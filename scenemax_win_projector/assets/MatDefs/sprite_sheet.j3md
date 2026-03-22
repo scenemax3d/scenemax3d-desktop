@@ -1,0 +1,22 @@
+MaterialDef Spritesheet {
+
+    MaterialParameters {
+        Texture2D ColorMap
+        Float SizeX : 1
+        Float SizeY : 1
+        Float Position
+    }
+
+    Technique {
+        VertexShader GLSL310 GLSL300 GLSL100 GLSL150:   MatDefs/sprite_sheet.vert
+        FragmentShader GLSL310 GLSL300 GLSL100 GLSL150: MatDefs/sprite_sheet.frag
+
+        WorldParameters {
+            WorldViewProjectionMatrix
+        }
+
+        Defines {
+        }
+    }
+
+}

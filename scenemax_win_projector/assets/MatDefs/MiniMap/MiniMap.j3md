@@ -1,0 +1,26 @@
+MaterialDef Unshaded {
+
+    MaterialParameters {
+
+        Texture2D ColorMap
+        Texture2D Mask
+        Texture2D Overlay
+
+    }
+
+    Technique {
+        VertexShader GLSL100 GLSL150:   MatDefs/MiniMap/MiniMap.vert
+        FragmentShader GLSL100 GLSL150: MatDefs/MiniMap/MiniMap.frag
+
+        WorldParameters {
+            WorldViewProjectionMatrix
+            ViewProjectionMatrix
+            ViewMatrix
+        }
+
+
+    }
+
+
+
+}

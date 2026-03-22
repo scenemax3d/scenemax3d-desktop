@@ -1,0 +1,71 @@
+{
+  "cases": [
+    {
+      "match": ["^wow", "great", "amazing", "excellent", "nice"],
+      "code": [
+        "sys.draw smiley1 : size (200,200), pos (15,50); wait 3 seconds;sys.draw clear;"
+      ],
+      "speak": [
+        "Awesome!",
+        "Glad you like it!",
+        "That's great to hear!",
+        "Fantastic!",
+        "Wonderful!",
+        "I'm happy you're impressed!",
+        "Wow, thanks!",
+        "That's amazing!",
+        "Excellent!",
+        "Super!",
+        "Impressive!",
+        "Cool!",
+        "That's awesome!",
+        "Thanks for the compliment!",
+        "I'm thrilled you think so!"
+      ]
+    },
+    {
+      "match": ["^hi\\.", "^hi,", "^hi\\s+"],
+      "code": ["sys.draw smiley1 : size (200,200), pos (15,50); wait 3 seconds;sys.draw clear;"],
+      "speak": [
+        "Hello!",
+        "Hi there!",
+        "Hey!",
+        "Hi!",
+        "Hey there!",
+        "Greetings!",
+        "Good to see you!",
+        "Howdy!",
+        "Hi, how are you?",
+        "Hello, user!",
+        "Hi, what's up?",
+        "Hey, nice to see you!",
+        "Hello, how can I help?",
+        "Hi, how's it going?",
+        "Hey, how can I assist?"
+      ]
+    },
+
+    {
+      "match": ["thank you"],
+      "code": ["sys.draw great_success1 : size (200,200), pos (15,50); wait 3 seconds;sys.draw clear;"],
+      "speak": [
+        "You're welcome!",
+        "Glad to help!",
+        "Anytime!",
+        "No problem!",
+        "My pleasure!",
+        "Happy to assist!",
+        "Sure thing!",
+        "Of course!",
+        "Absolutely!",
+        "Always here for you!",
+        "Don't mention it!",
+        "Glad I could help!",
+        "No worries!",
+        "You're most welcome!",
+        "Anytime you need!"
+
+      ]
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "items": [
+
+    {"name": "File", "items": [
+
+      {"name": "Projects", "items": [
+          {"name": "New Project...","command": "new_project_scripts_folder"}
+
+        ]
+      },
+
+      {"name": "Import Program...","command": "load_program"},
+      {"name": "Load From Cloud...","command": "load_from_cloud"},
+
+      {"name": "Code Snippets...", "command":"macro_builder"},
+      {"name": "Settings...", "command":"settings"},
+      {"name": "Open Installation Folder","command": "open_install_folder"},
+      {"name": "Exit","command": "exit"}
+
+    ]},
+
+    {"name": "Assets", "items": [
+      {"name": "Import Audio...","command": "import_audio", "enabled": true},
+      {"name": "Import Sprite...","command": "add_sprite", "enabled": true},
+      {"name": "Import 3D Model...","command": "add_model","enabled": true},
+      {"name": "Import Skybox...","command": "add_skybox","enabled": true},
+      {"name": "Open Assets Folder","command": "open_assets_folder"}
+
+    ]},
+    {"name": "Help", "items": [
+      {"name": "Online Help","command": "online_help"},
+      {"name": "About","command": "about"}
+
+    ]}
+
+  ]
+}

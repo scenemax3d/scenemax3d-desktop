@@ -1,0 +1,46 @@
+plugins {
+    id 'java'
+}
+
+group 'com.scenemax.designer'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = 11
+targetCompatibility = 11
+[compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
+
+repositories {
+    mavenCentral()
+    maven { url "https://jitpack.io" }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+        resources {
+            srcDirs = ['assets']
+        }
+    }
+}
+
+def jme3 = [v: '3.7.0-beta1.2.2', g: 'org.jmonkeyengine']
+
+dependencies {
+    // SceneMaxApp from the projector module
+    implementation project(":scenemax_win_projector")
+    implementation project(":scenemax3d_compiler")
+    implementation project(":scenemax3d_common_types")
+
+    // JME3 (needed explicitly since projector uses 'implementation' scope)
+    implementation "${jme3.g}:jme3-core:${jme3.v}"
+    implementation "${jme3.g}:jme3-desktop:${jme3.v}"
+    implementation "${jme3.g}:jme3-lwjgl:${jme3.v}"
+    implementation "${jme3.g}:jme3-effects:${jme3.v}"
+    implementation "${jme3.g}:jme3-plugins:${jme3.v}"
+
+    // JSON for document format
+    implementation 'org.json:json:20210307'
+    implementation 'commons-io:commons-io:2.11.0'
+}

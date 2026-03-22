@@ -1,0 +1,1378 @@
+package com.scenemax.designer;
+
+import com.jme3.input.KeyInput;
+import com.jme3.input.MouseInput;
+import com.jme3.input.controls.*;
+import com.jme3.math.*;
+import com.jme3.scene.Geometry;
+import com.jme3.scene.Node;
+import com.jme3.scene.Spatial;
+import com.jme3.scene.shape.Box;
+import com.scenemax.designer.gizmo.*;
+import com.scenemax.designer.grid.GridPlane;
+import com.scenemax.designer.selection.OutlineEffect;
+import com.scenemax.designer.selection.SelectionManager;
+import com.scenemaxeng.common.types.ResourceSetup;
+import com.scenemaxeng.projector.SceneMaxApp;
+import com.scenemaxeng.projector.SceneMaxScope;
+import org.json.JSONObject;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
+
+/**
+ * Core designer 3D application. Extends SceneMaxApp to leverage
+ * the SceneMax runtime for entity creation via runPartialCode().
+ * Adds designer extras: grid, orbit camera, selection, gizmos.
+ */
+public class DesignerApp extends SceneMaxApp {
+
+    /**
+     * Callback interface for notifying the Swing DesignerPanel of changes.
+     */
+    public interface DesignerPanelCallback {
+        void onSelectionChanged(DesignerEntity entity);
+        void onSceneChanged();
+        void onLoadingProgress(int loaded, int total);
+    }
+
+    /**
+     * Holds deferred entity info. After runPartialCode() is called,
+     * the entity node won't exist until simpleUpdate() processes the
+     * SceneMax controllers. This struct queues the lookup for later.
+     */
+    private static class PendingEntity {
+        String name;
+        String code;
+        DesignerEntityType type;
+        float radius;
+        float sizeX, sizeY, sizeZ;
+        String resourcePath;
+        boolean staticModel;
+        boolean vehicleModel;
+        boolean staticEntity;
+        boolean colliderEntity;
+        String material;
+        String nodeName;
+        int framesWaited;
+        boolean selectAfterCreation;
+        // For document loading: saved transform to apply
+        String entityId;
+        Quaternion savedRotation;
+        Vector3f savedScale;
+        // Loading progress gizmo shown while async model is loading
+        LoadingProgressGizmo loadingGizmo;
+    }
+
+    private String designerProjectPath;
+    private File designerFile;
+    private DesignerDocument document;
+    private DesignerPanelCallback panelCallback;
+    private Runnable scriptsTreeRefreshCallback;
+    private java.util.function.Consumer<String> codeFileUpdatedCallback;
+
+    private final List<DesignerEntity> entities = new ArrayList<>();
+    private final List<PendingEntity> pendingEntities = new ArrayList<>();
+    private SelectionManager selectionManager;
+    private GizmoManager gizmoManager;
+    private OutlineEffect outlineEffect;
+    private GridPlane gridPlane;
+    private TranslateGizmo translateGizmo;
+    private RotateGizmo rotateGizmo;
+    private ViewCubeGizmo viewCubeGizmo;
+    private DesignerEntity cameraEntity;
+    private CameraGizmoVisual cameraGizmoVisual;
+    private CameraPreviewViewport cameraPreview;
+
+    // Camera animation state (for view preset transitions)
+    private boolean animatingCamera = false;
+    private float animStartYaw, animStartPitch;
+    private float animTargetYaw, animTargetPitch;
+    private float animProgress;
+    private static final float ANIM_DURATION = 0.4f;
+
+    // Camera mode
+    public enum CameraMode { ORBIT, PAN }
+    private CameraMode cameraMode = CameraMode.ORBIT;
+
+    // Camera orbit state
+    private float cameraDistance = 15f;
+    private float cameraYaw = (float) Math.toRadians(45);
+    private float cameraPitch = (float) Math.toRadians(30);
+    private Vector3f cameraTarget = new Vector3f(0, 0, 0);
+    private boolean orbiting = false;
+    private boolean panning = false;
+    private boolean ctrlHeld = false;
+    private Vector2f lastMousePos = new Vector2f();
+
+    private int sphereCounter = 0;
+    private int boxCounter = 0;
+    private int modelCounter = 0;
+
+    private boolean loadingDocument = false;
+    private int loadingTotalEntities = 0;
+
+    // Input action names
+    private static final String ACTION_LEFT_CLICK = "DesignerLeftClick";
+    private static final String ACTION_RIGHT_CLICK = "DesignerRightClick";
+    private static final String ACTION_MIDDLE_CLICK = "DesignerMiddleClick";
+    private static final String ACTION_DELETE = "DesignerDelete";
+
+    /** Max frames to wait for a pending entity node to appear */
+    private static final int MAX_PENDING_FRAMES = 30;
+
+    /** Max frames to wait for an async model (much longer than primitives) */
+    private static final int MAX_PENDING_FRAMES_ASYNC = 600;
+
+    public DesignerApp() {
+        super();
+    }
+
+    public void setProjectPath(String projectPath) {
+        this.designerProjectPath = projectPath;
+    }
+
+    public void setDesignerFile(File file) {
+        this.designerFile = file;
+    }
+
+    public void setDocument(DesignerDocument document) {
+        this.document = document;
+    }
+
+    // --- Orbit camera state accessors (for save/restore across document switches) ---
+
+    public float getCameraDistance() { return cameraDistance; }
+    public float getCameraYaw() { return cameraYaw; }
+    public float getCameraPitch() { return cameraPitch; }
+    public Vector3f getCameraTarget() { return cameraTarget.clone(); }
+
+    public void setOrbitCameraState(float distance, float yaw, float pitch, Vector3f target) {
+        this.cameraDistance = distance;
+        this.cameraYaw = yaw;
+        this.cameraPitch = pitch;
+        this.cameraTarget.set(target);
+        updateOrbitCamera();
+    }
+
+    public void setDesignerPanelCallback(DesignerPanelCallback callback) {
+        this.panelCallback = callback;
+    }
+
+    /**
+     * Sets a callback that will be invoked (on the Swing EDT) when a .code
+     * file is created for the first time and the scripts tree needs refreshing.
+     */
+    public void setScriptsTreeRefreshCallback(Runnable callback) {
+        this.scriptsTreeRefreshCallback = callback;
+    }
+
+    /**
+     * Sets a callback that will be invoked (on the Swing EDT) whenever the
+     * companion .code file is updated on disk.  The callback receives the
+     * absolute path of the .code file so the UI can refresh open tabs.
+     */
+    public void setCodeFileUpdatedCallback(java.util.function.Consumer<String> callback) {
+        this.codeFileUpdatedCallback = callback;
+    }
+
+    public List<DesignerEntity> getEntities() {
+        return entities;
+    }
+
+    public SelectionManager getSelectionManager() {
+        return selectionManager;
+    }
+
+    public void setGizmoMode(GizmoMode mode) {
+        if (gizmoManager != null) gizmoManager.setMode(mode);
+    }
+
+    public void setCameraMode(CameraMode mode) {
+        this.cameraMode = mode;
+    }
+
+    // --- Override SceneMaxApp lifecycle to prevent clearing scene on parse errors ---
+
+    @Override
+    public void onEndCode() {
+        // No-op in designer mode - do NOT clear the scene
+    }
+
+    @Override
+    public void onEndCode(List<String> errors) {
+        // No-op in designer mode - just log errors
+        if (errors != null && !errors.isEmpty()) {
+            System.err.println("Designer parse errors: " + errors);
+        }
+    }
+
+    @Override
+    public void onStartCode() {
+        // No-op in designer mode
+    }
+
+    @Override
+    public void simpleInitApp() {
+        // Set workingFolder to the designer file's parent directory.
+        // SceneMaxApp expects workingFolder to be 2 levels deep inside the project
+        // (e.g., project/scripts/subfolder/) so that getParentFile().getParentFile()
+        // navigates up to the project root for resource loading.
+        // The .smdesign file lives inside scripts/, so its parent dir is correct.
+        if (designerFile != null) {
+            setWorkingFolder(designerFile.getParentFile().getAbsolutePath());
+        } else if (designerProjectPath != null) {
+            // Fallback: use project path directly (may fail if not 2 levels deep)
+            setWorkingFolder(designerProjectPath);
+        }
+
+        // Call SceneMaxApp's init - sets up asset management, lighting, physics, etc.
+        super.simpleInitApp();
+
+        // Disable default flyCam (SceneMaxApp already does this, but be explicit)
+        flyCam.setEnabled(false);
+        inputManager.setCursorVisible(true);
+
+        // Initialize the SceneMax runtime (mainScope, ProgramDef, threads)
+        // so we can use runPartialCode() to create entities
+        String runtimePath = designerFile != null
+                ? designerFile.getParentFile().getAbsolutePath()
+                : designerProjectPath;
+        initDesignerRuntime(runtimePath);
+
+        // --- Designer extras ---
+
+        // Grid plane
+        gridPlane = new GridPlane(assetManager);
+        rootNode.attachChild(gridPlane);
+
+        // Selection system
+        selectionManager = new SelectionManager();
+        outlineEffect = new OutlineEffect(assetManager);
+
+        // Gizmo system
+        translateGizmo = new TranslateGizmo(assetManager);
+        rootNode.attachChild(translateGizmo);
+        rotateGizmo = new RotateGizmo(assetManager);
+        rootNode.attachChild(rotateGizmo);
+        gizmoManager = new GizmoManager(rootNode, translateGizmo, rotateGizmo);
+        selectionManager.addListener(gizmoManager);
+
+        // ViewCube navigation gizmo (separate viewport, top-right corner)
+        viewCubeGizmo = new ViewCubeGizmo();
+        viewCubeGizmo.init(assetManager, renderManager, cam);
+        viewCubeGizmo.setCallback((targetYaw, targetPitch) -> {
+            startCameraAnimation(targetYaw, targetPitch);
+        });
+
+        // When a drag ends, update the properties panel with new transform values
+        gizmoManager.setDragEndCallback(entity -> {
+            if (panelCallback != null) {
+                panelCallback.onSelectionChanged(entity);
+            }
+            markDocumentDirty();
+        });
+
+        // Selection listeners -> notify Swing panel
+        selectionManager.addListener(entity -> {
+            outlineEffect.removeOutline();
+            if (entity != null && entity.getSceneNode() != null) {
+                outlineEffect.applyOutline(entity.getSceneNode());
+            }
+            if (panelCallback != null) {
+                panelCallback.onSelectionChanged(entity);
+            }
+        });
+
+        // Register designer input mappings
+        registerDesignerInputMappings();
+
+        // Camera gizmo entity (singleton - always exists, cannot be deleted)
+        initCameraEntity();
+
+        // Camera preview viewport (offscreen rendering for live preview, always visible)
+        cameraPreview = new CameraPreviewViewport();
+        cameraPreview.init(assetManager, renderManager, rootNode,
+                           cam.getWidth(), cam.getHeight());
+        cameraPreview.syncWithEntity(cameraEntity);
+        cameraPreview.show(guiNode);
+
+        // Load document entities if present (deferred - nodes appear after simpleUpdate)
+        if (document != null) {
+            loadDocumentEntities();
+        }
+
+        // Set initial camera
+        updateOrbitCamera();
+    }
+
+    // --- Entity management via SceneMax language ---
+
+    /** Creates a sphere using SceneMax language: name => sphere : pos (x,y,z), radius r */
+    public void addDefaultSphere() {
+        String name = "sphere_" + (++sphereCounter);
+        String code = name + " => sphere : pos (0,0.5,0), radius 0.5";
+        addEntityViaCode(name, code, DesignerEntityType.SPHERE, 0.5f, 0, 0, 0, null, false, false);
+    }
+
+    /** Creates a box using SceneMax language: name => box : size (x,y,z), pos (x,y,z) */
+    public void addDefaultBox() {
+        String name = "box_" + (++boxCounter);
+        String code = name + " => box : size (1,1,1), pos (0,0.5,0)";
+        addEntityViaCode(name, code, DesignerEntityType.BOX, 0, 0.5f, 0.5f, 0.5f, null, false, false);
+    }
+
+    /** Creates a 3D model using SceneMax language: name => [static] resourceName : pos (x,y,z) */
+    public void addModel(String resourceName, boolean isStatic) {
+        addModel(resourceName, isStatic, false);
+    }
+
+    public void addModel(String resourceName, boolean isStatic, boolean isVehicle) {
+        String name = "model_" + (++modelCounter);
+        String staticPrefix = isStatic ? "static " : "";
+        String vehicleSuffix = isVehicle ? " vehicle" : "";
+        float initialY = isVehicle ? 5f : 0f;
+        String code = name + " => " + staticPrefix + resourceName + vehicleSuffix + ": pos (0," + initialY + ",0) async";
+        addEntityViaCode(name, code, DesignerEntityType.MODEL, 0, 0, 0, 0, resourceName, isStatic, isVehicle);
+
+        // Apply the model's configured scale from ResourceSetup instead of defaulting to 1
+        if (getAssetsMapping() != null && getAssetsMapping().get3DModelsIndex() != null) {
+            ResourceSetup res = getAssetsMapping().get3DModelsIndex().get(resourceName.toLowerCase());
+            if (res != null) {
+                PendingEntity pe = pendingEntities.get(pendingEntities.size() - 1);
+                pe.savedScale = new Vector3f(res.scaleX, res.scaleY, res.scaleZ);
+            }
+        }
+    }
+
+    /**
+     * Creates the singleton camera gizmo entity. This is not created via
+     * SceneMax code -- the visual node is built directly.
+     */
+    private void initCameraEntity() {
+        // Remove the previous camera gizmo node to avoid duplicates
+        if (cameraEntity != null && cameraEntity.getSceneNode() != null) {
+            cameraEntity.getSceneNode().removeFromParent();
+        }
+
+        cameraGizmoVisual = new CameraGizmoVisual(assetManager);
+        Node cameraNode = new Node("GameCameraEntity");
+        cameraNode.attachChild(cameraGizmoVisual);
+
+        // Set initial position from document (or default)
+        Vector3f initialPos = new Vector3f(0, 2, 5);
+        Quaternion initialRot = Quaternion.IDENTITY.clone();
+        if (document != null) {
+            initialPos = document.getGameCameraPos().clone();
+            initialRot = document.getGameCameraRot().clone();
+        }
+        cameraNode.setLocalTranslation(initialPos);
+        cameraNode.setLocalRotation(initialRot);
+
+        cameraEntity = new DesignerEntity("__game_camera__", "Game Camera", DesignerEntityType.CAMERA);
+        cameraEntity.setSceneNode(cameraNode);
+        rootNode.attachChild(cameraNode);
+
+        // Add to entities list so it participates in selection/picking
+        entities.add(cameraEntity);
+    }
+
+    /** Returns sorted list of available 3D model names from the assets mapping. */
+    public List<String> getAvailableModelNames() {
+        List<String> names = new ArrayList<>();
+        if (getAssetsMapping() != null && getAssetsMapping().get3DModelsIndex() != null) {
+            TreeSet<String> sorted = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+            getAssetsMapping().get3DModelsIndex().values()
+                    .forEach(r -> sorted.add(r.name));
+            names.addAll(sorted);
+        }
+        return names;
+    }
+
+    /** Checks whether a model is a vehicle based on the assets mapping. */
+    public boolean isModelVehicle(String modelName) {
+        if (getAssetsMapping() == null || getAssetsMapping().get3DModelsIndex() == null) return false;
+        ResourceSetup res = getAssetsMapping().get3DModelsIndex().get(modelName.toLowerCase());
+        return res != null && res.isVehicle;
+    }
+
+    /**
+     * Executes SceneMax code to create an entity and queues a deferred lookup.
+     * The node won't exist until simpleUpdate() runs the SceneMax controllers,
+     * so we queue the info and check for the node each frame in simpleUpdate().
+     */
+    private void addEntityViaCode(String name, String code, DesignerEntityType type,
+                                   float radius, float sizeX, float sizeY, float sizeZ,
+                                   String resourcePath, boolean isStatic, boolean isVehicle) {
+        addEntityViaCode(name, code, type, radius, sizeX, sizeY, sizeZ, resourcePath, isStatic, isVehicle, false, false);
+    }
+
+    private void addEntityViaCode(String name, String code, DesignerEntityType type,
+                                   float radius, float sizeX, float sizeY, float sizeZ,
+                                   String resourcePath, boolean isStatic, boolean isVehicle,
+                                   boolean isStaticEntity, boolean isColliderEntity) {
+        // Run the SceneMax code - this creates controllers that will be
+        // processed in super.simpleUpdate() on the next frame(s)
+        runPartialCode(code, null, false);
+
+        // Build the expected node name
+        SceneMaxScope scope = getMainScope();
+        String nodeName = name + "@" + scope.scopeId;
+
+        // Queue for deferred lookup
+        PendingEntity pending = new PendingEntity();
+        pending.name = name;
+        pending.code = code;
+        pending.type = type;
+        pending.radius = radius;
+        pending.sizeX = sizeX;
+        pending.sizeY = sizeY;
+        pending.sizeZ = sizeZ;
+        pending.resourcePath = resourcePath;
+        pending.staticModel = isStatic;
+        pending.vehicleModel = isVehicle;
+        pending.staticEntity = isStaticEntity;
+        pending.colliderEntity = isColliderEntity;
+        pending.nodeName = nodeName;
+        pending.framesWaited = 0;
+        pending.selectAfterCreation = true;
+
+        // Show a loading progress gizmo for async model loading
+        if (type == DesignerEntityType.MODEL) {
+            attachLoadingGizmo(pending);
+        }
+
+        pendingEntities.add(pending);
+    }
+
+    /**
+     * Creates and attaches a loading progress gizmo for a pending model entity.
+     * The gizmo is placed slightly above the model's expected spawn position.
+     */
+    private void attachLoadingGizmo(PendingEntity pe) {
+        LoadingProgressGizmo gizmo = new LoadingProgressGizmo(assetManager, pe.resourcePath);
+        // Position slightly above the model's expected Y position
+        float y = pe.vehicleModel ? 6f : 1f;
+        gizmo.setLocalTranslation(0, y, 0);
+        rootNode.attachChild(gizmo);
+        pe.loadingGizmo = gizmo;
+    }
+
+    /**
+     * Called each frame from simpleUpdate() to check if pending entity nodes
+     * have been created by the SceneMax controllers.
+     */
+    private void processPendingEntities() {
+        if (pendingEntities.isEmpty()) return;
+
+        boolean anyResolved = false;
+        Iterator<PendingEntity> it = pendingEntities.iterator();
+        while (it.hasNext()) {
+            PendingEntity pe = it.next();
+            pe.framesWaited++;
+
+            Node node = (Node) rootNode.getChild(pe.nodeName);
+            if (node != null) {
+                // Entity node was created - register it
+                DesignerEntity entity;
+                if (pe.entityId != null) {
+                    entity = new DesignerEntity(pe.entityId, pe.name, pe.type);
+                } else {
+                    entity = new DesignerEntity(pe.name, pe.type);
+                }
+                entity.setSceneMaxCode(pe.code);
+                entity.setSceneNode(node);
+
+                // Store type-specific properties
+                switch (pe.type) {
+                    case SPHERE:
+                        entity.setRadius(pe.radius);
+                        entity.setStaticEntity(pe.staticEntity);
+                        entity.setColliderEntity(pe.colliderEntity);
+                        entity.setMaterial(pe.material != null ? pe.material : "");
+                        break;
+                    case BOX:
+                        entity.setSizeX(pe.sizeX);
+                        entity.setSizeY(pe.sizeY);
+                        entity.setSizeZ(pe.sizeZ);
+                        entity.setStaticEntity(pe.staticEntity);
+                        entity.setColliderEntity(pe.colliderEntity);
+                        entity.setMaterial(pe.material != null ? pe.material : "");
+                        break;
+                    case MODEL:
+                        entity.setResourcePath(pe.resourcePath);
+                        entity.setStaticModel(pe.staticModel);
+                        entity.setVehicleModel(pe.vehicleModel);
+                        break;
+                }
+
+                // Apply saved transform (for document loading)
+                if (pe.savedRotation != null) {
+                    node.setLocalRotation(pe.savedRotation);
+                }
+                if (pe.savedScale != null) {
+                    node.setLocalScale(pe.savedScale);
+                }
+
+                entities.add(entity);
+
+                if (pe.selectAfterCreation) {
+                    markDocumentDirty();
+                    selectionManager.select(entity);
+                }
+
+                // Remove loading gizmo if present
+                if (pe.loadingGizmo != null) {
+                    pe.loadingGizmo.removeFromParent();
+                    pe.loadingGizmo = null;
+                }
+
+                anyResolved = true;
+                it.remove();
+
+                // Notify loading progress during document loading
+                if (loadingDocument) {
+                    int loaded = loadingTotalEntities - pendingEntities.size();
+                    notifyLoadingProgress(loaded, loadingTotalEntities);
+                }
+            } else {
+                // Update loading gizmo progress for models still loading
+                if (pe.loadingGizmo != null) {
+                    int maxFrames = (pe.type == DesignerEntityType.MODEL) ? MAX_PENDING_FRAMES_ASYNC : MAX_PENDING_FRAMES;
+                    // Use a fast-start curve so the bar fills quickly at first,
+                    // then slows down, giving the user a sense of progress
+                    float ratio = (float) pe.framesWaited / maxFrames;
+                    float progress = 1.0f - (1.0f - ratio) * (1.0f - ratio);
+                    pe.loadingGizmo.setProgress(Math.min(progress, 0.95f));
+                    pe.loadingGizmo.faceCamera(cam);
+                }
+                // Use the appropriate timeout
+                int maxFrames = (pe.type == DesignerEntityType.MODEL) ? MAX_PENDING_FRAMES_ASYNC : MAX_PENDING_FRAMES;
+                if (pe.framesWaited > maxFrames) {
+                    System.err.println("Failed to create entity via code (timed out after "
+                            + maxFrames + " frames): " + pe.code);
+                    System.err.println("Expected node name: " + pe.nodeName);
+                    if (pe.loadingGizmo != null) {
+                        pe.loadingGizmo.removeFromParent();
+                        pe.loadingGizmo = null;
+                    }
+                    it.remove();
+                }
+            }
+        }
+
+        if (anyResolved) {
+            notifySceneChanged();
+        }
+
+        // If we were loading a document and all pending are resolved (or timed out), finalize
+        if (loadingDocument && pendingEntities.isEmpty()) {
+            loadingDocument = false;
+            notifyLoadingProgress(loadingTotalEntities, loadingTotalEntities);
+            sphereCounter = (int) entities.stream()
+                    .filter(e -> e.getType() == DesignerEntityType.SPHERE).count();
+            boxCounter = (int) entities.stream()
+                    .filter(e -> e.getType() == DesignerEntityType.BOX).count();
+            modelCounter = (int) entities.stream()
+                    .filter(e -> e.getType() == DesignerEntityType.MODEL).count();
+            selectionManager.deselect();
+        }
+    }
+
+    /** Updates the visual box mesh to match the entity's current size. */
+    public void updateBoxMesh(DesignerEntity entity) {
+        if (entity == null || entity.getType() != DesignerEntityType.BOX) return;
+        Node node = entity.getSceneNode();
+        if (node == null) return;
+        for (Spatial child : node.getChildren()) {
+            if (child instanceof Geometry) {
+                ((Geometry) child).setMesh(new Box(entity.getSizeX() * 2, entity.getSizeY() * 2, entity.getSizeZ() * 2));
+                break;
+            }
+        }
+    }
+
+    /** Applies a material to a BOX or SPHERE entity and updates the scene. */
+    public void applyMaterial(DesignerEntity entity, String material) {
+        if (entity == null) return;
+        entity.setMaterial(material);
+        if (material != null && !material.isEmpty()) {
+            runPartialCode(entity.getName() + ".material = \"" + material + "\"", null, false);
+        }
+        markDocumentDirty();
+    }
+
+    public void removeEntity(DesignerEntity entity) {
+        if (entity == null) return;
+        if (entity.getType() == DesignerEntityType.CAMERA) return; // Camera cannot be deleted
+
+        if (selectionManager.getSelected() == entity) {
+            selectionManager.deselect();
+        }
+
+        outlineEffect.removeOutline();
+
+        if (entity.getSceneNode() != null) {
+            entity.getSceneNode().removeFromParent();
+        }
+
+        entities.remove(entity);
+        markDocumentDirty();
+        notifySceneChanged();
+    }
+
+    /**
+     * Recreates an entity with updated static/collider flags.
+     * Preserves position, rotation, scale, and all other properties.
+     */
+    public void recreateEntity(DesignerEntity entity, boolean isStatic, boolean isCollider) {
+        if (entity == null) return;
+
+        // Capture current state
+        String name = entity.getName();
+        String entityId = entity.getId();
+        DesignerEntityType type = entity.getType();
+        Vector3f pos = entity.getPosition().clone();
+        Quaternion rot = entity.getRotation().clone();
+        Vector3f scale = entity.getScale().clone();
+        float radius = entity.getRadius();
+        float sizeX = entity.getSizeX();
+        float sizeY = entity.getSizeY();
+        float sizeZ = entity.getSizeZ();
+        String material = entity.getMaterial();
+
+        // Remove old entity from scene
+        if (selectionManager.getSelected() == entity) {
+            selectionManager.deselect();
+        }
+        outlineEffect.removeOutline();
+        if (entity.getSceneNode() != null) {
+            entity.getSceneNode().removeFromParent();
+        }
+        entities.remove(entity);
+
+        // Build new code with updated flags
+        String staticPfx = isStatic ? "static " : "";
+        String colliderPfx = isCollider ? "collider " : "";
+        String materialSuffix = (material != null && !material.isEmpty()) ? ", material \"" + material + "\"" : "";
+        String code;
+        switch (type) {
+            case SPHERE:
+                code = name + " => " + staticPfx + colliderPfx + "sphere : pos (" + pos.x + "," + pos.y + "," + pos.z +
+                       "), radius " + radius + materialSuffix;
+                break;
+            case BOX:
+                code = name + " => " + staticPfx + colliderPfx + "box : size (" +
+                       (sizeX * 2) + "," + (sizeY * 2) + "," + (sizeZ * 2) +
+                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+                break;
+            default:
+                return;
+        }
+
+        // Run the code to recreate entity
+        runPartialCode(code, null, false);
+
+        SceneMaxScope scope = getMainScope();
+        String nodeName = name + "@" + scope.scopeId;
+
+        PendingEntity pending = new PendingEntity();
+        pending.entityId = entityId;
+        pending.name = name;
+        pending.code = code;
+        pending.type = type;
+        pending.radius = radius;
+        pending.sizeX = sizeX;
+        pending.sizeY = sizeY;
+        pending.sizeZ = sizeZ;
+        pending.staticEntity = isStatic;
+        pending.colliderEntity = isCollider;
+        pending.material = material;
+        pending.nodeName = nodeName;
+        pending.framesWaited = 0;
+        pending.selectAfterCreation = true;
+        pending.savedRotation = rot;
+        pending.savedScale = scale;
+        pendingEntities.add(pending);
+    }
+
+    private void notifySceneChanged() {
+        if (panelCallback != null) {
+            panelCallback.onSceneChanged();
+        }
+    }
+
+    private void notifyLoadingProgress(int loaded, int total) {
+        if (panelCallback != null) {
+            panelCallback.onLoadingProgress(loaded, total);
+        }
+    }
+
+    // --- Document persistence ---
+
+    /**
+     * Clears the current scene and reloads all entities from the .smdesign
+     * file on disk.  This ensures the designer is 100% aligned with the
+     * companion .code file.  Called when a cached DesignerPanel is reused
+     * after its tab was closed.
+     */
+    public void reloadDocument() {
+        // Save camera position – clearScene() resets it
+        Vector3f savedCamPos = cam.getLocation().clone();
+        Quaternion savedCamRot = cam.getRotation().clone();
+
+        // Deselect current selection
+        if (selectionManager != null) {
+            selectionManager.deselect();
+        }
+        if (outlineEffect != null) {
+            outlineEffect.removeOutline();
+        }
+
+        // Clear designer entity tracking
+        entities.clear();
+        for (PendingEntity pe : pendingEntities) {
+            if (pe.loadingGizmo != null) {
+                pe.loadingGizmo.removeFromParent();
+            }
+        }
+        pendingEntities.clear();
+
+        // Clear the SceneMax scene (removes all models, boxes, spheres,
+        // controllers, audio, etc.)
+        clearScene();
+
+        // Re-initialize the SceneMax runtime (clearScene shuts down the
+        // executor service and clears all controllers including the main
+        // controller, so runPartialCode() won't work without this)
+        String runtimePath = designerFile != null
+                ? designerFile.getParentFile().getAbsolutePath()
+                : designerProjectPath;
+        initDesignerRuntime(runtimePath);
+
+        // Restore camera (clearScene resets it to default)
+        cam.setLocation(savedCamPos);
+        cam.setRotation(savedCamRot);
+
+        // Re-attach grid and gizmos if they were detached
+        if (gridPlane != null && gridPlane.getParent() == null) {
+            rootNode.attachChild(gridPlane);
+        }
+        if (translateGizmo != null && translateGizmo.getParent() == null) {
+            rootNode.attachChild(translateGizmo);
+        }
+        if (rotateGizmo != null && rotateGizmo.getParent() == null) {
+            rootNode.attachChild(rotateGizmo);
+        }
+
+        // Reload the document from disk (it may have been updated)
+        if (designerFile != null && designerFile.exists() && designerFile.length() > 0) {
+            try {
+                document = DesignerDocument.load(designerFile);
+            } catch (IOException e) {
+                System.err.println("Failed to reload designer document: " + e.getMessage());
+                document = new DesignerDocument(designerFile.getAbsolutePath());
+            }
+        }
+
+        // Re-create camera entity
+        initCameraEntity();
+
+        // Recreate all entities via SceneMax3D commands
+        if (document != null) {
+            loadDocumentEntities();
+        }
+
+        // Re-show the camera preview (clearScene detaches all guiNode children)
+        if (cameraPreview != null) {
+            cameraPreview.hide();  // reset visible flag
+            cameraPreview.show(guiNode);
+            cameraPreview.syncWithEntity(cameraEntity);
+        }
+
+        // Notify scene changed so the tree refreshes
+        notifySceneChanged();
+    }
+
+    /**
+     * Switches from the current designer document to a different one.
+     * Saves the current document, clears the scene, loads the new document
+     * Clears the current document state without loading a new one.
+     * Called when a designer tab is closed due to file deletion, so that
+     * stale entities are not accidentally saved to a future file with
+     * the same path.
+     *
+     * Must be called on the JME thread (via enqueue).
+     */
+    public void clearDocument() {
+        if (selectionManager != null) {
+            selectionManager.deselect();
+        }
+        if (outlineEffect != null) {
+            outlineEffect.removeOutline();
+        }
+        entities.clear();
+        for (PendingEntity pe : pendingEntities) {
+            if (pe.loadingGizmo != null) {
+                pe.loadingGizmo.removeFromParent();
+            }
+        }
+        pendingEntities.clear();
+        clearSceneAll();
+        document = null;
+        designerFile = null;
+    }
+
+    /**
+     * from disk, and recreates all entities.  Unlike {@link #reloadDocument()},
+     * this method does NOT preserve the current camera position — the orbit
+     * camera should be restored by the caller after this method returns.
+     *
+     * Must be called on the JME thread (via enqueue).
+     */
+    public void switchDocument(File newDesignerFile, String newProjectPath) {
+        // Save current document before switching
+        saveCameraState();
+
+        // Set new document info
+        this.designerFile = newDesignerFile;
+        this.designerProjectPath = newProjectPath;
+
+        // Deselect current selection
+        if (selectionManager != null) {
+            selectionManager.deselect();
+        }
+        if (outlineEffect != null) {
+            outlineEffect.removeOutline();
+        }
+
+        // Clear designer entity tracking
+        entities.clear();
+        for (PendingEntity pe : pendingEntities) {
+            if (pe.loadingGizmo != null) {
+                pe.loadingGizmo.removeFromParent();
+            }
+        }
+        pendingEntities.clear();
+
+        // Clear the SceneMax scene — use clearSceneAll() to also remove
+        // shared/static entities that clearScene() would keep alive
+        clearSceneAll();
+
+        // Re-initialize the SceneMax runtime
+        String runtimePath = designerFile != null
+                ? designerFile.getParentFile().getAbsolutePath()
+                : designerProjectPath;
+        initDesignerRuntime(runtimePath);
+
+        // Re-attach grid and gizmos if they were detached
+        if (gridPlane != null && gridPlane.getParent() == null) {
+            rootNode.attachChild(gridPlane);
+        }
+        if (translateGizmo != null && translateGizmo.getParent() == null) {
+            rootNode.attachChild(translateGizmo);
+        }
+        if (rotateGizmo != null && rotateGizmo.getParent() == null) {
+            rootNode.attachChild(rotateGizmo);
+        }
+
+        // Load the new document from disk
+        if (designerFile != null && designerFile.exists() && designerFile.length() > 0) {
+            try {
+                document = DesignerDocument.load(designerFile);
+            } catch (IOException e) {
+                System.err.println("Failed to load designer document: " + e.getMessage());
+                document = new DesignerDocument(designerFile.getAbsolutePath());
+            }
+        } else {
+            document = new DesignerDocument(designerFile.getAbsolutePath());
+        }
+
+        // Re-create camera entity from new document
+        initCameraEntity();
+
+        // Reset entity counters before loading (loadDocumentEntities will
+        // sync them to the highest index found in the document)
+        sphereCounter = 0;
+        boxCounter = 0;
+        modelCounter = 0;
+
+        // Recreate all entities from new document
+        if (document != null) {
+            loadDocumentEntities();
+        }
+
+        // Re-show the camera preview (clearSceneAll detaches all guiNode children)
+        if (cameraPreview != null) {
+            cameraPreview.hide();  // reset visible flag
+            cameraPreview.show(guiNode);
+            cameraPreview.syncWithEntity(cameraEntity);
+        }
+
+        // Notify scene changed so the tree refreshes
+        notifySceneChanged();
+    }
+
+    private void loadDocumentEntities() {
+        loadingDocument = true;
+        loadingTotalEntities = document.getEntityDefs().size();
+        notifyLoadingProgress(0, loadingTotalEntities);
+
+        for (JSONObject entityDef : document.getEntityDefs()) {
+            DesignerEntity entityTemplate = DesignerEntity.fromJSON(entityDef);
+            Vector3f pos = DesignerEntity.positionFromJSON(entityDef);
+            Quaternion rot = DesignerEntity.rotationFromJSON(entityDef);
+            Vector3f scale = DesignerEntity.scaleFromJSON(entityDef);
+
+            // Always regenerate code from entity properties so it reflects
+            // the latest position, size, static/collider flags, etc.
+            // (The saved sceneMaxCode can become stale after transform or
+            // property changes that don't update it.)
+            String code = generateCodeFromEntity(entityTemplate, pos);
+
+            // Run the code to create the entity - will be processed by controllers
+            runPartialCode(code, null, false);
+
+            // Build the expected node name and queue for deferred lookup
+            SceneMaxScope scope = getMainScope();
+            String nodeName = entityTemplate.getName() + "@" + scope.scopeId;
+
+            PendingEntity pending = new PendingEntity();
+            pending.entityId = entityTemplate.getId();
+            pending.name = entityTemplate.getName();
+            pending.code = code;
+            pending.type = entityTemplate.getType();
+            pending.nodeName = nodeName;
+            pending.framesWaited = 0;
+            pending.selectAfterCreation = false;
+            pending.savedRotation = rot;
+            pending.savedScale = scale;
+
+            // Copy type-specific properties
+            switch (entityTemplate.getType()) {
+                case SPHERE:
+                    pending.radius = entityTemplate.getRadius();
+                    pending.staticEntity = entityTemplate.isStaticEntity();
+                    pending.colliderEntity = entityTemplate.isColliderEntity();
+                    pending.material = entityTemplate.getMaterial();
+                    break;
+                case BOX:
+                    pending.sizeX = entityTemplate.getSizeX();
+                    pending.sizeY = entityTemplate.getSizeY();
+                    pending.sizeZ = entityTemplate.getSizeZ();
+                    pending.staticEntity = entityTemplate.isStaticEntity();
+                    pending.colliderEntity = entityTemplate.isColliderEntity();
+                    pending.material = entityTemplate.getMaterial();
+                    break;
+                case MODEL:
+                    pending.resourcePath = entityTemplate.getResourcePath();
+                    pending.staticModel = entityTemplate.isStaticModel();
+                    pending.vehicleModel = entityTemplate.isVehicleModel();
+                    break;
+            }
+
+            // Show a loading progress gizmo for async model loading
+            if (entityTemplate.getType() == DesignerEntityType.MODEL) {
+                LoadingProgressGizmo gizmo = new LoadingProgressGizmo(assetManager, entityTemplate.getResourcePath());
+                gizmo.setLocalTranslation(pos.x, pos.y + 1f, pos.z);
+                rootNode.attachChild(gizmo);
+                pending.loadingGizmo = gizmo;
+            }
+
+            // Apply material at runtime (the creation code includes the material
+            // attribute, but also send the runtime command to guarantee the visual)
+            String mat = entityTemplate.getMaterial();
+            if (mat != null && !mat.isEmpty()) {
+                runPartialCode(entityTemplate.getName() + ".material = \"" + mat + "\"", null, false);
+            }
+
+            pendingEntities.add(pending);
+        }
+
+        // If no entities to load, finalize immediately
+        if (pendingEntities.isEmpty()) {
+            loadingDocument = false;
+        }
+
+        // Sync counters with loaded entity names so new entities get unique indices
+        syncCountersFromEntities();
+    }
+
+    /**
+     * Scans entity names loaded from the document and advances the per-type
+     * counters past the highest index found.  This prevents name collisions
+     * when the user adds new entities after opening a saved document.
+     */
+    private void syncCountersFromEntities() {
+        if (document == null) return;
+        for (JSONObject entityDef : document.getEntityDefs()) {
+            DesignerEntity e = DesignerEntity.fromJSON(entityDef);
+            String name = e.getName();
+            if (name == null) continue;
+
+            if (name.startsWith("sphere_")) {
+                int idx = parseTrailingIndex(name, "sphere_");
+                if (idx > sphereCounter) sphereCounter = idx;
+            } else if (name.startsWith("box_")) {
+                int idx = parseTrailingIndex(name, "box_");
+                if (idx > boxCounter) boxCounter = idx;
+            } else if (name.startsWith("model_")) {
+                int idx = parseTrailingIndex(name, "model_");
+                if (idx > modelCounter) modelCounter = idx;
+            }
+        }
+    }
+
+    private int parseTrailingIndex(String name, String prefix) {
+        try {
+            return Integer.parseInt(name.substring(prefix.length()));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Generates SceneMax code from entity properties (for loading legacy documents
+     * that don't have the sceneMaxCode field).
+     */
+    private String generateCodeFromEntity(DesignerEntity entity, Vector3f pos) {
+        String name = entity.getName();
+        String mat = entity.getMaterial();
+        String materialSuffix = (mat != null && !mat.isEmpty()) ? ", material \"" + mat + "\"" : "";
+        switch (entity.getType()) {
+            case SPHERE:
+                String spherePrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
+                return name + " => " + spherePrefix + "sphere : pos (" + pos.x + "," + pos.y + "," + pos.z +
+                       "), radius " + entity.getRadius() + materialSuffix;
+            case BOX:
+                String boxPrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
+                return name + " => " + boxPrefix + "box : size (" +
+                       (entity.getSizeX() * 2) + "," + (entity.getSizeY() * 2) + "," + (entity.getSizeZ() * 2) +
+                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+            case MODEL:
+                String staticPfx = entity.isStaticModel() ? "static " : "";
+                String vehicleSfx = entity.isVehicleModel() ? " vehicle" : "";
+                return name + " => " + staticPfx + entity.getResourcePath() + vehicleSfx +
+                       ": pos (" + pos.x + "," + pos.y + "," + pos.z + ") async";
+            default:
+                return "";
+        }
+    }
+
+    /**
+     * Auto-saves both the .smdesign JSON and the companion .code file
+     * immediately so the on-disk files always reflect the current scene state.
+     */
+    public void markDocumentDirty() {
+        // Auto-save the .smdesign JSON
+        if (document != null && designerFile != null && designerFile.exists()) {
+            try {
+                List<DesignerEntity> sceneEntities = entities.stream()
+                        .filter(e -> e.getType() != DesignerEntityType.CAMERA)
+                        .collect(Collectors.toList());
+                Vector3f gameCamPos = cameraEntity != null ? cameraEntity.getPosition() : new Vector3f(0, 2, 5);
+                Quaternion gameCamRot = cameraEntity != null ? cameraEntity.getRotation() : Quaternion.IDENTITY;
+                document.save(new File(document.getFilePath()), sceneEntities,
+                        cam.getLocation(), cam.getRotation(), gameCamPos, gameCamRot);
+            } catch (IOException e) {
+                System.err.println("Failed to auto-save designer document");
+                e.printStackTrace();
+            }
+        }
+        // Auto-save the .code companion and notify UI
+        persistCodeFile();
+    }
+
+    /**
+     * Writes the companion .code file with the current SceneMax3D script.
+     * If the file is newly created, triggers a scripts tree refresh.
+     */
+    private void persistCodeFile() {
+        if (designerFile == null) return;
+        if (!designerFile.exists()) return; // file was deleted, don't recreate it
+        try {
+            List<DesignerEntity> sceneEntities = entities.stream()
+                    .filter(e -> e.getType() != DesignerEntityType.CAMERA)
+                    .collect(Collectors.toList());
+            Vector3f gameCamPos = cameraEntity != null ? cameraEntity.getPosition() : new Vector3f(0, 2, 5);
+            Quaternion gameCamRot = cameraEntity != null ? cameraEntity.getRotation() : Quaternion.IDENTITY;
+            boolean wasNew = DesignerDocument.saveCodeFile(designerFile, sceneEntities, gameCamPos, gameCamRot);
+            if (wasNew && scriptsTreeRefreshCallback != null) {
+                javax.swing.SwingUtilities.invokeLater(scriptsTreeRefreshCallback);
+            }
+            // Notify the UI so an open .code tab refreshes its content
+            if (codeFileUpdatedCallback != null) {
+                String codeFilePath = DesignerDocument.getCodeFile(designerFile).getAbsolutePath();
+                javax.swing.SwingUtilities.invokeLater(() -> codeFileUpdatedCallback.accept(codeFilePath));
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to persist .code file");
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Persists the final camera state on shutdown.  Entity changes are
+     * already auto-saved by {@link #markDocumentDirty()}.
+     */
+    private void saveCameraState() {
+        if (document == null || designerFile == null) return;
+        if (!designerFile.exists()) return; // file was deleted, don't recreate it
+        try {
+            List<DesignerEntity> sceneEntities = entities.stream()
+                    .filter(e -> e.getType() != DesignerEntityType.CAMERA)
+                    .collect(Collectors.toList());
+            Vector3f gameCamPos = cameraEntity != null ? cameraEntity.getPosition() : new Vector3f(0, 2, 5);
+            Quaternion gameCamRot = cameraEntity != null ? cameraEntity.getRotation() : Quaternion.IDENTITY;
+            document.save(new File(document.getFilePath()), sceneEntities,
+                    cam.getLocation(), cam.getRotation(), gameCamPos, gameCamRot);
+        } catch (IOException e) {
+            System.err.println("Failed to save camera state");
+            e.printStackTrace();
+        }
+    }
+
+    // --- Input handling ---
+
+    private void registerDesignerInputMappings() {
+        inputManager.addMapping(ACTION_LEFT_CLICK, new MouseButtonTrigger(MouseInput.BUTTON_LEFT));
+        inputManager.addMapping(ACTION_RIGHT_CLICK, new MouseButtonTrigger(MouseInput.BUTTON_RIGHT));
+        inputManager.addMapping(ACTION_MIDDLE_CLICK, new MouseButtonTrigger(MouseInput.BUTTON_MIDDLE));
+        inputManager.addMapping(ACTION_DELETE, new KeyTrigger(KeyInput.KEY_DELETE));
+        inputManager.addMapping("DesignerCtrl", new KeyTrigger(KeyInput.KEY_LCONTROL), new KeyTrigger(KeyInput.KEY_RCONTROL));
+        inputManager.addMapping("DesignerScrollUp", new MouseAxisTrigger(MouseInput.AXIS_WHEEL, false));
+        inputManager.addMapping("DesignerScrollDown", new MouseAxisTrigger(MouseInput.AXIS_WHEEL, true));
+
+        inputManager.addListener((ActionListener) (name, isPressed, tpf) -> {
+            if (name.equals(ACTION_LEFT_CLICK)) {
+                if (isPressed) onLeftClickPressed();
+                else onLeftClickReleased();
+            } else if (name.equals(ACTION_RIGHT_CLICK)) {
+                orbiting = isPressed;
+                if (isPressed) {
+                    lastMousePos.set(inputManager.getCursorPosition());
+                    animatingCamera = false;
+                }
+            } else if (name.equals(ACTION_MIDDLE_CLICK)) {
+                panning = isPressed;
+                if (isPressed) {
+                    lastMousePos.set(inputManager.getCursorPosition());
+                    animatingCamera = false;
+                }
+            }
+        }, ACTION_LEFT_CLICK, ACTION_RIGHT_CLICK, ACTION_MIDDLE_CLICK);
+
+        inputManager.addListener((ActionListener) (name, isPressed, tpf) -> {
+            if (name.equals(ACTION_DELETE) && isPressed) {
+                DesignerEntity sel = selectionManager.getSelected();
+                if (sel != null && sel.getType() != DesignerEntityType.CAMERA) removeEntity(sel);
+            } else if (name.equals("DesignerCtrl")) {
+                ctrlHeld = isPressed;
+            }
+        }, ACTION_DELETE, "DesignerCtrl");
+
+        inputManager.addListener((AnalogListener) (name, value, tpf) -> {
+            if (name.equals("DesignerScrollUp")) {
+                cameraDistance = Math.max(1f, cameraDistance - value * 50f);
+                updateOrbitCamera();
+            } else if (name.equals("DesignerScrollDown")) {
+                cameraDistance = Math.min(200f, cameraDistance + value * 50f);
+                updateOrbitCamera();
+            }
+        }, "DesignerScrollUp", "DesignerScrollDown");
+    }
+
+    private void onLeftClickPressed() {
+        Vector2f click = inputManager.getCursorPosition();
+
+        // Consume clicks inside camera preview area
+        if (cameraPreview != null && cameraPreview.isVisible() &&
+                cameraPreview.containsPoint(click)) {
+            return;
+        }
+
+        // Try viewcube click first (rendered on top)
+        if (viewCubeGizmo != null &&
+                viewCubeGizmo.tryClick(click, cam.getWidth(), cam.getHeight())) {
+            return;
+        }
+
+        // Try gizmo drag
+        if (gizmoManager.tryStartDrag(cam, click)) {
+            return;
+        }
+
+        // Otherwise, try picking an entity
+        DesignerEntity picked = selectionManager.pick(cam, click, entities);
+        selectionManager.select(picked);
+    }
+
+    private void onLeftClickReleased() {
+        if (gizmoManager.isDragging()) {
+            gizmoManager.endDrag();
+        }
+    }
+
+    // --- Orbit camera ---
+
+    private void updateOrbitCamera() {
+        float x = cameraDistance * (float) (Math.cos(cameraPitch) * Math.sin(cameraYaw));
+        float y = cameraDistance * (float) Math.sin(cameraPitch);
+        float z = cameraDistance * (float) (Math.cos(cameraPitch) * Math.cos(cameraYaw));
+
+        Vector3f camPos = cameraTarget.add(x, y, z);
+        cam.setLocation(camPos);
+        cam.lookAt(cameraTarget, Vector3f.UNIT_Y);
+    }
+
+    /**
+     * Starts a smooth camera animation toward the given yaw/pitch.
+     * NaN yaw means keep the current yaw (used for top/bottom views).
+     */
+    private void startCameraAnimation(float targetYaw, float targetPitch) {
+        animStartYaw = cameraYaw;
+        animStartPitch = cameraPitch;
+        animTargetPitch = targetPitch;
+
+        if (Float.isNaN(targetYaw)) {
+            animTargetYaw = cameraYaw;
+        } else {
+            // Normalize yaw difference so the camera takes the shortest path
+            float yawDiff = targetYaw - cameraYaw;
+            while (yawDiff > Math.PI) yawDiff -= 2 * Math.PI;
+            while (yawDiff < -Math.PI) yawDiff += 2 * Math.PI;
+            animTargetYaw = cameraYaw + yawDiff;
+        }
+
+        animProgress = 0f;
+        animatingCamera = true;
+    }
+
+    /**
+     * Called when the canvas is resized. Updates both main camera and viewcube.
+     */
+    public void onCanvasResized(int width, int height) {
+        cam.resize(width, height, true);
+        if (viewCubeGizmo != null) {
+            viewCubeGizmo.updateViewportBounds(width, height);
+        }
+        if (cameraPreview != null) {
+            cameraPreview.updatePosition(width, height);
+        }
+    }
+
+    // --- Update loop ---
+
+    @Override
+    public void simpleUpdate(float tpf) {
+        // IMPORTANT: call super so SceneMaxApp's controllers execute.
+        // This is where runPartialCode() commands (entity creation, etc.)
+        // actually get processed and nodes appear in the scene graph.
+        super.simpleUpdate(tpf);
+
+        // Check if any pending entity nodes have been created by the controllers
+        processPendingEntities();
+
+        // Animate camera toward a preset view (smooth transition)
+        if (animatingCamera) {
+            animProgress += tpf / ANIM_DURATION;
+            if (animProgress >= 1.0f) {
+                animProgress = 1.0f;
+                animatingCamera = false;
+            }
+            // Quadratic ease-out: fast start, smooth end
+            float t = 1.0f - (1.0f - animProgress) * (1.0f - animProgress);
+            cameraYaw = animStartYaw + (animTargetYaw - animStartYaw) * t;
+            cameraPitch = animStartPitch + (animTargetPitch - animStartPitch) * t;
+            updateOrbitCamera();
+        }
+
+        // Handle orbit/pan camera with mouse drag
+        if ((orbiting || panning) && !animatingCamera) {
+            Vector2f currentMouse = inputManager.getCursorPosition();
+            float dx = currentMouse.x - lastMousePos.x;
+            float dy = currentMouse.y - lastMousePos.y;
+            lastMousePos.set(currentMouse);
+
+            if (orbiting && cameraMode == CameraMode.ORBIT) {
+                // Right-click drag in Orbit mode: rotate camera around target
+                cameraYaw -= dx * 0.005f;
+                cameraPitch += dy * 0.005f;
+                cameraPitch = FastMath.clamp(cameraPitch, (float) Math.toRadians(-89), (float) Math.toRadians(89));
+                updateOrbitCamera();
+            } else if (orbiting && cameraMode == CameraMode.PAN) {
+                // Right-click drag in Pan mode: pan camera target
+                if (ctrlHeld) {
+                    // Ctrl held: vertical mouse movement pans forward/backward
+                    // along camera look direction projected onto XZ plane
+                    Vector3f lookDir = cam.getDirection().clone();
+                    lookDir.y = 0;
+                    lookDir.normalizeLocal();
+                    cameraTarget.addLocal(lookDir.mult(dy * 0.02f));
+                    // Horizontal mouse movement still pans left/right
+                    Vector3f right = cam.getLeft().negate().mult(dx * 0.02f);
+                    cameraTarget.addLocal(right);
+                } else {
+                    // No modifier: pan left/right and up/down
+                    Vector3f right = cam.getLeft().negate().mult(dx * 0.02f);
+                    Vector3f up = cam.getUp().mult(dy * 0.02f);
+                    cameraTarget.addLocal(right).addLocal(up);
+                }
+                updateOrbitCamera();
+            } else if (panning) {
+                // Middle-click drag: always pan (in both modes)
+                Vector3f right = cam.getLeft().negate().mult(dx * 0.02f);
+                Vector3f up = cam.getUp().mult(dy * 0.02f);
+                cameraTarget.addLocal(right).addLocal(up);
+                updateOrbitCamera();
+            }
+        }
+
+        // Handle gizmo drag
+        if (gizmoManager.isDragging()) {
+            gizmoManager.updateDrag(cam, inputManager.getCursorPosition());
+        }
+
+        // Scale gizmo based on camera distance
+        gizmoManager.scaleGizmoToCamera(cam);
+        gizmoManager.updateGizmoPosition();
+
+        // Sync viewcube camera rotation with main camera
+        if (viewCubeGizmo != null) {
+            viewCubeGizmo.syncCamera(cameraYaw, cameraPitch);
+        }
+
+        // Update camera preview if visible
+        if (cameraPreview != null && cameraPreview.isVisible()) {
+            cameraPreview.syncWithEntity(cameraEntity);
+        }
+    }
+
+    @Override
+    public void destroy() {
+        saveCameraState();
+        if (cameraPreview != null) {
+            cameraPreview.cleanup(renderManager);
+        }
+        if (viewCubeGizmo != null) {
+            viewCubeGizmo.cleanup(renderManager);
+        }
+        // Ensure cursor is visible before JME3 context shutdown
+        if (inputManager != null) {
+            inputManager.setCursorVisible(true);
+        }
+        try {
+            super.destroy();
+        } catch (NullPointerException e) {
+            // SceneMaxApp.destroy() references fields (pluginsCommunicationChannel,
+            // _appObserver) that are not initialized in designer mode.
+            // The JME3 base class cleanup (super.super.destroy()) has already
+            // executed successfully by the time these NPEs are thrown.
+        }
+    }
+}

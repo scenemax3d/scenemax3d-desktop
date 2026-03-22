@@ -1,0 +1,66 @@
+plugins {
+    id 'java'
+    id 'com.github.johnrengelman.shadow' //version '5.2.0'
+}
+
+//sourceSets.configureEach {
+//    configurations.getByName(runtimeClasspathConfigurationName) {
+//        attributes.attribute(Attribute.of("org.gradle.jvm.environment", String), "standard-jvm")
+//    }
+//    configurations.getByName(compileClasspathConfigurationName) {
+//        attributes.attribute(Attribute.of("org.gradle.jvm.environment", String), "standard-jvm")
+//    }
+//}
+
+apply plugin: 'idea'
+group 'com.scenemaxeng.plugins.ide'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = 11
+
+repositories {
+    mavenCentral()
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+        resources {
+            srcDirs = ['assets']
+        }
+    }
+}
+
+shadowJar {
+    include '**/*'
+    include '*.jar'
+
+}
+assemble.dependsOn shadowJar
+
+dependencies {
+    implementation 'com.intellij:forms_rt:7.0.3'
+    implementation project(":scenemax3d_common_types")
+    implementation 'org.json:json:20231013' // Required for JSON handling
+    implementation 'com.squareup.okhttp3:okhttp:4.9.2'
+
+    //implementation 'com.google.cloud:google-cloud-speech:4.41.0'
+    implementation 'com.assemblyai:assemblyai-java:2.0.1'
+
+    implementation 'net.sf.sociaal:freetts:1.2.2'
+}
+
+// Define a custom task for copying the file
+tasks.register('copyFile', Copy) {
+    from "build/libs/scenemax3d_plugins_ide-${version}-all.jar" // Source file path
+    into '../plugins'
+    rename { fileName -> 'scenemax3d-internal-plugins-ide.jar' } // Rename the file
+}
+
+// Configure the custom task to run after the build task
+tasks.named('build').configure {
+    finalizedBy(tasks.named('copyFile'))
+}
+

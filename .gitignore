@@ -1,0 +1,118 @@
+# Gradle
+.gradle
+.gradle.old/
+build/
+*/build/
+gradlew
+gradlew.bat
+gradle/
+
+# IntelliJ IDEA
+.idea/
+out/
+*/out/
+
+# Compiled output & JARs (except tracked ones in plugins/)
+**/bin/
+*.class
+scenemax3d_scene.jar
+launcher*.jar
+scenemax3d_parser/antlr-*.jar
+scenemax3d_compiler/libs/
+scenemax3d_compiler/src/com/scenemaxeng/compiler/META-INF/
+
+# Native binaries
+*.dll
+*.exe
+INNO-SETUP/Output/
+
+# Runtime / data directories
+run_dir/
+running/
+tmp/
+tmp_script.txt
+log
+recording
+tokens/
+data/
+deploy/
+deployModels/
+build_games/
+export_prg/
+export_res/
+export_targets/
+extra_models/
+games/
+scripts/
+scripts_bak/
+scripts_bak1/
+scripts_for_tests/
+scripts_Project 6/
+sample_macros/
+macro/
+macro-mamreem/
+jni4net/
+launch4j/
+effekseer/
+cert/
+bridge/
+app/
+
+# Resources (binary assets — models, audio, textures, sprites, fonts)
+resources/
+scenemax_win_projector/assets/Textures/
+scenemax_win_projector/assets/Effects/
+scenemax_win_projector/libs/
+
+# Android build
+android-native-build-process/
+LAUNCH4J-PROJECT/
+
+# Installer build artifacts
+NSIS-SETUP/
+
+# Dependency JARs (managed by Gradle)
+libs/
+plugins/*.jar
+
+# Project data
+projects/
+
+# Third-party source vendored in src/
+src/com/jdotsoft/
+
+# Old/alternate settings files
+settings.gradle.old*
+
+# Misc/test files in root
+nul
+CheckAwt.java
+TestSetParent.java
+test_scene.code
+test_scene.smdesign
+
+# Misc files
+*.txt
+*.ico
+*.log
+*.iss
+hs_err_pid*.log
+replay_pid*.log
+.gitattributes
+assets/META-INF/
+assets/images/google-gemini-icon*.png
+lic_terms_decrypted
+lic_terms_encrypted
+scenemax3d_com_certificate.txt
+copy_projector.bat
+run_debug.bat
+raw_images/
+plugins/assets.zip
+plugins/readme.txt
+chat_gpt.txt
+
+# Application config (contains credentials)
+config.properties
+
+# Claude memory (local only)
+.claude/

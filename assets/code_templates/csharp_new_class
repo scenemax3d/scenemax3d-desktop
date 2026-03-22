@@ -1,0 +1,7 @@
+
+public static class $class_name {
+
+    public static SceneMax3dHostInterface.ISceneMax3DApp app;
+
+
+}

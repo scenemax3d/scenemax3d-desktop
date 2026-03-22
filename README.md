@@ -1,0 +1,91 @@
+# SceneMax3D Developer Studio
+
+A desktop 3D scene editor and game development environment built with Java, [JMonkeyEngine 3](https://jmonkeyengine.org/), and Swing.
+
+SceneMax3D lets you visually design 3D scenes, write game logic using a built-in scripting language, and export your projects as standalone Windows executables or Android apps.
+
+## Features
+
+- **Visual 3D Scene Designer** -- drag-and-drop scene composition with real-time preview
+- **Custom Scripting Language** -- purpose-built DSL (ANTLR4-based parser) for game logic and interactivity
+- **Code Editor** -- syntax-highlighted editor with code folding (RSyntaxTextArea)
+- **Physics Engine** -- integrated Minie / Bullet physics
+- **3D Model Import** -- load models into your scenes
+- **Multi-Project Support** -- manage multiple projects from a single workspace
+- **Plugin System** -- extend functionality via plugins (WebSocket-based communication)
+- **Classroom Mode** -- collaborative features for educational settings
+- **Export Targets** -- package as Windows EXE (Launch4J + Inno Setup) or Android APK
+
+## Requirements
+
+- Java 11 or later
+- Windows (primary platform)
+
+## Building from Source
+
+SceneMax3D uses Gradle as its build system.
+
+```bash
+# Clone the repository
+git clone https://github.com/YOUR_USERNAME/scenemax_desktop.git
+cd scenemax_desktop
+
+# Copy the example config and fill in your values
+cp config.properties.example config.properties
+# Edit config.properties with your credentials (FTP, API keys, etc.)
+
+# Build the project
+./gradlew build
+```
+
+## Configuration
+
+Application credentials and service endpoints are stored in `config.properties` (git-ignored).
+Copy `config.properties.example` to `config.properties` and fill in your values before running.
+
+See `config.properties.example` for all available settings.
+
+## Project Structure
+
+```
+scenemax_desktop/            -- Main desktop application (Swing UI)
+scenemax_designer/           -- 3D scene designer/editor module
+scenemax_win_projector/      -- 3D runtime/playback engine
+scenemax3d_compiler/         -- Script compilation engine
+scenemax3d_parser/           -- ANTLR4 grammar & parser for SceneMax scripting language
+scenemax3d_common_types/     -- Shared type definitions across modules
+scenemax3d_plugins/          -- Plugin system with WebSocket support
+scenemax3d_plugins_ide/      -- IDE for plugin development
+assets/                      -- UI resources, images, code templates
+```
+
+## Technology Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Graphics Engine | JMonkeyEngine 3 |
+| Physics | Minie (Bullet) |
+| UI Framework | Swing + FlatLaf (dark theme) |
+| Scripting | Custom DSL via ANTLR4 |
+| Build System | Gradle |
+| Code Editor | RSyntaxTextArea |
+| Packaging | Shadow JAR, Launch4J, Inno Setup |
+
+## Third-Party Libraries
+
+- [JMonkeyEngine 3](https://github.com/jMonkeyEngine/jmonkeyengine) -- 3D engine
+- [Minie](https://github.com/stephengold/Minie) -- physics library
+- [JME-Vehicles](https://github.com/stephengold/jme-vehicles) -- vehicle physics
+- [ANTLR4](https://www.antlr.org/) -- parser generator
+- [FlatLaf](https://www.formdev.com/flatlaf/) -- modern Swing look-and-feel
+- [RSyntaxTextArea](https://github.com/bobbylight/RSyntaxTextArea) -- code editor component
+- [Socket.IO](https://github.com/socketio/socket.io) -- real-time communication
+- [NanoHTTPD](https://github.com/NanoHttpd/nanohttpd) -- embedded HTTP server
+
+## Contributing
+
+Contributions are welcome! Please open an issue to discuss your idea before submitting a pull request.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

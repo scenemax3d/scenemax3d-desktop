@@ -1,0 +1,54 @@
+plugins {
+    id 'java'
+    id 'com.github.johnrengelman.shadow' //version '5.2.0'
+}
+
+group 'com.scenemaxeng.plugins'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = 11
+
+repositories {
+    mavenCentral()
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+        resources {
+            srcDirs = ['assets']
+        }
+    }
+}
+
+shadowJar {
+    include '**/*'
+    include '*.jar'
+    //minimize()
+}
+assemble.dependsOn shadowJar
+
+dependencies {
+    implementation project(":scenemax3d_common_types")
+    implementation 'io.socket:socket.io-client:2.1.0' // Ensure this version matches the version you want to use
+    implementation 'org.json:json:20231013' // Required for JSON handling
+
+    implementation(
+            [group: 'org.nanohttpd', name: 'nanohttpd', version: '2.3.1'],
+    )
+}
+
+// Define a custom task for copying the file
+tasks.register('copyFile', Copy) {
+    from "build/libs/scenemax3d_plugins-${version}-all.jar" // Source file path
+    into '../plugins'
+    rename { fileName -> 'scenemax3d-internal-plugins.jar' } // Rename the file
+}
+
+// Configure the custom task to run after the build task
+tasks.named('build').configure {
+    finalizedBy(tasks.named('copyFile'))
+}
+

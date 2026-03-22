@@ -1,0 +1,28 @@
+
+public static class $class_name {
+
+    public static SceneMax3dHostInterface.ISceneMax3DApp app;
+
+    static double[] transitions = new double[] {$transitions_data};
+
+    public static double GetTrackLength() {
+    	return 	transitions.Length / 6;
+    }
+
+	public static double[] GetTransition(int transition) {
+
+        int offset = transition*6;
+        if (offset>=transitions.Length) {
+            offset=0;
+        }
+
+        return new double[] {
+            transitions[offset], transitions[offset+1], transitions[offset+2],
+            transitions[offset+3], transitions[offset+4], transitions[offset+5]
+        };
+
+
+	}
+
+
+}

@@ -1,0 +1,33 @@
+plugins {
+    id 'java'
+}
+
+group 'com.scenemaxeng.common.types'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = 11
+
+repositories {
+    mavenCentral()
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+        resources {
+            srcDirs = ['assets']
+        }
+    }
+}
+
+def jme3 = [v:'3.7.0-alpha3.1', g:'org.jmonkeyengine']
+dependencies {
+    implementation 'commons-io:commons-io:2.11.0'
+    implementation "${jme3.g}:jme3-core:${jme3.v}"
+    implementation 'org.json:json:20210307'
+
+    //compile project(':scenemax3d_compiler')
+
+}

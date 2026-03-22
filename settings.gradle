@@ -1,0 +1,15 @@
+
+rootProject.name = 'scenemax_desktop'
+include ':scenemax3d_common_types'
+include ':scenemax3d_plugins'
+include ':scenemax3d_plugins_ide'
+include ':scenemax3d_compiler'
+include ':scenemax_win_projector'
+include ':scenemax_designer'
+
+findProject(':scenemax3d_common_types')?.name = 'scenemax3d_common_types'
+findProject(':scenemax3d_plugins')?.name = 'scenemax3d_plugins'
+findProject(':scenemax3d_plugins_ide')?.name = 'scenemax3d_plugins_ide'
+findProject(':scenemax_win_projector')?.name = 'scenemax_win_projector'
+findProject(':scenemax3d_compiler')?.name = 'scenemax3d_compiler'
+

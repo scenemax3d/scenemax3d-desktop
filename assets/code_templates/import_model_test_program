@@ -1,0 +1,78 @@
+var sc=1,debugmode=0,showAxis=0,showWireframe=0
+
+sys.print "Press Left / Right Arrows To Turn"+newline : pos(0,0,0) and size=1.5
+sys.print "Press Up/Down Arrows To Scale"+newline : append
+sys.print "Press 'D' For Debug Mode On/Off"+newline : append
+sys.print "Press 'C' For Character Mode"+newline : append
+sys.print "Press 'I' To Show General Info"+newline : append
+
+lights.add probe "4"
+
+skybox.show "lagoon"
+msg.print "Loading..." : size=1.2 and pos(0,400,0) and color=yellow
+b is a static box : size (5,1,5) and pos (0,-5,0) and material="pond"
+m is a @model
+msg.print ""
+
+when key I is pressed once do
+	m.show info
+end do
+
+when key left is pressed do
+	m.turn left 20 in 0.5 seconds
+end do
+
+when key right is pressed do
+	m.turn right 20 in 0.5 seconds
+end do
+
+when key C is pressed once do
+
+	if(showAxis==0) {
+	  m.switch to character mode
+	  camera.chase m
+	}
+
+	run toggleDebug
+
+    if(showAxis==0) {
+        showAxis=1
+        m.show axis x y z
+
+    }
+
+end do
+
+toggleDebug = {
+		if(debugmode==0) {
+		debugmode=1
+		debug.on
+
+	} else {
+		debugmode=0
+		debug.off
+
+	}
+}
+
+when key D is pressed once do
+	run toggleDebug
+end do
+
+when key up is pressed do
+    msg.print "Scaling..."
+	sc=sc+0.01
+	sc.print "Scale: "+sc:size=1.2 and pos(600,0,0) and color=yellow
+	m.scale=sc
+	msg.print ""
+
+end do
+
+when key down is pressed do
+    msg.print "Scaling..."
+	sc=sc-0.01
+	sc.print "Scale: "+sc:size=1.2 and pos(600,0,0) and color=yellow
+	m.scale=sc
+	msg.print ""
+
+end do

@@ -1,0 +1,17 @@
+[
+  {
+    "name":  "ws",
+    "fileName": "scenemax3d-internal-plugins.jar",
+    "className":  "com.scenemaxeng.plugins.InProcWebServerPlugin",
+    "active": true,
+    "desc": "Enables REST API based communication to the engine in run-time"
+  },
+
+  {
+    "name":  "gemini_integration",
+    "fileName": "scenemax3d-internal-plugins-ide.jar",
+    "className":  "com.scenemaxeng.plugins.ide.GeminiSceneMax3DIntegration",
+    "active": true,
+    "desc": "Enables Google Gemini AI integration"
+  }
+]

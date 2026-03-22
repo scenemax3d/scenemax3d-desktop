@@ -1,0 +1,19 @@
+# SceneMax3D Configuration
+# Copy this file to config.properties and fill in your values.
+# config.properties is git-ignored and will NOT be committed.
+
+# Online gallery settings
+gallery_host=https://he.scenemax3d.com
+gallery_api_key=YOUR_CONSUMER_KEY_HERE
+gallery_api_secret=YOUR_CONSUMER_SECRET_HERE
+write_gallery_api_key=
+write_gallery_api_secret=
+
+# FTP upload settings
+ftp_upload_folder=http://he.scenemax3d.com/wp-content/downloads/
+ftp_host_name=scenemax3d.com
+ftp_user=YOUR_FTP_USERNAME_HERE
+ftp_password=YOUR_FTP_PASSWORD_HERE
+
+# Encryption key (128-bit AES key, exactly 16 characters)
+aes_key=YOUR_AES_KEY_HERE

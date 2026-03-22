@@ -1,0 +1,79 @@
+
+plugins {
+    id 'application'
+    id 'java'
+    id "com.github.johnrengelman.shadow" version "7.1.2"
+}
+apply plugin: 'idea'
+
+group 'com.scenemax.desktop'
+version '1.0-SNAPSHOT'
+
+defaultTasks 'jar'
+
+application {
+    mainClassName = 'com.scenemax.desktop.MainApp'
+}
+
+shadowJar {
+    include '**/*'
+    include '*.jar'
+    //minimize()
+}
+assemble.dependsOn shadowJar
+
+// Apply EXCLUDE duplicate strategy to all tasks that package/copy files
+tasks.withType(AbstractArchiveTask).configureEach {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+tasks.withType(Copy).configureEach {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+jar {
+    from {
+        (configurations.runtimeClasspath).collect {
+            it.isDirectory() ? it : zipTree(it)
+        }
+    }
+    manifest {
+        attributes 'Main-Class': 'com.scenemax.desktop.MainApp'
+    }
+}
+
+
+sourceCompatibility = '11'
+[compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
+
+
+repositories {
+    mavenCentral()
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+        resources {
+            srcDirs = ['assets']
+        }
+    }
+}
+
+dependencies {
+    implementation 'com.intellij:forms_rt:7.0.3'
+    implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: [])
+    implementation 'junit:junit:4.12'
+
+    implementation project(':scenemax3d_common_types')
+    implementation project(':scenemax3d_compiler')
+    implementation(
+            [group: 'org.nanohttpd', name: 'nanohttpd', version: '2.3.1'],
+    )
+    implementation 'com.formdev:flatlaf:3.6'
+
+    implementation project(':scenemax_designer')
+}
+
+

@@ -1,0 +1,79 @@
+
+plugins {
+    id 'java'
+    id 'com.github.johnrengelman.shadow' //version '5.2.0'
+}
+
+group 'com.scenemaxeng'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = 11
+
+repositories {
+    mavenCentral()
+    maven { url "https://jitpack.io" }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+        resources {
+            srcDirs = ['assets']
+        }
+    }
+}
+
+shadowJar {
+    include '**/*'
+    include '*.jar'
+    //minimize()
+}
+assemble.dependsOn shadowJar
+
+jar {
+    from("$buildDir/dependencies")
+
+    exclude('**/META-INF/*.SF')
+    exclude('**/META-INF/*.DSA')
+    exclude('**/META-INF/*.RSA')
+
+    manifest {
+        attributes (
+                'Implementation-Version': version,
+                'Built-By': System.getProperty('user.name'),
+                'Built-Date': new Date(),
+                'Built-JDK': System.getProperty('java.version'),
+                'Main-Class': 'com.scenemaxeng.projector.MainWinApp'
+        )
+    }
+}
+
+def jme3 = [v:'3.9.0-stable', g:'org.jmonkeyengine']
+dependencies {
+
+    implementation "${jme3.g}:jme3-core:${jme3.v}"
+    implementation "${jme3.g}:jme3-desktop:${jme3.v}"
+    implementation "${jme3.g}:jme3-effects:${jme3.v}"
+
+    implementation "${jme3.g}:jme3-jogg:${jme3.v}"
+    implementation "${jme3.g}:jme3-lwjgl:${jme3.v}"
+    implementation "${jme3.g}:jme3-niftygui:${jme3.v}"
+    implementation "${jme3.g}:jme3-plugins:${jme3.v}"
+
+    implementation "com.github.stephengold:SkyControl:1.1.0"
+    implementation "com.github.stephengold:MaVehicles:0.7.2"
+    implementation "com.github.stephengold:Minie:9.0.3"
+    implementation "com.github.stephengold:Garrett:0.5.4"
+
+    implementation("com.google.guava:guava:33.5.0-jre")
+
+    implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: [])
+
+    implementation project(":scenemax3d_common_types")
+    implementation project(":scenemax3d_compiler")
+
+    //testCompile group: 'junit', name: 'junit', version: '4.12'
+}
+

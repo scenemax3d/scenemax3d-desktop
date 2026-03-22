@@ -1,0 +1,29 @@
+plugins {
+    id 'java'
+}
+
+group 'com.scenemaxeng.compiler'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = 11
+
+repositories {
+    mavenCentral()
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+        resources {
+            srcDirs = ['assets']
+        }
+    }
+}
+
+dependencies {
+    implementation 'commons-io:commons-io:2.11.0'
+    implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: [])
+
+}

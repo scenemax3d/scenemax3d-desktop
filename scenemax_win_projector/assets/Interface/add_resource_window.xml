@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nifty xmlns="http://nifty-gui.lessvoid.com/nifty-gui" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://raw.githubusercontent.com/void256/nifty-gui/1.4/nifty-core/src/main/resources/nifty.xsd https://raw.githubusercontent.com/void256/nifty-gui/1.4/nifty-core/src/main/resources/nifty.xsd">
+    <useStyles filename="nifty-default-styles.xml"/>
+    <useControls filename="nifty-default-controls.xml"/>
+    <useStyles filename="Interface/textfield.xml" />
+    <useStyles filename="Interface/nifty-console-style.xml" />
+    <screen id="start" controller="com.scenemaxeng.projector.SceneEditorScreen">
+
+        <layer id="foreground" childLayout="vertical">
+
+            <panel id="panel_top" height="5%" width="100%" align="center"
+                   childLayout="vertical">
+                <control id="txtSelectedEntityProps" name="textfield" width="50%" text="" align="left" />
+
+            </panel>
+
+            <panel id="panel_bottom" width="30%" halign="left"
+                   childLayout="vertical" padding="10px">
+
+<!--                <control id="dropDownResourceTypes" name="dropDown" width="80%" align="left" />-->
+                <control id="txtSearch" name="textfield" width="40%" text="" align="left" />
+<!--                <control id="console" name="nifty-console" lines="5" align="center" valign="center" font="Arial.fnt"/>-->
+
+                <control id="lstEntities" width="40%" align="left" name="listBox" vertical="on" horizontal="optional" displayItems="12" selection="Single" />
+
+                <panel id="panel_console" width="100%" align="center" childLayout="horizontal">
+                    <control name="button" label="Add To Scene" id="addEntity" align="left"
+                             valign="center">
+                        <interact onClick="onAddEntityClick(hud)"/>
+                    </control>
+
+                    <control name="button" label="Generate Code" id="saveEntities" align="right"
+                             valign="center">
+                        <interact onClick="onSaveClick(hud)"/>
+                    </control>
+
+                </panel>
+
+
+                <control id="lstEntitiesInScene"
+                         width="40%" align="left" name="listBox" vertical="on"
+                         horizontal="optional" displayItems="12" selection="Single" padding="10px"/>
+
+                <!-- <panel id="panel_console" width="100%" align="center"
+                childLayout="horizontal">
+                  <panel id="panel_bottom_left" height="50%" width="50%" valign="center"
+                    childLayout="center">
+                      <control name="button" label="Run" id="runButton" align="center"
+                        valign="center">
+                        <interact onClick="button1_click(hud)"/>
+                      </control>
+                  </panel>
+                  <panel id="panel_bottom_right" height="50%" width="50%" valign="center"
+                    childLayout="center">
+                      <control name="button" label="Quit" id="QuitButton" align="center"
+                        valign="center">
+                      </control>
+                  </panel>
+                </panel> -->
+
+            </panel>
+
+
+
+        </layer>
+    </screen>
+
+</nifty>
