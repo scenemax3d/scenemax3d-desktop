@@ -4,5 +4,6 @@ public enum DesignerEntityType {
     SPHERE,
     BOX,
     MODEL,
-    CAMERA
+    CAMERA,
+    CODE
 }

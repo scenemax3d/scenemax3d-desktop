@@ -86,6 +86,11 @@ public class DesignerPanel extends JPanel {
     private JProgressBar loadingProgressBar;
     private JLabel loadingLabel;
 
+    // Floating code editor panel (for CODE nodes)
+    private JPanel codeEditorOverlay;
+    private JTextArea codeEditorArea;
+    private DesignerEntity editingCodeEntity;
+
     // Toolbar buttons
     private JToggleButton btnTranslate, btnRotate;
 
@@ -206,6 +211,12 @@ public class DesignerPanel extends JPanel {
             @Override
             public void mouseReleased(MouseEvent e) {
                 if (e.isPopupTrigger()) showTreeContextMenu(e);
+            }
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    onTreeDoubleClick(e);
+                }
             }
         });
 
@@ -612,6 +623,10 @@ public class DesignerPanel extends JPanel {
                 SwingUtilities.invokeLater(() -> {
                     updatePropertiesPanel(entity);
                     selectEntityInTree(entity);
+                    // Hide code editor when a 3D entity is selected via viewport
+                    if (entity != null && entity.getType() != DesignerEntityType.CODE) {
+                        hideCodeEditor();
+                    }
                 });
             }
 
@@ -739,6 +754,7 @@ public class DesignerPanel extends JPanel {
                     case BOX:    icon = "[B] "; break;
                     case MODEL:  icon = "[M] "; break;
                     case CAMERA: icon = "[C] "; break;
+                    case CODE:   icon = "{} "; break;
                     default:     icon = ""; break;
                 }
                 DefaultMutableTreeNode node = new DefaultMutableTreeNode(new EntityTreeNode(entity, icon + entity.getName()));
@@ -754,9 +770,25 @@ public class DesignerPanel extends JPanel {
         if (updatingTreeSelection) return;
         DefaultMutableTreeNode selected = (DefaultMutableTreeNode) sceneTree.getLastSelectedPathComponent();
         if (selected == null || !(selected.getUserObject() instanceof EntityTreeNode)) {
+            hideCodeEditor();
             return;
         }
         EntityTreeNode etn = (EntityTreeNode) selected.getUserObject();
+
+        // CODE nodes have no 3D scene node - show floating code editor instead
+        if (etn.entity.getType() == DesignerEntityType.CODE) {
+            if (app != null) {
+                app.enqueue(() -> {
+                    app.getSelectionManager().deselect();
+                    return null;
+                });
+            }
+            showCodeEditor(etn.entity);
+            updatePropertiesPanel(null);
+            return;
+        }
+
+        hideCodeEditor();
         if (app != null) {
             app.enqueue(() -> {
                 app.getSelectionManager().select(etn.entity);
@@ -800,6 +832,28 @@ public class DesignerPanel extends JPanel {
         EntityTreeNode etn = (EntityTreeNode) node.getUserObject();
 
         JPopupMenu menu = new JPopupMenu();
+
+        // "Add Code Node" - inserts after the selected item
+        JMenuItem addCodeItem = new JMenuItem("Add Code Node");
+        addCodeItem.addActionListener(ev -> {
+            String name = JOptionPane.showInputDialog(this, "Code node name:", "New Code Node",
+                    JOptionPane.PLAIN_MESSAGE);
+            if (name != null && !name.trim().isEmpty()) {
+                String trimmedName = name.trim();
+                if (app != null) {
+                    int entityIndex = app.getEntities().indexOf(etn.entity);
+                    int insertIndex = entityIndex >= 0 ? entityIndex + 1 : -1;
+                    app.enqueue(() -> {
+                        app.addCodeNode(trimmedName, insertIndex);
+                        return null;
+                    });
+                }
+            }
+        });
+        menu.add(addCodeItem);
+
+        menu.addSeparator();
+
         JMenuItem deleteItem = new JMenuItem("Delete");
         if (etn.entity.getType() == DesignerEntityType.CAMERA) {
             deleteItem.setEnabled(false);
@@ -815,6 +869,149 @@ public class DesignerPanel extends JPanel {
         });
         menu.add(deleteItem);
         menu.show(sceneTree, e.getX(), e.getY());
+    }
+
+    // --- Code node double-click rename ---
+
+    private void onTreeDoubleClick(MouseEvent e) {
+        int row = sceneTree.getClosestRowForLocation(e.getX(), e.getY());
+        if (row < 0) return;
+        DefaultMutableTreeNode node = (DefaultMutableTreeNode)
+                sceneTree.getPathForRow(row).getLastPathComponent();
+        if (node == null || !(node.getUserObject() instanceof EntityTreeNode)) return;
+        EntityTreeNode etn = (EntityTreeNode) node.getUserObject();
+        if (etn.entity.getType() != DesignerEntityType.CODE) return;
+
+        String newName = JOptionPane.showInputDialog(this, "Rename code node:",
+                etn.entity.getName());
+        if (newName != null && !newName.trim().isEmpty()) {
+            String trimmed = newName.trim();
+            if (app != null) {
+                app.enqueue(() -> {
+                    etn.entity.setName(trimmed);
+                    app.markDocumentDirty();
+                    return null;
+                });
+            }
+            refreshSceneTree();
+        }
+    }
+
+    // --- Floating code editor ---
+
+    private void buildCodeEditorOverlay() {
+        codeEditorOverlay = new JPanel(new BorderLayout());
+        codeEditorOverlay.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(80, 120, 200), 2),
+                BorderFactory.createEmptyBorder(8, 8, 8, 8)));
+        codeEditorOverlay.setBackground(new Color(40, 42, 46));
+        codeEditorOverlay.setVisible(false);
+
+        JLabel titleLabel = new JLabel("Code Editor");
+        titleLabel.setForeground(new Color(220, 220, 220));
+        titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 13f));
+        titleLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 6, 0));
+
+        codeEditorArea = new JTextArea(12, 50);
+        codeEditorArea.setFont(new Font("Monospaced", Font.PLAIN, 13));
+        codeEditorArea.setBackground(new Color(30, 30, 34));
+        codeEditorArea.setForeground(new Color(220, 220, 220));
+        codeEditorArea.setCaretColor(Color.WHITE);
+        codeEditorArea.setTabSize(4);
+        JScrollPane editorScroll = new JScrollPane(codeEditorArea);
+        editorScroll.setPreferredSize(new Dimension(500, 250));
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
+        buttonPanel.setOpaque(false);
+        JButton btnSave = new JButton("Save");
+        JButton btnCancel = new JButton("Cancel");
+        btnSave.addActionListener(ev -> saveCodeEditor());
+        btnCancel.addActionListener(ev -> hideCodeEditor());
+        buttonPanel.add(btnSave);
+        buttonPanel.add(btnCancel);
+
+        codeEditorOverlay.add(titleLabel, BorderLayout.NORTH);
+        codeEditorOverlay.add(editorScroll, BorderLayout.CENTER);
+        codeEditorOverlay.add(buttonPanel, BorderLayout.SOUTH);
+
+        // ESC to cancel, Ctrl+S to save
+        InputMap im = codeEditorOverlay.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
+        ActionMap am = codeEditorOverlay.getActionMap();
+        im.put(KeyStroke.getKeyStroke("ESCAPE"), "cancelCodeEditor");
+        am.put("cancelCodeEditor", new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) { hideCodeEditor(); }
+        });
+        im.put(KeyStroke.getKeyStroke("ctrl S"), "saveCodeEditor");
+        am.put("saveCodeEditor", new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) { saveCodeEditor(); }
+        });
+    }
+
+    private void showCodeEditor(DesignerEntity codeEntity) {
+        if (codeEditorOverlay == null) {
+            buildCodeEditorOverlay();
+            // Add as an overlay on the canvas container using layered pane
+            canvasContainer.setLayout(new BorderLayout());
+            // We need to use an overlay approach - add it to the canvasContainer's glass-pane-like layer
+        }
+        editingCodeEntity = codeEntity;
+        codeEditorArea.setText(codeEntity.getCodeText());
+        codeEditorArea.setCaretPosition(0);
+
+        if (codeEditorOverlay.getParent() == null) {
+            // Add overlay to canvasContainer using OverlayLayout
+            JLayeredPane layered = getLayeredPaneForCanvas();
+            if (layered != null) {
+                layered.add(codeEditorOverlay, JLayeredPane.POPUP_LAYER);
+                repositionCodeEditor(layered);
+                layered.revalidate();
+                layered.repaint();
+            }
+        }
+        codeEditorOverlay.setVisible(true);
+        codeEditorArea.requestFocusInWindow();
+    }
+
+    private JLayeredPane getLayeredPaneForCanvas() {
+        // Walk up to find the JLayeredPane (from the root pane)
+        JRootPane rootPane = SwingUtilities.getRootPane(canvasContainer);
+        if (rootPane != null) {
+            return rootPane.getLayeredPane();
+        }
+        return null;
+    }
+
+    private void repositionCodeEditor(JLayeredPane layered) {
+        // Position the overlay centered above the canvas
+        Point canvasLoc = SwingUtilities.convertPoint(canvasContainer, 0, 0, layered);
+        int cw = canvasContainer.getWidth();
+        int ch = canvasContainer.getHeight();
+        int ow = Math.min(600, cw - 40);
+        int oh = Math.min(350, ch - 40);
+        int ox = canvasLoc.x + (cw - ow) / 2;
+        int oy = canvasLoc.y + (ch - oh) / 2;
+        codeEditorOverlay.setBounds(ox, oy, ow, oh);
+    }
+
+    private void hideCodeEditor() {
+        if (codeEditorOverlay != null) {
+            codeEditorOverlay.setVisible(false);
+            editingCodeEntity = null;
+        }
+    }
+
+    private void saveCodeEditor() {
+        if (editingCodeEntity == null || app == null) return;
+        String newCode = codeEditorArea.getText();
+        DesignerEntity entity = editingCodeEntity;
+        app.enqueue(() -> {
+            entity.setCodeText(newCode);
+            app.markDocumentDirty();
+            return null;
+        });
+        hideCodeEditor();
     }
 
     // --- Properties panel ---

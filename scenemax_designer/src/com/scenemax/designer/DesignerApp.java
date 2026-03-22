@@ -116,6 +116,7 @@ public class DesignerApp extends SceneMaxApp {
 
     private boolean loadingDocument = false;
     private int loadingTotalEntities = 0;
+    private List<String> loadingEntityOrder;  // entity IDs in document order
 
     // Input action names
     private static final String ACTION_LEFT_CLICK = "DesignerLeftClick";
@@ -365,6 +366,28 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     /**
+     * Adds a code node at the given position in the entity list.
+     * Code nodes have no 3D representation; they inject user code
+     * into the generated .code file at their position in the hierarchy.
+     *
+     * @param name        display name for the code node
+     * @param insertIndex index in the entity list to insert at (-1 = end)
+     * @return the created code node entity
+     */
+    public DesignerEntity addCodeNode(String name, int insertIndex) {
+        DesignerEntity codeEntity = new DesignerEntity(name, DesignerEntityType.CODE);
+        codeEntity.setCodeText("// " + name + "\n");
+        if (insertIndex >= 0 && insertIndex < entities.size()) {
+            entities.add(insertIndex, codeEntity);
+        } else {
+            entities.add(codeEntity);
+        }
+        markDocumentDirty();
+        notifySceneChanged();
+        return codeEntity;
+    }
+
+    /**
      * Creates the singleton camera gizmo entity. This is not created via
      * SceneMax code -- the visual node is built directly.
      */
@@ -588,6 +611,22 @@ public class DesignerApp extends SceneMaxApp {
         if (loadingDocument && pendingEntities.isEmpty()) {
             loadingDocument = false;
             notifyLoadingProgress(loadingTotalEntities, loadingTotalEntities);
+
+            // Restore original document order (CODE nodes were added immediately,
+            // while 3D entities were added asynchronously as their nodes appeared)
+            if (loadingEntityOrder != null) {
+                entities.sort((a, b) -> {
+                    int idxA = loadingEntityOrder.indexOf(a.getId());
+                    int idxB = loadingEntityOrder.indexOf(b.getId());
+                    // Entities not in the document (e.g. camera) keep their position at the start
+                    if (idxA < 0) idxA = -1;
+                    if (idxB < 0) idxB = -1;
+                    return Integer.compare(idxA, idxB);
+                });
+                loadingEntityOrder = null;
+                notifySceneChanged();
+            }
+
             sphereCounter = (int) entities.stream()
                     .filter(e -> e.getType() == DesignerEntityType.SPHERE).count();
             boxCounter = (int) entities.stream()
@@ -937,8 +976,24 @@ public class DesignerApp extends SceneMaxApp {
         loadingTotalEntities = document.getEntityDefs().size();
         notifyLoadingProgress(0, loadingTotalEntities);
 
+        // Record document entity order so we can restore it after async loading
+        loadingEntityOrder = new ArrayList<>();
+        for (JSONObject entityDef : document.getEntityDefs()) {
+            loadingEntityOrder.add(entityDef.getString("id"));
+        }
+
         for (JSONObject entityDef : document.getEntityDefs()) {
             DesignerEntity entityTemplate = DesignerEntity.fromJSON(entityDef);
+
+            // Code nodes have no 3D representation — add directly to entities list
+            if (entityTemplate.getType() == DesignerEntityType.CODE) {
+                DesignerEntity codeEntity = new DesignerEntity(
+                        entityTemplate.getId(), entityTemplate.getName(), DesignerEntityType.CODE);
+                codeEntity.setCodeText(entityTemplate.getCodeText());
+                entities.add(codeEntity);
+                continue;
+            }
+
             Vector3f pos = DesignerEntity.positionFromJSON(entityDef);
             Quaternion rot = DesignerEntity.rotationFromJSON(entityDef);
             Vector3f scale = DesignerEntity.scaleFromJSON(entityDef);

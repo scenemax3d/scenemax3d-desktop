@@ -37,6 +37,9 @@ public class DesignerEntity {
     // Material for BOX, SPHERE (empty = no material / default)
     private String material = "";
 
+    // Code node text (for CODE type)
+    private String codeText = "";
+
     // The SceneMax language code used to create this entity
     private String sceneMaxCode;
 
@@ -87,6 +90,9 @@ public class DesignerEntity {
 
     public String getMaterial() { return material; }
     public void setMaterial(String material) { this.material = material != null ? material : ""; }
+
+    public String getCodeText() { return codeText; }
+    public void setCodeText(String codeText) { this.codeText = codeText != null ? codeText : ""; }
 
     public String getSceneMaxCode() { return sceneMaxCode; }
     public void setSceneMaxCode(String sceneMaxCode) { this.sceneMaxCode = sceneMaxCode; }
@@ -160,6 +166,9 @@ public class DesignerEntity {
                 break;
             case CAMERA:
                 break;
+            case CODE:
+                json.put("codeText", codeText);
+                break;
         }
 
         return json;
@@ -193,6 +202,9 @@ public class DesignerEntity {
                 entity.vehicleModel = json.optBoolean("vehicleModel", false);
                 break;
             case CAMERA:
+                break;
+            case CODE:
+                entity.codeText = json.optString("codeText", "");
                 break;
         }
 

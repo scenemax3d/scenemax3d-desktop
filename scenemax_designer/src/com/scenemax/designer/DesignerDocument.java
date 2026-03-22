@@ -186,6 +186,13 @@ public class DesignerDocument {
         sb.append("\n");
 
         for (DesignerEntity entity : entities) {
+            if (entity.getType() == DesignerEntityType.CODE) {
+                String codeText = entity.getCodeText();
+                if (codeText != null && !codeText.trim().isEmpty()) {
+                    sb.append(codeText.trim()).append("\n");
+                }
+                continue;
+            }
             String code = generateEntityCode(entity);
             if (!code.isEmpty()) {
                 sb.append(code).append("\n");
@@ -312,6 +319,11 @@ public class DesignerDocument {
         List<DesignerEntity> entities = new ArrayList<>();
         for (JSONObject json : doc.entityDefs) {
             DesignerEntity entity = DesignerEntity.fromJSON(json);
+            if (entity.getType() == DesignerEntityType.CODE) {
+                // Code nodes don't need a scene node
+                entities.add(entity);
+                continue;
+            }
             // Create a temporary scene node to hold the transform so getPosition() etc. work
             Node tempNode = new Node(entity.getName());
             tempNode.setLocalTranslation(DesignerEntity.positionFromJSON(json));
