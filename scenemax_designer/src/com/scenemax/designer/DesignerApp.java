@@ -185,6 +185,20 @@ public class DesignerApp extends SceneMaxApp {
         return entities;
     }
 
+    /**
+     * Moves an entity from one index to another in the entity list,
+     * affecting its order in the generated code.
+     */
+    public void reorderEntity(int fromIndex, int toIndex) {
+        if (fromIndex < 0 || fromIndex >= entities.size() || toIndex < 0 || toIndex >= entities.size()) {
+            return;
+        }
+        DesignerEntity entity = entities.remove(fromIndex);
+        entities.add(toIndex, entity);
+        markDocumentDirty();
+        notifySceneChanged();
+    }
+
     public SelectionManager getSelectionManager() {
         return selectionManager;
     }

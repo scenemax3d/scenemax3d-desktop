@@ -11,7 +11,11 @@ import javax.swing.*;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreePath;
 import java.awt.*;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.Transferable;
+import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.MouseAdapter;
@@ -204,6 +208,11 @@ public class DesignerPanel extends JPanel {
                 if (e.isPopupTrigger()) showTreeContextMenu(e);
             }
         });
+
+        // Enable drag-and-drop reordering of scene entities
+        sceneTree.setDragEnabled(true);
+        sceneTree.setDropMode(DropMode.INSERT);
+        sceneTree.setTransferHandler(new SceneTreeTransferHandler());
 
         JScrollPane treeScroll = new JScrollPane(sceneTree);
         treeScroll.setBorder(BorderFactory.createTitledBorder("Scene Hierarchy"));
@@ -1074,6 +1083,112 @@ public class DesignerPanel extends JPanel {
         this.codeFileUpdatedCallback = callback;
         if (app != null) {
             app.setCodeFileUpdatedCallback(callback);
+        }
+    }
+
+    /**
+     * TransferHandler that allows drag-and-drop reordering of entity nodes
+     * within the scene hierarchy tree. Only entity nodes (children of root)
+     * can be dragged; dropping onto the root node or between entity nodes
+     * reorders the entity list in DesignerApp.
+     */
+    private class SceneTreeTransferHandler extends TransferHandler {
+        private final DataFlavor entityNodeFlavor = new DataFlavor(EntityTreeNode.class, "EntityTreeNode");
+
+        @Override
+        public int getSourceActions(JComponent c) {
+            return MOVE;
+        }
+
+        @Override
+        protected Transferable createTransferable(JComponent c) {
+            JTree tree = (JTree) c;
+            DefaultMutableTreeNode node = (DefaultMutableTreeNode) tree.getLastSelectedPathComponent();
+            if (node == null || node == sceneTreeRoot) return null;
+            Object userObj = node.getUserObject();
+            if (!(userObj instanceof EntityTreeNode)) return null;
+            EntityTreeNode etn = (EntityTreeNode) userObj;
+            return new Transferable() {
+                @Override
+                public DataFlavor[] getTransferDataFlavors() {
+                    return new DataFlavor[]{entityNodeFlavor};
+                }
+
+                @Override
+                public boolean isDataFlavorSupported(DataFlavor flavor) {
+                    return entityNodeFlavor.equals(flavor);
+                }
+
+                @Override
+                public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
+                    if (!isDataFlavorSupported(flavor)) throw new UnsupportedFlavorException(flavor);
+                    return etn;
+                }
+            };
+        }
+
+        @Override
+        public boolean canImport(TransferSupport support) {
+            if (!support.isDrop()) return false;
+            if (!support.isDataFlavorSupported(entityNodeFlavor)) return false;
+            JTree.DropLocation dl = (JTree.DropLocation) support.getDropLocation();
+            TreePath destPath = dl.getPath();
+            if (destPath == null) return false;
+            // Only allow drops under the root node
+            DefaultMutableTreeNode destNode = (DefaultMutableTreeNode) destPath.getLastPathComponent();
+            return destNode == sceneTreeRoot;
+        }
+
+        @Override
+        public boolean importData(TransferSupport support) {
+            if (!canImport(support)) return false;
+            try {
+                EntityTreeNode draggedEtn = (EntityTreeNode) support.getTransferable().getTransferData(entityNodeFlavor);
+                JTree.DropLocation dl = (JTree.DropLocation) support.getDropLocation();
+                int dropIndex = dl.getChildIndex();
+
+                if (app == null) return false;
+                List<DesignerEntity> entities = app.getEntities();
+
+                // Find source index in the entity list
+                int sourceIndex = entities.indexOf(draggedEtn.entity);
+                if (sourceIndex < 0) return false;
+
+                // dropIndex == -1 means dropped on the root node itself → move to end
+                int targetIndex = computeDropTargetIndex(dropIndex, sourceIndex, entities);
+
+                if (sourceIndex == targetIndex) return false;
+
+                final int finalTarget = targetIndex;
+                app.enqueue(() -> {
+                    app.reorderEntity(sourceIndex, finalTarget);
+                    return null;
+                });
+                return true;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+
+        private int computeDropTargetIndex(int dropIndex, int sourceIndex, List<DesignerEntity> entities) {
+            if (dropIndex < 0) {
+                return entities.size() - 1;
+            }
+            if (dropIndex >= sceneTreeRoot.getChildCount()) {
+                return entities.size() - 1;
+            }
+            if (dropIndex == 0) {
+                return 0;
+            }
+            // Get the entity at the tree node just before the drop position
+            int lookupIndex = dropIndex > sourceIndex ? dropIndex - 1 : dropIndex;
+            DefaultMutableTreeNode nodeBefore = (DefaultMutableTreeNode) sceneTreeRoot.getChildAt(lookupIndex);
+            if (nodeBefore.getUserObject() instanceof EntityTreeNode) {
+                EntityTreeNode etnBefore = (EntityTreeNode) nodeBefore.getUserObject();
+                int idx = entities.indexOf(etnBefore.entity);
+                return idx >= 0 ? idx : entities.size() - 1;
+            }
+            return entities.size() - 1;
         }
     }
 
