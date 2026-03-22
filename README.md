@@ -2,19 +2,27 @@
 
 A desktop 3D scene editor and game development environment built with Java, [JMonkeyEngine 3](https://jmonkeyengine.org/), and Swing.
 
-SceneMax3D lets you visually design 3D scenes, write game logic using a built-in scripting language, and export your projects as standalone Windows executables or Android apps.
+SceneMax3D lets you visually design 3D scenes, write game logic using a built-in scripting language, and export your projects as standalone PC executables or Android apps.
+
+<img width="1600" height="846" alt="image" src="https://github.com/user-attachments/assets/8e83d0b0-950e-425d-94a0-d38db5fc4fd3" />
+
+SceneMax3D was first created by Adi Barda in 2005 as a C++/DirectX game engine and scripting language for education purposes.
+In 2017-2018 it was rewritten in Java from scratch using JMonkeyEngine3 as the target renderer and ANTLR4 for the language parsing. 
+In Mar-22, 2026 the entire solution was uploaded to GitHub as an open source (MIT license) project.
+## Product Website
+[SceneMax3D](https://scenemax3d.com/cook-book/)
 
 ## Features
 
 - **Visual 3D Scene Designer** -- drag-and-drop scene composition with real-time preview
 - **Custom Scripting Language** -- purpose-built DSL (ANTLR4-based parser) for game logic and interactivity
-- **Code Editor** -- syntax-highlighted editor with code folding (RSyntaxTextArea)
+- **Code Editor** -- syntax-highlighted editor with code folding 
 - **Physics Engine** -- integrated Minie / Bullet physics
 - **3D Model Import** -- load models into your scenes
 - **Multi-Project Support** -- manage multiple projects from a single workspace
 - **Plugin System** -- extend functionality via plugins (WebSocket-based communication)
 - **Classroom Mode** -- collaborative features for educational settings
-- **Export Targets** -- package as Windows EXE (Launch4J + Inno Setup) or Android APK
+- **Export Targets** -- package as PC executable (Launch4J + Inno Setup) or Android APK
 
 ## Requirements
 
