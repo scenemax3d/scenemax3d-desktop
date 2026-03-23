@@ -1,6 +1,7 @@
 # Scenes & Shared State
 You can switch between scenes (game levels / starting screen / menues etc.) by using the switch command.
-Each scene needs to have its own folder with a main file in the project structure:
+Each scene needs to have its **own folder** with a **main** file in the project structure:
+
 <img width="485" height="270" alt="image" src="https://github.com/user-attachments/assets/924d629c-0235-4e7c-9ce9-580f5b7ca797" />
 
 ## Switching Scenes
