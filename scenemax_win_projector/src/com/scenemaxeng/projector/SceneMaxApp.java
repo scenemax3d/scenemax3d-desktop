@@ -142,7 +142,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     private static HashMap<String, List<java.lang.Object>> collisionControlsCache=new HashMap<>();
     private static HashMap<String, SpriteEmitter> sprites = new HashMap<String, SpriteEmitter>();
-    private static AssetsMapping assetsMapping = null;//new AssetsMapping();
+    protected static AssetsMapping assetsMapping = null;
     private static HashMap<String, AudioNode> _audioNodes = new HashMap<>();
     private static HashMap<String, BitmapText> _printChannels = new HashMap<>();
     private static HashMap<String, PictureExt> _drawChannels = new HashMap<>();

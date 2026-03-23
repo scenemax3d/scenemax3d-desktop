@@ -12,6 +12,7 @@ import com.scenemax.designer.gizmo.*;
 import com.scenemax.designer.grid.GridPlane;
 import com.scenemax.designer.selection.OutlineEffect;
 import com.scenemax.designer.selection.SelectionManager;
+import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.types.ResourceSetup;
 import com.scenemaxeng.projector.SceneMaxApp;
 import com.scenemaxeng.projector.SceneMaxScope;
@@ -234,20 +235,33 @@ public class DesignerApp extends SceneMaxApp {
 
     @Override
     public void simpleInitApp() {
-        // Set workingFolder to the designer file's parent directory.
-        // SceneMaxApp expects workingFolder to be 2 levels deep inside the project
-        // (e.g., project/scripts/subfolder/) so that getParentFile().getParentFile()
-        // navigates up to the project root for resource loading.
-        // The .smdesign file lives inside scripts/, so its parent dir is correct.
+        // Set workingFolder for SceneMaxApp base init (asset locators, etc.)
         if (designerFile != null) {
             setWorkingFolder(designerFile.getParentFile().getAbsolutePath());
         } else if (designerProjectPath != null) {
-            // Fallback: use project path directly (may fail if not 2 levels deep)
             setWorkingFolder(designerProjectPath);
         }
 
         // Call SceneMaxApp's init - sets up asset management, lighting, physics, etc.
         super.simpleInitApp();
+
+        // Reload AssetsMapping with the project's resources folder so that
+        // ext models (models-ext.json) are included, same as MainApp does.
+        // Also register the resources folder as an asset locator so the
+        // JME asset manager can find model files (e.g. .gltf/.glb).
+        String resourcesFolder = getProjectResourcesFolder();
+        if (resourcesFolder != null) {
+            assetsMapping = new AssetsMapping(resourcesFolder);
+            try {
+                File resDir = new File(resourcesFolder);
+                if (resDir.exists()) {
+                    assetManager.registerLocator(resDir.getCanonicalPath(),
+                            com.jme3.asset.plugins.FileLocator.class);
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
 
         // Disable default flyCam (SceneMaxApp already does this, but be explicit)
         flyCam.setEnabled(false);
@@ -419,12 +433,36 @@ public class DesignerApp extends SceneMaxApp {
         entities.add(cameraEntity);
     }
 
-    /** Returns sorted list of available 3D model names from the assets mapping. */
+    /** Returns the project's resources folder path. */
+    private String getProjectResourcesFolder() {
+        if (designerProjectPath != null) {
+            return designerProjectPath + "/resources";
+        }
+        if (designerFile != null) {
+            return designerFile.getParentFile().getParent() + "/resources";
+        }
+        return null;
+    }
+
+    /**
+     * Creates an AssetsMapping that includes both default and project-specific
+     * extended models, the same way MainApp does via Util.getResourcesFolder().
+     */
+    private AssetsMapping createFullAssetsMapping() {
+        String resourcesFolder = getProjectResourcesFolder();
+        if (resourcesFolder != null) {
+            return new AssetsMapping(resourcesFolder);
+        }
+        return new AssetsMapping();
+    }
+
+    /** Returns sorted list of available 3D model names, including project ext models. */
     public List<String> getAvailableModelNames() {
+        AssetsMapping mapping = createFullAssetsMapping();
         List<String> names = new ArrayList<>();
-        if (getAssetsMapping() != null && getAssetsMapping().get3DModelsIndex() != null) {
+        if (mapping.get3DModelsIndex() != null) {
             TreeSet<String> sorted = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-            getAssetsMapping().get3DModelsIndex().values()
+            mapping.get3DModelsIndex().values()
                     .forEach(r -> sorted.add(r.name));
             names.addAll(sorted);
         }
@@ -433,8 +471,9 @@ public class DesignerApp extends SceneMaxApp {
 
     /** Checks whether a model is a vehicle based on the assets mapping. */
     public boolean isModelVehicle(String modelName) {
-        if (getAssetsMapping() == null || getAssetsMapping().get3DModelsIndex() == null) return false;
-        ResourceSetup res = getAssetsMapping().get3DModelsIndex().get(modelName.toLowerCase());
+        AssetsMapping mapping = createFullAssetsMapping();
+        if (mapping.get3DModelsIndex() == null) return false;
+        ResourceSetup res = mapping.get3DModelsIndex().get(modelName.toLowerCase());
         return res != null && res.isVehicle;
     }
 
