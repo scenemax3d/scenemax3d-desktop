@@ -47,10 +47,12 @@ while counter>0
 Async loop (does not block the next command):
 
 ```scenemax
-do 10 times async
-  d.turn 30 in 1 second
-  d.turn 20 in 0.5 seconds
+do 10 times async  // async means the entire do - end do code is non blocking
+  d.turn left 30 in 1 second
+  d.turn right 20 in 0.5 seconds
 end do
+// this move command will execute in parallel with the above do - end do block
+d.move left 5 in 10 seconds
 ```
 
 ## For Each
