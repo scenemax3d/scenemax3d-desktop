@@ -28,8 +28,8 @@ Loop 10 times:
 
 ```scenemax
 do 10 times
-  d.turn 30 in 1 second
-  d.turn 20 in 0.5 seconds
+  d.turn left 30 in 1 second
+  d.turn right 20 in 0.5 seconds
 end do
 ```
 
