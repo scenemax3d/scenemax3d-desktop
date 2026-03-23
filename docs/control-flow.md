@@ -38,10 +38,10 @@ Loop with a counter and a while condition:
 ```scenemax
 var counter = 10
 do 10 times
-  d.turn 30 in 1 second
-  d.turn 20 in 0.5 seconds
+  d.turn left 30 in 1 second
+  d.turn right 20 in 0.5 seconds
   counter = counter - 1
-end do while counter>0
+while counter>0
 ```
 
 Async loop (does not block the next command):
