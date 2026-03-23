@@ -868,6 +868,73 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     }
 
+    private void addScene(String parentPath) {
+        String sceneName = (String) JOptionPane.showInputDialog(
+                null,
+                "Type new scene name",
+                "Add Scene",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                null,
+                "");
+
+        if (sceneName == null || sceneName.trim().length() == 0) {
+            return;
+        }
+
+        sceneName = sceneName.trim();
+
+        // Validate as a valid folder name (no path separators or invalid chars)
+        if (sceneName.matches(".*[\\\\/:*?\"<>|].*")) {
+            JOptionPane.showMessageDialog(null,
+                    "Invalid scene name. Avoid these characters: \\ / : * ? \" < > |",
+                    "Invalid Name", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        File sceneFolder = new File(parentPath + "/" + sceneName);
+        if (sceneFolder.exists()) {
+            JOptionPane.showMessageDialog(null,
+                    "A folder named '" + sceneName + "' already exists.",
+                    "Scene Already Exists", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        if (!sceneFolder.mkdir()) {
+            JOptionPane.showMessageDialog(null,
+                    "Folder creation failed. Try again with a different name.",
+                    "Create Scene Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Create the designer document (.smdesign and companion .code files)
+        String docName = sceneName + ".smdesign";
+        File designerFile = new File(sceneFolder, docName);
+        try {
+            DesignerDocument.writeEmptyFile(designerFile);
+        } catch (IOException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(null,
+                    "Error creating designer document: " + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Create the main file with a reference to the designer's generated code
+        File mainFile = new File(sceneFolder, "main");
+        try {
+            String mainContent = "add \"" + sceneName + ".code\" code\n";
+            Files.write(mainFile.toPath(), mainContent.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+
+        // Refresh tree and open the designer document
+        saveSelectedTreeNodePosition(sceneFolder.getPath(), docName);
+        loadScriptsFolder();
+        openLastTreeNode();
+    }
+
     private JPopupMenu getNodePopupMenu(TreePath path) {
 
         ActionListener popupActionListener = new ActionListener() {
@@ -881,7 +948,9 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 }
 
                 String filePath = ((ScriptPathNode) obj.getUserObject()).getPath();
-                if (cmd.equals("create_sub_folder")) {
+                if (cmd.equals("add_scene")) {
+                    addScene(filePath);
+                } else if (cmd.equals("create_sub_folder")) {
                     createSubFolder(filePath);
                 } else if (cmd.equals("export_native_android")) {
                     exportNativeAndroidApp(filePath);
@@ -1039,6 +1108,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         File file = new File(filePath);
         JPopupMenu popup = new JPopupMenu();
 
+        addScriptsTreePopupMenuItem("Add Scene...", "add_scene", popup, popupActionListener, true, false, file);
+        if (file.isDirectory()) {
+            popup.addSeparator();
+        }
         addScriptsTreePopupMenuItem("Save", "save", popup, popupActionListener, false, true, file);
         JMenuItem item = addScriptsTreePopupMenuItem("Delete...", "delete", popup, popupActionListener, false, true, file);
         if (item != null) {
