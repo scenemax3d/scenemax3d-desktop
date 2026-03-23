@@ -61,8 +61,8 @@ var ang = angle(n1,n2)
 Measure the distance between two objects:
 
 ```scenemax
-n is a ninja : pos (-2,0,0)
-n2 is a ninja : pos (2,0,0)
+n => ninja : pos (-2,0,0)
+n2 => ninja : pos (2,0,0)
 var dist = distance(n,n2)
 ```
 

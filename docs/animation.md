@@ -73,7 +73,7 @@ player1.anim_percent
 Switch to character mode and perform a jump:
 
 ```scenemax
-n is a ninja
+n => ninja
 n.switch to character mode
 n.character.jump
 ```

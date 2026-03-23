@@ -27,14 +27,14 @@ sys.draw runningman : pos (10,10)
 Apply a sprite as a texture on a box or sphere:
 
 ```scenemax
-b is a box : material="shira1"
-s is a sphere : material="runningman"
+b => box : material="shira1"
+s => sphere : material="runningman"
 ```
 
 Change a material at runtime:
 
 ```scenemax
-s is a sphere : material = "pond"
+s => sphere : material = "pond"
 wait 5 seconds
 s.material="shira1"
 ```

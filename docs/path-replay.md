@@ -8,7 +8,7 @@ Path replay allows you to record and play back movement paths using arrays. Ever
 
 ```scenemax
 var points = [0,0,0,0,0,0,  1,1,10,0,90,0,  2,2,0,0,0,0]
-s is a sinbad
+s => sinbad
 s.replay points in 10 seconds
 ```
 

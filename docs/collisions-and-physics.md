@@ -22,7 +22,7 @@ end do
 Map joints (bones) to a character for precise collision detection and bone control:
 
 ```scenemax
-n is a dynamic ninja :
+n => dynamic ninja :
   joints ("Joint9","Joint11","Joint12","Joint16","Joint17","Joint18","Joint19",
   "Joint20","Joint21","Joint23","Joint24","Joint25")
 ```

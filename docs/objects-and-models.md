@@ -7,19 +7,19 @@
 Create a sphere:
 
 ```scenemax
-s is a sphere
+s => sphere
 ```
 
 Sphere with a material:
 
 ```scenemax
-s is a sphere : material="pond"
+s => sphere : material="pond"
 ```
 
 Sphere with material and radius:
 
 ```scenemax
-s is a sphere : material="pond" and radius=2
+s => sphere : material="pond" and radius=2
 ```
 
 ### Box
@@ -27,7 +27,7 @@ s is a sphere : material="pond" and radius=2
 Create a box with specific dimensions (half-extents for X, Y, Z):
 
 ```scenemax
-b is a box : material="pond" and size (100,1,100)
+b => box : material="pond" and size (100,1,100)
 ```
 
 ### Static Objects
@@ -35,13 +35,13 @@ b is a box : material="pond" and size (100,1,100)
 Create a static box (can support other objects placed on it):
 
 ```scenemax
-b is a static box
+b => static box
 ```
 
 Static race track:
 
 ```scenemax
-t is a static track2
+t => static track2
 ```
 
 ## 3D Character Models
@@ -49,7 +49,7 @@ t is a static track2
 Load a 3D character model:
 
 ```scenemax
-si is a sinbad
+si => sinbad
 ```
 
 Shorthand syntax for loading a model:
@@ -69,7 +69,7 @@ s => sinbad async
 Scale a model at load time (3x larger):
 
 ```scenemax
-d is a dragon : scale=3
+d => dragon : scale=3
 ```
 
 Scale a model after loading (2x):
@@ -83,7 +83,7 @@ d.scale=2
 Load a model pre-rotated by 90 degrees:
 
 ```scenemax
-d is a dragon : turn 90
+d => dragon : turn 90
 ```
 
 ### Hidden at Load
@@ -91,7 +91,7 @@ d is a dragon : turn 90
 Load a model in a hidden state:
 
 ```scenemax
-n is a sinbad : hidden
+n => sinbad : hidden
 ```
 
 ### Mass
@@ -107,7 +107,7 @@ d.mass=10
 Load a vehicle model:
 
 ```scenemax
-c is a hatchback vehicle
+c => hatchback vehicle
 ```
 
 ## Collider Boxes
@@ -131,7 +131,7 @@ Create an object whose type is determined at runtime:
 
 ```scenemax
 var model_type="Sinbad"
-m is a (model_type)
+m => (model_type)
 ```
 
 ## Deleting Objects
@@ -139,7 +139,7 @@ m is a (model_type)
 Remove an object from memory:
 
 ```scenemax
-s is a sinbad
+s => sinbad
 s.delete
 ```
 
@@ -166,7 +166,7 @@ d.show axis x y z
 Show joint/bone names of a model (with font size 5):
 
 ```scenemax
-n is a ninja
+n => ninja
 n.show joints : size 5
 ```
 
@@ -175,13 +175,13 @@ n.show joints : size 5
 Cast shadows onto other objects:
 
 ```scenemax
-n is a ninja : shadow mode cast
+n => ninja : shadow mode cast
 ```
 
 Receive shadows from other objects:
 
 ```scenemax
-b is a static box : shadow mode receive
+b => static box : shadow mode receive
 ```
 
 ## Lights

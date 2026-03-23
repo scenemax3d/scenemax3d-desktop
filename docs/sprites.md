@@ -5,19 +5,19 @@
 Load a bird sprite:
 
 ```scenemax
-br is a bird sprite
+br => bird sprite
 ```
 
 Load a sprite hidden at a specific position:
 
 ```scenemax
-b is a bird sprite: hidden, pos (-4,2,2)
+b => bird sprite: hidden, pos (-4,2,2)
 ```
 
 Load a display-only sprite with no collision detection (better performance):
 
 ```scenemax
-b is a bird sprite: collision shape none
+b => bird sprite: collision shape none
 ```
 
 ## Billboard Sprites
@@ -25,13 +25,13 @@ b is a bird sprite: collision shape none
 Create a sprite that always faces the camera:
 
 ```scenemax
-hit1 is a good_jap1 sprite : scale 3 and billboard true
+hit1 => good_jap1 sprite : scale 3 and billboard true
 ```
 
 Position a billboard sprite on a character's joint:
 
 ```scenemax
-hit1 is a good_jap1 sprite : scale 3 and billboard true and pos(player2."mixamorig:Head")
+hit1 => good_jap1 sprite : scale 3 and billboard true and pos(player2."mixamorig:Head")
 ```
 
 ## Sprite Animation

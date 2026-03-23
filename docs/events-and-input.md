@@ -33,7 +33,7 @@ end do
 Execute code when clicking on a specific object (model, sphere, box, or canvas):
 
 ```scenemax
-player is a sinbad
+player => sinbad
 when mouse left is pressed on player do
 end do
 ```

@@ -13,10 +13,10 @@ var arr=[10,20,30,40,50,60,70]
 Create an array of different objects and access one randomly:
 
 ```scenemax
-s1 is a sinbad
-s2 is a ninja
-s3 is a bird sprite
-b is a box
+s1 => sinbad
+s2 => ninja
+s3 => bird sprite
+b => box
 
 var my_objects = [s1,s2,s3,b]
 var random_obj = my_objects [rnd(4)]
