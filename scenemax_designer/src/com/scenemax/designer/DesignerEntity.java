@@ -44,6 +44,9 @@ public class DesignerEntity {
     // Hidden flag – only affects generated code output, not designer visibility
     private boolean hidden;
 
+    // Shadow mode: "none", "cast", "receive", "both"
+    private String shadowMode = "none";
+
     // The SceneMax language code used to create this entity
     private String sceneMaxCode;
 
@@ -104,6 +107,9 @@ public class DesignerEntity {
     public boolean isHidden() { return hidden; }
     public void setHidden(boolean hidden) { this.hidden = hidden; }
 
+    public String getShadowMode() { return shadowMode; }
+    public void setShadowMode(String shadowMode) { this.shadowMode = shadowMode != null ? shadowMode : "none"; }
+
     public String getSceneMaxCode() { return sceneMaxCode; }
     public void setSceneMaxCode(String sceneMaxCode) { this.sceneMaxCode = sceneMaxCode; }
 
@@ -161,6 +167,7 @@ public class DesignerEntity {
                 json.put("colliderEntity", colliderEntity);
                 json.put("material", material);
                 json.put("hidden", hidden);
+                json.put("shadowMode", shadowMode);
                 break;
             case BOX:
                 json.put("sizeX", sizeX);
@@ -170,6 +177,7 @@ public class DesignerEntity {
                 json.put("colliderEntity", colliderEntity);
                 json.put("material", material);
                 json.put("hidden", hidden);
+                json.put("shadowMode", shadowMode);
                 break;
             case MODEL:
                 json.put("resourcePath", resourcePath != null ? resourcePath : "");
@@ -177,6 +185,7 @@ public class DesignerEntity {
                 json.put("dynamicModel", dynamicModel);
                 json.put("vehicleModel", vehicleModel);
                 json.put("hidden", hidden);
+                json.put("shadowMode", shadowMode);
                 break;
             case CAMERA:
                 break;
@@ -202,6 +211,7 @@ public class DesignerEntity {
                 entity.colliderEntity = json.optBoolean("colliderEntity", false);
                 entity.material = json.optString("material", "");
                 entity.hidden = json.optBoolean("hidden", false);
+                entity.shadowMode = json.optString("shadowMode", "none");
                 break;
             case BOX:
                 entity.sizeX = (float) json.optDouble("sizeX", 0.5);
@@ -211,6 +221,7 @@ public class DesignerEntity {
                 entity.colliderEntity = json.optBoolean("colliderEntity", false);
                 entity.material = json.optString("material", "");
                 entity.hidden = json.optBoolean("hidden", false);
+                entity.shadowMode = json.optString("shadowMode", "none");
                 break;
             case MODEL:
                 entity.resourcePath = json.optString("resourcePath", "");
@@ -218,6 +229,7 @@ public class DesignerEntity {
                 entity.dynamicModel = json.optBoolean("dynamicModel", false);
                 entity.vehicleModel = json.optBoolean("vehicleModel", false);
                 entity.hidden = json.optBoolean("hidden", false);
+                entity.shadowMode = json.optString("shadowMode", "none");
                 break;
             case CAMERA:
                 break;

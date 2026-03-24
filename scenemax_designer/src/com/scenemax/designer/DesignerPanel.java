@@ -77,6 +77,8 @@ public class DesignerPanel extends JPanel {
     private JCheckBox chkStaticEntity, chkColliderEntity;
     private JCheckBox chkHidden;
     private JPanel hiddenPanel;
+    private JComboBox<String> cboShadowMode;
+    private JPanel shadowModePanel;
     private JPanel staticColliderPanel;
     private JComboBox<String> cboMaterial;
     private JPanel materialPanel;
@@ -440,6 +442,22 @@ public class DesignerPanel extends JPanel {
         chkHidden.addActionListener(e -> applyHiddenChange());
         hiddenPanel.setVisible(false);
         propertiesForm.add(hiddenPanel);
+
+        // Shadow Mode combo (BOX, SPHERE, MODEL)
+        shadowModePanel = new JPanel();
+        shadowModePanel.setLayout(new BoxLayout(shadowModePanel, BoxLayout.Y_AXIS));
+        shadowModePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        shadowModePanel.add(Box.createVerticalStrut(8));
+        JPanel shadowModeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        shadowModeRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        shadowModeRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        shadowModeRow.add(new JLabel("Shadow Mode:"));
+        cboShadowMode = new JComboBox<>(new String[]{"None", "Cast", "Receive", "Both"});
+        cboShadowMode.addActionListener(e -> applyShadowModeChange());
+        shadowModeRow.add(cboShadowMode);
+        shadowModePanel.add(shadowModeRow);
+        shadowModePanel.setVisible(false);
+        propertiesForm.add(shadowModePanel);
 
         propertiesForm.revalidate();
     }
@@ -1051,6 +1069,7 @@ public class DesignerPanel extends JPanel {
                 staticColliderPanel.setVisible(false);
                 materialPanel.setVisible(false);
                 hiddenPanel.setVisible(false);
+                shadowModePanel.setVisible(false);
                 return;
             }
 
@@ -1101,8 +1120,16 @@ public class DesignerPanel extends JPanel {
                     || entity.getType() == DesignerEntityType.MODEL) {
                 chkHidden.setSelected(entity.isHidden());
                 hiddenPanel.setVisible(true);
+
+                String sm = entity.getShadowMode();
+                if ("cast".equals(sm)) cboShadowMode.setSelectedItem("Cast");
+                else if ("receive".equals(sm)) cboShadowMode.setSelectedItem("Receive");
+                else if ("both".equals(sm)) cboShadowMode.setSelectedItem("Both");
+                else cboShadowMode.setSelectedItem("None");
+                shadowModePanel.setVisible(true);
             } else {
                 hiddenPanel.setVisible(false);
+                shadowModePanel.setVisible(false);
             }
 
             // Camera entities don't need scale
@@ -1239,6 +1266,24 @@ public class DesignerPanel extends JPanel {
         boolean hidden = chkHidden.isSelected();
         app.enqueue(() -> {
             sel.setHidden(hidden);
+            app.markDocumentDirty();
+            return null;
+        });
+    }
+
+    private void applyShadowModeChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null) return;
+        String selected = (String) cboShadowMode.getSelectedItem();
+        String mode;
+        if ("Cast".equals(selected)) mode = "cast";
+        else if ("Receive".equals(selected)) mode = "receive";
+        else if ("Both".equals(selected)) mode = "both";
+        else mode = "none";
+        String finalMode = mode;
+        app.enqueue(() -> {
+            sel.setShadowMode(finalMode);
             app.markDocumentDirty();
             return null;
         });

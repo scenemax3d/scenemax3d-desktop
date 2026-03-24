@@ -251,23 +251,24 @@ public class DesignerDocument {
         String rotateSuffix = buildRotateSuffix(entity.getRotation());
         String scaleSuffix = buildScaleSuffix(entity.getScale());
         String materialSuffix = buildMaterialSuffix(entity.getMaterial());
+        String shadowSuffix = buildShadowModeSuffix(entity.getShadowMode());
         String hiddenAttr = entity.isHidden() ? " hidden," : "";
         switch (entity.getType()) {
             case SPHERE:
                 String spherePrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
                 return name + " => " + spherePrefix + "sphere :" + hiddenAttr + " pos (" + pos.x + "," + pos.y + "," + pos.z +
-                       "), radius " + entity.getRadius() + materialSuffix + scaleSuffix + rotateSuffix;
+                       "), radius " + entity.getRadius() + materialSuffix + scaleSuffix + rotateSuffix + shadowSuffix;
             case BOX:
                 String boxPrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
                 return name + " => " + boxPrefix + "box :" + hiddenAttr + " size (" +
                        (entity.getSizeX() * 2) + "," + (entity.getSizeY() * 2) + "," + (entity.getSizeZ() * 2) +
-                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + scaleSuffix + rotateSuffix;
+                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + scaleSuffix + rotateSuffix + shadowSuffix;
             case MODEL:
                 String modelPrefix = entity.isStaticModel() ? "static " : entity.isDynamicModel() ? "dynamic " : "";
                 String vehicleSuffix = entity.isVehicleModel() ? " vehicle" : "";
                 String modelHidden = entity.isHidden() ? " : hidden," : ":";
                 return name + " => " + modelPrefix + entity.getResourcePath() + vehicleSuffix +
-                       modelHidden + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + scaleSuffix + rotateSuffix + " async";
+                       modelHidden + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + scaleSuffix + rotateSuffix + shadowSuffix + " async";
             default:
                 return "";
         }
@@ -294,6 +295,22 @@ public class DesignerDocument {
             return "";
         }
         return ", material \"" + material + "\"";
+    }
+
+    private static String buildShadowModeSuffix(String shadowMode) {
+        if (shadowMode == null || shadowMode.equals("none")) {
+            return "";
+        }
+        switch (shadowMode) {
+            case "cast":
+                return ", shadow mode cast";
+            case "receive":
+                return ", shadow mode receive";
+            case "both":
+                return ", shadow mode on";
+            default:
+                return "";
+        }
     }
 
     private static String buildRotateSuffix(Quaternion rotation) {
