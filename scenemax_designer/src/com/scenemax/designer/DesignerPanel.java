@@ -922,20 +922,30 @@ public class DesignerPanel extends JPanel {
                 sceneTree.getPathForRow(row).getLastPathComponent();
         if (node == null || !(node.getUserObject() instanceof EntityTreeNode)) return;
         EntityTreeNode etn = (EntityTreeNode) node.getUserObject();
-        if (etn.entity.getType() != DesignerEntityType.CODE) return;
 
-        String newName = JOptionPane.showInputDialog(this, "Rename code node:",
-                etn.entity.getName());
-        if (newName != null && !newName.trim().isEmpty()) {
-            String trimmed = newName.trim();
+        if (etn.entity.getType() == DesignerEntityType.CODE) {
+            // CODE nodes: show rename dialog
+            String newName = JOptionPane.showInputDialog(this, "Rename code node:",
+                    etn.entity.getName());
+            if (newName != null && !newName.trim().isEmpty()) {
+                String trimmed = newName.trim();
+                if (app != null) {
+                    app.enqueue(() -> {
+                        etn.entity.setName(trimmed);
+                        app.markDocumentDirty();
+                        return null;
+                    });
+                }
+                refreshSceneTree();
+            }
+        } else {
+            // Non-CODE nodes: ease the editor camera to focus on the entity
             if (app != null) {
                 app.enqueue(() -> {
-                    etn.entity.setName(trimmed);
-                    app.markDocumentDirty();
+                    app.focusCameraOnEntity(etn.entity);
                     return null;
                 });
             }
-            refreshSceneTree();
         }
     }
 

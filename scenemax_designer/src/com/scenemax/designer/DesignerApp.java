@@ -98,6 +98,15 @@ public class DesignerApp extends SceneMaxApp {
     private float animProgress;
     private static final float ANIM_DURATION = 0.4f;
 
+    // Camera target animation state (for focus-on-entity)
+    private boolean animatingCameraTarget = false;
+    private Vector3f animStartTarget;
+    private Vector3f animEndTarget;
+    private float animTargetProgress;
+    private float animStartDistance;
+    private float animEndDistance;
+    private static final float FOCUS_ANIM_DURATION = 0.5f;
+
     // Camera mode
     public enum CameraMode { ORBIT, PAN }
     private CameraMode cameraMode = CameraMode.ORBIT;
@@ -1372,6 +1381,38 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     /**
+     * Smoothly moves the editor camera to focus on the given entity.
+     * The camera eases its target to the entity's world position and adjusts
+     * the distance so the object is comfortably visible.
+     */
+    public void focusCameraOnEntity(DesignerEntity entity) {
+        if (entity == null || entity.getSceneNode() == null) return;
+
+        Vector3f entityPos = entity.getSceneNode().getWorldTranslation();
+
+        animStartTarget = cameraTarget.clone();
+        animEndTarget = entityPos.clone();
+
+        // Compute a comfortable distance based on the entity's bounding volume
+        float radius = 5f;
+        if (entity.getSceneNode().getWorldBound() != null) {
+            radius = entity.getSceneNode().getWorldBound().getVolume();
+            // Approximate a radius from bounding volume (cube root for rough size)
+            radius = (float) Math.cbrt(radius);
+            if (radius < 1f) radius = 1f;
+        }
+        float desiredDistance = radius * 3f;
+        // Clamp to reasonable range
+        desiredDistance = Math.max(3f, Math.min(desiredDistance, 100f));
+
+        animStartDistance = cameraDistance;
+        animEndDistance = desiredDistance;
+
+        animTargetProgress = 0f;
+        animatingCameraTarget = true;
+    }
+
+    /**
      * Called when the canvas is resized. Updates both main camera and viewcube.
      */
     public void onCanvasResized(int width, int height) {
@@ -1410,8 +1451,22 @@ public class DesignerApp extends SceneMaxApp {
             updateOrbitCamera();
         }
 
+        // Animate camera target toward a focused entity (smooth transition)
+        if (animatingCameraTarget) {
+            animTargetProgress += tpf / FOCUS_ANIM_DURATION;
+            if (animTargetProgress >= 1.0f) {
+                animTargetProgress = 1.0f;
+                animatingCameraTarget = false;
+            }
+            // Quadratic ease-out
+            float t = 1.0f - (1.0f - animTargetProgress) * (1.0f - animTargetProgress);
+            cameraTarget.interpolateLocal(animStartTarget, animEndTarget, t);
+            cameraDistance = animStartDistance + (animEndDistance - animStartDistance) * t;
+            updateOrbitCamera();
+        }
+
         // Handle orbit/pan camera with mouse drag
-        if ((orbiting || panning) && !animatingCamera) {
+        if ((orbiting || panning) && !animatingCamera && !animatingCameraTarget) {
             Vector2f currentMouse = inputManager.getCursorPosition();
             float dx = currentMouse.x - lastMousePos.x;
             float dy = currentMouse.y - lastMousePos.y;
