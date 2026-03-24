@@ -267,8 +267,9 @@ public class DesignerDocument {
                 String modelPrefix = entity.isStaticModel() ? "static " : entity.isDynamicModel() ? "dynamic " : "";
                 String vehicleSuffix = entity.isVehicleModel() ? " vehicle" : "";
                 String modelHidden = entity.isHidden() ? " : hidden," : ":";
+                String jointsSuffix = buildJointsMappingSuffix(entity.getJointMapping());
                 return name + " => " + modelPrefix + entity.getResourcePath() + vehicleSuffix +
-                       modelHidden + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + scaleSuffix + rotateSuffix + shadowSuffix + " async";
+                       modelHidden + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + scaleSuffix + rotateSuffix + shadowSuffix + jointsSuffix + " async";
             default:
                 return "";
         }
@@ -324,6 +325,25 @@ public class DesignerDocument {
             return "";
         }
         return ", rotate(" + degX + "," + degY + "," + degZ + ")";
+    }
+
+    private static String buildJointsMappingSuffix(String jointMapping) {
+        if (jointMapping == null || jointMapping.trim().isEmpty()) {
+            return "";
+        }
+        String[] joints = jointMapping.split(",");
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n, joints (");
+        for (int i = 0; i < joints.length; i++) {
+            String joint = joints[i].trim();
+            if (joint.isEmpty()) continue;
+            if (sb.length() > "\n, joints (".length()) {
+                sb.append(",");
+            }
+            sb.append("\"").append(joint).append("\"");
+        }
+        sb.append(")");
+        return sb.toString();
     }
 
     /**

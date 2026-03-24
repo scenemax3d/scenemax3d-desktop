@@ -47,6 +47,9 @@ public class DesignerEntity {
     // Shadow mode: "none", "cast", "receive", "both"
     private String shadowMode = "none";
 
+    // Joint mapping for 3D models (comma-separated joint names, empty = disabled)
+    private String jointMapping = "";
+
     // The SceneMax language code used to create this entity
     private String sceneMaxCode;
 
@@ -109,6 +112,9 @@ public class DesignerEntity {
 
     public String getShadowMode() { return shadowMode; }
     public void setShadowMode(String shadowMode) { this.shadowMode = shadowMode != null ? shadowMode : "none"; }
+
+    public String getJointMapping() { return jointMapping; }
+    public void setJointMapping(String jointMapping) { this.jointMapping = jointMapping != null ? jointMapping : ""; }
 
     public String getSceneMaxCode() { return sceneMaxCode; }
     public void setSceneMaxCode(String sceneMaxCode) { this.sceneMaxCode = sceneMaxCode; }
@@ -186,6 +192,7 @@ public class DesignerEntity {
                 json.put("vehicleModel", vehicleModel);
                 json.put("hidden", hidden);
                 json.put("shadowMode", shadowMode);
+                json.put("jointMapping", jointMapping);
                 break;
             case CAMERA:
                 break;
@@ -230,6 +237,7 @@ public class DesignerEntity {
                 entity.vehicleModel = json.optBoolean("vehicleModel", false);
                 entity.hidden = json.optBoolean("hidden", false);
                 entity.shadowMode = json.optString("shadowMode", "none");
+                entity.jointMapping = json.optString("jointMapping", "");
                 break;
             case CAMERA:
                 break;

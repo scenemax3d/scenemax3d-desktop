@@ -79,6 +79,9 @@ public class DesignerPanel extends JPanel {
     private JPanel hiddenPanel;
     private JComboBox<String> cboShadowMode;
     private JPanel shadowModePanel;
+    private JCheckBox chkJointMapping;
+    private JButton btnEditJointMapping;
+    private JPanel jointMappingPanel;
     private JPanel staticColliderPanel;
     private JComboBox<String> cboMaterial;
     private JPanel materialPanel;
@@ -458,6 +461,26 @@ public class DesignerPanel extends JPanel {
         shadowModePanel.add(shadowModeRow);
         shadowModePanel.setVisible(false);
         propertiesForm.add(shadowModePanel);
+
+        // Joint Mapping checkbox + edit button (MODEL only)
+        jointMappingPanel = new JPanel();
+        jointMappingPanel.setLayout(new BoxLayout(jointMappingPanel, BoxLayout.Y_AXIS));
+        jointMappingPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        jointMappingPanel.add(Box.createVerticalStrut(8));
+        JPanel jointMappingRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        jointMappingRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        jointMappingRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        chkJointMapping = new JCheckBox("Joint Mapping");
+        chkJointMapping.addActionListener(e -> applyJointMappingCheckChange());
+        btnEditJointMapping = new JButton("...");
+        btnEditJointMapping.setPreferredSize(new Dimension(32, 22));
+        btnEditJointMapping.setEnabled(false);
+        btnEditJointMapping.addActionListener(e -> showJointMappingEditor());
+        jointMappingRow.add(chkJointMapping);
+        jointMappingRow.add(btnEditJointMapping);
+        jointMappingPanel.add(jointMappingRow);
+        jointMappingPanel.setVisible(false);
+        propertiesForm.add(jointMappingPanel);
 
         propertiesForm.revalidate();
     }
@@ -1080,6 +1103,7 @@ public class DesignerPanel extends JPanel {
                 materialPanel.setVisible(false);
                 hiddenPanel.setVisible(false);
                 shadowModePanel.setVisible(false);
+                jointMappingPanel.setVisible(false);
                 return;
             }
 
@@ -1137,9 +1161,20 @@ public class DesignerPanel extends JPanel {
                 else if ("both".equals(sm)) cboShadowMode.setSelectedItem("Both");
                 else cboShadowMode.setSelectedItem("None");
                 shadowModePanel.setVisible(true);
+
+                if (entity.getType() == DesignerEntityType.MODEL) {
+                    String jm = entity.getJointMapping();
+                    boolean hasJoints = jm != null && !jm.trim().isEmpty();
+                    chkJointMapping.setSelected(hasJoints);
+                    btnEditJointMapping.setEnabled(hasJoints);
+                    jointMappingPanel.setVisible(true);
+                } else {
+                    jointMappingPanel.setVisible(false);
+                }
             } else {
                 hiddenPanel.setVisible(false);
                 shadowModePanel.setVisible(false);
+                jointMappingPanel.setVisible(false);
             }
 
             // Camera entities don't need scale
@@ -1297,6 +1332,85 @@ public class DesignerPanel extends JPanel {
             app.markDocumentDirty();
             return null;
         });
+    }
+
+    private void applyJointMappingCheckChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.MODEL) return;
+        boolean checked = chkJointMapping.isSelected();
+        btnEditJointMapping.setEnabled(checked);
+        if (!checked) {
+            app.enqueue(() -> {
+                sel.setJointMapping("");
+                app.markDocumentDirty();
+                return null;
+            });
+        }
+    }
+
+    private void showJointMappingEditor() {
+        if (app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.MODEL) return;
+
+        String[] presetNames = {"(Custom)", "Mixamo", "Blender", "Unity", "Unreal", "Autodesk Maya"};
+        String[] presetValues = {
+            "",
+            "mixamorig:Head,mixamorig:LeftShoulder,mixamorig:LeftArm,mixamorig:LeftForeArm,mixamorig:LeftHand,"
+                + "mixamorig:RightShoulder,mixamorig:RightArm,mixamorig:RightForeArm,mixamorig:RightHand,"
+                + "mixamorig:LeftUpLeg,mixamorig:LeftLeg,mixamorig:LeftFoot,"
+                + "mixamorig:RightUpLeg,mixamorig:RightLeg,mixamorig:RightFoot",
+            "head,neck,spine,spine.001,spine.002,shoulder.L,upper_arm.L,forearm.L,hand.L,"
+                + "shoulder.R,upper_arm.R,forearm.R,hand.R,thigh.L,shin.L,foot.L,thigh.R,shin.R,foot.R",
+            "Head,Neck,Chest,Spine,Hips,LeftUpperArm,LeftLowerArm,LeftHand,"
+                + "RightUpperArm,RightLowerArm,RightHand,LeftUpperLeg,LeftLowerLeg,LeftFoot,"
+                + "RightUpperLeg,RightLowerLeg,RightFoot",
+            "head,neck_01,spine_01,spine_02,spine_03,clavicle_l,upperarm_l,lowerarm_l,hand_l,"
+                + "clavicle_r,upperarm_r,lowerarm_r,hand_r,thigh_l,calf_l,foot_l,thigh_r,calf_r,foot_r",
+            "Hips,Spine,Spine1,Spine2,Neck,Head,LeftShoulder,LeftArm,LeftForeArm,LeftHand,"
+                + "RightShoulder,RightArm,RightForeArm,RightHand,LeftUpLeg,LeftLeg,LeftFoot,"
+                + "RightUpLeg,RightLeg,RightFoot"
+        };
+
+        JComboBox<String> cboPreset = new JComboBox<>(presetNames);
+        JTextArea txtJoints = new JTextArea(8, 40);
+        txtJoints.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        txtJoints.setLineWrap(true);
+        txtJoints.setWrapStyleWord(true);
+
+        String currentMapping = sel.getJointMapping();
+        txtJoints.setText(currentMapping != null ? currentMapping : "");
+
+        cboPreset.addActionListener(e -> {
+            int idx = cboPreset.getSelectedIndex();
+            if (idx > 0) {
+                txtJoints.setText(presetValues[idx]);
+            }
+        });
+
+        JPanel panel = new JPanel(new BorderLayout(4, 4));
+        JPanel topRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        topRow.add(new JLabel("Preset:"));
+        topRow.add(cboPreset);
+        panel.add(topRow, BorderLayout.NORTH);
+        panel.add(new JScrollPane(txtJoints), BorderLayout.CENTER);
+
+        int result = JOptionPane.showConfirmDialog(this, panel,
+                "Edit Joint Mapping", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+
+        if (result == JOptionPane.OK_OPTION) {
+            String joints = txtJoints.getText().trim();
+            app.enqueue(() -> {
+                sel.setJointMapping(joints);
+                app.markDocumentDirty();
+                return null;
+            });
+            if (joints.isEmpty()) {
+                chkJointMapping.setSelected(false);
+                btnEditJointMapping.setEnabled(false);
+            }
+        }
     }
 
     private void applyMaterialChange() {
