@@ -22,6 +22,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -812,7 +813,12 @@ public class DesignerPanel extends JPanel {
     public void refreshSceneTree() {
         sceneTreeRoot.removeAllChildren();
         if (app != null) {
-            for (DesignerEntity entity : app.getEntities()) {
+            // Snapshot the list to avoid ConcurrentModificationException —
+            // the JME thread may be adding entities while Swing iterates.
+            List<DesignerEntity> snapshot = new ArrayList<>(app.getEntities());
+            System.out.println("[TREE] refreshSceneTree called, snapshot size=" + snapshot.size());
+            for (DesignerEntity entity : snapshot) {
+                System.out.println("[TREE]   " + entity.getName() + " type=" + entity.getType() + " collider=" + entity.isColliderEntity());
                 String icon;
                 switch (entity.getType()) {
                     case SPHERE: icon = "[S] "; break;

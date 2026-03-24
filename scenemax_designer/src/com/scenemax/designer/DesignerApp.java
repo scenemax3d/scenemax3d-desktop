@@ -696,8 +696,12 @@ public class DesignerApp extends SceneMaxApp {
                     pe.loadingGizmo.setProgress(Math.min(progress, 0.95f));
                     pe.loadingGizmo.faceCamera(cam);
                 }
-                // Use the appropriate timeout
-                int maxFrames = (pe.type == DesignerEntityType.MODEL) ? MAX_PENDING_FRAMES_ASYNC : MAX_PENDING_FRAMES;
+                // During document loading, use the longer async timeout for ALL
+                // entity types because the CompositeController processes actions
+                // sequentially — primitives queued after async models won't run
+                // until all preceding models finish loading.
+                int maxFrames = (pe.type == DesignerEntityType.MODEL || loadingDocument)
+                        ? MAX_PENDING_FRAMES_ASYNC : MAX_PENDING_FRAMES;
                 if (pe.framesWaited > maxFrames) {
                     System.err.println("Failed to create entity via code (timed out after "
                             + maxFrames + " frames): " + pe.code);
@@ -711,7 +715,11 @@ public class DesignerApp extends SceneMaxApp {
             }
         }
 
-        if (anyResolved) {
+        // During document loading, skip intermediate tree refreshes — the
+        // entities list is still being populated on this (JME) thread while
+        // the Swing thread would try to read it.  A single definitive refresh
+        // happens below once ALL entities have been resolved.
+        if (anyResolved && !loadingDocument) {
             notifySceneChanged();
         }
 
@@ -732,8 +740,15 @@ public class DesignerApp extends SceneMaxApp {
                     return Integer.compare(idxA, idxB);
                 });
                 loadingEntityOrder = null;
-                notifySceneChanged();
             }
+
+            // Now that all entities are in and sorted, refresh the tree once
+            System.out.println("[JME] Loading complete. entities.size()=" + entities.size()
+                    + " pendingEntities.size()=" + pendingEntities.size());
+            for (DesignerEntity e : entities) {
+                System.out.println("[JME]   " + e.getName() + " type=" + e.getType() + " collider=" + e.isColliderEntity());
+            }
+            notifySceneChanged();
 
             sphereCounter = (int) entities.stream()
                     .filter(e -> e.getType() == DesignerEntityType.SPHERE).count();
@@ -823,18 +838,21 @@ public class DesignerApp extends SceneMaxApp {
         }
         entities.remove(entity);
 
-        // Build new code with updated flags
+        // Build new code with updated flags.
+        // NOTE: "collider" keyword is intentionally omitted — the runtime
+        // would create an invisible GhostControl.  We create a normal visible
+        // object in the designer; the collider keyword is only emitted in the
+        // exported .code file by DesignerDocument.generateEntityCode().
         String staticPfx = isStatic ? "static " : "";
-        String colliderPfx = isCollider ? "collider " : "";
         String materialSuffix = (material != null && !material.isEmpty()) ? ", material \"" + material + "\"" : "";
         String code;
         switch (type) {
             case SPHERE:
-                code = name + " => " + staticPfx + colliderPfx + "sphere : pos (" + pos.x + "," + pos.y + "," + pos.z +
+                code = name + " => " + staticPfx + "sphere : pos (" + pos.x + "," + pos.y + "," + pos.z +
                        "), radius " + radius + materialSuffix;
                 break;
             case BOX:
-                code = name + " => " + staticPfx + colliderPfx + "box : size (" +
+                code = name + " => " + staticPfx + "box : size (" +
                        (sizeX * 2) + "," + (sizeY * 2) + "," + (sizeZ * 2) +
                        "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
                 break;
@@ -962,8 +980,12 @@ public class DesignerApp extends SceneMaxApp {
             cameraPreview.syncWithEntity(cameraEntity);
         }
 
-        // Notify scene changed so the tree refreshes
-        notifySceneChanged();
+        // Don't refresh the tree here — loadDocumentEntities() only queues
+        // pending entities.  The tree will refresh once all of them have been
+        // resolved in processPendingEntities().
+        if (pendingEntities.isEmpty()) {
+            notifySceneChanged();
+        }
     }
 
     /**
@@ -1081,8 +1103,13 @@ public class DesignerApp extends SceneMaxApp {
             cameraPreview.syncWithEntity(cameraEntity);
         }
 
-        // Notify scene changed so the tree refreshes
-        notifySceneChanged();
+        // Don't refresh the tree here — loadDocumentEntities() only queues
+        // pending entities.  The tree will refresh once all of them have been
+        // resolved in processPendingEntities().
+        if (pendingEntities.isEmpty()) {
+            // No 3D entities to load (only CODE nodes) — refresh now
+            notifySceneChanged();
+        }
     }
 
     private void loadDocumentEntities() {
@@ -1227,8 +1254,12 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     /**
-     * Generates SceneMax code from entity properties (for loading legacy documents
-     * that don't have the sceneMaxCode field).
+     * Generates SceneMax code from entity properties for design-time use.
+     * NOTE: the "collider" keyword is intentionally omitted here because the
+     * runtime turns colliders into invisible GhostControls with no geometry.
+     * In the designer we always create a visible object; the "collider"
+     * keyword is only emitted in DesignerDocument.generateEntityCode() for
+     * the exported .code file.
      */
     private String generateCodeFromEntity(DesignerEntity entity, Vector3f pos) {
         String name = entity.getName();
@@ -1236,11 +1267,11 @@ public class DesignerApp extends SceneMaxApp {
         String materialSuffix = (mat != null && !mat.isEmpty()) ? ", material \"" + mat + "\"" : "";
         switch (entity.getType()) {
             case SPHERE:
-                String spherePrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
+                String spherePrefix = entity.isStaticEntity() ? "static " : "";
                 return name + " => " + spherePrefix + "sphere : pos (" + pos.x + "," + pos.y + "," + pos.z +
                        "), radius " + entity.getRadius() + materialSuffix;
             case BOX:
-                String boxPrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
+                String boxPrefix = entity.isStaticEntity() ? "static " : "";
                 return name + " => " + boxPrefix + "box : size (" +
                        (entity.getSizeX() * 2) + "," + (entity.getSizeY() * 2) + "," + (entity.getSizeZ() * 2) +
                        "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
