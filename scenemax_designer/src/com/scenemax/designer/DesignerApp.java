@@ -7,7 +7,10 @@ import com.jme3.math.*;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
+import com.jme3.material.Material;
+import com.jme3.material.RenderState;
 import com.jme3.scene.shape.Box;
+import com.jme3.scene.shape.Sphere;
 import com.scenemax.designer.gizmo.*;
 import com.scenemax.designer.grid.GridPlane;
 import com.scenemax.designer.selection.OutlineEffect;
@@ -558,6 +561,40 @@ public class DesignerApp extends SceneMaxApp {
         pe.loadingGizmo = gizmo;
     }
 
+    private static final String COLLIDER_WIREFRAME_KEY = "ColliderWireframe";
+
+    /**
+     * Attaches a wireframe geometry to a collider entity's node so it is
+     * visible in the designer even though colliders have no runtime geometry.
+     * Uses a semi-transparent green wireframe to distinguish colliders from
+     * regular objects.
+     */
+    private void attachColliderWireframe(Node node, DesignerEntityType type,
+                                          float sizeX, float sizeY, float sizeZ, float radius) {
+        // Remove any existing collider wireframe first
+        Spatial existing = node.getChild(COLLIDER_WIREFRAME_KEY);
+        if (existing != null) existing.removeFromParent();
+
+        Geometry wireGeo;
+        switch (type) {
+            case BOX:
+                wireGeo = new Geometry(COLLIDER_WIREFRAME_KEY, new Box(sizeX * 2, sizeY * 2, sizeZ * 2));
+                break;
+            case SPHERE:
+                wireGeo = new Geometry(COLLIDER_WIREFRAME_KEY, new Sphere(16, 16, radius));
+                break;
+            default:
+                return;
+        }
+
+        Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+        mat.setColor("Color", new ColorRGBA(0f, 1f, 0.4f, 1f));
+        mat.getAdditionalRenderState().setWireframe(true);
+        mat.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Off);
+        wireGeo.setMaterial(mat);
+        node.attachChild(wireGeo);
+    }
+
     /**
      * Called each frame from simpleUpdate() to check if pending entity nodes
      * have been created by the SceneMax controllers.
@@ -611,6 +648,12 @@ public class DesignerApp extends SceneMaxApp {
                         entity.setHidden(pe.hidden);
                         entity.setShadowMode(pe.shadowMode);
                         break;
+                }
+
+                // Attach wireframe decorator for collider entities so they
+                // are visible in the designer (colliders have no runtime geometry)
+                if (pe.colliderEntity) {
+                    attachColliderWireframe(node, pe.type, pe.sizeX, pe.sizeY, pe.sizeZ, pe.radius);
                 }
 
                 // Apply saved transform (for document loading)
@@ -707,6 +750,12 @@ public class DesignerApp extends SceneMaxApp {
         if (entity == null || entity.getType() != DesignerEntityType.BOX) return;
         Node node = entity.getSceneNode();
         if (node == null) return;
+        if (entity.isColliderEntity()) {
+            // Update the collider wireframe decorator
+            attachColliderWireframe(node, DesignerEntityType.BOX,
+                    entity.getSizeX(), entity.getSizeY(), entity.getSizeZ(), 0);
+            return;
+        }
         for (Spatial child : node.getChildren()) {
             if (child instanceof Geometry) {
                 ((Geometry) child).setMesh(new Box(entity.getSizeX() * 2, entity.getSizeY() * 2, entity.getSizeZ() * 2));
