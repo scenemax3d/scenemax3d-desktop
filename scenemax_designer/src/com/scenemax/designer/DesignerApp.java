@@ -60,6 +60,8 @@ public class DesignerApp extends SceneMaxApp {
         boolean staticEntity;
         boolean colliderEntity;
         String material;
+        boolean hidden;
+        String shadowMode;
         String nodeName;
         int framesWaited;
         boolean selectAfterCreation;
@@ -588,6 +590,8 @@ public class DesignerApp extends SceneMaxApp {
                         entity.setStaticEntity(pe.staticEntity);
                         entity.setColliderEntity(pe.colliderEntity);
                         entity.setMaterial(pe.material != null ? pe.material : "");
+                        entity.setHidden(pe.hidden);
+                        entity.setShadowMode(pe.shadowMode);
                         break;
                     case BOX:
                         entity.setSizeX(pe.sizeX);
@@ -596,12 +600,16 @@ public class DesignerApp extends SceneMaxApp {
                         entity.setStaticEntity(pe.staticEntity);
                         entity.setColliderEntity(pe.colliderEntity);
                         entity.setMaterial(pe.material != null ? pe.material : "");
+                        entity.setHidden(pe.hidden);
+                        entity.setShadowMode(pe.shadowMode);
                         break;
                     case MODEL:
                         entity.setResourcePath(pe.resourcePath);
                         entity.setStaticModel(pe.staticModel);
                         entity.setDynamicModel(pe.dynamicModel);
                         entity.setVehicleModel(pe.vehicleModel);
+                        entity.setHidden(pe.hidden);
+                        entity.setShadowMode(pe.shadowMode);
                         break;
                 }
 
@@ -1086,6 +1094,8 @@ public class DesignerApp extends SceneMaxApp {
                     pending.staticEntity = entityTemplate.isStaticEntity();
                     pending.colliderEntity = entityTemplate.isColliderEntity();
                     pending.material = entityTemplate.getMaterial();
+                    pending.hidden = entityTemplate.isHidden();
+                    pending.shadowMode = entityTemplate.getShadowMode();
                     break;
                 case BOX:
                     pending.sizeX = entityTemplate.getSizeX();
@@ -1094,12 +1104,16 @@ public class DesignerApp extends SceneMaxApp {
                     pending.staticEntity = entityTemplate.isStaticEntity();
                     pending.colliderEntity = entityTemplate.isColliderEntity();
                     pending.material = entityTemplate.getMaterial();
+                    pending.hidden = entityTemplate.isHidden();
+                    pending.shadowMode = entityTemplate.getShadowMode();
                     break;
                 case MODEL:
                     pending.resourcePath = entityTemplate.getResourcePath();
                     pending.staticModel = entityTemplate.isStaticModel();
                     pending.dynamicModel = entityTemplate.isDynamicModel();
                     pending.vehicleModel = entityTemplate.isVehicleModel();
+                    pending.hidden = entityTemplate.isHidden();
+                    pending.shadowMode = entityTemplate.getShadowMode();
                     break;
             }
 
