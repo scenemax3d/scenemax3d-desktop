@@ -262,9 +262,9 @@ public class DesignerDocument {
                        (entity.getSizeX() * 2) + "," + (entity.getSizeY() * 2) + "," + (entity.getSizeZ() * 2) +
                        "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + scaleSuffix + rotateSuffix;
             case MODEL:
-                String staticPrefix = entity.isStaticModel() ? "static " : "";
+                String modelPrefix = entity.isStaticModel() ? "static " : entity.isDynamicModel() ? "dynamic " : "";
                 String vehicleSuffix = entity.isVehicleModel() ? " vehicle" : "";
-                return name + " => " + staticPrefix + entity.getResourcePath() + vehicleSuffix +
+                return name + " => " + modelPrefix + entity.getResourcePath() + vehicleSuffix +
                        ": pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + scaleSuffix + rotateSuffix + " async";
             default:
                 return "";

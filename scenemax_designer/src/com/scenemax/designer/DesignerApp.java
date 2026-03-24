@@ -55,6 +55,7 @@ public class DesignerApp extends SceneMaxApp {
         float sizeX, sizeY, sizeZ;
         String resourcePath;
         boolean staticModel;
+        boolean dynamicModel;
         boolean vehicleModel;
         boolean staticEntity;
         boolean colliderEntity;
@@ -356,18 +357,18 @@ public class DesignerApp extends SceneMaxApp {
         addEntityViaCode(name, code, DesignerEntityType.BOX, 0, 0.5f, 0.5f, 0.5f, null, false, false);
     }
 
-    /** Creates a 3D model using SceneMax language: name => [static] resourceName : pos (x,y,z) */
+    /** Creates a 3D model using SceneMax language: name => [static|dynamic] resourceName : pos (x,y,z) */
     public void addModel(String resourceName, boolean isStatic) {
-        addModel(resourceName, isStatic, false);
+        addModel(resourceName, isStatic, false, false);
     }
 
-    public void addModel(String resourceName, boolean isStatic, boolean isVehicle) {
+    public void addModel(String resourceName, boolean isStatic, boolean isDynamic, boolean isVehicle) {
         String name = "model_" + (++modelCounter);
-        String staticPrefix = isStatic ? "static " : "";
+        String prefix = isStatic ? "static " : isDynamic ? "dynamic " : "";
         String vehicleSuffix = isVehicle ? " vehicle" : "";
         float initialY = isVehicle ? 5f : 0f;
-        String code = name + " => " + staticPrefix + resourceName + vehicleSuffix + ": pos (0," + initialY + ",0) async";
-        addEntityViaCode(name, code, DesignerEntityType.MODEL, 0, 0, 0, 0, resourceName, isStatic, isVehicle);
+        String code = name + " => " + prefix + resourceName + vehicleSuffix + ": pos (0," + initialY + ",0) async";
+        addEntityViaCode(name, code, DesignerEntityType.MODEL, 0, 0, 0, 0, resourceName, isStatic, isDynamic, isVehicle);
 
         // Apply the model's configured scale from ResourceSetup instead of defaulting to 1
         if (getAssetsMapping() != null && getAssetsMapping().get3DModelsIndex() != null) {
@@ -485,12 +486,18 @@ public class DesignerApp extends SceneMaxApp {
     private void addEntityViaCode(String name, String code, DesignerEntityType type,
                                    float radius, float sizeX, float sizeY, float sizeZ,
                                    String resourcePath, boolean isStatic, boolean isVehicle) {
-        addEntityViaCode(name, code, type, radius, sizeX, sizeY, sizeZ, resourcePath, isStatic, isVehicle, false, false);
+        addEntityViaCode(name, code, type, radius, sizeX, sizeY, sizeZ, resourcePath, isStatic, false, isVehicle, false, false);
     }
 
     private void addEntityViaCode(String name, String code, DesignerEntityType type,
                                    float radius, float sizeX, float sizeY, float sizeZ,
-                                   String resourcePath, boolean isStatic, boolean isVehicle,
+                                   String resourcePath, boolean isStatic, boolean isDynamic, boolean isVehicle) {
+        addEntityViaCode(name, code, type, radius, sizeX, sizeY, sizeZ, resourcePath, isStatic, isDynamic, isVehicle, false, false);
+    }
+
+    private void addEntityViaCode(String name, String code, DesignerEntityType type,
+                                   float radius, float sizeX, float sizeY, float sizeZ,
+                                   String resourcePath, boolean isStatic, boolean isDynamic, boolean isVehicle,
                                    boolean isStaticEntity, boolean isColliderEntity) {
         // Run the SceneMax code - this creates controllers that will be
         // processed in super.simpleUpdate() on the next frame(s)
@@ -511,6 +518,7 @@ public class DesignerApp extends SceneMaxApp {
         pending.sizeZ = sizeZ;
         pending.resourcePath = resourcePath;
         pending.staticModel = isStatic;
+        pending.dynamicModel = isDynamic;
         pending.vehicleModel = isVehicle;
         pending.staticEntity = isStaticEntity;
         pending.colliderEntity = isColliderEntity;
@@ -583,6 +591,7 @@ public class DesignerApp extends SceneMaxApp {
                     case MODEL:
                         entity.setResourcePath(pe.resourcePath);
                         entity.setStaticModel(pe.staticModel);
+                        entity.setDynamicModel(pe.dynamicModel);
                         entity.setVehicleModel(pe.vehicleModel);
                         break;
                 }
@@ -1080,6 +1089,7 @@ public class DesignerApp extends SceneMaxApp {
                 case MODEL:
                     pending.resourcePath = entityTemplate.getResourcePath();
                     pending.staticModel = entityTemplate.isStaticModel();
+                    pending.dynamicModel = entityTemplate.isDynamicModel();
                     pending.vehicleModel = entityTemplate.isVehicleModel();
                     break;
             }

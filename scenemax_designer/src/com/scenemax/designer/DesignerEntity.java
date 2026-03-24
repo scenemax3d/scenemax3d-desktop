@@ -28,6 +28,7 @@ public class DesignerEntity {
     // Model-specific
     private String resourcePath;
     private boolean staticModel;
+    private boolean dynamicModel;
     private boolean vehicleModel;
 
     // Shared flags for BOX, SPHERE (and MODEL already has staticModel)
@@ -79,6 +80,9 @@ public class DesignerEntity {
 
     public boolean isStaticModel() { return staticModel; }
     public void setStaticModel(boolean staticModel) { this.staticModel = staticModel; }
+
+    public boolean isDynamicModel() { return dynamicModel; }
+    public void setDynamicModel(boolean dynamicModel) { this.dynamicModel = dynamicModel; }
 
     public boolean isVehicleModel() { return vehicleModel; }
     public void setVehicleModel(boolean vehicleModel) { this.vehicleModel = vehicleModel; }
@@ -162,6 +166,7 @@ public class DesignerEntity {
             case MODEL:
                 json.put("resourcePath", resourcePath != null ? resourcePath : "");
                 json.put("staticModel", staticModel);
+                json.put("dynamicModel", dynamicModel);
                 json.put("vehicleModel", vehicleModel);
                 break;
             case CAMERA:
@@ -199,6 +204,7 @@ public class DesignerEntity {
             case MODEL:
                 entity.resourcePath = json.optString("resourcePath", "");
                 entity.staticModel = json.optBoolean("staticModel", false);
+                entity.dynamicModel = json.optBoolean("dynamicModel", false);
                 entity.vehicleModel = json.optBoolean("vehicleModel", false);
                 break;
             case CAMERA:

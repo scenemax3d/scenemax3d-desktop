@@ -589,7 +589,7 @@ public class Import3DModelPanel extends DesignerPanel {
         String name = txtName.getText().trim();
         if (app != null && name.length() > 0) {
             app.enqueue(() -> {
-                app.addModel(name, false, false);
+                app.addModel(name, false, false, false);
                 return null;
             });
         }

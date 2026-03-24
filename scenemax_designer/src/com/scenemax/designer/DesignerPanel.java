@@ -486,6 +486,9 @@ public class DesignerPanel extends JPanel {
             }
         });
         JCheckBox chkStatic = new JCheckBox("Static");
+        JCheckBox chkDynamic = new JCheckBox("Dynamic");
+        chkStatic.addActionListener(e -> { if (chkStatic.isSelected()) chkDynamic.setSelected(false); });
+        chkDynamic.addActionListener(e -> { if (chkDynamic.isSelected()) chkStatic.setSelected(false); });
 
         JPanel panel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
@@ -500,7 +503,10 @@ public class DesignerPanel extends JPanel {
         gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
         panel.add(new JLabel("Options:"), gbc);
         gbc.gridx = 1;
-        panel.add(chkStatic, gbc);
+        JPanel optionsPanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
+        optionsPanel.add(chkStatic);
+        optionsPanel.add(chkDynamic);
+        panel.add(optionsPanel, gbc);
 
         int result = JOptionPane.showConfirmDialog(this, panel,
                 "Add 3D Model", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
@@ -508,9 +514,10 @@ public class DesignerPanel extends JPanel {
         if (result == JOptionPane.OK_OPTION) {
             String selectedModel = (String) cmbModels.getSelectedItem();
             boolean isStatic = chkStatic.isSelected();
+            boolean isDynamic = chkDynamic.isSelected();
             if (selectedModel != null) {
                 boolean isVehicle = app.isModelVehicle(selectedModel);
-                app.enqueue(() -> { app.addModel(selectedModel, isStatic, isVehicle); return null; });
+                app.enqueue(() -> { app.addModel(selectedModel, isStatic, isDynamic, isVehicle); return null; });
             }
         }
     }
