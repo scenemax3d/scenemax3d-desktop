@@ -75,6 +75,8 @@ public class DesignerPanel extends JPanel {
     private JSpinner spnSizeX, spnSizeY, spnSizeZ;
     private JPanel sizeFieldsPanel;
     private JCheckBox chkStaticEntity, chkColliderEntity;
+    private JCheckBox chkHidden;
+    private JPanel hiddenPanel;
     private JPanel staticColliderPanel;
     private JComboBox<String> cboMaterial;
     private JPanel materialPanel;
@@ -423,6 +425,21 @@ public class DesignerPanel extends JPanel {
 
         materialPanel.setVisible(false);
         propertiesForm.add(materialPanel);
+
+        // Hidden checkbox (BOX, SPHERE, MODEL)
+        hiddenPanel = new JPanel();
+        hiddenPanel.setLayout(new BoxLayout(hiddenPanel, BoxLayout.Y_AXIS));
+        hiddenPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        hiddenPanel.add(Box.createVerticalStrut(8));
+        JPanel hiddenRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        hiddenRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        hiddenRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        chkHidden = new JCheckBox("Hidden");
+        hiddenRow.add(chkHidden);
+        hiddenPanel.add(hiddenRow);
+        chkHidden.addActionListener(e -> applyHiddenChange());
+        hiddenPanel.setVisible(false);
+        propertiesForm.add(hiddenPanel);
 
         propertiesForm.revalidate();
     }
@@ -1033,6 +1050,7 @@ public class DesignerPanel extends JPanel {
                 sizeFieldsPanel.setVisible(false);
                 staticColliderPanel.setVisible(false);
                 materialPanel.setVisible(false);
+                hiddenPanel.setVisible(false);
                 return;
             }
 
@@ -1077,6 +1095,14 @@ public class DesignerPanel extends JPanel {
             } else {
                 staticColliderPanel.setVisible(false);
                 materialPanel.setVisible(false);
+            }
+
+            if (entity.getType() == DesignerEntityType.BOX || entity.getType() == DesignerEntityType.SPHERE
+                    || entity.getType() == DesignerEntityType.MODEL) {
+                chkHidden.setSelected(entity.isHidden());
+                hiddenPanel.setVisible(true);
+            } else {
+                hiddenPanel.setVisible(false);
             }
 
             // Camera entities don't need scale
@@ -1202,6 +1228,18 @@ public class DesignerPanel extends JPanel {
 
         app.enqueue(() -> {
             app.recreateEntity(sel, isStatic, isCollider);
+            return null;
+        });
+    }
+
+    private void applyHiddenChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null) return;
+        boolean hidden = chkHidden.isSelected();
+        app.enqueue(() -> {
+            sel.setHidden(hidden);
+            app.markDocumentDirty();
             return null;
         });
     }
