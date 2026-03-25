@@ -19,6 +19,7 @@ import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.types.ResourceSetup;
 import com.scenemaxeng.projector.SceneMaxApp;
 import com.scenemaxeng.projector.SceneMaxScope;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -74,6 +75,8 @@ public class DesignerApp extends SceneMaxApp {
         Vector3f savedScale;
         // Loading progress gizmo shown while async model is loading
         LoadingProgressGizmo loadingGizmo;
+        // Target list to add the resolved entity to (entities list or a section's children)
+        List<DesignerEntity> targetList;
     }
 
     private String designerProjectPath;
@@ -417,6 +420,92 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     /**
+     * Adds a section node at the given position in the entity list.
+     * Section nodes group other entities for organizational purposes
+     * and control code generation order.
+     *
+     * @param name        display name for the section
+     * @param insertIndex index in the entity list to insert at (-1 = end)
+     * @return the created section entity
+     */
+    public DesignerEntity addSectionNode(String name, int insertIndex) {
+        DesignerEntity section = new DesignerEntity(name, DesignerEntityType.SECTION);
+        if (insertIndex >= 0 && insertIndex < entities.size()) {
+            entities.add(insertIndex, section);
+        } else {
+            entities.add(section);
+        }
+        markDocumentDirty();
+        notifySceneChanged();
+        return section;
+    }
+
+    /**
+     * Moves an entity into a section node as a child at the given index.
+     * Removes the entity from its current location first.
+     */
+    public void moveEntityToSection(DesignerEntity entity, DesignerEntity section, int childIndex) {
+        if (entity == null || section == null || section.getType() != DesignerEntityType.SECTION) return;
+        // Remove from top-level list
+        entities.remove(entity);
+        // Remove from any other section
+        removeEntityFromAllSections(entity, entities);
+        // Add to target section
+        if (childIndex >= 0 && childIndex <= section.getChildren().size()) {
+            section.addChild(childIndex, entity);
+        } else {
+            section.addChild(entity);
+        }
+        markDocumentDirty();
+        notifySceneChanged();
+    }
+
+    /**
+     * Moves an entity out of a section back to the top-level entity list.
+     */
+    public void moveEntityToTopLevel(DesignerEntity entity, int targetIndex) {
+        if (entity == null) return;
+        // Remove from any section
+        removeEntityFromAllSections(entity, entities);
+        // Remove from top-level in case it's there
+        entities.remove(entity);
+        if (targetIndex >= 0 && targetIndex <= entities.size()) {
+            entities.add(targetIndex, entity);
+        } else {
+            entities.add(entity);
+        }
+        markDocumentDirty();
+        notifySceneChanged();
+    }
+
+    /**
+     * Recursively removes an entity from all section children lists.
+     */
+    private void removeEntityFromAllSections(DesignerEntity target, List<DesignerEntity> list) {
+        for (DesignerEntity e : list) {
+            if (e.getType() == DesignerEntityType.SECTION) {
+                e.removeChild(target);
+                removeEntityFromAllSections(target, e.getChildren());
+            }
+        }
+    }
+
+    /**
+     * Recursively removes 3D scene nodes for all entities within a list
+     * (used when deleting a section and its children).
+     */
+    private void removeSceneNodesRecursive(List<DesignerEntity> list) {
+        for (DesignerEntity child : list) {
+            if (child.getType() == DesignerEntityType.SECTION) {
+                removeSceneNodesRecursive(child.getChildren());
+            }
+            if (child.getSceneNode() != null) {
+                child.getSceneNode().removeFromParent();
+            }
+        }
+    }
+
+    /**
      * Creates the singleton camera gizmo entity. This is not created via
      * SceneMax code -- the visual node is built directly.
      */
@@ -664,7 +753,12 @@ public class DesignerApp extends SceneMaxApp {
                     node.setLocalScale(pe.savedScale);
                 }
 
-                entities.add(entity);
+                // Add to the correct target list (top-level or section children)
+                if (pe.targetList != null) {
+                    pe.targetList.add(entity);
+                } else {
+                    entities.add(entity);
+                }
 
                 if (pe.selectAfterCreation) {
                     markDocumentDirty();
@@ -728,17 +822,10 @@ public class DesignerApp extends SceneMaxApp {
             loadingDocument = false;
             notifyLoadingProgress(loadingTotalEntities, loadingTotalEntities);
 
-            // Restore original document order (CODE nodes were added immediately,
+            // Restore original document order (CODE/SECTION nodes were added immediately,
             // while 3D entities were added asynchronously as their nodes appeared)
             if (loadingEntityOrder != null) {
-                entities.sort((a, b) -> {
-                    int idxA = loadingEntityOrder.indexOf(a.getId());
-                    int idxB = loadingEntityOrder.indexOf(b.getId());
-                    // Entities not in the document (e.g. camera) keep their position at the start
-                    if (idxA < 0) idxA = -1;
-                    if (idxB < 0) idxB = -1;
-                    return Integer.compare(idxA, idxB);
-                });
+                sortEntitiesByLoadOrder(entities, loadingEntityOrder);
                 loadingEntityOrder = null;
             }
 
@@ -799,11 +886,18 @@ public class DesignerApp extends SceneMaxApp {
 
         outlineEffect.removeOutline();
 
+        // For SECTION nodes, recursively remove 3D scene nodes of children
+        if (entity.getType() == DesignerEntityType.SECTION) {
+            removeSceneNodesRecursive(entity.getChildren());
+        }
+
         if (entity.getSceneNode() != null) {
             entity.getSceneNode().removeFromParent();
         }
 
         entities.remove(entity);
+        // Also remove from any parent section
+        removeEntityFromAllSections(entity, entities);
         markDocumentDirty();
         notifySceneChanged();
     }
@@ -1119,11 +1213,53 @@ public class DesignerApp extends SceneMaxApp {
 
         // Record document entity order so we can restore it after async loading
         loadingEntityOrder = new ArrayList<>();
-        for (JSONObject entityDef : document.getEntityDefs()) {
-            loadingEntityOrder.add(entityDef.getString("id"));
-        }
+        collectEntityIdsRecursive(document.getEntityDefs(), loadingEntityOrder);
 
-        for (JSONObject entityDef : document.getEntityDefs()) {
+        loadEntityDefs(document.getEntityDefs(), entities);
+    }
+
+    /**
+     * Recursively sorts entities (and section children) by the recorded load order.
+     */
+    private void sortEntitiesByLoadOrder(List<DesignerEntity> list, List<String> order) {
+        list.sort((a, b) -> {
+            int idxA = order.indexOf(a.getId());
+            int idxB = order.indexOf(b.getId());
+            if (idxA < 0) idxA = -1;
+            if (idxB < 0) idxB = -1;
+            return Integer.compare(idxA, idxB);
+        });
+        for (DesignerEntity e : list) {
+            if (e.getType() == DesignerEntityType.SECTION && !e.getChildren().isEmpty()) {
+                sortEntitiesByLoadOrder(e.getChildren(), order);
+            }
+        }
+    }
+
+    /**
+     * Recursively collects entity IDs from entity defs including section children.
+     */
+    private void collectEntityIdsRecursive(List<JSONObject> entityDefs, List<String> ids) {
+        for (JSONObject entityDef : entityDefs) {
+            ids.add(entityDef.getString("id"));
+            if ("SECTION".equals(entityDef.optString("type")) && entityDef.has("children")) {
+                JSONArray children = entityDef.getJSONArray("children");
+                List<JSONObject> childDefs = new ArrayList<>();
+                for (int i = 0; i < children.length(); i++) {
+                    childDefs.add(children.getJSONObject(i));
+                }
+                collectEntityIdsRecursive(childDefs, ids);
+            }
+        }
+    }
+
+    /**
+     * Recursively loads entity definitions, handling CODE and SECTION types
+     * specially. 3D entities (SPHERE, BOX, MODEL) are created via code execution.
+     * SECTION entities are added directly with their children loaded recursively.
+     */
+    private void loadEntityDefs(List<JSONObject> entityDefs, List<DesignerEntity> targetList) {
+        for (JSONObject entityDef : entityDefs) {
             DesignerEntity entityTemplate = DesignerEntity.fromJSON(entityDef);
 
             // Code nodes have no 3D representation — add directly to entities list
@@ -1131,7 +1267,24 @@ public class DesignerApp extends SceneMaxApp {
                 DesignerEntity codeEntity = new DesignerEntity(
                         entityTemplate.getId(), entityTemplate.getName(), DesignerEntityType.CODE);
                 codeEntity.setCodeText(entityTemplate.getCodeText());
-                entities.add(codeEntity);
+                targetList.add(codeEntity);
+                continue;
+            }
+
+            // Section nodes — add directly and load children recursively
+            if (entityTemplate.getType() == DesignerEntityType.SECTION) {
+                DesignerEntity sectionEntity = new DesignerEntity(
+                        entityTemplate.getId(), entityTemplate.getName(), DesignerEntityType.SECTION);
+                targetList.add(sectionEntity);
+                // Recursively load children into the section's children list
+                if (entityDef.has("children")) {
+                    JSONArray childrenArr = entityDef.getJSONArray("children");
+                    List<JSONObject> childDefs = new ArrayList<>();
+                    for (int i = 0; i < childrenArr.length(); i++) {
+                        childDefs.add(childrenArr.getJSONObject(i));
+                    }
+                    loadEntityDefs(childDefs, sectionEntity.getChildren());
+                }
                 continue;
             }
 
@@ -1162,6 +1315,7 @@ public class DesignerApp extends SceneMaxApp {
             pending.selectAfterCreation = false;
             pending.savedRotation = rot;
             pending.savedScale = scale;
+            pending.targetList = targetList;
 
             // Copy type-specific properties
             switch (entityTemplate.getType()) {

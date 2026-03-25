@@ -3,8 +3,11 @@ package com.scenemax.designer;
 import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -49,6 +52,9 @@ public class DesignerEntity {
 
     // Joint mapping for 3D models (comma-separated joint names, empty = disabled)
     private String jointMapping = "";
+
+    // Children (for SECTION type only)
+    private List<DesignerEntity> children = new ArrayList<>();
 
     // The SceneMax language code used to create this entity
     private String sceneMaxCode;
@@ -118,6 +124,11 @@ public class DesignerEntity {
 
     public String getSceneMaxCode() { return sceneMaxCode; }
     public void setSceneMaxCode(String sceneMaxCode) { this.sceneMaxCode = sceneMaxCode; }
+
+    public List<DesignerEntity> getChildren() { return children; }
+    public void addChild(DesignerEntity child) { children.add(child); }
+    public void addChild(int index, DesignerEntity child) { children.add(index, child); }
+    public void removeChild(DesignerEntity child) { children.remove(child); }
 
     // --- Transform helpers ---
 
@@ -199,6 +210,13 @@ public class DesignerEntity {
             case CODE:
                 json.put("codeText", codeText);
                 break;
+            case SECTION:
+                JSONArray childrenArray = new JSONArray();
+                for (DesignerEntity child : children) {
+                    childrenArray.put(child.toJSON());
+                }
+                json.put("children", childrenArray);
+                break;
         }
 
         return json;
@@ -243,6 +261,14 @@ public class DesignerEntity {
                 break;
             case CODE:
                 entity.codeText = json.optString("codeText", "");
+                break;
+            case SECTION:
+                if (json.has("children")) {
+                    JSONArray childrenArr = json.getJSONArray("children");
+                    for (int i = 0; i < childrenArr.length(); i++) {
+                        entity.children.add(fromJSON(childrenArr.getJSONObject(i)));
+                    }
+                }
                 break;
         }
 

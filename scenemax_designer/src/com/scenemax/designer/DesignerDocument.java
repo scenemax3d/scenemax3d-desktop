@@ -185,19 +185,7 @@ public class DesignerDocument {
           .append(camDegY).append(",").append(camDegZ).append(")\n");
         sb.append("\n");
 
-        for (DesignerEntity entity : entities) {
-            if (entity.getType() == DesignerEntityType.CODE) {
-                String codeText = entity.getCodeText();
-                if (codeText != null && !codeText.trim().isEmpty()) {
-                    sb.append(codeText.trim()).append("\n");
-                }
-                continue;
-            }
-            String code = generateEntityCode(entity);
-            if (!code.isEmpty()) {
-                sb.append(code).append("\n");
-            }
-        }
+        appendEntitiesCode(sb, entities);
 
         // Include user's end code at the very end
         File endFile = getEndCodeFile(smdesignFile);
@@ -239,6 +227,31 @@ public class DesignerDocument {
     private static String getBaseName(File smdesignFile) {
         String smdesignName = smdesignFile.getName();
         return smdesignName.substring(0, smdesignName.length() - ".smdesign".length());
+    }
+
+    /**
+     * Recursively appends code for a list of entities.
+     * Section nodes are transparent — their children are rendered in order.
+     */
+    private static void appendEntitiesCode(StringBuilder sb, List<DesignerEntity> entities) {
+        for (DesignerEntity entity : entities) {
+            if (entity.getType() == DesignerEntityType.SECTION) {
+                // Sections are purely organizational — recurse into children
+                appendEntitiesCode(sb, entity.getChildren());
+                continue;
+            }
+            if (entity.getType() == DesignerEntityType.CODE) {
+                String codeText = entity.getCodeText();
+                if (codeText != null && !codeText.trim().isEmpty()) {
+                    sb.append(codeText.trim()).append("\n");
+                }
+                continue;
+            }
+            String code = generateEntityCode(entity);
+            if (!code.isEmpty()) {
+                sb.append(code).append("\n");
+            }
+        }
     }
 
     /**
@@ -358,8 +371,12 @@ public class DesignerDocument {
         List<DesignerEntity> entities = new ArrayList<>();
         for (JSONObject json : doc.entityDefs) {
             DesignerEntity entity = DesignerEntity.fromJSON(json);
-            if (entity.getType() == DesignerEntityType.CODE) {
-                // Code nodes don't need a scene node
+            if (entity.getType() == DesignerEntityType.CODE || entity.getType() == DesignerEntityType.SECTION) {
+                // Code and section nodes don't need a scene node;
+                // section children are reconstructed recursively by fromJSON
+                if (entity.getType() == DesignerEntityType.SECTION) {
+                    attachTempSceneNodesRecursive(entity.getChildren(), json.optJSONArray("children"));
+                }
                 entities.add(entity);
                 continue;
             }
@@ -375,6 +392,30 @@ public class DesignerDocument {
         }
 
         saveCodeFile(smdesignFile, entities, doc.gameCameraPos, doc.gameCameraRot);
+    }
+
+    /**
+     * Recursively attaches temporary scene nodes to entities inside sections
+     * so that getPosition()/getRotation()/getScale() work during code regeneration.
+     */
+    private static void attachTempSceneNodesRecursive(List<DesignerEntity> entities, JSONArray jsonArray) {
+        if (entities == null || jsonArray == null) return;
+        for (int i = 0; i < entities.size() && i < jsonArray.length(); i++) {
+            DesignerEntity entity = entities.get(i);
+            JSONObject json = jsonArray.getJSONObject(i);
+            if (entity.getType() == DesignerEntityType.CODE || entity.getType() == DesignerEntityType.CAMERA) {
+                continue;
+            }
+            if (entity.getType() == DesignerEntityType.SECTION) {
+                attachTempSceneNodesRecursive(entity.getChildren(), json.optJSONArray("children"));
+                continue;
+            }
+            Node tempNode = new Node(entity.getName());
+            tempNode.setLocalTranslation(DesignerEntity.positionFromJSON(json));
+            tempNode.setLocalRotation(DesignerEntity.rotationFromJSON(json));
+            tempNode.setLocalScale(DesignerEntity.scaleFromJSON(json));
+            entity.setSceneNode(tempNode);
+        }
     }
 
     public static DesignerDocument createEmpty(String filePath) {

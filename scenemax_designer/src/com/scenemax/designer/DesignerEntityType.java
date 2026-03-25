@@ -5,5 +5,6 @@ public enum DesignerEntityType {
     BOX,
     MODEL,
     CAMERA,
-    CODE
+    CODE,
+    SECTION
 }

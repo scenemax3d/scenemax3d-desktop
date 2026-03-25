@@ -230,7 +230,7 @@ public class DesignerPanel extends JPanel {
 
         // Enable drag-and-drop reordering of scene entities
         sceneTree.setDragEnabled(true);
-        sceneTree.setDropMode(DropMode.INSERT);
+        sceneTree.setDropMode(DropMode.ON_OR_INSERT);
         sceneTree.setTransferHandler(new SceneTreeTransferHandler());
 
         JScrollPane treeScroll = new JScrollPane(sceneTree);
@@ -811,30 +811,68 @@ public class DesignerPanel extends JPanel {
     // --- Scene tree ---
 
     public void refreshSceneTree() {
+        // Remember expanded section paths so we can restore them after reload
+        java.util.Set<String> expandedIds = new java.util.HashSet<>();
+        for (int i = 0; i < sceneTree.getRowCount(); i++) {
+            TreePath path = sceneTree.getPathForRow(i);
+            if (sceneTree.isExpanded(path)) {
+                DefaultMutableTreeNode n = (DefaultMutableTreeNode) path.getLastPathComponent();
+                if (n.getUserObject() instanceof EntityTreeNode) {
+                    expandedIds.add(((EntityTreeNode) n.getUserObject()).entity.getId());
+                }
+            }
+        }
+
         sceneTreeRoot.removeAllChildren();
         if (app != null) {
             // Snapshot the list to avoid ConcurrentModificationException —
             // the JME thread may be adding entities while Swing iterates.
             List<DesignerEntity> snapshot = new ArrayList<>(app.getEntities());
-            System.out.println("[TREE] refreshSceneTree called, snapshot size=" + snapshot.size());
-            for (DesignerEntity entity : snapshot) {
-                System.out.println("[TREE]   " + entity.getName() + " type=" + entity.getType() + " collider=" + entity.isColliderEntity());
-                String icon;
-                switch (entity.getType()) {
-                    case SPHERE: icon = "[S] "; break;
-                    case BOX:    icon = "[B] "; break;
-                    case MODEL:  icon = "[M] "; break;
-                    case CAMERA: icon = "[C] "; break;
-                    case CODE:   icon = "{} "; break;
-                    default:     icon = ""; break;
-                }
-                DefaultMutableTreeNode node = new DefaultMutableTreeNode(new EntityTreeNode(entity, icon + entity.getName()));
-                sceneTreeRoot.add(node);
-            }
+            buildTreeNodes(sceneTreeRoot, snapshot);
         }
         sceneTreeModel.reload();
         // Expand root
         sceneTree.expandRow(0);
+        // Restore expanded sections
+        restoreExpandedSections(sceneTreeRoot, expandedIds);
+    }
+
+    private void buildTreeNodes(DefaultMutableTreeNode parent, List<DesignerEntity> entities) {
+        for (DesignerEntity entity : entities) {
+            String icon = getEntityIcon(entity);
+            DefaultMutableTreeNode node = new DefaultMutableTreeNode(new EntityTreeNode(entity, icon + entity.getName()));
+            parent.add(node);
+            if (entity.getType() == DesignerEntityType.SECTION) {
+                buildTreeNodes(node, entity.getChildren());
+            }
+        }
+    }
+
+    private String getEntityIcon(DesignerEntity entity) {
+        switch (entity.getType()) {
+            case SPHERE:  return "[S] ";
+            case BOX:     return "[B] ";
+            case MODEL:   return "[M] ";
+            case CAMERA:  return "[C] ";
+            case CODE:    return "{} ";
+            case SECTION: return "\u25B6 ";
+            default:      return "";
+        }
+    }
+
+    private void restoreExpandedSections(DefaultMutableTreeNode parent, java.util.Set<String> expandedIds) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            DefaultMutableTreeNode child = (DefaultMutableTreeNode) parent.getChildAt(i);
+            if (child.getUserObject() instanceof EntityTreeNode) {
+                EntityTreeNode etn = (EntityTreeNode) child.getUserObject();
+                if (etn.entity.getType() == DesignerEntityType.SECTION) {
+                    if (expandedIds.contains(etn.entity.getId())) {
+                        sceneTree.expandPath(new TreePath(child.getPath()));
+                    }
+                    restoreExpandedSections(child, expandedIds);
+                }
+            }
+        }
     }
 
     private void onTreeSelectionChanged(TreeSelectionEvent e) {
@@ -846,7 +884,7 @@ public class DesignerPanel extends JPanel {
         }
         EntityTreeNode etn = (EntityTreeNode) selected.getUserObject();
 
-        // CODE nodes have no 3D scene node - show floating code editor instead
+        // CODE and SECTION nodes have no 3D scene node
         if (etn.entity.getType() == DesignerEntityType.CODE) {
             if (app != null) {
                 app.enqueue(() -> {
@@ -855,6 +893,18 @@ public class DesignerPanel extends JPanel {
                 });
             }
             showCodeEditor(etn.entity);
+            updatePropertiesPanel(null);
+            return;
+        }
+
+        if (etn.entity.getType() == DesignerEntityType.SECTION) {
+            if (app != null) {
+                app.enqueue(() -> {
+                    app.getSelectionManager().deselect();
+                    return null;
+                });
+            }
+            hideCodeEditor();
             updatePropertiesPanel(null);
             return;
         }
@@ -875,22 +925,35 @@ public class DesignerPanel extends JPanel {
                 sceneTree.clearSelection();
                 return;
             }
-            for (int i = 0; i < sceneTreeRoot.getChildCount(); i++) {
-                DefaultMutableTreeNode childNode = (DefaultMutableTreeNode) sceneTreeRoot.getChildAt(i);
-                if (childNode.getUserObject() instanceof EntityTreeNode) {
-                    EntityTreeNode etn = (EntityTreeNode) childNode.getUserObject();
-                    if (etn.entity == entity) {
-                        javax.swing.tree.TreePath path = new javax.swing.tree.TreePath(childNode.getPath());
-                        sceneTree.setSelectionPath(path);
-                        sceneTree.scrollPathToVisible(path);
-                        return;
-                    }
-                }
+            DefaultMutableTreeNode found = findTreeNode(sceneTreeRoot, entity);
+            if (found != null) {
+                TreePath path = new TreePath(found.getPath());
+                sceneTree.setSelectionPath(path);
+                sceneTree.scrollPathToVisible(path);
+            } else {
+                sceneTree.clearSelection();
             }
-            sceneTree.clearSelection();
         } finally {
             updatingTreeSelection = false;
         }
+    }
+
+    private DefaultMutableTreeNode findTreeNode(DefaultMutableTreeNode parent, DesignerEntity entity) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            DefaultMutableTreeNode child = (DefaultMutableTreeNode) parent.getChildAt(i);
+            if (child.getUserObject() instanceof EntityTreeNode) {
+                EntityTreeNode etn = (EntityTreeNode) child.getUserObject();
+                if (etn.entity == entity) {
+                    return child;
+                }
+                // Search inside section children
+                if (etn.entity.getType() == DesignerEntityType.SECTION) {
+                    DefaultMutableTreeNode found = findTreeNode(child, entity);
+                    if (found != null) return found;
+                }
+            }
+        }
+        return null;
     }
 
     private void showTreeContextMenu(MouseEvent e) {
@@ -899,10 +962,47 @@ public class DesignerPanel extends JPanel {
         sceneTree.setSelectionRow(row);
 
         DefaultMutableTreeNode node = (DefaultMutableTreeNode) sceneTree.getLastSelectedPathComponent();
-        if (node == null || !(node.getUserObject() instanceof EntityTreeNode)) return;
-        EntityTreeNode etn = (EntityTreeNode) node.getUserObject();
+        if (node == null) return;
 
         JPopupMenu menu = new JPopupMenu();
+
+        // Right-click on root "Scene" node
+        if (node == sceneTreeRoot) {
+            JMenuItem addSectionItem = new JMenuItem("New section...");
+            addSectionItem.addActionListener(ev -> promptAndCreateSection(-1, null));
+            menu.add(addSectionItem);
+            menu.show(sceneTree, e.getX(), e.getY());
+            return;
+        }
+
+        if (!(node.getUserObject() instanceof EntityTreeNode)) return;
+        EntityTreeNode etn = (EntityTreeNode) node.getUserObject();
+
+        // "New section..." - available on all nodes
+        JMenuItem addSectionItem = new JMenuItem("New section...");
+        addSectionItem.addActionListener(ev -> {
+            if (etn.entity.getType() == DesignerEntityType.SECTION) {
+                // Right-click on a section: create child section inside it
+                promptAndCreateSection(-1, etn.entity);
+            } else {
+                // Right-click on a regular node: create section after it in its parent list
+                int entityIndex = app.getEntities().indexOf(etn.entity);
+                int insertIndex = entityIndex >= 0 ? entityIndex + 1 : -1;
+                // Check if the entity is inside a section
+                DefaultMutableTreeNode parentNode = (DefaultMutableTreeNode) node.getParent();
+                if (parentNode != null && parentNode != sceneTreeRoot
+                        && parentNode.getUserObject() instanceof EntityTreeNode) {
+                    EntityTreeNode parentEtn = (EntityTreeNode) parentNode.getUserObject();
+                    if (parentEtn.entity.getType() == DesignerEntityType.SECTION) {
+                        int childIndex = parentEtn.entity.getChildren().indexOf(etn.entity);
+                        promptAndCreateSectionInSection(parentEtn.entity, childIndex + 1);
+                        return;
+                    }
+                }
+                promptAndCreateSection(insertIndex, null);
+            }
+        });
+        menu.add(addSectionItem);
 
         // "Add Code Node" - inserts after the selected item
         JMenuItem addCodeItem = new JMenuItem("Add Code Node");
@@ -925,6 +1025,26 @@ public class DesignerPanel extends JPanel {
 
         menu.addSeparator();
 
+        // "Rename" for section nodes
+        if (etn.entity.getType() == DesignerEntityType.SECTION) {
+            JMenuItem renameItem = new JMenuItem("Rename...");
+            renameItem.addActionListener(ev -> {
+                String newName = JOptionPane.showInputDialog(this, "Rename section:", etn.entity.getName());
+                if (newName != null && !newName.trim().isEmpty()) {
+                    String trimmed = newName.trim();
+                    if (app != null) {
+                        app.enqueue(() -> {
+                            etn.entity.setName(trimmed);
+                            app.markDocumentDirty();
+                            return null;
+                        });
+                    }
+                    refreshSceneTree();
+                }
+            });
+            menu.add(renameItem);
+        }
+
         JMenuItem deleteItem = new JMenuItem("Delete");
         if (etn.entity.getType() == DesignerEntityType.CAMERA) {
             deleteItem.setEnabled(false);
@@ -942,6 +1062,53 @@ public class DesignerPanel extends JPanel {
         menu.show(sceneTree, e.getX(), e.getY());
     }
 
+    private void promptAndCreateSection(int insertIndex, DesignerEntity parentSection) {
+        String name = JOptionPane.showInputDialog(this, "Section name:", "New Section",
+                JOptionPane.PLAIN_MESSAGE);
+        if (name != null && !name.trim().isEmpty()) {
+            String trimmedName = name.trim();
+            if (app != null) {
+                if (parentSection != null && parentSection.getType() == DesignerEntityType.SECTION) {
+                    // Create as child of existing section
+                    app.enqueue(() -> {
+                        DesignerEntity section = new DesignerEntity(trimmedName, DesignerEntityType.SECTION);
+                        parentSection.addChild(section);
+                        app.markDocumentDirty();
+                        SwingUtilities.invokeLater(this::refreshSceneTree);
+                        return null;
+                    });
+                } else {
+                    // Create at top level
+                    app.enqueue(() -> {
+                        app.addSectionNode(trimmedName, insertIndex);
+                        return null;
+                    });
+                }
+            }
+        }
+    }
+
+    private void promptAndCreateSectionInSection(DesignerEntity parentSection, int childIndex) {
+        String name = JOptionPane.showInputDialog(this, "Section name:", "New Section",
+                JOptionPane.PLAIN_MESSAGE);
+        if (name != null && !name.trim().isEmpty()) {
+            String trimmedName = name.trim();
+            if (app != null) {
+                app.enqueue(() -> {
+                    DesignerEntity section = new DesignerEntity(trimmedName, DesignerEntityType.SECTION);
+                    if (childIndex >= 0 && childIndex <= parentSection.getChildren().size()) {
+                        parentSection.addChild(childIndex, section);
+                    } else {
+                        parentSection.addChild(section);
+                    }
+                    app.markDocumentDirty();
+                    SwingUtilities.invokeLater(this::refreshSceneTree);
+                    return null;
+                });
+            }
+        }
+    }
+
     // --- Code node double-click rename ---
 
     private void onTreeDoubleClick(MouseEvent e) {
@@ -952,9 +1119,10 @@ public class DesignerPanel extends JPanel {
         if (node == null || !(node.getUserObject() instanceof EntityTreeNode)) return;
         EntityTreeNode etn = (EntityTreeNode) node.getUserObject();
 
-        if (etn.entity.getType() == DesignerEntityType.CODE) {
-            // CODE nodes: show rename dialog
-            String newName = JOptionPane.showInputDialog(this, "Rename code node:",
+        if (etn.entity.getType() == DesignerEntityType.CODE || etn.entity.getType() == DesignerEntityType.SECTION) {
+            // CODE and SECTION nodes: show rename dialog
+            String prompt = etn.entity.getType() == DesignerEntityType.SECTION ? "Rename section:" : "Rename code node:";
+            String newName = JOptionPane.showInputDialog(this, prompt,
                     etn.entity.getName());
             if (newName != null && !newName.trim().isEmpty()) {
                 String trimmed = newName.trim();
@@ -1505,9 +1673,8 @@ public class DesignerPanel extends JPanel {
 
     /**
      * TransferHandler that allows drag-and-drop reordering of entity nodes
-     * within the scene hierarchy tree. Only entity nodes (children of root)
-     * can be dragged; dropping onto the root node or between entity nodes
-     * reorders the entity list in DesignerApp.
+     * within the scene hierarchy tree. Supports dropping into section nodes
+     * and reordering within the root or within sections.
      */
     private class SceneTreeTransferHandler extends TransferHandler {
         private final DataFlavor entityNodeFlavor = new DataFlavor(EntityTreeNode.class, "EntityTreeNode");
@@ -1551,9 +1718,35 @@ public class DesignerPanel extends JPanel {
             JTree.DropLocation dl = (JTree.DropLocation) support.getDropLocation();
             TreePath destPath = dl.getPath();
             if (destPath == null) return false;
-            // Only allow drops under the root node
             DefaultMutableTreeNode destNode = (DefaultMutableTreeNode) destPath.getLastPathComponent();
-            return destNode == sceneTreeRoot;
+
+            // Allow drops under the root node or under section nodes
+            if (destNode == sceneTreeRoot) return true;
+            if (destNode.getUserObject() instanceof EntityTreeNode) {
+                EntityTreeNode destEtn = (EntityTreeNode) destNode.getUserObject();
+                if (destEtn.entity.getType() == DesignerEntityType.SECTION) {
+                    // Prevent dropping a section into itself or its own descendants
+                    try {
+                        EntityTreeNode draggedEtn = (EntityTreeNode) support.getTransferable().getTransferData(entityNodeFlavor);
+                        if (draggedEtn.entity == destEtn.entity) return false;
+                        if (isDescendantSection(draggedEtn.entity, destEtn.entity)) return false;
+                    } catch (Exception ex) {
+                        return false;
+                    }
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** Check if targetSection is a descendant of ancestor (prevent circular nesting). */
+        private boolean isDescendantSection(DesignerEntity ancestor, DesignerEntity target) {
+            if (ancestor.getType() != DesignerEntityType.SECTION) return false;
+            for (DesignerEntity child : ancestor.getChildren()) {
+                if (child == target) return true;
+                if (child.getType() == DesignerEntityType.SECTION && isDescendantSection(child, target)) return true;
+            }
+            return false;
         }
 
         @Override
@@ -1563,35 +1756,71 @@ public class DesignerPanel extends JPanel {
                 EntityTreeNode draggedEtn = (EntityTreeNode) support.getTransferable().getTransferData(entityNodeFlavor);
                 JTree.DropLocation dl = (JTree.DropLocation) support.getDropLocation();
                 int dropIndex = dl.getChildIndex();
+                DefaultMutableTreeNode destNode = (DefaultMutableTreeNode) dl.getPath().getLastPathComponent();
 
                 if (app == null) return false;
-                List<DesignerEntity> entities = app.getEntities();
 
-                // Find source index in the entity list
-                int sourceIndex = entities.indexOf(draggedEtn.entity);
-                if (sourceIndex < 0) return false;
+                DesignerEntity draggedEntity = draggedEtn.entity;
 
-                // dropIndex == -1 means dropped on the root node itself → move to end
-                int targetIndex = computeDropTargetIndex(dropIndex, sourceIndex, entities);
+                if (destNode == sceneTreeRoot) {
+                    // Dropping at the top level
+                    List<DesignerEntity> entities = app.getEntities();
+                    int sourceIndex = entities.indexOf(draggedEntity);
+                    boolean wasTopLevel = sourceIndex >= 0;
 
-                if (sourceIndex == targetIndex) return false;
+                    if (wasTopLevel) {
+                        // Reorder within top level
+                        int targetIndex = computeDropTargetIndex(dropIndex, sourceIndex, entities, sceneTreeRoot);
+                        if (sourceIndex == targetIndex) return false;
+                        final int finalTarget = targetIndex;
+                        app.enqueue(() -> {
+                            app.reorderEntity(sourceIndex, finalTarget);
+                            return null;
+                        });
+                    } else {
+                        // Move from a section back to top level
+                        int targetIndex = dropIndex >= 0 && dropIndex <= entities.size() ? dropIndex : entities.size();
+                        final int finalTarget = targetIndex;
+                        app.enqueue(() -> {
+                            app.moveEntityToTopLevel(draggedEntity, finalTarget);
+                            return null;
+                        });
+                    }
+                    return true;
+                }
 
-                final int finalTarget = targetIndex;
-                app.enqueue(() -> {
-                    app.reorderEntity(sourceIndex, finalTarget);
-                    return null;
-                });
-                return true;
+                // Dropping into a section node
+                if (destNode.getUserObject() instanceof EntityTreeNode) {
+                    EntityTreeNode destEtn = (EntityTreeNode) destNode.getUserObject();
+                    if (destEtn.entity.getType() == DesignerEntityType.SECTION) {
+                        DesignerEntity section = destEtn.entity;
+                        int childIdx = dropIndex >= 0 ? dropIndex : section.getChildren().size();
+                        // Adjust index if moving within the same section
+                        int currentIdx = section.getChildren().indexOf(draggedEntity);
+                        if (currentIdx >= 0 && childIdx > currentIdx) {
+                            childIdx--;
+                        }
+                        final int finalChildIdx = childIdx;
+                        app.enqueue(() -> {
+                            app.moveEntityToSection(draggedEntity, section, finalChildIdx);
+                            return null;
+                        });
+                        return true;
+                    }
+                }
+
+                return false;
             } catch (Exception e) {
                 return false;
             }
         }
 
-        private int computeDropTargetIndex(int dropIndex, int sourceIndex, List<DesignerEntity> entities) {
+        private int computeDropTargetIndex(int dropIndex, int sourceIndex,
+                                           List<DesignerEntity> entities, DefaultMutableTreeNode parent) {
             if (dropIndex < 0) {
                 return entities.size() - 1;
             }
-            if (dropIndex >= sceneTreeRoot.getChildCount()) {
+            if (dropIndex >= parent.getChildCount()) {
                 return entities.size() - 1;
             }
             if (dropIndex == 0) {
@@ -1599,7 +1828,7 @@ public class DesignerPanel extends JPanel {
             }
             // Get the entity at the tree node just before the drop position
             int lookupIndex = dropIndex > sourceIndex ? dropIndex - 1 : dropIndex;
-            DefaultMutableTreeNode nodeBefore = (DefaultMutableTreeNode) sceneTreeRoot.getChildAt(lookupIndex);
+            DefaultMutableTreeNode nodeBefore = (DefaultMutableTreeNode) parent.getChildAt(lookupIndex);
             if (nodeBefore.getUserObject() instanceof EntityTreeNode) {
                 EntityTreeNode etnBefore = (EntityTreeNode) nodeBefore.getUserObject();
                 int idx = entities.indexOf(etnBefore.entity);
