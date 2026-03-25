@@ -35,10 +35,10 @@ SceneMax3D uses Gradle as its build system.
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/scenemax_desktop.git
+git clone https://github.com/scenemax3d/scenemax3d-desktop.git
 cd scenemax_desktop
 
-# Copy the example config and fill in your values
+# OPTIONAL - Copy the example config and fill in your values
 cp config.properties.example config.properties
 # Edit config.properties with your credentials (FTP, API keys, etc.)
 
