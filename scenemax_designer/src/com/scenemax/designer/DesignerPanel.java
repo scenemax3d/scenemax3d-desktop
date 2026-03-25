@@ -10,6 +10,7 @@ import com.scenemax.designer.selection.SelectionManager;
 import javax.swing.*;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.tree.DefaultMutableTreeNode;
+import javax.swing.tree.DefaultTreeCellRenderer;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 import java.awt.*;
@@ -20,10 +21,17 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.geom.Ellipse2D;
+import java.awt.geom.GeneralPath;
+import java.awt.geom.Line2D;
+import java.awt.geom.RoundRectangle2D;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Swing panel that embeds the JME3 3D viewport and tool panels.
@@ -212,6 +220,7 @@ public class DesignerPanel extends JPanel {
         sceneTreeModel = new DefaultTreeModel(sceneTreeRoot);
         sceneTree = new JTree(sceneTreeModel);
         sceneTree.setRootVisible(true);
+        sceneTree.setCellRenderer(new SceneTreeCellRenderer());
         sceneTree.addTreeSelectionListener(this::onTreeSelectionChanged);
         sceneTree.addMouseListener(new MouseAdapter() {
             @Override
@@ -874,24 +883,11 @@ public class DesignerPanel extends JPanel {
 
     private void buildTreeNodes(DefaultMutableTreeNode parent, List<DesignerEntity> entities) {
         for (DesignerEntity entity : entities) {
-            String icon = getEntityIcon(entity);
-            DefaultMutableTreeNode node = new DefaultMutableTreeNode(new EntityTreeNode(entity, icon + entity.getName()));
+            DefaultMutableTreeNode node = new DefaultMutableTreeNode(new EntityTreeNode(entity, entity.getName()));
             parent.add(node);
             if (entity.getType() == DesignerEntityType.SECTION) {
                 buildTreeNodes(node, entity.getChildren());
             }
-        }
-    }
-
-    private String getEntityIcon(DesignerEntity entity) {
-        switch (entity.getType()) {
-            case SPHERE:  return "[S] ";
-            case BOX:     return "[B] ";
-            case MODEL:   return "[M] ";
-            case CAMERA:  return "[C] ";
-            case CODE:    return "{} ";
-            case SECTION: return "\u25B6 ";
-            default:      return "";
         }
     }
 
@@ -2022,6 +2018,177 @@ public class DesignerPanel extends JPanel {
                 return idx >= 0 ? idx : entities.size() - 1;
             }
             return entities.size() - 1;
+        }
+    }
+
+    /**
+     * Custom tree cell renderer that draws elegant white icons for each entity type.
+     */
+    private static class SceneTreeCellRenderer extends DefaultTreeCellRenderer {
+        private static final int ICON_SIZE = 16;
+        private static final Map<DesignerEntityType, Icon> ICON_CACHE = new EnumMap<>(DesignerEntityType.class);
+
+        static {
+            for (DesignerEntityType type : DesignerEntityType.values()) {
+                ICON_CACHE.put(type, createIcon(type));
+            }
+        }
+
+        @Override
+        public Component getTreeCellRendererComponent(JTree tree, Object value, boolean sel,
+                boolean expanded, boolean leaf, int row, boolean hasFocus) {
+            super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus);
+            if (value instanceof DefaultMutableTreeNode) {
+                Object userObj = ((DefaultMutableTreeNode) value).getUserObject();
+                if (userObj instanceof EntityTreeNode) {
+                    EntityTreeNode etn = (EntityTreeNode) userObj;
+                    Icon icon = ICON_CACHE.get(etn.entity.getType());
+                    if (icon != null) {
+                        setIcon(icon);
+                    }
+                }
+            }
+            return this;
+        }
+
+        private static Icon createIcon(DesignerEntityType type) {
+            BufferedImage img = new BufferedImage(ICON_SIZE, ICON_SIZE, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = img.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+            g.setColor(new Color(220, 220, 220));
+            g.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+
+            switch (type) {
+                case SPHERE:
+                    drawSphere(g);
+                    break;
+                case BOX:
+                    drawBox(g);
+                    break;
+                case MODEL:
+                    drawModel(g);
+                    break;
+                case CAMERA:
+                    drawCamera(g);
+                    break;
+                case CODE:
+                    drawCode(g);
+                    break;
+                case SECTION:
+                    drawSection(g);
+                    break;
+            }
+            g.dispose();
+            return new ImageIcon(img);
+        }
+
+        /** Sphere: circle with a subtle highlight arc */
+        private static void drawSphere(Graphics2D g) {
+            g.draw(new Ellipse2D.Float(2, 2, 12, 12));
+            // highlight arc for 3D feel
+            g.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g.setColor(new Color(255, 255, 255, 100));
+            g.drawArc(4, 3, 7, 7, 30, 120);
+        }
+
+        /** Box: isometric cube */
+        private static void drawBox(Graphics2D g) {
+            int cx = 8, top = 2, bot = 14, mid = 8;
+            int left = 2, right = 14;
+            // top face
+            GeneralPath topFace = new GeneralPath();
+            topFace.moveTo(cx, top);
+            topFace.lineTo(right, top + 3);
+            topFace.lineTo(cx, mid);
+            topFace.lineTo(left, top + 3);
+            topFace.closePath();
+            g.draw(topFace);
+            // left face
+            g.draw(new Line2D.Float(left, top + 3, left, bot - 3));
+            g.draw(new Line2D.Float(left, bot - 3, cx, bot));
+            // right face
+            g.draw(new Line2D.Float(right, top + 3, right, bot - 3));
+            g.draw(new Line2D.Float(right, bot - 3, cx, bot));
+            // center vertical
+            g.draw(new Line2D.Float(cx, mid, cx, bot));
+        }
+
+        /** Model: 3D diamond / gem shape */
+        private static void drawModel(Graphics2D g) {
+            GeneralPath p = new GeneralPath();
+            // top point
+            p.moveTo(8, 1);
+            // upper right
+            p.lineTo(14, 5);
+            // lower right
+            p.lineTo(11, 14);
+            // bottom
+            p.lineTo(8, 15);
+            // lower left
+            p.lineTo(5, 14);
+            // upper left
+            p.lineTo(2, 5);
+            p.closePath();
+            g.draw(p);
+            // inner structure lines
+            g.setStroke(new BasicStroke(0.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g.draw(new Line2D.Float(2, 5, 14, 5));
+            g.draw(new Line2D.Float(5, 5, 8, 15));
+            g.draw(new Line2D.Float(11, 5, 8, 15));
+        }
+
+        /** Camera: body rectangle + lens triangle */
+        private static void drawCamera(Graphics2D g) {
+            // camera body
+            g.draw(new RoundRectangle2D.Float(1, 4, 10, 8, 2, 2));
+            // lens / viewfinder triangle
+            GeneralPath lens = new GeneralPath();
+            lens.moveTo(11, 6);
+            lens.lineTo(15, 4);
+            lens.lineTo(15, 12);
+            lens.lineTo(11, 10);
+            g.draw(lens);
+            // small record dot
+            g.setColor(new Color(220, 220, 220));
+            g.fillOval(4, 7, 3, 3);
+        }
+
+        /** Code: curly braces */
+        private static void drawCode(Graphics2D g) {
+            g.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            // left brace {
+            GeneralPath left = new GeneralPath();
+            left.moveTo(6, 2);
+            left.curveTo(4, 2, 4, 4, 4, 6);
+            left.curveTo(4, 7, 2, 8, 2, 8);
+            left.curveTo(2, 8, 4, 9, 4, 10);
+            left.curveTo(4, 12, 4, 14, 6, 14);
+            g.draw(left);
+            // right brace }
+            GeneralPath right = new GeneralPath();
+            right.moveTo(10, 2);
+            right.curveTo(12, 2, 12, 4, 12, 6);
+            right.curveTo(12, 7, 14, 8, 14, 8);
+            right.curveTo(14, 8, 12, 9, 12, 10);
+            right.curveTo(12, 12, 12, 14, 10, 14);
+            g.draw(right);
+        }
+
+        /** Section: folder icon */
+        private static void drawSection(Graphics2D g) {
+            // folder tab
+            GeneralPath folder = new GeneralPath();
+            folder.moveTo(2, 4);
+            folder.lineTo(2, 13);
+            folder.lineTo(14, 13);
+            folder.lineTo(14, 6);
+            folder.lineTo(9, 6);
+            folder.lineTo(7, 4);
+            folder.closePath();
+            g.draw(folder);
+            // folder tab top
+            g.draw(new Line2D.Float(2, 4, 7, 4));
         }
     }
 
