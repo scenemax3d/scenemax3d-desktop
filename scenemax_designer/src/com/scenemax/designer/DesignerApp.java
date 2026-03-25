@@ -66,6 +66,7 @@ public class DesignerApp extends SceneMaxApp {
         String material;
         boolean hidden;
         String shadowMode;
+        String jointMapping;
         String nodeName;
         int framesWaited;
         boolean selectAfterCreation;
@@ -736,6 +737,7 @@ public class DesignerApp extends SceneMaxApp {
                         entity.setVehicleModel(pe.vehicleModel);
                         entity.setHidden(pe.hidden);
                         entity.setShadowMode(pe.shadowMode);
+                        entity.setJointMapping(pe.jointMapping != null ? pe.jointMapping : "");
                         break;
                 }
 
@@ -861,6 +863,23 @@ public class DesignerApp extends SceneMaxApp {
         for (Spatial child : node.getChildren()) {
             if (child instanceof Geometry) {
                 ((Geometry) child).setMesh(new Box(entity.getSizeX() * 2, entity.getSizeY() * 2, entity.getSizeZ() * 2));
+                break;
+            }
+        }
+    }
+
+    /** Updates the visual sphere mesh to match the entity's current radius. */
+    public void updateSphereMesh(DesignerEntity entity) {
+        if (entity == null || entity.getType() != DesignerEntityType.SPHERE) return;
+        Node node = entity.getSceneNode();
+        if (node == null) return;
+        if (entity.isColliderEntity()) {
+            attachColliderWireframe(node, DesignerEntityType.SPHERE, 0, 0, 0, entity.getRadius());
+            return;
+        }
+        for (Spatial child : node.getChildren()) {
+            if (child instanceof Geometry) {
+                ((Geometry) child).setMesh(new Sphere(16, 16, entity.getRadius()));
                 break;
             }
         }
@@ -1344,6 +1363,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.vehicleModel = entityTemplate.isVehicleModel();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
+                    pending.jointMapping = entityTemplate.getJointMapping();
                     break;
             }
 

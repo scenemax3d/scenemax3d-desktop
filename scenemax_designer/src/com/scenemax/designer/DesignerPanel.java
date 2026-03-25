@@ -75,6 +75,8 @@ public class DesignerPanel extends JPanel {
     private double lastScaleX = 1.0, lastScaleY = 1.0, lastScaleZ = 1.0;
     private JSpinner spnSizeX, spnSizeY, spnSizeZ;
     private JPanel sizeFieldsPanel;
+    private JSpinner spnRadius;
+    private JPanel radiusPanel;
     private JCheckBox chkStaticEntity, chkColliderEntity;
     private JCheckBox chkHidden;
     private JPanel hiddenPanel;
@@ -383,6 +385,30 @@ public class DesignerPanel extends JPanel {
 
         sizeFieldsPanel.setVisible(false);
         propertiesForm.add(sizeFieldsPanel);
+
+        // Radius field (Sphere only - shown/hidden based on selection)
+        radiusPanel = new JPanel();
+        radiusPanel.setLayout(new BoxLayout(radiusPanel, BoxLayout.Y_AXIS));
+        radiusPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        radiusPanel.add(Box.createVerticalStrut(8));
+        JLabel lblRadius = new JLabel("Radius:");
+        lblRadius.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblRadius.setFont(lblRadius.getFont().deriveFont(Font.BOLD));
+        radiusPanel.add(lblRadius);
+
+        spnRadius = new JSpinner(new SpinnerNumberModel(0.5, 0.01, 9999.0, 0.1));
+        JPanel radiusRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
+        radiusRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        radiusRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        spnRadius.setPreferredSize(new Dimension(80, 24));
+        radiusRow.add(spnRadius);
+        radiusPanel.add(radiusRow);
+
+        spnRadius.addChangeListener(e -> applyRadiusChange());
+
+        radiusPanel.setVisible(false);
+        propertiesForm.add(radiusPanel);
 
         // Static / Collider checkboxes (BOX and SPHERE only)
         staticColliderPanel = new JPanel();
@@ -1273,6 +1299,7 @@ public class DesignerPanel extends JPanel {
                 lblType.setText("Type: -");
                 clearSpinners();
                 sizeFieldsPanel.setVisible(false);
+                radiusPanel.setVisible(false);
                 staticColliderPanel.setVisible(false);
                 materialPanel.setVisible(false);
                 hiddenPanel.setVisible(false);
@@ -1310,6 +1337,13 @@ public class DesignerPanel extends JPanel {
                 sizeFieldsPanel.setVisible(true);
             } else {
                 sizeFieldsPanel.setVisible(false);
+            }
+
+            if (entity.getType() == DesignerEntityType.SPHERE) {
+                spnRadius.setValue((double) entity.getRadius());
+                radiusPanel.setVisible(true);
+            } else {
+                radiusPanel.setVisible(false);
             }
 
             if (entity.getType() == DesignerEntityType.BOX || entity.getType() == DesignerEntityType.SPHERE) {
@@ -1458,6 +1492,21 @@ public class DesignerPanel extends JPanel {
             sel.setSizeY(sizeY);
             sel.setSizeZ(sizeZ);
             app.updateBoxMesh(sel);
+            app.markDocumentDirty();
+            return null;
+        });
+    }
+
+    private void applyRadiusChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.SPHERE) return;
+
+        float radius = ((Number) spnRadius.getValue()).floatValue();
+
+        app.enqueue(() -> {
+            sel.setRadius(radius);
+            app.updateSphereMesh(sel);
             app.markDocumentDirty();
             return null;
         });
