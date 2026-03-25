@@ -78,6 +78,8 @@ public class DesignerApp extends SceneMaxApp {
         LoadingProgressGizmo loadingGizmo;
         // Target list to add the resolved entity to (entities list or a section's children)
         List<DesignerEntity> targetList;
+        // Index within the target list to insert at (-1 = append)
+        int insertIndex = -1;
     }
 
     private String designerProjectPath;
@@ -363,16 +365,26 @@ public class DesignerApp extends SceneMaxApp {
 
     /** Creates a sphere using SceneMax language: name => sphere : pos (x,y,z), radius r */
     public void addDefaultSphere() {
+        addDefaultSphere(null, -1);
+    }
+
+    /** Creates a sphere at a specific position in a target list. */
+    public void addDefaultSphere(List<DesignerEntity> targetList, int insertIndex) {
         String name = "sphere_" + (++sphereCounter);
         String code = name + " => sphere : pos (0,0.5,0), radius 0.5";
-        addEntityViaCode(name, code, DesignerEntityType.SPHERE, 0.5f, 0, 0, 0, null, false, false);
+        addEntityViaCode(name, code, DesignerEntityType.SPHERE, 0.5f, 0, 0, 0, null, false, false, false, false, false, targetList, insertIndex);
     }
 
     /** Creates a box using SceneMax language: name => box : size (x,y,z), pos (x,y,z) */
     public void addDefaultBox() {
+        addDefaultBox(null, -1);
+    }
+
+    /** Creates a box at a specific position in a target list. */
+    public void addDefaultBox(List<DesignerEntity> targetList, int insertIndex) {
         String name = "box_" + (++boxCounter);
         String code = name + " => box : size (1,1,1), pos (0,0.5,0)";
-        addEntityViaCode(name, code, DesignerEntityType.BOX, 0, 0.5f, 0.5f, 0.5f, null, false, false);
+        addEntityViaCode(name, code, DesignerEntityType.BOX, 0, 0.5f, 0.5f, 0.5f, null, false, false, false, false, false, targetList, insertIndex);
     }
 
     /** Creates a 3D model using SceneMax language: name => [static|dynamic] resourceName : pos (x,y,z) */
@@ -381,12 +393,18 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     public void addModel(String resourceName, boolean isStatic, boolean isDynamic, boolean isVehicle) {
+        addModel(resourceName, isStatic, isDynamic, isVehicle, null, -1);
+    }
+
+    /** Creates a 3D model at a specific position in a target list. */
+    public void addModel(String resourceName, boolean isStatic, boolean isDynamic, boolean isVehicle,
+                         List<DesignerEntity> targetList, int insertIndex) {
         String name = "model_" + (++modelCounter);
         String prefix = isStatic ? "static " : isDynamic ? "dynamic " : "";
         String vehicleSuffix = isVehicle ? " vehicle" : "";
         float initialY = isVehicle ? 5f : 0f;
         String code = name + " => " + prefix + resourceName + vehicleSuffix + ": pos (0," + initialY + ",0) async";
-        addEntityViaCode(name, code, DesignerEntityType.MODEL, 0, 0, 0, 0, resourceName, isStatic, isDynamic, isVehicle);
+        addEntityViaCode(name, code, DesignerEntityType.MODEL, 0, 0, 0, 0, resourceName, isStatic, isDynamic, isVehicle, false, false, targetList, insertIndex);
 
         // Apply the model's configured scale from ResourceSetup instead of defaulting to 1
         if (getAssetsMapping() != null && getAssetsMapping().get3DModelsIndex() != null) {
@@ -408,12 +426,25 @@ public class DesignerApp extends SceneMaxApp {
      * @return the created code node entity
      */
     public DesignerEntity addCodeNode(String name, int insertIndex) {
+        return addCodeNode(name, null, insertIndex);
+    }
+
+    /**
+     * Adds a code node at the given position in a target list.
+     *
+     * @param name        display name for the code node
+     * @param targetList  the list to insert into (null = top-level entities)
+     * @param insertIndex index in the target list to insert at (-1 = end)
+     * @return the created code node entity
+     */
+    public DesignerEntity addCodeNode(String name, List<DesignerEntity> targetList, int insertIndex) {
         DesignerEntity codeEntity = new DesignerEntity(name, DesignerEntityType.CODE);
         codeEntity.setCodeText("// " + name + "\n");
-        if (insertIndex >= 0 && insertIndex < entities.size()) {
-            entities.add(insertIndex, codeEntity);
+        List<DesignerEntity> target = (targetList != null) ? targetList : entities;
+        if (insertIndex >= 0 && insertIndex < target.size()) {
+            target.add(insertIndex, codeEntity);
         } else {
-            entities.add(codeEntity);
+            target.add(codeEntity);
         }
         markDocumentDirty();
         notifySceneChanged();
@@ -603,6 +634,14 @@ public class DesignerApp extends SceneMaxApp {
                                    float radius, float sizeX, float sizeY, float sizeZ,
                                    String resourcePath, boolean isStatic, boolean isDynamic, boolean isVehicle,
                                    boolean isStaticEntity, boolean isColliderEntity) {
+        addEntityViaCode(name, code, type, radius, sizeX, sizeY, sizeZ, resourcePath, isStatic, isDynamic, isVehicle, isStaticEntity, isColliderEntity, null, -1);
+    }
+
+    private void addEntityViaCode(String name, String code, DesignerEntityType type,
+                                   float radius, float sizeX, float sizeY, float sizeZ,
+                                   String resourcePath, boolean isStatic, boolean isDynamic, boolean isVehicle,
+                                   boolean isStaticEntity, boolean isColliderEntity,
+                                   List<DesignerEntity> targetList, int insertIndex) {
         // Run the SceneMax code - this creates controllers that will be
         // processed in super.simpleUpdate() on the next frame(s)
         runPartialCode(code, null, false);
@@ -629,6 +668,12 @@ public class DesignerApp extends SceneMaxApp {
         pending.nodeName = nodeName;
         pending.framesWaited = 0;
         pending.selectAfterCreation = true;
+        pending.targetList = targetList;
+        pending.insertIndex = insertIndex;
+
+        System.out.println("[TRACE] addEntityViaCode: name=" + name + ", type=" + type
+                + ", targetList=" + (targetList != null ? "non-null (size=" + targetList.size() + ")" : "null")
+                + ", insertIndex=" + insertIndex);
 
         // Show a loading progress gizmo for async model loading
         if (type == DesignerEntityType.MODEL) {
@@ -756,11 +801,21 @@ public class DesignerApp extends SceneMaxApp {
                 }
 
                 // Add to the correct target list (top-level or section children)
-                if (pe.targetList != null) {
-                    pe.targetList.add(entity);
+                List<DesignerEntity> target = pe.targetList != null ? pe.targetList : entities;
+                boolean isTopLevel = (target == entities);
+                System.out.println("[TRACE] processPendingEntities resolved: name=" + pe.name
+                        + ", targetList=" + (pe.targetList != null ? "non-null" : "null")
+                        + ", isTopLevel=" + isTopLevel
+                        + ", insertIndex=" + pe.insertIndex
+                        + ", target.size()=" + target.size()
+                        + ", entities.size()=" + entities.size());
+                if (pe.insertIndex >= 0 && pe.insertIndex <= target.size()) {
+                    target.add(pe.insertIndex, entity);
                 } else {
-                    entities.add(entity);
+                    target.add(entity);
                 }
+                System.out.println("[TRACE] After add: target.size()=" + target.size()
+                        + ", entities.size()=" + entities.size());
 
                 if (pe.selectAfterCreation) {
                     markDocumentDirty();
@@ -941,6 +996,27 @@ public class DesignerApp extends SceneMaxApp {
         float sizeZ = entity.getSizeZ();
         String material = entity.getMaterial();
 
+        // Find the entity's location (top-level or inside a section)
+        List<DesignerEntity> ownerList = null;
+        int ownerIndex = -1;
+        int topIdx = entities.indexOf(entity);
+        if (topIdx >= 0) {
+            ownerList = null; // top-level
+            ownerIndex = topIdx;
+        } else {
+            // Search in section children
+            for (DesignerEntity e : entities) {
+                if (e.getType() == DesignerEntityType.SECTION) {
+                    int childIdx = e.getChildren().indexOf(entity);
+                    if (childIdx >= 0) {
+                        ownerList = e.getChildren();
+                        ownerIndex = childIdx;
+                        break;
+                    }
+                }
+            }
+        }
+
         // Remove old entity from scene
         if (selectionManager.getSelected() == entity) {
             selectionManager.deselect();
@@ -949,7 +1025,11 @@ public class DesignerApp extends SceneMaxApp {
         if (entity.getSceneNode() != null) {
             entity.getSceneNode().removeFromParent();
         }
-        entities.remove(entity);
+        if (ownerList != null) {
+            ownerList.remove(entity);
+        } else {
+            entities.remove(entity);
+        }
 
         // Build new code with updated flags.
         // NOTE: "collider" keyword is intentionally omitted — the runtime
@@ -996,6 +1076,8 @@ public class DesignerApp extends SceneMaxApp {
         pending.selectAfterCreation = true;
         pending.savedRotation = rot;
         pending.savedScale = scale;
+        pending.targetList = ownerList;
+        pending.insertIndex = ownerIndex;
         pendingEntities.add(pending);
     }
 

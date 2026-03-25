@@ -548,6 +548,10 @@ public class DesignerPanel extends JPanel {
     // --- Model picker dialog ---
 
     private void showModelPickerDialog() {
+        showModelPickerDialog(null, -1);
+    }
+
+    private void showModelPickerDialog(java.util.List<DesignerEntity> targetList, int insertIndex) {
         if (app == null) return;
 
         List<String> modelNames = app.getAvailableModelNames();
@@ -602,7 +606,7 @@ public class DesignerPanel extends JPanel {
             boolean isDynamic = chkDynamic.isSelected();
             if (selectedModel != null) {
                 boolean isVehicle = app.isModelVehicle(selectedModel);
-                app.enqueue(() -> { app.addModel(selectedModel, isStatic, isDynamic, isVehicle); return null; });
+                app.enqueue(() -> { app.addModel(selectedModel, isStatic, isDynamic, isVehicle, targetList, insertIndex); return null; });
             }
         }
     }
@@ -854,6 +858,11 @@ public class DesignerPanel extends JPanel {
             // Snapshot the list to avoid ConcurrentModificationException —
             // the JME thread may be adding entities while Swing iterates.
             List<DesignerEntity> snapshot = new ArrayList<>(app.getEntities());
+            System.out.println("[TRACE] refreshSceneTree: top-level entities count=" + snapshot.size());
+            for (DesignerEntity e : snapshot) {
+                System.out.println("[TRACE]   entity: " + e.getName() + " type=" + e.getType()
+                        + (e.getType() == DesignerEntityType.SECTION ? " children=" + e.getChildren().size() : ""));
+            }
             buildTreeNodes(sceneTreeRoot, snapshot);
         }
         sceneTreeModel.reload();
@@ -1030,7 +1039,7 @@ public class DesignerPanel extends JPanel {
         });
         menu.add(addSectionItem);
 
-        // "Add Code Node" - inserts after the selected item
+        // "Add Code Node" - inserts after the selected item (or as last child in a section)
         JMenuItem addCodeItem = new JMenuItem("Add Code Node");
         addCodeItem.addActionListener(ev -> {
             String name = JOptionPane.showInputDialog(this, "Code node name:", "New Code Node",
@@ -1038,16 +1047,145 @@ public class DesignerPanel extends JPanel {
             if (name != null && !name.trim().isEmpty()) {
                 String trimmedName = name.trim();
                 if (app != null) {
-                    int entityIndex = app.getEntities().indexOf(etn.entity);
-                    int insertIndex = entityIndex >= 0 ? entityIndex + 1 : -1;
+                    java.util.List<DesignerEntity> targetList;
+                    int insertIdx;
+                    if (etn.entity.getType() == DesignerEntityType.SECTION) {
+                        targetList = etn.entity.getChildren();
+                        insertIdx = -1; // append as last child
+                    } else {
+                        DefaultMutableTreeNode parentNode = (DefaultMutableTreeNode) node.getParent();
+                        if (parentNode != null && parentNode != sceneTreeRoot
+                                && parentNode.getUserObject() instanceof EntityTreeNode) {
+                            EntityTreeNode parentEtn = (EntityTreeNode) parentNode.getUserObject();
+                            if (parentEtn.entity.getType() == DesignerEntityType.SECTION) {
+                                targetList = parentEtn.entity.getChildren();
+                                insertIdx = parentEtn.entity.getChildren().indexOf(etn.entity) + 1;
+                            } else {
+                                targetList = null;
+                                int ei = app.getEntities().indexOf(etn.entity);
+                                insertIdx = ei >= 0 ? ei + 1 : -1;
+                            }
+                        } else {
+                            targetList = null;
+                            int ei = app.getEntities().indexOf(etn.entity);
+                            insertIdx = ei >= 0 ? ei + 1 : -1;
+                        }
+                    }
+                    final java.util.List<DesignerEntity> fTargetList = targetList;
+                    final int fInsertIdx = insertIdx;
                     app.enqueue(() -> {
-                        app.addCodeNode(trimmedName, insertIndex);
+                        app.addCodeNode(trimmedName, fTargetList, fInsertIdx);
                         return null;
                     });
                 }
             }
         });
         menu.add(addCodeItem);
+
+        menu.addSeparator();
+
+        // "Add 3D Model..." - inserts after the selected item (or as last child in a section)
+        JMenuItem addModelItem = new JMenuItem("Add 3D Model...");
+        addModelItem.addActionListener(ev -> {
+            java.util.List<DesignerEntity> targetList;
+            int insertIdx;
+            if (etn.entity.getType() == DesignerEntityType.SECTION) {
+                targetList = etn.entity.getChildren();
+                insertIdx = -1; // append as last child
+            } else {
+                DefaultMutableTreeNode parentNode = (DefaultMutableTreeNode) node.getParent();
+                if (parentNode != null && parentNode != sceneTreeRoot
+                        && parentNode.getUserObject() instanceof EntityTreeNode) {
+                    EntityTreeNode parentEtn = (EntityTreeNode) parentNode.getUserObject();
+                    if (parentEtn.entity.getType() == DesignerEntityType.SECTION) {
+                        targetList = parentEtn.entity.getChildren();
+                        insertIdx = parentEtn.entity.getChildren().indexOf(etn.entity) + 1;
+                    } else {
+                        targetList = null;
+                        int ei = app.getEntities().indexOf(etn.entity);
+                        insertIdx = ei >= 0 ? ei + 1 : -1;
+                    }
+                } else {
+                    targetList = null;
+                    int ei = app.getEntities().indexOf(etn.entity);
+                    insertIdx = ei >= 0 ? ei + 1 : -1;
+                }
+            }
+            showModelPickerDialog(targetList, insertIdx);
+        });
+        menu.add(addModelItem);
+
+        // "Add Box..." - inserts after the selected item (or as last child in a section)
+        JMenuItem addBoxItem = new JMenuItem("Add Box...");
+        addBoxItem.addActionListener(ev -> {
+            if (app != null) {
+                java.util.List<DesignerEntity> targetList;
+                int insertIdx;
+                if (etn.entity.getType() == DesignerEntityType.SECTION) {
+                    targetList = etn.entity.getChildren();
+                    insertIdx = -1;
+                } else {
+                    DefaultMutableTreeNode parentNode = (DefaultMutableTreeNode) node.getParent();
+                    if (parentNode != null && parentNode != sceneTreeRoot
+                            && parentNode.getUserObject() instanceof EntityTreeNode) {
+                        EntityTreeNode parentEtn = (EntityTreeNode) parentNode.getUserObject();
+                        if (parentEtn.entity.getType() == DesignerEntityType.SECTION) {
+                            targetList = parentEtn.entity.getChildren();
+                            insertIdx = parentEtn.entity.getChildren().indexOf(etn.entity) + 1;
+                        } else {
+                            targetList = null;
+                            int ei = app.getEntities().indexOf(etn.entity);
+                            insertIdx = ei >= 0 ? ei + 1 : -1;
+                        }
+                    } else {
+                        targetList = null;
+                        int ei = app.getEntities().indexOf(etn.entity);
+                        insertIdx = ei >= 0 ? ei + 1 : -1;
+                    }
+                }
+                final java.util.List<DesignerEntity> fTargetList = targetList;
+                final int fInsertIdx = insertIdx;
+                System.out.println("[TRACE] Add Box context menu: targetList=" + (fTargetList != null ? "section children (size=" + fTargetList.size() + ")" : "null (top-level)") + ", insertIdx=" + fInsertIdx);
+                app.enqueue(() -> { app.addDefaultBox(fTargetList, fInsertIdx); return null; });
+            }
+        });
+        menu.add(addBoxItem);
+
+        // "Add Sphere" - inserts after the selected item (or as last child in a section)
+        JMenuItem addSphereItem = new JMenuItem("Add Sphere");
+        addSphereItem.addActionListener(ev -> {
+            if (app != null) {
+                java.util.List<DesignerEntity> targetList;
+                int insertIdx;
+                if (etn.entity.getType() == DesignerEntityType.SECTION) {
+                    targetList = etn.entity.getChildren();
+                    insertIdx = -1;
+                } else {
+                    DefaultMutableTreeNode parentNode = (DefaultMutableTreeNode) node.getParent();
+                    if (parentNode != null && parentNode != sceneTreeRoot
+                            && parentNode.getUserObject() instanceof EntityTreeNode) {
+                        EntityTreeNode parentEtn = (EntityTreeNode) parentNode.getUserObject();
+                        if (parentEtn.entity.getType() == DesignerEntityType.SECTION) {
+                            targetList = parentEtn.entity.getChildren();
+                            insertIdx = parentEtn.entity.getChildren().indexOf(etn.entity) + 1;
+                        } else {
+                            targetList = null;
+                            int ei = app.getEntities().indexOf(etn.entity);
+                            insertIdx = ei >= 0 ? ei + 1 : -1;
+                        }
+                    } else {
+                        targetList = null;
+                        int ei = app.getEntities().indexOf(etn.entity);
+                        insertIdx = ei >= 0 ? ei + 1 : -1;
+                    }
+                }
+                final java.util.List<DesignerEntity> fTargetList = targetList;
+                final int fInsertIdx = insertIdx;
+                System.out.println("[TRACE] Add Sphere context menu: targetList=" + (fTargetList != null ? "section children (size=" + fTargetList.size() + ")" : "null (top-level)") + ", insertIdx=" + fInsertIdx);
+                app.enqueue(() -> { app.addDefaultSphere(fTargetList, fInsertIdx); return null; });
+            }
+        });
+        menu.add(addSphereItem);
 
         menu.addSeparator();
 
