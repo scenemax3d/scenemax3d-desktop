@@ -1,0 +1,32 @@
+
+time_out = {
+
+	if(game_status==GAME_STATE_OVER) {
+		return
+	}
+	
+	game_status=GAME_STATE_OVER // game over
+	gameover.draw time_over1 : size (512,512) and pos(550,150)
+
+	run clear_rings
+	
+  player1.victory
+  player1.idle2 loop
+	   
+  player2.Backflip
+  player2.look at (player1)
+  player2.Idle loop
+	
+	msg2.draw press_space_to_continue : pos (544,450)
+	//msg2.print "Press T To Continue..." : pos (500,460,0) and color = green and font = "yoshi"
+
+	do async
+		wait 2 seconds
+		run set_camera_on_player
+	end do
+
+  wait for key space to be pressed
+  msg2.draw clear
+	run restart_game
+
+}

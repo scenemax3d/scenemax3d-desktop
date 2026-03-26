@@ -1,0 +1,299 @@
+var last_player2_y = 0;
+[player2.data.is_jumping == 0 && player2.data.is_down == 0 && enemy_ko==0]
+old_fighter_jump (p) = {
+	player2.data.is_jumping = 1
+	audio.play "jump1"
+	last_player2_y = player2.y
+	
+	do async
+	  if (last_player2_y > player2.y) {
+	  	player2.data.is_jumping = 2	
+	  	audio.play "fall1"
+	  }
+	  last_player2_y = player2.y
+  while player2.data.is_jumping == 1
+  
+	do async
+	  cam3 = CAM_REGULAR_DIST * 1.5
+	 	p.big_jump
+	  p.Idle loop
+	  p.look at (player1)
+	  cam3 = CAM_REGULAR_DIST 
+		player2.data.is_jumping = 0
+	end do
+
+	do async
+	  wait 1.4 seconds
+	  audio.play "crash1"
+		wait 0.1 second
+		//effects.explosion.show : pos (p."mixamorig:RightFoot"), duration 0.5 async
+		run shake_the_world2
+	end do
+	
+	p.move forward 0.3 for 0.5 seconds async
+  p.character.jump at speed of 35
+}
+
+op_punch(p2) = {
+	 op_action=1
+	 audio.play "punch1"
+	 p2.move forward 0.2 for 0.2 seconds async
+	 p2.CrossPunch at speed of 1.5
+	 [enemy_ko==0]
+	 p2.Idle loop
+	 
+	 op_action=0
+}
+
+[op_hit!=1 
+ && player1_ko==0 && enemy_ko==0
+ && op_action==0 
+ && game_status==GAME_STATE_START 
+ && slow_motion==0
+ && player2.data.trapped == 0  
+ && player2.data.is_jumping == 0]
+opponent_ai (p1, p2) = {
+
+  var dist = distance(p1, p2)
+  counter = counter + 1
+  p2.look at (p1)
+
+  // --- Health-based aggression: desperate after losing just 4 HP ---
+  var is_desperate = (life2 <= 6)
+
+  // --- Always punish a descending player jump, from a wide range ---
+  if (p1.data.is_jumping == 2) {
+    if (dist < 7) {
+      op_action = 2
+      audio.play "kick2"
+      p2.move forward 0.3 for 0.2 seconds async
+      p2.HighKick at speed of 2.2
+      op_action = 0
+      [enemy_ko==0]
+      p2.Idle loop
+      return
+    }
+  }
+
+  // --- Close range (< 3.5): always attack, no backing off ---
+  if (dist < 3.5) {
+    var close_choice = rnd(3)
+    if (close_choice == 0) {
+      // Fast punch
+      run op_punch(p2)
+    } else if (close_choice == 1) {
+      // HighKick
+      op_action = 2
+      audio.play "kick2"
+      p2.move forward 0.2 for 0.1 seconds async
+      p2.HighKick at speed of 2.0
+      op_action = 0
+      [enemy_ko==0]
+      p2.Idle loop
+    } else {
+      // When desperate: ButterflyKick combo; otherwise punch
+      if (is_desperate) {
+        op_action = 4
+        audio.play "hu_ya1"
+        p2.move forward 0.2 for 0.1 seconds async
+        p2.ButterflyKick at speed of 2.0
+        op_action = 0
+        [enemy_ko==0]
+        p2.Idle loop
+      } else {
+        run op_punch(p2)
+      }
+    }
+    return
+  }
+
+  // --- Mid range (3.5 to 5.0): always dash in and strike ---
+  if (dist < 5.0) {
+    var mid_choice = rnd(2)
+    if (mid_choice == 0) {
+      // Aggressive dash FlyKick
+      op_action = 3
+      audio.play "kick3"
+      p2.StepForward at speed of 2.5 async
+      p2.move forward 0.35 for 0.2 seconds async
+      p2.FlyKick at speed of 2.5
+      op_action = 0
+      [enemy_ko==0]
+      p2.Idle loop
+    } else {
+      // Dash HighKick
+      op_action = 2
+      audio.play "kick2"
+      p2.StepForward at speed of 2.5 async
+      p2.move forward 0.3 for 0.2 seconds async
+      p2.HighKick at speed of 2.0
+      op_action = 0
+      [enemy_ko==0]
+      p2.Idle loop
+    }
+    return
+  }
+
+  // --- Far range (>= 5.0): always charge — no idle jumping ---
+  // Sprint in hard, then hit with a powerful combo
+  p2.StepForward at speed of 2.5 async
+  p2.move forward 0.4 for 0.2 seconds async
+
+  var far_choice = rnd(3)
+  if (far_choice == 0) {
+    op_action = 3
+    audio.play "hu_ya1"
+    p2.move forward 0.3 for 0.2 seconds async
+    p2.FlyKick at speed of 2.5
+  } else if (far_choice == 1) {
+    op_action = 4
+    audio.play "hu_ya1"
+    p2.move forward 0.3 for 0.2 seconds async
+    p2.ButterflyKick at speed of 2.5
+  } else {
+    // Desperate charge: jump attack
+    run old_fighter_jump(p2)
+    return
+  }
+  op_action = 0
+  [enemy_ko==0]
+  p2.Idle loop
+}
+
+[op_hit!=1 
+ && player1_ko==0 && enemy_ko==0
+ && op_action==0 
+ && game_status==GAME_STATE_START 
+ && slow_motion==0
+ && player2.data.trapped == 0  
+ && player2.data.is_jumping == 0]
+ 
+opponent_ai_orig (p1,p2) = {
+    
+  var dist = distance(p1,p2)
+  counter=counter+1
+  p2.look at (p1)
+
+  if(dist>=5) {
+  	if (rnd(2)==0 && action==PLAYER_ACTION_IDLE) {
+	    	run old_fighter_jump(p2)
+	    	return
+	    } 
+	    p2.StepForward at speed of 1.5 async
+			p2.move forward 0.2 for 0.2 seconds async
+			if(distance(p1,p2)<7) {
+				op_action=3
+				audio.play "kick3"
+				p2.FlyKick at speed of 2
+				if(enemy_ko==0) {
+				  p2.Idle loop
+				}
+			}
+			op_action=0
+	} else if (dist<3.5) {
+		  
+	    if (rnd(2)==0 && action==PLAYER_ACTION_IDLE) {
+	    	run old_fighter_jump(p2)
+	    	return
+	    } 
+	    
+	    run op_punch
+	    
+			
+	} else if (dist<4.5) {
+		  if (rnd(2)==0 && action==PLAYER_ACTION_IDLE) {
+	    	run old_fighter_jump(p2)
+	    	return
+		  }
+      op_action=2
+      audio.play "kick2"
+      p2.move forward 0.2 for 0.2 seconds async
+			p2.HighKick at speed of 1.5
+			op_action=0
+			if(enemy_ko==0) {
+			  p2.Idle loop
+			}
+			
+	}	else if (dist>=4.5) {
+			if (rnd(2)==0 && action==PLAYER_ACTION_IDLE) {
+	    	run old_fighter_jump(p2)
+	    	return
+		  }
+      if(dist>5.3) {
+      	p2.StepForward at speed of 1.5 async
+			  p2.move forward 0.2 for 0.2 seconds async
+      }
+//  Hit, CrossPunch, ButterflyKick, FlyKick, Idle, Backflip, HighKick, Knockout,       
+      var ac = rnd(2)
+      if(ac==1) {
+        op_action=3
+        audio.play "hu_ya1"
+        p2.move forward 0.2 for 0.2 seconds async
+        p2.FlyKick at speed of 1.5
+      } else {
+      	op_action=4
+      	audio.play "hu_ya1"
+      	p2.move forward 0.2 for 0.2 seconds async
+			  p2.ButterflyKick at speed of 1.5
+      }
+			op_action=0
+
+			[enemy_ko==0]
+			p2.Idle loop
+			
+	}
+	
+}
+
+run opponent_ai(player1,player2) every 0.8 seconds
+
+
+[@enemy_ai_allowed]
+rest = {
+	life2=life2+1
+	if(life2>10) {
+		life2=10
+	}
+}
+run rest every 10 seconds
+
+[@enemy_ai_allowed]
+enemy_crazy = {
+  
+	if(rnd(5)==1) {
+	  
+	  if (rnd(10)==1) {
+		  audio.play "monster_roar"
+		  tg.Howl async
+		  camera.attach to tg : pos (0,1,-12)
+			wait 0.75 seconds
+			run set_camera_on_player
+	  } else {
+	    audio.play "fight1"	
+	  }
+
+		if(car_action==0) {
+			player2.rotate(y+360) in 0.5 second
+			//camera.attach to player2 : pos (0,3.5,8)
+		  //effects.debris.show : pos (player2) and end size = 50 and duration = 0.5
+		  wait 1 second
+		  //run set_camera_on_player		
+		}
+		
+	}
+	
+	  
+}
+
+run enemy_crazy every 2 second
+
+[@enemy_ai_allowed]
+enemy_turn = {
+  
+	player2.turn left 10 in 0.3 seconds
+	player2.turn right 20 in 0.6 seconds
+	player2.turn left 10 in 0.3 seconds
+}
+run enemy_turn every 1.2 seconds
+
+

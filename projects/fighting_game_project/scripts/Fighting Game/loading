@@ -1,0 +1,107 @@
+using desert1 sprite
+intro.draw intro_page
+//intro => box: material="intro_page", size (10,5,0.1), pos (13,-14,40)  
+loading.print "Loading..." : pos (100,10,0) and font "yoshi" and color=green
+loading3.draw powered_by_scenemax3d : pos (100,700),size(200,200)
+lights.add probe "4"
+
+///////////////
+floor => static box : size (100,1,100), pos (0,-15,0), material="desert1", shadow mode receive
+level2 => static crime_city1 : pos (220,-90,210), shadow mode on
+////// // todo: support shadow, sprite materials
+
+
+ring is a fantasy_ring1 : scale 25 and pos (13,-12,50)
+ring.turn left 360 in 50 seconds async
+
+do async
+  audio.play "monster_roar"
+  wait 3 seconds
+  audio.play "drums_music1" loop
+end do
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+tg is a tiger3 : scale 0.04 and turn 180 and pos (13,-14,43) async
+intro.draw clear
+tg."Idle_Lie Prone" loop
+camera.attach to tg : pos (0,1,-12)
+effects.flame.show : pos (13,-20,50), radius = 17, duration 4 async
+skybox.show solar system
+wait 1 seconds
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//CanCanDance, DanceTwerk, LeftArmGuesture, Idle, RightArmGuesture, Go, Jump
+boss is a dynamic boss : hidden and pos (9,0,35), shadow mode cast async
+boss.switch to character mode
+
+player2 is a dynamic old_fighter2 : hidden and pos (39.95,-86.5,16.5) and shadow mode cast 
+and joints ("mixamorig:Head"
+,"mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand"
+,"mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand"
+,"mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot",
+"mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot") async
+//player2.show info : file "c:\tmp\ttt.txt"
+player2_body_collider=> collider box : size (1,1,1)
+player2_body_collider.attach to player2: pos (0,1,0)
+player2_head_collider=> collider sphere : radius 0.5 
+player2_head_collider.attach to player2."mixamorig:Head": pos (0,0.5,0)
+player2_left_foot_collider=>collider sphere : radius 0.5
+player2_left_foot_collider.attach to player2."mixamorig:LeftFoot": pos (0,0,0)
+player2_right_foot_collider=>collider sphere : radius 0.5
+player2_right_foot_collider.attach to player2."mixamorig:RightFoot": pos (0,0,0)
+player2_left_hand_collider=>collider sphere : radius 0.5
+player2_left_hand_collider.attach to player2."mixamorig:LeftHand": pos (0,0,0)
+player2_right_hand_collider=>collider sphere : radius 0.5
+player2_right_hand_collider.attach to player2."mixamorig:RightHand": pos (0,0,0)
+
+player1 is a dynamic fighter1 : scale 3 and pos (39.4,-87,29) and hidden and shadow mode cast
+and joints ("mixamorig:Head","mixamorig:LeftShoulder",
+"mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand",
+"mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand",
+"mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot",
+"mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot") async
+player1_body_collider=> collider box : size (1,1,1)
+player1_body_collider.attach to player1: pos (0,1,0)
+player1_head_collider=> collider sphere : radius 0.5 
+player1_head_collider.attach to player1."mixamorig:Head": pos (0,0.5,0)
+player1_left_foot_collider=>collider sphere : radius 0.5
+player1_left_foot_collider.attach to player1."mixamorig:LeftFoot": pos (0,0,0)
+player1_right_foot_collider=>collider sphere : radius 0.5
+player1_right_foot_collider.attach to player1."mixamorig:RightFoot": pos (0,0,0)
+player1_left_hand_collider=>collider sphere : radius 0.5
+player1_left_hand_collider.attach to player1."mixamorig:LeftHand": pos (0,0,0)
+player1_right_hand_collider=>collider sphere : radius 0.5
+player1_right_hand_collider.attach to player1."mixamorig:RightHand": pos (0,0,0)
+
+// cache sprites
+throw_text => throw_text sprite : size(2,1),	billboard true, collision shape none, hidden
+player2_hit1 => hit4 sprite: scale 4, billboard true	, collision shape none, hidden 
+player2_hit2 => hit3 sprite : scale 4, billboard true, collision shape none, hidden
+player1_hit1 => hit4 sprite: scale 4, billboard true	, collision shape none, hidden 
+player1_hit2 => hit3 sprite : scale 4, billboard true, collision shape none, hidden
+
+
+loading.print ""
+
+player1.data.celebrating=0
+player1.switch to character mode : gravity 60
+player2.switch to character mode : gravity 40
+player1.character.ignore player2.joints // avoid collision of joints with character controls
+player2.character.ignore player1.joints
+
+middleSphere is a sphere : hidden and radius 0.1 and material="alpha"
+profile2.draw old_man_profile1 : pos (1300,5)
+profile1.draw ninja_profile1 : pos (5,5) and size (120,200)
+
+ring.hide
+tg.switch to character mode
+tg.turn right 45 in 0.1 seconds
+tg.hide
+
+player1.show
+player2.show
+
+player2.look at (player1)
+player1.look at (player2)
+
+tg.show

@@ -1,0 +1,78 @@
+
+
+[op_action==0 && player2.data.trapped == 0 && player2.data.is_jumping==0]
+check_opponent_hit = {
+		 
+	  var per = player1.anim_percent
+	  //ggg.print "player1: "+player1.data.hit_joint+
+	  //  newline+"player2: "+player2.data.hit_joint : pos (200,250,0) and color=yellow
+		
+		if(action==PLAYER_ACTION_C ) {
+			op_hit=1
+			audio.play "hurt1"
+			player2.data.is_down=1
+			do async
+			  player2_hit2.pos(player2."mixamorig:Head") 
+    		  player2_hit2.show
+	  		player2_hit2.play (frame 0 to 15) 
+	  		player2_hit2.hide
+			end do
+
+			run flash_hit_text async
+			
+			player2.leg_takedown_victim at speed of 2
+			player2.data.is_down=0
+			op_hit=0
+			return
+		}
+		
+		if(action==PLAYER_ACTION_D && @hit_by_hands) {
+			op_hit=1
+			do async
+    		player2_hit1.pos(player2."mixamorig:Head") 
+    		player2_hit1.show
+	  		player2_hit1.play (frame 0 to 15) 
+	  		player2_hit1.hide
+  		end do
+  		run shake_the_world async
+			player2.move backward 0.4 for 0.3 seconds async
+		  player2."Hit" async
+		  wait 0.2 seconds
+		  op_hit=0
+		  return
+		}
+		
+	  if(action==PLAYER_ACTION_A) { // INPUT A round kick + fly kick
+      //joint.print player1.data.hit_joint : pos (10,600,0), color green
+	 		run handle_opponent_hit
+		
+		} else if(action==PLAYER_ACTION_S && @hit_by_legs) {
+	             	
+	 		run handle_opponent_hit
+	 		
+	 		if(per<25) {
+	 		  
+				do async
+					cam2=15, cam3=2, cam4=1, cam5=2
+	 		    cam_move_speed=0.01
+	 		    run ambient_camera
+					perfect => perfect1 sprite : scale 3 and billboard true
+						and pos(player1."mixamorig:Head"), collision shape none
+	 		    wait 0.2 seconds
+	 		    cam2=1.3, cam3=CAM_REGULAR_DIST, cam4=2, cam5=1
+	 		    cam_move_speed=0.2
+	 		    perfect.move forward 5 in 0.5 seconds
+	 		    perfect.delete
+	 		  end do
+
+				audio.play "attack1_jap"
+	 		  run player1_slow_motion (0.5,40)
+	 		} 
+	 		
+	 } else if (dist<4) {
+			player1.move backward 0.1 for 0.1 seconds async
+		  player2.move backward 0.1 for 0.1 seconds
+		
+	 }
+
+}

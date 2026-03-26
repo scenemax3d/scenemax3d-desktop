@@ -1,0 +1,39 @@
+canvas.size 1600,900
+//switch to "game_init"
+
+add "/variables/constants", 
+    "/variables/global_variables" code
+add "/game_init/game_init.code",
+    "/game_input/input",
+    "/game_input/input_x",
+    "/game_input/input_c", 
+    "/utils/camera_strategy" code
+add "/game_states/game_start", 
+    "/game_states/game_over", 
+    "/game_states/game_time_out", 
+    "/utils/printing" code
+add "boss_ai", 
+    "enemy_ai", 
+    //"opponent_hit", 
+    //"check_opponent_hit", 
+    //"collision", 
+    "collision_new", 
+    "/states/player1_attack_states", "/states/player2_attack_states", 
+    "/states/player1_general_states", "/states/player2_general_states",
+    "enemy_knockout" , 
+    "/utils/tiger_utils" code
+
+
+player1.idle2 loop
+player2.Idle loop
+
+intro.draw intro_page	
+intro2.draw press_space_to_start : pos (544,450)
+wait for key space to be pressed
+intro2.draw clear
+intro.draw clear
+run game_start
+
+
+# jump
+

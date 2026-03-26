@@ -1,0 +1,52 @@
+
+enemy_knockout = {
+	enemy_ko=1
+	op_hit = 2
+  do async
+    win1 is a you_win1 sprite : scale 3 and billboard true
+      and pos(player1.x,player1.y+3,player1.z), collision shape none
+    effects.flash.show : pos(win1) and duration 5 async
+		wait 5 seconds
+		win1.move forward 7 in 0.2 seconds
+		win1.delete
+		op_hit=op_hit-1
+  end do
+    
+	do async
+	  boss.DanceTwerk 
+	  boss.Idle loop
+	end do
+		
+	do async
+	  audio.stop "fight_music1"
+	  audio.play "level_win1"
+	  wait 7 seconds
+	  audio.play "fight_music1" loop
+	end do
+
+	do async
+	  player2.Knockout
+	  wait 2 seconds
+    player2.data.knockout=0
+    player2.Backflip 
+		player2.Idle loop
+		op_hit=op_hit-1
+  end do
+  
+  do async
+	  player1.data.celebrating=1
+	  player1.turn 360 in 1 second async
+    player1.victory then backflip 
+	  player1.idle2 loop
+	  player1.data.celebrating=0
+	end do
+  
+}
+
+when op_hit==0 after op_hit==1 do
+	life1=INITIAL_PLAYER_STRENGTH
+ 	life2=INITIAL_PLAYER_STRENGTH
+ 	timer=60
+ 	enemy_ko = 0
+end do
+	

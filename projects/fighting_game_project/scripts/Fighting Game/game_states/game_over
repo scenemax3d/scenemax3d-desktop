@@ -1,0 +1,140 @@
+game_over = {
+
+	if(game_status==GAME_STATE_OVER) {
+		return
+	}
+	
+	game_status=GAME_STATE_OVER // game over
+	gameover.draw game_over3 : size (550,160) and pos(550,150)
+
+	player1.stunned1
+  wait 1 second
+  player1.fall_idle1 loop
+  
+	player2.look at (player1)   
+  player2.BackFlip
+  player2.Idle loop
+
+	msg2.draw press_space_to_continue : pos (544,450)
+	//msg2.print "Press T To Continue..." : pos (500,460,0) and color = green and font = "yoshi"
+
+	do async
+		// Block ambient_camera for the entire KO cinematic
+		camera_mode = CAMERA_MODE_SHAKE
+
+		// Dramatic 360° orbit around the fallen player
+		// Starts low and close, spirals up and out as it circles
+
+		var ko_radius = 4
+		var ko_height = 0.8
+		var ko_speed = 0.8
+
+		// step 1 — 0° (start close and low)
+		var ko_rad = 0 * 3.14159 / 180
+		var ko_x = middleSphere.x + cos(ko_rad) * ko_radius
+		var ko_z = middleSphere.z + sin(ko_rad) * ko_radius
+		camera.move to (ko_x, middleSphere.y + ko_height, ko_z) in ko_speed seconds looking at (middleSphere up 1.0)
+
+		// step 2 — 45°
+		ko_rad = 45 * 3.14159 / 180
+		ko_radius = 4.5
+		ko_height = 1.2
+		ko_x = middleSphere.x + cos(ko_rad) * ko_radius
+		ko_z = middleSphere.z + sin(ko_rad) * ko_radius
+		camera.move to (ko_x, middleSphere.y + ko_height, ko_z) in ko_speed seconds looking at (middleSphere up 1.0)
+
+		// step 3 — 90°
+		ko_rad = 90 * 3.14159 / 180
+		ko_radius = 5
+		ko_height = 1.6
+		ko_x = middleSphere.x + cos(ko_rad) * ko_radius
+		ko_z = middleSphere.z + sin(ko_rad) * ko_radius
+		camera.move to (ko_x, middleSphere.y + ko_height, ko_z) in ko_speed seconds looking at (middleSphere up 1.0)
+
+		// step 4 — 135°
+		ko_rad = 135 * 3.14159 / 180
+		ko_radius = 5.5
+		ko_height = 2.0
+		ko_x = middleSphere.x + cos(ko_rad) * ko_radius
+		ko_z = middleSphere.z + sin(ko_rad) * ko_radius
+		camera.move to (ko_x, middleSphere.y + ko_height, ko_z) in ko_speed seconds looking at (middleSphere up 1.0)
+
+		// step 5 — 180° (behind the player)
+		ko_rad = 180 * 3.14159 / 180
+		ko_radius = 6
+		ko_height = 2.5
+		ko_x = middleSphere.x + cos(ko_rad) * ko_radius
+		ko_z = middleSphere.z + sin(ko_rad) * ko_radius
+		camera.move to (ko_x, middleSphere.y + ko_height, ko_z) in ko_speed seconds looking at (middleSphere up 1.0)
+
+		// step 6 — 225°
+		ko_rad = 225 * 3.14159 / 180
+		ko_radius = 6.5
+		ko_height = 3.0
+		ko_x = middleSphere.x + cos(ko_rad) * ko_radius
+		ko_z = middleSphere.z + sin(ko_rad) * ko_radius
+		camera.move to (ko_x, middleSphere.y + ko_height, ko_z) in ko_speed seconds looking at (middleSphere up 1.0)
+
+		// step 7 — 270°
+		ko_rad = 270 * 3.14159 / 180
+		ko_radius = 7
+		ko_height = 3.5
+		ko_x = middleSphere.x + cos(ko_rad) * ko_radius
+		ko_z = middleSphere.z + sin(ko_rad) * ko_radius
+		camera.move to (ko_x, middleSphere.y + ko_height, ko_z) in ko_speed seconds looking at (middleSphere up 1.0)
+
+		// step 8 — 315° (pulling back and rising high)
+		ko_rad = 315 * 3.14159 / 180
+		ko_radius = 8
+		ko_height = 4.5
+		ko_speed = 1.2
+		ko_x = middleSphere.x + cos(ko_rad) * ko_radius
+		ko_z = middleSphere.z + sin(ko_rad) * ko_radius
+		camera.move to (ko_x, middleSphere.y + ko_height, ko_z) in ko_speed seconds looking at (middleSphere up 1.0)
+
+		// step 9 — 360° (full circle, final high wide shot)
+		ko_rad = 360 * 3.14159 / 180
+		ko_radius = 10
+		ko_height = 5.5
+		ko_speed = 1.5
+		ko_x = middleSphere.x + cos(ko_rad) * ko_radius
+		ko_z = middleSphere.z + sin(ko_rad) * ko_radius
+		camera.move to (ko_x, middleSphere.y + ko_height, ko_z) in ko_speed seconds looking at (middleSphere up 1.0)
+
+		// Restore camera mode and hand off
+		camera_mode = CAMERA_MODE_DEFAULT
+		run set_camera_on_player
+	end do
+
+  wait for key space to be pressed
+  msg2.draw clear
+	run restart_game
+	
+}
+
+[game_status==GAME_STATE_OVER]
+restart_game = {
+
+  do async
+    run tiger_roar(1.3) async
+    player1.clear character mode
+    player2.clear character mode
+    player1.pos (39.4,-87,29)
+		player2.pos (39.95,-86.5,16.5)
+		player1.switch to character mode : gravity 60
+    player2.switch to character mode : gravity 40
+  end do
+  msg.print ""
+	msg2.print ""
+  wait 1.5 second
+  
+	audio.play "scream1"
+	player1.jumping
+	player1.idle2 loop
+	
+	gameover.draw clear
+
+	run game_start
+
+}
+	

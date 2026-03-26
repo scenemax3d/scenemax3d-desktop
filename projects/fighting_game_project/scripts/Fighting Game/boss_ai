@@ -1,0 +1,9 @@
+boss_ai = {
+	boss.look at (player1)
+//	var bossdist= distance(boss,player1)
+//	if(bossdist>10) {
+//		boss.move forward 0.01 for 0.1 second
+//	}
+}
+
+run boss_ai every 0.2 seconds

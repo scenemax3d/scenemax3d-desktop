@@ -1,0 +1,68 @@
+
+set_camera_on_player = {
+  if(camera_mode==CAMERA_MODE_DEFAULT) {
+  	camera.attach stop
+  } else if(camera_mode==CAMERA_MODE_ATTACH_PLAYER1) {
+  	camera.attach to player1 : pos(0,1.5,-7) // and rotate(-15,0,0)
+  }
+
+}
+
+var camera_rotate_angle = 45, camera_rotate_dir = 1
+
+[is_camera_rotating==1 && camera_mode != CAMERA_MODE_CHASE_PLAYER1]
+rotate_camera = {
+	camera_rotate_angle = camera_rotate_angle + 0.5 * camera_rotate_dir
+	if (camera_rotate_angle > 90 || camera_rotate_angle<0) {
+		camera_rotate_dir=camera_rotate_dir*-1
+	}
+	sys.print camera_rotate_angle
+	middleSphere.move to (player1 forward cam1) in cam_move_speed seconds async
+	var rad = camera_rotate_angle * 3.14 / 180
+	var x = middleSphere.x + cos(rad) * 15
+	var z = middleSphere.z + sin(rad) * 15
+	//camera.pos(x, middleSphere.y, z)
+	//camera.look at (middleSphere)
+	camera.move to(x, middleSphere.y, z) in cam_move_speed seconds looking at (middleSphere up cam5)
+}
+run rotate_camera every cam_move_speed seconds
+
+[camera_mode==CAMERA_MODE_DEFAULT && is_camera_rotating==0]
+ambient_camera = {
+	middleSphere.move to (player1 forward cam1) in cam_move_speed seconds async
+	if (cam_side==1) {
+  	camera.move to (player1 forward cam2 right cam3 up cam4) in cam_move_speed seconds looking at (middleSphere up cam5)
+	} else {
+		camera.move to (player1 forward cam2 left cam3 up cam4) in cam_move_speed seconds looking at (middleSphere up cam5)
+	}
+
+}
+run ambient_camera every 0.25 seconds
+
+[camera_mode==CAMERA_MODE_DEFAULT]
+shake_the_world = {
+	camera_mode=CAMERA_MODE_SHAKE
+	//camera.chase stop
+	do 2 times
+   camera.move backward 0.03 in 0.051 seconds	
+   camera.move forward 0.03 in 0.051 seconds
+  end do
+  camera_mode=CAMERA_MODE_DEFAULT
+  run set_camera_on_player
+
+}
+
+[camera_mode==CAMERA_MODE_DEFAULT]
+shake_the_world2 = {
+	camera_mode=CAMERA_MODE_SHAKE
+	//camera.chase stop
+	do 2 times
+   camera.roll left 3 in 0.071 seconds	
+   camera.roll right 5 in 0.051 seconds
+   camera.roll left 2 in 0.051 seconds	
+  end do
+  camera_mode=CAMERA_MODE_DEFAULT
+  run set_camera_on_player
+
+}
+

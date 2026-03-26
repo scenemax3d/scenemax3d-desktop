@@ -1,0 +1,131 @@
+var high_kick_counter = 0
+
+
+[player2.anim_percent>15 && player2.anim_percent<35]
+check_fly_kick = {
+	high_kick_counter = high_kick_counter + 1
+  var per=player2.anim_percent
+	//gg.print "XX anim_percent = "+per
+	
+	if(op_action==3 && slow_motion==0) {
+		do async
+		  slow_motion=1
+			run player2_slow_motion(0.3,20) async
+			if (high_kick_counter%3==0) {
+				player1_ko = 1
+				return
+			}
+  		[game_status!=GAME_STATE_OVER && player1.data.is_jumping==0]
+			player1.idle2 loop
+			slow_motion=0
+			
+		end do
+  }
+	
+}
+
+
+[player2.anim_percent>49 && player2.anim_percent<56]
+check_butterfly_kick = {
+	high_kick_counter = high_kick_counter + 1
+  var per=player2.anim_percent
+
+	if(op_action==4 && slow_motion==0) {
+		do async
+			slow_motion=1
+			
+			run player2_slow_motion(0.3,50) async
+			if (high_kick_counter%3==0) {
+				player1_ko = 1
+				return
+			}
+  		[game_status!=GAME_STATE_OVER && player1.data.is_jumping==0]
+			player1.idle2 loop			
+			slow_motion=0
+		end do
+  }
+	
+}
+
+
+player2_slow_motion (tm, frame_count) = {
+
+  audio.play "slap1"
+	do async
+		player1_hit1.pos(player1."mixamorig:Head") 
+    player1_hit1.show
+	  player1_hit1.play (frame 0 to 15) 
+	  player1_hit1.hide
+  end do
+
+	effects.flash.show : pos (player2."mixamorig:LeftFoot") and duration=0.5 async
+	effects.TimeOrbit.show : pos (player1) and end size = 4 and duration = 0.5 async
+	player1.animation speed 0.01	for tm seconds 
+	player2.animation speed 0.01	for tm seconds when frames > frame_count
+	wait tm second
+										
+}
+
+
+[op_hit!=1 && player1_ko==0 && player1.data.is_jumping==0]
+handle_collision = {
+
+	var dist = distance(player1,player2)
+	
+	//////////////// MAIN PLAYER GOT HIT ////////////
+		
+	  // KICK
+		if( (player2.data.hit_joint=="mixamorig:RightFoot" ||
+		   player2.data.hit_joint=="mixamorig:LeftFoot" || 
+		   player2.data.hit_joint=="mixamorig:LeftLeg" ||
+		   player2.data.hit_joint=="mixamorig:RightLeg")  ) { 
+		   
+			if(op_action==2 || op_action==3 || op_action==4 ) {
+				//var act=op_action
+				run check_fly_kick
+				run check_butterfly_kick
+				
+				op_action=0
+				
+        if(action==0) {
+					effects.flash.show : pos (player1) and duration=0.3 async
+					player1.move backward 0.2 for 0.2 seconds async
+					life1=life1-1
+        }
+        
+				audio.play "hurt1"
+				run shake_the_world async
+				return
+			}
+		}
+	
+	//////////////////// OPPONENT GOT HIT ///////////
+	run check_opponent_hit
+
+}
+
+//player1_slow_motion (tm, frame_count) = {
+//
+//	slow_motion=1
+//	do async
+//		player2_hit2.show
+//	  player2_hit2.pos (player2."mixamorig:Head")
+//	  player2_hit2.play(frame 0 to 15)
+//		player2_hit2.hide
+//	end do
+//		
+//	effects.flash.show : pos (player2."mixamorig:LeftFoot") and duration=0.5 async
+//	effects.TimeOrbit.show : pos (player1) and end size = 4 and duration = 0.5 async
+//	player2.animation speed 0.01	for tm seconds // 10 times slower
+//	player1.animation speed 0.01	for tm seconds when frames > frame_count // 10 times slower
+//	wait tm second
+//	slow_motion=0
+//									
+//}
+
+[@allow_collision_check]
+when player1 collides with player2 do
+		coll=1
+		run handle_collision
+		coll=0
+end do

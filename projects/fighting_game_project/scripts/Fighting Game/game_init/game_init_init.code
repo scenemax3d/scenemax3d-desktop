@@ -1,0 +1,8 @@
+// Write your initialization code here.
+// This code will be included at the beginning of the generated .code file.
+using desert1 sprite
+intro.draw intro_page
+
+loading.print "Loading..." : pos (100,10,0) and font "yoshi" and color=green
+loading3.draw powered_by_scenemax3d : pos (100,700),size(200,200)
+lights.add probe "4"

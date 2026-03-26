@@ -1,0 +1,51 @@
+
+handle_opponent_hit = {
+
+	 audio.play "monster_damage_15"
+	 	
+	  //lasthit.print "last hit dist: "+dist + ", percent = "+player1.anim_percent  : pos (800,100,0) and size=2 and color=red
+		op_hit=1
+				
+		player2.move backward 0.2 for 0.1 seconds async
+		player2."Hit" async
+						
+		score=score+10
+		life2=life2-1
+		//effects.flash.show : pos (player2) and duration=0.3 async
+		
+	  run shake_the_world async
+	  player1.move backward 0.3 for 0.1 seconds async
+	
+		
+		if(rnd(2)==0) {
+			player1.move backward 0.3 for 0.2 seconds async
+      //player2.character.jump at speed of 20 
+		} else {
+			player2.Backflip async
+		}
+	  	  
+	  // CHECK ENEMY STRENGTH 
+	  
+	  if(life2==0) {
+	  	run enemy_knockout
+	  	
+	  } else {
+			op_hit=0
+	  	
+	  	if(rnd(3)==1) {
+	  		do async
+	  		  boss."Jump"
+	  		  boss.Idle loop
+	  		end do
+	  	} else {
+	  	  do async
+	  	    boss.RightArmGuesture
+	  	    boss.Idle loop
+	  	  end do
+	  	}
+	  	
+	  }
+
+	  //player2.move backward 0.3 for 0.1 seconds
+
+}
