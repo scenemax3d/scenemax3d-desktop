@@ -6,10 +6,9 @@ import com.jme3.math.Ray;
 import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
-import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
-import com.jme3.scene.Spatial;
 import com.scenemax.designer.DesignerEntity;
+import com.scenemax.designer.DesignerEntityType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -60,10 +59,23 @@ public class SelectionManager {
 
         Ray ray = new Ray(worldCoords, direction);
 
-        DesignerEntity closest = null;
-        float closestDist = Float.MAX_VALUE;
+        float[] closestDist = { Float.MAX_VALUE };
+        DesignerEntity[] closest = { null };
 
+        pickRecursive(ray, entities, closest, closestDist);
+
+        return closest[0];
+    }
+
+    private void pickRecursive(Ray ray, List<DesignerEntity> entities,
+                               DesignerEntity[] closest, float[] closestDist) {
         for (DesignerEntity entity : entities) {
+            // Recurse into section children
+            if (entity.getType() == DesignerEntityType.SECTION) {
+                pickRecursive(ray, entity.getChildren(), closest, closestDist);
+                continue;
+            }
+
             Node node = entity.getSceneNode();
             if (node == null) continue;
 
@@ -72,13 +84,11 @@ public class SelectionManager {
 
             if (results.size() > 0) {
                 CollisionResult hit = results.getClosestCollision();
-                if (hit.getDistance() < closestDist) {
-                    closestDist = hit.getDistance();
-                    closest = entity;
+                if (hit.getDistance() < closestDist[0]) {
+                    closestDist[0] = hit.getDistance();
+                    closest[0] = entity;
                 }
             }
         }
-
-        return closest;
     }
 }

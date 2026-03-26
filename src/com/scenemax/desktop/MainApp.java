@@ -2143,31 +2143,6 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             btnRunScript.setEnabled(true);
             btnRecordScene.setEnabled(true);
 
-//            if (isRecordMode) {
-//                screenRec.stop();
-//
-//                String path = System.getProperty("user.dir");
-//                File f = new File(".\\out\\recording.mp4");
-//                if (!f.exists()) {
-//                    JOptionPane.showMessageDialog(null, "Scene recording failed.\r\nContact support forum for more information", "Recording Error", JOptionPane.ERROR_MESSAGE);
-//                    return;
-//                }
-//
-//                int n = JOptionPane.showConfirmDialog(
-//                        null,
-//                        "Recording finished. Open file location?",
-//                        "Open File Location",
-//                        JOptionPane.YES_NO_OPTION);
-//
-//                if (n == YES_OPTION) {
-//                    try {
-//                        Process p = new ProcessBuilder("explorer.exe", "/select,.\\out\\recording.mp4").start();
-//                    } catch (IOException e) {
-//                        e.printStackTrace();
-//                    }
-//                }
-//
-//            }
         }
     }
 
@@ -2286,25 +2261,6 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         }
         return null;
     }
-
-//    protected boolean prepareAndRunScript() {
-//
-//        File scriptFile = prepareCurrScriptFile();
-//        if (scriptFile == null) {
-//            return false;
-//        }
-//
-//        String prg = textAreaSP.isVisible() ? textArea.getText() : textAreaRTL.getText();
-//        ApplyMacroResults mr = applyMacro(prg);
-//        deleteCurrentScriptFile();
-//
-//        MainWinApp wa = new MainWinApp(scriptFile, mr.finalPrg, false);
-//        theApp = wa;
-//        theApp.parent = this;
-//        btnRunScript.setEnabled(false);
-//        btnRecordScene.setEnabled(false);
-//        return true;
-//    }
 
     private void deleteCurrentScriptFile() {
 
