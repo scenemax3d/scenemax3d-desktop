@@ -142,23 +142,23 @@ public class DesignerPanel extends JPanel {
         JToolBar toolbar = new JToolBar();
         toolbar.setFloatable(false);
 
-        JButton btnAddSphere = new JButton("Sphere");
+        JButton btnAddSphere = new JButton(createDesignerToolbarIcon("sphere"));
         btnAddSphere.setToolTipText("Add Sphere");
         btnAddSphere.addActionListener(e -> {
             if (app != null) app.enqueue(() -> { app.addDefaultSphere(); return null; });
         });
 
-        JButton btnAddBox = new JButton("Box");
+        JButton btnAddBox = new JButton(createDesignerToolbarIcon("box"));
         btnAddBox.setToolTipText("Add Box");
         btnAddBox.addActionListener(e -> {
             if (app != null) app.enqueue(() -> { app.addDefaultBox(); return null; });
         });
 
-        JButton btnAddModel = new JButton("3D Model");
+        JButton btnAddModel = new JButton(createDesignerToolbarIcon("model"));
         btnAddModel.setToolTipText("Add 3D Model");
         btnAddModel.addActionListener(e -> showModelPickerDialog());
 
-        JButton btnDelete = new JButton("Delete");
+        JButton btnDelete = new JButton(createDesignerToolbarIcon("delete"));
         btnDelete.setToolTipText("Delete Selected");
         btnDelete.addActionListener(e -> {
             if (app != null) {
@@ -180,8 +180,8 @@ public class DesignerPanel extends JPanel {
 
         toolbar.add(new JLabel("  Gizmo: "));
         ButtonGroup gizmoGroup = new ButtonGroup();
-        btnTranslate = new JToggleButton("Translate", true);
-        btnRotate = new JToggleButton("Rotate");
+        btnTranslate = new JToggleButton(createDesignerToolbarIcon("translate"), true);
+        btnRotate = new JToggleButton(createDesignerToolbarIcon("rotate"));
         gizmoGroup.add(btnTranslate);
         gizmoGroup.add(btnRotate);
         btnTranslate.addActionListener(e -> {
@@ -196,8 +196,8 @@ public class DesignerPanel extends JPanel {
         toolbar.addSeparator();
         toolbar.add(new JLabel("  Camera: "));
         ButtonGroup cameraGroup = new ButtonGroup();
-        JToggleButton btnOrbit = new JToggleButton("Orbit", true);
-        JToggleButton btnPan = new JToggleButton("Pan");
+        JToggleButton btnOrbit = new JToggleButton(createDesignerToolbarIcon("orbit"), true);
+        JToggleButton btnPan = new JToggleButton(createDesignerToolbarIcon("pan"));
         cameraGroup.add(btnOrbit);
         cameraGroup.add(btnPan);
         btnOrbit.addActionListener(e -> {
@@ -2019,6 +2019,169 @@ public class DesignerPanel extends JPanel {
             }
             return entities.size() - 1;
         }
+    }
+
+    // ── Programmatic designer toolbar icons (white on transparent, 20×20) ──
+
+    private static final int DT_ICON = 20;
+    private static final Color DT_COLOR = new Color(220, 220, 220);
+    private static final Color DT_HIGHLIGHT = new Color(255, 255, 255, 100);
+
+    private static Icon createDesignerToolbarIcon(String key) {
+        BufferedImage img = new BufferedImage(DT_ICON, DT_ICON, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+        g.setColor(DT_COLOR);
+        g.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+
+        switch (key) {
+            case "sphere":    drawToolbarSphere(g);    break;
+            case "box":       drawToolbarBox(g);       break;
+            case "model":     drawToolbarModel(g);     break;
+            case "delete":    drawToolbarDelete(g);    break;
+            case "translate": drawToolbarTranslate(g); break;
+            case "rotate":    drawToolbarRotate(g);    break;
+            case "orbit":     drawToolbarOrbit(g);     break;
+            case "pan":       drawToolbarPan(g);       break;
+        }
+        g.dispose();
+        return new ImageIcon(img);
+    }
+
+    /** Sphere: circle with highlight arc */
+    private static void drawToolbarSphere(Graphics2D g) {
+        g.draw(new Ellipse2D.Float(2, 2, 16, 16));
+        // highlight arc for 3D feel
+        g.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.setColor(DT_HIGHLIGHT);
+        g.drawArc(5, 4, 9, 9, 30, 120);
+    }
+
+    /** Box: isometric cube */
+    private static void drawToolbarBox(Graphics2D g) {
+        int cx = 10, top = 2, bot = 18, mid = 10;
+        int left = 2, right = 18;
+        // top face
+        GeneralPath topFace = new GeneralPath();
+        topFace.moveTo(cx, top);
+        topFace.lineTo(right, top + 4);
+        topFace.lineTo(cx, mid);
+        topFace.lineTo(left, top + 4);
+        topFace.closePath();
+        g.draw(topFace);
+        // left face
+        g.draw(new Line2D.Float(left, top + 4, left, bot - 4));
+        g.draw(new Line2D.Float(left, bot - 4, cx, bot));
+        // right face
+        g.draw(new Line2D.Float(right, top + 4, right, bot - 4));
+        g.draw(new Line2D.Float(right, bot - 4, cx, bot));
+        // center vertical
+        g.draw(new Line2D.Float(cx, mid, cx, bot));
+    }
+
+    /** 3D Model: diamond/gem shape */
+    private static void drawToolbarModel(Graphics2D g) {
+        GeneralPath p = new GeneralPath();
+        p.moveTo(10, 1);
+        p.lineTo(18, 6);
+        p.lineTo(14, 18);
+        p.lineTo(10, 19);
+        p.lineTo(6, 18);
+        p.lineTo(2, 6);
+        p.closePath();
+        g.draw(p);
+        // inner structure
+        g.setStroke(new BasicStroke(0.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.draw(new Line2D.Float(2, 6, 18, 6));
+        g.draw(new Line2D.Float(6, 6, 10, 19));
+        g.draw(new Line2D.Float(14, 6, 10, 19));
+    }
+
+    /** Delete: trash can */
+    private static void drawToolbarDelete(Graphics2D g) {
+        // lid
+        g.draw(new Line2D.Float(3, 5, 17, 5));
+        g.draw(new Line2D.Float(7, 5, 7, 3));
+        g.draw(new Line2D.Float(7, 3, 13, 3));
+        g.draw(new Line2D.Float(13, 3, 13, 5));
+        // can body
+        GeneralPath can = new GeneralPath();
+        can.moveTo(4, 5);
+        can.lineTo(5, 17);
+        can.lineTo(15, 17);
+        can.lineTo(16, 5);
+        g.draw(can);
+        // vertical lines inside
+        g.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.draw(new Line2D.Float(8, 8, 8, 14));
+        g.draw(new Line2D.Float(10, 8, 10, 14));
+        g.draw(new Line2D.Float(12, 8, 12, 14));
+    }
+
+    /** Translate: four-direction arrow / move cross */
+    private static void drawToolbarTranslate(Graphics2D g) {
+        g.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        // cross lines
+        g.draw(new Line2D.Float(10, 2, 10, 18));
+        g.draw(new Line2D.Float(2, 10, 18, 10));
+        // top arrow
+        g.draw(new Line2D.Float(10, 2, 7, 5));
+        g.draw(new Line2D.Float(10, 2, 13, 5));
+        // bottom arrow
+        g.draw(new Line2D.Float(10, 18, 7, 15));
+        g.draw(new Line2D.Float(10, 18, 13, 15));
+        // left arrow
+        g.draw(new Line2D.Float(2, 10, 5, 7));
+        g.draw(new Line2D.Float(2, 10, 5, 13));
+        // right arrow
+        g.draw(new Line2D.Float(18, 10, 15, 7));
+        g.draw(new Line2D.Float(18, 10, 15, 13));
+    }
+
+    /** Rotate: circular arrow */
+    private static void drawToolbarRotate(Graphics2D g) {
+        g.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        // arc (most of a circle)
+        g.drawArc(3, 3, 14, 14, 30, 280);
+        // arrowhead at the end of the arc (pointing clockwise, at ~30 degrees)
+        float ax = 14.5f, ay = 13f;
+        g.draw(new Line2D.Float(ax, ay, ax + 2, ay - 3));
+        g.draw(new Line2D.Float(ax, ay, ax - 3, ay - 1));
+    }
+
+    /** Orbit: eye with circular arrow around it */
+    private static void drawToolbarOrbit(Graphics2D g) {
+        g.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        // orbit ring (ellipse)
+        g.draw(new Ellipse2D.Float(2, 4, 16, 12));
+        // center dot (focal point)
+        g.fill(new Ellipse2D.Float(8, 8, 4, 4));
+        // small arrow on the orbit ring (top-right)
+        g.setStroke(new BasicStroke(1.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.draw(new Line2D.Float(15, 6, 17, 4));
+        g.draw(new Line2D.Float(15, 6, 17, 7));
+    }
+
+    /** Pan: open hand */
+    private static void drawToolbarPan(Graphics2D g) {
+        g.setStroke(new BasicStroke(1.3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        // palm
+        g.draw(new RoundRectangle2D.Float(4, 8, 12, 10, 4, 4));
+        // fingers (four lines going up from palm)
+        g.draw(new Line2D.Float(6, 8, 6, 3));
+        g.draw(new Line2D.Float(9, 8, 9, 2));
+        g.draw(new Line2D.Float(12, 8, 12, 3));
+        g.draw(new Line2D.Float(15, 8, 15, 5));
+        // finger tips (small rounds)
+        g.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.draw(new Ellipse2D.Float(5, 2, 2, 2));
+        g.draw(new Ellipse2D.Float(8, 1, 2, 2));
+        g.draw(new Ellipse2D.Float(11, 2, 2, 2));
+        g.draw(new Ellipse2D.Float(14, 4, 2, 2));
+        // thumb
+        g.setStroke(new BasicStroke(1.3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.draw(new Line2D.Float(4, 11, 2, 9));
     }
 
     /**

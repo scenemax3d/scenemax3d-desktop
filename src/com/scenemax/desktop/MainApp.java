@@ -26,6 +26,8 @@ import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 import java.awt.*;
 import java.awt.event.*;
+import java.awt.geom.*;
+import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.*;
@@ -109,17 +111,17 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
         mainToolbar.setFloatable(false);
 
-        btnRunScript = addToolbarButton("start_button1_24x24", "run", "Run Program");
-        addToolbarButton("folder_button2_24x24", "create_folder", "Create Folder");
-        addToolbarButton("save_button1_24x24", "save", "Save Changes");
+        btnRunScript = addToolbarButton(createToolbarIcon("run"), "run", "Run Program");
+        addToolbarButton(createToolbarIcon("create_folder"), "create_folder", "Create Folder");
+        addToolbarButton(createToolbarIcon("save"), "save", "Save Changes");
 
-        JButton jb = addToolbarButton("classroom1_24x24", "connect", "Connect To Classroom");
+        JButton jb = addToolbarButton(createToolbarIcon("connect"), "connect", "Connect To Classroom");
         if (LicenseService.getClassroomServer().equals("NA")) {
             jb.setEnabled(false);
         }
 
-        packageBrogramButton = addToolbarButton("build3_24x24", "deploy", "Package Program");
-        btnRecordScene = addToolbarButton("record_button1_24x24", "run_record", "Run & Record Scene Clip");
+        packageBrogramButton = addToolbarButton(createToolbarIcon("deploy"), "deploy", "Package Program");
+        btnRecordScene = addToolbarButton(createToolbarIcon("run_record"), "run_record", "Run & Record Scene Clip");
         btnRecordScene.setEnabled(false); // until we find a way to get the running window rect
 
         textArea = new RSyntaxTextArea(20, 60);
@@ -2082,6 +2084,160 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     private JButton addToolbarButton(String img, String actionCommand, String toolTipText) {
         return this.addToolbarButton(img, actionCommand, toolTipText, this);
+    }
+
+    private JButton addToolbarButton(Icon icon, String actionCommand, String toolTipText) {
+        JButton button = new JButton();
+        button.setActionCommand(actionCommand);
+        button.setToolTipText(toolTipText);
+        button.addActionListener(this);
+        button.setIcon(icon);
+        button.setOpaque(false);
+        button.setContentAreaFilled(false);
+        button.setBorderPainted(false);
+        mainToolbar.add(button);
+        return button;
+    }
+
+    // ── Programmatic toolbar icons (white on transparent, 24×24) ──────────
+
+    private static final int TB_ICON_SIZE = 24;
+    private static final Color TB_COLOR = new Color(220, 220, 220);
+    private static final Color TB_HIGHLIGHT = new Color(255, 255, 255, 100);
+
+    private static Icon createToolbarIcon(String key) {
+        BufferedImage img = new BufferedImage(TB_ICON_SIZE, TB_ICON_SIZE, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+        g.setColor(TB_COLOR);
+        g.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+
+        switch (key) {
+            case "run":          drawRunIcon(g);        break;
+            case "create_folder":drawFolderIcon(g);     break;
+            case "save":         drawSaveIcon(g);       break;
+            case "connect":      drawConnectIcon(g);    break;
+            case "deploy":       drawDeployIcon(g);     break;
+            case "run_record":   drawRecordIcon(g);     break;
+        }
+        g.dispose();
+        return new ImageIcon(img);
+    }
+
+    /** Play triangle */
+    private static void drawRunIcon(Graphics2D g) {
+        GeneralPath p = new GeneralPath();
+        p.moveTo(7, 4);
+        p.lineTo(20, 12);
+        p.lineTo(7, 20);
+        p.closePath();
+        g.fill(p);
+    }
+
+    /** Folder with a + sign */
+    private static void drawFolderIcon(Graphics2D g) {
+        // folder body
+        GeneralPath folder = new GeneralPath();
+        folder.moveTo(2, 7);
+        folder.lineTo(2, 20);
+        folder.lineTo(22, 20);
+        folder.lineTo(22, 9);
+        folder.lineTo(13, 9);
+        folder.lineTo(11, 7);
+        folder.closePath();
+        g.draw(folder);
+        // folder tab
+        g.draw(new Line2D.Float(2, 7, 11, 7));
+        // plus sign
+        g.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.draw(new Line2D.Float(12, 12, 12, 18));
+        g.draw(new Line2D.Float(9, 15, 15, 15));
+    }
+
+    /** Floppy disk */
+    private static void drawSaveIcon(Graphics2D g) {
+        // outer body
+        GeneralPath body = new GeneralPath();
+        body.moveTo(3, 3);
+        body.lineTo(3, 21);
+        body.lineTo(21, 21);
+        body.lineTo(21, 7);
+        body.lineTo(17, 3);
+        body.closePath();
+        g.draw(body);
+        // top slot (disk shutter)
+        g.draw(new RoundRectangle2D.Float(8, 3, 8, 7, 1, 1));
+        // metal slide
+        g.draw(new Line2D.Float(14, 3, 14, 9));
+        // label area
+        g.draw(new RoundRectangle2D.Float(6, 14, 12, 6, 1, 1));
+    }
+
+    /** Connected people / classroom */
+    private static void drawConnectIcon(Graphics2D g) {
+        // left person - head
+        g.draw(new Ellipse2D.Float(3, 4, 5, 5));
+        // left person - body
+        GeneralPath lb = new GeneralPath();
+        lb.moveTo(2, 19);
+        lb.curveTo(2, 13, 3, 11, 5.5f, 11);
+        lb.curveTo(8, 11, 9, 13, 9, 19);
+        g.draw(lb);
+
+        // right person - head
+        g.draw(new Ellipse2D.Float(15, 4, 5, 5));
+        // right person - body
+        GeneralPath rb = new GeneralPath();
+        rb.moveTo(14, 19);
+        rb.curveTo(14, 13, 15, 11, 17.5f, 11);
+        rb.curveTo(20, 11, 21, 13, 21, 19);
+        g.draw(rb);
+
+        // connection line
+        g.setStroke(new BasicStroke(1.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.setColor(TB_HIGHLIGHT);
+        g.draw(new Line2D.Float(9, 14, 14, 14));
+        // connection dots
+        g.setColor(TB_COLOR);
+        g.fillOval(9, 13, 2, 2);
+        g.fillOval(13, 13, 2, 2);
+    }
+
+    /** Package / build box */
+    private static void drawDeployIcon(Graphics2D g) {
+        int cx = 12, top = 3, bot = 21, mid = 12;
+        int left = 2, right = 22;
+        // top face (diamond)
+        GeneralPath topFace = new GeneralPath();
+        topFace.moveTo(cx, top);
+        topFace.lineTo(right, top + 4);
+        topFace.lineTo(cx, mid);
+        topFace.lineTo(left, top + 4);
+        topFace.closePath();
+        g.draw(topFace);
+        // left face
+        g.draw(new Line2D.Float(left, top + 4, left, bot - 4));
+        g.draw(new Line2D.Float(left, bot - 4, cx, bot));
+        // right face
+        g.draw(new Line2D.Float(right, top + 4, right, bot - 4));
+        g.draw(new Line2D.Float(right, bot - 4, cx, bot));
+        // center vertical
+        g.draw(new Line2D.Float(cx, mid, cx, bot));
+        // ribbon on top face
+        g.setColor(TB_HIGHLIGHT);
+        g.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.draw(new Line2D.Float(cx, top, cx, mid));
+        g.draw(new Line2D.Float(left, top + 4, right, top + 4));
+    }
+
+    /** Record: circle + small play triangle */
+    private static void drawRecordIcon(Graphics2D g) {
+        // record circle
+        g.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.draw(new Ellipse2D.Float(2, 2, 20, 20));
+        // inner filled circle (record dot)
+        g.fill(new Ellipse2D.Float(7, 7, 10, 10));
     }
 
     @Override
