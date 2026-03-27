@@ -1934,6 +1934,21 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         return null;
     }
 
+    private TreePath findDirectChild(DefaultMutableTreeNode parent, String name) {
+
+        if (parent == null) {
+            return null;
+        }
+
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            TreeNode child = parent.getChildAt(i);
+            if (child.toString().equalsIgnoreCase(name)) {
+                return Utils.getPath(child);
+            }
+        }
+        return null;
+    }
+
     private void openTreeNodeByFile(File path) {
         saveLastSelectedFileEnabled = false;
         String parentPath = path.getParentFile().getAbsolutePath();
@@ -1941,7 +1956,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         TreeNode rootNode = (TreeNode) tree1.getModel().getRoot();
         TreeNode root = parentPath == null || parentPath.length() == 0 ? (TreeNode) tree1.getModel().getRoot() : findFolderNode(rootNode, parentPath);
 
-        TreePath tp = find((DefaultMutableTreeNode) root, nodeText);
+        TreePath tp = findDirectChild((DefaultMutableTreeNode) root, nodeText);
 
         if (tp != null) {
             tree1.setSelectionPath(tp);
@@ -1960,7 +1975,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         TreeNode rootNode = (TreeNode) tree1.getModel().getRoot();
         TreeNode root = parentPath == null || parentPath.length() == 0 ? (TreeNode) tree1.getModel().getRoot() : findFolderNode(rootNode, parentPath);
 
-        TreePath tp = find((DefaultMutableTreeNode) root, nodeText);
+        TreePath tp = findDirectChild((DefaultMutableTreeNode) root, nodeText);
 
         if (tp != null) {
             tree1.setSelectionPath(tp);
