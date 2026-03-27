@@ -68,6 +68,7 @@ public class Import3DModelPanel extends DesignerPanel {
 
     private String selectedFile;
     private String selectedFileDestDir;
+    private String previewModelAssetPath;
     private String resourcesFolder;
     private boolean modelImported = false;
     private boolean modelPreviewLoaded = false;
@@ -504,9 +505,8 @@ public class Import3DModelPanel extends DesignerPanel {
             return false;
         }
 
-        if (modelNameExists(name, "./resources", "models.json") ||
-                modelNameExists(name, resourcesFolder, "models-ext.json")) {
-            JOptionPane.showMessageDialog(this, "Model name: " + name + " already exists",
+        if (modelNameExists(name, "./resources", "models.json")) {
+            JOptionPane.showMessageDialog(this, "Model name: " + name + " already exists as a built-in model",
                     "Error", JOptionPane.ERROR_MESSAGE);
             return false;
         }
@@ -516,10 +516,16 @@ public class Import3DModelPanel extends DesignerPanel {
         File srcDir = srcFile.getParentFile();
         selectedFileDestDir = resourcesFolder + "/Models/" + (isGlb ? srcFile.getName().replace(".glb", "") : srcDir.getName());
         File destDir = new File(selectedFileDestDir);
-        if (destDir.exists()) {
-            JOptionPane.showMessageDialog(this, "Directory: " + destDir.getAbsolutePath() + " already exists",
-                    "Error", JOptionPane.ERROR_MESSAGE);
-            return false;
+
+        boolean nameExistsInExt = modelNameExists(name, resourcesFolder, "models-ext.json");
+        if (nameExistsInExt || destDir.exists()) {
+            int choice = JOptionPane.showConfirmDialog(this,
+                    "Model \"" + name + "\" already exists. Replace it?",
+                    "Model Already Exists", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (choice != JOptionPane.YES_OPTION) {
+                return false;
+            }
+            cleanupExistingModelForOverride(name, destDir);
         }
 
         destDir.mkdir();
@@ -573,6 +579,7 @@ public class Import3DModelPanel extends DesignerPanel {
 
             writePendingMarker(name, selectedFileDestDir);
 
+            previewModelAssetPath = modelPath;
             modelPreviewLoaded = true;
             return true;
 
@@ -705,6 +712,22 @@ public class Import3DModelPanel extends DesignerPanel {
             app.getAssetsMapping().get3DModelsIndex().remove(name.toLowerCase());
         }
 
+        // Unload the preview model from the JME scene and asset cache before
+        // deleting files — on Windows the asset manager holds a file lock on
+        // the .glb until the cache entry is explicitly evicted.
+        if (app != null && previewModelAssetPath != null) {
+            String assetPath = previewModelAssetPath;
+            try {
+                app.enqueue(() -> {
+                    app.removePreviewEntities(name, assetPath);
+                    return null;
+                }).get();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            previewModelAssetPath = null;
+        }
+
         if (selectedFileDestDir != null) {
             File modelDir = new File(selectedFileDestDir);
             if (modelDir.exists()) {
@@ -718,6 +741,50 @@ public class Import3DModelPanel extends DesignerPanel {
 
         deletePendingMarker();
         modelPreviewLoaded = false;
+    }
+
+    /**
+     * Removes an existing user-imported model so it can be replaced by a
+     * fresh import.  Evicts the asset from the JME cache first to release
+     * any OS-level file locks (important on Windows), then removes the
+     * on-disk directory and the models-ext.json entry.
+     */
+    private void cleanupExistingModelForOverride(String name, File destDir) {
+        // Resolve the cached asset path before removing from the mapping
+        String assetPath = null;
+        if (app != null && app.getAssetsMapping() != null) {
+            ResourceSetup res = app.getAssetsMapping().get3DModelsIndex().get(name.toLowerCase());
+            if (res != null) {
+                assetPath = res.path;
+            }
+        }
+
+        // Evict from JME scene + asset cache to release Windows file locks
+        if (app != null && assetPath != null) {
+            final String finalAssetPath = assetPath;
+            try {
+                app.enqueue(() -> {
+                    app.removePreviewEntities(name, finalAssetPath);
+                    return null;
+                }).get();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
+        removeModelFromList(name);
+
+        if (app != null && app.getAssetsMapping() != null) {
+            app.getAssetsMapping().get3DModelsIndex().remove(name.toLowerCase());
+        }
+
+        if (destDir.exists()) {
+            try {
+                FileUtils.deleteDirectory(destDir);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     /**

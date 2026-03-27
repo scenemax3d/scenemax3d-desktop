@@ -2090,7 +2090,14 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                         modelShape = CollisionShapeFactory.createBoxShape(parentNode);
                     }
                 } else {
-                    modelShape = CollisionShapeFactory.createDynamicMeshShape(parentNode);
+                    try {
+                        modelShape = CollisionShapeFactory.createDynamicMeshShape(parentNode);
+                    } catch (IllegalArgumentException e) {
+                        // Some models have geometry with negative scale components (e.g. mirrored
+                        // meshes from Blender). HullCollisionShape rejects negative scales, so
+                        // fall back to a merged-box approximation which has no such restriction.
+                        modelShape = CollisionShapeFactory.createMergedBoxShape(parentNode);
+                    }
                 }
 
                 RigidBodyControl modelCtl = new RigidBodyControl(modelShape, mass);

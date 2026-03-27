@@ -1,5 +1,6 @@
 package com.scenemax.designer;
 
+import com.jme3.asset.ModelKey;
 import com.jme3.input.KeyInput;
 import com.jme3.input.MouseInput;
 import com.jme3.input.controls.*;
@@ -974,6 +975,32 @@ public class DesignerApp extends SceneMaxApp {
         removeEntityFromAllSections(entity, entities);
         markDocumentDirty();
         notifySceneChanged();
+    }
+
+    /**
+     * Removes all pending and loaded entities whose resource name matches
+     * {@code resourceName}, then evicts the model asset from the JME cache.
+     * Must be called on the JME render thread (e.g. via {@code enqueue()}).
+     * Used by the import panel to release Windows file locks before deleting
+     * a rolled-back preview model directory.
+     */
+    public void removePreviewEntities(String resourceName, String assetPath) {
+        // Cancel any still-pending load for this resource
+        pendingEntities.removeIf(pe -> resourceName.equalsIgnoreCase(pe.resourcePath));
+
+        // Remove any already-loaded scene entities for this resource
+        for (DesignerEntity entity : new ArrayList<>(entities)) {
+            if (resourceName.equalsIgnoreCase(entity.getResourcePath())) {
+                if (entity.getSceneNode() != null) {
+                    entity.getSceneNode().removeFromParent();
+                }
+                entities.remove(entity);
+                removeEntityFromAllSections(entity, entities);
+            }
+        }
+
+        // Evict from the JME asset cache to release the OS file lock (Windows)
+        assetManager.deleteFromCache(new ModelKey(assetPath));
     }
 
     /**
