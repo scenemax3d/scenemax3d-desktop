@@ -50,12 +50,12 @@ public class Import3DModelPanel extends DesignerPanel {
     // Import settings fields
     private JTextField txtFileName;
     private JTextField txtName;
-    private JTextField txtImportScale;
     private JTextField txtImportTransX, txtImportTransY, txtImportTransZ;
     private JTextField txtImportRotateY;
     private JTextField txtCalibrateX, txtCalibrateY, txtCalibrateZ;
     private JTextField txtCapsuleRadius, txtCapsuleHeight;
     private JTextField txtStepHeight;
+    private JCheckBox chkStatic;
 
     // Transform properties (live 3D manipulation)
     private JSpinner spnPosX, spnPosY, spnPosZ;
@@ -211,11 +211,15 @@ public class Import3DModelPanel extends DesignerPanel {
         // ========== Import metadata settings ==========
         form.add(createBoldLabel("Import Settings:"));
         form.add(Box.createVerticalStrut(4));
-        txtImportScale = addLabeledTextField(form, "Scale:", "1", 8);
         txtImportRotateY = addLabeledTextField(form, "Rotate Y:", "0", 8);
         txtImportTransX = addLabeledTextField(form, "Translate X:", "0", 8);
         txtImportTransY = addLabeledTextField(form, "Translate Y:", "0", 8);
         txtImportTransZ = addLabeledTextField(form, "Translate Z:", "0", 8);
+
+        form.add(Box.createVerticalStrut(4));
+        chkStatic = new JCheckBox("Static");
+        chkStatic.setAlignmentX(Component.LEFT_ALIGNMENT);
+        form.add(chkStatic);
 
         form.add(Box.createVerticalStrut(8));
         form.add(createSeparator());
@@ -429,7 +433,7 @@ public class Import3DModelPanel extends DesignerPanel {
         JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-        Dimension spinSize = new Dimension(60, 24);
+        Dimension spinSize = new Dimension(80, 24);
         s1.setPreferredSize(spinSize);
         s2.setPreferredSize(spinSize);
         s3.setPreferredSize(spinSize);
@@ -554,6 +558,7 @@ public class Import3DModelPanel extends DesignerPanel {
             model.put("transY", 0.0f);
             model.put("transZ", 0.0f);
             model.put("rotateY", 0.0f);
+            model.put("isStatic", false);
 
             JSONObject character = model.getJSONObject("physics").getJSONObject("character");
             character.put("calibrateX", 0.0f);
@@ -639,7 +644,9 @@ public class Import3DModelPanel extends DesignerPanel {
      */
     private void updateModelMetadata() {
         String name = txtName.getText().trim();
-        float scale = getFloatValue(txtImportScale.getText(), 1.0f);
+        float scaleX = ((Number) spnScaleX.getValue()).floatValue();
+        float scaleY = ((Number) spnScaleY.getValue()).floatValue();
+        float scaleZ = ((Number) spnScaleZ.getValue()).floatValue();
         float transX = getFloatValue(txtImportTransX.getText(), 0.0f);
         float transY = getFloatValue(txtImportTransY.getText(), 0.0f);
         float transZ = getFloatValue(txtImportTransZ.getText(), 0.0f);
@@ -650,6 +657,7 @@ public class Import3DModelPanel extends DesignerPanel {
         float capsuleRadius = getFloatValue(txtCapsuleRadius.getText(), 2.0f);
         float capsuleHeight = getFloatValue(txtCapsuleHeight.getText(), 2.0f);
         float stepHeight = getFloatValue(txtStepHeight.getText(), 0.05f);
+        boolean isStatic = chkStatic.isSelected();
 
         JSONObject res = getResourcesFolderIndex(resourcesFolder + "/Models/models-ext.json");
         JSONArray models = res.getJSONArray("models");
@@ -657,13 +665,14 @@ public class Import3DModelPanel extends DesignerPanel {
         for (int i = 0; i < models.length(); i++) {
             JSONObject m = models.getJSONObject(i);
             if (m.getString("name").equalsIgnoreCase(name)) {
-                m.put("scaleX", scale);
-                m.put("scaleY", scale);
-                m.put("scaleZ", scale);
+                m.put("scaleX", scaleX);
+                m.put("scaleY", scaleY);
+                m.put("scaleZ", scaleZ);
                 m.put("transX", transX);
                 m.put("transY", transY);
                 m.put("transZ", transZ);
                 m.put("rotateY", rotateY);
+                m.put("isStatic", isStatic);
 
                 JSONObject character = m.getJSONObject("physics").getJSONObject("character");
                 character.put("calibrateX", calX);
@@ -682,9 +691,9 @@ public class Import3DModelPanel extends DesignerPanel {
         if (app != null && app.getAssetsMapping() != null) {
             ResourceSetup resSetup = app.getAssetsMapping().get3DModelsIndex().get(name.toLowerCase());
             if (resSetup != null) {
-                resSetup.scaleX = scale;
-                resSetup.scaleY = scale;
-                resSetup.scaleZ = scale;
+                resSetup.scaleX = scaleX;
+                resSetup.scaleY = scaleY;
+                resSetup.scaleZ = scaleZ;
                 resSetup.localTranslationX = transX;
                 resSetup.localTranslationY = transY;
                 resSetup.localTranslationZ = transZ;

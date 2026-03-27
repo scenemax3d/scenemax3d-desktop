@@ -572,21 +572,41 @@ public class DesignerPanel extends JPanel {
         }
 
         JComboBox<String> cmbModels = new JComboBox<>(modelNames.toArray(new String[0]));
+        JCheckBox chkStatic = new JCheckBox("Static");
+        JCheckBox chkDynamic = new JCheckBox("Dynamic");
         cmbModels.setRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> list, Object value, int index,
                                                           boolean isSelected, boolean cellHasFocus) {
                 super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                if (value instanceof String && app.isModelVehicle((String) value)) {
-                    setText(value + "  (vehicle)");
+                if (value instanceof String) {
+                    String name = (String) value;
+                    String label = name;
+                    if (app.isModelVehicle(name)) {
+                        label += "  (vehicle)";
+                    }
+                    if (app.isModelStatic(name)) {
+                        label += "  (static)";
+                    }
+                    setText(label);
                 }
                 return this;
             }
         });
-        JCheckBox chkStatic = new JCheckBox("Static");
-        JCheckBox chkDynamic = new JCheckBox("Dynamic");
+        cmbModels.addActionListener(e -> {
+            String selected = (String) cmbModels.getSelectedItem();
+            if (selected != null && app.isModelStatic(selected)) {
+                chkStatic.setSelected(true);
+                chkDynamic.setSelected(false);
+            }
+        });
         chkStatic.addActionListener(e -> { if (chkStatic.isSelected()) chkDynamic.setSelected(false); });
         chkDynamic.addActionListener(e -> { if (chkDynamic.isSelected()) chkStatic.setSelected(false); });
+        // Auto-check static for the initially selected model
+        String initialModel = (String) cmbModels.getSelectedItem();
+        if (initialModel != null && app.isModelStatic(initialModel)) {
+            chkStatic.setSelected(true);
+        }
 
         JPanel panel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();

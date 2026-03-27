@@ -112,6 +112,9 @@ public class AssetsMapping {
 
             ResourceSetup res3D = new ResourceSetup(name,path,scaleX,scaleY,scaleZ,transX,transY,transZ,rotateY);
             res3D.setJsonBuffer(spr.toString());
+            if(spr.has("isStatic")) {
+                res3D.isStatic = spr.getBoolean("isStatic");
+            }
 
             if(spr.has("physics")) {
                 JSONObject physics = spr.getJSONObject("physics");

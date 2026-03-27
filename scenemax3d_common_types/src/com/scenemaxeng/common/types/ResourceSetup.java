@@ -37,6 +37,7 @@ public class ResourceSetup {
     public SceneMaxGearBox gearBox;
     public SceneMaxEngine engine;
     public boolean isVehicle;
+    public boolean isStatic;
     public String horn;
     public float localScale=1;
 

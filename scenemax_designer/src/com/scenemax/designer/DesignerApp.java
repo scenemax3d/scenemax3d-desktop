@@ -614,6 +614,14 @@ public class DesignerApp extends SceneMaxApp {
         return res != null && res.isVehicle;
     }
 
+    /** Checks whether a model is marked as static based on the assets mapping. */
+    public boolean isModelStatic(String modelName) {
+        AssetsMapping mapping = createFullAssetsMapping();
+        if (mapping.get3DModelsIndex() == null) return false;
+        ResourceSetup res = mapping.get3DModelsIndex().get(modelName.toLowerCase());
+        return res != null && res.isStatic;
+    }
+
     /**
      * Executes SceneMax code to create an entity and queues a deferred lookup.
      * The node won't exist until simpleUpdate() runs the SceneMax controllers,
