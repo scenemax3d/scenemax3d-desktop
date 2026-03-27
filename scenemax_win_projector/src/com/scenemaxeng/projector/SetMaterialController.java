@@ -17,7 +17,7 @@ public class SetMaterialController extends SceneMaxBaseController {
         findTargetVar();
 
         SetMaterialCommand cmd = (SetMaterialCommand) this.cmd;
-        String material = new ActionLogicalExpression(cmd.materialNameExpr,this.scope).evaluate().toString();
+        String material = new ActionLogicalExpressionVm(cmd.materialNameExpr,this.scope).evaluate().toString();
 
         if(this.targetVarDef.varType== VariableDef.VAR_TYPE_BOX) {
             this.app.setBoxMaterial(this.targetVar, material);

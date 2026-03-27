@@ -20,7 +20,7 @@ public class ChangeMassController extends SceneMaxBaseController{
             targetCalculated = true;
             findTargetVar();
 
-            Double mass = (Double)new ActionLogicalExpression(cmd.massExpr,this.scope).evaluate();
+            Double mass = (Double)new ActionLogicalExpressionVm(cmd.massExpr,this.scope).evaluate();
 
             if (targetVarDef.varType == VariableDef.VAR_TYPE_3D) {
                 this.app.applyModelMass(this.targetVar, mass);

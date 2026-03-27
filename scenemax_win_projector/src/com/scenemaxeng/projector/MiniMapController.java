@@ -19,11 +19,11 @@ public class MiniMapController extends SceneMaxBaseController {
 
         MiniMapCommand cmd = (MiniMapCommand)this.cmd;
         if(cmd.sizeExpr!=null) {
-            cmd.sizeVal = ((Double)new ActionLogicalExpression(cmd.sizeExpr,this.scope).evaluate()).intValue();
+            cmd.sizeVal = ((Double)new ActionLogicalExpressionVm(cmd.sizeExpr,this.scope).evaluate()).intValue();
         }
 
         if(cmd.heightExpr!=null) {
-            cmd.heightVal = ((Double)new ActionLogicalExpression(cmd.heightExpr,this.scope).evaluate()).floatValue();
+            cmd.heightVal = ((Double)new ActionLogicalExpressionVm(cmd.heightExpr,this.scope).evaluate()).floatValue();
         }
 
         app.ShowHideMiniMap(cmd,this.targetVar, this.targetVarDef);

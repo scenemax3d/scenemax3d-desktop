@@ -22,7 +22,7 @@ public class DoBlockController extends SceneMaxBaseController {
     public HashMap<String,Object> funcScopeParams;
     private List<String> paramsNames;
     private List<SceneMaxParser.Logical_expressionContext> paramsExp;
-    public ActionLogicalExpression intervalExpr;
+    public ActionLogicalExpressionVm intervalExpr;
     private Double interval=-1.0;
     private double timerIntervalCount=0;
     private boolean timerTicked;
@@ -30,8 +30,8 @@ public class DoBlockController extends SceneMaxBaseController {
     private int eventHandlersCount;
 
     // Cached to avoid per-frame allocation
-    private ActionLogicalExpression goExprCached;
-    private ActionLogicalExpression loopExprCached;
+    private ActionLogicalExpressionVm goExprCached;
+    private ActionLogicalExpressionVm loopExprCached;
 
 
     public DoBlockController(SceneMaxApp app, SceneMaxScope scope, DoBlockCommand cmd) {
@@ -75,7 +75,7 @@ public class DoBlockController extends SceneMaxBaseController {
         if(checkGoExpr && goExpr!=null) {
             checkGoExpr=this.cmd.useGoExprEveryIteration;
             if(goExprCached == null) {
-                goExprCached = new ActionLogicalExpression(goExpr, parentScope);
+                goExprCached = new ActionLogicalExpressionVm(goExpr, parentScope);
             }
             Object cond = goExprCached.evaluate();
             if(cond instanceof Boolean) {
@@ -135,7 +135,7 @@ public class DoBlockController extends SceneMaxBaseController {
             if(this.cmd.amountExpr==null){
                 this.target=0;
             } else {
-                this.target = ActionLogicalExpression.toDouble(new ActionLogicalExpression(this.cmd.amountExpr,scope).evaluate());
+                this.target = ActionLogicalExpressionVm.toDouble(new ActionLogicalExpressionVm(this.cmd.amountExpr,scope).evaluate());
                 scope.type= SceneMaxScope.SCOPE_TYPE_LOOPER;
                 scope.isReturnPoint=true;
                 scope.setCreatorController(this);
@@ -167,7 +167,7 @@ public class DoBlockController extends SceneMaxBaseController {
 
                 if (this.cmd.loopExpr!=null) {
                     if(loopExprCached == null) {
-                        loopExprCached = new ActionLogicalExpression(this.cmd.loopExpr, this.scope);
+                        loopExprCached = new ActionLogicalExpressionVm(this.cmd.loopExpr, this.scope);
                     }
                     loopCondition = (Boolean) loopExprCached.evaluate();
                 }
@@ -244,7 +244,7 @@ public class DoBlockController extends SceneMaxBaseController {
             funcScopeParams=new HashMap<>();
             int index = 0;
             for (SceneMaxParser.Logical_expressionContext ctx : paramsExp) {
-                ActionLogicalExpression exp = new ActionLogicalExpression(ctx, this.parentScope);
+                ActionLogicalExpressionVm exp = new ActionLogicalExpressionVm(ctx, this.parentScope);
                 Object obj = exp.evaluate();
 
                 if(obj instanceof String) {

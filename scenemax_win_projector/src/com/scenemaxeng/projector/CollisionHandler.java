@@ -37,7 +37,7 @@ public class CollisionHandler {
         boolean goCondition;
 
         if(goExpr!=null) {
-            Object cond = new ActionLogicalExpression(goExpr,this.doBlock.parentScope).evaluate();
+            Object cond = new ActionLogicalExpressionVm(goExpr,this.doBlock.parentScope).evaluate();
             if(cond instanceof Boolean) {
                 goCondition=(Boolean)cond;
                 return goCondition;

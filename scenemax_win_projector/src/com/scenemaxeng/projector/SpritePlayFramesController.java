@@ -45,13 +45,13 @@ class SpritePlayFramesController extends SceneMaxBaseController{
         if(!targetCalculated) {
             if(cmd.durationStrategy==1) {//play for amount of time
                 targetDuration = cmd.forTimeExpr==null?1.0f:
-                        Float.parseFloat(new ActionLogicalExpression(cmd.forTimeExpr,scope).evaluate().toString());//     Float.parseFloat(this.forTime);
+                        Float.parseFloat(new ActionLogicalExpressionVm(cmd.forTimeExpr,scope).evaluate().toString());//     Float.parseFloat(this.forTime);
             }
 
-            targetTime = cmd.speedExpr==null?1.0f:Float.parseFloat(new ActionLogicalExpression(cmd.speedExpr,scope).evaluate().toString());
+            targetTime = cmd.speedExpr==null?1.0f:Float.parseFloat(new ActionLogicalExpressionVm(cmd.speedExpr,scope).evaluate().toString());
 
-            fromFrame = (int)Float.parseFloat(new ActionLogicalExpression(this.cmd.fromFrameExpr,scope).evaluate().toString());//
-            toFrame = (int)Float.parseFloat(new ActionLogicalExpression(this.cmd.toFrameExpr,scope).evaluate().toString());//
+            fromFrame = (int)Float.parseFloat(new ActionLogicalExpressionVm(this.cmd.fromFrameExpr,scope).evaluate().toString());//
+            toFrame = (int)Float.parseFloat(new ActionLogicalExpressionVm(this.cmd.toFrameExpr,scope).evaluate().toString());//
 
 
             if(cmd.varDef.varType== VariableDef.VAR_TYPE_OBJECT) {

@@ -17,7 +17,7 @@ public class PlaySoundController extends SceneMaxBaseController {
 
         String sound = null;
         if(cmd.soundExpr!=null) {
-            sound = new ActionLogicalExpression(cmd.soundExpr,this.scope).evaluate().toString();
+            sound = new ActionLogicalExpressionVm(cmd.soundExpr,this.scope).evaluate().toString();
         } else {
             sound = cmd.sound;
         }

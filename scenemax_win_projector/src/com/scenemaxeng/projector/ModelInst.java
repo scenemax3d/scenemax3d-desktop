@@ -6,14 +6,14 @@ import com.scenemaxeng.compiler.VariableDef;
 public class ModelInst extends EntityInstBase{
 
     public ModelDef modelDef;
-    public ActionLogicalExpression scaleExpr;
-    public ActionLogicalExpression massExpr;
-    public ActionLogicalExpression xExpr;
-    public ActionLogicalExpression yExpr;
-    public ActionLogicalExpression zExpr;
-    public ActionLogicalExpression rxExpr;
-    public ActionLogicalExpression ryExpr;
-    public ActionLogicalExpression rzExpr;
+    public ActionLogicalExpressionVm scaleExpr;
+    public ActionLogicalExpressionVm massExpr;
+    public ActionLogicalExpressionVm xExpr;
+    public ActionLogicalExpressionVm yExpr;
+    public ActionLogicalExpressionVm zExpr;
+    public ActionLogicalExpressionVm rxExpr;
+    public ActionLogicalExpressionVm ryExpr;
+    public ActionLogicalExpressionVm rzExpr;
     public RunTimeVarDef entityForPos;
     public RunTimeVarDef entityForRot;
 
@@ -23,32 +23,32 @@ public class ModelInst extends EntityInstBase{
         this.varDef=varDef;
 
         if(varDef.scaleExpr!=null) {
-            this.scaleExpr = new ActionLogicalExpression(varDef.scaleExpr,scope);
+            this.scaleExpr = new ActionLogicalExpressionVm(varDef.scaleExpr,scope);
         }
 
         if(varDef.massExpr!=null) {
-            this.massExpr = new ActionLogicalExpression(varDef.massExpr,scope);
+            this.massExpr = new ActionLogicalExpressionVm(varDef.massExpr,scope);
         }
 
         if(varDef.xExpr!=null) {
-            this.xExpr=new ActionLogicalExpression(varDef.xExpr,scope);
-            this.yExpr=new ActionLogicalExpression(varDef.yExpr,scope);
-            this.zExpr=new ActionLogicalExpression(varDef.zExpr,scope);
+            this.xExpr=new ActionLogicalExpressionVm(varDef.xExpr,scope);
+            this.yExpr=new ActionLogicalExpressionVm(varDef.yExpr,scope);
+            this.zExpr=new ActionLogicalExpressionVm(varDef.zExpr,scope);
 
         }
 
         if(varDef.useVerbalTurn) {
             if(varDef.rxExpr!=null) {
-                this.rxExpr=new ActionLogicalExpression(varDef.rxExpr,scope);
+                this.rxExpr=new ActionLogicalExpressionVm(varDef.rxExpr,scope);
             } else if(varDef.ryExpr!=null) {
-                this.ryExpr=new ActionLogicalExpression(varDef.ryExpr,scope);
+                this.ryExpr=new ActionLogicalExpressionVm(varDef.ryExpr,scope);
             } else if(varDef.rzExpr!=null) {
-                this.rzExpr=new ActionLogicalExpression(varDef.rzExpr,scope);
+                this.rzExpr=new ActionLogicalExpressionVm(varDef.rzExpr,scope);
             }
         } else if(varDef.rxExpr!=null) {
-            this.rxExpr=new ActionLogicalExpression(varDef.rxExpr,scope);
-            this.ryExpr=new ActionLogicalExpression(varDef.ryExpr,scope);
-            this.rzExpr=new ActionLogicalExpression(varDef.rzExpr,scope);
+            this.rxExpr=new ActionLogicalExpressionVm(varDef.rxExpr,scope);
+            this.ryExpr=new ActionLogicalExpressionVm(varDef.ryExpr,scope);
+            this.rzExpr=new ActionLogicalExpressionVm(varDef.rzExpr,scope);
         }
 
     }

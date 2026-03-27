@@ -17,9 +17,9 @@ public class CarTurboController extends SceneMaxBaseController{
 
         CarTurboCommand cmd = (CarTurboCommand) this.cmd;
         RunTimeVarDef entity = findTargetVar(cmd.targetVar);
-        Double x = (Double) new ActionLogicalExpression(cmd.xExpr, this.scope).evaluate();
-        Double y = (Double) new ActionLogicalExpression(cmd.yExpr, this.scope).evaluate();
-        Double z = (Double) new ActionLogicalExpression(cmd.zExpr, this.scope).evaluate();
+        Double x = (Double) new ActionLogicalExpressionVm(cmd.xExpr, this.scope).evaluate();
+        Double y = (Double) new ActionLogicalExpressionVm(cmd.yExpr, this.scope).evaluate();
+        Double z = (Double) new ActionLogicalExpressionVm(cmd.zExpr, this.scope).evaluate();
 
         app.carTurbo(entity, x,y,z);
         return true;

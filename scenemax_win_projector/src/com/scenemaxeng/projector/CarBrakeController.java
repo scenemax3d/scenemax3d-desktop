@@ -17,7 +17,7 @@ public class CarBrakeController extends SceneMaxBaseController{
 
         CarBrakeCommand cmd = (CarBrakeCommand) this.cmd;
         RunTimeVarDef entity = findTargetVar(cmd.targetVar);
-        Double brake = (Double) new ActionLogicalExpression(cmd.brakeExp, this.scope).evaluate();
+        Double brake = (Double) new ActionLogicalExpressionVm(cmd.brakeExp, this.scope).evaluate();
 
         app.carBrake(entity, brake);
         return true;

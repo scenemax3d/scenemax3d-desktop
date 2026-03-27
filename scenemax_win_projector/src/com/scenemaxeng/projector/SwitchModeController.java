@@ -24,7 +24,7 @@ public class SwitchModeController extends SceneMaxBaseController {
 
         if(cmd.switchTo==SwitchModeCommand.CHARACTER) {
             if(cmd.gravityExpr!=null) {
-                cmd.gravityVal = (Double) new ActionLogicalExpression(cmd.gravityExpr,this.scope).evaluate();
+                cmd.gravityVal = (Double) new ActionLogicalExpressionVm(cmd.gravityExpr,this.scope).evaluate();
             }
             this.app.switchModelToCharacterMode(this.targetVar,cmd);
         } else if(cmd.switchTo==SwitchModeCommand.RAGDOLL) {

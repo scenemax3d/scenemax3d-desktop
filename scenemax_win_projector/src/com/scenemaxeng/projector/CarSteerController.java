@@ -17,7 +17,7 @@ public class CarSteerController extends SceneMaxBaseController {
 
         CarSteerCommand cmd = (CarSteerCommand) this.cmd;
         RunTimeVarDef entity = findTargetVar(cmd.targetVar);
-        Double steer = (Double) new ActionLogicalExpression(cmd.steerExp, this.scope).evaluate();
+        Double steer = (Double) new ActionLogicalExpressionVm(cmd.steerExp, this.scope).evaluate();
 
         app.carSteer(entity, steer);
         return true;

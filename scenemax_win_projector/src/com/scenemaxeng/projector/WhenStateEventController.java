@@ -9,7 +9,7 @@ import java.util.List;
 
 public class WhenStateEventController extends SceneMaxBaseController {
 
-    private List<ActionLogicalExpression> expr = new ArrayList<>();
+    private List<ActionLogicalExpressionVm> expr = new ArrayList<>();
     private int exprIndex = 0;
     private WhenStateCommand cmd = null;
     private DoBlockController handler = null;
@@ -27,7 +27,7 @@ public class WhenStateEventController extends SceneMaxBaseController {
         if (!targetCalculated) {
             this.targetCalculated = true;
             for (SceneMaxParser.Logical_expressionContext logicalExpressionContext : this.cmd.whenExpr) {
-                this.expr.add(new ActionLogicalExpression(logicalExpressionContext, this.scope));
+                this.expr.add(new ActionLogicalExpressionVm(logicalExpressionContext, this.scope));
             }
             this.exprIndex = this.expr.size()-1;
             this.handler = new DoBlockController(app,scope, this.cmd.doBlock);
@@ -36,7 +36,7 @@ public class WhenStateEventController extends SceneMaxBaseController {
         }
 
         if (!this.handler.isRunning) {
-            ActionLogicalExpression expr = this.expr.get(this.exprIndex);
+            ActionLogicalExpressionVm expr = this.expr.get(this.exprIndex);
             Boolean res = (Boolean)expr.evaluate();
             if (res) {
                 if (this.exprIndex == 0) {

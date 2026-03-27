@@ -20,7 +20,7 @@ public class CreateSpriteController extends SceneMaxBaseController {
 //        SpriteDef def;
 //
         if (cmd.spriteDef.nameExpr != null) {
-            cmd.varDef.resName = new ActionLogicalExpression(cmd.spriteDef.nameExpr, this.scope).evaluate().toString();
+            cmd.varDef.resName = new ActionLogicalExpressionVm(cmd.spriteDef.nameExpr, this.scope).evaluate().toString();
         }
 
         SpriteInst inst = app.createSpriteInst(this.scope, cmd);

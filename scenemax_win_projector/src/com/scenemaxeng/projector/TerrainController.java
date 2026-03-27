@@ -20,7 +20,7 @@ public class TerrainController extends SceneMaxBaseController {
 
     public boolean run(float tpf) {
         if (forceStop) return true;
-        ActionLogicalExpression exp = new ActionLogicalExpression(cmd.terrainNameExprCtx,this.scope);
+        ActionLogicalExpressionVm exp = new ActionLogicalExpressionVm(cmd.terrainNameExprCtx,this.scope);
         String asset = exp.evaluate().toString();
         app.loadTerrain(asset);
 

@@ -43,9 +43,9 @@ public class LookAtController extends SceneMaxBaseController{
                 RunTimeVarDef lookatVar = app.findVarRuntime(prg,scope,cmd.moveToTarget);
                 app.lookAt(lookingObject, lookatVar);
             } else {
-                float x = ((Double)new ActionLogicalExpression(cmd.moveToTargetXExpr,scope).evaluate()).floatValue();
-                float y = ((Double)new ActionLogicalExpression(cmd.moveToTargetYExpr,scope).evaluate()).floatValue();
-                float z = ((Double)new ActionLogicalExpression(cmd.moveToTargetZExpr,scope).evaluate()).floatValue();
+                float x = ((Double)new ActionLogicalExpressionVm(cmd.moveToTargetXExpr,scope).evaluate()).floatValue();
+                float y = ((Double)new ActionLogicalExpressionVm(cmd.moveToTargetYExpr,scope).evaluate()).floatValue();
+                float z = ((Double)new ActionLogicalExpressionVm(cmd.moveToTargetZExpr,scope).evaluate()).floatValue();
                 Vector3f lookatVec = new Vector3f(x,y,z);
                 app.lookAt(lookingObject,lookatVec);
             }

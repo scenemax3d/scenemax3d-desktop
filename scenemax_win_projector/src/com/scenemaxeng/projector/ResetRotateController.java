@@ -22,9 +22,9 @@ public class ResetRotateController extends SceneMaxBaseController {
             RotateResetCommand cmd = (RotateResetCommand) this.cmd;
             findTargetVar();
 
-            float x = ((Double) new ActionLogicalExpression(cmd.xExpr, this.scope).evaluate()).floatValue();
-            float y = ((Double) new ActionLogicalExpression(cmd.yExpr, this.scope).evaluate()).floatValue();
-            float z = ((Double) new ActionLogicalExpression(cmd.zExpr, this.scope).evaluate()).floatValue();
+            float x = ((Double) new ActionLogicalExpressionVm(cmd.xExpr, this.scope).evaluate()).floatValue();
+            float y = ((Double) new ActionLogicalExpressionVm(cmd.yExpr, this.scope).evaluate()).floatValue();
+            float z = ((Double) new ActionLogicalExpressionVm(cmd.zExpr, this.scope).evaluate()).floatValue();
 
             if (targetVarDef.varType == VariableDef.VAR_TYPE_CAMERA) {
                 this.app.rotateResetCamera(x,y,z);

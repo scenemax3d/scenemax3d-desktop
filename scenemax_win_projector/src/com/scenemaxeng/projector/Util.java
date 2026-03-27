@@ -16,7 +16,7 @@ public class Util {
         if(posStatement.directionVerbs!=null) {
 
             for(DirectionVerb dv:posStatement.directionVerbs) {
-                Double val = (Double) new ActionLogicalExpression(dv.valExp,thread).evaluate();
+                Double val = (Double) new ActionLogicalExpressionVm(dv.valExp,thread).evaluate();
 
                 if(dv.verb==DirectionVerb.FORWARD) {
                     Vector3f forward = locRot.mult(Vector3f.UNIT_Z);

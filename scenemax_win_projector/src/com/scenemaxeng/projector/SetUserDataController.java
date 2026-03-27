@@ -20,7 +20,7 @@ public class SetUserDataController extends SceneMaxBaseController {
             targetCalculated = true;
             findTargetVar();
 
-            java.lang.Object data = new ActionLogicalExpression(cmd.dataExpr,this.scope).evaluate();
+            java.lang.Object data = new ActionLogicalExpressionVm(cmd.dataExpr,this.scope).evaluate();
 
             if (targetVarDef.varType == VariableDef.VAR_TYPE_3D) {
                 this.app.setModelUserData(this.targetVar, cmd.fieldName, data);

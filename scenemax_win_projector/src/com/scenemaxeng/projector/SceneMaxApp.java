@@ -211,7 +211,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     public SceneMaxApp() {
         this.logger = Logger.getLogger(SceneMaxApp.class.getName());
         //debugLogger = ProjectorLogger.run();
-        ActionLogicalExpression.setApp(this);
+        ActionLogicalExpressionVm.setApp(this);
         this.showSettings=false;
         initKeyMapping();
         VariableDef camVarDef = new VariableDef();
@@ -1018,7 +1018,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
             float volume = 100;
             if(st.volumeExpr!=null) {
-                volume = ((Double)new ActionLogicalExpression(st.volumeExpr,mainScope).evaluate()).floatValue();
+                volume = ((Double)new ActionLogicalExpressionVm(st.volumeExpr,mainScope).evaluate()).floatValue();
                 if(volume>100) {
                     volume=100;
                 }
@@ -1043,8 +1043,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 rc.axis = cmd.axis;
                 rc.numSign = cmd.numSign;
                 rc.num = cmd.num;
-                rc.numExpr = new ActionLogicalExpression(cmd.numExpr,scope );
-                rc.speedExpr = new ActionLogicalExpression(cmd.speedExp,scope);
+                rc.numExpr = new ActionLogicalExpressionVm(cmd.numExpr,scope );
+                rc.speedExpr = new ActionLogicalExpressionVm(cmd.speedExp,scope);
                 rc.async= loopExpr!=null || action.isAsync;
                 scope.add(rc);
             }
@@ -1058,8 +1058,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 mc.axis = cmd.axis;
                 mc.numSign = cmd.numSign;
                 mc.num = cmd.num;
-                mc.numExpr = new ActionLogicalExpression(cmd.numExpr,scope);
-                mc.speedExpr = new ActionLogicalExpression(cmd.speedExpr,scope);
+                mc.numExpr = new ActionLogicalExpressionVm(cmd.numExpr,scope);
+                mc.speedExpr = new ActionLogicalExpressionVm(cmd.speedExpr,scope);
                 mc.async=action.isAsync;
                 scope.add(mc);
             }
@@ -1357,7 +1357,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             c.goExpr = fDef.goExpr;
             c.async = fic.isAsync || cmd.isAsync;
             if(fic.intervalExpr!=null) {
-                c.intervalExpr = new ActionLogicalExpression(fic.intervalExpr, scope);
+                c.intervalExpr = new ActionLogicalExpressionVm(fic.intervalExpr, scope);
                 c.async=true;
             }
 
@@ -1398,7 +1398,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             md = prg.getModel(var.resName);
             fromRes = var.resName;
         } else {
-            fromRes = new ActionLogicalExpression(var.resNameExpr, scope).evaluate().toString();
+            fromRes = new ActionLogicalExpressionVm(var.resNameExpr, scope).evaluate().toString();
 
             md = new ModelDef();
             md.name = fromRes;
@@ -1455,7 +1455,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 md = prg.getModel(var.resName);
                 fromRes = var.resName;
             } else {
-                fromRes = new ActionLogicalExpression(var.resNameExpr, scope).evaluate().toString();
+                fromRes = new ActionLogicalExpressionVm(var.resNameExpr, scope).evaluate().toString();
                 md = new ModelDef();
                 md.name = fromRes;
                 md.isVehicle = var.isVehicle;
@@ -1528,9 +1528,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         float x=1.0f,y=1.0f,z=1.0f;
         BoxVariableDef varDef = (BoxVariableDef)inst.varDef;
         if(varDef.sizeX!=null) {
-            x = ((Double)new ActionLogicalExpression(varDef.sizeX,inst.scope).evaluate()).floatValue();
-            y = ((Double)new ActionLogicalExpression(varDef.sizeY,inst.scope).evaluate()).floatValue();
-            z = ((Double)new ActionLogicalExpression(varDef.sizeZ,inst.scope).evaluate()).floatValue();
+            x = ((Double)new ActionLogicalExpressionVm(varDef.sizeX,inst.scope).evaluate()).floatValue();
+            y = ((Double)new ActionLogicalExpressionVm(varDef.sizeY,inst.scope).evaluate()).floatValue();
+            z = ((Double)new ActionLogicalExpressionVm(varDef.sizeZ,inst.scope).evaluate()).floatValue();
         }
 
         String boxName = inst.varDef.varName+"@"+inst.scope.scopeId;
@@ -1599,7 +1599,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
 
             if (varDef.materialExpr != null) {
-                String materialName = new ActionLogicalExpression(varDef.materialExpr, inst.scope).evaluate().toString();
+                String materialName = new ActionLogicalExpressionVm(varDef.materialExpr, inst.scope).evaluate().toString();
                 if (!setGeometryMaterial(boxGeo, materialName)) {
                     handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
                     return;
@@ -2106,9 +2106,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
                 if (modelInst.varDef.calibration != null) {
 
-                    float cx = ((Double) new ActionLogicalExpression(modelInst.varDef.calibration.posX, modelInst.scope).evaluate()).floatValue();
-                    float cy = ((Double) new ActionLogicalExpression(modelInst.varDef.calibration.posY, modelInst.scope).evaluate()).floatValue();
-                    float cz = ((Double) new ActionLogicalExpression(modelInst.varDef.calibration.posZ, modelInst.scope).evaluate()).floatValue();
+                    float cx = ((Double) new ActionLogicalExpressionVm(modelInst.varDef.calibration.posX, modelInst.scope).evaluate()).floatValue();
+                    float cy = ((Double) new ActionLogicalExpressionVm(modelInst.varDef.calibration.posY, modelInst.scope).evaluate()).floatValue();
+                    float cz = ((Double) new ActionLogicalExpressionVm(modelInst.varDef.calibration.posZ, modelInst.scope).evaluate()).floatValue();
 
                     mm.move(cx, cy, cz);
                 }
@@ -2252,8 +2252,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         float width = 1.0f, height = 1.0f;
         if (spriteInst.spriteDef.widthExpr!=null) {
-            width = ((Double)new ActionLogicalExpression(spriteInst.spriteDef.widthExpr,spriteInst.scope).evaluate()).floatValue();
-            height = ((Double)new ActionLogicalExpression(spriteInst.spriteDef.heightExpr,spriteInst.scope).evaluate()).floatValue();
+            width = ((Double)new ActionLogicalExpressionVm(spriteInst.spriteDef.widthExpr,spriteInst.scope).evaluate()).floatValue();
+            height = ((Double)new ActionLogicalExpressionVm(spriteInst.spriteDef.heightExpr,spriteInst.scope).evaluate()).floatValue();
         }
         SpriteEmitter sprite = new SpriteEmitter(
                 name,rows,cols,width,height,
@@ -2291,7 +2291,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         if(spriteInst.spriteDef.scaleExpr!=null) {
-            Double val = (Double)new ActionLogicalExpression(spriteInst.spriteDef.scaleExpr,spriteInst.scope).evaluate();
+            Double val = (Double)new ActionLogicalExpressionVm(spriteInst.spriteDef.scaleExpr,spriteInst.scope).evaluate();
             sprite.getSpatial().setLocalScale(val.floatValue());
         }
 

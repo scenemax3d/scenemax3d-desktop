@@ -37,9 +37,9 @@ public class EntityPosController extends SceneMaxBaseController {
             Util.calcPositionStatementVerbs(this.scope, cmd.posStatement,locRot,calculatedPosition);
 
         } else if(cmd.x!=null) {
-            valX = (Double) new ActionLogicalExpression(cmd.x, this.scope).evaluate();
-            valY = (Double) new ActionLogicalExpression(cmd.y, this.scope).evaluate();
-            valZ = (Double) new ActionLogicalExpression(cmd.z, this.scope).evaluate();
+            valX = (Double) new ActionLogicalExpressionVm(cmd.x, this.scope).evaluate();
+            valY = (Double) new ActionLogicalExpressionVm(cmd.y, this.scope).evaluate();
+            valZ = (Double) new ActionLogicalExpressionVm(cmd.z, this.scope).evaluate();
         } else if(cmd.entityPos!=null) {
 
             entityForPos = app.findVarRuntime(prg,this.scope,cmd.entityPos.entityName);

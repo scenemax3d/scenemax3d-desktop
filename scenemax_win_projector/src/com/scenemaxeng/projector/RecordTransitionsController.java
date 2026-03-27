@@ -30,7 +30,7 @@ public class RecordTransitionsController extends SceneMaxBaseController{
             }
 
             ActionCommandRecord cmd = (ActionCommandRecord)this.cmd;
-            this.interval = (Double)new ActionLogicalExpression(cmd.everyTimeExpr,this.scope).evaluate();
+            this.interval = (Double)new ActionLogicalExpressionVm(cmd.everyTimeExpr,this.scope).evaluate();
 
             this.spatial.setUserData("__stop_record",false);
             targetCalculated=true;

@@ -21,7 +21,7 @@ public class ArrayCommandController extends SceneMaxBaseController {
 
         switch (this.cmd.action) {
             case Push:
-                Object obj = new ActionLogicalExpression(this.cmd.expr, this.scope).evaluate();
+                Object obj = new ActionLogicalExpressionVm(this.cmd.expr, this.scope).evaluate();
                 var.values.add(obj);
                 break;
             case Pop:

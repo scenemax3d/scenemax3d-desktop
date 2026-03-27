@@ -9,7 +9,9 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.lang.reflect.Field;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class ActionLogicalExpression extends ActionStatementBase {
 
@@ -21,6 +23,30 @@ public class ActionLogicalExpression extends ActionStatementBase {
     private static final ThreadLocal<LogicalExpressionVisitor> visitorPool = new ThreadLocal<>();
     // Tracks nesting depth so nested evals don't clobber the pooled visitor
     private static final ThreadLocal<int[]> evalDepth = ThreadLocal.withInitial(() -> new int[]{0});
+    private static final int MAX_DIAGNOSTIC_LOGS = 100;
+    private static final AtomicLong dualModeMismatchCount = new AtomicLong();
+    private static final AtomicLong dualModeExceptionCount = new AtomicLong();
+    private static volatile EvaluationMode evaluationMode = EvaluationMode.fromProperty(System.getProperty("scenemax.logicalExpression.mode"));
+
+    public enum EvaluationMode {
+        LEGACY,
+        VM,
+        DUAL;
+
+        static EvaluationMode fromProperty(String raw) {
+            if (raw == null || raw.trim().isEmpty()) {
+                return VM;
+            }
+            String value = raw.trim().toUpperCase();
+            if ("VM".equals(value)) {
+                return VM;
+            }
+            if ("DUAL".equals(value)) {
+                return DUAL;
+            }
+            return LEGACY;
+        }
+    }
 
     public ActionLogicalExpression(ParserRuleContext ctx, SceneMaxScope scope) {
         this.scope = scope;
@@ -29,9 +55,37 @@ public class ActionLogicalExpression extends ActionStatementBase {
 
     public static void setApp(SceneMaxApp app) {
         ActionLogicalExpression.app = app;
+        ActionLogicalExpressionVm.setApp(app);
+    }
+
+    public static void setEvaluationMode(EvaluationMode mode) {
+        evaluationMode = mode == null ? EvaluationMode.LEGACY : mode;
+    }
+
+    public static EvaluationMode getEvaluationMode() {
+        return evaluationMode;
+    }
+
+    public static long getDualModeMismatchCount() {
+        return dualModeMismatchCount.get();
+    }
+
+    public static long getDualModeExceptionCount() {
+        return dualModeExceptionCount.get();
     }
 
     public Object evaluate() {
+        EvaluationMode mode = evaluationMode;
+        if (mode == EvaluationMode.VM) {
+            return new ActionLogicalExpressionVm(this.ctx, this.scope).evaluate();
+        }
+        if (mode == EvaluationMode.DUAL) {
+            return evaluateDual();
+        }
+        return evaluateLegacy();
+    }
+
+    private Object evaluateLegacy() {
         int[] depth = evalDepth.get();
         LogicalExpressionVisitor v;
         if (depth[0] == 0) {
@@ -53,6 +107,33 @@ public class ActionLogicalExpression extends ActionStatementBase {
         } finally {
             depth[0]--;
         }
+    }
+
+    private Object evaluateDual() {
+        Object legacyResult = evaluateLegacy();
+
+        // Avoid duplicate side effects in diagnostics mode for expressions with function calls such as rnd().
+        if (containsFunctionCall(this.ctx)) {
+            return legacyResult;
+        }
+
+        RuntimeErrorSnapshot snapshot = RuntimeErrorSnapshot.capture(app);
+        try {
+            Object vmResult = new ActionLogicalExpressionVm(this.ctx, this.scope).evaluate();
+            if (!resultsEqual(legacyResult, vmResult)) {
+                long count = dualModeMismatchCount.incrementAndGet();
+                logDualModeDiagnostic("Mismatch #" + count + ": expr='" + this.ctx.getText()
+                        + "', legacy=" + stringify(legacyResult) + ", vm=" + stringify(vmResult));
+            }
+        } catch (Throwable t) {
+            long count = dualModeExceptionCount.incrementAndGet();
+            logDualModeDiagnostic("VM exception #" + count + ": expr='" + this.ctx.getText()
+                    + "', type=" + t.getClass().getSimpleName() + ", message=" + t.getMessage());
+        } finally {
+            snapshot.restore(app);
+        }
+
+        return legacyResult;
     }
 
     /**
@@ -82,6 +163,117 @@ public class ActionLogicalExpression extends ActionStatementBase {
         if (obj instanceof Number) return ((Number) obj).doubleValue();
         if (obj == null) return 0.0;
         return Double.parseDouble(obj.toString());
+    }
+
+    private static boolean resultsEqual(Object left, Object right) {
+        if (left == right) {
+            return true;
+        }
+        if (left == null || right == null) {
+            return false;
+        }
+        if (left instanceof Number && right instanceof Number) {
+            return Double.compare(((Number) left).doubleValue(), ((Number) right).doubleValue()) == 0;
+        }
+        return left.equals(right);
+    }
+
+    private static String stringify(Object value) {
+        return value == null ? "null" : value.toString();
+    }
+
+    private static void logDualModeDiagnostic(String message) {
+        long totalLogs = dualModeMismatchCount.get() + dualModeExceptionCount.get();
+        if (totalLogs <= MAX_DIAGNOSTIC_LOGS) {
+            System.err.println("[ActionLogicalExpression][DUAL] " + message);
+        }
+    }
+
+    private static boolean containsFunctionCall(ParserRuleContext ctx) {
+        if (ctx == null) {
+            return false;
+        }
+        if (ctx instanceof SceneMaxParser.Function_valueContext) {
+            return true;
+        }
+        for (int i = 0; i < ctx.getChildCount(); i++) {
+            if (ctx.getChild(i) instanceof ParserRuleContext) {
+                if (containsFunctionCall((ParserRuleContext) ctx.getChild(i))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static final class RuntimeErrorSnapshot {
+        private final Field runTimeErrorField;
+        private final Object runTimeErrorValue;
+        private final Field hasRunTimeErrorField;
+        private final Object hasRunTimeErrorValue;
+
+        private RuntimeErrorSnapshot(Field runTimeErrorField, Object runTimeErrorValue,
+                                     Field hasRunTimeErrorField, Object hasRunTimeErrorValue) {
+            this.runTimeErrorField = runTimeErrorField;
+            this.runTimeErrorValue = runTimeErrorValue;
+            this.hasRunTimeErrorField = hasRunTimeErrorField;
+            this.hasRunTimeErrorValue = hasRunTimeErrorValue;
+        }
+
+        static RuntimeErrorSnapshot capture(SceneMaxApp app) {
+            if (app == null) {
+                return new RuntimeErrorSnapshot(null, null, null, null);
+            }
+            Field runTimeErrorField = findField(app.getClass(), "runTimeError");
+            Field hasRunTimeErrorField = findField(app.getClass(), "hasRunTimeError");
+            Object runTimeErrorValue = getFieldValue(runTimeErrorField, app);
+            Object hasRunTimeErrorValue = getFieldValue(hasRunTimeErrorField, app);
+            return new RuntimeErrorSnapshot(runTimeErrorField, runTimeErrorValue, hasRunTimeErrorField, hasRunTimeErrorValue);
+        }
+
+        void restore(SceneMaxApp app) {
+            if (app == null) {
+                return;
+            }
+            setFieldValue(runTimeErrorField, app, runTimeErrorValue);
+            setFieldValue(hasRunTimeErrorField, app, hasRunTimeErrorValue);
+        }
+
+        private static Field findField(Class<?> type, String name) {
+            Class<?> current = type;
+            while (current != null) {
+                try {
+                    Field field = current.getDeclaredField(name);
+                    field.setAccessible(true);
+                    return field;
+                } catch (NoSuchFieldException ignored) {
+                    current = current.getSuperclass();
+                }
+            }
+            return null;
+        }
+
+        private static Object getFieldValue(Field field, Object target) {
+            if (field == null) {
+                return null;
+            }
+            try {
+                return field.get(target);
+            } catch (IllegalAccessException ignored) {
+                return null;
+            }
+        }
+
+        private static void setFieldValue(Field field, Object target, Object value) {
+            if (field == null) {
+                return;
+            }
+            try {
+                field.set(target, value);
+            } catch (IllegalAccessException ignored) {
+                // Best effort only; diagnostics mode must never break expression evaluation.
+            }
+        }
     }
 
     private static class LogicalExpressionVisitor extends SceneMaxBaseVisitor<Object> {

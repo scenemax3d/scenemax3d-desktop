@@ -21,7 +21,7 @@ public class SkyBoxActionController extends SceneMaxBaseController{
     {
         if(cmd.isShow) {
             if(!cmd.isShowSolarSystem) {
-                String skyboxMaterial = cmd.showExpr;//new ActionLogicalExpression(cmd.showExpr, scope).evaluate().toString();
+                String skyboxMaterial = cmd.showExpr;//new ActionLogicalExpressionVm(cmd.showExpr, scope).evaluate().toString();
                 app.showSkyBox(skyboxMaterial);
             } else {
                 evalSetupVars(cmd);
@@ -36,15 +36,15 @@ public class SkyBoxActionController extends SceneMaxBaseController{
 
     private void evalSetupVars(SkyBoxCommand cmd) {
         if(cmd.cloudinessExpr!=null) {
-            cmd.cloudinessVal = (Double)new ActionLogicalExpression(cmd.cloudinessExpr,scope).evaluate();
+            cmd.cloudinessVal = (Double)new ActionLogicalExpressionVm(cmd.cloudinessExpr,scope).evaluate();
         }
 
         if(cmd.cloudFlatteningExpr!=null) {
-            cmd.cloudFlatteningVal = (Double)new ActionLogicalExpression(cmd.cloudFlatteningExpr,scope).evaluate();
+            cmd.cloudFlatteningVal = (Double)new ActionLogicalExpressionVm(cmd.cloudFlatteningExpr,scope).evaluate();
         }
 
         if(cmd.hourOfDayExpr!=null) {
-            cmd.hourOfDayVal = (Double)new ActionLogicalExpression(cmd.hourOfDayExpr,scope).evaluate();
+            cmd.hourOfDayVal = (Double)new ActionLogicalExpressionVm(cmd.hourOfDayExpr,scope).evaluate();
 
         }
 

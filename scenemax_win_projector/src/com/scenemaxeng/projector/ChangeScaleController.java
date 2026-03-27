@@ -21,7 +21,7 @@ public class ChangeScaleController extends SceneMaxBaseController {
             targetCalculated = true;
             findTargetVar();
 
-            Double scale = (Double)new ActionLogicalExpression(cmd.scaleExpr,this.scope).evaluate();
+            Double scale = (Double)new ActionLogicalExpressionVm(cmd.scaleExpr,this.scope).evaluate();
 
             if (targetVarDef.varType == VariableDef.VAR_TYPE_3D) {
                 this.app.changeModelScale(this.targetVar, scale);

@@ -30,7 +30,7 @@ public class WaitStatementController extends SceneMaxBaseController {
             if(cmd.explicitWaitTime>0) {
                 targetTime=cmd.explicitWaitTime;
             } else {
-                targetTime = cmd.waitExpr == null ? 1.0f : Float.parseFloat(new ActionLogicalExpression(cmd.waitExpr, scope).evaluate().toString());
+                targetTime = cmd.waitExpr == null ? 1.0f : Float.parseFloat(new ActionLogicalExpressionVm(cmd.waitExpr, scope).evaluate().toString());
             }
 
             targetCalculated=true;

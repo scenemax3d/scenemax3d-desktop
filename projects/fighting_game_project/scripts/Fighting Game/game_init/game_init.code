@@ -69,7 +69,7 @@ player2_right_foot_collider.attach to player2."mixamorig:RightFoot": pos (0,0,0)
 player2_left_foot_collider => collider sphere : pos (-4.7635937,0.5,0.0), radius 0.5
 // player2_left_foot_collider_attach
 player2_left_foot_collider.attach to player2."mixamorig:LeftFoot": pos (0,0,0)
-player2_right_hand_collider => collider sphere : pos (-10.128401,0.5,0.0), radius 0.5
+player2_right_hand_collider => collider sphere : pos (-10.128401,0.5,0.36325407), radius 0.5
 // player2_right_hand_collider_attach
 player2_right_hand_collider.attach to player2."mixamorig:RightHand": pos (0,0,0)
 player2_left_hand_collider => collider sphere : pos (-8.123157,0.5,0.0), radius 0.5
@@ -106,3 +106,19 @@ player1.look at (player2)
 
 // Write your finalization code here.
 // This code will be included at the end of the generated .code file.
+player2.data.is_jumping = 0
+player2.data.is_down = 0
+player2.data.trapped = 0
+player2.data.hand_attack_hit = 0
+player2.data.foot_attack_hit = 0
+player2.data.head_hit = 0
+player2.data.body_hit = 0
+player2.data.knockout = 0
+
+player1.data.is_jumping = 0
+player1.data.hand_attack_hit = 0
+player1.data.foot_attack_hit = 0
+player1.data.takedown_punches = 0
+player1.data.attack_legs = 0
+player1.data.head_hit = 0
+player1.data.body_hit = 0

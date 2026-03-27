@@ -24,7 +24,7 @@ public class CharacterJumpController extends SceneMaxBaseController {
 
             Double speed = null;
             if(cmd.speedExpr!=null) {
-                speed = (Double) new ActionLogicalExpression(cmd.speedExpr, this.scope).evaluate();
+                speed = (Double) new ActionLogicalExpressionVm(cmd.speedExpr, this.scope).evaluate();
             }
 
             if (targetVarDef.varType == VariableDef.VAR_TYPE_3D) {

@@ -93,13 +93,13 @@ public class ReplayController extends SceneMaxBaseController {
 
             data = scope.getVar(cmd.dataArrayName);
             if(cmd.startAtExpr!=null) {
-                startAt = ((Double)new ActionLogicalExpression(cmd.startAtExpr,scope).evaluate()).intValue();
+                startAt = ((Double)new ActionLogicalExpressionVm(cmd.startAtExpr,scope).evaluate()).intValue();
                 int mod = startAt%6;
                 startAt-=mod;
                 initialStart = startAt;
             }
 
-            Double speed = (Double)new ActionLogicalExpression(cmd.speedExpr,scope).evaluate();
+            Double speed = (Double)new ActionLogicalExpressionVm(cmd.speedExpr,scope).evaluate();
             speedUnit = speed/(data.values.size()/6);
 
             targetSpatial = app.getEntitySpatial(this.targetVar, this.targetVarDef.varType);
@@ -134,7 +134,7 @@ public class ReplayController extends SceneMaxBaseController {
 
     public void setSpeed(SceneMaxParser.Logical_expressionContext speedExpr) {
 
-        Double speed = (Double)new ActionLogicalExpression(speedExpr,scope).evaluate();
+        Double speed = (Double)new ActionLogicalExpressionVm(speedExpr,scope).evaluate();
         speedUnit = speed/(data.values.size()/6);
     }
 
@@ -157,7 +157,7 @@ public class ReplayController extends SceneMaxBaseController {
 
         if(startAt==initialStart) {
             if(command.loopExpr!=null) {
-                Object cond = new ActionLogicalExpression(command.loopExpr,this.scope).evaluate();
+                Object cond = new ActionLogicalExpressionVm(command.loopExpr,this.scope).evaluate();
                 if(!(cond instanceof Boolean && ((Boolean)cond))) {
                     return true;
                 }
@@ -176,32 +176,32 @@ public class ReplayController extends SceneMaxBaseController {
 
 
         if(this.command.offsetXExpr!=null) {
-            Double offset = (Double)new ActionLogicalExpression(command.offsetXExpr,this.scope).evaluate();
+            Double offset = (Double)new ActionLogicalExpressionVm(command.offsetXExpr,this.scope).evaluate();
             x=x+offset;
         }
 
         if(this.command.offsetYExpr!=null) {
-            Double offset = (Double)new ActionLogicalExpression(command.offsetYExpr,this.scope).evaluate();
+            Double offset = (Double)new ActionLogicalExpressionVm(command.offsetYExpr,this.scope).evaluate();
             y=y+offset;
         }
 
         if(this.command.offsetZExpr!=null) {
-            Double offset = (Double)new ActionLogicalExpression(command.offsetZExpr,this.scope).evaluate();
+            Double offset = (Double)new ActionLogicalExpressionVm(command.offsetZExpr,this.scope).evaluate();
             z=z+offset;
         }
 
         if(this.command.offsetRXExpr!=null) {
-            Double offset = (Double)new ActionLogicalExpression(command.offsetRXExpr,this.scope).evaluate();
+            Double offset = (Double)new ActionLogicalExpressionVm(command.offsetRXExpr,this.scope).evaluate();
             rx=rx+offset;
         }
 
         if(this.command.offsetRYExpr!=null) {
-            Double offset = (Double)new ActionLogicalExpression(command.offsetRYExpr,this.scope).evaluate();
+            Double offset = (Double)new ActionLogicalExpressionVm(command.offsetRYExpr,this.scope).evaluate();
             ry=ry+offset;
         }
 
         if(this.command.offsetRZExpr!=null) {
-            Double offset = (Double)new ActionLogicalExpression(command.offsetRZExpr,this.scope).evaluate();
+            Double offset = (Double)new ActionLogicalExpressionVm(command.offsetRZExpr,this.scope).evaluate();
             rz=rz+offset;
         }
 

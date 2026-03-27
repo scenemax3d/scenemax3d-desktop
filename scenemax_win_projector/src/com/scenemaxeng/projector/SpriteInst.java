@@ -7,9 +7,9 @@ public class SpriteInst extends EntityInstBase{
 
     public SpriteDef spriteDef;
 
-    public ActionLogicalExpression xExpr;
-    public ActionLogicalExpression yExpr;
-    public ActionLogicalExpression zExpr;
+    public ActionLogicalExpressionVm xExpr;
+    public ActionLogicalExpressionVm yExpr;
+    public ActionLogicalExpressionVm zExpr;
     public RunTimeVarDef entityForPos;
     public RunTimeVarDef entityForRot;
 
@@ -20,9 +20,9 @@ public class SpriteInst extends EntityInstBase{
         this.thresholdX=80;
 
         if(varDef.xExpr!=null) {
-            this.xExpr=new ActionLogicalExpression(varDef.xExpr,scope);
-            this.yExpr=new ActionLogicalExpression(varDef.yExpr,scope);
-            this.zExpr=new ActionLogicalExpression(varDef.zExpr,scope);
+            this.xExpr=new ActionLogicalExpressionVm(varDef.xExpr,scope);
+            this.yExpr=new ActionLogicalExpressionVm(varDef.yExpr,scope);
+            this.zExpr=new ActionLogicalExpressionVm(varDef.zExpr,scope);
 
         }
 

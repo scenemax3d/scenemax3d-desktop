@@ -51,8 +51,8 @@ class FunctionInvoker {
 
     private boolean invokeCos() {
         if(ctx.logical_expression().size()>0) {
-            Object val = new ActionLogicalExpression(ctx.logical_expression(0), scope).evaluate();
-            retval = Math.cos(ActionLogicalExpression.toDouble(val));
+            Object val = new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+            retval = Math.cos(ActionLogicalExpressionVm.toDouble(val));
             return true;
         } else {
             this.runtimeError = "Function '"+ctx.java_func_name().getText()+"' expecting argument";
@@ -62,8 +62,8 @@ class FunctionInvoker {
 
     private boolean invokeSin() {
         if(ctx.logical_expression().size()>0) {
-            Object val = new ActionLogicalExpression(ctx.logical_expression(0), scope).evaluate();
-            retval = Math.sin(ActionLogicalExpression.toDouble(val));
+            Object val = new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+            retval = Math.sin(ActionLogicalExpressionVm.toDouble(val));
             return true;
         } else {
             this.runtimeError = "Function '"+ctx.java_func_name().getText()+"' expecting argument";
@@ -73,8 +73,8 @@ class FunctionInvoker {
 
     private boolean invokeRound() {
         if(ctx.logical_expression().size()>0) {
-            Object val = new ActionLogicalExpression(ctx.logical_expression(0), scope).evaluate();
-            retval = Math.round(ActionLogicalExpression.toDouble(val));
+            Object val = new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+            retval = Math.round(ActionLogicalExpressionVm.toDouble(val));
             return true;
         } else {
             this.runtimeError = "Function '"+ctx.java_func_name().getText()+"' expecting argument";
@@ -84,8 +84,8 @@ class FunctionInvoker {
 
     private boolean invokeAbs() {
         if(ctx.logical_expression().size()>0) {
-            Object val = new ActionLogicalExpression(ctx.logical_expression(0), scope).evaluate();
-            retval = Math.abs(ActionLogicalExpression.toDouble(val));
+            Object val = new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+            retval = Math.abs(ActionLogicalExpressionVm.toDouble(val));
             return true;
         } else {
             this.runtimeError = "Function '"+ctx.java_func_name().getText()+"' expecting argument";
@@ -95,8 +95,8 @@ class FunctionInvoker {
 
     private boolean invokeCeiling() {
         if(ctx.logical_expression().size()>0) {
-            Object val = new ActionLogicalExpression(ctx.logical_expression(0), scope).evaluate();
-            retval = Math.ceil(ActionLogicalExpression.toDouble(val));
+            Object val = new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+            retval = Math.ceil(ActionLogicalExpressionVm.toDouble(val));
             return true;
         } else {
             this.runtimeError = "Function '"+ctx.java_func_name().getText()+"' expecting argument";
@@ -106,8 +106,8 @@ class FunctionInvoker {
 
     private boolean invokeFloor() {
         if(ctx.logical_expression().size()>0) {
-            Object val = new ActionLogicalExpression(ctx.logical_expression(0), scope).evaluate();
-            retval = Math.floor(ActionLogicalExpression.toDouble(val));
+            Object val = new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+            retval = Math.floor(ActionLogicalExpressionVm.toDouble(val));
             return true;
         } else {
             this.runtimeError = "Function '"+ctx.java_func_name().getText()+"' expecting argument";
@@ -118,8 +118,8 @@ class FunctionInvoker {
 
     private boolean invokeRnd() {
         if(ctx.logical_expression().size()>0) {
-            Object val = new ActionLogicalExpression(ctx.logical_expression(0), scope).evaluate();
-            Double d = (Math.random() * ActionLogicalExpression.toDouble(val));
+            Object val = new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+            Double d = (Math.random() * ActionLogicalExpressionVm.toDouble(val));
             retval = Math.floor(d);
             return true;
         } else {

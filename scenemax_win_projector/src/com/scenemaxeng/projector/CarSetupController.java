@@ -20,34 +20,34 @@ public class CarSetupController extends SceneMaxBaseController{
 
         if(cmd.setupEngine) {
             if(cmd.enginePowerExp!=null) {
-                cmd.enginePowerVal = (Double) new ActionLogicalExpression(cmd.enginePowerExp, this.scope).evaluate();
+                cmd.enginePowerVal = (Double) new ActionLogicalExpressionVm(cmd.enginePowerExp, this.scope).evaluate();
             }
 
             if(cmd.engineBreakingExp!=null) {
-                cmd.engineBreakingVal = (Double) new ActionLogicalExpression(cmd.engineBreakingExp, this.scope).evaluate();
+                cmd.engineBreakingVal = (Double) new ActionLogicalExpressionVm(cmd.engineBreakingExp, this.scope).evaluate();
             }
 
         } else {
 
 
             if (cmd.compressionExpr != null) {
-                cmd.compressionVal = (Double) new ActionLogicalExpression(cmd.compressionExpr, this.scope).evaluate();
+                cmd.compressionVal = (Double) new ActionLogicalExpressionVm(cmd.compressionExpr, this.scope).evaluate();
             }
 
             if (cmd.dampingExpr != null) {
-                cmd.dampingVal = (Double) new ActionLogicalExpression(cmd.dampingExpr, this.scope).evaluate();
+                cmd.dampingVal = (Double) new ActionLogicalExpressionVm(cmd.dampingExpr, this.scope).evaluate();
             }
 
             if (cmd.frictionExpr != null) {
-                cmd.frictionVal = (Double) new ActionLogicalExpression(cmd.frictionExpr, this.scope).evaluate();
+                cmd.frictionVal = (Double) new ActionLogicalExpressionVm(cmd.frictionExpr, this.scope).evaluate();
             }
 
             if (cmd.stiffnessExpr != null) {
-                cmd.stiffnessVal = (Double) new ActionLogicalExpression(cmd.stiffnessExpr, this.scope).evaluate();
+                cmd.stiffnessVal = (Double) new ActionLogicalExpressionVm(cmd.stiffnessExpr, this.scope).evaluate();
             }
 
             if (cmd.lengthExpr != null) {
-                cmd.lengthVal = (Double) new ActionLogicalExpression(cmd.lengthExpr, this.scope).evaluate();
+                cmd.lengthVal = (Double) new ActionLogicalExpressionVm(cmd.lengthExpr, this.scope).evaluate();
             }
 
         }

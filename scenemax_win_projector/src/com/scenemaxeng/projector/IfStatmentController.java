@@ -9,7 +9,7 @@ public class IfStatmentController extends CompositeController {
 
     private SceneMaxScope scope;
     private SceneMaxApp app;
-    private ActionLogicalExpression ifExpr;
+    private ActionLogicalExpressionVm ifExpr;
 
 
     public IfStatmentController(SceneMaxApp app, SceneMaxScope scope, IfStatementCommand cmd) {
@@ -18,11 +18,11 @@ public class IfStatmentController extends CompositeController {
         this.ifCommand=cmd;
         this.adhereToPauseStatus=false; // do block works even when the scene is paused
 
-        ifExpr=new ActionLogicalExpression(ifCommand.expression,scope);
+        ifExpr=new ActionLogicalExpressionVm(ifCommand.expression,scope);
 
     }
 
-    public boolean evalExpr(ActionLogicalExpression expr) {
+    public boolean evalExpr(ActionLogicalExpressionVm expr) {
         Object obj = expr.evaluate();
         if (obj instanceof Boolean) {
             //System.out.println("expression eval() = "+obj);
@@ -47,7 +47,7 @@ public class IfStatmentController extends CompositeController {
                 // check the else-if blocks
                 for(int i=0;i<ifCommand.elseIfCommands.size();++i) {
                     IfStatementCommand elseifCmd = ifCommand.elseIfCommands.get(i);
-                    if(evalExpr(new ActionLogicalExpression(elseifCmd.expression,scope))) {
+                    if(evalExpr(new ActionLogicalExpressionVm(elseifCmd.expression,scope))) {
                         DoBlockCommand cmd = elseifCmd.doBlock;
                         DoBlockController c = new DoBlockController((SceneMaxApp)app,scope,cmd);
                         c.app = (SceneMaxApp)app;

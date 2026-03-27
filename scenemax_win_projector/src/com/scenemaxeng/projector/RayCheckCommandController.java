@@ -27,9 +27,9 @@ public class RayCheckCommandController extends CompositeController {
             Vector3f pos=null;
             Vector3f dir=null;
             if(cmd.posX!=null) {
-                Double x = (Double) new ActionLogicalExpression(cmd.posX,scope).evaluate();
-                Double y = (Double) new ActionLogicalExpression(cmd.posY,scope).evaluate();
-                Double z = (Double) new ActionLogicalExpression(cmd.posZ,scope).evaluate();
+                Double x = (Double) new ActionLogicalExpressionVm(cmd.posX,scope).evaluate();
+                Double y = (Double) new ActionLogicalExpressionVm(cmd.posY,scope).evaluate();
+                Double z = (Double) new ActionLogicalExpressionVm(cmd.posZ,scope).evaluate();
                 pos=new Vector3f(x.floatValue(),y.floatValue(),z.floatValue());
             } else {
                 if(cmd.entityPos!=null) {// entityPos exists when not using mouse cursor

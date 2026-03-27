@@ -22,10 +22,10 @@ public class AnimateOptionsController extends SceneMaxBaseController{
         if(forTimeVal==null) {
             findTargetVar();
             AnimateOptionsCommand cmd = (AnimateOptionsCommand) this.cmd;
-            cmd.speedVal = (Double) new ActionLogicalExpression(cmd.speedExpr, this.scope).evaluate();
+            cmd.speedVal = (Double) new ActionLogicalExpressionVm(cmd.speedExpr, this.scope).evaluate();
 
             if (cmd.forTimeExpr != null) {
-                forTimeVal = (Double) new ActionLogicalExpression(cmd.forTimeExpr, this.scope).evaluate();
+                forTimeVal = (Double) new ActionLogicalExpressionVm(cmd.forTimeExpr, this.scope).evaluate();
             } else {
                 this.app.applyAnimationOptions(this.targetVar, cmd);
                 return true;
@@ -33,7 +33,7 @@ public class AnimateOptionsController extends SceneMaxBaseController{
             }
 
             if(cmd.aboveFramesExpr!=null) {
-                aboveFramesVal = (Double) new ActionLogicalExpression(cmd.aboveFramesExpr, this.scope).evaluate();
+                aboveFramesVal = (Double) new ActionLogicalExpressionVm(cmd.aboveFramesExpr, this.scope).evaluate();
                 targetModel = this.app.getAppModel(this.targetVar);
                 if(targetModel==null) {
                     return true;

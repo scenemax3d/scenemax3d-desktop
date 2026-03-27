@@ -28,16 +28,16 @@ public class AttachToController extends SceneMaxBaseController{
         Vector3f offsetRot=null;
 
         if(cmd.xExpr!=null) {
-            xPos = (Double) new ActionLogicalExpression(cmd.xExpr, this.scope).evaluate();
-            yPos = (Double) new ActionLogicalExpression(cmd.yExpr, this.scope).evaluate();
-            zPos = (Double) new ActionLogicalExpression(cmd.zExpr, this.scope).evaluate();
+            xPos = (Double) new ActionLogicalExpressionVm(cmd.xExpr, this.scope).evaluate();
+            yPos = (Double) new ActionLogicalExpressionVm(cmd.yExpr, this.scope).evaluate();
+            zPos = (Double) new ActionLogicalExpressionVm(cmd.zExpr, this.scope).evaluate();
             offsetPos = new Vector3f(xPos.floatValue(),yPos.floatValue(),zPos.floatValue());
         }
 
         if(cmd.rxExpr!=null) {
-            xRot = (Double) new ActionLogicalExpression(cmd.rxExpr, this.scope).evaluate();
-            yRot = (Double) new ActionLogicalExpression(cmd.ryExpr, this.scope).evaluate();
-            zRot = (Double) new ActionLogicalExpression(cmd.rzExpr, this.scope).evaluate();
+            xRot = (Double) new ActionLogicalExpressionVm(cmd.rxExpr, this.scope).evaluate();
+            yRot = (Double) new ActionLogicalExpressionVm(cmd.ryExpr, this.scope).evaluate();
+            zRot = (Double) new ActionLogicalExpressionVm(cmd.rzExpr, this.scope).evaluate();
             offsetRot = new Vector3f(xRot.floatValue(),yRot.floatValue(),zRot.floatValue());
         }
 

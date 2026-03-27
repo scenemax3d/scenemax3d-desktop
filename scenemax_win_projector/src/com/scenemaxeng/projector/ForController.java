@@ -9,7 +9,7 @@ public class ForController extends CompositeController {
     private DoBlockController doBlock;
 
     // Cached to avoid per-frame allocation
-    private ActionLogicalExpression stopCondExpr;
+    private ActionLogicalExpressionVm stopCondExpr;
     private VariableAssignmentController incrementCtl;
 
     public ForController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope, ForCommand cmd) {
@@ -31,7 +31,7 @@ public class ForController extends CompositeController {
             this.add(this.doBlock);
 
             // Cache these for reuse every frame
-            stopCondExpr = new ActionLogicalExpression(this.cmd.stopConditionExpr, scope);
+            stopCondExpr = new ActionLogicalExpressionVm(this.cmd.stopConditionExpr, scope);
             incrementCtl = new VariableAssignmentController(this.app, scope, prg, this.cmd.incrementIndexCommand);
         }
 

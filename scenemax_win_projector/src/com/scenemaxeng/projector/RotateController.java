@@ -16,13 +16,13 @@ public class RotateController extends SceneMaxBaseController{
     private float targetVal=0;
     private int axisNum = -1;
     private float direction = 1;
-    public ActionLogicalExpression numExpr;
-    public ActionLogicalExpression speedExpr;
+    public ActionLogicalExpressionVm numExpr;
+    public ActionLogicalExpressionVm speedExpr;
     private boolean targetCalculated=false;
     private ActionCommandRotate rotateCmd;
 
     // Cached to avoid per-frame allocation
-    private ActionLogicalExpression loopExprCached;
+    private ActionLogicalExpressionVm loopExprCached;
     //private VariableDef targetVarDef;
 
 
@@ -56,8 +56,8 @@ public class RotateController extends SceneMaxBaseController{
 
             findTargetVar();
 
-            targetVal = numExpr==null?1.0f:(float) ActionLogicalExpression.toDouble(numExpr.evaluate());
-            targetTime = speedExpr==null?1.0f:(float) ActionLogicalExpression.toDouble(speedExpr.evaluate());
+            targetVal = numExpr==null?1.0f:(float) ActionLogicalExpressionVm.toDouble(numExpr.evaluate());
+            targetTime = speedExpr==null?1.0f:(float) ActionLogicalExpressionVm.toDouble(speedExpr.evaluate());
 
             this.enableEntity(targetVar);// enable this entity
             targetCalculated=true;
@@ -88,7 +88,7 @@ public class RotateController extends SceneMaxBaseController{
 
         if(finished && this.rotateCmd.loopExpr!=null) {
             if(loopExprCached == null) {
-                loopExprCached = new ActionLogicalExpression(this.rotateCmd.loopExpr, this.scope);
+                loopExprCached = new ActionLogicalExpressionVm(this.rotateCmd.loopExpr, this.scope);
             }
             Object cond = loopExprCached.evaluate();
             if(cond instanceof Boolean && ((Boolean)cond)) {

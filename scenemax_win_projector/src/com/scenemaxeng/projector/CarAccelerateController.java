@@ -17,7 +17,7 @@ public class CarAccelerateController extends SceneMaxBaseController {
 
         AccelerateCommand cmd = (AccelerateCommand) this.cmd;
         RunTimeVarDef entity = findTargetVar(cmd.targetVar);
-        Double accelerate = (Double) new ActionLogicalExpression(cmd.accelerateExp, this.scope).evaluate();
+        Double accelerate = (Double) new ActionLogicalExpressionVm(cmd.accelerateExp, this.scope).evaluate();
 
         app.carAccelerate(entity, accelerate);
         return true;

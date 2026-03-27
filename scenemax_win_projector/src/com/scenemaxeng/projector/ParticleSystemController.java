@@ -38,7 +38,7 @@ public class ParticleSystemController extends SceneMaxBaseController {
         particleCreated=true;
 
         if(cmd.time!=null) {
-            cmd.timeVal = ((Double) new ActionLogicalExpression(cmd.time.logical_expression(), scope).evaluate()).floatValue();
+            cmd.timeVal = ((Double) new ActionLogicalExpressionVm(cmd.time.logical_expression(), scope).evaluate()).floatValue();
         }
 
         if (cmd.entityPos!=null) {
@@ -63,35 +63,35 @@ public class ParticleSystemController extends SceneMaxBaseController {
 
         } else if (cmd.pos != null) {
             if(cmd.pos.pos_axes()!=null) {
-                cmd.posX = ((Double) new ActionLogicalExpression(cmd.pos.pos_axes().print_pos_x().logical_expression(), scope).evaluate()).floatValue();
-                cmd.posY = ((Double) new ActionLogicalExpression(cmd.pos.pos_axes().print_pos_y().logical_expression(), scope).evaluate()).floatValue();
-                cmd.posZ = ((Double) new ActionLogicalExpression(cmd.pos.pos_axes().print_pos_z().logical_expression(), scope).evaluate()).floatValue();
+                cmd.posX = ((Double) new ActionLogicalExpressionVm(cmd.pos.pos_axes().print_pos_x().logical_expression(), scope).evaluate()).floatValue();
+                cmd.posY = ((Double) new ActionLogicalExpressionVm(cmd.pos.pos_axes().print_pos_y().logical_expression(), scope).evaluate()).floatValue();
+                cmd.posZ = ((Double) new ActionLogicalExpressionVm(cmd.pos.pos_axes().print_pos_z().logical_expression(), scope).evaluate()).floatValue();
             }
         }
 
         if(cmd.gravity!=null) {
-            cmd.gravityX = ((Double) new ActionLogicalExpression(cmd.gravity.vector_x().logical_expression(),scope).evaluate()).floatValue();
-            cmd.gravityY = ((Double) new ActionLogicalExpression(cmd.gravity.vector_y().logical_expression(),scope).evaluate()).floatValue();
-            cmd.gravityZ = ((Double) new ActionLogicalExpression(cmd.gravity.vector_z().logical_expression(),scope).evaluate()).floatValue();
+            cmd.gravityX = ((Double) new ActionLogicalExpressionVm(cmd.gravity.vector_x().logical_expression(),scope).evaluate()).floatValue();
+            cmd.gravityY = ((Double) new ActionLogicalExpressionVm(cmd.gravity.vector_y().logical_expression(),scope).evaluate()).floatValue();
+            cmd.gravityZ = ((Double) new ActionLogicalExpressionVm(cmd.gravity.vector_z().logical_expression(),scope).evaluate()).floatValue();
         }
 
         if(cmd.startSize!=null) {
-            cmd.startSizeVal = ((Double) new ActionLogicalExpression(cmd.startSize.logical_expression(),scope).evaluate()).floatValue();
+            cmd.startSizeVal = ((Double) new ActionLogicalExpressionVm(cmd.startSize.logical_expression(),scope).evaluate()).floatValue();
         }
 
         if(cmd.endSize!=null) {
-            cmd.endSizeVal = ((Double) new ActionLogicalExpression(cmd.endSize.logical_expression(),scope).evaluate()).floatValue();
+            cmd.endSizeVal = ((Double) new ActionLogicalExpressionVm(cmd.endSize.logical_expression(),scope).evaluate()).floatValue();
         }
 
         // new particle system
         if(cmd.type>=100) {
             if(cmd.radiusValExpr!=null) {
-                cmd.radiusVal=((Double) new ActionLogicalExpression(cmd.radiusValExpr,scope).evaluate()).floatValue();
+                cmd.radiusVal=((Double) new ActionLogicalExpressionVm(cmd.radiusValExpr,scope).evaluate()).floatValue();
             }
 
             if(cmd.emissionsPerSecExpr!=null) {
-                cmd.emissionsPerSecondVal = ((Double) new ActionLogicalExpression(cmd.emissionsPerSecExpr,scope).evaluate()).floatValue();
-                cmd.particlesPerEmissionVal = ((Double) new ActionLogicalExpression(cmd.particlesPerEmissionExpr,scope).evaluate()).floatValue();
+                cmd.emissionsPerSecondVal = ((Double) new ActionLogicalExpressionVm(cmd.emissionsPerSecExpr,scope).evaluate()).floatValue();
+                cmd.particlesPerEmissionVal = ((Double) new ActionLogicalExpressionVm(cmd.particlesPerEmissionExpr,scope).evaluate()).floatValue();
             }
 
         }

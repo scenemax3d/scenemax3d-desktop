@@ -17,12 +17,12 @@ public class MoveController extends SceneMaxBaseController{
     private int axisNum = -1;
     private float direction = 1;
 
-    public ActionLogicalExpression numExpr;
+    public ActionLogicalExpressionVm numExpr;
     private boolean targetCalculated=false;
-    public ActionLogicalExpression speedExpr;
+    public ActionLogicalExpressionVm speedExpr;
 
     // Cached to avoid per-frame allocation
-    private ActionLogicalExpression loopExprCached;
+    private ActionLogicalExpressionVm loopExprCached;
 
     private ActionCommandMove cmd;
 
@@ -56,8 +56,8 @@ public class MoveController extends SceneMaxBaseController{
     public boolean run(float tpf) {
 
         if(!targetCalculated) {
-            targetVal = numExpr==null?1.0f:(float) ActionLogicalExpression.toDouble(numExpr.evaluate());
-            targetTime = speedExpr==null?1.0f:(float) ActionLogicalExpression.toDouble(speedExpr.evaluate());
+            targetVal = numExpr==null?1.0f:(float) ActionLogicalExpressionVm.toDouble(numExpr.evaluate());
+            targetTime = speedExpr==null?1.0f:(float) ActionLogicalExpressionVm.toDouble(speedExpr.evaluate());
             this.findTargetVar();
 //            if(cmd.varDef.varType==VariableDef.VAR_TYPE_SPHERE || cmd.varDef.varType==VariableDef.VAR_TYPE_BOX) {
 //                int threadId = app.getEntityThreadId(thread, cmd.targetVar,cmd.varDef.varType);
@@ -126,7 +126,7 @@ public class MoveController extends SceneMaxBaseController{
 
         if(finished && this.cmd.loopExpr!=null) {
             if(loopExprCached == null) {
-                loopExprCached = new ActionLogicalExpression(this.cmd.loopExpr, this.scope);
+                loopExprCached = new ActionLogicalExpressionVm(this.cmd.loopExpr, this.scope);
             }
             Object cond = loopExprCached.evaluate();
             if(cond instanceof Boolean && ((Boolean)cond)) {

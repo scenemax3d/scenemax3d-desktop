@@ -19,18 +19,18 @@ public class UIAttachController extends SceneMaxBaseController {
 
             ChannelDrawCommand cmd = (ChannelDrawCommand)this.cmd;
             if(cmd.posXExpr!=null) {
-                cmd.posXVal = ((Double)new ActionLogicalExpression(cmd.posXExpr,this.scope).evaluate()).floatValue();
-                cmd.posYVal = ((Double)new ActionLogicalExpression(cmd.posYExpr,this.scope).evaluate()).floatValue();
+                cmd.posXVal = ((Double)new ActionLogicalExpressionVm(cmd.posXExpr,this.scope).evaluate()).floatValue();
+                cmd.posYVal = ((Double)new ActionLogicalExpressionVm(cmd.posYExpr,this.scope).evaluate()).floatValue();
 
             }
 
             if(cmd.widthExpr!=null) {
-                cmd.widthVal = ((Double)new ActionLogicalExpression(cmd.widthExpr,this.scope).evaluate()).intValue();
-                cmd.heightVal = ((Double)new ActionLogicalExpression(cmd.heightExpr,this.scope).evaluate()).intValue();
+                cmd.widthVal = ((Double)new ActionLogicalExpressionVm(cmd.widthExpr,this.scope).evaluate()).intValue();
+                cmd.heightVal = ((Double)new ActionLogicalExpressionVm(cmd.heightExpr,this.scope).evaluate()).intValue();
             }
 
             if(cmd.frameNumExpr!=null) {
-                cmd.frameNumVal = ((Double)new ActionLogicalExpression(cmd.frameNumExpr,this.scope).evaluate()).intValue();
+                cmd.frameNumVal = ((Double)new ActionLogicalExpressionVm(cmd.frameNumExpr,this.scope).evaluate()).intValue();
             }
 
             app.channelDraw(cmd);

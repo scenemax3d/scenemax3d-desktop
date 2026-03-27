@@ -16,7 +16,7 @@ public class ChangeVelocityController extends SceneMaxBaseController {
         findTargetVar();
 
         ChangeVelocityCommand cmd = (ChangeVelocityCommand)this.cmd;
-        Double velocity = (Double) new ActionLogicalExpression(cmd.velocityExpr,this.scope).evaluate();
+        Double velocity = (Double) new ActionLogicalExpressionVm(cmd.velocityExpr,this.scope).evaluate();
 
         if(this.targetVarDef.varType== VariableDef.VAR_TYPE_3D) {
             this.app.applyModelVelocity(this.targetVar,velocity);

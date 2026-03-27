@@ -14,17 +14,17 @@ public class PrintStatementContoller extends SceneMaxBaseController {
     {
 
         PrintStatementCommand cmd = (PrintStatementCommand)this.cmd;
-        String txt = new ActionLogicalExpression(cmd.text,this.scope).evaluate().toString();
+        String txt = new ActionLogicalExpressionVm(cmd.text,this.scope).evaluate().toString();
         double x=-1,y=0,z=0,fontSize=0;
 
         if(cmd.x!=null) {
-            x=Double.parseDouble(new ActionLogicalExpression(cmd.x,this.scope).evaluate().toString());
-            y=Double.parseDouble(new ActionLogicalExpression(cmd.y,this.scope).evaluate().toString());
-            z=Double.parseDouble(new ActionLogicalExpression(cmd.z,this.scope).evaluate().toString());
+            x=Double.parseDouble(new ActionLogicalExpressionVm(cmd.x,this.scope).evaluate().toString());
+            y=Double.parseDouble(new ActionLogicalExpressionVm(cmd.y,this.scope).evaluate().toString());
+            z=Double.parseDouble(new ActionLogicalExpressionVm(cmd.z,this.scope).evaluate().toString());
         }
 
         if(cmd.fontSize!=null) {
-            fontSize = Double.parseDouble(new ActionLogicalExpression(cmd.fontSize,this.scope).evaluate().toString());
+            fontSize = Double.parseDouble(new ActionLogicalExpressionVm(cmd.fontSize,this.scope).evaluate().toString());
         }
 
         app.print(cmd.printChannel,txt,cmd.color,x,y,z,cmd.font, fontSize,cmd.append);

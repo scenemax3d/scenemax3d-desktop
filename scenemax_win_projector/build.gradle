@@ -18,9 +18,18 @@ sourceSets {
     main {
         java {
             srcDirs = ['src']
+            exclude 'test/**'
         }
         resources {
             srcDirs = ['assets']
+        }
+    }
+    test {
+        java {
+            srcDirs = ['src/test/java']
+        }
+        resources {
+            srcDirs = ['src/test/resources']
         }
     }
 }
@@ -74,6 +83,6 @@ dependencies {
     implementation project(":scenemax3d_common_types")
     implementation project(":scenemax3d_compiler")
 
-    //testCompile group: 'junit', name: 'junit', version: '4.12'
+    testImplementation 'junit:junit:4.13.2'
 }
 

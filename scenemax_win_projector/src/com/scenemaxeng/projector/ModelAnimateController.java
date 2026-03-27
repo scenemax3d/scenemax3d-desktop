@@ -8,14 +8,14 @@ public class ModelAnimateController extends SceneMaxBaseController {
     public String speed;
     private boolean animationStarted = false;
     private AppModelAnimationController controller;
-    private ActionLogicalExpression speedExpr;
+    private ActionLogicalExpressionVm speedExpr;
     private boolean reused;
     private ActionCommandAnimate cmdAnim = null;
 
     public ModelAnimateController(SceneMaxApp app, ProgramDef prg, ActionCommandAnimate cmd, SceneMaxScope scope) {
         super(app, prg, scope, cmd);
         this.cmdAnim = (ActionCommandAnimate)this.cmd;
-        speedExpr = cmd.speedExpr==null?null:new ActionLogicalExpression(cmd.speedExpr,scope);
+        speedExpr = cmd.speedExpr==null?null:new ActionLogicalExpressionVm(cmd.speedExpr,scope);
         this.adhereToPauseStatus=false;
     }
 
@@ -71,7 +71,7 @@ public class ModelAnimateController extends SceneMaxBaseController {
     public boolean checkGoExpr() {
 
         if(cmdAnim.goExpr!=null) {
-            Object cond = new ActionLogicalExpression(cmdAnim.goExpr,this.scope).evaluate();
+            Object cond = new ActionLogicalExpressionVm(cmdAnim.goExpr,this.scope).evaluate();
             if(cond instanceof Boolean) {
                 return (Boolean)cond;
 

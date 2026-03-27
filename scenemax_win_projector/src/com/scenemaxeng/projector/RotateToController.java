@@ -43,8 +43,8 @@ public class RotateToController extends SceneMaxBaseController {
         if (!targetCalculated) {
 
             findTargetVar();
-            targetVal = this.cmd.rotateValExpr==null?1.0f:((Double)new ActionLogicalExpression(this.cmd.rotateValExpr,this.scope).evaluate()).floatValue();
-            targetTime = this.cmd.speedExpr==null?1.0f:((Double)new ActionLogicalExpression(this.cmd.speedExpr,this.scope).evaluate()).floatValue();
+            targetVal = this.cmd.rotateValExpr==null?1.0f:((Double)new ActionLogicalExpressionVm(this.cmd.rotateValExpr,this.scope).evaluate()).floatValue();
+            targetTime = this.cmd.speedExpr==null?1.0f:((Double)new ActionLogicalExpressionVm(this.cmd.speedExpr,this.scope).evaluate()).floatValue();
 
             float curr=0;
             if(axisNum==1) {

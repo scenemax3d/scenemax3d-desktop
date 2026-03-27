@@ -100,7 +100,7 @@ public class HttpController extends CompositeController {
         }
 
         public void run() {
-            String addr = new ActionLogicalExpression(cmd.addressExp,this.scope).evaluate().toString();
+            String addr = new ActionLogicalExpressionVm(cmd.addressExp,this.scope).evaluate().toString();
 
             HttpURLConnection connection = null;
 

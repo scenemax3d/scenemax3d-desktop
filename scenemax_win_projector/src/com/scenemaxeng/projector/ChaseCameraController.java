@@ -33,23 +33,23 @@ public class ChaseCameraController extends SceneMaxBaseController{
 
             if(cmd.havingAttributesExists) {
                 if(cmd.rotationSpeedExpr!=null) {
-                    cmd.rotationSpeedVal = (Double) new ActionLogicalExpression(cmd.rotationSpeedExpr,scope).evaluate();
+                    cmd.rotationSpeedVal = (Double) new ActionLogicalExpressionVm(cmd.rotationSpeedExpr,scope).evaluate();
                 }
 
                 if(cmd.verticalRotationExpr!=null) {
-                    cmd.verticalRotationVal = (Double) new ActionLogicalExpression(cmd.verticalRotationExpr,scope).evaluate();
+                    cmd.verticalRotationVal = (Double) new ActionLogicalExpressionVm(cmd.verticalRotationExpr,scope).evaluate();
                 }
 
                 if(cmd.horizontalRotationExpr!=null) {
-                    cmd.horizontalRotationVal = (Double) new ActionLogicalExpression(cmd.horizontalRotationExpr,scope).evaluate();
+                    cmd.horizontalRotationVal = (Double) new ActionLogicalExpressionVm(cmd.horizontalRotationExpr,scope).evaluate();
                 }
 
                 if(cmd.minDistanceExpr!=null) {
-                    cmd.minDistanceVal = (Double) new ActionLogicalExpression(cmd.minDistanceExpr,scope).evaluate();
+                    cmd.minDistanceVal = (Double) new ActionLogicalExpressionVm(cmd.minDistanceExpr,scope).evaluate();
                 }
 
                 if(cmd.maxDistanceExpr!=null) {
-                    cmd.maxDistanceVal = (Double) new ActionLogicalExpression(cmd.maxDistanceExpr,scope).evaluate();
+                    cmd.maxDistanceVal = (Double) new ActionLogicalExpressionVm(cmd.maxDistanceExpr,scope).evaluate();
                 }
             }
 

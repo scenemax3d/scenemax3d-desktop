@@ -47,7 +47,7 @@ public class WaitForController extends SceneMaxBaseController {
         }
 
         if(this.waitForExpr!=null) {
-            Object obj = new ActionLogicalExpression(this.waitForExpr,this.scope).evaluate();
+            Object obj = new ActionLogicalExpressionVm(this.waitForExpr,this.scope).evaluate();
             if (obj instanceof Boolean) {
                 return (Boolean) obj;
             }

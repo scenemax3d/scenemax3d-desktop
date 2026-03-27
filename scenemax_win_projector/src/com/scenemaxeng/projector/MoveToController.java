@@ -80,10 +80,10 @@ public class MoveToController extends SceneMaxBaseController {
 
             }
 
-            targetTime = ((Double)new ActionLogicalExpression(cmd.speedExpr,scope).evaluate()).floatValue();
+            targetTime = ((Double)new ActionLogicalExpressionVm(cmd.speedExpr,scope).evaluate()).floatValue();
             Double extraDist = 0.0;
             if(cmd.extraDistanceExpr!=null) {
-                extraDist = (Double)new ActionLogicalExpression(cmd.extraDistanceExpr,scope).evaluate();
+                extraDist = (Double)new ActionLogicalExpressionVm(cmd.extraDistanceExpr,scope).evaluate();
             }
 
             //
@@ -96,9 +96,9 @@ public class MoveToController extends SceneMaxBaseController {
                 if (red != null) {
                     redVector = red.getWorldTranslation();
                 } else {
-                    float x = ((Double) new ActionLogicalExpression(cmd.moveToTargetXExpr, scope).evaluate()).floatValue();
-                    float y = ((Double) new ActionLogicalExpression(cmd.moveToTargetYExpr, scope).evaluate()).floatValue();
-                    float z = ((Double) new ActionLogicalExpression(cmd.moveToTargetZExpr, scope).evaluate()).floatValue();
+                    float x = ((Double) new ActionLogicalExpressionVm(cmd.moveToTargetXExpr, scope).evaluate()).floatValue();
+                    float y = ((Double) new ActionLogicalExpressionVm(cmd.moveToTargetYExpr, scope).evaluate()).floatValue();
+                    float z = ((Double) new ActionLogicalExpressionVm(cmd.moveToTargetZExpr, scope).evaluate()).floatValue();
                     redVector = new Vector3f(x, y, z);
                 }
             }

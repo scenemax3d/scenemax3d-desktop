@@ -35,7 +35,7 @@ public class UserInputDoBlockController extends DoBlockController {
         boolean goCondition;
 
         if(goExpr!=null) {
-            Object cond = new ActionLogicalExpression(goExpr,parentScope).evaluate();
+            Object cond = new ActionLogicalExpressionVm(goExpr,parentScope).evaluate();
             if(cond instanceof Boolean) {
                 goCondition=(Boolean)cond;
                 return goCondition;

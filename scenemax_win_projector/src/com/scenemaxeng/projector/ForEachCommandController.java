@@ -21,7 +21,7 @@ public class ForEachCommandController extends CompositeController {
             ForEachCommand cmd = (ForEachCommand)this.cmd;
             List<EntityInstBase> entities;
             if (cmd.targetCollectionExpr != null) {
-                entities = (List<EntityInstBase>)new ActionLogicalExpression(cmd.targetCollectionExpr, this.scope).evaluate();
+                entities = (List<EntityInstBase>)new ActionLogicalExpressionVm(cmd.targetCollectionExpr, this.scope).evaluate();
             } else {
                 entities = app.getAllEntities(cmd.entityType, cmd.name, cmd.nameComparator);
             }

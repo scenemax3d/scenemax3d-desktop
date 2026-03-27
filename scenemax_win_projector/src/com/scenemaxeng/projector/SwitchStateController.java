@@ -18,7 +18,7 @@ public class SwitchStateController extends SceneMaxBaseController {
     }
 
     public boolean run(float tpf) {
-        String path = new ActionLogicalExpression(this.cmd.pathExpr, this.scope).evaluate().toString();
+        String path = new ActionLogicalExpressionVm(this.cmd.pathExpr, this.scope).evaluate().toString();
         String level = "";
         if (!path.equals("main")) {
             level = "/" + path;

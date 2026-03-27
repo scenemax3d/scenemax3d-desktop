@@ -20,9 +20,9 @@ public class LightsActionController extends SceneMaxBaseController {
         float z=0;
 
         if(cmd.xExpr!=null) {
-            x = ((Double) new ActionLogicalExpression(cmd.xExpr, this.scope).evaluate()).floatValue();
-            y = ((Double) new ActionLogicalExpression(cmd.yExpr, this.scope).evaluate()).floatValue();
-            z = ((Double) new ActionLogicalExpression(cmd.zExpr, this.scope).evaluate()).floatValue();
+            x = ((Double) new ActionLogicalExpressionVm(cmd.xExpr, this.scope).evaluate()).floatValue();
+            y = ((Double) new ActionLogicalExpressionVm(cmd.yExpr, this.scope).evaluate()).floatValue();
+            z = ((Double) new ActionLogicalExpressionVm(cmd.zExpr, this.scope).evaluate()).floatValue();
         }
 
         app.addLightProbe(cmd.name,x,y,z);

@@ -31,17 +31,17 @@ public class DungeonCameraAppState extends BaseAppState {
 
 
         if(cmd.offsetYExpr!=null) {
-            Double offsetY = (Double)new ActionLogicalExpression(cmd.offsetYExpr,this.scope).evaluate();
+            Double offsetY = (Double)new ActionLogicalExpressionVm(cmd.offsetYExpr,this.scope).evaluate();
             this.offset.setY(offsetY.floatValue());
         }
 
         if(cmd.offsetXExpr!=null) {
-            Double offsetX = (Double)new ActionLogicalExpression(cmd.offsetXExpr,this.scope).evaluate();
+            Double offsetX = (Double)new ActionLogicalExpressionVm(cmd.offsetXExpr,this.scope).evaluate();
             this.offset.setX(offsetX.floatValue());
         }
 
         if(cmd.offsetZExpr!=null) {
-            Double offsetZ = (Double)new ActionLogicalExpression(cmd.offsetZExpr,this.scope).evaluate();
+            Double offsetZ = (Double)new ActionLogicalExpressionVm(cmd.offsetZExpr,this.scope).evaluate();
             this.offset.setZ(offsetZ.floatValue());
         }
 

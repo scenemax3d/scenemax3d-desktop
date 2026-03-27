@@ -37,12 +37,12 @@ public class DirectionalMoveController extends SceneMaxBaseController{
             findTargetVar();
 
             if (cmd.distanceExpr != null) {
-                dist = (Double) new ActionLogicalExpression(cmd.distanceExpr, this.scope).evaluate();
+                dist = (Double) new ActionLogicalExpressionVm(cmd.distanceExpr, this.scope).evaluate();
             }
             this.app.moveDirectional(this.targetVar, cmd.direction, dist);
 
             if (cmd.timeExpr != null) {
-                this.targetTime = ((Double) new ActionLogicalExpression(cmd.timeExpr, this.scope).evaluate()).floatValue();
+                this.targetTime = ((Double) new ActionLogicalExpressionVm(cmd.timeExpr, this.scope).evaluate()).floatValue();
                 this.originalTargetTime = this.targetTime;
                 return false;
             } else {
@@ -55,7 +55,7 @@ public class DirectionalMoveController extends SceneMaxBaseController{
         boolean stop = (this.targetTime <= 0);
 
         if(stop && this.cmd.loopExpr!=null) {
-            Object cond = new ActionLogicalExpression(this.cmd.loopExpr,this.scope).evaluate();
+            Object cond = new ActionLogicalExpressionVm(this.cmd.loopExpr,this.scope).evaluate();
             if(cond instanceof Boolean && ((Boolean)cond)) {
                 stop=false;
                 this.targetTime=this.originalTargetTime;

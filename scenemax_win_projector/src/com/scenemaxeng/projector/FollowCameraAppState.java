@@ -36,21 +36,21 @@ public class FollowCameraAppState extends BaseAppState {
 
         Double offsetX=0d, offsetY = 0d, offsetZ=0d;
         if(cmd.offsetYExpr!=null) {
-            offsetY = (Double)new ActionLogicalExpression(cmd.offsetYExpr,this.scope).evaluate();
+            offsetY = (Double)new ActionLogicalExpressionVm(cmd.offsetYExpr,this.scope).evaluate();
         }
 
         if(cmd.offsetXExpr!=null) {
-            offsetX = (Double)new ActionLogicalExpression(cmd.offsetXExpr,this.scope).evaluate();
+            offsetX = (Double)new ActionLogicalExpressionVm(cmd.offsetXExpr,this.scope).evaluate();
         }
 
         if(cmd.offsetZExpr!=null) {
-            offsetZ = (Double)new ActionLogicalExpression(cmd.offsetZExpr,this.scope).evaluate();
+            offsetZ = (Double)new ActionLogicalExpressionVm(cmd.offsetZExpr,this.scope).evaluate();
         }
 
         offset.set(offsetX.floatValue(),offsetY.floatValue(),offsetZ.floatValue());
 
         if(cmd.dampingExpr!=null) {
-            damping = ((Double)new ActionLogicalExpression(cmd.dampingExpr,this.scope).evaluate()).floatValue();
+            damping = ((Double)new ActionLogicalExpressionVm(cmd.dampingExpr,this.scope).evaluate()).floatValue();
         }
 
         float[] camAngles = new float[3];
@@ -75,15 +75,15 @@ public class FollowCameraAppState extends BaseAppState {
 
         Double offsetX=null, offsetY = null, offsetZ=null;
         if(cmd.offsetYExpr!=null) {
-            offsetY = (Double)new ActionLogicalExpression(cmd.offsetYExpr,this.scope).evaluate();
+            offsetY = (Double)new ActionLogicalExpressionVm(cmd.offsetYExpr,this.scope).evaluate();
         }
 
         if(cmd.offsetXExpr!=null) {
-            offsetX = (Double)new ActionLogicalExpression(cmd.offsetXExpr,this.scope).evaluate();
+            offsetX = (Double)new ActionLogicalExpressionVm(cmd.offsetXExpr,this.scope).evaluate();
         }
 
         if(cmd.offsetZExpr!=null) {
-            offsetZ = (Double)new ActionLogicalExpression(cmd.offsetZExpr,this.scope).evaluate();
+            offsetZ = (Double)new ActionLogicalExpressionVm(cmd.offsetZExpr,this.scope).evaluate();
         }
 
         Vector3f desiredPosition = target.getWorldTranslation();

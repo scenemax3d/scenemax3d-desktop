@@ -44,7 +44,7 @@ public class VariableAssignmentController extends CompositeController {
 
         var.values = new ArrayList<>();
         for (SceneMaxParser.Logical_expressionContext logExp : varAssignmentCommand.array) {
-            Object retval = new ActionLogicalExpression(logExp, this.scope).evaluate();
+            Object retval = new ActionLogicalExpressionVm(logExp, this.scope).evaluate();
             var.values.add(retval);
         }
 
@@ -70,7 +70,7 @@ public class VariableAssignmentController extends CompositeController {
                 continue;
             }
 
-            Object retval = new ActionLogicalExpression(varAssignmentCommand.values.get(index), this.scope).evaluate();
+            Object retval = new ActionLogicalExpressionVm(varAssignmentCommand.values.get(index), this.scope).evaluate();
 
             if (retval instanceof List) {
                 var.values = (List<Object>) retval;
@@ -79,7 +79,7 @@ public class VariableAssignmentController extends CompositeController {
             } else {
 
                 if (var.varType == VariableDef.VAR_TYPE_ARRAY) {
-                    Object arrIndex = new ActionLogicalExpression(varAssignmentCommand.arrayIndexes.get(varDef), this.scope).evaluate();
+                    Object arrIndex = new ActionLogicalExpressionVm(varAssignmentCommand.arrayIndexes.get(varDef), this.scope).evaluate();
                     var.values.set( ((Double)arrIndex).intValue(), retval);
                     index++;
                     continue;
@@ -88,7 +88,7 @@ public class VariableAssignmentController extends CompositeController {
                 var.value = retval;
                 boolean minSet = false;
                 if (var.varDef.declaration.minExpr != null) {
-                    Object min = new ActionLogicalExpression(var.varDef.declaration.minExpr, this.scope).evaluate();
+                    Object min = new ActionLogicalExpressionVm(var.varDef.declaration.minExpr, this.scope).evaluate();
                     if ((Double) var.value < (Double) min) {
                         var.value = min;
                         minSet = true;
@@ -96,7 +96,7 @@ public class VariableAssignmentController extends CompositeController {
                 }
 
                 if (!minSet && var.varDef.declaration.maxExpr != null) {
-                    Object max = new ActionLogicalExpression(var.varDef.declaration.maxExpr, this.scope).evaluate();
+                    Object max = new ActionLogicalExpressionVm(var.varDef.declaration.maxExpr, this.scope).evaluate();
                     if ((Double) var.value > (Double) max) {
                         var.value = max;
                     }

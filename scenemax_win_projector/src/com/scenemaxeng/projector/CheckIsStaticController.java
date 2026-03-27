@@ -53,7 +53,7 @@ public class CheckIsStaticController extends SceneMaxBaseController {
 
         if(this.targetTime==0) {
             if (app.isEntityStatic(targetVar, targetVarDef.varType)) {
-                double delay = Double.parseDouble(new ActionLogicalExpression(this.cmd.timeExpr,scope).evaluate().toString());
+                double delay = Double.parseDouble(new ActionLogicalExpressionVm(this.cmd.timeExpr,scope).evaluate().toString());
                 this.targetTime = delay;
             }
         } else {
