@@ -10,6 +10,7 @@ A fully playable 3D fighting game featuring two characters with a complete comba
 
 **Note**: for this game to run as expected, you will need to download its resources (Models / Sprites / Audio etc.) and import them to the game.
 Download the resources ZIP file from: [Here](https://drive.google.com/file/d/1u9g_e4iRIM--yOfyFwgvQb2hgo9k3XvB/view?usp=sharing)
+
 Import the resources by selecting the **File/Import program...** menu:
 <img width="556" height="527" alt="image" src="https://github.com/user-attachments/assets/83e9cc82-c987-42dc-99a1-ea47a8e71fed" />
 
