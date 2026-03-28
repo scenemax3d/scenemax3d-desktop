@@ -7,6 +7,7 @@ This folder contains demo projects that showcase the capabilities of SceneMax3D 
 ## Fighting Game
 
 A fully playable 3D fighting game featuring two characters with a complete combat system, AI opponent, dynamic camera, and cinematic sequences. This project demonstrates how to build a complex, real-time interactive game using the SceneMax3D scripting language.
+
 **Note**: for this game to run as expected, you will need to download its resources (Models / Sprites / Audio etc.) and import them to the game.
 Download the resources ZIP file from: [Here](https://drive.google.com/file/d/1u9g_e4iRIM--yOfyFwgvQb2hgo9k3XvB/view?usp=sharing)
 Import the resources by selecting the File/Import program... menu:
