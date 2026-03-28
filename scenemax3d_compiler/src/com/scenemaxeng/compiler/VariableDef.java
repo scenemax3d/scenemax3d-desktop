@@ -24,6 +24,7 @@ public class VariableDef extends StatementDef{
     public static final int VAR_TYPE_BOX = 40;
     public static final int VAR_TYPE_EXPR_POINTER = 50;
     public static final int VAR_TYPE_CYLINDER = 60;
+    public static final int VAR_TYPE_HOLLOW_CYLINDER = 65;
     public static final int VAR_TYPE_QUAD = 70;
     //public int threadId;
 

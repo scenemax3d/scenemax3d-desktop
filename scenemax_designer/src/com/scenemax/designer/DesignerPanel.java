@@ -87,6 +87,8 @@ public class DesignerPanel extends JPanel {
     private JPanel radiusPanel;
     private JSpinner spnRadiusTop, spnRadiusBottom, spnCylinderHeight;
     private JPanel cylinderPanel;
+    private JSpinner spnHcRadiusTop, spnHcRadiusBottom, spnHcInnerRadiusTop, spnHcInnerRadiusBottom, spnHcHeight;
+    private JPanel hollowCylinderPanel;
     private JCheckBox chkStaticEntity, chkColliderEntity;
     private JCheckBox chkHidden;
     private JPanel hiddenPanel;
@@ -162,6 +164,12 @@ public class DesignerPanel extends JPanel {
             if (app != null) app.enqueue(() -> { app.addDefaultCylinder(); return null; });
         });
 
+        JButton btnAddHollowCylinder = new JButton(createDesignerToolbarIcon("hollowcylinder"));
+        btnAddHollowCylinder.setToolTipText("Add Hollow Cylinder");
+        btnAddHollowCylinder.addActionListener(e -> {
+            if (app != null) app.enqueue(() -> { app.addDefaultHollowCylinder(); return null; });
+        });
+
         JButton btnAddQuad = new JButton(createDesignerToolbarIcon("quad"));
         btnAddQuad.setToolTipText("Add Quad");
         btnAddQuad.addActionListener(e -> {
@@ -188,6 +196,7 @@ public class DesignerPanel extends JPanel {
         toolbar.add(btnAddSphere);
         toolbar.add(btnAddBox);
         toolbar.add(btnAddCylinder);
+        toolbar.add(btnAddHollowCylinder);
         toolbar.add(btnAddQuad);
         toolbar.add(btnAddModel);
         toolbar.addSeparator();
@@ -471,6 +480,59 @@ public class DesignerPanel extends JPanel {
 
         cylinderPanel.setVisible(false);
         propertiesForm.add(cylinderPanel);
+
+        // Hollow Cylinder fields (outer radii, inner radii, height)
+        hollowCylinderPanel = new JPanel();
+        hollowCylinderPanel.setLayout(new BoxLayout(hollowCylinderPanel, BoxLayout.Y_AXIS));
+        hollowCylinderPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        hollowCylinderPanel.add(Box.createVerticalStrut(8));
+        JLabel lblHollowCyl = new JLabel("Hollow Cylinder:");
+        lblHollowCyl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblHollowCyl.setFont(lblHollowCyl.getFont().deriveFont(Font.BOLD));
+        hollowCylinderPanel.add(lblHollowCyl);
+
+        spnHcRadiusTop = new JSpinner(new SpinnerNumberModel(1.0, 0.01, 9999.0, 0.1));
+        spnHcRadiusBottom = new JSpinner(new SpinnerNumberModel(1.0, 0.01, 9999.0, 0.1));
+        spnHcInnerRadiusTop = new JSpinner(new SpinnerNumberModel(0.5, 0.01, 9999.0, 0.1));
+        spnHcInnerRadiusBottom = new JSpinner(new SpinnerNumberModel(0.5, 0.01, 9999.0, 0.1));
+        spnHcHeight = new JSpinner(new SpinnerNumberModel(2.0, 0.01, 9999.0, 0.1));
+
+        Dimension hcSpinSize = new Dimension(60, 24);
+        spnHcRadiusTop.setPreferredSize(hcSpinSize);
+        spnHcRadiusBottom.setPreferredSize(hcSpinSize);
+        spnHcInnerRadiusTop.setPreferredSize(hcSpinSize);
+        spnHcInnerRadiusBottom.setPreferredSize(hcSpinSize);
+        spnHcHeight.setPreferredSize(hcSpinSize);
+
+        JPanel hcRow1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
+        hcRow1.setAlignmentX(Component.LEFT_ALIGNMENT);
+        hcRow1.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        hcRow1.add(new JLabel("R-Top:"));
+        hcRow1.add(spnHcRadiusTop);
+        hcRow1.add(new JLabel("R-Btm:"));
+        hcRow1.add(spnHcRadiusBottom);
+        hcRow1.add(new JLabel("H:"));
+        hcRow1.add(spnHcHeight);
+        hollowCylinderPanel.add(hcRow1);
+
+        JPanel hcRow2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
+        hcRow2.setAlignmentX(Component.LEFT_ALIGNMENT);
+        hcRow2.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        hcRow2.add(new JLabel("Inner R-Top:"));
+        hcRow2.add(spnHcInnerRadiusTop);
+        hcRow2.add(new JLabel("Inner R-Btm:"));
+        hcRow2.add(spnHcInnerRadiusBottom);
+        hollowCylinderPanel.add(hcRow2);
+
+        spnHcRadiusTop.addChangeListener(e -> applyHollowCylinderChange());
+        spnHcRadiusBottom.addChangeListener(e -> applyHollowCylinderChange());
+        spnHcInnerRadiusTop.addChangeListener(e -> applyHollowCylinderChange());
+        spnHcInnerRadiusBottom.addChangeListener(e -> applyHollowCylinderChange());
+        spnHcHeight.addChangeListener(e -> applyHollowCylinderChange());
+
+        hollowCylinderPanel.setVisible(false);
+        propertiesForm.add(hollowCylinderPanel);
 
         // Static / Collider checkboxes (BOX and SPHERE only)
         staticColliderPanel = new JPanel();
@@ -1291,6 +1353,41 @@ public class DesignerPanel extends JPanel {
         });
         menu.add(addCylinderItem);
 
+        // "Add Hollow Cylinder" - inserts after the selected item (or as last child in a section)
+        JMenuItem addHollowCylinderItem = new JMenuItem("Add Hollow Cylinder");
+        addHollowCylinderItem.addActionListener(ev -> {
+            if (app != null) {
+                java.util.List<DesignerEntity> targetList;
+                int insertIdx;
+                if (etn.entity.getType() == DesignerEntityType.SECTION) {
+                    targetList = etn.entity.getChildren();
+                    insertIdx = -1;
+                } else {
+                    DefaultMutableTreeNode parentNode = (DefaultMutableTreeNode) node.getParent();
+                    if (parentNode != null && parentNode != sceneTreeRoot
+                            && parentNode.getUserObject() instanceof EntityTreeNode) {
+                        EntityTreeNode parentEtn = (EntityTreeNode) parentNode.getUserObject();
+                        if (parentEtn.entity.getType() == DesignerEntityType.SECTION) {
+                            targetList = parentEtn.entity.getChildren();
+                            insertIdx = parentEtn.entity.getChildren().indexOf(etn.entity) + 1;
+                        } else {
+                            targetList = null;
+                            int ei = app.getEntities().indexOf(etn.entity);
+                            insertIdx = ei >= 0 ? ei + 1 : -1;
+                        }
+                    } else {
+                        targetList = null;
+                        int ei = app.getEntities().indexOf(etn.entity);
+                        insertIdx = ei >= 0 ? ei + 1 : -1;
+                    }
+                }
+                final java.util.List<DesignerEntity> fTargetList = targetList;
+                final int fInsertIdx = insertIdx;
+                app.enqueue(() -> { app.addDefaultHollowCylinder(fTargetList, fInsertIdx); return null; });
+            }
+        });
+        menu.add(addHollowCylinderItem);
+
         // "Add Quad" - inserts after the selected item (or as last child in a section)
         JMenuItem addQuadItem = new JMenuItem("Add Quad");
         addQuadItem.addActionListener(ev -> {
@@ -1578,6 +1675,7 @@ public class DesignerPanel extends JPanel {
                 sizeFieldsPanel.setVisible(false);
                 radiusPanel.setVisible(false);
                 cylinderPanel.setVisible(false);
+                hollowCylinderPanel.setVisible(false);
                 staticColliderPanel.setVisible(false);
                 materialPanel.setVisible(false);
                 hiddenPanel.setVisible(false);
@@ -1633,8 +1731,20 @@ public class DesignerPanel extends JPanel {
                 cylinderPanel.setVisible(false);
             }
 
+            if (entity.getType() == DesignerEntityType.HOLLOW_CYLINDER) {
+                spnHcRadiusTop.setValue((double) entity.getRadiusTop());
+                spnHcRadiusBottom.setValue((double) entity.getRadiusBottom());
+                spnHcInnerRadiusTop.setValue((double) entity.getInnerRadiusTop());
+                spnHcInnerRadiusBottom.setValue((double) entity.getInnerRadiusBottom());
+                spnHcHeight.setValue((double) entity.getHeight());
+                hollowCylinderPanel.setVisible(true);
+            } else {
+                hollowCylinderPanel.setVisible(false);
+            }
+
             if (entity.getType() == DesignerEntityType.BOX || entity.getType() == DesignerEntityType.SPHERE
-                    || entity.getType() == DesignerEntityType.CYLINDER || entity.getType() == DesignerEntityType.QUAD) {
+                    || entity.getType() == DesignerEntityType.CYLINDER || entity.getType() == DesignerEntityType.HOLLOW_CYLINDER
+                    || entity.getType() == DesignerEntityType.QUAD) {
                 chkStaticEntity.setSelected(entity.isStaticEntity());
                 chkColliderEntity.setSelected(entity.isColliderEntity());
                 staticColliderPanel.setVisible(true);
@@ -1647,7 +1757,8 @@ public class DesignerPanel extends JPanel {
             }
 
             if (entity.getType() == DesignerEntityType.BOX || entity.getType() == DesignerEntityType.SPHERE
-                    || entity.getType() == DesignerEntityType.CYLINDER || entity.getType() == DesignerEntityType.QUAD
+                    || entity.getType() == DesignerEntityType.CYLINDER || entity.getType() == DesignerEntityType.HOLLOW_CYLINDER
+                    || entity.getType() == DesignerEntityType.QUAD
                     || entity.getType() == DesignerEntityType.MODEL) {
                 chkHidden.setSelected(entity.isHidden());
                 hiddenPanel.setVisible(true);
@@ -1820,12 +1931,36 @@ public class DesignerPanel extends JPanel {
         });
     }
 
+    private void applyHollowCylinderChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.HOLLOW_CYLINDER) return;
+
+        float rTop = ((Number) spnHcRadiusTop.getValue()).floatValue();
+        float rBottom = ((Number) spnHcRadiusBottom.getValue()).floatValue();
+        float irTop = ((Number) spnHcInnerRadiusTop.getValue()).floatValue();
+        float irBottom = ((Number) spnHcInnerRadiusBottom.getValue()).floatValue();
+        float h = ((Number) spnHcHeight.getValue()).floatValue();
+
+        app.enqueue(() -> {
+            sel.setRadiusTop(rTop);
+            sel.setRadiusBottom(rBottom);
+            sel.setInnerRadiusTop(irTop);
+            sel.setInnerRadiusBottom(irBottom);
+            sel.setHeight(h);
+            app.updateHollowCylinderMesh(sel);
+            app.markDocumentDirty();
+            return null;
+        });
+    }
+
     private void applyStaticColliderChange() {
         if (updatingProperties || app == null) return;
         DesignerEntity sel = app.getSelectionManager().getSelected();
         if (sel == null) return;
         if (sel.getType() != DesignerEntityType.BOX && sel.getType() != DesignerEntityType.SPHERE
-                && sel.getType() != DesignerEntityType.CYLINDER && sel.getType() != DesignerEntityType.QUAD) return;
+                && sel.getType() != DesignerEntityType.CYLINDER && sel.getType() != DesignerEntityType.HOLLOW_CYLINDER
+                && sel.getType() != DesignerEntityType.QUAD) return;
 
         boolean isStatic = chkStaticEntity.isSelected();
         boolean isCollider = chkColliderEntity.isSelected();
@@ -1950,7 +2085,8 @@ public class DesignerPanel extends JPanel {
         DesignerEntity sel = app.getSelectionManager().getSelected();
         if (sel == null) return;
         if (sel.getType() != DesignerEntityType.BOX && sel.getType() != DesignerEntityType.SPHERE
-                && sel.getType() != DesignerEntityType.CYLINDER && sel.getType() != DesignerEntityType.QUAD) return;
+                && sel.getType() != DesignerEntityType.CYLINDER && sel.getType() != DesignerEntityType.HOLLOW_CYLINDER
+                && sel.getType() != DesignerEntityType.QUAD) return;
 
         String material = (String) cboMaterial.getSelectedItem();
         if (material == null) material = "";
@@ -2214,8 +2350,9 @@ public class DesignerPanel extends JPanel {
         switch (key) {
             case "sphere":    drawToolbarSphere(g);    break;
             case "box":       drawToolbarBox(g);       break;
-            case "cylinder":  drawToolbarCylinder(g);  break;
-            case "quad":      drawToolbarQuad(g);      break;
+            case "cylinder":        drawToolbarCylinder(g);        break;
+            case "hollowcylinder":  drawToolbarHollowCylinder(g);  break;
+            case "quad":            drawToolbarQuad(g);            break;
             case "model":     drawToolbarModel(g);     break;
             case "delete":    drawToolbarDelete(g);    break;
             case "translate": drawToolbarTranslate(g); break;
@@ -2270,6 +2407,25 @@ public class DesignerPanel extends JPanel {
         g.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND,
                 1.0f, new float[]{2f, 2f}, 0));
         g.draw(new java.awt.geom.Arc2D.Float(3, 13, 14, 5, 0, 180, java.awt.geom.Arc2D.OPEN));
+    }
+
+    /** Hollow Cylinder: cylinder with inner hole visible on top cap */
+    private static void drawToolbarHollowCylinder(Graphics2D g) {
+        // outer top ellipse
+        g.draw(new Ellipse2D.Float(3, 2, 14, 5));
+        // side lines
+        g.draw(new Line2D.Float(3, 4.5f, 3, 15.5f));
+        g.draw(new Line2D.Float(17, 4.5f, 17, 15.5f));
+        // bottom ellipse (front arc only)
+        g.draw(new java.awt.geom.Arc2D.Float(3, 13, 14, 5, 180, 180, java.awt.geom.Arc2D.OPEN));
+        // bottom ellipse (back arc dashed)
+        g.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND,
+                1.0f, new float[]{2f, 2f}, 0));
+        g.draw(new java.awt.geom.Arc2D.Float(3, 13, 14, 5, 0, 180, java.awt.geom.Arc2D.OPEN));
+        // inner hole on top cap
+        g.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.setColor(DT_COLOR);
+        g.draw(new Ellipse2D.Float(6, 3, 8, 3));
     }
 
     /** Quad: flat rectangle with slight perspective */
@@ -2439,6 +2595,9 @@ public class DesignerPanel extends JPanel {
                 case CYLINDER:
                     drawCylinder(g);
                     break;
+                case HOLLOW_CYLINDER:
+                    drawHollowCylinder(g);
+                    break;
                 case QUAD:
                     drawQuad(g);
                     break;
@@ -2496,6 +2655,19 @@ public class DesignerPanel extends JPanel {
             g.draw(new Line2D.Float(2, 4, 2, 12));
             g.draw(new Line2D.Float(14, 4, 14, 12));
             g.draw(new java.awt.geom.Arc2D.Float(2, 10, 12, 4, 180, 180, java.awt.geom.Arc2D.OPEN));
+        }
+
+        /** Hollow Cylinder: cylinder with inner hole on top */
+        private static void drawHollowCylinder(Graphics2D g) {
+            // outer top ellipse
+            g.draw(new Ellipse2D.Float(2, 2, 12, 4));
+            // side lines
+            g.draw(new Line2D.Float(2, 4, 2, 12));
+            g.draw(new Line2D.Float(14, 4, 14, 12));
+            // bottom arc (front half)
+            g.draw(new java.awt.geom.Arc2D.Float(2, 10, 12, 4, 180, 180, java.awt.geom.Arc2D.OPEN));
+            // inner hole on top cap
+            g.draw(new Ellipse2D.Float(5, 2.5f, 6, 3));
         }
 
         /** Quad: flat rectangle */

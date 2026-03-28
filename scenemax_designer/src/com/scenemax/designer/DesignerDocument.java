@@ -282,6 +282,13 @@ public class DesignerDocument {
                        entity.getRadiusTop() + "," + entity.getRadiusBottom() +
                        "), height " + entity.getHeight() +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + scaleSuffix + rotateSuffix + shadowSuffix;
+            case HOLLOW_CYLINDER:
+                String hcPrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
+                return name + " => " + hcPrefix + "hollow cylinder :" + hiddenAttr + " radius (" +
+                       entity.getRadiusTop() + "," + entity.getRadiusBottom() +
+                       "), inner radius (" + entity.getInnerRadiusTop() + "," + entity.getInnerRadiusBottom() +
+                       "), height " + entity.getHeight() +
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + scaleSuffix + rotateSuffix + shadowSuffix;
             case QUAD:
                 String quadPrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
                 return name + " => " + quadPrefix + "quad :" + hiddenAttr + " size (" +

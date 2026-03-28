@@ -137,6 +137,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private static HashMap<String,Node> spheres = new HashMap<>();
     private static HashMap<String,Node> boxes = new HashMap<>();
     private static HashMap<String,Node> cylinders = new HashMap<>();
+    private static HashMap<String,Node> hollowCylinders = new HashMap<>();
     private static HashMap<String,Node> quads = new HashMap<>();
     //private static HashMap<String,SkyBoxMaterial> skyboxMaterials = new HashMap<>();
     private static HashMap<String,ResourceMaterial> materials = new HashMap<>();
@@ -182,6 +183,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private HashMap<String, EntityInstBase> sphereInstances = new HashMap<>();
     private HashMap<String, EntityInstBase> boxInstances = new HashMap<>();
     private HashMap<String, EntityInstBase> cylinderInstances = new HashMap<>();
+    private HashMap<String, EntityInstBase> hollowCylinderInstances = new HashMap<>();
     private HashMap<String, EntityInstBase> quadInstances = new HashMap<>();
     private String projectName = null;
     private DungeonCameraAppState dungeonCameraState = null;
@@ -1541,6 +1543,24 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return;
         }
 
+        if(var.resName.equals("hollowcylinder")) {
+            HollowCylinderInst inst = new HollowCylinderInst((HollowCylinderVariableDef)var,scope);
+            String key = var.varName+"_"+ ++entityInstCounter;
+            inst.entityKey=key;
+            hollowCylinderInstances.put(key, inst);
+            if(var.entityPos!=null) {
+                inst.entityForPos = findVarRuntime(prg,scope,var.entityPos.entityName);
+            }
+
+            if(var.entityRot!=null) {
+                inst.entityForRot = findVarRuntime(prg,scope,var.entityRot);
+            }
+
+            scope.entities.put(var.varName,inst);
+            loadHollowCylinder(inst);
+            return;
+        }
+
         if(var.resName.equals("quad")) {
             QuadInst inst = new QuadInst((QuadVariableDef)var,scope);
             String key = var.varName+"_"+ ++entityInstCounter;
@@ -1980,6 +2000,144 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         if(inst.varDef.visible) {
             rootNode.attachChild(cylinderNode);
+        }
+    }
+
+    private void loadHollowCylinder(HollowCylinderInst inst) {
+
+        RigidBodyControl modelCtl = null;
+        GhostControl ghost = null;
+
+        HollowCylinderVariableDef varDef = (HollowCylinderVariableDef)inst.varDef;
+        float radiusTop = inst.radiusTopExpr==null?1f:((Double)inst.radiusTopExpr.evaluate()).floatValue();
+        float radiusBottom = inst.radiusBottomExpr==null?1f:((Double)inst.radiusBottomExpr.evaluate()).floatValue();
+        float innerRadiusTop = inst.innerRadiusTopExpr==null?0.5f:((Double)inst.innerRadiusTopExpr.evaluate()).floatValue();
+        float innerRadiusBottom = inst.innerRadiusBottomExpr==null?0.5f:((Double)inst.innerRadiusBottomExpr.evaluate()).floatValue();
+        float height = inst.heightExpr==null?2f:((Double)inst.heightExpr.evaluate()).floatValue();
+
+        // Guard against zero/negative dimensions
+        if (radiusTop <= 0) radiusTop = 1f;
+        if (radiusBottom <= 0) radiusBottom = 1f;
+        if (innerRadiusTop <= 0) innerRadiusTop = 0.5f;
+        if (innerRadiusBottom <= 0) innerRadiusBottom = 0.5f;
+        if (height <= 0) height = 2f;
+
+        String hcName = inst.varDef.varName+"@"+inst.scope.scopeId;
+        Node hcNode = new Node(hcName);
+        hcNode.setUserData("key",hcName);
+
+        ////////// SET POSITION & ROTATION ///////
+
+        if(inst.rxExpr!=null) {
+            float rotateX = Float.parseFloat(inst.rxExpr.evaluate().toString());
+            float rotateY = Float.parseFloat(inst.ryExpr.evaluate().toString());
+            float rotateZ = Float.parseFloat(inst.rzExpr.evaluate().toString());
+            hcNode.rotate(rotateX* FastMath.DEG_TO_RAD,rotateY* FastMath.DEG_TO_RAD,rotateZ* FastMath.DEG_TO_RAD);
+
+        } else if(inst.entityForRot!=null) {
+            Spatial sp = getEntitySpatial(inst.entityForRot.varName,inst.entityForRot.varDef.varType);
+            hcNode.setLocalRotation(sp.getLocalRotation());
+        }
+
+        if(inst.xExpr!=null) {
+            float localTranslationX = Float.parseFloat(inst.xExpr.evaluate().toString());
+            float localTranslationY = Float.parseFloat(inst.yExpr.evaluate().toString());
+            float localTranslationZ = Float.parseFloat(inst.zExpr.evaluate().toString());
+            hcNode.setLocalTranslation(localTranslationX, localTranslationY, localTranslationZ);
+        } else if(inst.entityForPos!=null) {
+            if(inst.varDef.entityPos.entityJointName==null) {
+                Spatial sp = getEntitySpatial(inst.entityForPos.varName,inst.entityForPos.varDef.varType);
+                hcNode.setLocalTranslation(sp.getLocalTranslation());
+            } else {
+                AppModel am2 = models.get(inst.entityForPos.varName);
+                if(am2!=null) {
+                    Node n = am2.getJointAttachementNode(inst.varDef.entityPos.entityJointName);
+                    if(n!=null) {
+                        Joint j = (Joint) n.getUserData("AttachedBone");
+                        Vector3f pos = j.getModelTransform().clone().combineWithParent(am2.getSkinningControl().getSpatial().getWorldTransform()).getTranslation();
+                        hcNode.setLocalTranslation(pos);
+                    }
+                }
+            }
+        }
+
+        if(varDef.isCollider) {
+            ghost = new GhostControl(
+                    new CylinderCollisionShape(new Vector3f(Math.max(radiusTop,radiusBottom), height/2, Math.max(radiusTop,radiusBottom)), 1));
+            hcNode.addControl(ghost);
+        } else {
+            HollowCylinderMesh hcMesh = new HollowCylinderMesh(radiusTop, radiusBottom, innerRadiusTop, innerRadiusBottom, height);
+            final Geometry hcGeo = new Geometry(hcName, hcMesh);
+            hcNode.attachChild(hcGeo);
+
+            TangentBinormalGenerator.generate(hcMesh);
+
+            if (inst.varDef.shadowMode == 3) {
+                hcGeo.setShadowMode(RenderQueue.ShadowMode.CastAndReceive);
+            } else if (inst.varDef.shadowMode == 2) {
+                hcGeo.setShadowMode(RenderQueue.ShadowMode.Receive);
+            } else if (inst.varDef.shadowMode == 1) {
+                hcGeo.setShadowMode(RenderQueue.ShadowMode.Cast);
+            }
+
+            if (inst.materialExpr != null) {
+                String materialName = inst.materialExpr.evaluate().toString();
+                if (!setGeometryMaterial(hcGeo, materialName)) {
+                    handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
+                    return;
+                }
+            } else {
+                Material mat1 = new Material(assetManager,
+                        "Common/MatDefs/Misc/Unshaded.j3md");
+                mat1.setColor("Color", ColorRGBA.Cyan);
+                hcGeo.setMaterial(mat1);
+            }
+
+            boolean isPhysical = inst.massExpr!=null;
+            float mass = 0;
+            if(isPhysical) {
+                if(inst.varDef.isStatic) {
+                    mass=0;
+                } else {
+                    mass = Float.parseFloat(inst.massExpr.evaluate().toString());
+                }
+            }
+
+            CollisionShape modelShape;
+            if(inst.varDef.isStatic) {
+                modelShape = new MeshCollisionShape(hcGeo.getMesh());
+            } else {
+                modelShape = CollisionShapeFactory.createDynamicMeshShape(hcGeo);
+            }
+
+            modelCtl = new RigidBodyControl(modelShape,mass);
+
+            if(!inst.varDef.isStatic) {
+                modelCtl.setKinematic(!isPhysical);
+            }
+
+            hcNode.addControl(modelCtl);
+        }
+
+        hollowCylinders.put(hcName,hcNode);
+        geoName2ModelName.put(hcName,hcName);
+        geoName2EntityInst.put(hcName,inst);
+
+        List<java.lang.Object> ctls = new ArrayList<>();
+        if(modelCtl!=null) {
+            bulletAppState.getPhysicsSpace().add(modelCtl);
+            ctls.add(modelCtl);
+        }
+
+        if(ghost!=null) {
+            bulletAppState.getPhysicsSpace().add(ghost);
+            ctls.add(ghost);
+        }
+
+        collisionControlsCache.put(hcName,ctls);
+
+        if(inst.varDef.visible) {
+            rootNode.attachChild(hcNode);
         }
     }
 
@@ -4576,6 +4734,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             m=boxes.get(targetVar);
         } else if(varType==VariableDef.VAR_TYPE_CYLINDER) {
             m=cylinders.get(targetVar);
+        } else if(varType==VariableDef.VAR_TYPE_HOLLOW_CYLINDER) {
+            m=hollowCylinders.get(targetVar);
         } else if(varType==VariableDef.VAR_TYPE_QUAD) {
             m=quads.get(targetVar);
         }
@@ -5086,6 +5246,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             child = spheres.get(targetVar);
         } else if(varType==VariableDef.VAR_TYPE_CYLINDER) {
             child = cylinders.get(targetVar);
+        } else if(varType==VariableDef.VAR_TYPE_HOLLOW_CYLINDER) {
+            child = hollowCylinders.get(targetVar);
         } else if(varType==VariableDef.VAR_TYPE_QUAD) {
             child = quads.get(targetVar);
         }
@@ -6411,6 +6573,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         setGeometryMaterial((Geometry)g.getChild(0),material);
     }
 
+    public void setHollowCylinderMaterial(String hcName, String material) {
+        Node g = hollowCylinders.get(hcName);
+        setGeometryMaterial((Geometry)g.getChild(0),material);
+    }
+
     public void setQuadMaterial(String quadName, String material) {
         Node g = quads.get(quadName);
         setGeometryMaterial((Geometry)g.getChild(0),material);
@@ -6428,6 +6595,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             getAllSphereEntities(name,retval);
         } else if(entityType== VariableDef.VAR_TYPE_CYLINDER) {
             getAllCylinderEntities(name,retval);
+        } else if(entityType== VariableDef.VAR_TYPE_HOLLOW_CYLINDER) {
+            getAllHollowCylinderEntities(name,retval);
         } else if(entityType== VariableDef.VAR_TYPE_QUAD) {
             getAllQuadEntities(name,retval);
         } else {
@@ -6436,6 +6605,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             getAllBoxEntities(name,retval);
             getAllSphereEntities(name,retval);
             getAllCylinderEntities(name,retval);
+            getAllHollowCylinderEntities(name,retval);
             getAllQuadEntities(name,retval);
         }
 
@@ -6510,6 +6680,21 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         this.cylinderInstances.forEach((k, v) -> {
+            if(k.contains(name)) {
+                retval.add(v);
+            }
+        });
+
+    }
+
+    private void getAllHollowCylinderEntities(String name,List<EntityInstBase> retval) {
+
+        if(name==null) {
+            retval.addAll(this.hollowCylinderInstances.values());
+            return;
+        }
+
+        this.hollowCylinderInstances.forEach((k, v) -> {
             if(k.contains(name)) {
                 retval.add(v);
             }

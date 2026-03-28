@@ -17,6 +17,7 @@ statement
    | define_sphere      # defSphere
    | define_box         # defBox
    | define_cylinder    # defCylinder
+   | define_hollow_cylinder # defHollowCylinder
    | define_quad        # defQuad
    | define_group       # defineGroup
    | debug_statement    # debugStatement
@@ -285,6 +286,7 @@ group_name : ID ;
 define_sphere: Shared? res_var_decl isa_expr Collider? Static? Sphere (sphere_having_expr)? ;
 define_box: Shared? res_var_decl isa_expr Collider? Static? Box (box_having_expr)? ;
 define_cylinder: Shared? res_var_decl isa_expr Collider? Static? Cylinder (cylinder_having_expr)? ;
+define_hollow_cylinder: Shared? res_var_decl isa_expr Collider? Static? Hollow Cylinder (hollow_cylinder_having_expr)? ;
 define_quad: Shared? res_var_decl isa_expr Collider? Static? Quad (quad_having_expr)? ;
 define_sprite_implicit : Shared? var_decl isa_expr dynamic_model_type Sprite (sprite_having_expr)? ;
 
@@ -692,6 +694,15 @@ cylinder_radius_top : logical_expression ;
 cylinder_radius_bottom : logical_expression ;
 cylinder_height_attr : Height Equals? logical_expression ;
 
+hollow_cylinder_having_expr : (Having hollow_cylinder_attributes) ;
+hollow_cylinder_attributes : hollow_cylinder_attr (and_expr hollow_cylinder_attr)* ;
+hollow_cylinder_attr : model_attr | hollow_cylinder_specific_attr ;
+hollow_cylinder_specific_attr : material_attr | hollow_cylinder_radius_attr | hollow_cylinder_inner_radius_attr | cylinder_height_attr ;
+hollow_cylinder_radius_attr : Radius Equals? '(' cylinder_radius_top ',' cylinder_radius_bottom ')' ;
+hollow_cylinder_inner_radius_attr : Inner Radius Equals? '(' hollow_cylinder_inner_radius_top ',' hollow_cylinder_inner_radius_bottom ')' ;
+hollow_cylinder_inner_radius_top : logical_expression ;
+hollow_cylinder_inner_radius_bottom : logical_expression ;
+
 quad_having_expr : (Having quad_attributes) ;
 quad_attributes : quad_attr (and_expr quad_attr)* ;
 quad_attr : model_attr | quad_specific_attr ;
@@ -791,6 +802,8 @@ Emissions : 'Emissions' | 'emissions' ;
 Sphere : 'Sphere' | 'sphere' ;
 Box : 'Box' | 'box' ;
 Cylinder : 'Cylinder' | 'cylinder' ;
+Hollow : 'Hollow' | 'hollow' ;
+Inner : 'Inner' | 'inner' ;
 Quad : 'Quad' | 'quad' ;
 Boxes : 'Boxes' | 'boxes' ;
 None : 'None' | 'none' ;

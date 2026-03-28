@@ -906,6 +906,81 @@ public class SceneMaxLanguageParser implements IParser {
 
             }
 
+            public StatementDef visitDefHollowCylinder(SceneMaxParser.DefHollowCylinderContext ctx) {
+
+                String varName = ctx.define_hollow_cylinder().res_var_decl().getText();
+                HollowCylinderVariableDef varDef = new HollowCylinderVariableDef();
+                varDef.isShared = ctx.define_hollow_cylinder().Shared() != null;
+                varDef.varName = varName;
+                varDef.resName="hollowcylinder";
+                varDef.isStatic=ctx.define_hollow_cylinder().Static()!=null;
+                varDef.isCollider = ctx.define_hollow_cylinder().Collider()!=null;
+
+                if(ctx.define_hollow_cylinder().hollow_cylinder_having_expr()!=null) {
+                    for(SceneMaxParser.Hollow_cylinder_attrContext attr:ctx.define_hollow_cylinder().hollow_cylinder_having_expr().hollow_cylinder_attributes().hollow_cylinder_attr()) {
+                        if(attr.model_attr()!=null) {
+                            if(attr.model_attr().print_pos_attr()!=null) {
+                                if(attr.model_attr().print_pos_attr().pos_axes()!=null) {
+                                    if(attr.model_attr().print_pos_attr().pos_axes().exception!=null) {
+                                        return null;
+                                    }
+                                    varDef.xExpr = attr.model_attr().print_pos_attr().pos_axes().print_pos_x().logical_expression();
+                                    varDef.yExpr = attr.model_attr().print_pos_attr().pos_axes().print_pos_y().logical_expression();
+                                    varDef.zExpr = attr.model_attr().print_pos_attr().pos_axes().print_pos_z().logical_expression();
+                                } else {
+                                    varDef.entityPos=new EntityPos();
+                                    setEntityPos(varDef.entityPos,attr.model_attr().print_pos_attr().pos_entity());
+                                }
+                            } else if (attr.model_attr().init_rotate_attr()!=null) {
+                                SceneMaxParser.Rot_axesContext rotAxes = attr.model_attr().init_rotate_attr().rot_axes();
+                                if(rotAxes!=null) {
+                                    varDef.rxExpr = rotAxes.rotate_x().logical_expression();
+                                    varDef.ryExpr = rotAxes.rotate_y().logical_expression();
+                                    varDef.rzExpr = rotAxes.rotate_z().logical_expression();
+                                } else {
+                                    varDef.entityRot = attr.model_attr().init_rotate_attr().rot_entity().getText();
+                                }
+                            } else if(attr.model_attr().init_mass_attr()!=null) {
+                                varDef.massExpr = attr.model_attr().init_mass_attr().logical_expression();
+                            } else if(attr.model_attr().init_static_attr()!=null) {
+                                varDef.isStatic=true;
+                            } else if(attr.model_attr().init_hidden_attr()!=null) {
+                                varDef.visible=false;
+                            } else if(attr.model_attr().shadow_mode_attr()!=null) {
+                                SceneMaxParser.Shadow_mode_optionsContext shadow_opts = attr.model_attr().shadow_mode_attr().shadow_mode_options();
+                                if(shadow_opts.Cast()!=null) {
+                                    varDef.shadowMode = 1;
+                                } else if(shadow_opts.Receive()!=null) {
+                                    varDef.shadowMode = 2;
+                                } else {
+                                    varDef.shadowMode = 3;
+                                }
+                            }
+                        }
+
+                        if(attr.hollow_cylinder_specific_attr()!=null) {
+                            if(attr.hollow_cylinder_specific_attr().hollow_cylinder_radius_attr()!=null) {
+                                varDef.radiusTopExpr = attr.hollow_cylinder_specific_attr().hollow_cylinder_radius_attr().cylinder_radius_top().logical_expression();
+                                varDef.radiusBottomExpr = attr.hollow_cylinder_specific_attr().hollow_cylinder_radius_attr().cylinder_radius_bottom().logical_expression();
+                            }
+                            if(attr.hollow_cylinder_specific_attr().hollow_cylinder_inner_radius_attr()!=null) {
+                                varDef.innerRadiusTopExpr = attr.hollow_cylinder_specific_attr().hollow_cylinder_inner_radius_attr().hollow_cylinder_inner_radius_top().logical_expression();
+                                varDef.innerRadiusBottomExpr = attr.hollow_cylinder_specific_attr().hollow_cylinder_inner_radius_attr().hollow_cylinder_inner_radius_bottom().logical_expression();
+                            }
+                            if(attr.hollow_cylinder_specific_attr().cylinder_height_attr()!=null) {
+                                varDef.heightExpr = attr.hollow_cylinder_specific_attr().cylinder_height_attr().logical_expression();
+                            }
+                            if(attr.hollow_cylinder_specific_attr().material_attr()!=null) {
+                                varDef.materialExpr = attr.hollow_cylinder_specific_attr().material_attr().logical_expression();
+                            }
+                        }
+                    }
+                }
+
+                return varDef;
+
+            }
+
             public StatementDef visitDefQuad(SceneMaxParser.DefQuadContext ctx) {
 
                 String varName = ctx.define_quad().res_var_decl().getText();

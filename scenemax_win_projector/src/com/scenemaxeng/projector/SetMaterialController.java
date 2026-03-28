@@ -25,6 +25,8 @@ public class SetMaterialController extends SceneMaxBaseController {
             this.app.setSphereMaterial(this.targetVar, material);
         } else if(this.targetVarDef.varType== VariableDef.VAR_TYPE_CYLINDER) {
             this.app.setCylinderMaterial(this.targetVar, material);
+        } else if(this.targetVarDef.varType== VariableDef.VAR_TYPE_HOLLOW_CYLINDER) {
+            this.app.setHollowCylinderMaterial(this.targetVar, material);
         } else if(this.targetVarDef.varType== VariableDef.VAR_TYPE_QUAD) {
             this.app.setQuadMaterial(this.targetVar, material);
         }

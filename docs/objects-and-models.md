@@ -52,6 +52,28 @@ c => cylinder : radius (1, 1) and height 2 and material="rock" and pos (0, 1, 0)
 
 The two radius values define the top and bottom radii respectively. Using different values creates a cone or frustum shape.
 
+### Hollow Cylinder
+
+Create a hollow cylinder (tube/pipe):
+
+```scenemax
+h => hollow cylinder
+```
+
+Hollow cylinder with outer radii, inner radii, and height:
+
+```scenemax
+h => hollow cylinder : radius (1, 1) and inner radius (0.5, 0.5) and height 3
+```
+
+Hollow cylinder with different top/bottom radii for a funnel shape:
+
+```scenemax
+h => hollow cylinder : radius (2, 1) and inner radius (1.5, 0.5) and height 4 and material="rock" and pos (0, 2, 0)
+```
+
+The `radius` defines the outer top and bottom radii, while `inner radius` defines the hole's top and bottom radii. Both support independent values for frustum-like hollow shapes.
+
 ### Quad
 
 Create a flat rectangular surface:

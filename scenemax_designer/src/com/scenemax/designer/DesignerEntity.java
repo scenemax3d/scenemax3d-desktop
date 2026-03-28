@@ -33,6 +33,10 @@ public class DesignerEntity {
     private float radiusBottom = 1.0f;
     private float height = 2.0f;
 
+    // HollowCylinder-specific (outer radii + height reuse cylinder fields)
+    private float innerRadiusTop = 0.5f;
+    private float innerRadiusBottom = 0.5f;
+
     // Quad-specific
     private float quadWidth = 1.0f;
     private float quadHeight = 1.0f;
@@ -105,6 +109,11 @@ public class DesignerEntity {
     public void setRadiusBottom(float radiusBottom) { this.radiusBottom = radiusBottom; }
     public float getHeight() { return height; }
     public void setHeight(float height) { this.height = height; }
+
+    public float getInnerRadiusTop() { return innerRadiusTop; }
+    public void setInnerRadiusTop(float innerRadiusTop) { this.innerRadiusTop = innerRadiusTop; }
+    public float getInnerRadiusBottom() { return innerRadiusBottom; }
+    public void setInnerRadiusBottom(float innerRadiusBottom) { this.innerRadiusBottom = innerRadiusBottom; }
 
     public float getQuadWidth() { return quadWidth; }
     public void setQuadWidth(float quadWidth) { this.quadWidth = quadWidth; }
@@ -227,6 +236,18 @@ public class DesignerEntity {
                 json.put("hidden", hidden);
                 json.put("shadowMode", shadowMode);
                 break;
+            case HOLLOW_CYLINDER:
+                json.put("radiusTop", radiusTop);
+                json.put("radiusBottom", radiusBottom);
+                json.put("innerRadiusTop", innerRadiusTop);
+                json.put("innerRadiusBottom", innerRadiusBottom);
+                json.put("height", height);
+                json.put("staticEntity", staticEntity);
+                json.put("colliderEntity", colliderEntity);
+                json.put("material", material);
+                json.put("hidden", hidden);
+                json.put("shadowMode", shadowMode);
+                break;
             case QUAD:
                 json.put("quadWidth", quadWidth);
                 json.put("quadHeight", quadHeight);
@@ -291,6 +312,18 @@ public class DesignerEntity {
             case CYLINDER:
                 entity.radiusTop = (float) json.optDouble("radiusTop", 1.0);
                 entity.radiusBottom = (float) json.optDouble("radiusBottom", 1.0);
+                entity.height = (float) json.optDouble("height", 2.0);
+                entity.staticEntity = json.optBoolean("staticEntity", false);
+                entity.colliderEntity = json.optBoolean("colliderEntity", false);
+                entity.material = json.optString("material", "");
+                entity.hidden = json.optBoolean("hidden", false);
+                entity.shadowMode = json.optString("shadowMode", "none");
+                break;
+            case HOLLOW_CYLINDER:
+                entity.radiusTop = (float) json.optDouble("radiusTop", 1.0);
+                entity.radiusBottom = (float) json.optDouble("radiusBottom", 1.0);
+                entity.innerRadiusTop = (float) json.optDouble("innerRadiusTop", 0.5);
+                entity.innerRadiusBottom = (float) json.optDouble("innerRadiusBottom", 0.5);
                 entity.height = (float) json.optDouble("height", 2.0);
                 entity.staticEntity = json.optBoolean("staticEntity", false);
                 entity.colliderEntity = json.optBoolean("colliderEntity", false);

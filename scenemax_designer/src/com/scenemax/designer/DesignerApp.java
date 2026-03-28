@@ -59,6 +59,7 @@ public class DesignerApp extends SceneMaxApp {
         float radius;
         float sizeX, sizeY, sizeZ;
         float radiusTop, radiusBottom, cylinderHeight;
+        float innerRadiusTop, innerRadiusBottom;
         float quadWidth, quadHeight;
         String resourcePath;
         boolean staticModel;
@@ -138,6 +139,7 @@ public class DesignerApp extends SceneMaxApp {
     private int sphereCounter = 0;
     private int boxCounter = 0;
     private int cylinderCounter = 0;
+    private int hollowCylinderCounter = 0;
     private int quadCounter = 0;
     private int modelCounter = 0;
 
@@ -402,6 +404,18 @@ public class DesignerApp extends SceneMaxApp {
         String name = "cylinder_" + (++cylinderCounter);
         String code = name + " => cylinder : radius (1,1), height 2, pos (0,1,0)";
         addEntityViaCode(name, code, DesignerEntityType.CYLINDER, 0, 0, 0, 0, null, false, false, false, false, false, targetList, insertIndex);
+    }
+
+    /** Creates a hollow cylinder using SceneMax language. */
+    public void addDefaultHollowCylinder() {
+        addDefaultHollowCylinder(null, -1);
+    }
+
+    /** Creates a hollow cylinder at a specific position in a target list. */
+    public void addDefaultHollowCylinder(List<DesignerEntity> targetList, int insertIndex) {
+        String name = "hcylinder_" + (++hollowCylinderCounter);
+        String code = name + " => hollow cylinder : radius (1,1), inner radius (0.5,0.5), height 2, pos (0,1,0)";
+        addEntityViaCode(name, code, DesignerEntityType.HOLLOW_CYLINDER, 0, 0, 0, 0, null, false, false, false, false, false, targetList, insertIndex);
     }
 
     /** Creates a quad using SceneMax language: name => quad : size (w, h), pos (x,y,z) */
@@ -710,6 +724,12 @@ public class DesignerApp extends SceneMaxApp {
             pending.radiusTop = 1.0f;
             pending.radiusBottom = 1.0f;
             pending.cylinderHeight = 2.0f;
+        } else if (type == DesignerEntityType.HOLLOW_CYLINDER) {
+            pending.radiusTop = 1.0f;
+            pending.radiusBottom = 1.0f;
+            pending.innerRadiusTop = 0.5f;
+            pending.innerRadiusBottom = 0.5f;
+            pending.cylinderHeight = 2.0f;
         } else if (type == DesignerEntityType.QUAD) {
             pending.quadWidth = 1.0f;
             pending.quadHeight = 1.0f;
@@ -766,6 +786,10 @@ public class DesignerApp extends SceneMaxApp {
                 wireGeo = new Geometry(COLLIDER_WIREFRAME_KEY, new Sphere(16, 16, radius));
                 break;
             case CYLINDER:
+                wireGeo = new Geometry(COLLIDER_WIREFRAME_KEY,
+                        new com.jme3.scene.shape.Cylinder(16, 16, radius, radius, sizeY * 2, true, false));
+                break;
+            case HOLLOW_CYLINDER:
                 wireGeo = new Geometry(COLLIDER_WIREFRAME_KEY,
                         new com.jme3.scene.shape.Cylinder(16, 16, radius, radius, sizeY * 2, true, false));
                 break;
@@ -829,6 +853,18 @@ public class DesignerApp extends SceneMaxApp {
                     case CYLINDER:
                         entity.setRadiusTop(pe.radiusTop);
                         entity.setRadiusBottom(pe.radiusBottom);
+                        entity.setHeight(pe.cylinderHeight);
+                        entity.setStaticEntity(pe.staticEntity);
+                        entity.setColliderEntity(pe.colliderEntity);
+                        entity.setMaterial(pe.material != null ? pe.material : "");
+                        entity.setHidden(pe.hidden);
+                        entity.setShadowMode(pe.shadowMode);
+                        break;
+                    case HOLLOW_CYLINDER:
+                        entity.setRadiusTop(pe.radiusTop);
+                        entity.setRadiusBottom(pe.radiusBottom);
+                        entity.setInnerRadiusTop(pe.innerRadiusTop);
+                        entity.setInnerRadiusBottom(pe.innerRadiusBottom);
                         entity.setHeight(pe.cylinderHeight);
                         entity.setStaticEntity(pe.staticEntity);
                         entity.setColliderEntity(pe.colliderEntity);
@@ -1029,6 +1065,27 @@ public class DesignerApp extends SceneMaxApp {
         }
     }
 
+    /** Updates the visual hollow cylinder mesh to match the entity's current radii and height. */
+    public void updateHollowCylinderMesh(DesignerEntity entity) {
+        if (entity == null || entity.getType() != DesignerEntityType.HOLLOW_CYLINDER) return;
+        Node node = entity.getSceneNode();
+        if (node == null) return;
+        if (entity.isColliderEntity()) {
+            attachColliderWireframe(node, DesignerEntityType.HOLLOW_CYLINDER,
+                    0, 0, 0, Math.max(entity.getRadiusTop(), entity.getRadiusBottom()));
+            return;
+        }
+        for (Spatial child : node.getChildren()) {
+            if (child instanceof Geometry) {
+                ((Geometry) child).setMesh(new com.scenemaxeng.projector.HollowCylinderMesh(
+                        entity.getRadiusTop(), entity.getRadiusBottom(),
+                        entity.getInnerRadiusTop(), entity.getInnerRadiusBottom(),
+                        entity.getHeight()));
+                break;
+            }
+        }
+    }
+
     /** Applies a material to a BOX or SPHERE entity and updates the scene. */
     public void applyMaterial(DesignerEntity entity, String material) {
         if (entity == null) return;
@@ -1111,6 +1168,8 @@ public class DesignerApp extends SceneMaxApp {
         float sizeZ = entity.getSizeZ();
         float radiusTop = entity.getRadiusTop();
         float radiusBottom = entity.getRadiusBottom();
+        float innerRadiusTop = entity.getInnerRadiusTop();
+        float innerRadiusBottom = entity.getInnerRadiusBottom();
         float cylHeight = entity.getHeight();
         float quadWidth = entity.getQuadWidth();
         float quadHeight = entity.getQuadHeight();
@@ -1175,6 +1234,13 @@ public class DesignerApp extends SceneMaxApp {
                        "), height " + cylHeight +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
                 break;
+            case HOLLOW_CYLINDER:
+                code = name + " => " + staticPfx + "hollow cylinder : radius (" +
+                       radiusTop + "," + radiusBottom +
+                       "), inner radius (" + innerRadiusTop + "," + innerRadiusBottom +
+                       "), height " + cylHeight +
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+                break;
             case QUAD:
                 code = name + " => " + staticPfx + "quad : size (" +
                        quadWidth + "," + quadHeight +
@@ -1202,6 +1268,8 @@ public class DesignerApp extends SceneMaxApp {
         pending.radiusTop = radiusTop;
         pending.radiusBottom = radiusBottom;
         pending.cylinderHeight = cylHeight;
+        pending.innerRadiusTop = innerRadiusTop;
+        pending.innerRadiusBottom = innerRadiusBottom;
         pending.quadWidth = quadWidth;
         pending.quadHeight = quadHeight;
         pending.staticEntity = isStatic;
@@ -1584,6 +1652,18 @@ public class DesignerApp extends SceneMaxApp {
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
                     break;
+                case HOLLOW_CYLINDER:
+                    pending.radiusTop = entityTemplate.getRadiusTop();
+                    pending.radiusBottom = entityTemplate.getRadiusBottom();
+                    pending.innerRadiusTop = entityTemplate.getInnerRadiusTop();
+                    pending.innerRadiusBottom = entityTemplate.getInnerRadiusBottom();
+                    pending.cylinderHeight = entityTemplate.getHeight();
+                    pending.staticEntity = entityTemplate.isStaticEntity();
+                    pending.colliderEntity = entityTemplate.isColliderEntity();
+                    pending.material = entityTemplate.getMaterial();
+                    pending.hidden = entityTemplate.isHidden();
+                    pending.shadowMode = entityTemplate.getShadowMode();
+                    break;
                 case QUAD:
                     pending.quadWidth = entityTemplate.getQuadWidth();
                     pending.quadHeight = entityTemplate.getQuadHeight();
@@ -1690,6 +1770,13 @@ public class DesignerApp extends SceneMaxApp {
                 String cylPrefix = entity.isStaticEntity() ? "static " : "";
                 return name + " => " + cylPrefix + "cylinder : radius (" +
                        entity.getRadiusTop() + "," + entity.getRadiusBottom() +
+                       "), height " + entity.getHeight() +
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+            case HOLLOW_CYLINDER:
+                String hcPrefix = entity.isStaticEntity() ? "static " : "";
+                return name + " => " + hcPrefix + "hollow cylinder : radius (" +
+                       entity.getRadiusTop() + "," + entity.getRadiusBottom() +
+                       "), inner radius (" + entity.getInnerRadiusTop() + "," + entity.getInnerRadiusBottom() +
                        "), height " + entity.getHeight() +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
             case QUAD:
