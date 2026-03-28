@@ -85,6 +85,8 @@ public class DesignerPanel extends JPanel {
     private JPanel sizeFieldsPanel;
     private JSpinner spnRadius;
     private JPanel radiusPanel;
+    private JSpinner spnRadiusTop, spnRadiusBottom, spnCylinderHeight;
+    private JPanel cylinderPanel;
     private JCheckBox chkStaticEntity, chkColliderEntity;
     private JCheckBox chkHidden;
     private JPanel hiddenPanel;
@@ -154,6 +156,18 @@ public class DesignerPanel extends JPanel {
             if (app != null) app.enqueue(() -> { app.addDefaultBox(); return null; });
         });
 
+        JButton btnAddCylinder = new JButton(createDesignerToolbarIcon("cylinder"));
+        btnAddCylinder.setToolTipText("Add Cylinder");
+        btnAddCylinder.addActionListener(e -> {
+            if (app != null) app.enqueue(() -> { app.addDefaultCylinder(); return null; });
+        });
+
+        JButton btnAddQuad = new JButton(createDesignerToolbarIcon("quad"));
+        btnAddQuad.setToolTipText("Add Quad");
+        btnAddQuad.addActionListener(e -> {
+            if (app != null) app.enqueue(() -> { app.addDefaultQuad(); return null; });
+        });
+
         JButton btnAddModel = new JButton(createDesignerToolbarIcon("model"));
         btnAddModel.setToolTipText("Add 3D Model");
         btnAddModel.addActionListener(e -> showModelPickerDialog());
@@ -173,6 +187,8 @@ public class DesignerPanel extends JPanel {
         toolbar.add(new JLabel("  Add: "));
         toolbar.add(btnAddSphere);
         toolbar.add(btnAddBox);
+        toolbar.add(btnAddCylinder);
+        toolbar.add(btnAddQuad);
         toolbar.add(btnAddModel);
         toolbar.addSeparator();
         toolbar.add(btnDelete);
@@ -418,6 +434,43 @@ public class DesignerPanel extends JPanel {
 
         radiusPanel.setVisible(false);
         propertiesForm.add(radiusPanel);
+
+        // Cylinder fields (radiusTop, radiusBottom, height)
+        cylinderPanel = new JPanel();
+        cylinderPanel.setLayout(new BoxLayout(cylinderPanel, BoxLayout.Y_AXIS));
+        cylinderPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        cylinderPanel.add(Box.createVerticalStrut(8));
+        JLabel lblCylinder = new JLabel("Cylinder:");
+        lblCylinder.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblCylinder.setFont(lblCylinder.getFont().deriveFont(Font.BOLD));
+        cylinderPanel.add(lblCylinder);
+
+        spnRadiusTop = new JSpinner(new SpinnerNumberModel(1.0, 0.01, 9999.0, 0.1));
+        spnRadiusBottom = new JSpinner(new SpinnerNumberModel(1.0, 0.01, 9999.0, 0.1));
+        spnCylinderHeight = new JSpinner(new SpinnerNumberModel(2.0, 0.01, 9999.0, 0.1));
+
+        JPanel cylRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
+        cylRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        cylRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        Dimension cylSpinSize = new Dimension(70, 24);
+        spnRadiusTop.setPreferredSize(cylSpinSize);
+        spnRadiusBottom.setPreferredSize(cylSpinSize);
+        spnCylinderHeight.setPreferredSize(cylSpinSize);
+        cylRow.add(new JLabel("R-Top:"));
+        cylRow.add(spnRadiusTop);
+        cylRow.add(new JLabel("R-Btm:"));
+        cylRow.add(spnRadiusBottom);
+        cylRow.add(new JLabel("H:"));
+        cylRow.add(spnCylinderHeight);
+        cylinderPanel.add(cylRow);
+
+        spnRadiusTop.addChangeListener(e -> applyCylinderChange());
+        spnRadiusBottom.addChangeListener(e -> applyCylinderChange());
+        spnCylinderHeight.addChangeListener(e -> applyCylinderChange());
+
+        cylinderPanel.setVisible(false);
+        propertiesForm.add(cylinderPanel);
 
         // Static / Collider checkboxes (BOX and SPHERE only)
         staticColliderPanel = new JPanel();
@@ -1203,6 +1256,76 @@ public class DesignerPanel extends JPanel {
         });
         menu.add(addSphereItem);
 
+        // "Add Cylinder" - inserts after the selected item (or as last child in a section)
+        JMenuItem addCylinderItem = new JMenuItem("Add Cylinder");
+        addCylinderItem.addActionListener(ev -> {
+            if (app != null) {
+                java.util.List<DesignerEntity> targetList;
+                int insertIdx;
+                if (etn.entity.getType() == DesignerEntityType.SECTION) {
+                    targetList = etn.entity.getChildren();
+                    insertIdx = -1;
+                } else {
+                    DefaultMutableTreeNode parentNode = (DefaultMutableTreeNode) node.getParent();
+                    if (parentNode != null && parentNode != sceneTreeRoot
+                            && parentNode.getUserObject() instanceof EntityTreeNode) {
+                        EntityTreeNode parentEtn = (EntityTreeNode) parentNode.getUserObject();
+                        if (parentEtn.entity.getType() == DesignerEntityType.SECTION) {
+                            targetList = parentEtn.entity.getChildren();
+                            insertIdx = parentEtn.entity.getChildren().indexOf(etn.entity) + 1;
+                        } else {
+                            targetList = null;
+                            int ei = app.getEntities().indexOf(etn.entity);
+                            insertIdx = ei >= 0 ? ei + 1 : -1;
+                        }
+                    } else {
+                        targetList = null;
+                        int ei = app.getEntities().indexOf(etn.entity);
+                        insertIdx = ei >= 0 ? ei + 1 : -1;
+                    }
+                }
+                final java.util.List<DesignerEntity> fTargetList = targetList;
+                final int fInsertIdx = insertIdx;
+                app.enqueue(() -> { app.addDefaultCylinder(fTargetList, fInsertIdx); return null; });
+            }
+        });
+        menu.add(addCylinderItem);
+
+        // "Add Quad" - inserts after the selected item (or as last child in a section)
+        JMenuItem addQuadItem = new JMenuItem("Add Quad");
+        addQuadItem.addActionListener(ev -> {
+            if (app != null) {
+                java.util.List<DesignerEntity> targetList;
+                int insertIdx;
+                if (etn.entity.getType() == DesignerEntityType.SECTION) {
+                    targetList = etn.entity.getChildren();
+                    insertIdx = -1;
+                } else {
+                    DefaultMutableTreeNode parentNode = (DefaultMutableTreeNode) node.getParent();
+                    if (parentNode != null && parentNode != sceneTreeRoot
+                            && parentNode.getUserObject() instanceof EntityTreeNode) {
+                        EntityTreeNode parentEtn = (EntityTreeNode) parentNode.getUserObject();
+                        if (parentEtn.entity.getType() == DesignerEntityType.SECTION) {
+                            targetList = parentEtn.entity.getChildren();
+                            insertIdx = parentEtn.entity.getChildren().indexOf(etn.entity) + 1;
+                        } else {
+                            targetList = null;
+                            int ei = app.getEntities().indexOf(etn.entity);
+                            insertIdx = ei >= 0 ? ei + 1 : -1;
+                        }
+                    } else {
+                        targetList = null;
+                        int ei = app.getEntities().indexOf(etn.entity);
+                        insertIdx = ei >= 0 ? ei + 1 : -1;
+                    }
+                }
+                final java.util.List<DesignerEntity> fTargetList = targetList;
+                final int fInsertIdx = insertIdx;
+                app.enqueue(() -> { app.addDefaultQuad(fTargetList, fInsertIdx); return null; });
+            }
+        });
+        menu.add(addQuadItem);
+
         menu.addSeparator();
 
         // "Rename" for section nodes
@@ -1454,6 +1577,7 @@ public class DesignerPanel extends JPanel {
                 clearSpinners();
                 sizeFieldsPanel.setVisible(false);
                 radiusPanel.setVisible(false);
+                cylinderPanel.setVisible(false);
                 staticColliderPanel.setVisible(false);
                 materialPanel.setVisible(false);
                 hiddenPanel.setVisible(false);
@@ -1500,7 +1624,17 @@ public class DesignerPanel extends JPanel {
                 radiusPanel.setVisible(false);
             }
 
-            if (entity.getType() == DesignerEntityType.BOX || entity.getType() == DesignerEntityType.SPHERE) {
+            if (entity.getType() == DesignerEntityType.CYLINDER) {
+                spnRadiusTop.setValue((double) entity.getRadiusTop());
+                spnRadiusBottom.setValue((double) entity.getRadiusBottom());
+                spnCylinderHeight.setValue((double) entity.getHeight());
+                cylinderPanel.setVisible(true);
+            } else {
+                cylinderPanel.setVisible(false);
+            }
+
+            if (entity.getType() == DesignerEntityType.BOX || entity.getType() == DesignerEntityType.SPHERE
+                    || entity.getType() == DesignerEntityType.CYLINDER || entity.getType() == DesignerEntityType.QUAD) {
                 chkStaticEntity.setSelected(entity.isStaticEntity());
                 chkColliderEntity.setSelected(entity.isColliderEntity());
                 staticColliderPanel.setVisible(true);
@@ -1513,6 +1647,7 @@ public class DesignerPanel extends JPanel {
             }
 
             if (entity.getType() == DesignerEntityType.BOX || entity.getType() == DesignerEntityType.SPHERE
+                    || entity.getType() == DesignerEntityType.CYLINDER || entity.getType() == DesignerEntityType.QUAD
                     || entity.getType() == DesignerEntityType.MODEL) {
                 chkHidden.setSelected(entity.isHidden());
                 hiddenPanel.setVisible(true);
@@ -1666,11 +1801,31 @@ public class DesignerPanel extends JPanel {
         });
     }
 
+    private void applyCylinderChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.CYLINDER) return;
+
+        float radiusTop = ((Number) spnRadiusTop.getValue()).floatValue();
+        float radiusBottom = ((Number) spnRadiusBottom.getValue()).floatValue();
+        float height = ((Number) spnCylinderHeight.getValue()).floatValue();
+
+        app.enqueue(() -> {
+            sel.setRadiusTop(radiusTop);
+            sel.setRadiusBottom(radiusBottom);
+            sel.setHeight(height);
+            app.updateCylinderMesh(sel);
+            app.markDocumentDirty();
+            return null;
+        });
+    }
+
     private void applyStaticColliderChange() {
         if (updatingProperties || app == null) return;
         DesignerEntity sel = app.getSelectionManager().getSelected();
         if (sel == null) return;
-        if (sel.getType() != DesignerEntityType.BOX && sel.getType() != DesignerEntityType.SPHERE) return;
+        if (sel.getType() != DesignerEntityType.BOX && sel.getType() != DesignerEntityType.SPHERE
+                && sel.getType() != DesignerEntityType.CYLINDER && sel.getType() != DesignerEntityType.QUAD) return;
 
         boolean isStatic = chkStaticEntity.isSelected();
         boolean isCollider = chkColliderEntity.isSelected();
@@ -1794,7 +1949,8 @@ public class DesignerPanel extends JPanel {
         if (updatingProperties || app == null) return;
         DesignerEntity sel = app.getSelectionManager().getSelected();
         if (sel == null) return;
-        if (sel.getType() != DesignerEntityType.BOX && sel.getType() != DesignerEntityType.SPHERE) return;
+        if (sel.getType() != DesignerEntityType.BOX && sel.getType() != DesignerEntityType.SPHERE
+                && sel.getType() != DesignerEntityType.CYLINDER && sel.getType() != DesignerEntityType.QUAD) return;
 
         String material = (String) cboMaterial.getSelectedItem();
         if (material == null) material = "";
@@ -2058,6 +2214,8 @@ public class DesignerPanel extends JPanel {
         switch (key) {
             case "sphere":    drawToolbarSphere(g);    break;
             case "box":       drawToolbarBox(g);       break;
+            case "cylinder":  drawToolbarCylinder(g);  break;
+            case "quad":      drawToolbarQuad(g);      break;
             case "model":     drawToolbarModel(g);     break;
             case "delete":    drawToolbarDelete(g);    break;
             case "translate": drawToolbarTranslate(g); break;
@@ -2098,6 +2256,35 @@ public class DesignerPanel extends JPanel {
         g.draw(new Line2D.Float(right, bot - 4, cx, bot));
         // center vertical
         g.draw(new Line2D.Float(cx, mid, cx, bot));
+    }
+
+    /** Cylinder: two ellipses connected by lines */
+    private static void drawToolbarCylinder(Graphics2D g) {
+        // top ellipse
+        g.draw(new Ellipse2D.Float(3, 2, 14, 5));
+        // side lines
+        g.draw(new Line2D.Float(3, 4.5f, 3, 15.5f));
+        g.draw(new Line2D.Float(17, 4.5f, 17, 15.5f));
+        // bottom ellipse (arc only - back half hidden)
+        g.draw(new java.awt.geom.Arc2D.Float(3, 13, 14, 5, 180, 180, java.awt.geom.Arc2D.OPEN));
+        g.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND,
+                1.0f, new float[]{2f, 2f}, 0));
+        g.draw(new java.awt.geom.Arc2D.Float(3, 13, 14, 5, 0, 180, java.awt.geom.Arc2D.OPEN));
+    }
+
+    /** Quad: flat rectangle with slight perspective */
+    private static void drawToolbarQuad(Graphics2D g) {
+        GeneralPath p = new GeneralPath();
+        p.moveTo(4, 5);
+        p.lineTo(16, 3);
+        p.lineTo(18, 15);
+        p.lineTo(6, 17);
+        p.closePath();
+        g.draw(p);
+        // diagonal to suggest flatness
+        g.setStroke(new BasicStroke(0.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.setColor(DT_HIGHLIGHT);
+        g.draw(new Line2D.Float(4, 5, 18, 15));
     }
 
     /** 3D Model: diamond/gem shape */
@@ -2249,6 +2436,12 @@ public class DesignerPanel extends JPanel {
                 case BOX:
                     drawBox(g);
                     break;
+                case CYLINDER:
+                    drawCylinder(g);
+                    break;
+                case QUAD:
+                    drawQuad(g);
+                    break;
                 case MODEL:
                     drawModel(g);
                     break;
@@ -2295,6 +2488,25 @@ public class DesignerPanel extends JPanel {
             g.draw(new Line2D.Float(right, bot - 3, cx, bot));
             // center vertical
             g.draw(new Line2D.Float(cx, mid, cx, bot));
+        }
+
+        /** Cylinder: two ellipses with side lines */
+        private static void drawCylinder(Graphics2D g) {
+            g.draw(new Ellipse2D.Float(2, 2, 12, 4));
+            g.draw(new Line2D.Float(2, 4, 2, 12));
+            g.draw(new Line2D.Float(14, 4, 14, 12));
+            g.draw(new java.awt.geom.Arc2D.Float(2, 10, 12, 4, 180, 180, java.awt.geom.Arc2D.OPEN));
+        }
+
+        /** Quad: flat rectangle */
+        private static void drawQuad(Graphics2D g) {
+            GeneralPath p = new GeneralPath();
+            p.moveTo(3, 4);
+            p.lineTo(13, 2);
+            p.lineTo(14, 12);
+            p.lineTo(4, 14);
+            p.closePath();
+            g.draw(p);
         }
 
         /** Model: 3D diamond / gem shape */

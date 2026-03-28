@@ -28,6 +28,15 @@ public class DesignerEntity {
     private float sizeY = 0.5f;
     private float sizeZ = 0.5f;
 
+    // Cylinder-specific
+    private float radiusTop = 1.0f;
+    private float radiusBottom = 1.0f;
+    private float height = 2.0f;
+
+    // Quad-specific
+    private float quadWidth = 1.0f;
+    private float quadHeight = 1.0f;
+
     // Model-specific
     private String resourcePath;
     private boolean staticModel;
@@ -89,6 +98,18 @@ public class DesignerEntity {
     public void setSizeY(float sizeY) { this.sizeY = sizeY; }
     public float getSizeZ() { return sizeZ; }
     public void setSizeZ(float sizeZ) { this.sizeZ = sizeZ; }
+
+    public float getRadiusTop() { return radiusTop; }
+    public void setRadiusTop(float radiusTop) { this.radiusTop = radiusTop; }
+    public float getRadiusBottom() { return radiusBottom; }
+    public void setRadiusBottom(float radiusBottom) { this.radiusBottom = radiusBottom; }
+    public float getHeight() { return height; }
+    public void setHeight(float height) { this.height = height; }
+
+    public float getQuadWidth() { return quadWidth; }
+    public void setQuadWidth(float quadWidth) { this.quadWidth = quadWidth; }
+    public float getQuadHeight() { return quadHeight; }
+    public void setQuadHeight(float quadHeight) { this.quadHeight = quadHeight; }
 
     public String getResourcePath() { return resourcePath; }
     public void setResourcePath(String resourcePath) { this.resourcePath = resourcePath; }
@@ -196,6 +217,25 @@ public class DesignerEntity {
                 json.put("hidden", hidden);
                 json.put("shadowMode", shadowMode);
                 break;
+            case CYLINDER:
+                json.put("radiusTop", radiusTop);
+                json.put("radiusBottom", radiusBottom);
+                json.put("height", height);
+                json.put("staticEntity", staticEntity);
+                json.put("colliderEntity", colliderEntity);
+                json.put("material", material);
+                json.put("hidden", hidden);
+                json.put("shadowMode", shadowMode);
+                break;
+            case QUAD:
+                json.put("quadWidth", quadWidth);
+                json.put("quadHeight", quadHeight);
+                json.put("staticEntity", staticEntity);
+                json.put("colliderEntity", colliderEntity);
+                json.put("material", material);
+                json.put("hidden", hidden);
+                json.put("shadowMode", shadowMode);
+                break;
             case MODEL:
                 json.put("resourcePath", resourcePath != null ? resourcePath : "");
                 json.put("staticModel", staticModel);
@@ -242,6 +282,25 @@ public class DesignerEntity {
                 entity.sizeX = (float) json.optDouble("sizeX", 0.5);
                 entity.sizeY = (float) json.optDouble("sizeY", 0.5);
                 entity.sizeZ = (float) json.optDouble("sizeZ", 0.5);
+                entity.staticEntity = json.optBoolean("staticEntity", false);
+                entity.colliderEntity = json.optBoolean("colliderEntity", false);
+                entity.material = json.optString("material", "");
+                entity.hidden = json.optBoolean("hidden", false);
+                entity.shadowMode = json.optString("shadowMode", "none");
+                break;
+            case CYLINDER:
+                entity.radiusTop = (float) json.optDouble("radiusTop", 1.0);
+                entity.radiusBottom = (float) json.optDouble("radiusBottom", 1.0);
+                entity.height = (float) json.optDouble("height", 2.0);
+                entity.staticEntity = json.optBoolean("staticEntity", false);
+                entity.colliderEntity = json.optBoolean("colliderEntity", false);
+                entity.material = json.optString("material", "");
+                entity.hidden = json.optBoolean("hidden", false);
+                entity.shadowMode = json.optString("shadowMode", "none");
+                break;
+            case QUAD:
+                entity.quadWidth = (float) json.optDouble("quadWidth", 1.0);
+                entity.quadHeight = (float) json.optDouble("quadHeight", 1.0);
                 entity.staticEntity = json.optBoolean("staticEntity", false);
                 entity.colliderEntity = json.optBoolean("colliderEntity", false);
                 entity.material = json.optString("material", "");

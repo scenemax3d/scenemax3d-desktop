@@ -30,12 +30,61 @@ Create a box with specific dimensions (half-extents for X, Y, Z):
 b => box : material="pond" and size (100,1,100)
 ```
 
+### Cylinder
+
+Create a cylinder:
+
+```scenemax
+c => cylinder
+```
+
+Cylinder with top and bottom radii and height:
+
+```scenemax
+c => cylinder : radius (1, 0.5) and height 3
+```
+
+Cylinder with material, position, and rotation:
+
+```scenemax
+c => cylinder : radius (1, 1) and height 2 and material="rock" and pos (0, 1, 0) and rotate (0, 45, 0)
+```
+
+The two radius values define the top and bottom radii respectively. Using different values creates a cone or frustum shape.
+
+### Quad
+
+Create a flat rectangular surface:
+
+```scenemax
+q => quad
+```
+
+Quad with specific width and height:
+
+```scenemax
+q => quad : size (4, 3)
+```
+
+Quad with material and position:
+
+```scenemax
+q => quad : size (10, 10) and material="grass" and pos (0, 0, 0)
+```
+
 ### Static Objects
 
 Create a static box (can support other objects placed on it):
 
 ```scenemax
 b => static box
+```
+
+Static cylinder and quad:
+
+```scenemax
+c => static cylinder : radius (1, 1) and height 2
+q => static quad : size (10, 10)
 ```
 
 Static race track:
@@ -110,12 +159,18 @@ Load a vehicle model:
 c => hatchback vehicle
 ```
 
-## Collider Boxes
+## Colliders
 
-Create an invisible box that can receive collision events:
+Create an invisible box collider that can receive collision events:
 
 ```scenemax
 player1_head => collider box : size(1,2,1)
+```
+
+Create a cylinder collider:
+
+```scenemax
+barrel_col => collider cylinder : radius (0.5, 0.5) and height 2
 ```
 
 Attach a collider to a character's head joint:
@@ -182,6 +237,12 @@ Receive shadows from other objects:
 
 ```scenemax
 b => static box : shadow mode receive
+```
+
+Shadow modes work on all primitive types (box, sphere, cylinder, quad) and models:
+
+```scenemax
+c => cylinder : radius (1, 1) and height 3 and shadow mode both
 ```
 
 ## Lights

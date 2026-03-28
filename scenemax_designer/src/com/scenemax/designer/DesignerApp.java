@@ -58,6 +58,8 @@ public class DesignerApp extends SceneMaxApp {
         DesignerEntityType type;
         float radius;
         float sizeX, sizeY, sizeZ;
+        float radiusTop, radiusBottom, cylinderHeight;
+        float quadWidth, quadHeight;
         String resourcePath;
         boolean staticModel;
         boolean dynamicModel;
@@ -135,6 +137,8 @@ public class DesignerApp extends SceneMaxApp {
 
     private int sphereCounter = 0;
     private int boxCounter = 0;
+    private int cylinderCounter = 0;
+    private int quadCounter = 0;
     private int modelCounter = 0;
 
     private boolean loadingDocument = false;
@@ -386,6 +390,30 @@ public class DesignerApp extends SceneMaxApp {
         String name = "box_" + (++boxCounter);
         String code = name + " => box : size (1,1,1), pos (0,0.5,0)";
         addEntityViaCode(name, code, DesignerEntityType.BOX, 0, 0.5f, 0.5f, 0.5f, null, false, false, false, false, false, targetList, insertIndex);
+    }
+
+    /** Creates a cylinder using SceneMax language: name => cylinder : radius (top, bottom), height h, pos (x,y,z) */
+    public void addDefaultCylinder() {
+        addDefaultCylinder(null, -1);
+    }
+
+    /** Creates a cylinder at a specific position in a target list. */
+    public void addDefaultCylinder(List<DesignerEntity> targetList, int insertIndex) {
+        String name = "cylinder_" + (++cylinderCounter);
+        String code = name + " => cylinder : radius (1,1), height 2, pos (0,1,0)";
+        addEntityViaCode(name, code, DesignerEntityType.CYLINDER, 0, 0, 0, 0, null, false, false, false, false, false, targetList, insertIndex);
+    }
+
+    /** Creates a quad using SceneMax language: name => quad : size (w, h), pos (x,y,z) */
+    public void addDefaultQuad() {
+        addDefaultQuad(null, -1);
+    }
+
+    /** Creates a quad at a specific position in a target list. */
+    public void addDefaultQuad(List<DesignerEntity> targetList, int insertIndex) {
+        String name = "quad_" + (++quadCounter);
+        String code = name + " => quad : size (1,1), pos (0,0.5,0)";
+        addEntityViaCode(name, code, DesignerEntityType.QUAD, 0, 0, 0, 0, null, false, false, false, false, false, targetList, insertIndex);
     }
 
     /** Creates a 3D model using SceneMax language: name => [static|dynamic] resourceName : pos (x,y,z) */
@@ -676,6 +704,16 @@ public class DesignerApp extends SceneMaxApp {
         pending.colliderEntity = isColliderEntity;
         pending.nodeName = nodeName;
         pending.framesWaited = 0;
+
+        // Set sensible defaults for type-specific fields so they don't stay at 0
+        if (type == DesignerEntityType.CYLINDER) {
+            pending.radiusTop = 1.0f;
+            pending.radiusBottom = 1.0f;
+            pending.cylinderHeight = 2.0f;
+        } else if (type == DesignerEntityType.QUAD) {
+            pending.quadWidth = 1.0f;
+            pending.quadHeight = 1.0f;
+        }
         pending.selectAfterCreation = true;
         pending.targetList = targetList;
         pending.insertIndex = insertIndex;
@@ -726,6 +764,10 @@ public class DesignerApp extends SceneMaxApp {
                 break;
             case SPHERE:
                 wireGeo = new Geometry(COLLIDER_WIREFRAME_KEY, new Sphere(16, 16, radius));
+                break;
+            case CYLINDER:
+                wireGeo = new Geometry(COLLIDER_WIREFRAME_KEY,
+                        new com.jme3.scene.shape.Cylinder(16, 16, radius, radius, sizeY * 2, true, false));
                 break;
             default:
                 return;
@@ -778,6 +820,25 @@ public class DesignerApp extends SceneMaxApp {
                         entity.setSizeX(pe.sizeX);
                         entity.setSizeY(pe.sizeY);
                         entity.setSizeZ(pe.sizeZ);
+                        entity.setStaticEntity(pe.staticEntity);
+                        entity.setColliderEntity(pe.colliderEntity);
+                        entity.setMaterial(pe.material != null ? pe.material : "");
+                        entity.setHidden(pe.hidden);
+                        entity.setShadowMode(pe.shadowMode);
+                        break;
+                    case CYLINDER:
+                        entity.setRadiusTop(pe.radiusTop);
+                        entity.setRadiusBottom(pe.radiusBottom);
+                        entity.setHeight(pe.cylinderHeight);
+                        entity.setStaticEntity(pe.staticEntity);
+                        entity.setColliderEntity(pe.colliderEntity);
+                        entity.setMaterial(pe.material != null ? pe.material : "");
+                        entity.setHidden(pe.hidden);
+                        entity.setShadowMode(pe.shadowMode);
+                        break;
+                    case QUAD:
+                        entity.setQuadWidth(pe.quadWidth);
+                        entity.setQuadHeight(pe.quadHeight);
                         entity.setStaticEntity(pe.staticEntity);
                         entity.setColliderEntity(pe.colliderEntity);
                         entity.setMaterial(pe.material != null ? pe.material : "");
@@ -949,6 +1010,25 @@ public class DesignerApp extends SceneMaxApp {
         }
     }
 
+    /** Updates the visual cylinder mesh to match the entity's current radii and height. */
+    public void updateCylinderMesh(DesignerEntity entity) {
+        if (entity == null || entity.getType() != DesignerEntityType.CYLINDER) return;
+        Node node = entity.getSceneNode();
+        if (node == null) return;
+        if (entity.isColliderEntity()) {
+            attachColliderWireframe(node, DesignerEntityType.CYLINDER,
+                    0, 0, 0, Math.max(entity.getRadiusTop(), entity.getRadiusBottom()));
+            return;
+        }
+        for (Spatial child : node.getChildren()) {
+            if (child instanceof Geometry) {
+                ((Geometry) child).setMesh(new com.jme3.scene.shape.Cylinder(
+                        16, 32, entity.getRadiusTop(), entity.getRadiusBottom(), entity.getHeight(), true, false));
+                break;
+            }
+        }
+    }
+
     /** Applies a material to a BOX or SPHERE entity and updates the scene. */
     public void applyMaterial(DesignerEntity entity, String material) {
         if (entity == null) return;
@@ -1029,6 +1109,11 @@ public class DesignerApp extends SceneMaxApp {
         float sizeX = entity.getSizeX();
         float sizeY = entity.getSizeY();
         float sizeZ = entity.getSizeZ();
+        float radiusTop = entity.getRadiusTop();
+        float radiusBottom = entity.getRadiusBottom();
+        float cylHeight = entity.getHeight();
+        float quadWidth = entity.getQuadWidth();
+        float quadHeight = entity.getQuadHeight();
         String material = entity.getMaterial();
 
         // Find the entity's location (top-level or inside a section)
@@ -1084,6 +1169,17 @@ public class DesignerApp extends SceneMaxApp {
                        (sizeX * 2) + "," + (sizeY * 2) + "," + (sizeZ * 2) +
                        "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
                 break;
+            case CYLINDER:
+                code = name + " => " + staticPfx + "cylinder : radius (" +
+                       radiusTop + "," + radiusBottom +
+                       "), height " + cylHeight +
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+                break;
+            case QUAD:
+                code = name + " => " + staticPfx + "quad : size (" +
+                       quadWidth + "," + quadHeight +
+                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+                break;
             default:
                 return;
         }
@@ -1103,6 +1199,11 @@ public class DesignerApp extends SceneMaxApp {
         pending.sizeX = sizeX;
         pending.sizeY = sizeY;
         pending.sizeZ = sizeZ;
+        pending.radiusTop = radiusTop;
+        pending.radiusBottom = radiusBottom;
+        pending.cylinderHeight = cylHeight;
+        pending.quadWidth = quadWidth;
+        pending.quadHeight = quadHeight;
         pending.staticEntity = isStatic;
         pending.colliderEntity = isCollider;
         pending.material = material;
@@ -1473,6 +1574,25 @@ public class DesignerApp extends SceneMaxApp {
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
                     break;
+                case CYLINDER:
+                    pending.radiusTop = entityTemplate.getRadiusTop();
+                    pending.radiusBottom = entityTemplate.getRadiusBottom();
+                    pending.cylinderHeight = entityTemplate.getHeight();
+                    pending.staticEntity = entityTemplate.isStaticEntity();
+                    pending.colliderEntity = entityTemplate.isColliderEntity();
+                    pending.material = entityTemplate.getMaterial();
+                    pending.hidden = entityTemplate.isHidden();
+                    pending.shadowMode = entityTemplate.getShadowMode();
+                    break;
+                case QUAD:
+                    pending.quadWidth = entityTemplate.getQuadWidth();
+                    pending.quadHeight = entityTemplate.getQuadHeight();
+                    pending.staticEntity = entityTemplate.isStaticEntity();
+                    pending.colliderEntity = entityTemplate.isColliderEntity();
+                    pending.material = entityTemplate.getMaterial();
+                    pending.hidden = entityTemplate.isHidden();
+                    pending.shadowMode = entityTemplate.getShadowMode();
+                    break;
                 case MODEL:
                     pending.resourcePath = entityTemplate.getResourcePath();
                     pending.staticModel = entityTemplate.isStaticModel();
@@ -1565,6 +1685,17 @@ public class DesignerApp extends SceneMaxApp {
                 String boxPrefix = entity.isStaticEntity() ? "static " : "";
                 return name + " => " + boxPrefix + "box : size (" +
                        (entity.getSizeX() * 2) + "," + (entity.getSizeY() * 2) + "," + (entity.getSizeZ() * 2) +
+                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+            case CYLINDER:
+                String cylPrefix = entity.isStaticEntity() ? "static " : "";
+                return name + " => " + cylPrefix + "cylinder : radius (" +
+                       entity.getRadiusTop() + "," + entity.getRadiusBottom() +
+                       "), height " + entity.getHeight() +
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+            case QUAD:
+                String quadPrefix = entity.isStaticEntity() ? "static " : "";
+                return name + " => " + quadPrefix + "quad : size (" +
+                       entity.getQuadWidth() + "," + entity.getQuadHeight() +
                        "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
             case MODEL:
                 String staticPfx = entity.isStaticModel() ? "static " : "";

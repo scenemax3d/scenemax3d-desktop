@@ -450,6 +450,10 @@ public class SceneMaxLanguageParser implements IParser {
                         cmd.entityType = VariableDef.VAR_TYPE_BOX;
                     } else if(type.equals("sphere")) {
                         cmd.entityType = VariableDef.VAR_TYPE_SPHERE;
+                    } else if(type.equals("cylinder")) {
+                        cmd.entityType = VariableDef.VAR_TYPE_CYLINDER;
+                    } else if(type.equals("quad")) {
+                        cmd.entityType = VariableDef.VAR_TYPE_QUAD;
                     }
                 }
 
@@ -822,6 +826,145 @@ public class SceneMaxLanguageParser implements IParser {
 
                             if(attr.box_specific_attr().material_attr()!=null) {
                                 varDef.materialExpr = attr.box_specific_attr().material_attr().logical_expression();
+                            }
+                        }
+                    }
+                }
+
+                return varDef;
+
+            }
+
+            public StatementDef visitDefCylinder(SceneMaxParser.DefCylinderContext ctx) {
+
+                String varName = ctx.define_cylinder().res_var_decl().getText();
+                CylinderVariableDef varDef = new CylinderVariableDef();
+                varDef.isShared = ctx.define_cylinder().Shared() != null;
+                varDef.varName = varName;
+                varDef.resName="cylinder";
+                varDef.isStatic=ctx.define_cylinder().Static()!=null;
+                varDef.isCollider = ctx.define_cylinder().Collider()!=null;
+
+                if(ctx.define_cylinder().cylinder_having_expr()!=null) {
+                    for(SceneMaxParser.Cylinder_attrContext attr:ctx.define_cylinder().cylinder_having_expr().cylinder_attributes().cylinder_attr()) {
+                        if(attr.model_attr()!=null) {
+                            if(attr.model_attr().print_pos_attr()!=null) {
+                                if(attr.model_attr().print_pos_attr().pos_axes()!=null) {
+                                    if(attr.model_attr().print_pos_attr().pos_axes().exception!=null) {
+                                        return null;
+                                    }
+                                    varDef.xExpr = attr.model_attr().print_pos_attr().pos_axes().print_pos_x().logical_expression();
+                                    varDef.yExpr = attr.model_attr().print_pos_attr().pos_axes().print_pos_y().logical_expression();
+                                    varDef.zExpr = attr.model_attr().print_pos_attr().pos_axes().print_pos_z().logical_expression();
+                                } else {
+                                    varDef.entityPos=new EntityPos();
+                                    setEntityPos(varDef.entityPos,attr.model_attr().print_pos_attr().pos_entity());
+                                }
+                            } else if (attr.model_attr().init_rotate_attr()!=null) {
+                                SceneMaxParser.Rot_axesContext rotAxes = attr.model_attr().init_rotate_attr().rot_axes();
+                                if(rotAxes!=null) {
+                                    varDef.rxExpr = rotAxes.rotate_x().logical_expression();
+                                    varDef.ryExpr = rotAxes.rotate_y().logical_expression();
+                                    varDef.rzExpr = rotAxes.rotate_z().logical_expression();
+                                } else {
+                                    varDef.entityRot = attr.model_attr().init_rotate_attr().rot_entity().getText();
+                                }
+                            } else if(attr.model_attr().init_mass_attr()!=null) {
+                                varDef.massExpr = attr.model_attr().init_mass_attr().logical_expression();
+                            } else if(attr.model_attr().init_static_attr()!=null) {
+                                varDef.isStatic=true;
+                            } else if(attr.model_attr().init_hidden_attr()!=null) {
+                                varDef.visible=false;
+                            } else if(attr.model_attr().shadow_mode_attr()!=null) {
+                                SceneMaxParser.Shadow_mode_optionsContext shadow_opts = attr.model_attr().shadow_mode_attr().shadow_mode_options();
+                                if(shadow_opts.Cast()!=null) {
+                                    varDef.shadowMode = 1;
+                                } else if(shadow_opts.Receive()!=null) {
+                                    varDef.shadowMode = 2;
+                                } else {
+                                    varDef.shadowMode = 3;
+                                }
+                            }
+                        }
+
+                        if(attr.cylinder_specific_attr()!=null) {
+                            if(attr.cylinder_specific_attr().cylinder_radius_attr()!=null) {
+                                varDef.radiusTopExpr = attr.cylinder_specific_attr().cylinder_radius_attr().cylinder_radius_top().logical_expression();
+                                varDef.radiusBottomExpr = attr.cylinder_specific_attr().cylinder_radius_attr().cylinder_radius_bottom().logical_expression();
+                            }
+                            if(attr.cylinder_specific_attr().cylinder_height_attr()!=null) {
+                                varDef.heightExpr = attr.cylinder_specific_attr().cylinder_height_attr().logical_expression();
+                            }
+                            if(attr.cylinder_specific_attr().material_attr()!=null) {
+                                varDef.materialExpr = attr.cylinder_specific_attr().material_attr().logical_expression();
+                            }
+                        }
+                    }
+                }
+
+                return varDef;
+
+            }
+
+            public StatementDef visitDefQuad(SceneMaxParser.DefQuadContext ctx) {
+
+                String varName = ctx.define_quad().res_var_decl().getText();
+                QuadVariableDef varDef = new QuadVariableDef();
+                varDef.isShared = ctx.define_quad().Shared() != null;
+                varDef.varName = varName;
+                varDef.resName="quad";
+                varDef.isStatic=ctx.define_quad().Static()!=null;
+                varDef.isCollider = ctx.define_quad().Collider()!=null;
+
+                if(ctx.define_quad().quad_having_expr()!=null) {
+                    for(SceneMaxParser.Quad_attrContext attr:ctx.define_quad().quad_having_expr().quad_attributes().quad_attr()) {
+                        if(attr.model_attr()!=null) {
+                            if(attr.model_attr().print_pos_attr()!=null) {
+                                if(attr.model_attr().print_pos_attr().pos_axes()!=null) {
+                                    if(attr.model_attr().print_pos_attr().pos_axes().exception!=null) {
+                                        return null;
+                                    }
+                                    varDef.xExpr = attr.model_attr().print_pos_attr().pos_axes().print_pos_x().logical_expression();
+                                    varDef.yExpr = attr.model_attr().print_pos_attr().pos_axes().print_pos_y().logical_expression();
+                                    varDef.zExpr = attr.model_attr().print_pos_attr().pos_axes().print_pos_z().logical_expression();
+                                } else {
+                                    varDef.entityPos=new EntityPos();
+                                    setEntityPos(varDef.entityPos,attr.model_attr().print_pos_attr().pos_entity());
+                                }
+                            } else if (attr.model_attr().init_rotate_attr()!=null) {
+                                SceneMaxParser.Rot_axesContext rotAxes = attr.model_attr().init_rotate_attr().rot_axes();
+                                if(rotAxes!=null) {
+                                    varDef.rxExpr = rotAxes.rotate_x().logical_expression();
+                                    varDef.ryExpr = rotAxes.rotate_y().logical_expression();
+                                    varDef.rzExpr = rotAxes.rotate_z().logical_expression();
+                                } else {
+                                    varDef.entityRot = attr.model_attr().init_rotate_attr().rot_entity().getText();
+                                }
+                            } else if(attr.model_attr().init_mass_attr()!=null) {
+                                varDef.massExpr = attr.model_attr().init_mass_attr().logical_expression();
+                            } else if(attr.model_attr().init_static_attr()!=null) {
+                                varDef.isStatic=true;
+                            } else if(attr.model_attr().init_hidden_attr()!=null) {
+                                varDef.visible=false;
+                            } else if(attr.model_attr().shadow_mode_attr()!=null) {
+                                SceneMaxParser.Shadow_mode_optionsContext shadow_opts = attr.model_attr().shadow_mode_attr().shadow_mode_options();
+                                if(shadow_opts.Cast()!=null) {
+                                    varDef.shadowMode = 1;
+                                } else if(shadow_opts.Receive()!=null) {
+                                    varDef.shadowMode = 2;
+                                } else {
+                                    varDef.shadowMode = 3;
+                                }
+                            }
+                        }
+
+                        if(attr.quad_specific_attr()!=null) {
+                            if(attr.quad_specific_attr().quad_size_attr()!=null) {
+                                varDef.widthExpr = attr.quad_specific_attr().quad_size_attr().quad_width().logical_expression();
+                                varDef.heightExpr = attr.quad_specific_attr().quad_size_attr().quad_height().logical_expression();
+                            }
+                            if(attr.quad_specific_attr().material_attr()!=null) {
+                                varDef.materialExpr = attr.quad_specific_attr().material_attr().logical_expression();
                             }
                         }
                     }

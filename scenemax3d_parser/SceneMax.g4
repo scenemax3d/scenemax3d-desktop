@@ -16,6 +16,8 @@ statement
    | define_resource	# defResource
    | define_sphere      # defSphere
    | define_box         # defBox
+   | define_cylinder    # defCylinder
+   | define_quad        # defQuad
    | define_group       # defineGroup
    | debug_statement    # debugStatement
    | define_variable	# defVar
@@ -282,6 +284,8 @@ define_group : res_var_decl Belongs To The group_name Group ;
 group_name : ID ;
 define_sphere: Shared? res_var_decl isa_expr Collider? Static? Sphere (sphere_having_expr)? ;
 define_box: Shared? res_var_decl isa_expr Collider? Static? Box (box_having_expr)? ;
+define_cylinder: Shared? res_var_decl isa_expr Collider? Static? Cylinder (cylinder_having_expr)? ;
+define_quad: Shared? res_var_decl isa_expr Collider? Static? Quad (quad_having_expr)? ;
 define_sprite_implicit : Shared? var_decl isa_expr dynamic_model_type Sprite (sprite_having_expr)? ;
 
 define_variable : Shared? var_decl isa_expr Dynamic? Static? dynamic_model_type Vehicle? (scene_entity_having_expr)? (async_expr)? ;
@@ -679,6 +683,23 @@ sphere_specific_attr : material_attr | radius_attr ;
 material_attr : Material Equals? logical_expression ;
 radius_attr : Radius Equals? logical_expression ;
 
+cylinder_having_expr : (Having cylinder_attributes) ;
+cylinder_attributes : cylinder_attr (and_expr cylinder_attr)* ;
+cylinder_attr : model_attr | cylinder_specific_attr ;
+cylinder_specific_attr : material_attr | cylinder_radius_attr | cylinder_height_attr ;
+cylinder_radius_attr : Radius Equals? '(' cylinder_radius_top ',' cylinder_radius_bottom ')' ;
+cylinder_radius_top : logical_expression ;
+cylinder_radius_bottom : logical_expression ;
+cylinder_height_attr : Height Equals? logical_expression ;
+
+quad_having_expr : (Having quad_attributes) ;
+quad_attributes : quad_attr (and_expr quad_attr)* ;
+quad_attr : model_attr | quad_specific_attr ;
+quad_specific_attr : material_attr | quad_size_attr ;
+quad_size_attr : Size Equals? '(' quad_width ',' quad_height ')' ;
+quad_width : logical_expression ;
+quad_height : logical_expression ;
+
 sprite_having_expr : (Having sprite_attributes) ; //rows_def And cols_def
 sprite_attributes : sprite_attr (and_expr sprite_attr)* ;
 sprite_attr : rows_def | cols_def | print_pos_attr | init_scale_attr
@@ -715,7 +736,7 @@ number_sign : PLUS | MINUS ;
 number: DecimalDigit ('.' DecimalDigit)? ;
 
 allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | ReplayIndex | AnimPercent |
-    Do | Loop | Material | Radius | Sphere | Box | Boxes | Collision | Shape | Spark | Flash | Explosion | Debris |
+    Do | Loop | Material | Radius | Sphere | Box | Cylinder | Quad | Boxes | Collision | Shape | Spark | Flash | Explosion | Debris |
     Spark | Fire | Flame | Destination | Gradient | Orbital | Start | Gravity | Duration |
     Water | Strength | Depth | Terrain | Camera | Chase | Trailing | Vertical | Horizontal | Rotation | Max | Min | Distance |
     Angle | Parent | Detach | Attach | Draw | Debug | On | Off | Calibrate | Shadow | Cast | Receive | SkyBox | Solar | System |
@@ -769,6 +790,8 @@ Radius : 'Radius' | 'radius' ;
 Emissions : 'Emissions' | 'emissions' ;
 Sphere : 'Sphere' | 'sphere' ;
 Box : 'Box' | 'box' ;
+Cylinder : 'Cylinder' | 'cylinder' ;
+Quad : 'Quad' | 'quad' ;
 Boxes : 'Boxes' | 'boxes' ;
 None : 'None' | 'none' ;
 Collision : 'Collision' | 'collision' ;
