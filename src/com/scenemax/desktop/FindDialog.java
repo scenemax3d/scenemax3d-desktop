@@ -1,11 +1,6 @@
 package com.scenemax.desktop;
 
-import com.intellij.uiDesigner.core.GridConstraints;
-import com.intellij.uiDesigner.core.GridLayoutManager;
-import com.intellij.uiDesigner.core.Spacer;
 import org.apache.commons.io.FileUtils;
-import org.json.JSONArray;
-import org.json.JSONObject;
 
 import javax.swing.*;
 import java.awt.*;
@@ -13,280 +8,335 @@ import java.awt.event.*;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public class FindDialog extends JDialog {
 
-    private final File currentFile;
-    private final List<String> files;
     private final MainApp mainApp;
+    private final List<String> files;
 
-    private JPanel contentPane;
-    private JButton btnNext;
-    private JButton buttonCancel;
     private JTextField txtFind;
-    private JButton btnPrev;
-    private JButton btnSearch;
-    private JSONObject searchResult;
+    private JTextField txtReplace;
+    private JCheckBox chkCaseSensitive;
+    private JLabel lblStatus;
+
+    private int searchFileIndex;
     private int searchIndex;
-    private int searchFileIndex = 0;
-    private JSONArray searchResultIndex;
-    private int searchResultLength;
-    private String lastSearch = "";
+    private boolean hasWrapped;
 
-
-    public FindDialog(MainApp mainApp, File currentFile, List<String> files, String selectedText) {
-        setContentPane(contentPane);
-        //
-        getRootPane().setDefaultButton(btnNext);
-
-        this.currentFile = currentFile;
-        this.files = files;
+    public FindDialog(MainApp mainApp, String activeFilePath, List<String> files, String selectedText) {
         this.mainApp = mainApp;
+        this.files = files;
 
-        if (selectedText != null) {
+        // Start searching from the active file
+        searchFileIndex = 0;
+        if (activeFilePath != null) {
+            for (int i = 0; i < files.size(); i++) {
+                if (files.get(i).equals(activeFilePath)) {
+                    searchFileIndex = i;
+                    break;
+                }
+            }
+        }
+        searchIndex = 0;
+        hasWrapped = false;
+
+        buildUI(selectedText);
+
+        // Close on ESCAPE
+        getRootPane().registerKeyboardAction(e -> dispose(),
+                KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
+                JComponent.WHEN_IN_FOCUSED_WINDOW);
+    }
+
+    private void buildUI(String selectedText) {
+        setTitle("Find and Replace");
+        setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+
+        JPanel contentPane = new JPanel(new BorderLayout(8, 8));
+        contentPane.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        setContentPane(contentPane);
+
+        // --- Top: Find/Replace fields ---
+        JPanel fieldsPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(2, 4, 2, 4);
+
+        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.EAST;
+        fieldsPanel.add(new JLabel("Find:"), gbc);
+
+        txtFind = new JTextField(30);
+        if (selectedText != null && !selectedText.isEmpty()) {
             txtFind.setText(selectedText);
         }
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        fieldsPanel.add(txtFind, gbc);
 
-        buttonCancel.addActionListener(new ActionListener() {
-            public void actionPerformed(ActionEvent e) {
-                onCancel();
-            }
-        });
+        gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        gbc.anchor = GridBagConstraints.EAST;
+        fieldsPanel.add(new JLabel("Replace:"), gbc);
 
-        // call onCancel() when cross is clicked
-        setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
-        addWindowListener(new WindowAdapter() {
-            public void windowClosing(WindowEvent e) {
-                onCancel();
-            }
-        });
+        txtReplace = new JTextField(30);
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        fieldsPanel.add(txtReplace, gbc);
 
-        // call onCancel() on ESCAPE
-        contentPane.registerKeyboardAction(new ActionListener() {
-            public void actionPerformed(ActionEvent e) {
-                onCancel();
-            }
-        }, KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
+        chkCaseSensitive = new JCheckBox("Case sensitive");
+        gbc.gridx = 1; gbc.gridy = 2; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        gbc.anchor = GridBagConstraints.WEST;
+        fieldsPanel.add(chkCaseSensitive, gbc);
 
-        btnPrev.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                findPrev();
-            }
-        });
-        btnNext.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                findNext();
-            }
-        });
+        contentPane.add(fieldsPanel, BorderLayout.NORTH);
 
+        // --- Status label ---
+        lblStatus = new JLabel(" ");
+        lblStatus.setHorizontalAlignment(SwingConstants.CENTER);
+        contentPane.add(lblStatus, BorderLayout.CENTER);
+
+        // --- Bottom: Buttons ---
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+
+        JButton btnPrev = new JButton("Find Prev");
+        JButton btnNext = new JButton("Find Next");
+        JButton btnReplace = new JButton("Replace");
+        JButton btnReplaceAll = new JButton("Replace All");
+        JButton btnExit = new JButton("Exit");
+
+        buttonPanel.add(btnPrev);
+        buttonPanel.add(btnNext);
+        buttonPanel.add(btnReplace);
+        buttonPanel.add(btnReplaceAll);
+        buttonPanel.add(btnExit);
+
+        contentPane.add(buttonPanel, BorderLayout.SOUTH);
+
+        // Default button
+        getRootPane().setDefaultButton(btnNext);
+
+        // Actions
+        btnNext.addActionListener(e -> findNext());
+        btnPrev.addActionListener(e -> findPrev());
+        btnReplace.addActionListener(e -> replaceCurrent());
+        btnReplaceAll.addActionListener(e -> replaceAll());
+        btnExit.addActionListener(e -> dispose());
+
+        // Enter in find field triggers Find Next
+        txtFind.addActionListener(e -> findNext());
     }
 
-    private void findPrev() {
-        find(-1);
+    private String getSearchText() {
+        return txtFind.getText();
     }
 
-//    private void findPrev() {
-//
-//        initSearch();
-//
-//        searchIndex--;
-//        if (searchIndex < 0) {
-//            searchIndex = searchResultIndex.length() - 1;
-//        }
-//
-//        showItem();
-//
-//    }
+    private boolean isCaseSensitive() {
+        return chkCaseSensitive.isSelected();
+    }
 
-    private void find(int dir) {
-        String searchText = txtFind.getText().trim().toLowerCase();
-        if (searchText.length() == 0) {
-            return;
+    /**
+     * Gets the content for the file at the given index.
+     * For the active editor tab, reads from the editor (includes unsaved changes).
+     * For other files, reads from disk.
+     */
+    private String getFileContent(int fileIndex) {
+        String path = files.get(fileIndex);
+        String activeFilePath = mainApp.getActiveFilePath();
+
+        // If this is the active file, read from the editor to include unsaved changes
+        if (activeFilePath != null && activeFilePath.equals(path)) {
+            String editorText = mainApp.getActiveEditorText();
+            if (editorText != null) {
+                return editorText;
+            }
         }
 
-        String path = files.get(searchFileIndex);
-        File f = new File(path);
-
+        // Read from disk
         try {
-            String code = FileUtils.readFileToString(f, StandardCharsets.UTF_8);
-            code = code.toLowerCase();
-            int pos = code.indexOf(searchText, searchIndex);
-            if (pos == -1) {
-                searchFileIndex = searchFileIndex + 1 * dir;
-                searchIndex = 0;
-                if (dir == 1) {
-                    if (searchFileIndex >= files.size()) {
-                        searchFileIndex = 0;
-                        find(dir);
-                    }
-                } else {
-                    if (searchFileIndex <= 0) {
-                        searchFileIndex = files.size() - 1;
-                        find(dir);
-                    }
-                }
-            } else {
-                int selectLength = searchText.length();
-                mainApp.showTextInFile(path, pos, selectLength);
-                searchIndex = pos + selectLength;
-            }
+            return FileUtils.readFileToString(new File(path), StandardCharsets.UTF_8);
         } catch (IOException e) {
             e.printStackTrace();
+            return "";
         }
+    }
 
+    private int indexOf(String content, String search, int fromIndex) {
+        if (isCaseSensitive()) {
+            return content.indexOf(search, fromIndex);
+        } else {
+            return content.toLowerCase().indexOf(search.toLowerCase(), fromIndex);
+        }
+    }
+
+    private int lastIndexOf(String content, String search, int fromIndex) {
+        if (isCaseSensitive()) {
+            // String.lastIndexOf searches backwards from fromIndex
+            return content.lastIndexOf(search, fromIndex);
+        } else {
+            return content.toLowerCase().lastIndexOf(search.toLowerCase(), fromIndex);
+        }
     }
 
     private void findNext() {
-        find(1);
+        String searchText = getSearchText();
+        if (searchText.isEmpty()) return;
+
+        int startFileIndex = searchFileIndex;
+        int startPos = searchIndex;
+
+        // Search in the current file from current position
+        for (int i = 0; i < files.size(); i++) {
+            int fileIdx = (startFileIndex + i) % files.size();
+            String content = getFileContent(fileIdx);
+
+            int searchFrom = (fileIdx == startFileIndex) ? startPos : 0;
+            int pos = indexOf(content, searchText, searchFrom);
+
+            if (pos != -1) {
+                searchFileIndex = fileIdx;
+                searchIndex = pos + searchText.length();
+                hasWrapped = false;
+
+                String fileName = new File(files.get(fileIdx)).getName();
+                lblStatus.setText("Found in: " + fileName);
+                mainApp.showTextInFile(files.get(fileIdx), pos, searchText.length());
+                return;
+            }
+        }
+
+        // Not found anywhere
+        lblStatus.setText("No matches found");
+        Toolkit.getDefaultToolkit().beep();
     }
 
-//    private void findNext() {
-//
-//        if (txtFind.getText().trim().length() == 0) {
-//            return;
-//        }
-//
-//        initSearch();
-//
-//        searchIndex++;
-//        if (searchIndex > searchResultIndex.length() - 1) {
-//            searchIndex = 0;
-//        }
-//
-//        showItem();
-//
-//    }
+    private void findPrev() {
+        String searchText = getSearchText();
+        if (searchText.isEmpty()) return;
 
-//    private void initSearch() {
-//        if (searchResultIndex == null || !lastSearch.equals(txtFind.getText().trim().toLowerCase())) {
-//            lastSearch = txtFind.getText().toLowerCase();
-//            searchResult = search();
-//            searchResultIndex = searchResult.getJSONArray("index");
-//            searchResultLength = searchResult.getInt("length");
-//            searchIndex = searchResult.getInt("findStartIndex") - 1;
-//
-//        }
-//
-//    }
+        int startFileIndex = searchFileIndex;
+        // Search backwards: start from one character before current match start
+        int startPos = searchIndex - searchText.length() - 1;
 
-    private void showItem() {
-        JSONObject item = searchResultIndex.getJSONObject(searchIndex);
-        String folder = item.getString("folder");
-        String file = item.getString("file");
-        int index = item.getInt("index");
-        mainApp.showTextInFile(folder, file, index, searchResultLength);
+        for (int i = 0; i < files.size(); i++) {
+            int fileIdx = (startFileIndex - i + files.size()) % files.size();
+            String content = getFileContent(fileIdx);
+
+            int searchFrom;
+            if (i == 0) {
+                searchFrom = Math.max(startPos, -1);
+            } else {
+                searchFrom = content.length();
+            }
+
+            int pos = lastIndexOf(content, searchText, searchFrom);
+
+            if (pos != -1) {
+                searchFileIndex = fileIdx;
+                searchIndex = pos + searchText.length();
+                hasWrapped = false;
+
+                String fileName = new File(files.get(fileIdx)).getName();
+                lblStatus.setText("Found in: " + fileName);
+                mainApp.showTextInFile(files.get(fileIdx), pos, searchText.length());
+                return;
+            }
+        }
+
+        // Not found anywhere
+        lblStatus.setText("No matches found");
+        Toolkit.getDefaultToolkit().beep();
     }
 
-//    private JSONObject search() {
-//
-//        String search = txtFind.getText().trim().toLowerCase();
-//        String currFileName = currentFile.getName();
-//
-//        JSONArray resultIndex = new JSONArray();
-//        JSONObject findResult = new JSONObject();
-//        findResult.put("length", search.length());
-//        findResult.put("index", resultIndex);
-//        int findStartIndex = -1;
-//
-//        String folderName = currentFile.getParentFile().getName();
-//        List<String> sortedFiles = new ArrayList<>(files.keySet());
-//        Collections.sort(sortedFiles);
-//
-//        for (String key : sortedFiles) {
-//            String content = files.getString(key).toLowerCase();
-//            int startIndex = 0, counter = 0;
-//
-//            int index = content.indexOf(search, startIndex);
-//            while (index != -1) {
-//
-//                JSONObject item = new JSONObject();
-//                item.put("folder", folderName);
-//                item.put("file", key);
-//                item.put("index", index);
-//                resultIndex.put(item);
-//
-//                // we want the user to see first the results from the current selected file
-//                if (findStartIndex == -1 && currFileName.equals(key)) {
-//                    findStartIndex = resultIndex.length() - 1;
-//                }
-//
-//                startIndex = index + search.length();
-//                index = content.indexOf(search, startIndex);
-//            }
-//
-//        }
-//
-//        findResult.put("findStartIndex", findStartIndex);
-//        return findResult;
-//
-//    }
+    private void replaceCurrent() {
+        String searchText = getSearchText();
+        String replaceText = txtReplace.getText();
+        if (searchText.isEmpty()) return;
 
-    private void onOK() {
-        // add your code here
-        dispose();
+        // Check if there's currently a selection matching the search text
+        String activeFilePath = mainApp.getActiveFilePath();
+        if (activeFilePath == null) return;
+
+        String editorText = mainApp.getActiveEditorText();
+        if (editorText == null) return;
+
+        int selStart = mainApp.getActiveSelectionStart();
+        int selEnd = mainApp.getActiveSelectionEnd();
+
+        if (selStart >= 0 && selEnd > selStart) {
+            String selected = editorText.substring(selStart, selEnd);
+            boolean matches = isCaseSensitive()
+                    ? selected.equals(searchText)
+                    : selected.equalsIgnoreCase(searchText);
+
+            if (matches) {
+                mainApp.replaceActiveSelection(replaceText);
+
+                // Adjust search position after replacement
+                searchIndex = selStart + replaceText.length();
+
+                lblStatus.setText("Replaced. Finding next...");
+                // Automatically find next
+                findNext();
+                return;
+            }
+        }
+
+        // No current match selected, just find next
+        findNext();
     }
 
-    private void onCancel() {
-        // add your code here if necessary
-        dispose();
-    }
+    private void replaceAll() {
+        String searchText = getSearchText();
+        String replaceText = txtReplace.getText();
+        if (searchText.isEmpty()) return;
 
-    {
-// GUI initializer generated by IntelliJ IDEA GUI Designer
-// >>> IMPORTANT!! <<<
-// DO NOT EDIT OR ADD ANY CODE HERE!
-        $$$setupUI$$$();
-    }
+        int totalCount = 0;
 
-    /**
-     * Method generated by IntelliJ IDEA GUI Designer
-     * >>> IMPORTANT!! <<<
-     * DO NOT edit this method OR call it in your code!
-     *
-     * @noinspection ALL
-     */
-    private void $$$setupUI$$$() {
-        contentPane = new JPanel();
-        contentPane.setLayout(new GridLayoutManager(2, 1, new Insets(10, 10, 10, 10), -1, -1));
-        final JPanel panel1 = new JPanel();
-        panel1.setLayout(new GridLayoutManager(1, 4, new Insets(0, 0, 0, 0), -1, -1));
-        contentPane.add(panel1, new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, 1, null, null, null, 0, false));
-        final Spacer spacer1 = new Spacer();
-        panel1.add(spacer1, new GridConstraints(0, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
-        final JPanel panel2 = new JPanel();
-        panel2.setLayout(new GridLayoutManager(1, 1, new Insets(0, 0, 0, 0), -1, -1));
-        panel1.add(panel2, new GridConstraints(0, 3, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null, 0, false));
-        buttonCancel = new JButton();
-        buttonCancel.setText("Exit");
-        panel2.add(buttonCancel, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
-        btnPrev = new JButton();
-        btnPrev.setText("Prev");
-        panel1.add(btnPrev, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
-        btnNext = new JButton();
-        btnNext.setText("Next");
-        panel1.add(btnNext, new GridConstraints(0, 1, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
-        final JPanel panel3 = new JPanel();
-        panel3.setLayout(new GridLayoutManager(2, 2, new Insets(0, 0, 0, 0), -1, -1));
-        contentPane.add(panel3, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null, 0, false));
-        final JLabel label1 = new JLabel();
-        label1.setText("Find:");
-        panel3.add(label1, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
-        final Spacer spacer2 = new Spacer();
-        panel3.add(spacer2, new GridConstraints(1, 0, 1, 2, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_VERTICAL, 1, GridConstraints.SIZEPOLICY_WANT_GROW, null, null, null, 0, false));
-        txtFind = new JTextField();
-        panel3.add(txtFind, new GridConstraints(0, 1, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null, new Dimension(150, -1), null, 0, false));
-    }
+        for (int fileIdx = 0; fileIdx < files.size(); fileIdx++) {
+            String filePath = files.get(fileIdx);
+            String content = getFileContent(fileIdx);
+            String originalContent = content;
 
-    /**
-     * @noinspection ALL
-     */
-    public JComponent $$$getRootComponent$$$() {
-        return contentPane;
-    }
+            // Perform all replacements in this file
+            StringBuilder sb = new StringBuilder();
+            int fileCount = 0;
+            int pos = 0;
 
+            while (pos < content.length()) {
+                int found = indexOf(content, searchText, pos);
+                if (found == -1) {
+                    sb.append(content.substring(pos));
+                    break;
+                }
+                sb.append(content, pos, found);
+                sb.append(replaceText);
+                fileCount++;
+                pos = found + searchText.length();
+            }
+
+            if (fileCount > 0) {
+                totalCount += fileCount;
+                String newContent = sb.toString();
+
+                // Write to disk
+                try {
+                    File f = new File(filePath);
+                    String normalized = newContent.replaceAll("\r", "");
+                    FileUtils.writeStringToFile(f, normalized, StandardCharsets.UTF_8);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+
+                // If this is the active file, update the editor
+                String activeFilePath = mainApp.getActiveFilePath();
+                if (activeFilePath != null && activeFilePath.equals(filePath)) {
+                    mainApp.setActiveEditorText(newContent);
+                }
+            }
+        }
+
+        if (totalCount > 0) {
+            lblStatus.setText("Replaced " + totalCount + " occurrence" + (totalCount != 1 ? "s" : ""));
+        } else {
+            lblStatus.setText("No matches found");
+            Toolkit.getDefaultToolkit().beep();
+        }
+    }
 }

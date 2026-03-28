@@ -2776,20 +2776,19 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     public void keyPressed(KeyEvent e) {
 
-        if (e.getSource() == textArea && e.getKeyCode() == KeyEvent.VK_F && e.isControlDown()) {
+        if ((e.getSource() == textArea || e.getSource() == textAreaRTL) && e.getKeyCode() == KeyEvent.VK_F && e.isControlDown()) {
 
             String selectedText = textAreaSP.isVisible() ? textArea.getSelectedText() : textAreaRTL.getSelectedText();
-            File f = new File(lastSelectedFilePath);
-            List<String> files = new ArrayList<>();
-            if (f.isFile()) {
-                searchFolderFilesRecursive(new File(Util.getScriptsFolder()), files);
-            } else {
+            String activeFilePath = editorTabPanel != null ? editorTabPanel.getActiveFilePath() : null;
+            if (activeFilePath == null || !new File(activeFilePath).isFile()) {
                 return;
             }
+            List<String> files = new ArrayList<>();
+            searchFolderFilesRecursive(new File(Util.getScriptsFolder()), files);
 
-            FindDialog dlg = new FindDialog(this, f, files, selectedText);
+            FindDialog dlg = new FindDialog(this, activeFilePath, files, selectedText);
 
-            dlg.setSize(500, 150);
+            dlg.setSize(550, 200);
             dlg.setLocationRelativeTo(null);
             dlg.setAlwaysOnTop(true);
             dlg.setVisible(true);
@@ -2884,9 +2883,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         File f = new File(filePath);
         openTreeNodeByFile(f);
         openFileInTab(f);
-        textArea.setCaretPosition(index);
-        textArea.setSelectionStart(index);
-        textArea.setSelectionEnd(index + length);
+        JTextArea activeEditor = textAreaSP.isVisible() ? textArea : textAreaRTL;
+        activeEditor.setCaretPosition(index);
+        activeEditor.setSelectionStart(index);
+        activeEditor.setSelectionEnd(index + length);
     }
 
     public void showTextInFile(String folder, String file, int index, int length) {
@@ -2914,6 +2914,36 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
         saveLastSelectedFileEnabled = true;
 
+    }
+
+    public String getActiveFilePath() {
+        return editorTabPanel != null ? editorTabPanel.getActiveFilePath() : null;
+    }
+
+    public String getActiveEditorText() {
+        if (editorTabPanel == null || editorTabPanel.getActiveTab() == null) return null;
+        return editorTabPanel.getCurrentEditorText();
+    }
+
+    public int getActiveSelectionStart() {
+        JTextArea activeEditor = textAreaSP.isVisible() ? textArea : textAreaRTL;
+        return activeEditor.getSelectionStart();
+    }
+
+    public int getActiveSelectionEnd() {
+        JTextArea activeEditor = textAreaSP.isVisible() ? textArea : textAreaRTL;
+        return activeEditor.getSelectionEnd();
+    }
+
+    public void replaceActiveSelection(String replacement) {
+        JTextArea activeEditor = textAreaSP.isVisible() ? textArea : textAreaRTL;
+        activeEditor.replaceSelection(replacement);
+    }
+
+    public void setActiveEditorText(String text) {
+        if (editorTabPanel == null) return;
+        textArea.setText(text);
+        textAreaRTL.setText(text);
     }
 
     ////////////////////////////////////////////////////////////////////////////////////
