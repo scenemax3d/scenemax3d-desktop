@@ -497,7 +497,6 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
                 if (name.equals("Assets")) {
                     this.assetsMenu = menu;
-                    addResourcesToMenu(menu);
                 }
 
                 // add sub items
@@ -558,7 +557,6 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             JSONObject menuItem = items.getJSONObject(i);
             String name = menuItem.getString("name");
             if (name.equals("Assets")) {
-                addResourcesToMenu(this.assetsMenu);
                 // add sub items
                 addMenuItems(this.assetsMenu, menuItem.getJSONArray("items"));
                 break;
@@ -570,104 +568,6 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     }
 
-    private void addResourcesToMenu(JMenu menu) {
-        AssetsMapping assetsMapping = new AssetsMapping(Util.getResourcesFolder());
-        JMenu subMenu = new JMenu("Insert");
-        menu.add(subMenu);
-        addModelResourcesToMenu(assetsMapping, subMenu);
-        addSpriteResourcesToMenu(assetsMapping, subMenu);
-        addAudioResourcesToMenu(assetsMapping, subMenu);
-        addSkyboxResourcesToMenu(assetsMapping, subMenu);
-    }
-
-    private void addSkyboxResourcesToMenu(AssetsMapping assetsMapping, JMenu menu) {
-        HashMap<String, SkyBoxResource> skyboxes = assetsMapping.getSkyboxesIndex();
-        JMenu subMenu = new JMenu("SkyBox");
-        menu.add(subMenu);
-        for (SkyBoxResource sky : skyboxes.values()) {
-            JMenuItem skyMenu = new JMenuItem(sky.name);
-
-            subMenu.add(skyMenu);
-            skyMenu.setAction(new ResourceMenuAction(this, sky.name, sky));
-        }
-    }
-
-    private void addAudioResourcesToMenu(AssetsMapping assetsMapping, JMenu menu) {
-        HashMap<String, ResourceAudio> sounds = assetsMapping.getAudioIndex();
-        JMenu subMenu = new JMenu("Audio");
-        menu.add(subMenu);
-
-        List<ResourceAudio> sounds2 = new ArrayList<ResourceAudio>(sounds.values());
-        Collections.sort(sounds2, new Comparator<ResourceAudio>() {
-            @Override
-            public int compare(ResourceAudio o1, ResourceAudio o2) {
-                return o1.name.compareTo(o2.name);
-            }
-        });
-
-        for (ResourceAudio sound : sounds2) {
-            JMenuItem audioMenu = new JMenuItem(sound.name);
-
-            subMenu.add(audioMenu);
-            audioMenu.setAction(new ResourceMenuAction(this, sound.name, sound));
-        }
-
-    }
-
-    private void addSpriteResourcesToMenu(AssetsMapping assetsMapping, JMenu menu) {
-
-        HashMap<String, ResourceSetup2D> sprites = assetsMapping.getSpriteSheetsIndex();
-        JMenu subMenu = new JMenu("2D Sprite");
-        menu.add(subMenu);
-
-        List<ResourceSetup2D> sprites2d = new ArrayList<ResourceSetup2D>(sprites.values());
-        Collections.sort(sprites2d, new Comparator<ResourceSetup2D>() {
-            @Override
-            public int compare(ResourceSetup2D o1, ResourceSetup2D o2) {
-                return o1.name.compareTo(o2.name);
-            }
-        });
-
-
-        for (ResourceSetup2D sprite : sprites2d) {
-            JMenuItem spriteMenu = new JMenuItem(sprite.name);
-
-            subMenu.add(spriteMenu);
-            spriteMenu.setAction(new ResourceMenuAction(this, sprite.name, sprite));
-        }
-
-    }
-
-    private void addModelResourcesToMenu(AssetsMapping assetsMapping, JMenu menu) {
-
-        HashMap<String, ResourceSetup> models = assetsMapping.get3DModelsIndex();
-        JMenu subMenu = new JMenu("3D Model");
-        menu.add(subMenu);
-        JMenu vehiclesMenu = new JMenu("Vehicles");
-        subMenu.add(vehiclesMenu);
-
-        List<ResourceSetup> models3d = new ArrayList<ResourceSetup>(models.values());
-        Collections.sort(models3d, new Comparator<ResourceSetup>() {
-            @Override
-            public int compare(ResourceSetup o1, ResourceSetup o2) {
-                return o1.name.compareTo(o2.name);
-            }
-        });
-
-        for (ResourceSetup model : models3d) {
-            JMenuItem modelMenu = new JMenuItem(model.name);
-            if (model.isVehicle) {
-                vehiclesMenu.add(modelMenu);
-            } else {
-                subMenu.add(modelMenu);
-
-            }
-
-            //modelMenu.addActionListener(menuActionListener);
-            modelMenu.setAction(new ResourceMenuAction(this, model.name, model));
-        }
-
-    }
 
     private void addMenuItems(JMenu menu, JSONArray items) {
         if (items == null) return;
