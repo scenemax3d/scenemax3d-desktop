@@ -866,8 +866,6 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     createNewScript(filePath);
                 } else if (cmd.equals("new_designer")) {
                     createNewDesignerDocument(filePath);
-                } else if (cmd.equals("import_transitions")) {
-                    createNewReplayTransitionsFile(filePath);
                 } else if (cmd.equals("clean_backup_files")) {
                     cleanBackupFiles(new File(filePath));
                 } else if (cmd.equals("rename_folder")) {
@@ -977,6 +975,15 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
                 } else if (cmd.equals("export_to_zip")) {
                     exportProgramToLocalZipFile(filePath);
+                } else if (cmd.equals("import_from_zip")) {
+                    ImportProgramDialog dlg = new ImportProgramDialog();
+                    dlg.setSize(500, 150);
+                    dlg.setLocationRelativeTo(null);
+                    dlg.setModal(true);
+                    dlg.setVisible(true);
+
+                    loadScriptsFolder();
+                    openLastTreeNode();
                 } else if (cmd.equals("rename")) {
 
                     Path source = Paths.get(filePath);
@@ -1022,8 +1029,6 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         addScriptsTreePopupMenuItem("Rename...", "rename", popup, popupActionListener, false, true, file);
         addScriptsTreePopupMenuItem("Create New Script", "new", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Designer Document", "new_designer", popup, popupActionListener, true, false, file);
-        addScriptsTreePopupMenuItem("Import Transitions Data...", "import_transitions", popup, popupActionListener, true, false, file);
-
         addScriptsTreePopupMenuItem("Create Sub Folder...", "create_sub_folder", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Delete Folder...", "delete_folder", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Rename Folder...", "rename_folder", popup, popupActionListener, true, false, file);
@@ -1040,6 +1045,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         }
 
         addScriptsTreePopupMenuItem("Export Program To Zip File...", "export_to_zip", popup, popupActionListener, true, false, file);
+        addScriptsTreePopupMenuItem("Import Program From Zip File...", "import_from_zip", popup, popupActionListener, true, false, file);
         item = addScriptsTreePopupMenuItem("Upload Program To Web...", "upload_to_web", popup, popupActionListener, true, false, file);
 
         if (item != null) {
