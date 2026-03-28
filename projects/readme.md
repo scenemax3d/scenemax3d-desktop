@@ -215,6 +215,102 @@ var @player1_grabs_for_throwing_player2 = @player1_can_hit
 
 This composition pattern is used in [`collision_new`](scripts/Fighting%20Game/collision_new) and [`states/player1_attack_states`](scripts/Fighting%20Game/states/player1_attack_states) to cleanly express collision and attack resolution conditions.
 
+#### Control Flow with Logical Expression Pointers and `when` Statements
+
+The real power of logical expression pointers emerges when they are combined with `when ... do` statements. A `when` block is a **reactive listener** - the engine continuously monitors the condition and fires the block the moment it becomes true. When that condition includes an `@` pointer, you get a clean, declarative way to express complex game rules that respond to state changes automatically.
+
+**Example: Foot attack to the head with knockout logic**
+
+From [`states/player2_attack_states`](scripts/Fighting%20Game/states/player2_attack_states):
+
+```
+when @player2_can_hit && player2.data.foot_attack_hit == 1 && player1.data.head_hit == 1 do
+  high_kick_counter = high_kick_counter + 1
+  run player1_head_hit
+  player1.data.head_hit = 0
+  if (player2.data.is_jumping == 2) {
+    player1_ko = 1
+  } else {
+    if (high_kick_counter % 3 == 0) {
+      player1_ko = 1
+    }
+  }
+end do
+```
+
+This single `when` block combines the `@player2_can_hit` pointer (which itself checks that player 2 is on the ground, player 1 isn't in a KO state, and an attack action is active) with additional inline conditions for foot collision and head hit detection. When all conditions align simultaneously, the block fires and applies the game rule: deal damage, and trigger a knockout if the kick landed during a jump descent or if every third high kick connects.
+
+**Example: Hand attack to head - simple hit resolution**
+
+```
+when @player2_can_hit && player2.data.hand_attack_hit == 1 && player1.data.head_hit == 1 do
+  run player1_head_hit
+end do
+```
+
+The same `@player2_can_hit` pointer guards this handler, but with different inline conditions (hand collision instead of foot). The shared pointer ensures both handlers enforce the same base rules without duplicating the logic.
+
+**Example: Enemy knockout trigger**
+
+From [`states/player2_general_states`](scripts/Fighting%20Game/states/player2_general_states):
+
+```
+when life2 == 0 && enemy_ko == 0 do
+  run enemy_knockout
+end do
+```
+
+This `when` statement monitors the enemy's health and fires the moment it reaches zero - but only if the knockout sequence hasn't already started (`enemy_ko == 0`), preventing duplicate triggers.
+
+**Example: Player knockout recovery**
+
+From [`states/player1_general_states`](scripts/Fighting%20Game/states/player1_general_states):
+
+```
+when player1_ko == 1 do
+  if (rnd(2) == 0) {
+    player1.back_death1 at speed of 1.2 : protected
+  } else {
+    player1.right_death1 at speed of 1.2 : protected
+  }
+  wait 1.5 seconds
+  player1.standing_up at speed of 1.2 : protected
+  player1.idle2 loop
+  player1_ko = 0
+end do
+```
+
+When the `player1_ko` flag is set to 1 (by the foot-attack handler above or any other source), this listener fires automatically, plays a random death animation, waits, then plays the recovery animation and resets the flag.
+
+**Example: State transition with `after` clause**
+
+From [`enemy_knockout`](scripts/Fighting%20Game/enemy_knockout):
+
+```
+when op_hit == 0 after op_hit == 1 do
+  life1 = INITIAL_PLAYER_STRENGTH
+  life2 = INITIAL_PLAYER_STRENGTH
+  timer = 60
+  enemy_ko = 0
+end do
+```
+
+The `after` clause adds transition detection - this fires only when `op_hit` transitions from 1 to 0, meaning all victory sequences have finished. This prevents the reset from happening prematurely.
+
+#### Benefits of `when` with Logical Expression Pointers
+
+1. **Reactive, event-driven design** - Instead of polling or checking conditions inside a game loop, `when` blocks let you declare *what should happen* when a state is reached. The engine handles the monitoring. This eliminates the need for manual frame-by-frame condition checking and makes the game logic inherently event-driven.
+
+2. **Separation of "when to act" from "what to do"** - The `@` pointer defines the preconditions in one place (`global_variables`), while the `when` block defines the response in another (`player2_attack_states`). This separation means you can modify the rules for "when can player 2 hit" without touching any of the individual attack handlers - every `when` block referencing `@player2_can_hit` automatically picks up the change.
+
+3. **Eliminating duplicated guard logic** - Without `@` pointers, every `when` block for player 2's attacks would need to repeat the full condition: `player2.data.is_jumping == 0 && player1_ko == 0 && op_action != 0`. With the pointer, this is written once and referenced everywhere. In this project, `@player2_can_hit` is used in 6 different collision handlers in [`collision_new`](scripts/Fighting%20Game/collision_new) and 4 attack state handlers in [`states/player2_attack_states`](scripts/Fighting%20Game/states/player2_attack_states) - that's 10 places where the guard logic is guaranteed to be consistent.
+
+4. **Composable complexity** - Simple pointers combine into complex ones (`@player1_hand_attack_head` builds on `@player1_can_hit`), and those composed pointers can be mixed with inline conditions in `when` blocks. This lets you layer conditions naturally: the shared base rules live in the pointer, while handler-specific conditions are written inline.
+
+5. **Real-time evaluation** - Logical expression pointers are not evaluated once at definition time. They are evaluated every time they are checked, reflecting the current game state. This means a single `@enemy_ai_allowed` pointer correctly gates all AI behavior as variables like `enemy_ko`, `slow_motion`, and `player2.data.trapped` change throughout gameplay.
+
+6. **Self-documenting code** - A guard like `[@asd_go_condition]` immediately communicates intent ("the A/S/D attack keys should only work under these conditions") without requiring the reader to parse a multi-line boolean expression every time. The pointer name acts as documentation.
+
 ### Player Input
 
 Defined in [`game_input/input`](scripts/Fighting%20Game/game_input/input), [`game_input/input_x`](scripts/Fighting%20Game/game_input/input_x), and [`game_input/input_c`](scripts/Fighting%20Game/game_input/input_c):
