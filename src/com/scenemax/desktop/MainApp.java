@@ -93,6 +93,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private JMenu projectsSubMenu;
     private JMenu assetsMenu;
     private EditorTabPanel editorTabPanel;
+    private SceneMaxAutoComplete autoComplete;
     // (Designer panels are managed per-tab inside EditorTabPanel)
 
     public MainApp() {
@@ -207,6 +208,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         });
 
         editorTabPanel = new EditorTabPanel(layeredPane, textArea, textAreaSP, textAreaRTL, textAreaRtlSP);
+        autoComplete = new SceneMaxAutoComplete(textArea, () -> editorTabPanel != null && editorTabPanel.getActiveTab() != null
+                ? editorTabPanel.getActiveFilePath() : null);
         editorTabPanel.setOnTabChangedCallback(() -> {
             EditorTabPanel.TabData active = editorTabPanel.getActiveTab();
             if (active != null) {
@@ -219,6 +222,9 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
                 // Select and focus the corresponding tree node
                 openTreeNodeByFile(new File(active.filePath));
+
+                // Invalidate autocomplete cache on tab switch
+                autoComplete.invalidateCache();
             } else {
                 lastSelectedFilePath = null;
                 isDocumentChanged = false;
@@ -2803,6 +2809,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
             if (editorTabPanel != null && editorTabPanel.getActiveTab() != null) {
                 editorTabPanel.saveActiveTab();
+                autoComplete.invalidateCache();
 
                 final JTextArea txt = e.getSource() == textArea ? textArea : textAreaRTL;
                 final Color c = txt.getBackground();
