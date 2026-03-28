@@ -5,6 +5,8 @@ import com.jme3.math.Vector3f;
 import com.jme3.system.AppSettings;
 import com.jme3.system.JmeCanvasContext;
 import com.scenemax.designer.gizmo.GizmoMode;
+import com.scenemax.designer.path.BezierPath;
+import com.scenemax.designer.path.PathSample;
 import com.scenemax.designer.selection.SelectionManager;
 
 import javax.swing.*;
@@ -97,6 +99,10 @@ public class DesignerPanel extends JPanel {
     private JCheckBox chkJointMapping;
     private JButton btnEditJointMapping;
     private JPanel jointMappingPanel;
+    private JPanel pathPropertiesPanel;
+    private JLabel lblPathPointCount;
+    private JSpinner spnPathSubdivisions;
+    private JCheckBox chkPathClosed;
     private JPanel staticColliderPanel;
     private JComboBox<String> cboMaterial;
     private JPanel materialPanel;
@@ -180,6 +186,12 @@ public class DesignerPanel extends JPanel {
         btnAddModel.setToolTipText("Add 3D Model");
         btnAddModel.addActionListener(e -> showModelPickerDialog());
 
+        JButton btnAddPath = new JButton(createDesignerToolbarIcon("path"));
+        btnAddPath.setToolTipText("Draw Path (click to place points, double-click to finish, ESC to cancel)");
+        btnAddPath.addActionListener(e -> {
+            if (app != null) app.enqueue(() -> { app.enterPathMode(); return null; });
+        });
+
         JButton btnDelete = new JButton(createDesignerToolbarIcon("delete"));
         btnDelete.setToolTipText("Delete Selected");
         btnDelete.addActionListener(e -> {
@@ -199,6 +211,7 @@ public class DesignerPanel extends JPanel {
         toolbar.add(btnAddHollowCylinder);
         toolbar.add(btnAddQuad);
         toolbar.add(btnAddModel);
+        toolbar.add(btnAddPath);
         toolbar.addSeparator();
         toolbar.add(btnDelete);
         toolbar.addSeparator();
@@ -632,6 +645,51 @@ public class DesignerPanel extends JPanel {
         jointMappingPanel.add(jointMappingRow);
         jointMappingPanel.setVisible(false);
         propertiesForm.add(jointMappingPanel);
+
+        // Path properties panel (PATH type only)
+        pathPropertiesPanel = new JPanel();
+        pathPropertiesPanel.setLayout(new BoxLayout(pathPropertiesPanel, BoxLayout.Y_AXIS));
+        pathPropertiesPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        pathPropertiesPanel.add(Box.createVerticalStrut(8));
+        JLabel lblPath = new JLabel("Path:");
+        lblPath.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblPath.setFont(lblPath.getFont().deriveFont(Font.BOLD));
+        pathPropertiesPanel.add(lblPath);
+
+        lblPathPointCount = new JLabel("Points: 0");
+        lblPathPointCount.setAlignmentX(Component.LEFT_ALIGNMENT);
+        pathPropertiesPanel.add(lblPathPointCount);
+
+        JPanel pathSubdivRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        pathSubdivRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        pathSubdivRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        spnPathSubdivisions = new JSpinner(new SpinnerNumberModel(20, 1, 100, 1));
+        spnPathSubdivisions.setPreferredSize(new Dimension(60, 24));
+        pathSubdivRow.add(new JLabel("Subdivisions:"));
+        pathSubdivRow.add(spnPathSubdivisions);
+        pathPropertiesPanel.add(pathSubdivRow);
+
+        spnPathSubdivisions.addChangeListener(e -> applyPathSubdivisionsChange());
+
+        chkPathClosed = new JCheckBox("Closed Loop");
+        chkPathClosed.setAlignmentX(Component.LEFT_ALIGNMENT);
+        chkPathClosed.addActionListener(e -> applyPathClosedChange());
+        pathPropertiesPanel.add(chkPathClosed);
+
+        pathPropertiesPanel.add(Box.createVerticalStrut(4));
+
+        JPanel pathButtonRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        pathButtonRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        pathButtonRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        JButton btnAutoSmooth = new JButton("Auto Smooth");
+        btnAutoSmooth.setToolTipText("Auto-smooth all tangent handles");
+        btnAutoSmooth.addActionListener(e -> autoSmoothPath());
+        pathButtonRow.add(btnAutoSmooth);
+        pathPropertiesPanel.add(pathButtonRow);
+
+        pathPropertiesPanel.setVisible(false);
+        propertiesForm.add(pathPropertiesPanel);
 
         propertiesForm.revalidate();
     }
@@ -1681,6 +1739,7 @@ public class DesignerPanel extends JPanel {
                 hiddenPanel.setVisible(false);
                 shadowModePanel.setVisible(false);
                 jointMappingPanel.setVisible(false);
+                pathPropertiesPanel.setVisible(false);
                 return;
             }
 
@@ -1783,6 +1842,17 @@ public class DesignerPanel extends JPanel {
                 hiddenPanel.setVisible(false);
                 shadowModePanel.setVisible(false);
                 jointMappingPanel.setVisible(false);
+            }
+
+            // PATH properties
+            if (entity.getType() == DesignerEntityType.PATH && entity.getBezierPath() != null) {
+                BezierPath path = entity.getBezierPath();
+                lblPathPointCount.setText("Points: " + path.getPointCount());
+                spnPathSubdivisions.setValue(path.getSubdivisions());
+                chkPathClosed.setSelected(path.isClosed());
+                pathPropertiesPanel.setVisible(true);
+            } else {
+                pathPropertiesPanel.setVisible(false);
             }
 
             // Camera entities don't need scale
@@ -2080,6 +2150,46 @@ public class DesignerPanel extends JPanel {
         }
     }
 
+    // --- Path property handlers ---
+
+    private void applyPathSubdivisionsChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.PATH || sel.getBezierPath() == null) return;
+        int subdivs = (int) spnPathSubdivisions.getValue();
+        app.enqueue(() -> {
+            sel.getBezierPath().setSubdivisions(subdivs);
+            app.rebuildPathVisual(sel);
+            app.markDocumentDirty();
+            return null;
+        });
+    }
+
+    private void applyPathClosedChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.PATH || sel.getBezierPath() == null) return;
+        boolean closed = chkPathClosed.isSelected();
+        app.enqueue(() -> {
+            sel.getBezierPath().setClosed(closed);
+            app.rebuildPathVisual(sel);
+            app.markDocumentDirty();
+            return null;
+        });
+    }
+
+    private void autoSmoothPath() {
+        if (app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.PATH || sel.getBezierPath() == null) return;
+        app.enqueue(() -> {
+            sel.getBezierPath().autoSmoothAll();
+            app.rebuildPathVisual(sel);
+            app.markDocumentDirty();
+            return null;
+        });
+    }
+
     private void applyMaterialChange() {
         if (updatingProperties || app == null) return;
         DesignerEntity sel = app.getSelectionManager().getSelected();
@@ -2359,6 +2469,7 @@ public class DesignerPanel extends JPanel {
             case "rotate":    drawToolbarRotate(g);    break;
             case "orbit":     drawToolbarOrbit(g);     break;
             case "pan":       drawToolbarPan(g);       break;
+            case "path":      drawToolbarPath(g);      break;
         }
         g.dispose();
         return new ImageIcon(img);
@@ -2547,6 +2658,19 @@ public class DesignerPanel extends JPanel {
         g.draw(new Line2D.Float(4, 11, 2, 9));
     }
 
+    /** Path: S-curve with two dots at endpoints */
+    private static void drawToolbarPath(Graphics2D g) {
+        g.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        // S-curve Bezier path
+        GeneralPath curve = new GeneralPath();
+        curve.moveTo(3, 16);
+        curve.curveTo(3, 8, 17, 12, 17, 4);
+        g.draw(curve);
+        // Endpoint dots
+        g.fill(new Ellipse2D.Float(1.5f, 14.5f, 3, 3));
+        g.fill(new Ellipse2D.Float(15.5f, 2.5f, 3, 3));
+    }
+
     /**
      * Custom tree cell renderer that draws elegant white icons for each entity type.
      */
@@ -2612,6 +2736,9 @@ public class DesignerPanel extends JPanel {
                     break;
                 case SECTION:
                     drawSection(g);
+                    break;
+                case PATH:
+                    drawPath(g);
                     break;
             }
             g.dispose();
@@ -2756,6 +2883,17 @@ public class DesignerPanel extends JPanel {
             g.draw(folder);
             // folder tab top
             g.draw(new Line2D.Float(2, 4, 7, 4));
+        }
+
+        /** Path: small S-curve with endpoint dots */
+        private static void drawPath(Graphics2D g) {
+            g.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            GeneralPath curve = new GeneralPath();
+            curve.moveTo(2, 13);
+            curve.curveTo(2, 7, 14, 9, 14, 3);
+            g.draw(curve);
+            g.fill(new Ellipse2D.Float(1, 12, 2.5f, 2.5f));
+            g.fill(new Ellipse2D.Float(12.5f, 1.5f, 2.5f, 2.5f));
         }
     }
 

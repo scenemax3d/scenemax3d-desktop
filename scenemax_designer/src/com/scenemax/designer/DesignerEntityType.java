@@ -9,5 +9,6 @@ public enum DesignerEntityType {
     MODEL,
     CAMERA,
     CODE,
-    SECTION
+    SECTION,
+    PATH
 }

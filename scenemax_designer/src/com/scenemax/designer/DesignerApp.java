@@ -5,6 +5,7 @@ import com.jme3.input.KeyInput;
 import com.jme3.input.MouseInput;
 import com.jme3.input.controls.*;
 import com.jme3.math.*;
+import com.jme3.renderer.Camera;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
@@ -14,6 +15,7 @@ import com.jme3.scene.shape.Box;
 import com.jme3.scene.shape.Sphere;
 import com.scenemax.designer.gizmo.*;
 import com.scenemax.designer.grid.GridPlane;
+import com.scenemax.designer.path.*;
 import com.scenemax.designer.selection.OutlineEffect;
 import com.scenemax.designer.selection.SelectionManager;
 import com.scenemaxeng.common.types.AssetsMapping;
@@ -105,6 +107,13 @@ public class DesignerApp extends SceneMaxApp {
     private DesignerEntity cameraEntity;
     private CameraGizmoVisual cameraGizmoVisual;
     private CameraPreviewViewport cameraPreview;
+
+    // Path drawing and editing
+    private PathDrawingMode pathDrawingMode;
+    private PathEditGizmo pathEditGizmo;
+    private int pathCounter = 0;
+    // Map from PATH entity ID to its PathVisual node
+    private final java.util.Map<String, PathVisual> pathVisuals = new java.util.HashMap<>();
 
     // Camera animation state (for view preset transitions)
     private boolean animatingCamera = false;
@@ -320,6 +329,28 @@ public class DesignerApp extends SceneMaxApp {
         gizmoManager = new GizmoManager(rootNode, translateGizmo, rotateGizmo);
         selectionManager.addListener(gizmoManager);
 
+        // Path drawing mode and edit gizmo
+        pathDrawingMode = new PathDrawingMode(rootNode, assetManager);
+        pathDrawingMode.setCallback(new PathDrawingMode.PathDrawingCallback() {
+            @Override
+            public void onPathFinished(BezierPath path) {
+                addPathEntity(path);
+                if (panelCallback != null) panelCallback.onSceneChanged();
+            }
+            @Override
+            public void onPathCancelled() {
+                if (panelCallback != null) panelCallback.onSceneChanged();
+            }
+        });
+
+        pathEditGizmo = new PathEditGizmo();
+        pathEditGizmo.setEditCallback(entity -> {
+            if (panelCallback != null) {
+                panelCallback.onSelectionChanged(entity);
+            }
+            markDocumentDirty();
+        });
+
         // ViewCube navigation gizmo (separate viewport, top-right corner)
         viewCubeGizmo = new ViewCubeGizmo();
         viewCubeGizmo.init(assetManager, renderManager, cam);
@@ -335,11 +366,20 @@ public class DesignerApp extends SceneMaxApp {
             markDocumentDirty();
         });
 
-        // Selection listeners -> notify Swing panel
+        // Selection listeners -> notify Swing panel + path edit gizmo
         selectionManager.addListener(entity -> {
             outlineEffect.removeOutline();
             if (entity != null && entity.getSceneNode() != null) {
                 outlineEffect.applyOutline(entity.getSceneNode());
+            }
+            // Handle PATH edit gizmo activation/deactivation
+            if (entity != null && entity.getType() == DesignerEntityType.PATH) {
+                PathVisual visual = pathVisuals.get(entity.getId());
+                pathEditGizmo.attach(entity, visual);
+                // Hide standard gizmos for PATH entities
+                gizmoManager.setMode(gizmoManager.getMode()); // force hide
+            } else {
+                pathEditGizmo.detach();
             }
             if (panelCallback != null) {
                 panelCallback.onSelectionChanged(entity);
@@ -515,6 +555,74 @@ public class DesignerApp extends SceneMaxApp {
         return section;
     }
 
+    // --- Path entity management ---
+
+    /** Enters path drawing mode. Called from toolbar button. */
+    public void enterPathMode() {
+        if (pathDrawingMode != null && !pathDrawingMode.isActive()) {
+            selectionManager.deselect();
+            pathDrawingMode.enter();
+        }
+    }
+
+    /** Exits path drawing mode without creating a path. */
+    public void exitPathMode() {
+        if (pathDrawingMode != null && pathDrawingMode.isActive()) {
+            pathDrawingMode.cancel();
+        }
+    }
+
+    /** Returns whether path drawing mode is active. */
+    public boolean isPathDrawingActive() {
+        return pathDrawingMode != null && pathDrawingMode.isActive();
+    }
+
+    /**
+     * Creates a PATH entity from a finished BezierPath and adds it to the scene.
+     */
+    private void addPathEntity(BezierPath path) {
+        String name = "path_" + (++pathCounter);
+
+        DesignerEntity entity = new DesignerEntity(name, DesignerEntityType.PATH);
+        entity.setBezierPath(path);
+
+        // Create the visual node
+        PathVisual visual = new PathVisual(assetManager);
+        visual.rebuild(path);
+        rootNode.attachChild(visual);
+
+        // Create a wrapper node for the entity (needed for getPosition() etc.)
+        Node pathNode = new Node(name);
+        // Set position to first control point
+        if (path.getPointCount() > 0) {
+            pathNode.setLocalTranslation(path.getPoint(0).getPosition());
+        }
+        entity.setSceneNode(pathNode);
+        rootNode.attachChild(pathNode);
+
+        // Track the visual
+        pathVisuals.put(entity.getId(), visual);
+
+        entities.add(entity);
+        markDocumentDirty();
+        selectionManager.select(entity);
+        notifySceneChanged();
+    }
+
+    /**
+     * Rebuilds the PathVisual for a given PATH entity after editing.
+     */
+    public void rebuildPathVisual(DesignerEntity entity) {
+        if (entity == null || entity.getType() != DesignerEntityType.PATH) return;
+        PathVisual visual = pathVisuals.get(entity.getId());
+        if (visual != null && entity.getBezierPath() != null) {
+            visual.rebuild(entity.getBezierPath());
+        }
+    }
+
+    /** Returns the PathEditGizmo for external access (e.g. from DesignerPanel context menus). */
+    public PathEditGizmo getPathEditGizmo() { return pathEditGizmo; }
+
     /**
      * Moves an entity into a section node as a child at the given index.
      * Removes the entity from its current location first.
@@ -573,6 +681,10 @@ public class DesignerApp extends SceneMaxApp {
         for (DesignerEntity child : list) {
             if (child.getType() == DesignerEntityType.SECTION) {
                 removeSceneNodesRecursive(child.getChildren());
+            }
+            if (child.getType() == DesignerEntityType.PATH) {
+                PathVisual visual = pathVisuals.remove(child.getId());
+                if (visual != null) visual.removeFromParent();
             }
             if (child.getSceneNode() != null) {
                 child.getSceneNode().removeFromParent();
@@ -1106,6 +1218,17 @@ public class DesignerApp extends SceneMaxApp {
 
         outlineEffect.removeOutline();
 
+        // For PATH entities, detach edit gizmo and remove visual
+        if (entity.getType() == DesignerEntityType.PATH) {
+            if (pathEditGizmo != null && pathEditGizmo.isAttached()) {
+                pathEditGizmo.detach();
+            }
+            PathVisual visual = pathVisuals.remove(entity.getId());
+            if (visual != null) {
+                visual.removeFromParent();
+            }
+        }
+
         // For SECTION nodes, recursively remove 3D scene nodes of children
         if (entity.getType() == DesignerEntityType.SECTION) {
             removeSceneNodesRecursive(entity.getChildren());
@@ -1318,6 +1441,12 @@ public class DesignerApp extends SceneMaxApp {
             outlineEffect.removeOutline();
         }
 
+        // Clean up path visuals and editing state
+        if (pathEditGizmo != null) pathEditGizmo.detach();
+        if (pathDrawingMode != null && pathDrawingMode.isActive()) pathDrawingMode.cancel();
+        for (PathVisual pv : pathVisuals.values()) pv.removeFromParent();
+        pathVisuals.clear();
+
         // Clear designer entity tracking
         entities.clear();
         for (PendingEntity pe : pendingEntities) {
@@ -1404,6 +1533,12 @@ public class DesignerApp extends SceneMaxApp {
         if (outlineEffect != null) {
             outlineEffect.removeOutline();
         }
+        // Clean up path state
+        if (pathEditGizmo != null) pathEditGizmo.detach();
+        if (pathDrawingMode != null && pathDrawingMode.isActive()) pathDrawingMode.cancel();
+        for (PathVisual pv : pathVisuals.values()) pv.removeFromParent();
+        pathVisuals.clear();
+
         entities.clear();
         for (PendingEntity pe : pendingEntities) {
             if (pe.loadingGizmo != null) {
@@ -1438,6 +1573,12 @@ public class DesignerApp extends SceneMaxApp {
         if (outlineEffect != null) {
             outlineEffect.removeOutline();
         }
+
+        // Clean up path state
+        if (pathEditGizmo != null) pathEditGizmo.detach();
+        if (pathDrawingMode != null && pathDrawingMode.isActive()) pathDrawingMode.cancel();
+        for (PathVisual pv : pathVisuals.values()) pv.removeFromParent();
+        pathVisuals.clear();
 
         // Clear designer entity tracking
         entities.clear();
@@ -1573,6 +1714,32 @@ public class DesignerApp extends SceneMaxApp {
                         entityTemplate.getId(), entityTemplate.getName(), DesignerEntityType.CODE);
                 codeEntity.setCodeText(entityTemplate.getCodeText());
                 targetList.add(codeEntity);
+                continue;
+            }
+
+            // PATH entities are created directly (no SceneMax code)
+            if (entityTemplate.getType() == DesignerEntityType.PATH) {
+                DesignerEntity pathEntity = new DesignerEntity(
+                        entityTemplate.getId(), entityTemplate.getName(), DesignerEntityType.PATH);
+                pathEntity.setBezierPath(entityTemplate.getBezierPath());
+
+                // Create visual
+                PathVisual visual = new PathVisual(assetManager);
+                if (pathEntity.getBezierPath() != null) {
+                    visual.rebuild(pathEntity.getBezierPath());
+                }
+                rootNode.attachChild(visual);
+                pathVisuals.put(pathEntity.getId(), visual);
+
+                // Create wrapper node
+                Node pathNode = new Node(pathEntity.getName());
+                if (pathEntity.getBezierPath() != null && pathEntity.getBezierPath().getPointCount() > 0) {
+                    pathNode.setLocalTranslation(pathEntity.getBezierPath().getPoint(0).getPosition());
+                }
+                pathEntity.setSceneNode(pathNode);
+                rootNode.attachChild(pathNode);
+
+                targetList.add(pathEntity);
                 continue;
             }
 
@@ -1732,6 +1899,9 @@ public class DesignerApp extends SceneMaxApp {
             } else if (name.startsWith("model_")) {
                 int idx = parseTrailingIndex(name, "model_");
                 if (idx > modelCounter) modelCounter = idx;
+            } else if (name.startsWith("path_")) {
+                int idx = parseTrailingIndex(name, "path_");
+                if (idx > pathCounter) pathCounter = idx;
             }
         }
     }
@@ -1875,6 +2045,9 @@ public class DesignerApp extends SceneMaxApp {
         inputManager.addMapping(ACTION_MIDDLE_CLICK, new MouseButtonTrigger(MouseInput.BUTTON_MIDDLE));
         inputManager.addMapping(ACTION_DELETE, new KeyTrigger(KeyInput.KEY_DELETE));
         inputManager.addMapping("DesignerCtrl", new KeyTrigger(KeyInput.KEY_LCONTROL), new KeyTrigger(KeyInput.KEY_RCONTROL));
+        inputManager.addMapping("DesignerAlt", new KeyTrigger(KeyInput.KEY_LMENU), new KeyTrigger(KeyInput.KEY_RMENU));
+        inputManager.addMapping("DesignerEnter", new KeyTrigger(KeyInput.KEY_RETURN));
+        inputManager.addMapping("DesignerEscape", new KeyTrigger(KeyInput.KEY_ESCAPE));
         inputManager.addMapping("DesignerScrollUp", new MouseAxisTrigger(MouseInput.AXIS_WHEEL, false));
         inputManager.addMapping("DesignerScrollDown", new MouseAxisTrigger(MouseInput.AXIS_WHEEL, true));
 
@@ -1903,8 +2076,18 @@ public class DesignerApp extends SceneMaxApp {
                 if (sel != null && sel.getType() != DesignerEntityType.CAMERA) removeEntity(sel);
             } else if (name.equals("DesignerCtrl")) {
                 ctrlHeld = isPressed;
+            } else if (name.equals("DesignerAlt")) {
+                if (pathEditGizmo != null) pathEditGizmo.setAltHeld(isPressed);
+            } else if (name.equals("DesignerEnter") && isPressed) {
+                if (pathDrawingMode != null && pathDrawingMode.isActive()) {
+                    pathDrawingMode.finish();
+                }
+            } else if (name.equals("DesignerEscape") && isPressed) {
+                if (pathDrawingMode != null && pathDrawingMode.isActive()) {
+                    pathDrawingMode.cancel();
+                }
             }
-        }, ACTION_DELETE, "DesignerCtrl");
+        }, ACTION_DELETE, "DesignerCtrl", "DesignerAlt", "DesignerEnter", "DesignerEscape");
 
         inputManager.addListener((AnalogListener) (name, value, tpf) -> {
             if (name.equals("DesignerScrollUp")) {
@@ -1932,17 +2115,83 @@ public class DesignerApp extends SceneMaxApp {
             return;
         }
 
+        // If path drawing mode is active, delegate to it
+        if (pathDrawingMode != null && pathDrawingMode.isActive()) {
+            pathDrawingMode.onLeftClick(cam, click);
+            return;
+        }
+
+        // Try path edit gizmo drag (control points / tangent handles)
+        if (pathEditGizmo != null && pathEditGizmo.isAttached()) {
+            if (pathEditGizmo.tryStartDrag(cam, click)) {
+                return;
+            }
+        }
+
         // Try gizmo drag
         if (gizmoManager.tryStartDrag(cam, click)) {
             return;
         }
 
-        // Otherwise, try picking an entity
-        DesignerEntity picked = selectionManager.pick(cam, click, entities);
+        // Otherwise, try picking an entity (including PATH entities)
+        DesignerEntity picked = pickEntity(cam, click);
         selectionManager.select(picked);
     }
 
+    /**
+     * Picks an entity at the given screen position, including PATH entities
+     * which use screen-space curve proximity picking.
+     */
+    private DesignerEntity pickEntity(Camera cam, Vector2f screenPos) {
+        // First try standard ray-cast picking for non-PATH entities
+        DesignerEntity picked = selectionManager.pick(cam, screenPos, entities);
+
+        // Also check PATH entities using screen-space proximity to curve
+        float bestDist = picked != null ? PICK_THRESHOLD_PX : Float.MAX_VALUE;
+        DesignerEntity bestPath = picked;
+
+        for (DesignerEntity entity : entities) {
+            if (entity.getType() != DesignerEntityType.PATH) continue;
+            BezierPath path = entity.getBezierPath();
+            if (path == null || path.getPointCount() < 2) continue;
+
+            // Check screen-space distance to control points
+            for (int i = 0; i < path.getPointCount(); i++) {
+                Vector3f cpScreen = cam.getScreenCoordinates(path.getPoint(i).getPosition());
+                float dist = screenPos.distance(new Vector2f(cpScreen.x, cpScreen.y));
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestPath = entity;
+                }
+            }
+
+            // Check screen-space distance to curve segments
+            for (int seg = 0; seg < path.getSegmentCount(); seg++) {
+                for (int s = 0; s <= 20; s++) {
+                    float t = (float) s / 20;
+                    Vector3f worldPt = path.evaluate(seg, t);
+                    Vector3f screenPt = cam.getScreenCoordinates(worldPt);
+                    float dist = screenPos.distance(new Vector2f(screenPt.x, screenPt.y));
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestPath = entity;
+                    }
+                }
+            }
+        }
+
+        if (bestDist < PICK_THRESHOLD_PX) {
+            return bestPath;
+        }
+        return picked;
+    }
+
+    private static final float PICK_THRESHOLD_PX = 18f;
+
     private void onLeftClickReleased() {
+        if (pathEditGizmo != null && pathEditGizmo.isDragging()) {
+            pathEditGizmo.endDrag();
+        }
         if (gizmoManager.isDragging()) {
             gizmoManager.endDrag();
         }
@@ -2107,6 +2356,16 @@ public class DesignerApp extends SceneMaxApp {
                 cameraTarget.addLocal(right).addLocal(up);
                 updateOrbitCamera();
             }
+        }
+
+        // Handle path drawing mode mouse move (rubber-band preview)
+        if (pathDrawingMode != null && pathDrawingMode.isActive()) {
+            pathDrawingMode.onMouseMove(cam, inputManager.getCursorPosition());
+        }
+
+        // Handle path edit gizmo drag
+        if (pathEditGizmo != null && pathEditGizmo.isDragging()) {
+            pathEditGizmo.updateDrag(cam, inputManager.getCursorPosition());
         }
 
         // Handle gizmo drag

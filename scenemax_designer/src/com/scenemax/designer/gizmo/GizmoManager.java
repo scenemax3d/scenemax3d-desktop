@@ -8,6 +8,7 @@ import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
 import com.jme3.scene.Node;
 import com.scenemax.designer.DesignerEntity;
+import com.scenemax.designer.DesignerEntityType;
 import com.scenemax.designer.selection.SelectionManager;
 
 /**
@@ -83,6 +84,12 @@ public class GizmoManager implements SelectionManager.SelectionListener {
     @Override
     public void onSelectionChanged(DesignerEntity newSelection) {
         attachedEntity = newSelection;
+        // PATH entities use their own edit gizmo; hide standard gizmos
+        if (newSelection != null && newSelection.getType() == DesignerEntityType.PATH) {
+            translateGizmo.setCullHint(Node.CullHint.Always);
+            rotateGizmo.setCullHint(Node.CullHint.Always);
+            return;
+        }
         if (newSelection != null && newSelection.getSceneNode() != null) {
             updateGizmoPosition();
             updateGizmoVisibility();

@@ -33,11 +33,11 @@ public class RotateToControllerLight extends SceneMaxBaseController {
 
             float curr=0;
             if(axisNum==1) {
-                curr = (Float)app.getFieldValue(this.targetVar,"rx");
+                curr = ((Number)app.getFieldValue(this.targetVar,"rx")).floatValue();
             } else if(axisNum==2) {
-                curr = (Float)app.getFieldValue(this.targetVar,"ry");
+                curr = ((Number)app.getFieldValue(this.targetVar,"ry")).floatValue();
             } else if(axisNum==3) {
-                curr = (Float)app.getFieldValue(this.targetVar,"rz");
+                curr = ((Number)app.getFieldValue(this.targetVar,"rz")).floatValue();
             }
 
             float delta1 = targetVal-curr;

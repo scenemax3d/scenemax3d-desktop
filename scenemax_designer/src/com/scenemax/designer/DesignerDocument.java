@@ -6,6 +6,9 @@ import com.jme3.scene.Node;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import com.scenemax.designer.path.BezierPath;
+import com.scenemax.designer.path.PathSample;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -247,6 +250,11 @@ public class DesignerDocument {
                 }
                 continue;
             }
+            if (entity.getType() == DesignerEntityType.PATH) {
+                // PATH entities generate a comment with the sampled path data
+                generatePathCode(sb, entity);
+                continue;
+            }
             String code = generateEntityCode(entity);
             if (!code.isEmpty()) {
                 sb.append(code).append("\n");
@@ -304,6 +312,33 @@ public class DesignerDocument {
             default:
                 return "";
         }
+    }
+
+    /**
+     * Generates a SceneMax code line for a PATH entity.
+     * Emits the sampled path as a flat array of numbers:
+     * pathName = [x,y,z,rx,ry,rz, x,y,z,rx,ry,rz, ...]
+     * Each point contributes 6 numbers (position + rotation in degrees).
+     */
+    private static void generatePathCode(StringBuilder sb, DesignerEntity entity) {
+        BezierPath path = entity.getBezierPath();
+        if (path == null || path.getPointCount() < 2) return;
+
+        List<PathSample> samples = path.sample();
+        if (samples.isEmpty()) return;
+
+        sb.append("var ").append(entity.getName()).append(" = [");
+        for (int i = 0; i < samples.size(); i++) {
+            PathSample s = samples.get(i);
+            if (i > 0) sb.append(",");
+            sb.append(round(s.x)).append(",").append(round(s.y)).append(",").append(round(s.z))
+              .append(",").append(round(s.rx)).append(",").append(round(s.ry)).append(",").append(round(s.rz));
+        }
+        sb.append("]\n");
+    }
+
+    private static double round(float v) {
+        return Math.round(v * 1000.0) / 1000.0;
     }
 
     /**
@@ -389,6 +424,11 @@ public class DesignerDocument {
         List<DesignerEntity> entities = new ArrayList<>();
         for (JSONObject json : doc.entityDefs) {
             DesignerEntity entity = DesignerEntity.fromJSON(json);
+            if (entity.getType() == DesignerEntityType.PATH) {
+                // PATH entities are designer-only; add directly without a scene node
+                entities.add(entity);
+                continue;
+            }
             if (entity.getType() == DesignerEntityType.CODE || entity.getType() == DesignerEntityType.SECTION) {
                 // Code and section nodes don't need a scene node;
                 // section children are reconstructed recursively by fromJSON
@@ -421,7 +461,8 @@ public class DesignerDocument {
         for (int i = 0; i < entities.size() && i < jsonArray.length(); i++) {
             DesignerEntity entity = entities.get(i);
             JSONObject json = jsonArray.getJSONObject(i);
-            if (entity.getType() == DesignerEntityType.CODE || entity.getType() == DesignerEntityType.CAMERA) {
+            if (entity.getType() == DesignerEntityType.CODE || entity.getType() == DesignerEntityType.CAMERA
+                    || entity.getType() == DesignerEntityType.PATH) {
                 continue;
             }
             if (entity.getType() == DesignerEntityType.SECTION) {

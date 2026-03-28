@@ -3,6 +3,7 @@ package com.scenemax.designer;
 import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
+import com.scenemax.designer.path.BezierPath;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -65,6 +66,9 @@ public class DesignerEntity {
 
     // Joint mapping for 3D models (comma-separated joint names, empty = disabled)
     private String jointMapping = "";
+
+    // Path data (for PATH type only)
+    private BezierPath bezierPath;
 
     // Children (for SECTION type only)
     private List<DesignerEntity> children = new ArrayList<>();
@@ -151,6 +155,9 @@ public class DesignerEntity {
 
     public String getJointMapping() { return jointMapping; }
     public void setJointMapping(String jointMapping) { this.jointMapping = jointMapping != null ? jointMapping : ""; }
+
+    public BezierPath getBezierPath() { return bezierPath; }
+    public void setBezierPath(BezierPath bezierPath) { this.bezierPath = bezierPath; }
 
     public String getSceneMaxCode() { return sceneMaxCode; }
     public void setSceneMaxCode(String sceneMaxCode) { this.sceneMaxCode = sceneMaxCode; }
@@ -278,6 +285,11 @@ public class DesignerEntity {
                 }
                 json.put("children", childrenArray);
                 break;
+            case PATH:
+                if (bezierPath != null) {
+                    json.put("pathData", bezierPath.toJSON());
+                }
+                break;
         }
 
         return json;
@@ -360,6 +372,11 @@ public class DesignerEntity {
                     for (int i = 0; i < childrenArr.length(); i++) {
                         entity.children.add(fromJSON(childrenArr.getJSONObject(i)));
                     }
+                }
+                break;
+            case PATH:
+                if (json.has("pathData")) {
+                    entity.bezierPath = BezierPath.fromJSON(json.getJSONObject("pathData"));
                 }
                 break;
         }
