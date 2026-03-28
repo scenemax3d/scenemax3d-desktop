@@ -1,0 +1,149 @@
+{
+    "projects": [
+        {
+            "path": "projects/fighting_game_project",
+            "selectedNode": "main",
+            "name": "fighting game project",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game"
+        },
+        {
+            "path": "projects/default_project",
+            "selectedNode": "main",
+            "name": "default project",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\default_project\\scripts\\Jam-Crime-With_pause"
+        },
+        {
+            "path": "projects/test1",
+            "selectedNode": "loading",
+            "name": "test1",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test1\\scripts\\4play"
+        },
+        {
+            "path": "projects/test2",
+            "selectedNode": "main",
+            "name": "test2",
+            "selectedParent": "4play-lesson-3"
+        },
+        {
+            "path": "projects/test3",
+            "selectedNode": "main",
+            "name": "test3",
+            "selectedParent": "4play"
+        },
+        {
+            "path": "projects/test4",
+            "selectedNode": "main",
+            "name": "test4",
+            "selectedParent": "test4"
+        },
+        {
+            "path": "projects/test5",
+            "selectedNode": "main",
+            "name": "test5",
+            "selectedParent": "test5"
+        },
+        {
+            "path": "projects/test6",
+            "selectedNode": "main",
+            "name": "test6",
+            "selectedParent": "test6"
+        },
+        {
+            "path": "projects/test7",
+            "selectedNode": "main",
+            "name": "test7",
+            "selectedParent": "Rally-Desert-Cheese"
+        },
+        {
+            "path": "projects/test8",
+            "selectedNode": "main",
+            "name": "test8",
+            "selectedParent": "4play-lesson-3"
+        },
+        {
+            "path": "projects/test9",
+            "selectedNode": "main",
+            "name": "test9",
+            "selectedParent": "hello world"
+        },
+        {
+            "path": "projects/test10",
+            "selectedNode": "main",
+            "name": "test10",
+            "selectedParent": "hello world"
+        },
+        {
+            "path": "projects/test12",
+            "selectedNode": "main",
+            "name": "test12",
+            "selectedParent": "car race demo"
+        },
+        {
+            "path": "projects/test-add-code",
+            "selectedNode": "main",
+            "name": "test-add-code",
+            "selectedParent": "test-add-code"
+        },
+        {
+            "path": "projects/4play",
+            "selectedNode": "main",
+            "name": "4play",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\4play\\scripts\\4play"
+        },
+        {
+            "path": "projects/test_functions",
+            "selectedNode": "main",
+            "name": "test functions",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_functions\\scripts\\Fighting Game"
+        },
+        {
+            "path": "projects/test_dynamic_sprite_load",
+            "selectedNode": "main",
+            "name": "test dynamic sprite load",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_dynamic_sprite_load\\scripts\\test dynamic sprite load"
+        },
+        {
+            "path": "projects/English_Game",
+            "selectedNode": "main",
+            "name": "English Game",
+            "selectedParent": "English Game"
+        },
+        {
+            "path": "projects/Fighting_Game",
+            "selectedNode": "input",
+            "name": "Fighting Game",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\Fighting_Game\\scripts\\tests"
+        },
+        {
+            "path": "projects/proj1",
+            "selectedNode": "main",
+            "name": "proj1",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\proj1\\scripts\\proj1"
+        },
+        {
+            "path": "projects/proj2",
+            "selectedNode": "main",
+            "name": "proj2",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\proj2\\scripts\\proj2\\level3"
+        },
+        {
+            "path": "projects/test_gemini",
+            "selectedNode": "main",
+            "name": "test gemini",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_gemini\\scripts\\GeminiAI"
+        },
+        {
+            "path": "projects/demo1",
+            "selectedNode": "main",
+            "name": "demo1",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\demo1\\scripts\\demo1"
+        },
+        {
+            "path": "projects/test_designer",
+            "selectedNode": "level1.smdesign",
+            "name": "test designer",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_designer\\scripts\\test designer\\level1"
+        }
+    ],
+    "selectedProject": "fighting game project"
+}
