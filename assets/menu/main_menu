@@ -27,6 +27,27 @@
       {"name": "Open Assets Folder","command": "open_assets_folder"}
 
     ]},
+
+    {"name": "Git", "items": [
+      {"name": "Initialize Repository","command": "git_init"},
+      {"name": "Clone Repository...","command": "git_clone"},
+      {"name": "-"},
+      {"name": "Stage & Commit...","command": "git_commit"},
+      {"name": "Push...","command": "git_push"},
+      {"name": "Pull...","command": "git_pull"},
+      {"name": "Pull (Rebase)...","command": "git_pull_rebase"},
+      {"name": "Fetch","command": "git_fetch"},
+      {"name": "-"},
+      {"name": "Branches...","command": "git_branches"},
+      {"name": "Commit History...","command": "git_log"},
+      {"name": "-"},
+      {"name": "Stash Changes","command": "git_stash"},
+      {"name": "Pop Stash","command": "git_stash_pop"},
+      {"name": "-"},
+      {"name": "Create .gitignore","command": "git_create_gitignore"},
+      {"name": "Configuration...","command": "git_config"}
+    ]},
+
     {"name": "Help", "items": [
       {"name": "Online Help","command": "online_help"},
       {"name": "About","command": "about"}

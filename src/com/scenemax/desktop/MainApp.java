@@ -276,6 +276,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         });
 
         this.mainSplitPane.setResizeWeight(0.065);
+        initGitStatusLabel();
         loadPlugins();
     }
 
@@ -481,6 +482,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     dlg.setVisible(true);
 
                     initUtils();
+
+                // ─── Git commands ───
+                } else if (cmd.startsWith("git_")) {
+                    handleGitCommand(cmd);
                 }
             }
         };
@@ -580,6 +585,13 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         for (int i = 0; i < items.length(); ++i) {
             JSONObject item = items.getJSONObject(i);
             String name = item.getString("name");
+
+            // Separator support
+            if (name.equals("-")) {
+                menu.addSeparator();
+                continue;
+            }
+
             if (item.has("items")) {
                 JSONArray subItems = item.getJSONArray("items");
                 JMenu subMenu = new JMenu(name);
@@ -595,7 +607,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 JMenuItem subItem = new JMenuItem(name);
                 menu.add(subItem);
                 subItem.addActionListener(menuActionListener);
-                String command = item.getString("command");
+                String command = item.has("command") ? item.getString("command") : "";
                 subItem.setActionCommand(command);
                 if (item.has("enabled")) {
                     subItem.setEnabled(item.getBoolean("enabled"));
@@ -604,6 +616,269 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             }
 
         }
+    }
+
+    // ─── Git Integration ───
+
+    private String getActiveProjectGitPath() {
+        SceneMaxProject project = Util.getActiveProject();
+        if (project == null) {
+            JOptionPane.showMessageDialog(this, "No active project. Please create or select a project first.",
+                    "Git", JOptionPane.WARNING_MESSAGE);
+            return null;
+        }
+        return new File(project.path).getAbsolutePath();
+    }
+
+    private boolean checkGitInstalled() {
+        if (!GitManager.isGitInstalled()) {
+            String instructions = GitManager.getGitInstallInstructions();
+            JTextArea textArea = new JTextArea(instructions);
+            textArea.setEditable(false);
+            textArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+            textArea.setLineWrap(true);
+            textArea.setWrapStyleWord(true);
+            JScrollPane scrollPane = new JScrollPane(textArea);
+            scrollPane.setPreferredSize(new Dimension(500, 300));
+            JOptionPane.showMessageDialog(this, scrollPane, "Git Not Found", JOptionPane.WARNING_MESSAGE);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean checkGitRepo(String projectPath) {
+        if (!GitManager.isGitRepository(projectPath)) {
+            int choice = JOptionPane.showConfirmDialog(this,
+                    "This project is not a Git repository.\nWould you like to initialize one now?",
+                    "Not a Git Repository", JOptionPane.YES_NO_OPTION);
+            if (choice == JOptionPane.YES_OPTION) {
+                GitManager.GitResult result = GitManager.initRepository(projectPath);
+                if (result.isSuccess()) {
+                    JOptionPane.showMessageDialog(this, "Git repository initialized successfully!",
+                            "Git Init", JOptionPane.INFORMATION_MESSAGE);
+                    updateGitStatusLabel();
+
+                    // Check if user name/email are configured
+                    if (GitManager.getUserName().isEmpty() || GitManager.getUserEmail().isEmpty()) {
+                        JOptionPane.showMessageDialog(this,
+                                "Git user name and email are not configured.\nOpening configuration...",
+                                "Git Setup", JOptionPane.INFORMATION_MESSAGE);
+                        GitConfigDialog cfgDlg = new GitConfigDialog(this);
+                        cfgDlg.setVisible(true);
+                    }
+                    return true;
+                } else {
+                    JOptionPane.showMessageDialog(this, "Failed to initialize repository:\n" + result.error,
+                            "Git Init Error", JOptionPane.ERROR_MESSAGE);
+                    return false;
+                }
+            }
+            return false;
+        }
+        return true;
+    }
+
+    private void handleGitCommand(String cmd) {
+        if (!checkGitInstalled()) return;
+
+        if (cmd.equals("git_config")) {
+            GitConfigDialog dlg = new GitConfigDialog(this);
+            dlg.setVisible(true);
+            updateGitStatusLabel();
+            return;
+        }
+
+        if (cmd.equals("git_clone")) {
+            GitCloneDialog dlg = new GitCloneDialog(this);
+            dlg.setVisible(true);
+            return;
+        }
+
+        String projectPath = getActiveProjectGitPath();
+        if (projectPath == null) return;
+
+        if (cmd.equals("git_init")) {
+            if (GitManager.isGitRepository(projectPath)) {
+                JOptionPane.showMessageDialog(this, "This project is already a Git repository.",
+                        "Git Init", JOptionPane.INFORMATION_MESSAGE);
+            } else {
+                GitManager.GitResult result = GitManager.initRepository(projectPath);
+                if (result.isSuccess()) {
+                    JOptionPane.showMessageDialog(this, "Git repository initialized!\n" + result.output,
+                            "Git Init", JOptionPane.INFORMATION_MESSAGE);
+                    updateGitStatusLabel();
+
+                    if (GitManager.getUserName().isEmpty() || GitManager.getUserEmail().isEmpty()) {
+                        JOptionPane.showMessageDialog(this,
+                                "Git user name and email are not configured.\nOpening configuration...",
+                                "Git Setup", JOptionPane.INFORMATION_MESSAGE);
+                        GitConfigDialog cfgDlg = new GitConfigDialog(this);
+                        cfgDlg.setVisible(true);
+                    }
+                } else {
+                    JOptionPane.showMessageDialog(this, "Failed to initialize:\n" + result.error,
+                            "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+            return;
+        }
+
+        // All remaining commands require an existing repo
+        if (!checkGitRepo(projectPath)) return;
+
+        switch (cmd) {
+            case "git_commit": {
+                GitCommitDialog dlg = new GitCommitDialog(this, projectPath);
+                dlg.setVisible(true);
+                updateGitStatusLabel();
+                break;
+            }
+            case "git_push": {
+                GitPushPullDialog dlg = new GitPushPullDialog(this, projectPath, GitPushPullDialog.Operation.PUSH);
+                dlg.setVisible(true);
+                updateGitStatusLabel();
+                break;
+            }
+            case "git_pull": {
+                GitPushPullDialog dlg = new GitPushPullDialog(this, projectPath, GitPushPullDialog.Operation.PULL);
+                dlg.setVisible(true);
+                loadScriptsFolder();
+                openLastTreeNode();
+                updateGitStatusLabel();
+                break;
+            }
+            case "git_pull_rebase": {
+                GitPushPullDialog dlg = new GitPushPullDialog(this, projectPath, GitPushPullDialog.Operation.PULL_REBASE);
+                dlg.setVisible(true);
+                loadScriptsFolder();
+                openLastTreeNode();
+                updateGitStatusLabel();
+                break;
+            }
+            case "git_fetch": {
+                GitPushPullDialog dlg = new GitPushPullDialog(this, projectPath, GitPushPullDialog.Operation.FETCH);
+                dlg.setVisible(true);
+                break;
+            }
+            case "git_branches": {
+                GitBranchDialog dlg = new GitBranchDialog(this, projectPath);
+                dlg.setVisible(true);
+                loadScriptsFolder();
+                openLastTreeNode();
+                updateGitStatusLabel();
+                break;
+            }
+            case "git_log": {
+                GitLogDialog dlg = new GitLogDialog(this, projectPath);
+                dlg.setVisible(true);
+                break;
+            }
+            case "git_stash": {
+                GitManager.GitResult result = GitManager.stash(projectPath);
+                if (result.isSuccess()) {
+                    JOptionPane.showMessageDialog(this, "Changes stashed.\n" + result.output,
+                            "Git Stash", JOptionPane.INFORMATION_MESSAGE);
+                    loadScriptsFolder();
+                    openLastTreeNode();
+                } else {
+                    JOptionPane.showMessageDialog(this, "Stash failed:\n" + result.getFullOutput(),
+                            "Git Stash", JOptionPane.ERROR_MESSAGE);
+                }
+                updateGitStatusLabel();
+                break;
+            }
+            case "git_stash_pop": {
+                GitManager.GitResult result = GitManager.stashPop(projectPath);
+                if (result.isSuccess()) {
+                    JOptionPane.showMessageDialog(this, "Stash applied.\n" + result.output,
+                            "Git Stash Pop", JOptionPane.INFORMATION_MESSAGE);
+                    loadScriptsFolder();
+                    openLastTreeNode();
+                } else {
+                    JOptionPane.showMessageDialog(this, "Stash pop failed:\n" + result.getFullOutput(),
+                            "Git Stash Pop", JOptionPane.ERROR_MESSAGE);
+                }
+                updateGitStatusLabel();
+                break;
+            }
+            case "git_create_gitignore": {
+                if (GitManager.hasGitignore(projectPath)) {
+                    int choice = JOptionPane.showConfirmDialog(this,
+                            ".gitignore already exists. Overwrite with default?",
+                            "Create .gitignore", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                    if (choice != JOptionPane.YES_OPTION) return;
+                }
+                try {
+                    GitManager.createDefaultGitignore(projectPath);
+                    JOptionPane.showMessageDialog(this, ".gitignore created successfully.",
+                            "Git", JOptionPane.INFORMATION_MESSAGE);
+                } catch (IOException ex) {
+                    JOptionPane.showMessageDialog(this, "Failed to create .gitignore:\n" + ex.getMessage(),
+                            "Error", JOptionPane.ERROR_MESSAGE);
+                }
+                break;
+            }
+        }
+    }
+
+    private JLabel lblGitBranch;
+
+    private void initGitStatusLabel() {
+        if (lblGitBranch == null) {
+            mainToolbar.addSeparator();
+            lblGitBranch = new JLabel();
+            lblGitBranch.setFont(lblGitBranch.getFont().deriveFont(Font.PLAIN, 11f));
+            lblGitBranch.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            lblGitBranch.setToolTipText("Click to open Git branches");
+            lblGitBranch.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    if (GitManager.isGitInstalled()) {
+                        String path = getActiveProjectGitPath();
+                        if (path != null && GitManager.isGitRepository(path)) {
+                            GitBranchDialog dlg = new GitBranchDialog(MainApp.this, path);
+                            dlg.setVisible(true);
+                            updateGitStatusLabel();
+                            loadScriptsFolder();
+                            openLastTreeNode();
+                        }
+                    }
+                }
+            });
+            mainToolbar.add(lblGitBranch);
+        }
+        updateGitStatusLabel();
+    }
+
+    private void updateGitStatusLabel() {
+        if (lblGitBranch == null) return;
+
+        SwingUtilities.invokeLater(() -> {
+            if (!GitManager.isGitInstalled()) {
+                lblGitBranch.setText("  Git: not installed");
+                lblGitBranch.setForeground(new Color(150, 150, 150));
+                return;
+            }
+
+            String projectPath = null;
+            SceneMaxProject project = Util.getActiveProject();
+            if (project != null) {
+                projectPath = new File(project.path).getAbsolutePath();
+            }
+
+            if (projectPath == null || !GitManager.isGitRepository(projectPath)) {
+                lblGitBranch.setText("  Git: no repo");
+                lblGitBranch.setForeground(new Color(150, 150, 150));
+                return;
+            }
+
+            String branch = GitManager.getCurrentBranch(projectPath);
+            boolean hasChanges = GitManager.hasUncommittedChanges(projectPath);
+            String changedIndicator = hasChanges ? " *" : "";
+
+            lblGitBranch.setText("  \u2387 " + branch + changedIndicator);
+            lblGitBranch.setForeground(hasChanges ? new Color(255, 200, 100) : new Color(100, 200, 100));
+        });
     }
 
     private void initButtonHandlers() {
