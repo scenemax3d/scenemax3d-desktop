@@ -2046,6 +2046,7 @@ public class DesignerApp extends SceneMaxApp {
         inputManager.addMapping(ACTION_DELETE, new KeyTrigger(KeyInput.KEY_DELETE));
         inputManager.addMapping("DesignerCtrl", new KeyTrigger(KeyInput.KEY_LCONTROL), new KeyTrigger(KeyInput.KEY_RCONTROL));
         inputManager.addMapping("DesignerAlt", new KeyTrigger(KeyInput.KEY_LMENU), new KeyTrigger(KeyInput.KEY_RMENU));
+        inputManager.addMapping("DesignerShift", new KeyTrigger(KeyInput.KEY_LSHIFT), new KeyTrigger(KeyInput.KEY_RSHIFT));
         inputManager.addMapping("DesignerEnter", new KeyTrigger(KeyInput.KEY_RETURN));
         inputManager.addMapping("DesignerEscape", new KeyTrigger(KeyInput.KEY_ESCAPE));
         inputManager.addMapping("DesignerScrollUp", new MouseAxisTrigger(MouseInput.AXIS_WHEEL, false));
@@ -2078,6 +2079,8 @@ public class DesignerApp extends SceneMaxApp {
                 ctrlHeld = isPressed;
             } else if (name.equals("DesignerAlt")) {
                 if (pathEditGizmo != null) pathEditGizmo.setAltHeld(isPressed);
+            } else if (name.equals("DesignerShift")) {
+                if (pathEditGizmo != null) pathEditGizmo.setShiftHeld(isPressed);
             } else if (name.equals("DesignerEnter") && isPressed) {
                 if (pathDrawingMode != null && pathDrawingMode.isActive()) {
                     pathDrawingMode.finish();
@@ -2087,7 +2090,7 @@ public class DesignerApp extends SceneMaxApp {
                     pathDrawingMode.cancel();
                 }
             }
-        }, ACTION_DELETE, "DesignerCtrl", "DesignerAlt", "DesignerEnter", "DesignerEscape");
+        }, ACTION_DELETE, "DesignerCtrl", "DesignerAlt", "DesignerShift", "DesignerEnter", "DesignerEscape");
 
         inputManager.addListener((AnalogListener) (name, value, tpf) -> {
             if (name.equals("DesignerScrollUp")) {

@@ -34,6 +34,7 @@ public class PathEditGizmo {
     private Plane dragPlane;
     private Vector3f dragOffset;
     private boolean altHeld = false;
+    private boolean shiftHeld = false;
 
     private enum DragTarget {
         NONE,
@@ -73,6 +74,10 @@ public class PathEditGizmo {
 
     public void setAltHeld(boolean altHeld) {
         this.altHeld = altHeld;
+    }
+
+    public void setShiftHeld(boolean shiftHeld) {
+        this.shiftHeld = shiftHeld;
     }
 
     /**
@@ -119,14 +124,29 @@ public class PathEditGizmo {
         return false;
     }
 
+    private boolean dragVertical = false;
+    private Vector3f dragStartPos;
+
     private void startDrag(Camera cam, Vector2f screenPos, int index, DragTarget target, Vector3f worldPos) {
         dragging = true;
         dragPointIndex = index;
         dragTarget = target;
+        dragStartPos = worldPos.clone();
 
-        // Create drag plane: XZ ground plane through the point's Y position
-        // This gives the most intuitive control for ground-level editing
-        dragPlane = new Plane(Vector3f.UNIT_Y, worldPos.y);
+        if (shiftHeld) {
+            // Shift+drag: vertical (Y-axis) movement
+            // Use a plane facing the camera that passes through the point
+            dragVertical = true;
+            Vector3f camDir = cam.getDirection().clone();
+            camDir.y = 0;
+            camDir.normalizeLocal();
+            // Create a vertical plane perpendicular to the camera's horizontal direction
+            dragPlane = new Plane(camDir, camDir.dot(worldPos));
+        } else {
+            // Normal drag: XZ ground plane at the point's Y position
+            dragVertical = false;
+            dragPlane = new Plane(Vector3f.UNIT_Y, worldPos.y);
+        }
 
         // Compute offset from ray-plane hit to actual point (so dragging feels smooth)
         Vector3f hitPos = raycastPlane(cam, screenPos, dragPlane);
@@ -150,12 +170,22 @@ public class PathEditGizmo {
         if (hitPos == null) return;
 
         Vector3f newPos = hitPos.add(dragOffset);
+
+        // If vertical drag, only change Y, keep original X/Z
+        if (dragVertical) {
+            newPos.x = dragStartPos.x;
+            newPos.z = dragStartPos.z;
+        }
+
         BezierControlPoint cp = path.getPoint(dragPointIndex);
 
         switch (dragTarget) {
             case CONTROL_POINT:
                 // Move the control point; tangent handles move with it
                 cp.setPosition(newPos);
+                if (dragVertical) {
+                    dragStartPos.y = newPos.y; // track for continued dragging
+                }
                 break;
 
             case TANGENT_OUT:
