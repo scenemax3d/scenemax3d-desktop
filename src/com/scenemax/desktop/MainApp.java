@@ -1847,7 +1847,14 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             return;
         }
 
-        Import3DModelPanel importPanel = new Import3DModelPanel(projectPath, tmpDesignerFile, resourcesFolder);
+        String initialSketchfabToken = getParam("sketchfab_api_token", AppConfig.get("sketchfab_api_token"));
+        Import3DModelPanel importPanel = new Import3DModelPanel(
+                projectPath,
+                tmpDesignerFile,
+                resourcesFolder,
+                initialSketchfabToken,
+                token -> AppDB.getInstance().setParam("sketchfab_api_token", token)
+        );
 
         importPanel.setOnCloseCallback(imported -> {
             // Close the import tab
