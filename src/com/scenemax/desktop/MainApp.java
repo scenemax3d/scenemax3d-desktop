@@ -66,6 +66,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private JPanel bottomPanel;
     private JPanel topPanel;
     private JTextField txtNavUrl;
+    private JPanel gitStatusPanel;
     private RSyntaxTextArea textArea;
     private JScrollPane textAreaSP;
     private JTextArea textAreaRTL;
@@ -829,7 +830,6 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     private void initGitStatusLabel() {
         if (lblGitBranch == null) {
-            mainToolbar.addSeparator();
             lblGitBranch = new JLabel();
             lblGitBranch.setFont(lblGitBranch.getFont().deriveFont(Font.PLAIN, 11f));
             lblGitBranch.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -849,7 +849,12 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     }
                 }
             });
-            mainToolbar.add(lblGitBranch);
+            gitStatusPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
+            gitStatusPanel.setOpaque(false);
+            gitStatusPanel.add(lblGitBranch);
+            topPanel.add(gitStatusPanel, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST,
+                    GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW,
+                    GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
         }
         updateGitStatusLabel();
     }
@@ -3308,18 +3313,16 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         bottomPanel.setLayout(new GridLayoutManager(1, 1, new Insets(0, 0, 0, 0), -1, -1));
         mainPanel.add(bottomPanel, BorderLayout.SOUTH);
         topPanel = new JPanel();
-        topPanel.setLayout(new GridLayoutManager(2, 3, new Insets(0, 0, 0, 0), -1, -1));
+        topPanel.setLayout(new GridLayoutManager(1, 4, new Insets(0, 0, 0, 0), -1, -1));
         mainPanel.add(topPanel, BorderLayout.NORTH);
         txtNavUrl = new JTextField();
         txtNavUrl.setText("");
-        topPanel.add(txtNavUrl, new GridConstraints(1, 2, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null, new Dimension(150, -1), null, 0, false));
+        topPanel.add(txtNavUrl, new GridConstraints(0, 3, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null, new Dimension(150, -1), null, 0, false));
         final Spacer spacer1 = new Spacer();
-        topPanel.add(spacer1, new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
-        final Spacer spacer2 = new Spacer();
-        topPanel.add(spacer2, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_VERTICAL, 1, GridConstraints.SIZEPOLICY_WANT_GROW, null, null, null, 0, false));
+        topPanel.add(spacer1, new GridConstraints(0, 1, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
         final JLabel label1 = new JLabel();
         label1.setText("command:");
-        topPanel.add(label1, new GridConstraints(1, 1, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        topPanel.add(label1, new GridConstraints(0, 2, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
         mainSplitPane = new JSplitPane();
         mainSplitPane.setDividerLocation(532);
         mainSplitPane.setOneTouchExpandable(true);
