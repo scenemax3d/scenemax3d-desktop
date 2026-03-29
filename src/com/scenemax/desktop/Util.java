@@ -255,6 +255,8 @@ public class Util {
         file.mkdirs();
         file = new File("projects/"+folderName+"/resources/audio");
         file.mkdirs();
+        file = new File("projects/"+folderName+"/resources/fonts");
+        file.mkdirs();
 
         file = new File("projects/"+folderName+"/scripts");
         file.mkdirs();

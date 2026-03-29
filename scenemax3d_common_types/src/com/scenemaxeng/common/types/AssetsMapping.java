@@ -50,6 +50,9 @@ public class AssetsMapping {
         res = getResourcesFolderIndex(extPath+"/audio/audio-ext.json");
         loadAudioFromJson(res);
 
+        res = getResourcesFolderIndex(extPath+"/fonts/fonts-ext.json");
+        loadFontsFromJson(res);
+
         res = getResourcesFolderIndex(extPath+"/skyboxes/skyboxes-ext.json");
         loadSkyBoxesFromJson(res);
 
