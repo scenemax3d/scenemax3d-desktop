@@ -28,6 +28,10 @@
 
     ]},
 
+    {"name": "Tools", "items": [
+      {"name": "Font Generator...","command": "font_generator"}
+    ]},
+
     {"name": "Git", "items": [
       {"name": "Initialize Repository","command": "git_init"},
       {"name": "Clone Repository...","command": "git_clone"},
