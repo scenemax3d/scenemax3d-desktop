@@ -433,6 +433,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     refreshAssetsMenu();
                 } else if (cmd.equals("add_model")) {
                     openImport3DModelDocument();
+                } else if (cmd.equals("font_generator")) {
+                    FontGeneratorDialog dlg = new FontGeneratorDialog(MainApp.this);
+                    dlg.setLocationRelativeTo(MainApp.this);
+                    dlg.setVisible(true);
 
                 } else if (cmd.equals("open_assets_folder")) {
                     try {

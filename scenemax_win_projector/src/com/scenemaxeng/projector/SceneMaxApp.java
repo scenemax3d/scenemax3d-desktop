@@ -2788,19 +2788,37 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     public void print(String printChannel, String txt, String color, double x, double y, double z, String font, double fontSize, boolean append) {
 
         boolean attachToGui = false;
+        String requestedFontKey = font != null ? font.toLowerCase(Locale.ROOT) : "";
         BitmapText hudText = _printChannels.get(printChannel);
+        String existingFontKey = hudText != null ? hudText.getUserData("fontKey") : null;
+
+        if(hudText!=null && !Objects.equals(existingFontKey, requestedFontKey)) {
+            String existingText = hudText.getText();
+            hudText.removeFromParent();
+            hudText = null;
+            _printChannels.remove(printChannel);
+            if(append && existingText != null) {
+                txt = existingText.concat(txt);
+            }
+            append = false;
+        }
+
         if(hudText==null) {
             attachToGui=true;
 
             BitmapFont fnt=guiFont;
             if(font!=null) {
-                ResourceFont resFont = assetsMapping.getFontsIndex().get(font);
+                ResourceFont resFont = resolveFontResource(font);
                 if(resFont!=null) {
                     fnt=assetManager.loadFont(resFont.path);
+                } else {
+                    logger.warning("Requested font not found in assets mapping: " + font);
                 }
             }
             hudText = new BitmapText(fnt, false);
             hudText.setText("");
+            hudText.setUserData("fontKey", requestedFontKey);
+            hudText.setUserData("renderedSize", fnt.getCharSet().getRenderedSize());
             _printChannels.put(printChannel,hudText);
 
             if(x==-1) {
@@ -2829,7 +2847,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         if(fontSize!=0) {
-            hudText.setSize(guiFont.getCharSet().getRenderedSize()*(float)fontSize);      // font size
+            Integer renderedSize = hudText.getUserData("renderedSize");
+            if(renderedSize==null) {
+                renderedSize = guiFont.getCharSet().getRenderedSize();
+            }
+            hudText.setSize(renderedSize*(float)fontSize);      // font size
         }
 
         if(x!=-1) {
@@ -2845,6 +2867,15 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             guiNode.attachChild(hudText);
         }
 
+    }
+
+    private ResourceFont resolveFontResource(String font) {
+        if(font==null || assetsMapping==null) {
+            return null;
+        }
+
+        String fontKey = font.toLowerCase(Locale.ROOT);
+        return assetsMapping.getFontsIndex().get(fontKey);
     }
 
 
