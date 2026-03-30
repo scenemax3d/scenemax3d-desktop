@@ -14,6 +14,7 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
     private static final ImageIcon ICON_MAIN     = new ImageIcon(ScriptsTreeCellRenderer.class.getResource("/images/3d_script_2_24x24_blue.png"));
     private static final ImageIcon ICON_SCRIPT   = new ImageIcon(ScriptsTreeCellRenderer.class.getResource("/images/3d_script_2_24x24.png"));
     private static final ImageIcon ICON_DESIGNER = createDesignerIcon();
+    private static final ImageIcon ICON_UI_DESIGNER = createUIDesignerIcon();
 
     private JLabel label;
 
@@ -38,6 +39,8 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
         String name = value.toString();
         if (name.endsWith(".smdesign")) {
             label.setIcon(ICON_DESIGNER);
+        } else if (name.endsWith(".smui")) {
+            label.setIcon(ICON_UI_DESIGNER);
         } else if (name.endsWith(".cs")) {
             label.setIcon(ICON_CSHARP);
         } else if (name.equals("main")) {
@@ -75,6 +78,33 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
         int[] rxPoints = {16, 22, 22, 16};
         int[] ryPoints = {8, 2, 14, 20};
         g.drawPolygon(rxPoints, ryPoints, 4);
+
+        g.dispose();
+        return new ImageIcon(img);
+    }
+
+    /**
+     * Creates a 24x24 icon representing a UI designer document (layout grid).
+     */
+    private static ImageIcon createUIDesignerIcon() {
+        BufferedImage img = new BufferedImage(24, 24, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        // Draw a UI layout icon in cyan/teal
+        g.setColor(new Color(0, 188, 212));
+        g.setStroke(new BasicStroke(1.5f));
+
+        // Outer frame
+        g.drawRoundRect(2, 2, 20, 20, 3, 3);
+
+        // Inner layout dividers (horizontal + vertical)
+        g.drawLine(2, 9, 22, 9);   // horizontal divider
+        g.drawLine(12, 9, 12, 22); // vertical divider (bottom half)
+
+        // Small filled rectangle (button representation)
+        g.setColor(new Color(0, 150, 180));
+        g.fillRoundRect(4, 4, 16, 3, 1, 1);
 
         g.dispose();
         return new ImageIcon(img);
