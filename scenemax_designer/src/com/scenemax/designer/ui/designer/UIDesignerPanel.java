@@ -9,6 +9,8 @@ import javax.swing.*;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.tree.*;
 import java.awt.*;
+import java.awt.datatransfer.*;
+import java.awt.dnd.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.*;
@@ -239,6 +241,11 @@ public class UIDesignerPanel extends JPanel {
                 if (e.isPopupTrigger()) showTreeContextMenu(e);
             }
         });
+
+        // Enable drag-and-drop for reparenting widgets in the hierarchy
+        widgetTree.setDragEnabled(true);
+        widgetTree.setDropMode(DropMode.ON_OR_INSERT);
+        widgetTree.setTransferHandler(new WidgetTreeTransferHandler());
 
         JScrollPane treeScroll = new JScrollPane(widgetTree);
         treeScroll.setBorder(BorderFactory.createTitledBorder("Widget Hierarchy"));
@@ -1380,6 +1387,180 @@ public class UIDesignerPanel extends JPanel {
 
         g.dispose();
         return new ImageIcon(img);
+    }
+
+    // ========================================================================
+    // Widget tree drag-and-drop handler
+    // ========================================================================
+
+    /**
+     * TransferHandler that allows reparenting widgets via drag-and-drop
+     * in the widget hierarchy tree. Valid drop targets are LAYER nodes
+     * and PANEL widgets. The drop position among siblings determines z-order.
+     */
+    private class WidgetTreeTransferHandler extends TransferHandler {
+        private final DataFlavor widgetFlavor;
+
+        WidgetTreeTransferHandler() {
+            DataFlavor f;
+            try {
+                f = new DataFlavor(DataFlavor.javaJVMLocalObjectMimeType
+                        + ";class=" + UIWidgetDef.class.getName());
+            } catch (ClassNotFoundException e) {
+                f = DataFlavor.stringFlavor; // fallback, should not happen
+            }
+            widgetFlavor = f;
+        }
+
+        // --- Export (drag source) ---
+
+        @Override
+        public int getSourceActions(JComponent c) {
+            return MOVE;
+        }
+
+        @Override
+        protected Transferable createTransferable(JComponent c) {
+            JTree tree = (JTree) c;
+            DefaultMutableTreeNode node =
+                    (DefaultMutableTreeNode) tree.getLastSelectedPathComponent();
+            if (node == null) return null;
+            Object userObj = node.getUserObject();
+            if (!(userObj instanceof WidgetTreeNodeData)) return null;
+            UIWidgetDef widget = ((WidgetTreeNodeData) userObj).widget;
+            if (widget == null) return null; // don't drag layer/root nodes
+
+            return new Transferable() {
+                @Override
+                public DataFlavor[] getTransferDataFlavors() {
+                    return new DataFlavor[]{widgetFlavor};
+                }
+                @Override
+                public boolean isDataFlavorSupported(DataFlavor flavor) {
+                    return widgetFlavor.equals(flavor);
+                }
+                @Override
+                public Object getTransferData(DataFlavor flavor) {
+                    return widget;
+                }
+            };
+        }
+
+        // --- Import (drop target) ---
+
+        @Override
+        public boolean canImport(TransferSupport support) {
+            if (!support.isDrop()) return false;
+            support.setShowDropLocation(true);
+
+            JTree.DropLocation dl =
+                    (JTree.DropLocation) support.getDropLocation();
+            TreePath destPath = dl.getPath();
+            if (destPath == null) return false;
+
+            DefaultMutableTreeNode destNode =
+                    (DefaultMutableTreeNode) destPath.getLastPathComponent();
+            Object destObj = destNode.getUserObject();
+            if (!(destObj instanceof WidgetTreeNodeData)) return false;
+
+            WidgetTreeNodeData destData = (WidgetTreeNodeData) destObj;
+
+            // Destination must be a LAYER node or a PANEL widget
+            if (destData.widget == null) {
+                // Layer node — always valid as a drop target
+                return true;
+            }
+            if (destData.widget.getType() != UIWidgetType.PANEL) {
+                return false; // only PANELs can contain children
+            }
+
+            // Prevent dropping a widget onto itself or onto one of its descendants
+            try {
+                Transferable t = support.getTransferable();
+                UIWidgetDef draggedWidget = (UIWidgetDef) t.getTransferData(widgetFlavor);
+                if (draggedWidget == destData.widget) return false;
+                if (isDescendant(draggedWidget, destData.widget)) return false;
+            } catch (Exception e) {
+                return false;
+            }
+
+            return true;
+        }
+
+        @Override
+        public boolean importData(TransferSupport support) {
+            if (!canImport(support)) return false;
+
+            UIWidgetDef draggedWidget;
+            try {
+                draggedWidget = (UIWidgetDef) support.getTransferable()
+                        .getTransferData(widgetFlavor);
+            } catch (Exception e) {
+                return false;
+            }
+
+            JTree.DropLocation dl =
+                    (JTree.DropLocation) support.getDropLocation();
+            TreePath destPath = dl.getPath();
+            int childIndex = dl.getChildIndex(); // -1 means "on" the node
+
+            DefaultMutableTreeNode destNode =
+                    (DefaultMutableTreeNode) destPath.getLastPathComponent();
+            WidgetTreeNodeData destData =
+                    (WidgetTreeNodeData) destNode.getUserObject();
+
+            UILayerDef layer = getActiveLayer();
+            if (layer == null) return false;
+
+            // 1. Remove the widget from its current parent
+            removeWidgetFromParent(layer, draggedWidget);
+
+            // 2. Insert into the new parent at the correct position
+            if (destData.widget == null) {
+                // Dropping onto a LAYER node
+                if (childIndex < 0 || childIndex >= layer.getWidgets().size()) {
+                    layer.addWidget(draggedWidget);
+                } else {
+                    layer.getWidgets().add(childIndex, draggedWidget);
+                }
+            } else {
+                // Dropping onto a PANEL widget
+                UIWidgetDef panel = destData.widget;
+                if (childIndex < 0 || childIndex >= panel.getChildren().size()) {
+                    panel.addChild(draggedWidget);
+                } else {
+                    panel.getChildren().add(childIndex, draggedWidget);
+                }
+            }
+
+            markDirty();
+            refreshWidgetTree();
+            canvas.refreshLayout();
+            canvas.setSelectedWidget(draggedWidget);
+            selectWidgetInTree(draggedWidget);
+            showPropertiesForWidget(draggedWidget);
+
+            return true;
+        }
+
+        /**
+         * Checks if 'candidate' is a descendant of 'ancestor'.
+         */
+        private boolean isDescendant(UIWidgetDef ancestor, UIWidgetDef candidate) {
+            for (UIWidgetDef child : ancestor.getChildren()) {
+                if (child == candidate) return true;
+                if (isDescendant(child, candidate)) return true;
+            }
+            return false;
+        }
+
+        /**
+         * Removes a widget from its current parent (layer or panel).
+         */
+        private void removeWidgetFromParent(UILayerDef layer, UIWidgetDef widget) {
+            if (layer.getWidgets().remove(widget)) return;
+            removeWidgetRecursive(layer.getWidgets(), widget);
+        }
     }
 
     // ========================================================================
