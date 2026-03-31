@@ -54,9 +54,15 @@ sourceSets {
     main {
         java {
             srcDirs = ['src']
+            exclude 'test/**'
         }
         resources {
             srcDirs = ['assets']
+        }
+    }
+    test {
+        java {
+            srcDirs = ['src/test/java']
         }
     }
 }
@@ -64,14 +70,11 @@ sourceSets {
 dependencies {
     implementation 'com.intellij:forms_rt:7.0.3'
     implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: [])
-    implementation 'junit:junit:4.12'
+    testImplementation 'junit:junit:4.12'
 
     implementation project(':scenemax3d_common_types')
     implementation project(':scenemax3d_compiler')
-    implementation(
-            [group: 'org.nanohttpd', name: 'nanohttpd', version: '2.3.1'],
-    )
-    implementation 'com.formdev:flatlaf:3.6'
+    implementation files('launch4j/lib/flatlaf.jar')
 
     implementation project(':scenemax_designer')
 }

@@ -3,6 +3,7 @@ package com.scenemax.desktop;
 import com.scenemax.designer.DesignerDocument;
 import com.scenemax.designer.DesignerPanel;
 import com.scenemax.designer.Import3DModelPanel;
+import com.scenemax.designer.ui.designer.UIDesignerPanel;
 import org.apache.commons.io.FileUtils;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 
@@ -27,6 +28,8 @@ public class EditorTabPanel extends JPanel {
         boolean dirty;
         boolean isDesignerTab;
         DesignerPanel designerPanel;
+        boolean isUIDesignerTab;
+        UIDesignerPanel uiDesignerPanel;
 
         public TabData(String filePath, String content) {
             this.filePath = filePath;
@@ -36,6 +39,8 @@ public class EditorTabPanel extends JPanel {
             this.dirty = false;
             this.isDesignerTab = false;
             this.designerPanel = null;
+            this.isUIDesignerTab = false;
+            this.uiDesignerPanel = null;
         }
 
         public String getFileName() {
@@ -109,6 +114,8 @@ public class EditorTabPanel extends JPanel {
             }
             if (tabData.isDesignerTab) {
                 name = "\u25A6 " + name; // square with fill icon prefix
+            } else if (tabData.isUIDesignerTab) {
+                name = "\u25A4 " + name; // UI designer icon prefix
             }
             titleLabel.setText(name);
         }
@@ -227,11 +234,48 @@ public class EditorTabPanel extends JPanel {
         switchToTab(tabData);
     }
 
+    /**
+     * Opens a UI designer document tab with the embedded UI designer panel.
+     */
+    public void openUIDesignerFile(String filePath, UIDesignerPanel panel) {
+        String normalizedPath = new File(filePath).getAbsolutePath();
+
+        // If tab already exists, switch to it
+        if (tabButtons.containsKey(normalizedPath)) {
+            TabData existing = null;
+            for (TabData td : tabs) {
+                if (td.filePath.equals(normalizedPath)) {
+                    existing = td;
+                    break;
+                }
+            }
+            if (existing != null) {
+                switchToTab(existing);
+                return;
+            }
+        }
+
+        // Create new UI designer tab
+        TabData tabData = new TabData(normalizedPath, "");
+        tabData.isUIDesignerTab = true;
+        tabData.uiDesignerPanel = panel;
+        tabs.add(tabData);
+
+        TabButton btn = new TabButton(tabData);
+        btn.updateTitle(); // apply UI designer prefix
+        tabButtons.put(normalizedPath, btn);
+        tabBar.add(btn);
+        tabBar.revalidate();
+        tabBar.repaint();
+
+        switchToTab(tabData);
+    }
+
     public void switchToTab(TabData newTab) {
         if (newTab == activeTab) return;
 
         // Save current state from editor into old tab (only for non-designer tabs)
-        if (activeTab != null && !activeTab.isDesignerTab) {
+        if (activeTab != null && !activeTab.isDesignerTab && !activeTab.isUIDesignerTab) {
             activeTab.content = getCurrentEditorText();
             activeTab.caretPosition = getCurrentCaretPosition();
             activeTab.isRtlMode = textAreaRtlSP.isVisible();
@@ -249,6 +293,12 @@ public class EditorTabPanel extends JPanel {
             if (newTab.designerPanel != null) {
                 newTab.designerPanel.activatePanel();
                 centerContainer.add(newTab.designerPanel, BorderLayout.CENTER);
+            }
+        } else if (newTab.isUIDesignerTab) {
+            // Show the UI designer panel for this tab.
+            if (newTab.uiDesignerPanel != null) {
+                newTab.uiDesignerPanel.activatePanel();
+                centerContainer.add(newTab.uiDesignerPanel, BorderLayout.CENTER);
             }
         } else {
             // Show the code editor
@@ -311,6 +361,11 @@ public class EditorTabPanel extends JPanel {
             if (tabData.designerPanel != null) {
                 tabData.designerPanel.deactivatePanel();
             }
+        } else if (tabData.isUIDesignerTab) {
+            // Handle UI designer tab close — save and deactivate
+            if (tabData.uiDesignerPanel != null) {
+                tabData.uiDesignerPanel.deactivatePanel();
+            }
         } else {
             // Auto-save if dirty
             if (tabData.dirty) {
@@ -362,6 +417,13 @@ public class EditorTabPanel extends JPanel {
     public void saveActiveTab() {
         if (activeTab == null) return;
         if (activeTab.isDesignerTab) return; // designer handles its own saving
+        if (activeTab.isUIDesignerTab) {
+            // Trigger UI designer save
+            if (activeTab.uiDesignerPanel != null) {
+                activeTab.uiDesignerPanel.saveDocument();
+            }
+            return;
+        }
 
         // Sync content from editor
         activeTab.content = getCurrentEditorText();
@@ -431,7 +493,7 @@ public class EditorTabPanel extends JPanel {
     public void refreshTabContent(String filePath, String newContent) {
         String normalizedPath = new File(filePath).getAbsolutePath();
         for (TabData td : tabs) {
-            if (td.filePath.equals(normalizedPath) && !td.isDesignerTab) {
+            if (td.filePath.equals(normalizedPath) && !td.isDesignerTab && !td.isUIDesignerTab) {
                 td.content = newContent;
                 td.dirty = false;
                 if (td == activeTab) {
@@ -493,6 +555,11 @@ public class EditorTabPanel extends JPanel {
                 // Null out so closeTab() doesn't call deactivatePanel() again
                 toClose.designerPanel = null;
                 toClose.isDesignerTab = false;
+            }
+            if (deleting && toClose.isUIDesignerTab && toClose.uiDesignerPanel != null) {
+                toClose.uiDesignerPanel.clearAndDeactivatePanel();
+                toClose.uiDesignerPanel = null;
+                toClose.isUIDesignerTab = false;
             }
             closeTab(toClose);
         }

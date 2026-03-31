@@ -5,6 +5,8 @@ import com.intellij.uiDesigner.core.Spacer;
 import com.scenemax.designer.DesignerDocument;
 import com.scenemax.designer.DesignerPanel;
 import com.scenemax.designer.Import3DModelPanel;
+import com.scenemax.designer.ui.designer.UIDesignerPanel;
+import com.scenemaxeng.common.ui.model.UIDocument;
 import com.scenemaxeng.compiler.ApplyMacroResults;
 import com.scenemaxeng.compiler.MacroFilter;
 import com.scenemaxeng.common.types.*;
@@ -1156,6 +1158,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     createNewScript(filePath);
                 } else if (cmd.equals("new_designer")) {
                     createNewDesignerDocument(filePath);
+                } else if (cmd.equals("new_ui_document")) {
+                    createNewUIDocument(filePath);
                 } else if (cmd.equals("clean_backup_files")) {
                     cleanBackupFiles(new File(filePath));
                 } else if (cmd.equals("rename_folder")) {
@@ -1202,7 +1206,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         // JME app's in-memory state is cleared and stale entities
                         // are not accidentally written to a future file
                         boolean isDesigner = f.getName().toLowerCase().endsWith(".smdesign");
-                        editorTabPanel.closeTabByPath(filePath, isDesigner);
+                        boolean isUIDesigner = f.getName().toLowerCase().endsWith(".smui");
+                        editorTabPanel.closeTabByPath(filePath, isDesigner || isUIDesigner);
 
                         // If this is a .smdesign file, also delete its companion .code, _init.code
                         // and _end.code files and clean up any DB references (open_tabs)
@@ -1243,6 +1248,15 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                                         AppDB.getInstance().setParam("open_tabs~" + currentProject.name, cleaned.toString());
                                     } catch (JSONException ignored) {}
                                 }
+                            }
+                        }
+
+                        // If this is a .smui file, also delete its companion _ui.code file
+                        if (isUIDesigner) {
+                            File uiCodeFile = UIDocument.getCodeFile(f);
+                            if (uiCodeFile.exists()) {
+                                editorTabPanel.closeTabByPath(uiCodeFile.getAbsolutePath());
+                                uiCodeFile.delete();
                             }
                         }
 
@@ -1319,6 +1333,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         addScriptsTreePopupMenuItem("Rename...", "rename", popup, popupActionListener, false, true, file);
         addScriptsTreePopupMenuItem("Create New Script", "new", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Designer Document", "new_designer", popup, popupActionListener, true, false, file);
+        addScriptsTreePopupMenuItem("Create UI Document", "new_ui_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Sub Folder...", "create_sub_folder", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Delete Folder...", "delete_folder", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Rename Folder...", "rename_folder", popup, popupActionListener, true, false, file);
@@ -1782,6 +1797,68 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         openLastTreeNode();
     }
 
+    private void createNewUIDocument(String path) {
+        String docName = (String) JOptionPane.showInputDialog(
+                null,
+                "Type new UI document name",
+                "UI Document Name",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                null,
+                "");
+
+        if (docName == null || docName.trim().length() == 0) {
+            return;
+        }
+
+        docName = docName.trim();
+        if (!docName.endsWith(".smui")) {
+            docName = docName + ".smui";
+        }
+
+        File f = new File(path + "/" + docName);
+        try {
+            UIDocument.writeEmptyFile(f);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return;
+        }
+
+        File parentDir = new File(path);
+        saveSelectedTreeNodePosition(parentDir.getPath(), docName);
+        loadScriptsFolder();
+        openLastTreeNode();
+    }
+
+    private void openUIDesignerDocument(File f) {
+        // If this UI designer file is already open, just switch to its tab
+        if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
+            editorTabPanel.openUIDesignerFile(f.getAbsolutePath(), null);
+            return;
+        }
+
+        // Determine project path for resource loading
+        String projectPath = null;
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject != null) {
+            projectPath = activeProject.path;
+        }
+
+        UIDesignerPanel uiPanel = new UIDesignerPanel(projectPath, f);
+
+        // Notify the tab when the document becomes dirty
+        uiPanel.setOnDirtyCallback(() -> {
+            editorTabPanel.markActiveTabDirty();
+        });
+
+        // Open UI designer tab
+        editorTabPanel.openUIDesignerFile(f.getAbsolutePath(), uiPanel);
+
+        lastSelectedFilePath = f.getAbsolutePath();
+        lastSelectedNodeIsFile = true;
+        btnRunScript.setEnabled(false);
+    }
+
     private void openDesignerDocument(File f) {
         // If this designer file is already open, just switch to its tab
         if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
@@ -1917,7 +1994,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         } catch (Exception ignored) {
         }
 
-        FlatDarkLaf.setup();
+        setupLookAndFeel();
 
         EventQueue.invokeLater(new Runnable() {
             public void run() {
@@ -1942,6 +2019,20 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         });
 
 
+    }
+
+    private static void setupLookAndFeel() {
+        try {
+            FlatDarkLaf.class.getMethod("setup").invoke(null);
+            return;
+        } catch (Exception ignored) {
+        }
+
+        try {
+            UIManager.setLookAndFeel(new FlatDarkLaf());
+        } catch (UnsupportedLookAndFeelException e) {
+            throw new RuntimeException("Failed to initialize FlatDarkLaf", e);
+        }
     }
 
     private void initMacroFolder() {
@@ -2033,6 +2124,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     if (f.isFile()) {
                         if (f.getName().endsWith(".smdesign")) {
                             openDesignerDocument(f);
+                        } else if (f.getName().endsWith(".smui")) {
+                            openUIDesignerDocument(f);
                         } else {
                             openFileInTab(f);
                         }
@@ -2066,6 +2159,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     protected void loadFileToTextEditor(File f) {
         if (f.getName().endsWith(".smdesign")) {
             openDesignerDocument(f);
+        } else if (f.getName().endsWith(".smui")) {
+            openUIDesignerDocument(f);
         } else {
             openFileInTab(f);
         }
@@ -2190,6 +2285,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             if (f.isFile()) {
                 if (f.getName().endsWith(".smdesign")) {
                     openDesignerDocument(f);
+                } else if (f.getName().endsWith(".smui")) {
+                    openUIDesignerDocument(f);
                 } else {
                     openFileInTab(f);
                 }
@@ -2209,8 +2306,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         File[] files = folder.listFiles();
         if (files == null) return;
 
-        // Collect .code files that have a matching .smdesign sibling so we can
-        // skip them during the normal pass and nest them under the .smdesign node instead.
+        // Collect .code files that have a matching .smdesign or .smui sibling so we can
+        // skip them during the normal pass and nest them under the parent node instead.
         Set<String> pairedCodeFiles = new HashSet<>();
         for (final File fileEntry : files) {
             if (fileEntry.isFile() && fileEntry.getName().toLowerCase().endsWith(".smdesign")) {
@@ -2226,6 +2323,14 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 File endFile = new File(folder, baseName + "_end.code");
                 if (endFile.exists() && endFile.isFile()) {
                     pairedCodeFiles.add(endFile.getAbsolutePath());
+                }
+            }
+            // Collect _ui.code files paired with .smui files
+            if (fileEntry.isFile() && fileEntry.getName().toLowerCase().endsWith(".smui")) {
+                String baseName = fileEntry.getName().substring(0, fileEntry.getName().length() - ".smui".length());
+                File uiCodeFile = new File(folder, baseName + "_ui.code");
+                if (uiCodeFile.exists() && uiCodeFile.isFile()) {
+                    pairedCodeFiles.add(uiCodeFile.getAbsolutePath());
                 }
             }
         }
@@ -2272,6 +2377,17 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     ScriptPathNode endSp = new ScriptPathNode(endFile.getAbsolutePath(), endFile.getName());
                     DefaultMutableTreeNode endChild = new DefaultMutableTreeNode(endSp);
                     child.add(endChild);
+                }
+            }
+
+            // Nest the matching _ui.code file as a child of the .smui node
+            if (fileEntry.isFile() && name.endsWith(".smui")) {
+                String baseName = fileEntry.getName().substring(0, fileEntry.getName().length() - ".smui".length());
+                File uiCodeFile = new File(folder, baseName + "_ui.code");
+                if (uiCodeFile.exists() && uiCodeFile.isFile()) {
+                    ScriptPathNode uiCodeSp = new ScriptPathNode(uiCodeFile.getAbsolutePath(), uiCodeFile.getName());
+                    DefaultMutableTreeNode uiCodeChild = new DefaultMutableTreeNode(uiCodeSp);
+                    child.add(uiCodeChild);
                 }
             }
 

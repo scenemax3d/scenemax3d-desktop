@@ -361,6 +361,75 @@ public class SceneMaxLanguageParser implements IParser {
                 return cmd;
             }
 
+            public StatementDef visitUiStatement(SceneMaxParser.UiStatementContext ctx) {
+                SceneMaxParser.Ui_statementContext uiCtx = ctx.ui_statement();
+
+                if (uiCtx.ui_load() != null) {
+                    UILoadCommand cmd = new UILoadCommand();
+                    String quotedName = uiCtx.ui_load().QUOTED_STRING().getText();
+                    cmd.uiName = stripQutes(quotedName);
+                    // Resolve file path relative to the active script directory.
+                    // In the runtime projector, codePath is usually the script folder,
+                    // not the script file itself.
+                    if (codePath != null && !codePath.isEmpty()) {
+                        java.io.File codeLocation = new java.io.File(codePath);
+                        java.io.File codeDir = codeLocation;
+                        if (codeLocation.exists()) {
+                            if (!codeLocation.isDirectory()) {
+                                codeDir = codeLocation.getParentFile();
+                            }
+                        } else if (codeLocation.getName().contains(".")) {
+                            codeDir = codeLocation.getParentFile();
+                        }
+                        if (codeDir != null) {
+                            cmd.filePath = new java.io.File(codeDir, cmd.uiName + ".smui").getAbsolutePath();
+                        }
+                    }
+                    return cmd;
+
+                } else if (uiCtx.ui_show_hide() != null) {
+                    SceneMaxParser.Ui_show_hideContext shCtx = uiCtx.ui_show_hide();
+                    List<SceneMaxParser.Var_declContext> pathParts = shCtx.ui_dot_path().var_decl();
+                    if (pathParts.size() < 2) return null;
+
+                    UIShowHideCommand cmd = new UIShowHideCommand();
+                    cmd.uiName = pathParts.get(0).getText();
+                    cmd.layerName = pathParts.get(1).getText();
+                    cmd.show = shCtx.Show() != null;
+
+                    // Build widget path from remaining segments (index 2+)
+                    StringBuilder widgetPath = new StringBuilder();
+                    for (int i = 2; i < pathParts.size(); i++) {
+                        if (widgetPath.length() > 0) widgetPath.append(".");
+                        widgetPath.append(pathParts.get(i).getText());
+                    }
+                    cmd.widgetPath = widgetPath.toString();
+                    return cmd;
+
+                } else if (uiCtx.ui_set_property() != null) {
+                    SceneMaxParser.Ui_set_propertyContext propCtx = uiCtx.ui_set_property();
+                    List<SceneMaxParser.Var_declContext> pathParts = propCtx.ui_dot_path().var_decl();
+                    if (pathParts.size() < 2) return null;
+
+                    UISetPropertyCommand cmd = new UISetPropertyCommand();
+                    cmd.uiName = pathParts.get(0).getText();
+                    cmd.layerName = pathParts.get(1).getText();
+                    cmd.propertyName = propCtx.ui_property_name().var_decl().getText();
+                    cmd.valueExpr = propCtx.logical_expression();
+
+                    // Build widget path from remaining segments (index 2+)
+                    StringBuilder widgetPath = new StringBuilder();
+                    for (int i = 2; i < pathParts.size(); i++) {
+                        if (widgetPath.length() > 0) widgetPath.append(".");
+                        widgetPath.append(pathParts.get(i).getText());
+                    }
+                    cmd.widgetPath = widgetPath.toString();
+                    return cmd;
+                }
+
+                return null;
+            }
+
             public ActionStatementBase visitWhenStatement(SceneMaxParser.WhenStatementContext ctx) {
                 WhenStateCommand cmd = new WhenStateCommand();
                 cmd.whenExpr.addAll(ctx.when_statement().logical_expression_sequence().logical_expression());
