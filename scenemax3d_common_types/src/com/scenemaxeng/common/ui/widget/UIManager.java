@@ -8,6 +8,8 @@ import com.scenemaxeng.common.ui.model.UIDocument;
 import com.scenemaxeng.common.ui.model.UILayerDef;
 import com.scenemaxeng.common.ui.model.UIRenderMode;
 
+import com.scenemaxeng.common.types.AssetsMapping;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.LinkedHashMap;
@@ -26,6 +28,7 @@ public class UIManager {
     private AssetManager assetManager;
     private Node guiNode;
     private Node rootNode;
+    private AssetsMapping assetsMapping;
 
     private Map<String, LoadedUI> loadedUIs = new LinkedHashMap<>();
 
@@ -39,6 +42,11 @@ public class UIManager {
         this.assetManager = app.getAssetManager();
         this.guiNode = guiNode;
         this.rootNode = rootNode;
+    }
+
+    public UIManager(Application app, Node guiNode, Node rootNode, AssetsMapping assetsMapping) {
+        this(app, guiNode, rootNode);
+        this.assetsMapping = assetsMapping;
     }
 
     public String load(File file) throws IOException {
@@ -66,7 +74,7 @@ public class UIManager {
 
         for (UILayerDef layerDef : doc.getLayers()) {
             UILayerNode layerNode = new UILayerNode(layerDef, assetManager,
-                    canvasWidth, canvasHeight, runtimeWidth, runtimeHeight);
+                    canvasWidth, canvasHeight, runtimeWidth, runtimeHeight, assetsMapping);
             layerNode.buildAndLayout();
 
             if (layerDef.getRenderMode() == UIRenderMode.SCREEN_SPACE) {

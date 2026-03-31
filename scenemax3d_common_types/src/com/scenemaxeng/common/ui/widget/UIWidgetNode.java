@@ -7,6 +7,7 @@ import com.jme3.math.ColorRGBA;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
 import com.jme3.scene.shape.Quad;
+import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.ui.layout.LayoutRect;
 import com.scenemaxeng.common.ui.model.UIWidgetDef;
 import com.scenemaxeng.common.ui.model.UIWidgetType;
@@ -148,7 +149,8 @@ public abstract class UIWidgetNode extends Node {
 
     public static UIWidgetNode create(UIWidgetDef def, AssetManager assetManager,
                                       float designCanvasWidth, float designCanvasHeight,
-                                      float runtimeCanvasWidth, float runtimeCanvasHeight) {
+                                      float runtimeCanvasWidth, float runtimeCanvasHeight,
+                                      AssetsMapping assetsMapping) {
         switch (def.getType()) {
             case PANEL:
                 return new UIPanelNode(def.getName(), def, assetManager,
@@ -158,10 +160,10 @@ public abstract class UIWidgetNode extends Node {
                         designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight);
             case TEXT_VIEW:
                 return new UITextViewNode(def.getName(), def, assetManager,
-                        designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight);
+                        designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight, assetsMapping);
             case IMAGE:
                 return new UIImageNode(def.getName(), def, assetManager,
-                        designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight);
+                        designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight, assetsMapping);
             default:
                 return null;
         }

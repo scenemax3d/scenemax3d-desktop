@@ -427,7 +427,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         terrainHandler.camera = this.getCamera();
 
         // Initialize UI system manager
-        uiManager = new com.scenemaxeng.common.ui.widget.UIManager(this, guiNode, rootNode);
+        uiManager = new com.scenemaxeng.common.ui.widget.UIManager(this, guiNode, rootNode, assetsMapping);
 
         GuiGlobals.initialize(this);
         loadGlassStyle(this);

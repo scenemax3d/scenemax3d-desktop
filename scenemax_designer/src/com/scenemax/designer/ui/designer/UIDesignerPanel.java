@@ -1,5 +1,8 @@
 package com.scenemax.designer.ui.designer;
 
+import com.scenemaxeng.common.types.AssetsMapping;
+import com.scenemaxeng.common.types.ResourceFont;
+import com.scenemaxeng.common.types.ResourceSetup2D;
 import com.scenemaxeng.common.ui.model.*;
 
 import javax.swing.*;
@@ -12,7 +15,7 @@ import java.awt.geom.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
-import java.util.EnumMap;
+import java.util.*;
 import java.util.List;
 import java.util.Map;
 
@@ -68,12 +71,14 @@ public class UIDesignerPanel extends JPanel {
     private JTextField txtText;
     private JSpinner spnFontSize;
     private JComboBox<String> cboTextAlign;
+    private JComboBox<String> cboFont;
 
     private JPanel buttonPropsPanel;
     private JTextField txtButtonText;
 
     private JPanel imagePropsPanel;
     private JTextField txtImagePath;
+    private JComboBox<String> cboSprite;
 
     // Layer selector
     private JComboBox<String> cboLayer;
@@ -84,6 +89,9 @@ public class UIDesignerPanel extends JPanel {
 
     // Callback for notifying the IDE that the file has been modified
     private Runnable onDirtyCallback;
+
+    // Sprite resource mapping for design-time rendering
+    private AssetsMapping assetsMapping;
 
     public UIDesignerPanel(String projectPath, File uiFile) {
         super(new BorderLayout());
@@ -253,6 +261,11 @@ public class UIDesignerPanel extends JPanel {
         propertiesPanel.setBorder(BorderFactory.createTitledBorder("Properties"));
         buildPropertiesForm();
 
+        // Pass sprite resources to canvas for design-time rendering
+        if (assetsMapping != null) {
+            canvas.setSpriteResources(assetsMapping, projectPath);
+        }
+
         JScrollPane propsScroll = new JScrollPane(propertiesPanel);
         rightPanel.add(propsScroll, BorderLayout.CENTER);
 
@@ -414,6 +427,12 @@ public class UIDesignerPanel extends JPanel {
         cboTextAlign.addActionListener(e -> applyTextChange());
         addFormRowTo(textPropsPanel, "Align:", cboTextAlign);
 
+        cboFont = new JComboBox<>();
+        cboFont.addItem("(default)");
+        loadFontNames();
+        cboFont.addActionListener(e -> applyTextChange());
+        addFormRowTo(textPropsPanel, "Font:", cboFont);
+
         textPropsPanel.setVisible(false);
         propertiesPanel.add(textPropsPanel);
 
@@ -435,6 +454,12 @@ public class UIDesignerPanel extends JPanel {
         imagePropsPanel.setLayout(new BoxLayout(imagePropsPanel, BoxLayout.Y_AXIS));
         imagePropsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         imagePropsPanel.setBorder(BorderFactory.createTitledBorder("Image Properties"));
+
+        cboSprite = new JComboBox<>();
+        cboSprite.addItem("(none)");
+        loadSpriteNames();
+        cboSprite.addActionListener(e -> applySpriteChange());
+        addFormRowTo(imagePropsPanel, "Sprite:", cboSprite);
 
         txtImagePath = new JTextField(15);
         txtImagePath.addActionListener(e -> applyImagePathChange());
@@ -834,6 +859,11 @@ public class UIDesignerPanel extends JPanel {
                 txtText.setText(widget.getText());
                 spnFontSize.setValue((double) widget.getFontSize());
                 cboTextAlign.setSelectedItem(widget.getTextAlignment());
+                if (widget.getFontName() != null && !widget.getFontName().isEmpty()) {
+                    cboFont.setSelectedItem(widget.getFontName());
+                } else {
+                    cboFont.setSelectedIndex(0);
+                }
                 break;
             case BUTTON:
                 buttonPropsPanel.setVisible(true);
@@ -842,6 +872,11 @@ public class UIDesignerPanel extends JPanel {
             case IMAGE:
                 imagePropsPanel.setVisible(true);
                 txtImagePath.setText(widget.getImagePath() != null ? widget.getImagePath() : "");
+                if (widget.getSpriteName() != null && !widget.getSpriteName().isEmpty()) {
+                    cboSprite.setSelectedItem(widget.getSpriteName());
+                } else {
+                    cboSprite.setSelectedIndex(0);
+                }
                 break;
         }
 
@@ -1040,6 +1075,14 @@ public class UIDesignerPanel extends JPanel {
         widget.setText(txtText.getText());
         widget.setFontSize(((Number) spnFontSize.getValue()).floatValue());
         widget.setTextAlignment((String) cboTextAlign.getSelectedItem());
+
+        String selectedFont = (String) cboFont.getSelectedItem();
+        if ("(default)".equals(selectedFont)) {
+            widget.setFontName(null);
+        } else {
+            widget.setFontName(selectedFont);
+        }
+
         markDirty();
         canvas.refreshLayout();
     }
@@ -1062,6 +1105,75 @@ public class UIDesignerPanel extends JPanel {
         widget.setImagePath(txtImagePath.getText());
         markDirty();
         canvas.refreshLayout();
+    }
+
+    private void applySpriteChange() {
+        if (updatingProperties) return;
+        UIWidgetDef widget = canvas.getSelectedWidget();
+        if (widget == null || widget.getType() != UIWidgetType.IMAGE) return;
+
+        String selected = (String) cboSprite.getSelectedItem();
+        if ("(none)".equals(selected)) {
+            widget.setSpriteName(null);
+        } else {
+            widget.setSpriteName(selected);
+        }
+        markDirty();
+        canvas.refreshLayout();
+    }
+
+    private void loadSpriteNames() {
+        try {
+            if (projectPath != null) {
+                String resourcesFolder = projectPath + "/resources";
+                File resDir = new File(resourcesFolder);
+                if (resDir.exists()) {
+                    assetsMapping = new AssetsMapping(resourcesFolder);
+                } else {
+                    assetsMapping = new AssetsMapping();
+                }
+            } else {
+                assetsMapping = new AssetsMapping();
+            }
+
+            HashMap<String, ResourceSetup2D> sprites = assetsMapping.getSpriteSheetsIndex();
+            List<String> names = new ArrayList<>(sprites.keySet());
+            Collections.sort(names);
+            for (String name : names) {
+                ResourceSetup2D res = sprites.get(name);
+                cboSprite.addItem(res.name);
+            }
+        } catch (Exception e) {
+            System.err.println("[UIDesigner] Failed to load sprite names: " + e.getMessage());
+        }
+    }
+
+    private void loadFontNames() {
+        try {
+            if (assetsMapping == null) {
+                if (projectPath != null) {
+                    String resourcesFolder = projectPath + "/resources";
+                    File resDir = new File(resourcesFolder);
+                    if (resDir.exists()) {
+                        assetsMapping = new AssetsMapping(resourcesFolder);
+                    } else {
+                        assetsMapping = new AssetsMapping();
+                    }
+                } else {
+                    assetsMapping = new AssetsMapping();
+                }
+            }
+
+            HashMap<String, ResourceFont> fonts = assetsMapping.getFontsIndex();
+            List<String> names = new ArrayList<>(fonts.keySet());
+            Collections.sort(names);
+            for (String name : names) {
+                ResourceFont res = fonts.get(name);
+                cboFont.addItem(res.name);
+            }
+        } catch (Exception e) {
+            System.err.println("[UIDesigner] Failed to load font names: " + e.getMessage());
+        }
     }
 
     // ========================================================================

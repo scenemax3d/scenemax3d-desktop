@@ -87,6 +87,10 @@ public class UISetPropertyController extends SceneMaxBaseController {
                         app.handleRuntimeError("Invalid font size: " + value);
                     }
                     break;
+                case "font":
+                case "fontname":
+                    textView.setFontName(value);
+                    break;
                 default:
                     applyCommonProperty(widget, prop, value);
             }
@@ -113,6 +117,10 @@ public class UISetPropertyController extends SceneMaxBaseController {
                 case "image":
                 case "imagepath":
                     image.setImage(value);
+                    break;
+                case "sprite":
+                case "spritename":
+                    image.setSprite(value);
                     break;
                 default:
                     applyCommonProperty(widget, prop, value);

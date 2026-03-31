@@ -81,10 +81,12 @@ public class UIWidgetDef {
     private String textColor = "#FFFFFFFF";
     private float fontSize = 16;
     private String textAlignment = "left";   // left, center, right
+    private String fontName = null;          // font from AssetsMapping (null = default)
 
     // IMAGE
     private String imagePath = null;
     private String imageScaleMode = "fit";   // fit, fill, stretch
+    private String spriteName = null;        // sprite from AssetsMapping (overrides imagePath when set)
 
     // GUIDELINE
     private boolean guidelineIsHorizontal = true;   // true = horizontal, false = vertical
@@ -196,12 +198,16 @@ public class UIWidgetDef {
     public void setFontSize(float fontSize) { this.fontSize = fontSize; }
     public String getTextAlignment() { return textAlignment; }
     public void setTextAlignment(String alignment) { this.textAlignment = alignment; }
+    public String getFontName() { return fontName; }
+    public void setFontName(String fontName) { this.fontName = fontName; }
 
     // Image properties
     public String getImagePath() { return imagePath; }
     public void setImagePath(String path) { this.imagePath = path; }
     public String getImageScaleMode() { return imageScaleMode; }
     public void setImageScaleMode(String mode) { this.imageScaleMode = mode; }
+    public String getSpriteName() { return spriteName; }
+    public void setSpriteName(String spriteName) { this.spriteName = spriteName; }
 
     // Guideline properties
     public boolean isGuidelineHorizontal() { return guidelineIsHorizontal; }
@@ -319,10 +325,12 @@ public class UIWidgetDef {
                 json.put("textColor", textColor);
                 json.put("fontSize", fontSize);
                 json.put("textAlignment", textAlignment);
+                if (fontName != null) json.put("fontName", fontName);
                 break;
             case IMAGE:
                 if (imagePath != null) json.put("imagePath", imagePath);
                 json.put("imageScaleMode", imageScaleMode);
+                if (spriteName != null) json.put("spriteName", spriteName);
                 break;
             case GUIDELINE:
                 json.put("guidelineIsHorizontal", guidelineIsHorizontal);
@@ -409,10 +417,12 @@ public class UIWidgetDef {
                 def.textColor = json.optString("textColor", "#FFFFFFFF");
                 def.fontSize = (float) json.optDouble("fontSize", 16);
                 def.textAlignment = json.optString("textAlignment", "left");
+                def.fontName = json.optString("fontName", null);
                 break;
             case IMAGE:
                 def.imagePath = json.optString("imagePath", null);
                 def.imageScaleMode = json.optString("imageScaleMode", "fit");
+                def.spriteName = json.optString("spriteName", null);
                 break;
             case GUIDELINE:
                 def.guidelineIsHorizontal = json.optBoolean("guidelineIsHorizontal", true);
