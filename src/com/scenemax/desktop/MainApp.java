@@ -1994,6 +1994,12 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         } catch (Exception ignored) {
         }
 
+        // Embed the window title bar into the menu bar row to save vertical space.
+        // FlatLaf renders its own title bar with icon, title, and window buttons
+        // on the same line as the menu, replacing the native OS title bar.
+        System.setProperty("flatlaf.useWindowDecorations", "true");
+        System.setProperty("flatlaf.menuBarEmbedded", "true");
+
         setupLookAndFeel();
 
         EventQueue.invokeLater(new Runnable() {

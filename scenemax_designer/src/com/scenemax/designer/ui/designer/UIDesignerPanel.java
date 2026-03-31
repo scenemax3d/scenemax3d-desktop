@@ -46,6 +46,7 @@ public class UIDesignerPanel extends JPanel {
     private UIDesignerCanvas canvas;
 
     // Right panel: properties inspector
+    private static final int LABEL_WIDTH = 80;
     private JPanel propertiesPanel;
 
     // Property fields — common
@@ -245,7 +246,7 @@ public class UIDesignerPanel extends JPanel {
 
         // --- Right panel: Properties ---
         JPanel rightPanel = new JPanel(new BorderLayout());
-        rightPanel.setPreferredSize(new Dimension(260, 0));
+        rightPanel.setPreferredSize(new Dimension(290, 0));
 
         propertiesPanel = new JPanel();
         propertiesPanel.setLayout(new BoxLayout(propertiesPanel, BoxLayout.Y_AXIS));
@@ -337,11 +338,17 @@ public class UIDesignerPanel extends JPanel {
         chkCenterHorizontal.addActionListener(e -> applyCenterChange());
         chkCenterVertical.addActionListener(e -> applyCenterChange());
 
-        JPanel centerRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        JPanel centerRow = new JPanel(new GridBagLayout());
         centerRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        centerRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-        centerRow.add(chkCenterHorizontal);
-        centerRow.add(chkCenterVertical);
+        centerRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
+        centerRow.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        GridBagConstraints cgbc = new GridBagConstraints();
+        cgbc.fill = GridBagConstraints.HORIZONTAL;
+        cgbc.gridy = 0; cgbc.insets = new Insets(0, 0, 0, 4);
+        cgbc.gridx = 0; cgbc.weightx = 1.0;
+        centerRow.add(chkCenterHorizontal, cgbc);
+        cgbc.gridx = 1;
+        centerRow.add(chkCenterVertical, cgbc);
         propertiesPanel.add(centerRow);
 
         // Margins
@@ -367,7 +374,7 @@ public class UIDesignerPanel extends JPanel {
 
         spnHBias = new JSpinner(new SpinnerNumberModel(0.5, 0.0, 1.0, 0.05));
         spnVBias = new JSpinner(new SpinnerNumberModel(0.5, 0.0, 1.0, 0.05));
-        addFormRow("Horizontal:", spnHBias, "Vertical:", spnVBias);
+        addFormRow("H:", spnHBias, "V:", spnVBias);
 
         spnHBias.addChangeListener(e -> applyBiasChange());
         spnVBias.addChangeListener(e -> applyBiasChange());
@@ -1065,42 +1072,85 @@ public class UIDesignerPanel extends JPanel {
         JLabel lbl = new JLabel(text);
         lbl.setAlignmentX(Component.LEFT_ALIGNMENT);
         lbl.setFont(lbl.getFont().deriveFont(Font.BOLD));
+        lbl.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 0));
         return lbl;
     }
 
     private void addFormRow(String label, JComponent field) {
-        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        JPanel row = new JPanel(new BorderLayout(4, 0));
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-        row.add(new JLabel(label));
-        field.setPreferredSize(new Dimension(140, 24));
-        row.add(field);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
+        JLabel lbl = new JLabel(label);
+        lbl.setPreferredSize(new Dimension(LABEL_WIDTH, 24));
+        row.add(lbl, BorderLayout.WEST);
+        field.setPreferredSize(new Dimension(0, 24));
+        row.add(field, BorderLayout.CENTER);
+        row.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
         propertiesPanel.add(row);
     }
 
     private void addFormRow(String l1, JComponent f1, String l2, JComponent f2) {
-        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
+        JPanel row = new JPanel(new GridBagLayout());
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-        Dimension spinSize = new Dimension(65, 24);
-        f1.setPreferredSize(spinSize);
-        f2.setPreferredSize(spinSize);
-        row.add(new JLabel(l1));
-        row.add(f1);
-        row.add(new JLabel(l2));
-        row.add(f2);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
+        row.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(0, 0, 0, 2);
+        gbc.gridy = 0;
+
+        gbc.gridx = 0; gbc.weightx = 0;
+        JLabel lbl1 = new JLabel(l1);
+        lbl1.setPreferredSize(new Dimension(24, 24));
+        row.add(lbl1, gbc);
+
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        f1.setPreferredSize(new Dimension(0, 24));
+        row.add(f1, gbc);
+
+        gbc.gridx = 2; gbc.weightx = 0;
+        gbc.insets = new Insets(0, 6, 0, 2);
+        JLabel lbl2 = new JLabel(l2);
+        lbl2.setPreferredSize(new Dimension(24, 24));
+        row.add(lbl2, gbc);
+
+        gbc.gridx = 3; gbc.weightx = 1.0;
+        gbc.insets = new Insets(0, 0, 0, 0);
+        f2.setPreferredSize(new Dimension(0, 24));
+        row.add(f2, gbc);
+
         propertiesPanel.add(row);
     }
 
     private void addConstraintRow(String label, JComboBox<String> targetCombo, JComboBox<String> sideCombo) {
-        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
+        JPanel row = new JPanel(new GridBagLayout());
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-        targetCombo.setPreferredSize(new Dimension(100, 24));
-        sideCombo.setPreferredSize(new Dimension(60, 24));
-        row.add(new JLabel(label));
-        row.add(targetCombo);
-        row.add(sideCombo);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
+        row.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(0, 0, 0, 4);
+        gbc.gridy = 0;
+
+        // Label (fixed width)
+        gbc.gridx = 0; gbc.weightx = 0;
+        JLabel lbl = new JLabel(label);
+        lbl.setPreferredSize(new Dimension(56, 24));
+        row.add(lbl, gbc);
+
+        // Target combo (fills remaining space)
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        targetCombo.setPreferredSize(new Dimension(0, 24));
+        row.add(targetCombo, gbc);
+
+        // Side combo (fixed width, enough for "bottom")
+        gbc.gridx = 2; gbc.weightx = 0;
+        gbc.insets = new Insets(0, 0, 0, 0);
+        sideCombo.setPreferredSize(new Dimension(72, 24));
+        row.add(sideCombo, gbc);
+
         propertiesPanel.add(row);
 
         targetCombo.addActionListener(e -> applyConstraintChange());
@@ -1108,12 +1158,15 @@ public class UIDesignerPanel extends JPanel {
     }
 
     private void addFormRowTo(JPanel panel, String label, JComponent field) {
-        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        JPanel row = new JPanel(new BorderLayout(4, 0));
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-        row.add(new JLabel(label));
-        field.setPreferredSize(new Dimension(140, 24));
-        row.add(field);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
+        JLabel lbl = new JLabel(label);
+        lbl.setPreferredSize(new Dimension(LABEL_WIDTH, 24));
+        row.add(lbl, BorderLayout.WEST);
+        field.setPreferredSize(new Dimension(0, 24));
+        row.add(field, BorderLayout.CENTER);
+        row.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
         panel.add(row);
     }
 
