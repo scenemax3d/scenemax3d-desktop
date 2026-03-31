@@ -12,7 +12,6 @@ import com.scenemaxeng.common.ui.model.UIWidgetDef;
  * Panels can contain child widgets.
  */
 public class UIPanelNode extends UIWidgetNode {
-
     public UIPanelNode(String name, UIWidgetDef widgetDef, AssetManager assetManager,
                        float designCanvasWidth, float designCanvasHeight,
                        float runtimeCanvasWidth, float runtimeCanvasHeight) {
@@ -23,29 +22,19 @@ public class UIPanelNode extends UIWidgetNode {
     public void createVisual() {
         Quad quad = new Quad(widgetDef.getWidth(), widgetDef.getHeight());
         backgroundGeom = new Geometry(getName() + "_bg", quad);
-
-        if (widgetDef.getBackgroundImage() != null && !widgetDef.getBackgroundImage().isEmpty()) {
-            backgroundGeom.setMaterial(createTextureMaterial(widgetDef.getBackgroundImage()));
-        } else {
-            ColorRGBA color = parseColor(widgetDef.getBackgroundColor());
-            backgroundGeom.setMaterial(createColorMaterial(color));
-        }
-
+        backgroundGeom.setMaterial(createColorMaterial(new ColorRGBA(0f, 0f, 0f, 0f)));
         backgroundGeom.setQueueBucket(RenderQueue.Bucket.Gui);
         attachChild(backgroundGeom);
     }
 
     public void setBackgroundColor(String hexColor) {
         widgetDef.setBackgroundColor(hexColor);
-        if (backgroundGeom != null) {
-            backgroundGeom.setMaterial(createColorMaterial(parseColor(hexColor)));
-        }
     }
 
     public void setBackgroundImage(String imagePath) {
         widgetDef.setBackgroundImage(imagePath);
-        if (backgroundGeom != null && imagePath != null && !imagePath.isEmpty()) {
-            backgroundGeom.setMaterial(createTextureMaterial(imagePath));
+        if (backgroundGeom != null) {
+            backgroundGeom.setMaterial(createColorMaterial(new ColorRGBA(0f, 0f, 0f, 0f)));
         }
     }
 }

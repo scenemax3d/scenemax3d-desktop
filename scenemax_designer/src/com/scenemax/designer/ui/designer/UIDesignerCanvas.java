@@ -394,8 +394,8 @@ public class UIDesignerCanvas extends JPanel {
             }
         }
 
-        if (!spriteDrawn) {
-            // Fill
+        if (!spriteDrawn && widget.getType() != UIWidgetType.PANEL) {
+            // Panels are container-only in the designer: show the outline, not a filled background.
             g2.setColor(bgColor);
             g2.fill(new RoundRectangle2D.Float(x, y, w, h, 4, 4));
         }

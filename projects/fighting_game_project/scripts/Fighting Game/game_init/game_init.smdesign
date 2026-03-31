@@ -157,7 +157,7 @@
         3
       ],
       "type": "MODEL",
-      "sceneMaxCode": "model_4 => dynamic boss: pos (0,0.0,0) async",
+      "sceneMaxCode": "boss => boss: pos (9.0,0.0,35.0) async",
       "staticModel": false,
       "name": "boss",
       "vehicleModel": false,
@@ -1024,15 +1024,15 @@
   },
   "camera": {
     "rotation": [
-      -0.027293358,
-      0.9693792,
-      -0.20844048,
-      -0.12693125
+      0,
+      1,
+      -0,
+      -4.371139E-8
     ],
     "position": [
-      15.865345,
-      12.023137,
-      60.76598
+      0,
+      0,
+      10
     ]
   },
   "version": 1
