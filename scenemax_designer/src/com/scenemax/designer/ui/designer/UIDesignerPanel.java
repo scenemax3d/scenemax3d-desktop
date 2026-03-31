@@ -88,6 +88,9 @@ public class UIDesignerPanel extends JPanel {
     // Callback for notifying the IDE that the file has been modified
     private Runnable onDirtyCallback;
 
+    // Sprite resource mapping for design-time rendering
+    private AssetsMapping assetsMapping;
+
     public UIDesignerPanel(String projectPath, File uiFile) {
         super(new BorderLayout());
         this.projectPath = projectPath;
@@ -255,6 +258,11 @@ public class UIDesignerPanel extends JPanel {
         propertiesPanel.setLayout(new BoxLayout(propertiesPanel, BoxLayout.Y_AXIS));
         propertiesPanel.setBorder(BorderFactory.createTitledBorder("Properties"));
         buildPropertiesForm();
+
+        // Pass sprite resources to canvas for design-time rendering
+        if (assetsMapping != null) {
+            canvas.setSpriteResources(assetsMapping, projectPath);
+        }
 
         JScrollPane propsScroll = new JScrollPane(propertiesPanel);
         rightPanel.add(propsScroll, BorderLayout.CENTER);
@@ -1095,20 +1103,19 @@ public class UIDesignerPanel extends JPanel {
 
     private void loadSpriteNames() {
         try {
-            AssetsMapping mapping;
             if (projectPath != null) {
                 String resourcesFolder = projectPath + "/resources";
                 File resDir = new File(resourcesFolder);
                 if (resDir.exists()) {
-                    mapping = new AssetsMapping(resourcesFolder);
+                    assetsMapping = new AssetsMapping(resourcesFolder);
                 } else {
-                    mapping = new AssetsMapping();
+                    assetsMapping = new AssetsMapping();
                 }
             } else {
-                mapping = new AssetsMapping();
+                assetsMapping = new AssetsMapping();
             }
 
-            HashMap<String, ResourceSetup2D> sprites = mapping.getSpriteSheetsIndex();
+            HashMap<String, ResourceSetup2D> sprites = assetsMapping.getSpriteSheetsIndex();
             List<String> names = new ArrayList<>(sprites.keySet());
             Collections.sort(names);
             for (String name : names) {

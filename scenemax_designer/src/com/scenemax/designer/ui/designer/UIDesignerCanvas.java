@@ -1,15 +1,21 @@
 package com.scenemax.designer.ui.designer;
 
+import com.scenemaxeng.common.types.AssetsMapping;
+import com.scenemaxeng.common.types.ResourceSetup2D;
 import com.scenemaxeng.common.ui.layout.ConstraintLayoutEngine;
 import com.scenemaxeng.common.ui.layout.LayoutRect;
 import com.scenemaxeng.common.ui.model.*;
 
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.geom.Line2D;
 import java.awt.geom.Rectangle2D;
 import java.awt.geom.RoundRectangle2D;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,6 +62,11 @@ public class UIDesignerCanvas extends JPanel {
     private static final Color COLOR_CONSTRAINT_LINE = new Color(255, 100, 100, 160);
     private static final Color COLOR_WIDGET_LABEL = new Color(255, 255, 255, 200);
     private static final Color COLOR_GRID = new Color(55, 55, 58);
+
+    // Sprite rendering support
+    private AssetsMapping assetsMapping;
+    private String projectPath;
+    private Map<String, BufferedImage> spriteImageCache = new HashMap<>();
 
     // Listener for selection changes
     private SelectionListener selectionListener;
@@ -182,6 +193,12 @@ public class UIDesignerCanvas extends JPanel {
 
     public void setSelectionListener(SelectionListener listener) {
         this.selectionListener = listener;
+    }
+
+    public void setSpriteResources(AssetsMapping assetsMapping, String projectPath) {
+        this.assetsMapping = assetsMapping;
+        this.projectPath = projectPath;
+        this.spriteImageCache.clear();
     }
 
     /**
@@ -358,9 +375,30 @@ public class UIDesignerCanvas extends JPanel {
             default:      bgColor = COLOR_PANEL;  break;
         }
 
-        // Fill
-        g2.setColor(bgColor);
-        g2.fill(new RoundRectangle2D.Float(x, y, w, h, 4, 4));
+        // Try to draw sprite image for IMAGE widgets
+        boolean spriteDrawn = false;
+        if (widget.getType() == UIWidgetType.IMAGE && widget.getSpriteName() != null && !widget.getSpriteName().isEmpty()) {
+            BufferedImage spriteImg = loadSpriteImage(widget.getSpriteName());
+            if (spriteImg != null) {
+                // Draw first frame of the sprite sheet
+                ResourceSetup2D res = assetsMapping.getSpriteSheetsIndex().get(widget.getSpriteName().toLowerCase());
+                if (res != null && res.cols > 0 && res.rows > 0) {
+                    int frameW = spriteImg.getWidth() / res.cols;
+                    int frameH = spriteImg.getHeight() / res.rows;
+                    g2.drawImage(spriteImg,
+                            (int) x, (int) y, (int) (x + w), (int) (y + h),
+                            0, 0, frameW, frameH,
+                            null);
+                    spriteDrawn = true;
+                }
+            }
+        }
+
+        if (!spriteDrawn) {
+            // Fill
+            g2.setColor(bgColor);
+            g2.fill(new RoundRectangle2D.Float(x, y, w, h, 4, 4));
+        }
 
         // Border
         g2.setColor(bgColor.brighter());
@@ -549,5 +587,46 @@ public class UIDesignerCanvas extends JPanel {
             }
         }
         return ellipsis;
+    }
+
+    private BufferedImage loadSpriteImage(String spriteName) {
+        if (assetsMapping == null) return null;
+
+        if (spriteImageCache.containsKey(spriteName)) {
+            return spriteImageCache.get(spriteName);
+        }
+
+        ResourceSetup2D res = assetsMapping.getSpriteSheetsIndex().get(spriteName.toLowerCase());
+        if (res == null) {
+            spriteImageCache.put(spriteName, null);
+            return null;
+        }
+
+        // Try project resources first, then default resources
+        String[] searchPaths;
+        if (projectPath != null) {
+            searchPaths = new String[]{
+                    projectPath + "/resources/" + res.path,
+                    "./resources/" + res.path
+            };
+        } else {
+            searchPaths = new String[]{"./resources/" + res.path};
+        }
+
+        for (String path : searchPaths) {
+            File file = new File(path);
+            if (file.exists()) {
+                try {
+                    BufferedImage img = ImageIO.read(file);
+                    spriteImageCache.put(spriteName, img);
+                    return img;
+                } catch (Exception e) {
+                    System.err.println("[UIDesignerCanvas] Failed to load sprite image: " + path);
+                }
+            }
+        }
+
+        spriteImageCache.put(spriteName, null);
+        return null;
     }
 }
