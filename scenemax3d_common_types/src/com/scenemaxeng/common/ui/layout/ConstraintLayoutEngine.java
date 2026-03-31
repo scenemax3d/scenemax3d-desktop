@@ -246,8 +246,12 @@ public class ConstraintLayoutEngine {
         boolean hasStart = startConstraint != null;
         boolean hasEnd = endConstraint != null;
 
-        float startMargin = hasStart ? startConstraint.getMargin() : 0;
-        float endMargin = hasEnd ? endConstraint.getMargin() : 0;
+        // Widget-level margins are always applied (on top of any constraint margins)
+        float widgetStartMargin = horizontal ? widget.getMarginLeft() : widget.getMarginTop();
+        float widgetEndMargin = horizontal ? widget.getMarginRight() : widget.getMarginBottom();
+
+        float startMargin = (hasStart ? startConstraint.getMargin() : 0) + widgetStartMargin;
+        float endMargin = (hasEnd ? endConstraint.getMargin() : 0) + widgetEndMargin;
 
         float size;
         float position;
@@ -284,8 +288,8 @@ public class ConstraintLayoutEngine {
             size = (sizeMode == UISizeMode.FIXED) ? fixedSize : getPreferredSize(widget, horizontal);
             position = endAnchor - endMargin - size;
         } else {
-            // Unconstrained — position at origin
-            position = 0;
+            // Unconstrained — position at origin + widget margin
+            position = widgetStartMargin;
             size = (sizeMode == UISizeMode.FIXED) ? fixedSize : getPreferredSize(widget, horizontal);
         }
 

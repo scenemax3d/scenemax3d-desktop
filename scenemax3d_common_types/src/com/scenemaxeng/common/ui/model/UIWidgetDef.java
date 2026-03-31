@@ -49,6 +49,12 @@ public class UIWidgetDef {
     private float paddingTop = 0;
     private float paddingBottom = 0;
 
+    // --- Margins (outer spacing, always applied regardless of constraints) ---
+    private float marginLeft = 0;
+    private float marginRight = 0;
+    private float marginTop = 0;
+    private float marginBottom = 0;
+
     // --- Visibility ---
     private boolean visible = true;
 
@@ -153,6 +159,16 @@ public class UIWidgetDef {
     public void setPaddingTop(float paddingTop) { this.paddingTop = paddingTop; }
     public float getPaddingBottom() { return paddingBottom; }
     public void setPaddingBottom(float paddingBottom) { this.paddingBottom = paddingBottom; }
+
+    // Margins
+    public float getMarginLeft() { return marginLeft; }
+    public void setMarginLeft(float marginLeft) { this.marginLeft = marginLeft; }
+    public float getMarginRight() { return marginRight; }
+    public void setMarginRight(float marginRight) { this.marginRight = marginRight; }
+    public float getMarginTop() { return marginTop; }
+    public void setMarginTop(float marginTop) { this.marginTop = marginTop; }
+    public float getMarginBottom() { return marginBottom; }
+    public void setMarginBottom(float marginBottom) { this.marginBottom = marginBottom; }
 
     // Visibility
     public boolean isVisible() { return visible; }
@@ -292,6 +308,12 @@ public class UIWidgetDef {
         if (paddingTop != 0) json.put("paddingTop", paddingTop);
         if (paddingBottom != 0) json.put("paddingBottom", paddingBottom);
 
+        // Margins
+        if (marginLeft != 0) json.put("marginLeft", marginLeft);
+        if (marginRight != 0) json.put("marginRight", marginRight);
+        if (marginTop != 0) json.put("marginTop", marginTop);
+        if (marginBottom != 0) json.put("marginBottom", marginBottom);
+
         // Visibility
         json.put("visible", visible);
 
@@ -381,6 +403,12 @@ public class UIWidgetDef {
         def.paddingRight = (float) json.optDouble("paddingRight", 0);
         def.paddingTop = (float) json.optDouble("paddingTop", 0);
         def.paddingBottom = (float) json.optDouble("paddingBottom", 0);
+
+        // Margins
+        def.marginLeft = (float) json.optDouble("marginLeft", 0);
+        def.marginRight = (float) json.optDouble("marginRight", 0);
+        def.marginTop = (float) json.optDouble("marginTop", 0);
+        def.marginBottom = (float) json.optDouble("marginBottom", 0);
 
         // Visibility
         def.visible = json.optBoolean("visible", true);

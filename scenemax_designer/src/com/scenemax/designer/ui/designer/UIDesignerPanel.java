@@ -9,6 +9,8 @@ import javax.swing.*;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.tree.*;
 import java.awt.*;
+import java.awt.datatransfer.*;
+import java.awt.dnd.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.*;
@@ -240,6 +242,11 @@ public class UIDesignerPanel extends JPanel {
             }
         });
 
+        // Enable drag-and-drop for reparenting widgets in the hierarchy
+        widgetTree.setDragEnabled(true);
+        widgetTree.setDropMode(DropMode.ON_OR_INSERT);
+        widgetTree.setTransferHandler(new WidgetTreeTransferHandler());
+
         JScrollPane treeScroll = new JScrollPane(widgetTree);
         treeScroll.setBorder(BorderFactory.createTitledBorder("Widget Hierarchy"));
         leftPanel.add(treeScroll, BorderLayout.CENTER);
@@ -376,10 +383,10 @@ public class UIDesignerPanel extends JPanel {
         addFormRow("L:", spnMarginLeft, "R:", spnMarginRight);
         addFormRow("T:", spnMarginTop, "B:", spnMarginBottom);
 
-        spnMarginLeft.addChangeListener(e -> applyConstraintChange());
-        spnMarginRight.addChangeListener(e -> applyConstraintChange());
-        spnMarginTop.addChangeListener(e -> applyConstraintChange());
-        spnMarginBottom.addChangeListener(e -> applyConstraintChange());
+        spnMarginLeft.addChangeListener(e -> applyMarginChange());
+        spnMarginRight.addChangeListener(e -> applyMarginChange());
+        spnMarginTop.addChangeListener(e -> applyMarginChange());
+        spnMarginBottom.addChangeListener(e -> applyMarginChange());
 
         // Bias
         propertiesPanel.add(Box.createVerticalStrut(8));
@@ -843,10 +850,16 @@ public class UIDesignerPanel extends JPanel {
         refreshConstraintTargets(widget);
 
         // Load current constraints
-        loadConstraint(widget, UIConstraintSide.LEFT, cboConstraintLeft, cboConstraintLeftSide, spnMarginLeft);
-        loadConstraint(widget, UIConstraintSide.RIGHT, cboConstraintRight, cboConstraintRightSide, spnMarginRight);
-        loadConstraint(widget, UIConstraintSide.TOP, cboConstraintTop, cboConstraintTopSide, spnMarginTop);
-        loadConstraint(widget, UIConstraintSide.BOTTOM, cboConstraintBottom, cboConstraintBottomSide, spnMarginBottom);
+        loadConstraint(widget, UIConstraintSide.LEFT, cboConstraintLeft, cboConstraintLeftSide);
+        loadConstraint(widget, UIConstraintSide.RIGHT, cboConstraintRight, cboConstraintRightSide);
+        loadConstraint(widget, UIConstraintSide.TOP, cboConstraintTop, cboConstraintTopSide);
+        loadConstraint(widget, UIConstraintSide.BOTTOM, cboConstraintBottom, cboConstraintBottomSide);
+
+        // Load margins
+        spnMarginLeft.setValue((double) widget.getMarginLeft());
+        spnMarginRight.setValue((double) widget.getMarginRight());
+        spnMarginTop.setValue((double) widget.getMarginTop());
+        spnMarginBottom.setValue((double) widget.getMarginBottom());
 
         // Center constraints
         chkCenterHorizontal.setSelected(widget.isCenterHorizontal());
@@ -896,6 +909,10 @@ public class UIDesignerPanel extends JPanel {
         spnHeight.setValue(0.0);
         spnHBias.setValue(0.5);
         spnVBias.setValue(0.5);
+        spnMarginLeft.setValue(0.0);
+        spnMarginRight.setValue(0.0);
+        spnMarginTop.setValue(0.0);
+        spnMarginBottom.setValue(0.0);
         textPropsPanel.setVisible(false);
         buttonPropsPanel.setVisible(false);
         imagePropsPanel.setVisible(false);
@@ -938,16 +955,13 @@ public class UIDesignerPanel extends JPanel {
     }
 
     private void loadConstraint(UIWidgetDef widget, UIConstraintSide side,
-                                 JComboBox<String> targetCombo, JComboBox<String> sideCombo,
-                                 JSpinner marginSpinner) {
+                                 JComboBox<String> targetCombo, JComboBox<String> sideCombo) {
         UIConstraint constraint = widget.getConstraintForSide(side);
         if (constraint == null) {
             targetCombo.setSelectedItem("(none)");
-            marginSpinner.setValue(0.0);
         } else {
             targetCombo.setSelectedItem(constraint.getTargetName());
             sideCombo.setSelectedItem(constraint.getTargetSide().name().toLowerCase());
-            marginSpinner.setValue((double) constraint.getMargin());
         }
     }
 
@@ -1005,18 +1019,30 @@ public class UIDesignerPanel extends JPanel {
 
         widget.clearConstraints();
 
-        applyOneConstraint(widget, UIConstraintSide.LEFT, cboConstraintLeft, cboConstraintLeftSide, spnMarginLeft);
-        applyOneConstraint(widget, UIConstraintSide.RIGHT, cboConstraintRight, cboConstraintRightSide, spnMarginRight);
-        applyOneConstraint(widget, UIConstraintSide.TOP, cboConstraintTop, cboConstraintTopSide, spnMarginTop);
-        applyOneConstraint(widget, UIConstraintSide.BOTTOM, cboConstraintBottom, cboConstraintBottomSide, spnMarginBottom);
+        applyOneConstraint(widget, UIConstraintSide.LEFT, cboConstraintLeft, cboConstraintLeftSide);
+        applyOneConstraint(widget, UIConstraintSide.RIGHT, cboConstraintRight, cboConstraintRightSide);
+        applyOneConstraint(widget, UIConstraintSide.TOP, cboConstraintTop, cboConstraintTopSide);
+        applyOneConstraint(widget, UIConstraintSide.BOTTOM, cboConstraintBottom, cboConstraintBottomSide);
 
         markDirty();
         canvas.refreshLayout();
     }
 
+    private void applyMarginChange() {
+        if (updatingProperties) return;
+        UIWidgetDef widget = canvas.getSelectedWidget();
+        if (widget == null) return;
+
+        widget.setMarginLeft(((Number) spnMarginLeft.getValue()).floatValue());
+        widget.setMarginRight(((Number) spnMarginRight.getValue()).floatValue());
+        widget.setMarginTop(((Number) spnMarginTop.getValue()).floatValue());
+        widget.setMarginBottom(((Number) spnMarginBottom.getValue()).floatValue());
+        markDirty();
+        canvas.refreshLayout();
+    }
+
     private void applyOneConstraint(UIWidgetDef widget, UIConstraintSide side,
-                                     JComboBox<String> targetCombo, JComboBox<String> sideCombo,
-                                     JSpinner marginSpinner) {
+                                     JComboBox<String> targetCombo, JComboBox<String> sideCombo) {
         String target = (String) targetCombo.getSelectedItem();
         if (target == null || "(none)".equals(target)) return;
 
@@ -1028,8 +1054,7 @@ public class UIDesignerPanel extends JPanel {
             targetSide = side; // fallback to same side
         }
 
-        float margin = ((Number) marginSpinner.getValue()).floatValue();
-        widget.addConstraint(new UIConstraint(side, target, targetSide, margin));
+        widget.addConstraint(new UIConstraint(side, target, targetSide, 0));
     }
 
     private void applyBiasChange() {
@@ -1380,6 +1405,180 @@ public class UIDesignerPanel extends JPanel {
 
         g.dispose();
         return new ImageIcon(img);
+    }
+
+    // ========================================================================
+    // Widget tree drag-and-drop handler
+    // ========================================================================
+
+    /**
+     * TransferHandler that allows reparenting widgets via drag-and-drop
+     * in the widget hierarchy tree. Valid drop targets are LAYER nodes
+     * and PANEL widgets. The drop position among siblings determines z-order.
+     */
+    private class WidgetTreeTransferHandler extends TransferHandler {
+        private final DataFlavor widgetFlavor;
+
+        WidgetTreeTransferHandler() {
+            DataFlavor f;
+            try {
+                f = new DataFlavor(DataFlavor.javaJVMLocalObjectMimeType
+                        + ";class=" + UIWidgetDef.class.getName());
+            } catch (ClassNotFoundException e) {
+                f = DataFlavor.stringFlavor; // fallback, should not happen
+            }
+            widgetFlavor = f;
+        }
+
+        // --- Export (drag source) ---
+
+        @Override
+        public int getSourceActions(JComponent c) {
+            return MOVE;
+        }
+
+        @Override
+        protected Transferable createTransferable(JComponent c) {
+            JTree tree = (JTree) c;
+            DefaultMutableTreeNode node =
+                    (DefaultMutableTreeNode) tree.getLastSelectedPathComponent();
+            if (node == null) return null;
+            Object userObj = node.getUserObject();
+            if (!(userObj instanceof WidgetTreeNodeData)) return null;
+            UIWidgetDef widget = ((WidgetTreeNodeData) userObj).widget;
+            if (widget == null) return null; // don't drag layer/root nodes
+
+            return new Transferable() {
+                @Override
+                public DataFlavor[] getTransferDataFlavors() {
+                    return new DataFlavor[]{widgetFlavor};
+                }
+                @Override
+                public boolean isDataFlavorSupported(DataFlavor flavor) {
+                    return widgetFlavor.equals(flavor);
+                }
+                @Override
+                public Object getTransferData(DataFlavor flavor) {
+                    return widget;
+                }
+            };
+        }
+
+        // --- Import (drop target) ---
+
+        @Override
+        public boolean canImport(TransferSupport support) {
+            if (!support.isDrop()) return false;
+            support.setShowDropLocation(true);
+
+            JTree.DropLocation dl =
+                    (JTree.DropLocation) support.getDropLocation();
+            TreePath destPath = dl.getPath();
+            if (destPath == null) return false;
+
+            DefaultMutableTreeNode destNode =
+                    (DefaultMutableTreeNode) destPath.getLastPathComponent();
+            Object destObj = destNode.getUserObject();
+            if (!(destObj instanceof WidgetTreeNodeData)) return false;
+
+            WidgetTreeNodeData destData = (WidgetTreeNodeData) destObj;
+
+            // Destination must be a LAYER node or a PANEL widget
+            if (destData.widget == null) {
+                // Layer node — always valid as a drop target
+                return true;
+            }
+            if (destData.widget.getType() != UIWidgetType.PANEL) {
+                return false; // only PANELs can contain children
+            }
+
+            // Prevent dropping a widget onto itself or onto one of its descendants
+            try {
+                Transferable t = support.getTransferable();
+                UIWidgetDef draggedWidget = (UIWidgetDef) t.getTransferData(widgetFlavor);
+                if (draggedWidget == destData.widget) return false;
+                if (isDescendant(draggedWidget, destData.widget)) return false;
+            } catch (Exception e) {
+                return false;
+            }
+
+            return true;
+        }
+
+        @Override
+        public boolean importData(TransferSupport support) {
+            if (!canImport(support)) return false;
+
+            UIWidgetDef draggedWidget;
+            try {
+                draggedWidget = (UIWidgetDef) support.getTransferable()
+                        .getTransferData(widgetFlavor);
+            } catch (Exception e) {
+                return false;
+            }
+
+            JTree.DropLocation dl =
+                    (JTree.DropLocation) support.getDropLocation();
+            TreePath destPath = dl.getPath();
+            int childIndex = dl.getChildIndex(); // -1 means "on" the node
+
+            DefaultMutableTreeNode destNode =
+                    (DefaultMutableTreeNode) destPath.getLastPathComponent();
+            WidgetTreeNodeData destData =
+                    (WidgetTreeNodeData) destNode.getUserObject();
+
+            UILayerDef layer = getActiveLayer();
+            if (layer == null) return false;
+
+            // 1. Remove the widget from its current parent
+            removeWidgetFromParent(layer, draggedWidget);
+
+            // 2. Insert into the new parent at the correct position
+            if (destData.widget == null) {
+                // Dropping onto a LAYER node
+                if (childIndex < 0 || childIndex >= layer.getWidgets().size()) {
+                    layer.addWidget(draggedWidget);
+                } else {
+                    layer.getWidgets().add(childIndex, draggedWidget);
+                }
+            } else {
+                // Dropping onto a PANEL widget
+                UIWidgetDef panel = destData.widget;
+                if (childIndex < 0 || childIndex >= panel.getChildren().size()) {
+                    panel.addChild(draggedWidget);
+                } else {
+                    panel.getChildren().add(childIndex, draggedWidget);
+                }
+            }
+
+            markDirty();
+            refreshWidgetTree();
+            canvas.refreshLayout();
+            canvas.setSelectedWidget(draggedWidget);
+            selectWidgetInTree(draggedWidget);
+            showPropertiesForWidget(draggedWidget);
+
+            return true;
+        }
+
+        /**
+         * Checks if 'candidate' is a descendant of 'ancestor'.
+         */
+        private boolean isDescendant(UIWidgetDef ancestor, UIWidgetDef candidate) {
+            for (UIWidgetDef child : ancestor.getChildren()) {
+                if (child == candidate) return true;
+                if (isDescendant(child, candidate)) return true;
+            }
+            return false;
+        }
+
+        /**
+         * Removes a widget from its current parent (layer or panel).
+         */
+        private void removeWidgetFromParent(UILayerDef layer, UIWidgetDef widget) {
+            if (layer.getWidgets().remove(widget)) return;
+            removeWidgetRecursive(layer.getWidgets(), widget);
+        }
     }
 
     // ========================================================================
