@@ -81,6 +81,7 @@ public class UIWidgetDef {
     private String textColor = "#FFFFFFFF";
     private float fontSize = 16;
     private String textAlignment = "left";   // left, center, right
+    private String fontName = null;          // font from AssetsMapping (null = default)
 
     // IMAGE
     private String imagePath = null;
@@ -197,6 +198,8 @@ public class UIWidgetDef {
     public void setFontSize(float fontSize) { this.fontSize = fontSize; }
     public String getTextAlignment() { return textAlignment; }
     public void setTextAlignment(String alignment) { this.textAlignment = alignment; }
+    public String getFontName() { return fontName; }
+    public void setFontName(String fontName) { this.fontName = fontName; }
 
     // Image properties
     public String getImagePath() { return imagePath; }
@@ -322,6 +325,7 @@ public class UIWidgetDef {
                 json.put("textColor", textColor);
                 json.put("fontSize", fontSize);
                 json.put("textAlignment", textAlignment);
+                if (fontName != null) json.put("fontName", fontName);
                 break;
             case IMAGE:
                 if (imagePath != null) json.put("imagePath", imagePath);
@@ -413,6 +417,7 @@ public class UIWidgetDef {
                 def.textColor = json.optString("textColor", "#FFFFFFFF");
                 def.fontSize = (float) json.optDouble("fontSize", 16);
                 def.textAlignment = json.optString("textAlignment", "left");
+                def.fontName = json.optString("fontName", null);
                 break;
             case IMAGE:
                 def.imagePath = json.optString("imagePath", null);

@@ -4,6 +4,8 @@ import com.jme3.asset.AssetManager;
 import com.jme3.font.BitmapFont;
 import com.jme3.font.BitmapText;
 import com.jme3.renderer.queue.RenderQueue;
+import com.scenemaxeng.common.types.AssetsMapping;
+import com.scenemaxeng.common.types.ResourceFont;
 import com.scenemaxeng.common.ui.layout.LayoutRect;
 import com.scenemaxeng.common.ui.model.UIWidgetDef;
 
@@ -13,16 +15,19 @@ import com.scenemaxeng.common.ui.model.UIWidgetDef;
 public class UITextViewNode extends UIWidgetNode {
 
     private BitmapText textNode;
+    private AssetsMapping assetsMapping;
 
     public UITextViewNode(String name, UIWidgetDef widgetDef, AssetManager assetManager,
                           float designCanvasWidth, float designCanvasHeight,
-                          float runtimeCanvasWidth, float runtimeCanvasHeight) {
+                          float runtimeCanvasWidth, float runtimeCanvasHeight,
+                          AssetsMapping assetsMapping) {
         super(name, widgetDef, assetManager, designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight);
+        this.assetsMapping = assetsMapping;
     }
 
     @Override
     public void createVisual() {
-        BitmapFont font = assetManager.loadFont("Interface/Fonts/Default.fnt");
+        BitmapFont font = loadFont(widgetDef.getFontName());
         textNode = new BitmapText(font, false);
         textNode.setSize(widgetDef.getFontSize());
         textNode.setText(widgetDef.getText());
@@ -36,6 +41,22 @@ public class UITextViewNode extends UIWidgetNode {
     @Override
     protected void onLayoutUpdated(LayoutRect rect) {
         positionText();
+    }
+
+    private BitmapFont loadFont(String fontName) {
+        if (fontName != null && !fontName.isEmpty() && assetsMapping != null) {
+            ResourceFont resource = assetsMapping.getFontsIndex().get(fontName.toLowerCase());
+            if (resource != null) {
+                try {
+                    return assetManager.loadFont(resource.path);
+                } catch (Exception e) {
+                    System.err.println("[UIText] Failed to load font: " + fontName + " path=" + resource.path);
+                }
+            } else {
+                System.err.println("[UIText] Font not found in AssetsMapping: " + fontName);
+            }
+        }
+        return assetManager.loadFont("Interface/Fonts/Default.fnt");
     }
 
     private void positionText() {
@@ -80,6 +101,26 @@ public class UITextViewNode extends UIWidgetNode {
         widgetDef.setFontSize(size);
         if (textNode != null) {
             textNode.setSize(size);
+            positionText();
+        }
+    }
+
+    public void setFontName(String fontName) {
+        widgetDef.setFontName(fontName);
+        if (textNode != null) {
+            // BitmapText doesn't support changing font after creation, so recreate it
+            String currentText = textNode.getText();
+            float currentSize = widgetDef.getFontSize();
+            String currentColor = widgetDef.getTextColor();
+            detachChild(textNode);
+
+            BitmapFont font = loadFont(fontName);
+            textNode = new BitmapText(font, false);
+            textNode.setSize(currentSize);
+            textNode.setText(currentText);
+            textNode.setColor(parseColor(currentColor));
+            textNode.setQueueBucket(com.jme3.renderer.queue.RenderQueue.Bucket.Gui);
+            attachChild(textNode);
             positionText();
         }
     }

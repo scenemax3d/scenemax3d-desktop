@@ -1,6 +1,7 @@
 package com.scenemax.designer.ui.designer;
 
 import com.scenemaxeng.common.types.AssetsMapping;
+import com.scenemaxeng.common.types.ResourceFont;
 import com.scenemaxeng.common.types.ResourceSetup2D;
 import com.scenemaxeng.common.ui.model.*;
 
@@ -70,6 +71,7 @@ public class UIDesignerPanel extends JPanel {
     private JTextField txtText;
     private JSpinner spnFontSize;
     private JComboBox<String> cboTextAlign;
+    private JComboBox<String> cboFont;
 
     private JPanel buttonPropsPanel;
     private JTextField txtButtonText;
@@ -424,6 +426,12 @@ public class UIDesignerPanel extends JPanel {
         cboTextAlign = new JComboBox<>(new String[]{"left", "center", "right"});
         cboTextAlign.addActionListener(e -> applyTextChange());
         addFormRowTo(textPropsPanel, "Align:", cboTextAlign);
+
+        cboFont = new JComboBox<>();
+        cboFont.addItem("(default)");
+        loadFontNames();
+        cboFont.addActionListener(e -> applyTextChange());
+        addFormRowTo(textPropsPanel, "Font:", cboFont);
 
         textPropsPanel.setVisible(false);
         propertiesPanel.add(textPropsPanel);
@@ -851,6 +859,11 @@ public class UIDesignerPanel extends JPanel {
                 txtText.setText(widget.getText());
                 spnFontSize.setValue((double) widget.getFontSize());
                 cboTextAlign.setSelectedItem(widget.getTextAlignment());
+                if (widget.getFontName() != null && !widget.getFontName().isEmpty()) {
+                    cboFont.setSelectedItem(widget.getFontName());
+                } else {
+                    cboFont.setSelectedIndex(0);
+                }
                 break;
             case BUTTON:
                 buttonPropsPanel.setVisible(true);
@@ -1062,6 +1075,14 @@ public class UIDesignerPanel extends JPanel {
         widget.setText(txtText.getText());
         widget.setFontSize(((Number) spnFontSize.getValue()).floatValue());
         widget.setTextAlignment((String) cboTextAlign.getSelectedItem());
+
+        String selectedFont = (String) cboFont.getSelectedItem();
+        if ("(default)".equals(selectedFont)) {
+            widget.setFontName(null);
+        } else {
+            widget.setFontName(selectedFont);
+        }
+
         markDirty();
         canvas.refreshLayout();
     }
@@ -1124,6 +1145,34 @@ public class UIDesignerPanel extends JPanel {
             }
         } catch (Exception e) {
             System.err.println("[UIDesigner] Failed to load sprite names: " + e.getMessage());
+        }
+    }
+
+    private void loadFontNames() {
+        try {
+            if (assetsMapping == null) {
+                if (projectPath != null) {
+                    String resourcesFolder = projectPath + "/resources";
+                    File resDir = new File(resourcesFolder);
+                    if (resDir.exists()) {
+                        assetsMapping = new AssetsMapping(resourcesFolder);
+                    } else {
+                        assetsMapping = new AssetsMapping();
+                    }
+                } else {
+                    assetsMapping = new AssetsMapping();
+                }
+            }
+
+            HashMap<String, ResourceFont> fonts = assetsMapping.getFontsIndex();
+            List<String> names = new ArrayList<>(fonts.keySet());
+            Collections.sort(names);
+            for (String name : names) {
+                ResourceFont res = fonts.get(name);
+                cboFont.addItem(res.name);
+            }
+        } catch (Exception e) {
+            System.err.println("[UIDesigner] Failed to load font names: " + e.getMessage());
         }
     }
 

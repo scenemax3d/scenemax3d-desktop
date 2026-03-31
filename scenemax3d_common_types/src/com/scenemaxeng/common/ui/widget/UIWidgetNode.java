@@ -160,7 +160,7 @@ public abstract class UIWidgetNode extends Node {
                         designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight);
             case TEXT_VIEW:
                 return new UITextViewNode(def.getName(), def, assetManager,
-                        designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight);
+                        designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight, assetsMapping);
             case IMAGE:
                 return new UIImageNode(def.getName(), def, assetManager,
                         designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight, assetsMapping);

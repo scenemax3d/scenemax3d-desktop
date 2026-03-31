@@ -443,6 +443,15 @@ public class UIDesignerCanvas extends JPanel {
             g2.setColor(new Color(180, 180, 180, 160));
             g2.setFont(g2.getFont().deriveFont(Font.PLAIN, 9f));
             g2.drawString(label, x + 3, y + 10);
+
+            // Show font name for TEXT_VIEW at bottom
+            if (widget.getType() == UIWidgetType.TEXT_VIEW
+                    && widget.getFontName() != null && !widget.getFontName().isEmpty()
+                    && h > 24) {
+                g2.setColor(new Color(160, 200, 255, 150));
+                g2.setFont(g2.getFont().deriveFont(Font.ITALIC, 9f));
+                g2.drawString("\u266A " + widget.getFontName(), x + 3, y + h - 3);
+            }
         } else {
             // Just draw the name centered
             float textWidth = fm.stringWidth(label);
