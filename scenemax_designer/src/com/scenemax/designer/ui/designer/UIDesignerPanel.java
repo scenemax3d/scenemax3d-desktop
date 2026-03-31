@@ -1,6 +1,6 @@
 package com.scenemax.designer.ui.designer;
 
-import com.scenemax.designer.ui.model.*;
+import com.scenemaxeng.common.ui.model.*;
 
 import javax.swing.*;
 import javax.swing.event.TreeSelectionEvent;

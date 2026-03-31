@@ -1,28 +1,23 @@
-package com.scenemax.designer.ui.widget;
+package com.scenemaxeng.common.ui.widget;
 
 import com.jme3.asset.AssetManager;
 import com.jme3.font.BitmapFont;
 import com.jme3.font.BitmapText;
-import com.jme3.math.ColorRGBA;
 import com.jme3.renderer.queue.RenderQueue;
-import com.scenemax.designer.ui.layout.LayoutRect;
-import com.scenemax.designer.ui.model.UIWidgetDef;
+import com.scenemaxeng.common.ui.layout.LayoutRect;
+import com.scenemaxeng.common.ui.model.UIWidgetDef;
 
 /**
- * A text display widget — renders text using JME's BitmapText.
- *
- * Properties:
- *   text          - the display string
- *   textColor     - hex color
- *   fontSize      - font size in pixels
- *   textAlignment - "left", "center", "right"
+ * A text display widget - renders text using JME's BitmapText.
  */
 public class UITextViewNode extends UIWidgetNode {
 
     private BitmapText textNode;
 
-    public UITextViewNode(String name, UIWidgetDef widgetDef, AssetManager assetManager, float canvasHeight) {
-        super(name, widgetDef, assetManager, canvasHeight);
+    public UITextViewNode(String name, UIWidgetDef widgetDef, AssetManager assetManager,
+                          float designCanvasWidth, float designCanvasHeight,
+                          float runtimeCanvasWidth, float runtimeCanvasHeight) {
+        super(name, widgetDef, assetManager, designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight);
     }
 
     @Override
@@ -44,7 +39,9 @@ public class UITextViewNode extends UIWidgetNode {
     }
 
     private void positionText() {
-        if (textNode == null || layoutRect == null) return;
+        if (textNode == null || layoutRect == null) {
+            return;
+        }
 
         float textWidth = textNode.getLineWidth();
         float textHeight = textNode.getLineHeight();
@@ -56,18 +53,14 @@ public class UITextViewNode extends UIWidgetNode {
         } else if ("right".equals(align)) {
             tx = layoutRect.width - textWidth;
         } else {
-            tx = 0; // left
+            tx = 0;
         }
 
-        // Vertically center the text
         float ty = (layoutRect.height + textHeight) / 2f;
-
-        textNode.setLocalTranslation(tx, ty, 0);
+        // Keep text slightly in front of UI quads so it doesn't get occluded.
+        textNode.setLocalTranslation(tx, ty, 0.1f);
     }
 
-    /**
-     * Updates the display text at runtime.
-     */
     public void setText(String text) {
         widgetDef.setText(text);
         if (textNode != null) {
@@ -76,9 +69,6 @@ public class UITextViewNode extends UIWidgetNode {
         }
     }
 
-    /**
-     * Updates the text color at runtime.
-     */
     public void setTextColor(String hexColor) {
         widgetDef.setTextColor(hexColor);
         if (textNode != null) {
@@ -86,9 +76,6 @@ public class UITextViewNode extends UIWidgetNode {
         }
     }
 
-    /**
-     * Updates the font size at runtime.
-     */
     public void setFontSize(float size) {
         widgetDef.setFontSize(size);
         if (textNode != null) {

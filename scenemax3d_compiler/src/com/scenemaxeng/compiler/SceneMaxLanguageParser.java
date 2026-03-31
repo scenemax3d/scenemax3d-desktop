@@ -303,10 +303,6 @@ public class SceneMaxLanguageParser implements IParser {
                         vac.triggeredByDeclaration = true;
                         prg.actions.add(vac);
 
-                    } else if(stDef instanceof UILoadCommand) {
-                        // UI.load goes to resource actions (loaded before script execution)
-                        prg.requireResourceActions.add(stDef);
-
                     } else {
                         ActionStatementBase base = (ActionStatementBase)stDef;
                         if(base.validate(prg)) {
@@ -372,14 +368,23 @@ public class SceneMaxLanguageParser implements IParser {
                     UILoadCommand cmd = new UILoadCommand();
                     String quotedName = uiCtx.ui_load().QUOTED_STRING().getText();
                     cmd.uiName = stripQutes(quotedName);
-                    // Resolve file path relative to the code file's directory
+                    // Resolve file path relative to the active script directory.
+                    // In the runtime projector, codePath is usually the script folder,
+                    // not the script file itself.
                     if (codePath != null && !codePath.isEmpty()) {
-                        java.io.File codeDir = new java.io.File(codePath).getParentFile();
+                        java.io.File codeLocation = new java.io.File(codePath);
+                        java.io.File codeDir = codeLocation;
+                        if (codeLocation.exists()) {
+                            if (!codeLocation.isDirectory()) {
+                                codeDir = codeLocation.getParentFile();
+                            }
+                        } else if (codeLocation.getName().contains(".")) {
+                            codeDir = codeLocation.getParentFile();
+                        }
                         if (codeDir != null) {
                             cmd.filePath = new java.io.File(codeDir, cmd.uiName + ".smui").getAbsolutePath();
                         }
                     }
-                    cmd.requireResource = true;
                     return cmd;
 
                 } else if (uiCtx.ui_show_hide() != null) {

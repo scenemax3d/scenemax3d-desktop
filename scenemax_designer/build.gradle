@@ -25,7 +25,7 @@ sourceSets {
     }
 }
 
-def jme3 = [v: '3.7.0-beta1.2.2', g: 'org.jmonkeyengine']
+def jme3 = [v: '3.9.0-stable', g: 'org.jmonkeyengine']
 
 dependencies {
     // SceneMaxApp from the projector module

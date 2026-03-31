@@ -195,7 +195,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private Logger logger;
 
     // UI system manager for .smui documents
-    private com.scenemax.designer.ui.widget.UIManager uiManager;
+    private com.scenemaxeng.common.ui.widget.UIManager uiManager;
 
     public void clearThreads() {
         if (executorService!=null) {
@@ -427,7 +427,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         terrainHandler.camera = this.getCamera();
 
         // Initialize UI system manager
-        uiManager = new com.scenemax.designer.ui.widget.UIManager(this, guiNode, rootNode);
+        uiManager = new com.scenemaxeng.common.ui.widget.UIManager(this, guiNode, rootNode);
 
         GuiGlobals.initialize(this);
         loadGlassStyle(this);
@@ -1017,21 +1017,42 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         if(st instanceof PlayStopSoundCommand){
             loadAudioResource((PlayStopSoundCommand)st);
-        } else if(st instanceof com.scenemaxeng.compiler.UILoadCommand) {
-            loadUIResource((com.scenemaxeng.compiler.UILoadCommand)st);
         }
 
     }
 
     private void loadUIResource(com.scenemaxeng.compiler.UILoadCommand cmd) {
         try {
-            if (cmd.filePath != null && !cmd.filePath.isEmpty()) {
-                java.io.File uiFile = new java.io.File(cmd.filePath);
-                if (uiFile.exists()) {
-                    uiManager.load(uiFile);
-                }
+            if (cmd == null) {
+                handleRuntimeError("UI.load failed: command was null");
+                return;
             }
+
+            if (uiManager == null) {
+                logger.log(Level.WARNING, "UI.load '{0}' skipped because UI manager is not initialized", cmd.uiName);
+                handleRuntimeError("UI.load failed: UI manager is not initialized");
+                return;
+            }
+
+            if (cmd.filePath == null || cmd.filePath.isEmpty()) {
+                logger.log(Level.WARNING, "UI.load '{0}' failed because no .smui path was resolved", cmd.uiName);
+                handleRuntimeError("UI.load failed: no .smui file path was resolved for '" + cmd.uiName + "'");
+                return;
+            }
+
+            java.io.File uiFile = new java.io.File(cmd.filePath);
+            logger.log(Level.INFO, "UI.load '{0}' resolved to {1}", new Object[]{cmd.uiName, uiFile.getAbsolutePath()});
+
+            if (!uiFile.exists()) {
+                logger.log(Level.WARNING, "UI.load '{0}' could not find file at {1}", new Object[]{cmd.uiName, uiFile.getAbsolutePath()});
+                handleRuntimeError("UI.load failed: UI file not found at '" + uiFile.getAbsolutePath() + "'");
+                return;
+            }
+
+            uiManager.load(uiFile);
+            logger.log(Level.INFO, "UI.load '{0}' loaded successfully", cmd.uiName);
         } catch (Exception e) {
+            logger.log(Level.SEVERE, "UI.load resource failed for '" + (cmd != null ? cmd.uiName : "<null>") + "'", e);
             handleRuntimeError("UI.load resource failed: " + e.getMessage());
         }
     }
@@ -1374,6 +1395,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             scope.add(ctl);
         } else if (action instanceof PluginActionCommand) {
             PluginActionController ctl = new PluginActionController(this, prg, scope, (PluginActionCommand) action);
+            scope.add(ctl);
+        } else if (action instanceof com.scenemaxeng.compiler.UILoadCommand) {
+            UILoadController ctl = new UILoadController(this, prg, scope, (com.scenemaxeng.compiler.UILoadCommand) action);
             scope.add(ctl);
         } else if (action instanceof com.scenemaxeng.compiler.UIShowHideCommand) {
             UIShowHideController ctl = new UIShowHideController(this, prg, scope, (com.scenemaxeng.compiler.UIShowHideCommand) action);
@@ -6076,7 +6100,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     /**
      * Returns the UI system manager for .smui document rendering.
      */
-    public com.scenemax.designer.ui.widget.UIManager getUIManager() {
+    public com.scenemaxeng.common.ui.widget.UIManager getUIManager() {
         return uiManager;
     }
 

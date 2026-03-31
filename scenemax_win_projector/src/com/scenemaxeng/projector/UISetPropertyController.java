@@ -2,7 +2,7 @@ package com.scenemaxeng.projector;
 
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.UISetPropertyCommand;
-import com.scenemax.designer.ui.widget.*;
+import com.scenemaxeng.common.ui.widget.*;
 
 /**
  * Runtime controller for:

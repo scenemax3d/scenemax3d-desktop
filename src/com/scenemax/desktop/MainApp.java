@@ -6,7 +6,7 @@ import com.scenemax.designer.DesignerDocument;
 import com.scenemax.designer.DesignerPanel;
 import com.scenemax.designer.Import3DModelPanel;
 import com.scenemax.designer.ui.designer.UIDesignerPanel;
-import com.scenemax.designer.ui.model.UIDocument;
+import com.scenemaxeng.common.ui.model.UIDocument;
 import com.scenemaxeng.compiler.ApplyMacroResults;
 import com.scenemaxeng.compiler.MacroFilter;
 import com.scenemaxeng.common.types.*;
@@ -1994,7 +1994,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         } catch (Exception ignored) {
         }
 
-        FlatDarkLaf.setup();
+        setupLookAndFeel();
 
         EventQueue.invokeLater(new Runnable() {
             public void run() {
@@ -2019,6 +2019,20 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         });
 
 
+    }
+
+    private static void setupLookAndFeel() {
+        try {
+            FlatDarkLaf.class.getMethod("setup").invoke(null);
+            return;
+        } catch (Exception ignored) {
+        }
+
+        try {
+            UIManager.setLookAndFeel(new FlatDarkLaf());
+        } catch (UnsupportedLookAndFeelException e) {
+            throw new RuntimeException("Failed to initialize FlatDarkLaf", e);
+        }
     }
 
     private void initMacroFolder() {

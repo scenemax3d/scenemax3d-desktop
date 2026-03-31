@@ -1,8 +1,8 @@
 package com.scenemax.designer.ui.designer;
 
-import com.scenemax.designer.ui.layout.ConstraintLayoutEngine;
-import com.scenemax.designer.ui.layout.LayoutRect;
-import com.scenemax.designer.ui.model.*;
+import com.scenemaxeng.common.ui.layout.ConstraintLayoutEngine;
+import com.scenemaxeng.common.ui.layout.LayoutRect;
+import com.scenemaxeng.common.ui.model.*;
 
 import javax.swing.*;
 import java.awt.*;

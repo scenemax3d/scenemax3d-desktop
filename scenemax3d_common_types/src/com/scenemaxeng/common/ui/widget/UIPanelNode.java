@@ -1,30 +1,26 @@
-package com.scenemax.designer.ui.widget;
+package com.scenemaxeng.common.ui.widget;
 
 import com.jme3.asset.AssetManager;
 import com.jme3.math.ColorRGBA;
 import com.jme3.renderer.queue.RenderQueue;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.shape.Quad;
-import com.scenemax.designer.ui.layout.LayoutRect;
-import com.scenemax.designer.ui.model.UIWidgetDef;
+import com.scenemaxeng.common.ui.model.UIWidgetDef;
 
 /**
- * A panel widget — a colored or textured rectangular area.
+ * A panel widget - a colored or textured rectangular area.
  * Panels can contain child widgets.
- *
- * Properties:
- *   backgroundColor - hex RGBA color string
- *   backgroundImage - optional texture path
  */
 public class UIPanelNode extends UIWidgetNode {
 
-    public UIPanelNode(String name, UIWidgetDef widgetDef, AssetManager assetManager, float canvasHeight) {
-        super(name, widgetDef, assetManager, canvasHeight);
+    public UIPanelNode(String name, UIWidgetDef widgetDef, AssetManager assetManager,
+                       float designCanvasWidth, float designCanvasHeight,
+                       float runtimeCanvasWidth, float runtimeCanvasHeight) {
+        super(name, widgetDef, assetManager, designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight);
     }
 
     @Override
     public void createVisual() {
-        // Create a quad for the panel background
         Quad quad = new Quad(widgetDef.getWidth(), widgetDef.getHeight());
         backgroundGeom = new Geometry(getName() + "_bg", quad);
 
@@ -39,9 +35,6 @@ public class UIPanelNode extends UIWidgetNode {
         attachChild(backgroundGeom);
     }
 
-    /**
-     * Updates the background color at runtime.
-     */
     public void setBackgroundColor(String hexColor) {
         widgetDef.setBackgroundColor(hexColor);
         if (backgroundGeom != null) {
@@ -49,9 +42,6 @@ public class UIPanelNode extends UIWidgetNode {
         }
     }
 
-    /**
-     * Updates the background image at runtime.
-     */
     public void setBackgroundImage(String imagePath) {
         widgetDef.setBackgroundImage(imagePath);
         if (backgroundGeom != null && imagePath != null && !imagePath.isEmpty()) {

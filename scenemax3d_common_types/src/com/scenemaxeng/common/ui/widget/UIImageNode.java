@@ -1,4 +1,4 @@
-package com.scenemax.designer.ui.widget;
+package com.scenemaxeng.common.ui.widget;
 
 import com.jme3.asset.AssetManager;
 import com.jme3.material.Material;
@@ -7,30 +7,24 @@ import com.jme3.renderer.queue.RenderQueue;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.shape.Quad;
 import com.jme3.texture.Texture;
-import com.jme3.texture.Texture2D;
-import com.scenemax.designer.ui.layout.LayoutRect;
-import com.scenemax.designer.ui.model.UIWidgetDef;
+import com.scenemaxeng.common.ui.layout.LayoutRect;
+import com.scenemaxeng.common.ui.model.UIWidgetDef;
 
 /**
- * An image widget — displays a texture on a quad.
- *
- * Properties:
- *   imagePath      - path to the texture asset
- *   imageScaleMode - "fit" (maintain ratio, fit inside bounds),
- *                    "fill" (maintain ratio, fill bounds, may crop),
- *                    "stretch" (ignore ratio, fill bounds exactly)
+ * An image widget - displays a texture on a quad.
  */
 public class UIImageNode extends UIWidgetNode {
 
     private Texture loadedTexture;
 
-    public UIImageNode(String name, UIWidgetDef widgetDef, AssetManager assetManager, float canvasHeight) {
-        super(name, widgetDef, assetManager, canvasHeight);
+    public UIImageNode(String name, UIWidgetDef widgetDef, AssetManager assetManager,
+                       float designCanvasWidth, float designCanvasHeight,
+                       float runtimeCanvasWidth, float runtimeCanvasHeight) {
+        super(name, widgetDef, assetManager, designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight);
     }
 
     @Override
     public void createVisual() {
-        // Create a quad with initial dimensions
         Quad quad = new Quad(widgetDef.getWidth(), widgetDef.getHeight());
         backgroundGeom = new Geometry(getName() + "_img", quad);
 
@@ -43,15 +37,11 @@ public class UIImageNode extends UIWidgetNode {
                 mat.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
                 backgroundGeom.setMaterial(mat);
             } catch (Exception e) {
-                // Fallback to a magenta placeholder on load failure
-                backgroundGeom.setMaterial(createColorMaterial(
-                        new com.jme3.math.ColorRGBA(1, 0, 1, 1)));
+                backgroundGeom.setMaterial(createColorMaterial(new com.jme3.math.ColorRGBA(1, 0, 1, 1)));
                 System.err.println("[UIImage] Failed to load texture: " + path);
             }
         } else {
-            // No image set — show a placeholder
-            backgroundGeom.setMaterial(createColorMaterial(
-                    new com.jme3.math.ColorRGBA(0.5f, 0.5f, 0.5f, 0.3f)));
+            backgroundGeom.setMaterial(createColorMaterial(new com.jme3.math.ColorRGBA(0.5f, 0.5f, 0.5f, 0.3f)));
         }
 
         backgroundGeom.setQueueBucket(RenderQueue.Bucket.Gui);
@@ -60,14 +50,8 @@ public class UIImageNode extends UIWidgetNode {
 
     @Override
     protected void onLayoutUpdated(LayoutRect rect) {
-        // For "fit" and "fill" modes, we could adjust the quad size or UV coordinates.
-        // For now, "stretch" is the default behavior (quad fills the layout rect).
-        // TODO: implement fit/fill scale modes with UV or geometry adjustment
     }
 
-    /**
-     * Changes the image at runtime.
-     */
     public void setImage(String imagePath) {
         widgetDef.setImagePath(imagePath);
         if (backgroundGeom != null && imagePath != null && !imagePath.isEmpty()) {

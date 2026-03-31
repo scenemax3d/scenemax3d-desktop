@@ -2,9 +2,9 @@ package com.scenemaxeng.projector;
 
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.UIShowHideCommand;
-import com.scenemax.designer.ui.widget.UILayerNode;
-import com.scenemax.designer.ui.widget.UIManager;
-import com.scenemax.designer.ui.widget.UIWidgetNode;
+import com.scenemaxeng.common.ui.widget.UILayerNode;
+import com.scenemaxeng.common.ui.widget.UIManager;
+import com.scenemaxeng.common.ui.widget.UIWidgetNode;
 
 /**
  * Runtime controller for:

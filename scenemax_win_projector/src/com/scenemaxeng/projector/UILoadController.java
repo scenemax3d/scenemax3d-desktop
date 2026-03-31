@@ -11,9 +11,8 @@ import java.io.File;
  * Loads a .smui document via UIManager, creating the JME node hierarchy
  * and attaching layers to guiNode (screen-space) or rootNode (world-space).
  *
- * Note: In the standard pipeline, UI.load is handled as a resource-loading step
- * via loadResource() in SceneMaxApp, not through runAction(). This controller
- * exists as a utility for programmatic use or future extensions.
+ * UI.load now runs through the regular controller/action pipeline, just like
+ * the rest of the UI commands.
  */
 public class UILoadController extends SceneMaxBaseController {
 

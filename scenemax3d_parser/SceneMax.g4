@@ -29,6 +29,7 @@ statement
    | terrain_actions     # terrainActions
    | function_statement # functionStatement
    | mini_map_actions # miniMapActions
+   | ui_statement # uiStatement
    | action_statement   # actionStatement
    | do_block           # doBlock
    | function_invocation # functionInvocation
@@ -58,7 +59,6 @@ statement
    | http_statement # httpStatement
    | when_statement # whenStatement
    | switch_statement # switchStatement
-   | ui_statement # uiStatement
    ;
 
 // UI system commands

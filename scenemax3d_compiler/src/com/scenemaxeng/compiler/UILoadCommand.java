@@ -6,7 +6,7 @@ package com.scenemaxeng.compiler;
  * Loads a .smui document and creates the JME node hierarchy.
  * The UI name is used as the key for subsequent UI access commands.
  */
-public class UILoadCommand extends StatementDef {
+public class UILoadCommand extends ActionStatementBase {
 
     public String uiName;       // the quoted name from UI.load "name"
     public String filePath;     // resolved file path (set during compilation)
