@@ -465,6 +465,29 @@ public class UIDesignerCanvas extends JPanel {
             g2.fillOval((int) fromX - 3, (int) fromY - 3, 6, 6);
             g2.fillOval((int) toX - 3, (int) toY - 3, 6, 6);
         }
+
+        // Draw center constraint indicators
+        float canvasW = document.getCanvasWidth();
+        float canvasH = document.getCanvasHeight();
+        g2.setColor(new Color(100, 200, 255, 160));
+
+        if (widget.isCenterHorizontal()) {
+            float cx = widgetRect.x + widgetRect.width / 2;
+            float cy = widgetRect.y + widgetRect.height / 2;
+            // Draw dashed line from widget center to parent center (horizontal)
+            g2.draw(new Line2D.Float(cx, cy, canvasW / 2, cy));
+            g2.fillOval((int) cx - 3, (int) cy - 3, 6, 6);
+            g2.fillOval((int) (canvasW / 2) - 3, (int) cy - 3, 6, 6);
+        }
+
+        if (widget.isCenterVertical()) {
+            float cx = widgetRect.x + widgetRect.width / 2;
+            float cy = widgetRect.y + widgetRect.height / 2;
+            // Draw dashed line from widget center to parent center (vertical)
+            g2.draw(new Line2D.Float(cx, cy, cx, canvasH / 2));
+            g2.fillOval((int) cx - 3, (int) cy - 3, 6, 6);
+            g2.fillOval((int) cx - 3, (int) (canvasH / 2) - 3, 6, 6);
+        }
     }
 
     // --- Helpers ---

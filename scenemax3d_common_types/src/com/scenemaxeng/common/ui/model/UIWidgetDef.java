@@ -91,6 +91,10 @@ public class UIWidgetDef {
     private boolean guidelineIsPercent = false;      // true = position is a 0-1 percentage
     private float guidelinePosition = 0;             // pixels from edge, or 0-1 percentage
 
+    // --- Center constraints (convenience: centers widget in parent on given axis) ---
+    private boolean centerHorizontal = false;
+    private boolean centerVertical = false;
+
     // --- Z-order within parent (higher = drawn on top) ---
     private int zOrder = 0;
 
@@ -207,6 +211,12 @@ public class UIWidgetDef {
     public float getGuidelinePosition() { return guidelinePosition; }
     public void setGuidelinePosition(float position) { this.guidelinePosition = position; }
 
+    // Center constraints
+    public boolean isCenterHorizontal() { return centerHorizontal; }
+    public void setCenterHorizontal(boolean centerHorizontal) { this.centerHorizontal = centerHorizontal; }
+    public boolean isCenterVertical() { return centerVertical; }
+    public void setCenterVertical(boolean centerVertical) { this.centerVertical = centerVertical; }
+
     // Z-order
     public int getZOrder() { return zOrder; }
     public void setZOrder(int zOrder) { this.zOrder = zOrder; }
@@ -226,19 +236,21 @@ public class UIWidgetDef {
     }
 
     /**
-     * Returns true if this widget is constrained on both left and right.
+     * Returns true if this widget is constrained on both left and right, or centered horizontally.
      */
     public boolean isHorizontallyConstrained() {
-        return getConstraintForSide(UIConstraintSide.LEFT) != null
-            && getConstraintForSide(UIConstraintSide.RIGHT) != null;
+        return centerHorizontal
+            || (getConstraintForSide(UIConstraintSide.LEFT) != null
+                && getConstraintForSide(UIConstraintSide.RIGHT) != null);
     }
 
     /**
-     * Returns true if this widget is constrained on both top and bottom.
+     * Returns true if this widget is constrained on both top and bottom, or centered vertically.
      */
     public boolean isVerticallyConstrained() {
-        return getConstraintForSide(UIConstraintSide.TOP) != null
-            && getConstraintForSide(UIConstraintSide.BOTTOM) != null;
+        return centerVertical
+            || (getConstraintForSide(UIConstraintSide.TOP) != null
+                && getConstraintForSide(UIConstraintSide.BOTTOM) != null);
     }
 
     // ========================================================================
@@ -282,6 +294,10 @@ public class UIWidgetDef {
         if (verticalChainStyle != null) json.put("verticalChainStyle", verticalChainStyle.name());
         if (horizontalWeight != 1.0f) json.put("horizontalWeight", horizontalWeight);
         if (verticalWeight != 1.0f) json.put("verticalWeight", verticalWeight);
+
+        // Center constraints
+        if (centerHorizontal) json.put("centerHorizontal", true);
+        if (centerVertical) json.put("centerVertical", true);
 
         // Z-order
         if (zOrder != 0) json.put("zOrder", zOrder);
@@ -368,6 +384,10 @@ public class UIWidgetDef {
             def.verticalChainStyle = UIChainStyle.valueOf(json.getString("verticalChainStyle"));
         def.horizontalWeight = (float) json.optDouble("horizontalWeight", 1.0);
         def.verticalWeight = (float) json.optDouble("verticalWeight", 1.0);
+
+        // Center constraints
+        def.centerHorizontal = json.optBoolean("centerHorizontal", false);
+        def.centerVertical = json.optBoolean("centerVertical", false);
 
         // Z-order
         def.zOrder = json.optInt("zOrder", 0);

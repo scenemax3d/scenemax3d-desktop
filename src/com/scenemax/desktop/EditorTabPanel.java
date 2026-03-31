@@ -422,6 +422,11 @@ public class EditorTabPanel extends JPanel {
             if (activeTab.uiDesignerPanel != null) {
                 activeTab.uiDesignerPanel.saveDocument();
             }
+            activeTab.dirty = false;
+            TabButton btn = tabButtons.get(activeTab.filePath);
+            if (btn != null) {
+                btn.updateTitle();
+            }
             return;
         }
 
