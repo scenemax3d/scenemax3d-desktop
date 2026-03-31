@@ -114,6 +114,10 @@ public class UISetPropertyController extends SceneMaxBaseController {
                 case "imagepath":
                     image.setImage(value);
                     break;
+                case "sprite":
+                case "spritename":
+                    image.setSprite(value);
+                    break;
                 default:
                     applyCommonProperty(widget, prop, value);
             }

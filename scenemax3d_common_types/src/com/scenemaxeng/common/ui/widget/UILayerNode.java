@@ -2,6 +2,7 @@ package com.scenemaxeng.common.ui.widget;
 
 import com.jme3.asset.AssetManager;
 import com.jme3.scene.Node;
+import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.ui.layout.ConstraintLayoutEngine;
 import com.scenemaxeng.common.ui.layout.LayoutRect;
 import com.scenemaxeng.common.ui.model.UILayerDef;
@@ -27,6 +28,7 @@ public class UILayerNode extends Node {
     private float designCanvasHeight;
     private float runtimeCanvasWidth;
     private float runtimeCanvasHeight;
+    private AssetsMapping assetsMapping;
 
     private Map<String, UIWidgetNode> widgetNodes = new LinkedHashMap<>();
 
@@ -34,7 +36,8 @@ public class UILayerNode extends Node {
 
     public UILayerNode(UILayerDef layerDef, AssetManager assetManager,
                        float designCanvasWidth, float designCanvasHeight,
-                       float runtimeCanvasWidth, float runtimeCanvasHeight) {
+                       float runtimeCanvasWidth, float runtimeCanvasHeight,
+                       AssetsMapping assetsMapping) {
         super(layerDef.getName());
         this.layerDef = layerDef;
         this.assetManager = assetManager;
@@ -42,6 +45,7 @@ public class UILayerNode extends Node {
         this.designCanvasHeight = designCanvasHeight;
         this.runtimeCanvasWidth = runtimeCanvasWidth;
         this.runtimeCanvasHeight = runtimeCanvasHeight;
+        this.assetsMapping = assetsMapping;
     }
 
     public void buildAndLayout() {
@@ -102,7 +106,7 @@ public class UILayerNode extends Node {
         }
 
         UIWidgetNode widgetNode = UIWidgetNode.create(widgetDef, assetManager,
-                designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight);
+                designCanvasWidth, designCanvasHeight, runtimeCanvasWidth, runtimeCanvasHeight, assetsMapping);
         if (widgetNode == null) {
             LOGGER.log(Level.WARNING, "Skipping UI widget ''{0}'' type={1} because no runtime node exists",
                     new Object[]{widgetDef.getName(), widgetDef.getType()});

@@ -85,6 +85,7 @@ public class UIWidgetDef {
     // IMAGE
     private String imagePath = null;
     private String imageScaleMode = "fit";   // fit, fill, stretch
+    private String spriteName = null;        // sprite from AssetsMapping (overrides imagePath when set)
 
     // GUIDELINE
     private boolean guidelineIsHorizontal = true;   // true = horizontal, false = vertical
@@ -202,6 +203,8 @@ public class UIWidgetDef {
     public void setImagePath(String path) { this.imagePath = path; }
     public String getImageScaleMode() { return imageScaleMode; }
     public void setImageScaleMode(String mode) { this.imageScaleMode = mode; }
+    public String getSpriteName() { return spriteName; }
+    public void setSpriteName(String spriteName) { this.spriteName = spriteName; }
 
     // Guideline properties
     public boolean isGuidelineHorizontal() { return guidelineIsHorizontal; }
@@ -323,6 +326,7 @@ public class UIWidgetDef {
             case IMAGE:
                 if (imagePath != null) json.put("imagePath", imagePath);
                 json.put("imageScaleMode", imageScaleMode);
+                if (spriteName != null) json.put("spriteName", spriteName);
                 break;
             case GUIDELINE:
                 json.put("guidelineIsHorizontal", guidelineIsHorizontal);
@@ -413,6 +417,7 @@ public class UIWidgetDef {
             case IMAGE:
                 def.imagePath = json.optString("imagePath", null);
                 def.imageScaleMode = json.optString("imageScaleMode", "fit");
+                def.spriteName = json.optString("spriteName", null);
                 break;
             case GUIDELINE:
                 def.guidelineIsHorizontal = json.optBoolean("guidelineIsHorizontal", true);
