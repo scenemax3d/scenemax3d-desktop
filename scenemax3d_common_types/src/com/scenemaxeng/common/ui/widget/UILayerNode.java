@@ -31,6 +31,7 @@ public class UILayerNode extends Node {
     private AssetsMapping assetsMapping;
 
     private Map<String, UIWidgetNode> widgetNodes = new LinkedHashMap<>();
+    private Map<String, UIWidgetNode> widgetNodesByPath = new LinkedHashMap<>();
 
     private ConstraintLayoutEngine layoutEngine = new ConstraintLayoutEngine();
 
@@ -51,11 +52,12 @@ public class UILayerNode extends Node {
     public void buildAndLayout() {
         detachAllChildren();
         widgetNodes.clear();
+        widgetNodesByPath.clear();
         LOGGER.log(Level.INFO, "Building UI layer ''{0}'' with {1} top-level widgets",
                 new Object[]{layerDef.getName(), layerDef.getWidgets().size()});
 
         for (UIWidgetDef widgetDef : layerDef.getWidgets()) {
-            createWidgetNodeRecursive(widgetDef, this);
+            createWidgetNodeRecursive(widgetDef, this, widgetDef.getName());
         }
 
         runLayout();
@@ -100,7 +102,7 @@ public class UILayerNode extends Node {
         }
     }
 
-    private void createWidgetNodeRecursive(UIWidgetDef widgetDef, Node parentNode) {
+    private void createWidgetNodeRecursive(UIWidgetDef widgetDef, Node parentNode, String widgetPath) {
         if (widgetDef.getType() == UIWidgetType.GUIDELINE) {
             return;
         }
@@ -120,9 +122,10 @@ public class UILayerNode extends Node {
 
         parentNode.attachChild(widgetNode);
         widgetNodes.put(widgetDef.getName(), widgetNode);
+        widgetNodesByPath.put(widgetPath, widgetNode);
 
         for (UIWidgetDef child : widgetDef.getChildren()) {
-            createWidgetNodeRecursive(child, widgetNode);
+            createWidgetNodeRecursive(child, widgetNode, widgetPath + "." + child.getName());
         }
     }
 
@@ -132,6 +135,10 @@ public class UILayerNode extends Node {
     }
 
     public UIWidgetNode findWidget(String name) {
+        UIWidgetNode widget = widgetNodesByPath.get(name);
+        if (widget != null) {
+            return widget;
+        }
         return widgetNodes.get(name);
     }
 
