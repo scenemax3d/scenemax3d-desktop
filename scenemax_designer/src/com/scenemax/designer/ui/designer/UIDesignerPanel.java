@@ -60,6 +60,7 @@ public class UIDesignerPanel extends JPanel {
     // Property fields — constraints
     private JComboBox<String> cboConstraintLeft, cboConstraintRight, cboConstraintTop, cboConstraintBottom;
     private JComboBox<String> cboConstraintLeftSide, cboConstraintRightSide, cboConstraintTopSide, cboConstraintBottomSide;
+    private JCheckBox chkCenterHorizontal, chkCenterVertical;
 
     // Property fields — type-specific
     private JPanel textPropsPanel;
@@ -328,6 +329,20 @@ public class UIDesignerPanel extends JPanel {
         cboConstraintBottom = new JComboBox<>(targets);
         cboConstraintBottomSide = new JComboBox<>(vSides);
         addConstraintRow("Bottom \u2192", cboConstraintBottom, cboConstraintBottomSide);
+
+        // Center constraints
+        propertiesPanel.add(Box.createVerticalStrut(4));
+        chkCenterHorizontal = new JCheckBox("Center Horizontal");
+        chkCenterVertical = new JCheckBox("Center Vertical");
+        chkCenterHorizontal.addActionListener(e -> applyCenterChange());
+        chkCenterVertical.addActionListener(e -> applyCenterChange());
+
+        JPanel centerRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        centerRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        centerRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        centerRow.add(chkCenterHorizontal);
+        centerRow.add(chkCenterVertical);
+        propertiesPanel.add(centerRow);
 
         // Margins
         propertiesPanel.add(Box.createVerticalStrut(8));
@@ -801,6 +816,10 @@ public class UIDesignerPanel extends JPanel {
         loadConstraint(widget, UIConstraintSide.TOP, cboConstraintTop, cboConstraintTopSide, spnMarginTop);
         loadConstraint(widget, UIConstraintSide.BOTTOM, cboConstraintBottom, cboConstraintBottomSide, spnMarginBottom);
 
+        // Center constraints
+        chkCenterHorizontal.setSelected(widget.isCenterHorizontal());
+        chkCenterVertical.setSelected(widget.isCenterVertical());
+
         // Type-specific
         switch (widget.getType()) {
             case TEXT_VIEW:
@@ -978,6 +997,17 @@ public class UIDesignerPanel extends JPanel {
 
         widget.setHorizontalBias(((Number) spnHBias.getValue()).floatValue());
         widget.setVerticalBias(((Number) spnVBias.getValue()).floatValue());
+        markDirty();
+        canvas.refreshLayout();
+    }
+
+    private void applyCenterChange() {
+        if (updatingProperties) return;
+        UIWidgetDef widget = canvas.getSelectedWidget();
+        if (widget == null) return;
+
+        widget.setCenterHorizontal(chkCenterHorizontal.isSelected());
+        widget.setCenterVertical(chkCenterVertical.isSelected());
         markDirty();
         canvas.refreshLayout();
     }

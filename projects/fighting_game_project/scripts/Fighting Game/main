@@ -32,6 +32,7 @@ intro2.draw press_space_to_start : pos (544,450)
 wait for key space to be pressed
 intro2.draw clear
 intro.draw clear
+UI.load "test_ui"
 run game_start
 
 

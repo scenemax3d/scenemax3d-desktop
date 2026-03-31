@@ -227,6 +227,14 @@ public class ConstraintLayoutEngine {
         UIConstraint startConstraint = widget.getConstraintForSide(startSide);
         UIConstraint endConstraint = widget.getConstraintForSide(endSide);
 
+        // Center constraint: if enabled and no explicit start/end constraints, center in parent
+        boolean isCentered = horizontal ? widget.isCenterHorizontal() : widget.isCenterVertical();
+        if (isCentered && startConstraint == null && endConstraint == null) {
+            // Synthesize both-side parent constraints with 0 margin for centering
+            startConstraint = new UIConstraint(startSide, UIConstraint.TARGET_PARENT, startSide, 0);
+            endConstraint = new UIConstraint(endSide, UIConstraint.TARGET_PARENT, endSide, 0);
+        }
+
         UISizeMode sizeMode = horizontal ? widget.getWidthMode() : widget.getHeightMode();
         float fixedSize = horizontal ? widget.getWidth() : widget.getHeight();
         float bias = horizontal ? widget.getHorizontalBias() : widget.getVerticalBias();
