@@ -37,6 +37,17 @@ public class UIShowHideController extends SceneMaxBaseController {
         }
 
         if (shCmd.widgetPath == null || shCmd.widgetPath.isEmpty()) {
+            // Ambiguous short syntax: UI.layer1.panel2.hide
+            // If the first segment is not a loaded UI name, treat it as
+            // layer.widget against the active UI before falling back to layer visibility.
+            if (shCmd.uiName != null && !shCmd.uiName.isEmpty() && !uiManager.isLoaded(shCmd.uiName)) {
+                UIWidgetNode nestedWidget = uiManager.resolveWidget(null, shCmd.uiName, shCmd.layerName);
+                if (nestedWidget != null) {
+                    nestedWidget.setWidgetVisible(shCmd.show);
+                    return true;
+                }
+            }
+
             // Target is the layer itself
             UILayerNode layer = uiManager.resolveLayer(shCmd.uiName, shCmd.layerName);
             if (layer != null) {
