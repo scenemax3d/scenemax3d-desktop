@@ -58,7 +58,16 @@ statement
    | http_statement # httpStatement
    | when_statement # whenStatement
    | switch_statement # switchStatement
+   | ui_statement # uiStatement
    ;
+
+// UI system commands
+ui_statement : ui_load | ui_show_hide | ui_set_property ;
+ui_load : UI '.' Load QUOTED_STRING ;
+ui_show_hide : UI '.' ui_dot_path '.' (Show | Hide) ;
+ui_set_property : UI '.' ui_dot_path '.' ui_property_name Equals logical_expression ;
+ui_dot_path : var_decl ('.' var_decl)* ;
+ui_property_name : var_decl ;
 
 plugins_actions: Plugins '.' plugin_name '.' plugin_action plugin_params?;
 plugin_action: Start | Stop ;
@@ -760,7 +769,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Stiffness | Length | Stop | Return | Animate | Animation | Print | Append | Color | Font | SystemColor | Ray | Check | Pos |
     Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
     Screen | Scene | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
-    Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put ;
+    Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load ;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
@@ -1007,6 +1016,8 @@ File : 'File' | 'file' ;
 
 Clear : 'Clear' | 'clear' ;
 
+UI : 'UI' | 'ui' | 'Ui' ;
+Load : 'Load' | 'load' ;
 Plugins: 'plugins' | 'Plugins' ;
 Switch : 'Switch' | 'switch' ;
 //Car : 'Car' | 'car' ;

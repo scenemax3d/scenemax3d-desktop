@@ -303,6 +303,10 @@ public class SceneMaxLanguageParser implements IParser {
                         vac.triggeredByDeclaration = true;
                         prg.actions.add(vac);
 
+                    } else if(stDef instanceof UILoadCommand) {
+                        // UI.load goes to resource actions (loaded before script execution)
+                        prg.requireResourceActions.add(stDef);
+
                     } else {
                         ActionStatementBase base = (ActionStatementBase)stDef;
                         if(base.validate(prg)) {
@@ -359,6 +363,66 @@ public class SceneMaxLanguageParser implements IParser {
                 SwitchStateCommand cmd = new SwitchStateCommand();
                 cmd.pathExpr = ctx.switch_statement().logical_expression();
                 return cmd;
+            }
+
+            public StatementDef visitUiStatement(SceneMaxParser.UiStatementContext ctx) {
+                SceneMaxParser.Ui_statementContext uiCtx = ctx.ui_statement();
+
+                if (uiCtx.ui_load() != null) {
+                    UILoadCommand cmd = new UILoadCommand();
+                    String quotedName = uiCtx.ui_load().QUOTED_STRING().getText();
+                    cmd.uiName = stripQutes(quotedName);
+                    // Resolve file path relative to the code file's directory
+                    if (codePath != null && !codePath.isEmpty()) {
+                        java.io.File codeDir = new java.io.File(codePath).getParentFile();
+                        if (codeDir != null) {
+                            cmd.filePath = new java.io.File(codeDir, cmd.uiName + ".smui").getAbsolutePath();
+                        }
+                    }
+                    cmd.requireResource = true;
+                    return cmd;
+
+                } else if (uiCtx.ui_show_hide() != null) {
+                    SceneMaxParser.Ui_show_hideContext shCtx = uiCtx.ui_show_hide();
+                    List<SceneMaxParser.Var_declContext> pathParts = shCtx.ui_dot_path().var_decl();
+                    if (pathParts.size() < 2) return null;
+
+                    UIShowHideCommand cmd = new UIShowHideCommand();
+                    cmd.uiName = pathParts.get(0).getText();
+                    cmd.layerName = pathParts.get(1).getText();
+                    cmd.show = shCtx.Show() != null;
+
+                    // Build widget path from remaining segments (index 2+)
+                    StringBuilder widgetPath = new StringBuilder();
+                    for (int i = 2; i < pathParts.size(); i++) {
+                        if (widgetPath.length() > 0) widgetPath.append(".");
+                        widgetPath.append(pathParts.get(i).getText());
+                    }
+                    cmd.widgetPath = widgetPath.toString();
+                    return cmd;
+
+                } else if (uiCtx.ui_set_property() != null) {
+                    SceneMaxParser.Ui_set_propertyContext propCtx = uiCtx.ui_set_property();
+                    List<SceneMaxParser.Var_declContext> pathParts = propCtx.ui_dot_path().var_decl();
+                    if (pathParts.size() < 2) return null;
+
+                    UISetPropertyCommand cmd = new UISetPropertyCommand();
+                    cmd.uiName = pathParts.get(0).getText();
+                    cmd.layerName = pathParts.get(1).getText();
+                    cmd.propertyName = propCtx.ui_property_name().var_decl().getText();
+                    cmd.valueExpr = propCtx.logical_expression();
+
+                    // Build widget path from remaining segments (index 2+)
+                    StringBuilder widgetPath = new StringBuilder();
+                    for (int i = 2; i < pathParts.size(); i++) {
+                        if (widgetPath.length() > 0) widgetPath.append(".");
+                        widgetPath.append(pathParts.get(i).getText());
+                    }
+                    cmd.widgetPath = widgetPath.toString();
+                    return cmd;
+                }
+
+                return null;
             }
 
             public ActionStatementBase visitWhenStatement(SceneMaxParser.WhenStatementContext ctx) {
