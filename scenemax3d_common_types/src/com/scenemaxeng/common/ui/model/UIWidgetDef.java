@@ -73,7 +73,7 @@ public class UIWidgetDef {
     // --- Type-specific properties ---
 
     // PANEL
-    private String backgroundColor = "#333333FF";   // RGBA hex
+    private String backgroundColor = "#33333300";   // RGBA hex
     private String backgroundImage = null;
 
     // BUTTON
@@ -431,7 +431,7 @@ public class UIWidgetDef {
         // Type-specific
         switch (type) {
             case PANEL:
-                def.backgroundColor = json.optString("backgroundColor", "#333333FF");
+                def.backgroundColor = json.optString("backgroundColor", "#33333300");
                 def.backgroundImage = json.optString("backgroundImage", null);
                 break;
             case BUTTON:

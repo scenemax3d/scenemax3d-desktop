@@ -390,16 +390,25 @@ public class SceneMaxLanguageParser implements IParser {
                 } else if (uiCtx.ui_show_hide() != null) {
                     SceneMaxParser.Ui_show_hideContext shCtx = uiCtx.ui_show_hide();
                     List<SceneMaxParser.Var_declContext> pathParts = shCtx.ui_dot_path().var_decl();
-                    if (pathParts.size() < 2) return null;
+                    if (pathParts.isEmpty()) return null;
 
                     UIShowHideCommand cmd = new UIShowHideCommand();
-                    cmd.uiName = pathParts.get(0).getText();
-                    cmd.layerName = pathParts.get(1).getText();
                     cmd.show = shCtx.Show() != null;
+                    int widgetStartIndex;
 
-                    // Build widget path from remaining segments (index 2+)
+                    if (pathParts.size() == 1) {
+                        cmd.uiName = null;
+                        cmd.layerName = pathParts.get(0).getText();
+                        widgetStartIndex = 1;
+                    } else {
+                        cmd.uiName = pathParts.get(0).getText();
+                        cmd.layerName = pathParts.get(1).getText();
+                        widgetStartIndex = 2;
+                    }
+
+                    // Build widget path from remaining segments after the layer name.
                     StringBuilder widgetPath = new StringBuilder();
-                    for (int i = 2; i < pathParts.size(); i++) {
+                    for (int i = widgetStartIndex; i < pathParts.size(); i++) {
                         if (widgetPath.length() > 0) widgetPath.append(".");
                         widgetPath.append(pathParts.get(i).getText());
                     }
@@ -412,14 +421,23 @@ public class SceneMaxLanguageParser implements IParser {
                     if (pathParts.size() < 2) return null;
 
                     UISetPropertyCommand cmd = new UISetPropertyCommand();
-                    cmd.uiName = pathParts.get(0).getText();
-                    cmd.layerName = pathParts.get(1).getText();
                     cmd.propertyName = propCtx.ui_property_name().var_decl().getText();
                     cmd.valueExpr = propCtx.logical_expression();
+                    int widgetStartIndex;
 
-                    // Build widget path from remaining segments (index 2+)
+                    if (pathParts.size() == 2) {
+                        cmd.uiName = null;
+                        cmd.layerName = pathParts.get(0).getText();
+                        widgetStartIndex = 1;
+                    } else {
+                        cmd.uiName = pathParts.get(0).getText();
+                        cmd.layerName = pathParts.get(1).getText();
+                        widgetStartIndex = 2;
+                    }
+
+                    // Build widget path from remaining segments after the layer name.
                     StringBuilder widgetPath = new StringBuilder();
-                    for (int i = 2; i < pathParts.size(); i++) {
+                    for (int i = widgetStartIndex; i < pathParts.size(); i++) {
                         if (widgetPath.length() > 0) widgetPath.append(".");
                         widgetPath.append(pathParts.get(i).getText());
                     }

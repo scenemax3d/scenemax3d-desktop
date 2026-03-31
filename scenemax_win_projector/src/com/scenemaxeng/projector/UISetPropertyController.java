@@ -26,23 +26,20 @@ public class UISetPropertyController extends SceneMaxBaseController {
 
         UISetPropertyCommand propCmd = (UISetPropertyCommand) this.cmd;
         UIManager uiManager = app.getUIManager();
+        String commandPathPrefix = propCmd.uiName != null && !propCmd.uiName.isEmpty()
+                ? propCmd.uiName + "." + propCmd.layerName
+                : propCmd.layerName;
 
         if (uiManager == null) {
             app.handleRuntimeError("UI system not initialized");
             return true;
         }
 
-        // Resolve the target widget
-        String widgetName = propCmd.widgetPath;
-        if (widgetName.contains(".")) {
-            String[] parts = widgetName.split("\\.");
-            widgetName = parts[parts.length - 1];
-        }
-
-        UIWidgetNode widget = uiManager.resolveWidget(propCmd.uiName, propCmd.layerName, widgetName);
+        // Resolve the target widget by full path when provided.
+        UIWidgetNode widget = uiManager.resolveWidget(propCmd.uiName, propCmd.layerName, propCmd.widgetPath);
         if (widget == null) {
             app.handleRuntimeError("UI widget not found: " +
-                    propCmd.uiName + "." + propCmd.layerName + "." + propCmd.widgetPath);
+                    commandPathPrefix + "." + propCmd.widgetPath);
             return true;
         }
 

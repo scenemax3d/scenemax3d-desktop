@@ -29,12 +29,19 @@ public class UIManager {
     private Node guiNode;
     private Node rootNode;
     private AssetsMapping assetsMapping;
+    private String activeUIName;
 
     private Map<String, LoadedUI> loadedUIs = new LinkedHashMap<>();
 
     private static class LoadedUI {
         UIDocument document;
         Map<String, UILayerNode> layerNodes = new LinkedHashMap<>();
+    }
+
+    private static class ResolvedUIPath {
+        LoadedUI loadedUI;
+        String layerName;
+        String widgetPath;
     }
 
     public UIManager(Application app, Node guiNode, Node rootNode) {
@@ -93,6 +100,7 @@ public class UIManager {
         }
 
         loadedUIs.put(name, loadedUI);
+        activeUIName = name;
         LOGGER.log(Level.INFO, "UIManager finished loading UI ''{0}''", name);
         return name;
     }
@@ -106,6 +114,10 @@ public class UIManager {
         for (UILayerNode layerNode : loaded.layerNodes.values()) {
             layerNode.removeFromParent();
         }
+
+        if (uiName != null && uiName.equals(activeUIName)) {
+            activeUIName = loadedUIs.isEmpty() ? null : loadedUIs.keySet().iterator().next();
+        }
     }
 
     public void unloadAll() {
@@ -115,23 +127,27 @@ public class UIManager {
     }
 
     public UILayerNode resolveLayer(String uiName, String layerName) {
-        LoadedUI loaded = loadedUIs.get(uiName);
-        if (loaded == null) {
+        ResolvedUIPath resolved = resolvePath(uiName, layerName, null);
+        if (resolved == null || resolved.loadedUI == null) {
             return null;
         }
-        return loaded.layerNodes.get(layerName);
+        return resolved.loadedUI.layerNodes.get(resolved.layerName);
     }
 
     public UIWidgetNode resolveWidget(String uiName, String layerName, String widgetName) {
-        UILayerNode layer = resolveLayer(uiName, layerName);
+        ResolvedUIPath resolved = resolvePath(uiName, layerName, widgetName);
+        if (resolved == null || resolved.loadedUI == null) {
+            return null;
+        }
+        UILayerNode layer = resolved.loadedUI.layerNodes.get(resolved.layerName);
         if (layer == null) {
             return null;
         }
-        return layer.findWidget(widgetName);
+        return layer.findWidget(resolved.widgetPath);
     }
 
     public UIWidgetNode resolveWidgetPath(String uiName, String dotPath) {
-        LoadedUI loaded = loadedUIs.get(uiName);
+        LoadedUI loaded = getLoadedUI(uiName);
         if (loaded == null) {
             return null;
         }
@@ -146,22 +162,61 @@ public class UIManager {
             return null;
         }
 
-        String widgetName = parts[1];
-        if (widgetName.contains(".")) {
-            String[] widgetParts = widgetName.split("\\.");
-            widgetName = widgetParts[widgetParts.length - 1];
-        }
-
-        return layer.findWidget(widgetName);
+        return layer.findWidget(parts[1]);
     }
 
     public UIDocument getDocument(String uiName) {
-        LoadedUI loaded = loadedUIs.get(uiName);
+        LoadedUI loaded = getLoadedUI(uiName);
         return loaded != null ? loaded.document : null;
     }
 
     public boolean isLoaded(String uiName) {
         return loadedUIs.containsKey(uiName);
+    }
+
+    public String getActiveUIName() {
+        return activeUIName;
+    }
+
+    private LoadedUI getLoadedUI(String uiName) {
+        if (uiName != null && !uiName.isEmpty()) {
+            return loadedUIs.get(uiName);
+        }
+        if (activeUIName != null) {
+            return loadedUIs.get(activeUIName);
+        }
+        if (loadedUIs.size() == 1) {
+            return loadedUIs.values().iterator().next();
+        }
+        return null;
+    }
+
+    private ResolvedUIPath resolvePath(String uiName, String layerName, String widgetPath) {
+        LoadedUI loaded = getLoadedUI(uiName);
+        if (loaded != null && layerName != null && loaded.layerNodes.containsKey(layerName)) {
+            ResolvedUIPath resolved = new ResolvedUIPath();
+            resolved.loadedUI = loaded;
+            resolved.layerName = layerName;
+            resolved.widgetPath = widgetPath;
+            return resolved;
+        }
+
+        LoadedUI activeLoaded = getLoadedUI(null);
+        if (activeLoaded != null && uiName != null && activeLoaded.layerNodes.containsKey(uiName)) {
+            ResolvedUIPath resolved = new ResolvedUIPath();
+            resolved.loadedUI = activeLoaded;
+            resolved.layerName = uiName;
+            if (layerName == null || layerName.isEmpty()) {
+                resolved.widgetPath = widgetPath;
+            } else if (widgetPath == null || widgetPath.isEmpty()) {
+                resolved.widgetPath = layerName;
+            } else {
+                resolved.widgetPath = layerName + "." + widgetPath;
+            }
+            return resolved;
+        }
+
+        return null;
     }
 
     private void addBillboardControls(Node node) {

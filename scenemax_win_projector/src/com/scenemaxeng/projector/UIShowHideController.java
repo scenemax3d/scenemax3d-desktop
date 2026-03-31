@@ -27,6 +27,9 @@ public class UIShowHideController extends SceneMaxBaseController {
 
         UIShowHideCommand shCmd = (UIShowHideCommand) this.cmd;
         UIManager uiManager = app.getUIManager();
+        String commandPathPrefix = shCmd.uiName != null && !shCmd.uiName.isEmpty()
+                ? shCmd.uiName + "." + shCmd.layerName
+                : shCmd.layerName;
 
         if (uiManager == null) {
             app.handleRuntimeError("UI system not initialized");
@@ -34,29 +37,32 @@ public class UIShowHideController extends SceneMaxBaseController {
         }
 
         if (shCmd.widgetPath == null || shCmd.widgetPath.isEmpty()) {
+            // Ambiguous short syntax: UI.layer1.panel2.hide
+            // If the first segment is not a loaded UI name, treat it as
+            // layer.widget against the active UI before falling back to layer visibility.
+            if (shCmd.uiName != null && !shCmd.uiName.isEmpty() && !uiManager.isLoaded(shCmd.uiName)) {
+                UIWidgetNode nestedWidget = uiManager.resolveWidget(null, shCmd.uiName, shCmd.layerName);
+                if (nestedWidget != null) {
+                    nestedWidget.setWidgetVisible(shCmd.show);
+                    return true;
+                }
+            }
+
             // Target is the layer itself
             UILayerNode layer = uiManager.resolveLayer(shCmd.uiName, shCmd.layerName);
             if (layer != null) {
                 layer.setLayerVisible(shCmd.show);
             } else {
-                app.handleRuntimeError("UI layer not found: " + shCmd.uiName + "." + shCmd.layerName);
+                app.handleRuntimeError("UI layer not found: " + commandPathPrefix);
             }
         } else {
-            // Target is a widget within the layer
-            // The widgetPath may be "panel1" or "panel1.button1" etc.
-            // Extract the leaf widget name (all names are unique within a layer)
-            String widgetName = shCmd.widgetPath;
-            if (widgetName.contains(".")) {
-                String[] parts = widgetName.split("\\.");
-                widgetName = parts[parts.length - 1];
-            }
-
-            UIWidgetNode widget = uiManager.resolveWidget(shCmd.uiName, shCmd.layerName, widgetName);
+            // Target is a widget within the layer, resolved by full path when provided.
+            UIWidgetNode widget = uiManager.resolveWidget(shCmd.uiName, shCmd.layerName, shCmd.widgetPath);
             if (widget != null) {
                 widget.setWidgetVisible(shCmd.show);
             } else {
                 app.handleRuntimeError("UI widget not found: " +
-                        shCmd.uiName + "." + shCmd.layerName + "." + shCmd.widgetPath);
+                        commandPathPrefix + "." + shCmd.widgetPath);
             }
         }
 
