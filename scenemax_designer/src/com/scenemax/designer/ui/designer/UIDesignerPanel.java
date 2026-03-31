@@ -383,10 +383,10 @@ public class UIDesignerPanel extends JPanel {
         addFormRow("L:", spnMarginLeft, "R:", spnMarginRight);
         addFormRow("T:", spnMarginTop, "B:", spnMarginBottom);
 
-        spnMarginLeft.addChangeListener(e -> applyConstraintChange());
-        spnMarginRight.addChangeListener(e -> applyConstraintChange());
-        spnMarginTop.addChangeListener(e -> applyConstraintChange());
-        spnMarginBottom.addChangeListener(e -> applyConstraintChange());
+        spnMarginLeft.addChangeListener(e -> applyMarginChange());
+        spnMarginRight.addChangeListener(e -> applyMarginChange());
+        spnMarginTop.addChangeListener(e -> applyMarginChange());
+        spnMarginBottom.addChangeListener(e -> applyMarginChange());
 
         // Bias
         propertiesPanel.add(Box.createVerticalStrut(8));
@@ -850,10 +850,16 @@ public class UIDesignerPanel extends JPanel {
         refreshConstraintTargets(widget);
 
         // Load current constraints
-        loadConstraint(widget, UIConstraintSide.LEFT, cboConstraintLeft, cboConstraintLeftSide, spnMarginLeft);
-        loadConstraint(widget, UIConstraintSide.RIGHT, cboConstraintRight, cboConstraintRightSide, spnMarginRight);
-        loadConstraint(widget, UIConstraintSide.TOP, cboConstraintTop, cboConstraintTopSide, spnMarginTop);
-        loadConstraint(widget, UIConstraintSide.BOTTOM, cboConstraintBottom, cboConstraintBottomSide, spnMarginBottom);
+        loadConstraint(widget, UIConstraintSide.LEFT, cboConstraintLeft, cboConstraintLeftSide);
+        loadConstraint(widget, UIConstraintSide.RIGHT, cboConstraintRight, cboConstraintRightSide);
+        loadConstraint(widget, UIConstraintSide.TOP, cboConstraintTop, cboConstraintTopSide);
+        loadConstraint(widget, UIConstraintSide.BOTTOM, cboConstraintBottom, cboConstraintBottomSide);
+
+        // Load margins
+        spnMarginLeft.setValue((double) widget.getMarginLeft());
+        spnMarginRight.setValue((double) widget.getMarginRight());
+        spnMarginTop.setValue((double) widget.getMarginTop());
+        spnMarginBottom.setValue((double) widget.getMarginBottom());
 
         // Center constraints
         chkCenterHorizontal.setSelected(widget.isCenterHorizontal());
@@ -903,6 +909,10 @@ public class UIDesignerPanel extends JPanel {
         spnHeight.setValue(0.0);
         spnHBias.setValue(0.5);
         spnVBias.setValue(0.5);
+        spnMarginLeft.setValue(0.0);
+        spnMarginRight.setValue(0.0);
+        spnMarginTop.setValue(0.0);
+        spnMarginBottom.setValue(0.0);
         textPropsPanel.setVisible(false);
         buttonPropsPanel.setVisible(false);
         imagePropsPanel.setVisible(false);
@@ -945,16 +955,13 @@ public class UIDesignerPanel extends JPanel {
     }
 
     private void loadConstraint(UIWidgetDef widget, UIConstraintSide side,
-                                 JComboBox<String> targetCombo, JComboBox<String> sideCombo,
-                                 JSpinner marginSpinner) {
+                                 JComboBox<String> targetCombo, JComboBox<String> sideCombo) {
         UIConstraint constraint = widget.getConstraintForSide(side);
         if (constraint == null) {
             targetCombo.setSelectedItem("(none)");
-            marginSpinner.setValue(0.0);
         } else {
             targetCombo.setSelectedItem(constraint.getTargetName());
             sideCombo.setSelectedItem(constraint.getTargetSide().name().toLowerCase());
-            marginSpinner.setValue((double) constraint.getMargin());
         }
     }
 
@@ -1012,18 +1019,30 @@ public class UIDesignerPanel extends JPanel {
 
         widget.clearConstraints();
 
-        applyOneConstraint(widget, UIConstraintSide.LEFT, cboConstraintLeft, cboConstraintLeftSide, spnMarginLeft);
-        applyOneConstraint(widget, UIConstraintSide.RIGHT, cboConstraintRight, cboConstraintRightSide, spnMarginRight);
-        applyOneConstraint(widget, UIConstraintSide.TOP, cboConstraintTop, cboConstraintTopSide, spnMarginTop);
-        applyOneConstraint(widget, UIConstraintSide.BOTTOM, cboConstraintBottom, cboConstraintBottomSide, spnMarginBottom);
+        applyOneConstraint(widget, UIConstraintSide.LEFT, cboConstraintLeft, cboConstraintLeftSide);
+        applyOneConstraint(widget, UIConstraintSide.RIGHT, cboConstraintRight, cboConstraintRightSide);
+        applyOneConstraint(widget, UIConstraintSide.TOP, cboConstraintTop, cboConstraintTopSide);
+        applyOneConstraint(widget, UIConstraintSide.BOTTOM, cboConstraintBottom, cboConstraintBottomSide);
 
         markDirty();
         canvas.refreshLayout();
     }
 
+    private void applyMarginChange() {
+        if (updatingProperties) return;
+        UIWidgetDef widget = canvas.getSelectedWidget();
+        if (widget == null) return;
+
+        widget.setMarginLeft(((Number) spnMarginLeft.getValue()).floatValue());
+        widget.setMarginRight(((Number) spnMarginRight.getValue()).floatValue());
+        widget.setMarginTop(((Number) spnMarginTop.getValue()).floatValue());
+        widget.setMarginBottom(((Number) spnMarginBottom.getValue()).floatValue());
+        markDirty();
+        canvas.refreshLayout();
+    }
+
     private void applyOneConstraint(UIWidgetDef widget, UIConstraintSide side,
-                                     JComboBox<String> targetCombo, JComboBox<String> sideCombo,
-                                     JSpinner marginSpinner) {
+                                     JComboBox<String> targetCombo, JComboBox<String> sideCombo) {
         String target = (String) targetCombo.getSelectedItem();
         if (target == null || "(none)".equals(target)) return;
 
@@ -1035,8 +1054,7 @@ public class UIDesignerPanel extends JPanel {
             targetSide = side; // fallback to same side
         }
 
-        float margin = ((Number) marginSpinner.getValue()).floatValue();
-        widget.addConstraint(new UIConstraint(side, target, targetSide, margin));
+        widget.addConstraint(new UIConstraint(side, target, targetSide, 0));
     }
 
     private void applyBiasChange() {
