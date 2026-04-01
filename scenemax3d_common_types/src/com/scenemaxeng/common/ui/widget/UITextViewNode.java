@@ -4,6 +4,7 @@ import com.jme3.asset.AssetManager;
 import com.jme3.font.BitmapFont;
 import com.jme3.font.BitmapText;
 import com.jme3.renderer.queue.RenderQueue;
+import com.jme3.scene.Spatial;
 import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.types.ResourceFont;
 import com.scenemaxeng.common.ui.layout.LayoutRect;
@@ -127,5 +128,10 @@ public class UITextViewNode extends UIWidgetNode {
 
     public String getText() {
         return widgetDef.getText();
+    }
+
+    @Override
+    public Spatial getShaderTarget() {
+        return textNode != null ? textNode : super.getShaderTarget();
     }
 }

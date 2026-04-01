@@ -16,6 +16,7 @@ public class AssetsMapping {
     private HashMap<String, ResourceAudio> _audioNodesRes = new HashMap<>();
     private HashMap<String, ResourceSetup> _resources = new HashMap<>();
     private HashMap<String, ResourceSetup2D> _resources2D = new HashMap<>();
+    private HashMap<String, ResourceShader> _shaders = new HashMap<>();
     private HashMap<String,TerrainResource> _terrains=new HashMap<>();
     private HashMap<String,SkyBoxResource> _skyboxes=new HashMap<>();
 
@@ -56,6 +57,9 @@ public class AssetsMapping {
         res = getResourcesFolderIndex(extPath+"/skyboxes/skyboxes-ext.json");
         loadSkyBoxesFromJson(res);
 
+        res = getResourcesFolderIndex(extPath+"/shaders/shaders-ext.json");
+        loadShadersFromJson(res);
+
     }
 
     public AssetsMapping() {
@@ -84,6 +88,9 @@ public class AssetsMapping {
         res = getResourcesFolderIndex("./resources/skyboxes/skyboxes.json");
         loadSkyBoxesFromJson(res);
 
+        res = getResourcesFolderIndex("./resources/shaders/shaders.json");
+        loadShadersFromJson(res);
+
         /////////////////////////////// READ SELF - CONTAINED ASSETS /////////////////////////////
         // self contained exec will read from embedded class-path resource file
         res = getResourcesIndex();
@@ -94,6 +101,7 @@ public class AssetsMapping {
             loadAudioFromJson(res);
             loadFontsFromJson(res);
             loadSkyBoxesFromJson(res);
+            loadShadersFromJson(res);
         }
     }
 
@@ -285,6 +293,18 @@ public class AssetsMapping {
 
     }
 
+    private void loadShadersFromJson(JSONObject res) {
+        if(res==null || !res.has("shaders")) return;
+
+        JSONArray shaders = res.getJSONArray("shaders");
+        for (int i = 0; i < shaders.length(); ++i) {
+            JSONObject shader = shaders.getJSONObject(i);
+            String name = shader.getString("name");
+            String path = shader.getString("path");
+            _shaders.put(name.toLowerCase(), new ResourceShader(name, path));
+        }
+    }
+
     private void loadTerrainsFromJson(JSONObject res) {
         if(res==null || !res.has("terrains")) return;
 
@@ -325,6 +345,10 @@ public class AssetsMapping {
 
     public HashMap<String, ResourceFont> getFontsIndex() {
         return _fontNodesRes;
+    }
+
+    public HashMap<String, ResourceShader> getShadersIndex() {
+        return _shaders;
     }
 
     private JSONObject getResourcesFolderIndex(String path) {

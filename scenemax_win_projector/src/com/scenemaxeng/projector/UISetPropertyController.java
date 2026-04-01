@@ -73,6 +73,9 @@ public class UISetPropertyController extends SceneMaxBaseController {
                 case "text":
                     textView.setText(value);
                     break;
+                case "shader":
+                    app.setUIWidgetShader(textView, value);
+                    break;
                 case "color":
                 case "textcolor":
                     textView.setTextColor(value);
@@ -97,6 +100,9 @@ public class UISetPropertyController extends SceneMaxBaseController {
                 case "text":
                     button.setButtonText(value);
                     break;
+                case "shader":
+                    app.setUIWidgetShader(button, value);
+                    break;
                 case "color":
                 case "buttoncolor":
                     button.setBackgroundColor(value);
@@ -115,6 +121,9 @@ public class UISetPropertyController extends SceneMaxBaseController {
                 case "imagepath":
                     image.setImage(value);
                     break;
+                case "shader":
+                    app.setUIWidgetShader(image, value);
+                    break;
                 case "sprite":
                 case "spritename":
                     image.setSprite(value);
@@ -125,6 +134,9 @@ public class UISetPropertyController extends SceneMaxBaseController {
         } else if (widget instanceof UIPanelNode) {
             UIPanelNode panel = (UIPanelNode) widget;
             switch (prop) {
+                case "shader":
+                    app.setUIWidgetShader(panel, value);
+                    break;
                 case "color":
                 case "backgroundcolor":
                     panel.setBackgroundColor(value);
@@ -146,6 +158,9 @@ public class UISetPropertyController extends SceneMaxBaseController {
      */
     private void applyCommonProperty(UIWidgetNode widget, String prop, String value) {
         switch (prop) {
+            case "shader":
+                app.setUIWidgetShader(widget, value);
+                break;
             case "visible":
                 widget.setWidgetVisible(
                         value.equalsIgnoreCase("true") || value.equals("1"));

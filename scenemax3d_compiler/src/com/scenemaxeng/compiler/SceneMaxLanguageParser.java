@@ -2283,6 +2283,14 @@ public class SceneMaxLanguageParser implements IParser {
                 return cmd;
             }
 
+            public ActionStatementBase visitSetShaderAction(SceneMaxParser.SetShaderActionContext ctx) {
+
+                SetShaderCommand cmd = new SetShaderCommand();
+                cmd.shaderNameExpr = ctx.set_shader_action().logical_expression();
+                cmd.targetVar = ctx.set_shader_action().var_decl().getText();
+                return cmd;
+            }
+
             public ActionStatementBase visitCharacterActions(SceneMaxParser.CharacterActionsContext ctx) {
                 SceneMaxParser.Character_actionContext characterAction = ctx.character_actions().character_action();
                 if(characterAction.character_action_jump()!=null) {
