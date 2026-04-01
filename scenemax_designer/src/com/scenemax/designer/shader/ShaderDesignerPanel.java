@@ -3,22 +3,32 @@ package com.scenemax.designer.shader;
 import com.jme3.math.ColorRGBA;
 import com.jme3.system.AppSettings;
 import com.jme3.system.JmeCanvasContext;
+import com.scenemaxeng.common.types.AssetsMapping;
+import com.scenemaxeng.common.types.ResourceSetup;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
+import javax.imageio.ImageIO;
 
 public class ShaderDesignerPanel extends JPanel {
 
     private final String projectPath;
     private final File shaderFile;
     private final String resourcesFolder;
+    private final List<String> availableModelNames = new ArrayList<>();
+    private final Map<String, ResourceSetup> modelResources = new HashMap<>();
 
     private ShaderDocument document;
     private boolean dirty = false;
@@ -32,6 +42,12 @@ public class ShaderDesignerPanel extends JPanel {
     private final Map<ShaderBlockType, JCheckBox> blockChecks = new EnumMap<>(ShaderBlockType.class);
     private JList<ShaderTemplatePreset> templateList;
     private JComboBox<ShaderPreviewTarget> cboPreviewTarget;
+    private JComboBox<String> cboPreviewModel;
+    private JLabel lblPreviewHint;
+    private JPanel modelCardPanel;
+    private JLabel lblModelThumb;
+    private JLabel lblModelTitle;
+    private JLabel lblModelMeta;
     private JButton btnColor;
     private JSpinner spnGlowStrength;
     private JSpinner spnPulseSpeed;
@@ -40,6 +56,7 @@ public class ShaderDesignerPanel extends JPanel {
     private JSpinner spnScrollSpeed;
     private JTextField txtTexture;
     private JLabel lblExportPath;
+    private String thumbnailGenerationModel = null;
 
     public ShaderDesignerPanel(String projectPath, File shaderFile) {
         super(new BorderLayout());
@@ -48,6 +65,7 @@ public class ShaderDesignerPanel extends JPanel {
         this.resourcesFolder = resolveResourcesFolder(projectPath, shaderFile);
 
         loadDocument();
+        loadAvailableModels();
         buildUi();
         initPreview();
         refreshFromDocument();
@@ -202,6 +220,18 @@ public class ShaderDesignerPanel extends JPanel {
         lbl.setFont(lbl.getFont().deriveFont(Font.BOLD, 18f));
         previewHeader.add(lbl, BorderLayout.WEST);
 
+        JPanel previewHeaderLeft = new JPanel();
+        previewHeaderLeft.setOpaque(false);
+        previewHeaderLeft.setLayout(new BoxLayout(previewHeaderLeft, BoxLayout.Y_AXIS));
+        previewHeaderLeft.add(lbl);
+
+        lblPreviewHint = new JLabel("Try the effect on a quick primitive or one of your imported models.");
+        lblPreviewHint.setForeground(new Color(149, 164, 182));
+        lblPreviewHint.setFont(lblPreviewHint.getFont().deriveFont(Font.PLAIN, 12f));
+        previewHeaderLeft.add(lblPreviewHint);
+
+        previewHeader.add(previewHeaderLeft, BorderLayout.WEST);
+
         cboPreviewTarget = new JComboBox<>(ShaderPreviewTarget.values());
         cboPreviewTarget.setRenderer(new DefaultListCellRenderer() {
             @Override
@@ -209,7 +239,7 @@ public class ShaderDesignerPanel extends JPanel {
                                                           boolean isSelected, boolean cellHasFocus) {
                 super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
                 if (value instanceof ShaderPreviewTarget) {
-                    setText(((ShaderPreviewTarget) value).getDisplayName());
+                    setText("Target: " + ((ShaderPreviewTarget) value).getDisplayName());
                 }
                 return this;
             }
@@ -217,12 +247,47 @@ public class ShaderDesignerPanel extends JPanel {
         cboPreviewTarget.addActionListener(e -> {
             if (!updatingUi) {
                 document.setPreviewTarget((ShaderPreviewTarget) cboPreviewTarget.getSelectedItem());
+                if (document.getPreviewTarget() == ShaderPreviewTarget.MODEL
+                        && (document.getPreviewModelName() == null || document.getPreviewModelName().isBlank())
+                        && !availableModelNames.isEmpty()) {
+                    document.setPreviewModelName(availableModelNames.get(0));
+                }
+                if (cboPreviewModel != null) {
+                    cboPreviewModel.setVisible(document.getPreviewTarget() == ShaderPreviewTarget.MODEL);
+                }
+                if (modelCardPanel != null) {
+                    modelCardPanel.setVisible(document.getPreviewTarget() == ShaderPreviewTarget.MODEL);
+                }
                 markDirtyAndRefresh();
             }
         });
-        previewHeader.add(cboPreviewTarget, BorderLayout.EAST);
+        JPanel previewControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        previewControls.setOpaque(false);
+        previewControls.add(cboPreviewTarget);
 
-        center.add(previewHeader, BorderLayout.NORTH);
+        cboPreviewModel = new JComboBox<>(availableModelNames.toArray(new String[0]));
+        cboPreviewModel.setPreferredSize(new Dimension(170, 28));
+        cboPreviewModel.setToolTipText("Project model used for shader preview");
+        cboPreviewModel.addActionListener(e -> {
+            if (!updatingUi && cboPreviewModel.getSelectedItem() != null) {
+                document.setPreviewModelName((String) cboPreviewModel.getSelectedItem());
+                if (document.getPreviewTarget() != ShaderPreviewTarget.MODEL) {
+                    document.setPreviewTarget(ShaderPreviewTarget.MODEL);
+                    cboPreviewTarget.setSelectedItem(ShaderPreviewTarget.MODEL);
+                }
+                markDirtyAndRefresh();
+            }
+        });
+        previewControls.add(cboPreviewModel);
+        JPanel previewHeaderWrap = new JPanel(new BorderLayout());
+        previewHeaderWrap.setOpaque(false);
+        previewHeaderWrap.add(previewHeaderLeft, BorderLayout.WEST);
+        previewHeaderWrap.add(previewControls, BorderLayout.EAST);
+
+        center.add(previewHeaderWrap, BorderLayout.NORTH);
+
+        modelCardPanel = buildModelCard();
+        center.add(modelCardPanel, BorderLayout.SOUTH);
 
         previewContainer = new JPanel(new BorderLayout());
         previewContainer.setOpaque(true);
@@ -236,7 +301,7 @@ public class ShaderDesignerPanel extends JPanel {
         lblExportPath = new JLabel();
         lblExportPath.setForeground(new Color(149, 164, 182));
         footer.add(lblExportPath, BorderLayout.CENTER);
-        center.add(footer, BorderLayout.SOUTH);
+        previewContainer.add(footer, BorderLayout.SOUTH);
 
         return center;
     }
@@ -376,6 +441,20 @@ public class ShaderDesignerPanel extends JPanel {
         try {
             templateList.setSelectedValue(document.getTemplate(), true);
             cboPreviewTarget.setSelectedItem(document.getPreviewTarget());
+            if (document.getPreviewModelName() != null && !document.getPreviewModelName().isBlank()) {
+                cboPreviewModel.setSelectedItem(document.getPreviewModelName());
+            } else if (!availableModelNames.isEmpty()) {
+                cboPreviewModel.setSelectedIndex(0);
+            }
+            cboPreviewModel.setEnabled(!availableModelNames.isEmpty());
+            cboPreviewModel.setVisible(document.getPreviewTarget() == ShaderPreviewTarget.MODEL);
+            modelCardPanel.setVisible(document.getPreviewTarget() == ShaderPreviewTarget.MODEL);
+            if (document.getPreviewTarget() == ShaderPreviewTarget.MODEL) {
+                lblPreviewHint.setText("Previewing on one of your project models.");
+            } else {
+                lblPreviewHint.setText("Try the effect on a quick primitive or one of your imported models.");
+            }
+            refreshModelCard();
             updateColorButton(document.getMainColor());
             spnGlowStrength.setValue((double) document.getGlowStrength());
             spnPulseSpeed.setValue((double) document.getPulseSpeed());
@@ -477,6 +556,220 @@ public class ShaderDesignerPanel extends JPanel {
         if (previewApp != null) {
             previewApp.updatePreview(shaderFile, document);
         }
+        if (document.getPreviewTarget() == ShaderPreviewTarget.MODEL) {
+            scheduleModelThumbnailGeneration();
+        }
+    }
+
+    private void loadAvailableModels() {
+        availableModelNames.clear();
+        modelResources.clear();
+        if (resourcesFolder == null || resourcesFolder.isBlank()) {
+            return;
+        }
+        try {
+            AssetsMapping mapping = new AssetsMapping(new File(resourcesFolder).getCanonicalPath());
+            List<ResourceSetup> setups = new ArrayList<>(mapping.get3DModelsIndex().values());
+            setups.sort(Comparator.comparing(res -> res.name.toLowerCase()));
+            for (ResourceSetup setup : setups) {
+                availableModelNames.add(setup.name);
+                modelResources.put(setup.name, setup);
+            }
+            if ((document.getPreviewModelName() == null || document.getPreviewModelName().isBlank()) && !availableModelNames.isEmpty()) {
+                document.setPreviewModelName(availableModelNames.get(0));
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private JPanel buildModelCard() {
+        JPanel panel = new JPanel(new BorderLayout(10, 0));
+        panel.setOpaque(true);
+        panel.setBackground(new Color(22, 30, 38));
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(56, 68, 84), 1),
+                new EmptyBorder(10, 10, 10, 10)
+        ));
+
+        lblModelThumb = new JLabel(createGenericModelThumbnail());
+        lblModelThumb.setPreferredSize(new Dimension(72, 72));
+        panel.add(lblModelThumb, BorderLayout.WEST);
+
+        JPanel textWrap = new JPanel();
+        textWrap.setOpaque(false);
+        textWrap.setLayout(new BoxLayout(textWrap, BoxLayout.Y_AXIS));
+
+        lblModelTitle = new JLabel("No model selected");
+        lblModelTitle.setForeground(new Color(239, 244, 248));
+        lblModelTitle.setFont(lblModelTitle.getFont().deriveFont(Font.BOLD, 14f));
+        textWrap.add(lblModelTitle);
+
+        lblModelMeta = new JLabel("A cached preview thumbnail will appear here.");
+        lblModelMeta.setForeground(new Color(149, 164, 182));
+        lblModelMeta.setFont(lblModelMeta.getFont().deriveFont(Font.PLAIN, 12f));
+        textWrap.add(Box.createVerticalStrut(4));
+        textWrap.add(lblModelMeta);
+
+        panel.add(textWrap, BorderLayout.CENTER);
+        panel.setVisible(false);
+        return panel;
+    }
+
+    private void refreshModelCard() {
+        if (lblModelTitle == null || lblModelMeta == null || lblModelThumb == null) {
+            return;
+        }
+        String modelName = document.getPreviewModelName();
+        if (modelName == null || modelName.isBlank()) {
+            lblModelTitle.setText("No model selected");
+            lblModelMeta.setText("Choose a project model to preview the shader on it.");
+            lblModelThumb.setIcon(createGenericModelThumbnail());
+            return;
+        }
+        lblModelTitle.setText(modelName);
+        ResourceSetup setup = modelResources.get(modelName);
+        String pathText = setup != null && setup.path != null ? setup.path.replace("\\", "/") : "Project model";
+        lblModelMeta.setText(pathText);
+
+        File cacheFile = getCachedThumbnailFile(modelName);
+        if (cacheFile.exists()) {
+            try {
+                BufferedImage img = ImageIO.read(cacheFile);
+                if (img != null) {
+                    lblModelThumb.setIcon(new ImageIcon(img));
+                    return;
+                }
+            } catch (IOException ignored) {
+            }
+        }
+        lblModelThumb.setIcon(createGenericModelThumbnail());
+    }
+
+    private void scheduleModelThumbnailGeneration() {
+        if (previewCanvas == null) {
+            return;
+        }
+        String modelName = document.getPreviewModelName();
+        if (modelName == null || modelName.isBlank()) {
+            return;
+        }
+        File cacheFile = getCachedThumbnailFile(modelName);
+        if (cacheFile.exists() || modelName.equals(thumbnailGenerationModel)) {
+            refreshModelCard();
+            return;
+        }
+        thumbnailGenerationModel = modelName;
+        Timer timer = new Timer(900, e -> captureAndCacheThumbnail(modelName));
+        timer.setRepeats(false);
+        timer.start();
+    }
+
+    private void captureAndCacheThumbnail(String modelName) {
+        if (previewCanvas == null || !modelName.equals(document.getPreviewModelName())) {
+            thumbnailGenerationModel = null;
+            return;
+        }
+        int width = Math.max(1, previewCanvas.getWidth());
+        int height = Math.max(1, previewCanvas.getHeight());
+        if (width < 10 || height < 10) {
+            thumbnailGenerationModel = null;
+            return;
+        }
+
+        BufferedImage snapshot = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = snapshot.createGraphics();
+        previewCanvas.paint(g);
+        g.dispose();
+
+        SwingWorker<BufferedImage, Void> worker = new SwingWorker<>() {
+            @Override
+            protected BufferedImage doInBackground() throws Exception {
+                int crop = Math.min(snapshot.getWidth(), snapshot.getHeight());
+                int x = (snapshot.getWidth() - crop) / 2;
+                int y = Math.max(0, (snapshot.getHeight() - crop) / 3);
+                y = Math.min(y, snapshot.getHeight() - crop);
+                BufferedImage square = snapshot.getSubimage(x, y, crop, crop);
+
+                BufferedImage scaled = new BufferedImage(72, 72, BufferedImage.TYPE_INT_ARGB);
+                Graphics2D gg = scaled.createGraphics();
+                gg.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                gg.drawImage(square, 0, 0, 72, 72, null);
+                gg.dispose();
+
+                File cacheFile = getCachedThumbnailFile(modelName);
+                File parent = cacheFile.getParentFile();
+                if (!parent.exists()) {
+                    parent.mkdirs();
+                }
+                ImageIO.write(scaled, "png", cacheFile);
+                return scaled;
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    BufferedImage img = get();
+                    if (modelName.equals(document.getPreviewModelName())) {
+                        lblModelThumb.setIcon(new ImageIcon(img));
+                    }
+                } catch (Exception ignored) {
+                } finally {
+                    thumbnailGenerationModel = null;
+                    refreshModelCard();
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private File getCachedThumbnailFile(String modelName) {
+        String key = sanitizeFileName(modelName);
+        ResourceSetup setup = modelResources.get(modelName);
+        if (setup != null && setup.path != null) {
+            key += "_" + Integer.toHexString(setup.path.toLowerCase().hashCode());
+        }
+        return new File(getThumbnailCacheDir(), key + ".png");
+    }
+
+    private File getThumbnailCacheDir() {
+        File root = new File("tmp/shader_model_thumbs");
+        if (projectPath != null && !projectPath.isBlank()) {
+            String projectKey = sanitizeFileName(new File(projectPath).getName());
+            return new File(root, projectKey);
+        }
+        return root;
+    }
+
+    private String sanitizeFileName(String value) {
+        return value == null ? "model" : value.replaceAll("[^A-Za-z0-9._-]", "_");
+    }
+
+    private Icon createGenericModelThumbnail() {
+        BufferedImage img = new BufferedImage(72, 72, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        g.setColor(new Color(28, 37, 46));
+        g.fillRoundRect(0, 0, 72, 72, 12, 12);
+
+        GradientPaint paint = new GradientPaint(12, 14, new Color(80, 209, 195), 58, 58, new Color(255, 170, 83));
+        g.setPaint(paint);
+        Polygon front = new Polygon(new int[]{22, 42, 42, 22}, new int[]{26, 26, 46, 46}, 4);
+        Polygon top = new Polygon(new int[]{22, 32, 52, 42}, new int[]{26, 16, 16, 26}, 4);
+        Polygon side = new Polygon(new int[]{42, 52, 52, 42}, new int[]{26, 16, 36, 46}, 4);
+        g.fillPolygon(front);
+        g.fillPolygon(top);
+        g.fillPolygon(side);
+
+        g.setColor(new Color(255, 255, 255, 170));
+        g.setStroke(new BasicStroke(1.5f));
+        g.drawPolygon(front);
+        g.drawPolygon(top);
+        g.drawPolygon(side);
+
+        g.dispose();
+        return new ImageIcon(img);
     }
 
     private JPanel createCardPanel() {

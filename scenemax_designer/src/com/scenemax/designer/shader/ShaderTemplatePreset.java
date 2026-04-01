@@ -115,5 +115,6 @@ public enum ShaderTemplatePreset {
                 doc.setPreviewTarget(ShaderPreviewTarget.SPRITE);
                 break;
         }
+        doc.setPreviewModelName("");
     }
 }

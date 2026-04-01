@@ -25,6 +25,7 @@ public class ShaderDocument {
     private float edgeWidth = 0.15f;
     private float scrollSpeed = 0.35f;
     private String texturePath = "";
+    private String previewModelName = "";
 
     public ShaderDocument(String filePath) {
         this.filePath = filePath;
@@ -110,6 +111,14 @@ public class ShaderDocument {
         this.texturePath = texturePath != null ? texturePath.trim().replace("\\", "/") : "";
     }
 
+    public String getPreviewModelName() {
+        return previewModelName;
+    }
+
+    public void setPreviewModelName(String previewModelName) {
+        this.previewModelName = previewModelName != null ? previewModelName.trim() : "";
+    }
+
     public ShaderDocument copy() {
         ShaderDocument copy = new ShaderDocument(filePath);
         copy.template = template;
@@ -122,6 +131,7 @@ public class ShaderDocument {
         copy.edgeWidth = edgeWidth;
         copy.scrollSpeed = scrollSpeed;
         copy.texturePath = texturePath;
+        copy.previewModelName = previewModelName;
         return copy;
     }
 
@@ -139,6 +149,7 @@ public class ShaderDocument {
         root.put("edgeWidth", edgeWidth);
         root.put("scrollSpeed", scrollSpeed);
         root.put("texture", texturePath);
+        root.put("previewModelName", previewModelName);
 
         JSONArray blocksJson = new JSONArray();
         for (ShaderBlockType block : blocks) {
@@ -196,6 +207,7 @@ public class ShaderDocument {
         doc.edgeWidth = (float) root.optDouble("edgeWidth", 0.15);
         doc.scrollSpeed = (float) root.optDouble("scrollSpeed", 0.35);
         doc.texturePath = root.optString("texture", "");
+        doc.previewModelName = root.optString("previewModelName", "");
 
         doc.blocks.clear();
         JSONArray blocksJson = root.optJSONArray("blocks");
