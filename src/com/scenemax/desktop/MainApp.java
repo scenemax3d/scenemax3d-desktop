@@ -5,6 +5,9 @@ import com.intellij.uiDesigner.core.Spacer;
 import com.scenemax.designer.DesignerDocument;
 import com.scenemax.designer.DesignerPanel;
 import com.scenemax.designer.Import3DModelPanel;
+import com.scenemax.designer.shader.ShaderDesignerPanel;
+import com.scenemax.designer.shader.ShaderDocument;
+import com.scenemax.designer.shader.ShaderTemplatePreset;
 import com.scenemax.designer.ui.designer.UIDesignerPanel;
 import com.scenemaxeng.common.ui.model.UIDocument;
 import com.scenemaxeng.compiler.ApplyMacroResults;
@@ -219,9 +222,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 lastSelectedFilePath = active.filePath;
                 isDocumentChanged = active.dirty;
                 lastSelectedNodeIsFile = true;
-                textArea.setEnabled(true);
-                textAreaRTL.setEnabled(true);
-                btnRunScript.setEnabled(!active.filePath.endsWith(".cs"));
+                boolean visualDesignerTab = active.isDesignerTab || active.isUIDesignerTab || active.isShaderDesignerTab;
+                textArea.setEnabled(!visualDesignerTab);
+                textAreaRTL.setEnabled(!visualDesignerTab);
+                btnRunScript.setEnabled(!visualDesignerTab && !active.filePath.endsWith(".cs"));
 
                 // Select and focus the corresponding tree node
                 openTreeNodeByFile(new File(active.filePath));
@@ -1160,6 +1164,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     createNewDesignerDocument(filePath);
                 } else if (cmd.equals("new_ui_document")) {
                     createNewUIDocument(filePath);
+                } else if (cmd.equals("new_shader_document")) {
+                    createNewShaderDocument(filePath);
                 } else if (cmd.equals("clean_backup_files")) {
                     cleanBackupFiles(new File(filePath));
                 } else if (cmd.equals("rename_folder")) {
@@ -1207,7 +1213,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         // are not accidentally written to a future file
                         boolean isDesigner = f.getName().toLowerCase().endsWith(".smdesign");
                         boolean isUIDesigner = f.getName().toLowerCase().endsWith(".smui");
-                        editorTabPanel.closeTabByPath(filePath, isDesigner || isUIDesigner);
+                        boolean isShaderDesigner = f.getName().toLowerCase().endsWith(".smshader");
+                        editorTabPanel.closeTabByPath(filePath, isDesigner || isUIDesigner || isShaderDesigner);
 
                         // If this is a .smdesign file, also delete its companion .code, _init.code
                         // and _end.code files and clean up any DB references (open_tabs)
@@ -1260,6 +1267,17 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                             }
                         }
 
+                        if (isShaderDesigner) {
+                            File shaderOutputFolder = ShaderDocument.getRuntimeFolder(f, Util.getResourcesFolder());
+                            if (shaderOutputFolder.exists()) {
+                                try {
+                                    FileUtils.deleteDirectory(shaderOutputFolder);
+                                } catch (IOException ex) {
+                                    ex.printStackTrace();
+                                }
+                            }
+                        }
+
                         f.delete();
                         obj.removeFromParent();
                         tree1.updateUI();
@@ -1299,6 +1317,15 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                             String oldPath = source.toString();
                             Path dest = source.resolveSibling(newName.trim());
                             Files.move(source, dest);
+                            if (oldPath.toLowerCase().endsWith(".smshader")) {
+                                File oldFile = new File(oldPath);
+                                File newFile = dest.toFile();
+                                File oldOutput = ShaderDocument.getRuntimeFolder(oldFile, Util.getResourcesFolder());
+                                File newOutput = ShaderDocument.getRuntimeFolder(newFile, Util.getResourcesFolder());
+                                if (oldOutput.exists() && !newOutput.exists()) {
+                                    FileUtils.moveDirectory(oldOutput, newOutput);
+                                }
+                            }
                             obj.setUserObject(new ScriptPathNode(dest.toString(), newName.trim()));
                             tree1.updateUI();
                             editorTabPanel.updateTabForRename(oldPath, dest.toString());
@@ -1334,6 +1361,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         addScriptsTreePopupMenuItem("Create New Script", "new", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Designer Document", "new_designer", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create UI Document", "new_ui_document", popup, popupActionListener, true, false, file);
+        addScriptsTreePopupMenuItem("Create Shader Document", "new_shader_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Sub Folder...", "create_sub_folder", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Delete Folder...", "delete_folder", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Rename Folder...", "rename_folder", popup, popupActionListener, true, false, file);
@@ -1830,6 +1858,52 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         openLastTreeNode();
     }
 
+    private void createNewShaderDocument(String path) {
+        String docName = (String) JOptionPane.showInputDialog(
+                null,
+                "Type new shader document name",
+                "Shader Document Name",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                null,
+                "");
+
+        if (docName == null || docName.trim().length() == 0) {
+            return;
+        }
+
+        ShaderTemplatePreset preset = (ShaderTemplatePreset) JOptionPane.showInputDialog(
+                null,
+                "Choose a starter template",
+                "Starter Template",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                ShaderTemplatePreset.values(),
+                ShaderTemplatePreset.TEXTURE_TINT
+        );
+        if (preset == null) {
+            preset = ShaderTemplatePreset.TEXTURE_TINT;
+        }
+
+        docName = docName.trim();
+        if (!docName.endsWith(".smshader")) {
+            docName = docName + ".smshader";
+        }
+
+        File f = new File(path + "/" + docName);
+        try {
+            ShaderDocument.writeEmptyFile(f, preset);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return;
+        }
+
+        File parentDir = new File(path);
+        saveSelectedTreeNodePosition(parentDir.getPath(), docName);
+        loadScriptsFolder();
+        openLastTreeNode();
+    }
+
     private void openUIDesignerDocument(File f) {
         // If this UI designer file is already open, just switch to its tab
         if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
@@ -1857,6 +1931,30 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         lastSelectedFilePath = f.getAbsolutePath();
         lastSelectedNodeIsFile = true;
         btnRunScript.setEnabled(false);
+    }
+
+    private void openShaderDesignerDocument(File f) {
+        if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
+            editorTabPanel.openShaderDesignerFile(f.getAbsolutePath(), null);
+            return;
+        }
+
+        String projectPath = null;
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject != null) {
+            projectPath = activeProject.path;
+        }
+
+        ShaderDesignerPanel shaderPanel = new ShaderDesignerPanel(projectPath, f);
+        shaderPanel.setOnDirtyCallback(() -> editorTabPanel.markActiveTabDirty());
+
+        editorTabPanel.openShaderDesignerFile(f.getAbsolutePath(), shaderPanel);
+
+        lastSelectedFilePath = f.getAbsolutePath();
+        lastSelectedNodeIsFile = true;
+        btnRunScript.setEnabled(false);
+
+        saveSelectedTreeNodePosition(f.getParentFile().getPath(), f.getName());
     }
 
     private void openDesignerDocument(File f) {
@@ -2132,6 +2230,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                             openDesignerDocument(f);
                         } else if (f.getName().endsWith(".smui")) {
                             openUIDesignerDocument(f);
+                        } else if (f.getName().endsWith(".smshader")) {
+                            openShaderDesignerDocument(f);
                         } else {
                             openFileInTab(f);
                         }
@@ -2167,6 +2267,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             openDesignerDocument(f);
         } else if (f.getName().endsWith(".smui")) {
             openUIDesignerDocument(f);
+        } else if (f.getName().endsWith(".smshader")) {
+            openShaderDesignerDocument(f);
         } else {
             openFileInTab(f);
         }
@@ -2293,6 +2395,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     openDesignerDocument(f);
                 } else if (f.getName().endsWith(".smui")) {
                     openUIDesignerDocument(f);
+                } else if (f.getName().endsWith(".smshader")) {
+                    openShaderDesignerDocument(f);
                 } else {
                     openFileInTab(f);
                 }

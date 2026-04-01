@@ -15,6 +15,7 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
     private static final ImageIcon ICON_SCRIPT   = new ImageIcon(ScriptsTreeCellRenderer.class.getResource("/images/3d_script_2_24x24.png"));
     private static final ImageIcon ICON_DESIGNER = createDesignerIcon();
     private static final ImageIcon ICON_UI_DESIGNER = createUIDesignerIcon();
+    private static final ImageIcon ICON_SHADER_DESIGNER = createShaderDesignerIcon();
 
     private JLabel label;
 
@@ -41,6 +42,8 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
             label.setIcon(ICON_DESIGNER);
         } else if (name.endsWith(".smui")) {
             label.setIcon(ICON_UI_DESIGNER);
+        } else if (name.endsWith(".smshader")) {
+            label.setIcon(ICON_SHADER_DESIGNER);
         } else if (name.endsWith(".cs")) {
             label.setIcon(ICON_CSHARP);
         } else if (name.equals("main")) {
@@ -105,6 +108,39 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
         // Small filled rectangle (button representation)
         g.setColor(new Color(0, 150, 180));
         g.fillRoundRect(4, 4, 16, 3, 1, 1);
+
+        g.dispose();
+        return new ImageIcon(img);
+    }
+
+    /**
+     * Creates a 24x24 icon representing a shader/effect document (spark + gradient tile).
+     */
+    private static ImageIcon createShaderDesignerIcon() {
+        BufferedImage img = new BufferedImage(24, 24, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        GradientPaint paint = new GradientPaint(3, 3, new Color(0, 215, 210), 21, 21, new Color(255, 160, 65));
+        g.setPaint(paint);
+        g.fillRoundRect(3, 3, 18, 18, 5, 5);
+
+        g.setColor(new Color(14, 24, 32, 180));
+        g.fillRoundRect(5, 6, 14, 10, 3, 3);
+
+        g.setColor(Color.WHITE);
+        g.setStroke(new BasicStroke(1.5f));
+        Path2D spark = new Path2D.Float();
+        spark.moveTo(12, 4);
+        spark.lineTo(13.5, 9.5);
+        spark.lineTo(19, 11);
+        spark.lineTo(13.5, 12.5);
+        spark.lineTo(12, 18);
+        spark.lineTo(10.5, 12.5);
+        spark.lineTo(5, 11);
+        spark.lineTo(10.5, 9.5);
+        spark.closePath();
+        g.draw(spark);
 
         g.dispose();
         return new ImageIcon(img);
