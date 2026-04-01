@@ -6,6 +6,7 @@ import com.jme3.material.RenderState;
 import com.jme3.math.ColorRGBA;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
+import com.jme3.scene.Spatial;
 import com.jme3.scene.shape.Quad;
 import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.ui.layout.LayoutRect;
@@ -112,6 +113,14 @@ public abstract class UIWidgetNode extends Node {
 
     public LayoutRect getLayoutRect() {
         return layoutRect;
+    }
+
+    public Spatial getShaderTarget() {
+        return backgroundGeom != null ? backgroundGeom : this;
+    }
+
+    public Geometry getBackgroundGeometry() {
+        return backgroundGeom;
     }
 
     protected Material createColorMaterial(ColorRGBA color) {

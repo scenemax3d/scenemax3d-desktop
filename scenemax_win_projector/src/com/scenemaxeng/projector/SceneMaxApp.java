@@ -22,6 +22,7 @@ import com.jme3.anim.SkinningControl;
 import com.jme3.animation.SkeletonControl;
 import com.jme3.app.Application;
 import com.jme3.app.state.AppState;
+import com.jme3.asset.AssetInfo;
 import com.jme3.asset.AssetKey;
 import com.jme3.asset.plugins.FileLocator;
 import com.jme3.audio.AudioNode;
@@ -51,7 +52,11 @@ import com.jme3.input.controls.MouseButtonTrigger;
 import com.jme3.light.DirectionalLight;
 import com.jme3.light.LightProbe;
 import com.jme3.material.Material;
+import com.jme3.material.MatParamTexture;
+import com.jme3.material.MaterialDef;
+import com.jme3.material.MatParam;
 import com.jme3.material.RenderState;
+import com.jme3.shader.VarType;
 import com.jme3.math.*;
 import com.jme3.niftygui.NiftyJmeDisplay;
 import com.jme3.post.FilterPostProcessor;
@@ -141,6 +146,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private static HashMap<String,Node> quads = new HashMap<>();
     //private static HashMap<String,SkyBoxMaterial> skyboxMaterials = new HashMap<>();
     private static HashMap<String,ResourceMaterial> materials = new HashMap<>();
+    private static final Map<Geometry, Material> originalMaterials = new WeakHashMap<>();
+    private static final Set<Material> runtimeShaderMaterials = Collections.newSetFromMap(new WeakHashMap<>());
     private static HashMap<String, AppModel> models = new HashMap<String, AppModel>();
 
     private static HashMap<String, List<java.lang.Object>> collisionControlsCache=new HashMap<>();
@@ -166,10 +173,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     public CameraNode attachCameraNode;
     public boolean scenePaused;
     private WaterFilter water;
-    private String workingFolder;
+      private String workingFolder;
     private String currentLevel = "";
     private String entryScriptFileName;
     private ProgramDef prg;
+    private float runtimeShaderElapsedTime = 0f;
     private SceneMaxBaseController lastWaitController;
     private SkyControl skyControl;
     private Spatial skybox = null;
@@ -1331,6 +1339,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             SetMaterialController ctl = new SetMaterialController(this,prg,scope,(SetMaterialCommand)action);
             ctl.async = action.isAsync;
             scope.add(ctl);
+        } else if(action instanceof SetShaderCommand) {
+            SetShaderController ctl = new SetShaderController(this,prg,scope,(SetShaderCommand)action);
+            ctl.async = action.isAsync;
+            scope.add(ctl);
         } else if (action instanceof ForEachCommand) {
             ForEachCommandController ctl = new ForEachCommandController(this,prg,scope,(ForEachCommand)action);
             ctl.async = action.isAsync;
@@ -2360,6 +2372,259 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     }
 
+    private boolean setSpatialShader(Spatial spatial, String shaderName, boolean uiMode) {
+        if (spatial == null) {
+            return false;
+        }
+
+        if (shaderName == null || shaderName.trim().isEmpty()) {
+            restoreOriginalMaterials(spatial);
+            return true;
+        }
+
+        if (assetsMapping == null) {
+            return false;
+        }
+
+        ResourceShader shader = assetsMapping.getShadersIndex().get(shaderName.toLowerCase(Locale.ROOT));
+        if (shader == null) {
+            return false;
+        }
+
+        final boolean[] applied = {false};
+        forEachGeometry(spatial, geometry -> {
+            rememberOriginalMaterial(geometry);
+            Material shaderMaterial = buildShaderMaterial(shader, geometry.getMaterial(), uiMode);
+            if (shaderMaterial != null) {
+                geometry.setMaterial(shaderMaterial);
+                applied[0] = true;
+            }
+        });
+        return applied[0];
+    }
+
+    private Material buildShaderMaterial(ResourceShader shader, Material sourceMaterial, boolean uiMode) {
+        Material shaderTemplate;
+        try {
+            shaderTemplate = assetManager.loadMaterial(shader.path.replace(".j3md", ".j3m"));
+        } catch (Exception ex) {
+            try {
+                shaderTemplate = new Material(assetManager, shader.path);
+            } catch (Exception innerEx) {
+                return null;
+            }
+        }
+
+        Material shaderMaterial = new Material(assetManager, shader.path);
+        copyAllParams(shaderTemplate, shaderMaterial);
+        applyShaderMaterialDefaultsFromAsset(shader, shaderMaterial);
+
+        if (sourceMaterial != null) {
+            copyTextureParamIfPresent(sourceMaterial, shaderMaterial, "ColorMap", "ColorMap");
+            copyTextureParamIfPresent(sourceMaterial, shaderMaterial, "DiffuseMap", "ColorMap");
+            copyTextureParamIfPresent(sourceMaterial, shaderMaterial, "Texture", "ColorMap");
+            copyColorParamIfPresent(sourceMaterial, shaderMaterial, "Color", "MainColor");
+            copyColorParamIfPresent(sourceMaterial, shaderMaterial, "Diffuse", "MainColor");
+            copyParamIfPresent(sourceMaterial, shaderMaterial, "VertexColor", "VertexColor");
+        }
+
+        ensureDefaultColorParam(shaderMaterial, "MainColor", ColorRGBA.White);
+
+        if (uiMode) {
+            shaderMaterial.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
+            shaderMaterial.getAdditionalRenderState().setDepthWrite(false);
+            shaderMaterial.getAdditionalRenderState().setDepthTest(false);
+        }
+
+        if (shaderMaterial.getMaterialDef() != null && shaderMaterial.getMaterialDef().getMaterialParam("Time") != null) {
+            runtimeShaderMaterials.add(shaderMaterial);
+            shaderMaterial.setFloat("Time", runtimeShaderElapsedTime);
+        }
+
+        return shaderMaterial;
+    }
+
+    private void applyShaderMaterialDefaultsFromAsset(ResourceShader shader, Material shaderMaterial) {
+        if (shader == null || shaderMaterial == null) {
+            return;
+        }
+
+        String j3mPath = shader.path.replace(".j3md", ".j3m");
+        try {
+            AssetInfo assetInfo = assetManager.locateAsset(new AssetKey(j3mPath));
+            if (assetInfo == null) {
+                return;
+            }
+
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(assetInfo.openStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    applyShaderMaterialDefaultLine(shaderMaterial, line);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void applyShaderMaterialDefaultLine(Material material, String line) {
+        if (material == null || line == null) {
+            return;
+        }
+
+        String trimmed = line.trim();
+        if (trimmed.isEmpty() || trimmed.startsWith("Material ") || trimmed.equals("{") || trimmed.equals("}")) {
+            return;
+        }
+
+        int sep = trimmed.indexOf(':');
+        if (sep <= 0) {
+            return;
+        }
+
+        String paramName = trimmed.substring(0, sep).trim();
+        String rawValue = trimmed.substring(sep + 1).trim();
+        if (paramName.isEmpty() || rawValue.isEmpty()) {
+            return;
+        }
+
+        MaterialDef def = material.getMaterialDef();
+        if (def == null || def.getMaterialParam(paramName) == null) {
+            return;
+        }
+
+        VarType varType = def.getMaterialParam(paramName).getVarType();
+        try {
+            if (varType == VarType.Float) {
+                material.setFloat(paramName, Float.parseFloat(rawValue));
+            } else if (varType == VarType.Boolean) {
+                material.setBoolean(paramName, Boolean.parseBoolean(rawValue));
+            } else if (varType == VarType.Vector4 || varType == VarType.Vector4Array) {
+                String[] parts = rawValue.split("\\s+");
+                if (parts.length >= 4) {
+                    material.setColor(paramName, new ColorRGBA(
+                            Float.parseFloat(parts[0]),
+                            Float.parseFloat(parts[1]),
+                            Float.parseFloat(parts[2]),
+                            Float.parseFloat(parts[3])
+                    ));
+                }
+            } else if (varType == VarType.Texture2D && !rawValue.isEmpty()) {
+                material.setTexture(paramName, assetManager.loadTexture(rawValue));
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void copyAllParams(Material sourceMaterial, Material targetMaterial) {
+        if (sourceMaterial == null || targetMaterial == null) {
+            return;
+        }
+
+        for (MatParam param : sourceMaterial.getParams()) {
+            if (param == null || param.getValue() == null) {
+                continue;
+            }
+
+            try {
+                VarType varType = param.getVarType();
+                if (varType != null) {
+                    targetMaterial.setParam(param.getName(), varType, param.getValue());
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private void copyTextureParamIfPresent(Material sourceMaterial, Material targetMaterial, String fromName, String toName) {
+        MaterialDef targetDef = targetMaterial.getMaterialDef();
+        if (targetDef == null || targetDef.getMaterialParam(toName) == null) {
+            return;
+        }
+
+        MatParam param = sourceMaterial.getParam(fromName);
+        if (param instanceof MatParamTexture) {
+            targetMaterial.setTexture(toName, ((MatParamTexture) param).getTextureValue());
+        }
+    }
+
+    private void copyColorParamIfPresent(Material sourceMaterial, Material targetMaterial, String fromName, String toName) {
+        MaterialDef targetDef = targetMaterial.getMaterialDef();
+        if (targetDef == null || targetDef.getMaterialParam(toName) == null) {
+            return;
+        }
+
+        MatParam param = sourceMaterial.getParam(fromName);
+        if (param != null && param.getValue() instanceof ColorRGBA) {
+            targetMaterial.setColor(toName, ((ColorRGBA) param.getValue()).clone());
+        }
+    }
+
+    private void copyParamIfPresent(Material sourceMaterial, Material targetMaterial, String fromName, String toName) {
+        MaterialDef targetDef = targetMaterial.getMaterialDef();
+        if (targetDef == null || targetDef.getMaterialParam(toName) == null) {
+            return;
+        }
+
+        MatParam sourceParam = sourceMaterial.getParam(fromName);
+        if (sourceParam == null || sourceParam.getValue() == null || sourceParam.getVarType() == null) {
+            return;
+        }
+
+        try {
+            targetMaterial.setParam(toName, sourceParam.getVarType(), sourceParam.getValue());
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void ensureDefaultColorParam(Material material, String paramName, ColorRGBA defaultColor) {
+        if (material == null || defaultColor == null) {
+            return;
+        }
+
+        MaterialDef targetDef = material.getMaterialDef();
+        if (targetDef == null || targetDef.getMaterialParam(paramName) == null) {
+            return;
+        }
+
+        if (material.getParam(paramName) == null) {
+            material.setColor(paramName, defaultColor.clone());
+        }
+    }
+
+    private void rememberOriginalMaterial(Geometry geometry) {
+        if (geometry == null || originalMaterials.containsKey(geometry) || geometry.getMaterial() == null) {
+            return;
+        }
+
+        originalMaterials.put(geometry, geometry.getMaterial().clone());
+    }
+
+    private void restoreOriginalMaterials(Spatial spatial) {
+        forEachGeometry(spatial, geometry -> {
+            Material original = originalMaterials.get(geometry);
+            if (original != null) {
+                geometry.setMaterial(original.clone());
+            }
+        });
+    }
+
+    private void forEachGeometry(Spatial spatial, java.util.function.Consumer<Geometry> visitor) {
+        if (spatial == null || visitor == null) {
+            return;
+        }
+
+        if (spatial instanceof Geometry) {
+            visitor.accept((Geometry) spatial);
+            return;
+        }
+
+        if (spatial instanceof Node) {
+            for (Spatial child : ((Node) spatial).getChildren()) {
+                forEachGeometry(child, visitor);
+            }
+        }
+    }
+
     public Spatial loadModelSpatial(final String name, String resourcePath, final ModelInst modelInst) {
         final ResourceSetup resource = assetsMapping.get3DModelsIndex().get(resourcePath.toLowerCase());
         if (resource == null) {
@@ -3147,8 +3412,14 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     private void removeCollisionControlsFromPhysics(List<java.lang.Object> ctls) {
+        if (ctls == null || bulletAppState == null || bulletAppState.getPhysicsSpace() == null) {
+            return;
+        }
+
         for(java.lang.Object ctl:ctls){
-            bulletAppState.getPhysicsSpace().remove(ctl);
+            if (ctl != null) {
+                bulletAppState.getPhysicsSpace().remove(ctl);
+            }
         }
     }
 
@@ -3513,6 +3784,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     @Override
     public void simpleUpdate(float tpf) {
+        runtimeShaderElapsedTime += tpf;
+        updateRuntimeShaderMaterials();
 
         if(hasRunTimeError) {
             hasRunTimeError=false;
@@ -3552,20 +3825,35 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 }
             }
 
-            if(_controllers.size()==0) {
-                onEndCode();
-            }
+              if(_controllers.size()==0) {
+                  onEndCode();
+              }
 
-        }
+          }
 
-        if(followCameraState!=null) {
-            followCameraState.update(tpf);
-        }
+          if(followCameraState!=null) {
+              followCameraState.update(tpf);
+          }
 
         if (this.switchStateCode != null) {
             this.switchState();
         }
 
+      }
+
+    private void updateRuntimeShaderMaterials() {
+        for (Material material : runtimeShaderMaterials) {
+            if (material == null) {
+                continue;
+            }
+
+            try {
+                if (material.getMaterialDef() != null && material.getMaterialDef().getMaterialParam("Time") != null) {
+                    material.setFloat("Time", runtimeShaderElapsedTime);
+                }
+            } catch (Exception ignored) {
+            }
+        }
     }
 
 
@@ -6700,6 +6988,37 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     public void setQuadMaterial(String quadName, String material) {
         Node g = quads.get(quadName);
         setGeometryMaterial((Geometry)g.getChild(0),material);
+    }
+
+    public void setEntityShader(String targetVar, int varType, String shaderName) {
+        Spatial target = getEntitySpatial(targetVar, varType);
+        if (target == null) {
+            handleRuntimeError("Cannot find object '" + targetVar + "'");
+            return;
+        }
+
+        if (!setSpatialShader(target, shaderName, false)) {
+            if (shaderName == null || shaderName.trim().isEmpty()) {
+                handleRuntimeError("Cannot reset shader for '" + targetVar + "'");
+            } else {
+                handleRuntimeError("Cannot find shader resource named: '" + shaderName + "'");
+            }
+        }
+    }
+
+    public void setUIWidgetShader(com.scenemaxeng.common.ui.widget.UIWidgetNode widget, String shaderName) {
+        if (widget == null) {
+            handleRuntimeError("UI widget not found");
+            return;
+        }
+
+        if (!setSpatialShader(widget.getShaderTarget(), shaderName, true)) {
+            if (shaderName == null || shaderName.trim().isEmpty()) {
+                handleRuntimeError("Cannot reset shader for UI widget '" + widget.getName() + "'");
+            } else {
+                handleRuntimeError("Cannot find shader resource named: '" + shaderName + "'");
+            }
+        }
     }
 
     public List<EntityInstBase> getAllEntities(int entityType, String name, String nameComparator) {

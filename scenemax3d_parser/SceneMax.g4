@@ -493,6 +493,7 @@ action_operation
    | vehicle_engine_setup # vehicleEngineSetup
    | character_actions # characterActions
    | set_material_action # setMaterialAction
+   | set_shader_action # setShaderAction
    | replay # replayAction
    | array_push # arrayPush
    | array_pop # arrayPop
@@ -609,6 +610,7 @@ friction : var_decl '.' Friction Equals? logical_expression ;
 restitution : var_decl '.' Restitution Equals? logical_expression ;
 
 set_material_action : var_decl '.' Material Equals logical_expression ;
+set_shader_action : var_decl '.' Shader Equals logical_expression ;
 
 ray_check : IF '('? var_decl '.' Ray Check ')'? ray_check_from?  Then? do_block ;
 ray_check_from : From '(' (pos_axes | pos_entity) ')' ;
@@ -769,7 +771,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Stiffness | Length | Stop | Return | Animate | Animation | Print | Append | Color | Font | SystemColor | Ray | Check | Pos |
     Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
     Screen | Scene | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
-    Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load ;
+    Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
@@ -806,6 +808,7 @@ IsAn : 'is an' | 'Is an' | 'is An' | 'Is An' ;
 //Is : 'is' | 'Is' ;
 //A : 'a' | 'A' | 'an' | 'An' ;
 Material : 'Material' | 'material' ;
+Shader : 'Shader' | 'shader' ;
 Radius : 'Radius' | 'radius' ;
 Emissions : 'Emissions' | 'emissions' ;
 Sphere : 'Sphere' | 'sphere' ;

@@ -181,6 +181,7 @@ public class ShaderDocument {
                 buildMaterialDefinition(assetBase, runtimeName), StandardCharsets.UTF_8);
         Files.writeString(new File(outputDir, runtimeName + ".j3m").toPath(),
                 buildMaterialInstance(assetBase, runtimeName), StandardCharsets.UTF_8);
+        updateShaderIndex(shaderFile, resourcesFolder);
     }
 
     public static ShaderDocument load(File file) throws IOException {
@@ -253,6 +254,56 @@ public class ShaderDocument {
         return baseName.replaceAll("[^A-Za-z0-9_\\-]", "_");
     }
 
+    private void updateShaderIndex(File shaderFile, String resourcesFolder) throws IOException {
+        File shadersRoot = new File(resourcesFolder, "shaders");
+        if (!shadersRoot.exists()) {
+            shadersRoot.mkdirs();
+        }
+
+        File indexFile = new File(shadersRoot, "shaders-ext.json");
+        JSONObject root;
+        if (indexFile.exists()) {
+            String content = Files.readString(indexFile.toPath(), StandardCharsets.UTF_8);
+            root = content == null || content.isBlank() ? new JSONObject() : new JSONObject(content);
+        } else {
+            root = new JSONObject();
+        }
+
+        JSONArray shaders = root.optJSONArray("shaders");
+        if (shaders == null) {
+            shaders = new JSONArray();
+            root.put("shaders", shaders);
+        }
+
+        String runtimeName = getRuntimeName(shaderFile);
+        String runtimePath = getRuntimeAssetBase(shaderFile) + ".j3md";
+        boolean updated = false;
+        for (int i = 0; i < shaders.length(); i++) {
+            JSONObject shader = shaders.optJSONObject(i);
+            if (shader == null) {
+                continue;
+            }
+
+            String existingName = shader.optString("name", "");
+            String existingPath = shader.optString("path", "");
+            if (runtimeName.equalsIgnoreCase(existingName) || runtimePath.equalsIgnoreCase(existingPath)) {
+                shader.put("name", runtimeName);
+                shader.put("path", runtimePath);
+                updated = true;
+                break;
+            }
+        }
+
+        if (!updated) {
+            JSONObject shader = new JSONObject();
+            shader.put("name", runtimeName);
+            shader.put("path", runtimePath);
+            shaders.put(shader);
+        }
+
+        Files.writeString(indexFile.toPath(), root.toString(2), StandardCharsets.UTF_8);
+    }
+
     private String buildMaterialDefinition(String assetBase, String runtimeName) {
         return "MaterialDef " + runtimeName + " {\n" +
                 "\n" +
@@ -264,6 +315,7 @@ public class ShaderDocument {
                 "        Float Transparency : " + transparency + "\n" +
                 "        Float EdgeWidth : " + edgeWidth + "\n" +
                 "        Float ScrollSpeed : " + scrollSpeed + "\n" +
+                "        Boolean VertexColor : false\n" +
                 "        Texture2D ColorMap\n" +
                 "    }\n" +
                 "\n" +
@@ -278,6 +330,7 @@ public class ShaderDocument {
                 "\n" +
                 "        Defines {\n" +
                 "            USE_TEXTURE : ColorMap\n" +
+                "            USE_VERTEX_COLOR : VertexColor\n" +
                 "        }\n" +
                 "\n" +
                 "        RenderState {\n" +
@@ -311,15 +364,19 @@ public class ShaderDocument {
                 "attribute vec3 inPosition;\n" +
                 "attribute vec2 inTexCoord;\n" +
                 "attribute vec3 inNormal;\n" +
+                "attribute vec4 inColor;\n" +
                 "\n" +
                 "varying vec2 vUv;\n" +
                 "varying vec3 vWorldNormal;\n" +
                 "varying vec3 vLocalPos;\n" +
+                "varying vec4 vColor;\n" +
                 "\n" +
                 "void main() {\n" +
                 "    vUv = inTexCoord;\n" +
-                "    vWorldNormal = normalize(inNormal);\n" +
+                "    float normalLen = dot(inNormal, inNormal);\n" +
+                "    vWorldNormal = normalLen > 0.0001 ? normalize(inNormal) : vec3(0.0, 0.0, 1.0);\n" +
                 "    vLocalPos = inPosition;\n" +
+                "    vColor = inColor;\n" +
                 "    gl_Position = g_WorldViewProjectionMatrix * vec4(inPosition, 1.0);\n" +
                 "}\n";
     }
@@ -343,6 +400,13 @@ public class ShaderDocument {
                 "varying vec2 vUv;\n" +
                 "varying vec3 vWorldNormal;\n" +
                 "varying vec3 vLocalPos;\n" +
+                "varying vec4 vColor;\n" +
+                "\n" +
+                "#ifdef USE_VERTEX_COLOR\n" +
+                "const bool ENABLE_VERTEX_COLOR = true;\n" +
+                "#else\n" +
+                "const bool ENABLE_VERTEX_COLOR = false;\n" +
+                "#endif\n" +
                 "\n" +
                 "const bool ENABLE_TINT = " + blocks.contains(ShaderBlockType.TINT) + ";\n" +
                 "const bool ENABLE_GLOW = " + blocks.contains(ShaderBlockType.GLOW) + ";\n" +
@@ -374,6 +438,9 @@ public class ShaderDocument {
                 "#ifdef USE_TEXTURE\n" +
                 "    base *= texture2D(m_ColorMap, uv);\n" +
                 "#endif\n" +
+                "    if (ENABLE_VERTEX_COLOR) {\n" +
+                "        base *= vColor;\n" +
+                "    }\n" +
                 "    if (ENABLE_TINT) {\n" +
                 "        base.rgb *= m_MainColor.rgb;\n" +
                 "    }\n" +

@@ -6,6 +6,8 @@ import java.util.EnumSet;
 
 public enum ShaderTemplatePreset {
     TEXTURE_TINT("Texture + Tint"),
+    UI_SOFT_GLOW("UI Soft Glow"),
+    UI_NEON_SCAN("UI Neon Scan"),
     GLOW_PULSE("Glow Pulse"),
     DISSOLVE("Dissolve"),
     HOLOGRAM_LITE("Hologram Lite"),
@@ -52,6 +54,35 @@ public enum ShaderTemplatePreset {
                 doc.setEdgeWidth(0.15f);
                 doc.setScrollSpeed(0.35f);
                 doc.setPreviewTarget(ShaderPreviewTarget.BOX);
+                break;
+            case UI_SOFT_GLOW:
+                doc.getBlocks().addAll(EnumSet.of(
+                        ShaderBlockType.TINT,
+                        ShaderBlockType.GLOW
+                ));
+                doc.setMainColor(new ColorRGBA(0.92f, 0.97f, 1f, 1f));
+                doc.setGlowStrength(0.55f);
+                doc.setPulseSpeed(0.35f);
+                doc.setTransparency(0.02f);
+                doc.setEdgeWidth(0.08f);
+                doc.setScrollSpeed(0.20f);
+                doc.setPreviewTarget(ShaderPreviewTarget.SPRITE);
+                break;
+            case UI_NEON_SCAN:
+                doc.getBlocks().addAll(EnumSet.of(
+                        ShaderBlockType.TINT,
+                        ShaderBlockType.GLOW,
+                        ShaderBlockType.PULSE,
+                        ShaderBlockType.HOLOGRAM_LINES,
+                        ShaderBlockType.FLICKER
+                ));
+                doc.setMainColor(new ColorRGBA(0.20f, 1f, 0.86f, 1f));
+                doc.setGlowStrength(1.15f);
+                doc.setPulseSpeed(0.85f);
+                doc.setTransparency(0.06f);
+                doc.setEdgeWidth(0.10f);
+                doc.setScrollSpeed(0.45f);
+                doc.setPreviewTarget(ShaderPreviewTarget.SPRITE);
                 break;
             case GLOW_PULSE:
                 doc.getBlocks().addAll(EnumSet.of(
