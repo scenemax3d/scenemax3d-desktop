@@ -25,6 +25,7 @@ public class ShaderDocument {
     private float edgeWidth = 0.15f;
     private float scrollSpeed = 0.35f;
     private String texturePath = "";
+    private boolean useOriginalTexture = true;
     private String previewModelName = "";
 
     public ShaderDocument(String filePath) {
@@ -111,6 +112,14 @@ public class ShaderDocument {
         this.texturePath = texturePath != null ? texturePath.trim().replace("\\", "/") : "";
     }
 
+    public boolean isUseOriginalTexture() {
+        return useOriginalTexture;
+    }
+
+    public void setUseOriginalTexture(boolean useOriginalTexture) {
+        this.useOriginalTexture = useOriginalTexture;
+    }
+
     public String getPreviewModelName() {
         return previewModelName;
     }
@@ -131,6 +140,7 @@ public class ShaderDocument {
         copy.edgeWidth = edgeWidth;
         copy.scrollSpeed = scrollSpeed;
         copy.texturePath = texturePath;
+        copy.useOriginalTexture = useOriginalTexture;
         copy.previewModelName = previewModelName;
         return copy;
     }
@@ -149,6 +159,7 @@ public class ShaderDocument {
         root.put("edgeWidth", edgeWidth);
         root.put("scrollSpeed", scrollSpeed);
         root.put("texture", texturePath);
+        root.put("useOriginalTexture", useOriginalTexture);
         root.put("previewModelName", previewModelName);
 
         JSONArray blocksJson = new JSONArray();
@@ -208,6 +219,7 @@ public class ShaderDocument {
         doc.edgeWidth = (float) root.optDouble("edgeWidth", 0.15);
         doc.scrollSpeed = (float) root.optDouble("scrollSpeed", 0.35);
         doc.texturePath = root.optString("texture", "");
+        doc.useOriginalTexture = root.optBoolean("useOriginalTexture", true);
         doc.previewModelName = root.optString("previewModelName", "");
 
         doc.blocks.clear();
@@ -289,6 +301,7 @@ public class ShaderDocument {
             if (runtimeName.equalsIgnoreCase(existingName) || runtimePath.equalsIgnoreCase(existingPath)) {
                 shader.put("name", runtimeName);
                 shader.put("path", runtimePath);
+                shader.put("useOriginalTexture", useOriginalTexture);
                 updated = true;
                 break;
             }
@@ -298,6 +311,7 @@ public class ShaderDocument {
             JSONObject shader = new JSONObject();
             shader.put("name", runtimeName);
             shader.put("path", runtimePath);
+            shader.put("useOriginalTexture", useOriginalTexture);
             shaders.put(shader);
         }
 
@@ -315,6 +329,7 @@ public class ShaderDocument {
                 "        Float Transparency : " + transparency + "\n" +
                 "        Float EdgeWidth : " + edgeWidth + "\n" +
                 "        Float ScrollSpeed : " + scrollSpeed + "\n" +
+                "        Boolean UseOriginalTexture : " + useOriginalTexture + "\n" +
                 "        Boolean VertexColor : false\n" +
                 "        Texture2D ColorMap\n" +
                 "    }\n" +
@@ -352,6 +367,7 @@ public class ShaderDocument {
         sb.append("    Transparency : ").append(transparency).append("\n");
         sb.append("    EdgeWidth : ").append(edgeWidth).append("\n");
         sb.append("    ScrollSpeed : ").append(scrollSpeed).append("\n");
+        sb.append("    UseOriginalTexture : ").append(useOriginalTexture).append("\n");
         if (texturePath != null && !texturePath.isBlank()) {
             sb.append("    ColorMap : ").append(texturePath).append("\n");
         }

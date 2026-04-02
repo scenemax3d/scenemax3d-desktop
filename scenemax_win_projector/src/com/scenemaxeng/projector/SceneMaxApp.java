@@ -147,6 +147,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     //private static HashMap<String,SkyBoxMaterial> skyboxMaterials = new HashMap<>();
     private static HashMap<String,ResourceMaterial> materials = new HashMap<>();
     private static final Map<Geometry, Material> originalMaterials = new WeakHashMap<>();
+    private static final Map<Geometry, RenderQueue.Bucket> originalMaterialBuckets = new WeakHashMap<>();
     private static final Set<Material> runtimeShaderMaterials = Collections.newSetFromMap(new WeakHashMap<>());
     private static HashMap<String, AppModel> models = new HashMap<String, AppModel>();
 
@@ -2394,9 +2395,14 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         final boolean[] applied = {false};
         forEachGeometry(spatial, geometry -> {
             rememberOriginalMaterial(geometry);
-            Material shaderMaterial = buildShaderMaterial(shader, geometry.getMaterial(), uiMode);
+            Material sourceMaterial = originalMaterials.get(geometry);
+            if (sourceMaterial == null) {
+                sourceMaterial = geometry.getMaterial();
+            }
+            Material shaderMaterial = buildShaderMaterial(shader, sourceMaterial, uiMode);
             if (shaderMaterial != null) {
                 geometry.setMaterial(shaderMaterial);
+                geometry.setQueueBucket(uiMode ? RenderQueue.Bucket.Gui : RenderQueue.Bucket.Transparent);
                 applied[0] = true;
             }
         });
@@ -2418,13 +2424,15 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         Material shaderMaterial = new Material(assetManager, shader.path);
         copyAllParams(shaderTemplate, shaderMaterial);
         applyShaderMaterialDefaultsFromAsset(shader, shaderMaterial);
+        boolean useOriginalTexture = getBooleanParam(shaderMaterial, "UseOriginalTexture", true);
 
         if (sourceMaterial != null) {
-            copyTextureParamIfPresent(sourceMaterial, shaderMaterial, "ColorMap", "ColorMap");
-            copyTextureParamIfPresent(sourceMaterial, shaderMaterial, "DiffuseMap", "ColorMap");
-            copyTextureParamIfPresent(sourceMaterial, shaderMaterial, "Texture", "ColorMap");
-            copyColorParamIfPresent(sourceMaterial, shaderMaterial, "Color", "MainColor");
-            copyColorParamIfPresent(sourceMaterial, shaderMaterial, "Diffuse", "MainColor");
+            if (useOriginalTexture) {
+                copyTextureParamIfPresent(sourceMaterial, shaderMaterial, "ColorMap", "ColorMap");
+                copyTextureParamIfPresent(sourceMaterial, shaderMaterial, "DiffuseMap", "ColorMap");
+                copyTextureParamIfPresent(sourceMaterial, shaderMaterial, "Texture", "ColorMap");
+                copyFirstTextureParamIfPresent(sourceMaterial, shaderMaterial, "ColorMap");
+            }
             copyParamIfPresent(sourceMaterial, shaderMaterial, "VertexColor", "VertexColor");
         }
 
@@ -2464,6 +2472,27 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
         } catch (Exception ignored) {
         }
+    }
+
+    private boolean getBooleanParam(Material material, String paramName, boolean defaultValue) {
+        if (material == null || paramName == null || paramName.isEmpty()) {
+            return defaultValue;
+        }
+
+        MatParam param = material.getParam(paramName);
+        if (param != null && param.getValue() instanceof Boolean) {
+            return (Boolean) param.getValue();
+        }
+
+        MaterialDef def = material.getMaterialDef();
+        if (def != null && def.getMaterialParam(paramName) != null) {
+            Object defaultVal = def.getMaterialParam(paramName).getValue();
+            if (defaultVal instanceof Boolean) {
+                return (Boolean) defaultVal;
+            }
+        }
+
+        return defaultValue;
     }
 
     private void applyShaderMaterialDefaultLine(Material material, String line) {
@@ -2547,15 +2576,17 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
     }
 
-    private void copyColorParamIfPresent(Material sourceMaterial, Material targetMaterial, String fromName, String toName) {
+    private void copyFirstTextureParamIfPresent(Material sourceMaterial, Material targetMaterial, String toName) {
         MaterialDef targetDef = targetMaterial.getMaterialDef();
-        if (targetDef == null || targetDef.getMaterialParam(toName) == null) {
+        if (targetDef == null || targetDef.getMaterialParam(toName) == null || targetMaterial.getParam(toName) != null) {
             return;
         }
 
-        MatParam param = sourceMaterial.getParam(fromName);
-        if (param != null && param.getValue() instanceof ColorRGBA) {
-            targetMaterial.setColor(toName, ((ColorRGBA) param.getValue()).clone());
+        for (MatParam param : sourceMaterial.getParams()) {
+            if (param instanceof MatParamTexture) {
+                targetMaterial.setTexture(toName, ((MatParamTexture) param).getTextureValue());
+                return;
+            }
         }
     }
 
@@ -2597,6 +2628,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         originalMaterials.put(geometry, geometry.getMaterial().clone());
+        originalMaterialBuckets.put(geometry, geometry.getQueueBucket());
     }
 
     private void restoreOriginalMaterials(Spatial spatial) {
@@ -2604,6 +2636,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             Material original = originalMaterials.get(geometry);
             if (original != null) {
                 geometry.setMaterial(original.clone());
+            }
+            RenderQueue.Bucket originalBucket = originalMaterialBuckets.get(geometry);
+            if (originalBucket != null) {
+                geometry.setQueueBucket(originalBucket);
             }
         });
     }

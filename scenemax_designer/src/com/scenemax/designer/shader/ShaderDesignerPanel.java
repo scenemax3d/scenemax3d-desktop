@@ -55,6 +55,7 @@ public class ShaderDesignerPanel extends JPanel {
     private JSpinner spnEdgeWidth;
     private JSpinner spnScrollSpeed;
     private JTextField txtTexture;
+    private JCheckBox chkUseOriginalTexture;
     private JLabel lblExportPath;
     private String thumbnailGenerationModel = null;
 
@@ -380,6 +381,17 @@ public class ShaderDesignerPanel extends JPanel {
         textureRow.add(btnBrowse, BorderLayout.EAST);
         addRow(form, "Texture", textureRow);
 
+        chkUseOriginalTexture = new JCheckBox("Use Original Texture");
+        chkUseOriginalTexture.setOpaque(false);
+        chkUseOriginalTexture.setSelected(true);
+        chkUseOriginalTexture.addActionListener(e -> {
+            if (!updatingUi) {
+                document.setUseOriginalTexture(chkUseOriginalTexture.isSelected());
+                markDirtyAndRefresh();
+            }
+        });
+        form.add(chkUseOriginalTexture);
+
         JTextArea tip = new JTextArea(
                 "Tip: templates are just starting points. You can mix blocks freely, then save to generate runtime-ready .j3md/.j3m/.vert/.frag files.");
         tip.setOpaque(false);
@@ -462,6 +474,7 @@ public class ShaderDesignerPanel extends JPanel {
             spnEdgeWidth.setValue((double) document.getEdgeWidth());
             spnScrollSpeed.setValue((double) document.getScrollSpeed());
             txtTexture.setText(document.getTexturePath());
+            chkUseOriginalTexture.setSelected(document.isUseOriginalTexture());
             for (Map.Entry<ShaderBlockType, JCheckBox> entry : blockChecks.entrySet()) {
                 entry.getValue().setSelected(document.getBlocks().contains(entry.getKey()));
             }

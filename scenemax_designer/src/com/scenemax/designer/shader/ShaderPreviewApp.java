@@ -12,8 +12,11 @@ import com.jme3.input.controls.MouseAxisTrigger;
 import com.jme3.input.controls.MouseButtonTrigger;
 import com.jme3.light.AmbientLight;
 import com.jme3.light.DirectionalLight;
+import com.jme3.material.MatParam;
+import com.jme3.material.MatParamTexture;
 import com.jme3.material.Material;
 import com.jme3.material.RenderState;
+import com.jme3.material.MaterialDef;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
 import com.jme3.math.Quaternion;
@@ -38,6 +41,8 @@ import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.types.ResourceSetup;
 
 import java.io.File;
+import java.util.IdentityHashMap;
+import java.util.Map;
 
 public class ShaderPreviewApp extends SimpleApplication {
 
@@ -64,6 +69,7 @@ public class ShaderPreviewApp extends SimpleApplication {
     private boolean orbiting = false;
     private boolean panning = false;
     private final Vector2f lastMousePos = new Vector2f();
+    private final Map<Geometry, Material> originalPreviewMaterials = new IdentityHashMap<>();
     private ShaderPreviewTarget loadedPreviewTarget = null;
     private String loadedPreviewModelName = null;
 
@@ -214,24 +220,7 @@ public class ShaderPreviewApp extends SimpleApplication {
             assetManager.clearCache();
 
             String assetBase = ShaderDocument.getRuntimeAssetBase(currentFile);
-            Material material = new Material(assetManager, assetBase + ".j3md");
-            material.setColor("MainColor", currentDocument.getMainColor());
-            material.setFloat("Time", elapsedTime);
-            material.setFloat("GlowStrength", currentDocument.getGlowStrength());
-            material.setFloat("PulseSpeed", currentDocument.getPulseSpeed());
-            material.setFloat("Transparency", currentDocument.getTransparency());
-            material.setFloat("EdgeWidth", currentDocument.getEdgeWidth());
-            material.setFloat("ScrollSpeed", currentDocument.getScrollSpeed());
-
-            if (currentDocument.getTexturePath() != null && !currentDocument.getTexturePath().isBlank()) {
-                Texture texture = assetManager.loadTexture(currentDocument.getTexturePath());
-                texture.setWrap(Texture.WrapMode.Repeat);
-                material.setTexture("ColorMap", texture);
-            }
-
-            material.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
-            applyMaterialToPreview(material, RenderQueue.Bucket.Transparent);
-            currentMaterial = material;
+            applyMaterialToPreview(assetBase, RenderQueue.Bucket.Transparent);
         } catch (Exception ex) {
             ex.printStackTrace();
             applyFallbackMaterial();
@@ -263,7 +252,7 @@ public class ShaderPreviewApp extends SimpleApplication {
         Material fallback = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
         ColorRGBA color = currentDocument != null ? currentDocument.getMainColor() : new ColorRGBA(0.9f, 0.6f, 0.2f, 1f);
         fallback.setColor("Color", color);
-        applyMaterialToPreview(fallback, RenderQueue.Bucket.Opaque);
+        applyFallbackMaterialRecursive(previewContentNode, fallback, RenderQueue.Bucket.Opaque);
         currentMaterial = fallback;
     }
 
@@ -303,6 +292,7 @@ public class ShaderPreviewApp extends SimpleApplication {
         }
         previewContentNode.detachAllChildren();
         previewContentNode.setLocalRotation(Quaternion.IDENTITY);
+        originalPreviewMaterials.clear();
 
         ShaderPreviewTarget safeTarget = target != null ? target : ShaderPreviewTarget.BOX;
         switch (safeTarget) {
@@ -330,6 +320,7 @@ public class ShaderPreviewApp extends SimpleApplication {
         }
 
         previewContentNode.attachChild(previewSpatial);
+        captureOriginalMaterials(previewSpatial);
         centerPreviewContent();
         attachPreviewEntity(safeTarget);
         applyFallbackMaterial();
@@ -362,15 +353,80 @@ public class ShaderPreviewApp extends SimpleApplication {
         }
     }
 
-    private void applyMaterialToPreview(Material material, RenderQueue.Bucket bucket) {
-        if (previewSpatial == null || material == null) {
+    private void applyMaterialToPreview(String assetBase, RenderQueue.Bucket bucket) {
+        if (previewSpatial == null || assetBase == null || assetBase.isBlank()) {
             return;
         }
         previewContentNode.setQueueBucket(bucket);
-        applyMaterialRecursive(previewContentNode, material, bucket);
+        applyMaterialRecursive(previewContentNode, assetBase, bucket);
     }
 
-    private void applyMaterialRecursive(Spatial spatial, Material material, RenderQueue.Bucket bucket) {
+    private void applyMaterialRecursive(Spatial spatial, String assetBase, RenderQueue.Bucket bucket) {
+        spatial.setQueueBucket(bucket);
+        if (spatial instanceof Geometry) {
+            Geometry geometry = (Geometry) spatial;
+            Material sourceMaterial = originalPreviewMaterials.get(geometry);
+            Material material = buildPreviewMaterial(assetBase, sourceMaterial);
+            if (material != null) {
+                geometry.setMaterial(material);
+                currentMaterial = material;
+            }
+            return;
+        }
+        if (spatial instanceof Node) {
+            for (Spatial child : ((Node) spatial).getChildren()) {
+                applyMaterialRecursive(child, assetBase, bucket);
+            }
+        }
+    }
+
+    private Material buildPreviewMaterial(String assetBase, Material sourceMaterial) {
+        Material material = new Material(assetManager, assetBase + ".j3md");
+        material.setColor("MainColor", currentDocument.getMainColor());
+        material.setFloat("Time", elapsedTime);
+        material.setFloat("GlowStrength", currentDocument.getGlowStrength());
+        material.setFloat("PulseSpeed", currentDocument.getPulseSpeed());
+        material.setFloat("Transparency", currentDocument.getTransparency());
+        material.setFloat("EdgeWidth", currentDocument.getEdgeWidth());
+        material.setFloat("ScrollSpeed", currentDocument.getScrollSpeed());
+        material.setBoolean("UseOriginalTexture", currentDocument.isUseOriginalTexture());
+
+        if (currentDocument.getTexturePath() != null && !currentDocument.getTexturePath().isBlank()) {
+            Texture texture = assetManager.loadTexture(currentDocument.getTexturePath());
+            texture.setWrap(Texture.WrapMode.Repeat);
+            material.setTexture("ColorMap", texture);
+        }
+
+        if (sourceMaterial != null) {
+            if (currentDocument.isUseOriginalTexture()) {
+                copyTextureParamIfPresent(sourceMaterial, material, "ColorMap", "ColorMap");
+                copyTextureParamIfPresent(sourceMaterial, material, "DiffuseMap", "ColorMap");
+                copyTextureParamIfPresent(sourceMaterial, material, "Texture", "ColorMap");
+                copyFirstTextureParamIfPresent(sourceMaterial, material, "ColorMap");
+            }
+            copyParamIfPresent(sourceMaterial, material, "VertexColor", "VertexColor");
+        }
+
+        material.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
+        return material;
+    }
+
+    private void captureOriginalMaterials(Spatial spatial) {
+        if (spatial instanceof Geometry) {
+            Geometry geometry = (Geometry) spatial;
+            if (geometry.getMaterial() != null) {
+                originalPreviewMaterials.put(geometry, geometry.getMaterial().clone());
+            }
+            return;
+        }
+        if (spatial instanceof Node) {
+            for (Spatial child : ((Node) spatial).getChildren()) {
+                captureOriginalMaterials(child);
+            }
+        }
+    }
+
+    private void applyFallbackMaterialRecursive(Spatial spatial, Material material, RenderQueue.Bucket bucket) {
         spatial.setQueueBucket(bucket);
         if (spatial instanceof Geometry) {
             ((Geometry) spatial).setMaterial(material);
@@ -378,8 +434,51 @@ public class ShaderPreviewApp extends SimpleApplication {
         }
         if (spatial instanceof Node) {
             for (Spatial child : ((Node) spatial).getChildren()) {
-                applyMaterialRecursive(child, material, bucket);
+                applyFallbackMaterialRecursive(child, material, bucket);
             }
+        }
+    }
+
+    private void copyTextureParamIfPresent(Material sourceMaterial, Material targetMaterial, String fromName, String toName) {
+        MaterialDef targetDef = targetMaterial.getMaterialDef();
+        if (targetDef == null || targetDef.getMaterialParam(toName) == null) {
+            return;
+        }
+
+        MatParam param = sourceMaterial.getParam(fromName);
+        if (param instanceof MatParamTexture) {
+            targetMaterial.setTexture(toName, ((MatParamTexture) param).getTextureValue());
+        }
+    }
+
+    private void copyFirstTextureParamIfPresent(Material sourceMaterial, Material targetMaterial, String toName) {
+        MaterialDef targetDef = targetMaterial.getMaterialDef();
+        if (targetDef == null || targetDef.getMaterialParam(toName) == null || targetMaterial.getParam(toName) != null) {
+            return;
+        }
+
+        for (MatParam param : sourceMaterial.getParams()) {
+            if (param instanceof MatParamTexture) {
+                targetMaterial.setTexture(toName, ((MatParamTexture) param).getTextureValue());
+                return;
+            }
+        }
+    }
+
+    private void copyParamIfPresent(Material sourceMaterial, Material targetMaterial, String fromName, String toName) {
+        MaterialDef targetDef = targetMaterial.getMaterialDef();
+        if (targetDef == null || targetDef.getMaterialParam(toName) == null) {
+            return;
+        }
+
+        MatParam sourceParam = sourceMaterial.getParam(fromName);
+        if (sourceParam == null || sourceParam.getValue() == null || sourceParam.getVarType() == null) {
+            return;
+        }
+
+        try {
+            targetMaterial.setParam(toName, sourceParam.getVarType(), sourceParam.getValue());
+        } catch (Exception ignored) {
         }
     }
 
