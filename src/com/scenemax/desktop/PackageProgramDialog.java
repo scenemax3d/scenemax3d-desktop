@@ -1,192 +1,303 @@
 package com.scenemax.desktop;
 
-import com.intellij.uiDesigner.core.GridConstraints;
-import com.intellij.uiDesigner.core.GridLayoutManager;
-import org.apache.commons.io.FileUtils;
-
 import javax.swing.*;
-import javax.swing.plaf.FontUIResource;
-import javax.swing.text.StyleContext;
-
 import java.awt.*;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.File;
 import java.io.IOException;
-import java.util.Locale;
+import java.util.ArrayList;
+import java.util.List;
 
 import static javax.swing.JOptionPane.YES_OPTION;
 
 public class PackageProgramDialog extends JDialog implements PropertyChangeListener {
-    private JPanel contentPane;
-    private JProgressBar progressBar1;
-    private JLabel lblHeader1;
-    private JButton buttonOK;
+
+    private final JLabel lblHeader1 = new JLabel("Choose deployment targets and package your game.");
+    private final JLabel lblStatus = new JLabel(" ");
+    private final JCheckBox chkWindows = new JCheckBox("Windows (.exe)", true);
+    private final JCheckBox chkLinux = new JCheckBox("Linux (.jar + .sh)", true);
+    private final JCheckBox chkMac = new JCheckBox("Mac OSX (.jar + .command)", true);
+    private final JTextField txtWindowsIcon = new JTextField();
+    private final JTextField txtLinuxIcon = new JTextField();
+    private final JTextField txtMacIcon = new JTextField();
+    private final JButton btnBrowseWindowsIcon = new JButton("Browse...");
+    private final JButton btnBrowseLinuxIcon = new JButton("Browse...");
+    private final JButton btnBrowseMacIcon = new JButton("Browse...");
+    private final JButton buttonPackage = new JButton("Package");
+    private final JButton buttonCancel = new JButton("Cancel");
+    private final JProgressBar progressBar1 = new JProgressBar();
+
     private PackageProgramTask packageTask;
     private Runnable done;
     private String scriptFilePath;
+    private String prg;
+    private boolean doneInvoked = false;
 
     public PackageProgramDialog() {
-        setContentPane(contentPane);
+        super((Frame) null, "Package & Deploy", true);
         setAlwaysOnTop(true);
+        setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
+        setContentPane(createContentPane());
+        progressBar1.setStringPainted(true);
 
+        buttonPackage.addActionListener(e -> startPackaging());
+        buttonCancel.addActionListener(e -> handleClose());
+        btnBrowseWindowsIcon.addActionListener(e -> chooseIconFile(txtWindowsIcon, "Choose Windows icon (.ico preferred)"));
+        btnBrowseLinuxIcon.addActionListener(e -> chooseIconFile(txtLinuxIcon, "Choose Linux icon (.png preferred)"));
+        btnBrowseMacIcon.addActionListener(e -> chooseIconFile(txtMacIcon, "Choose macOS icon (.icns or .png preferred)"));
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                handleClose();
+            }
+        });
     }
 
-    private Runnable canceled = new Runnable() {
-        @Override
-        public void run() {
-
-            setAlwaysOnTop(false);
-
-            JOptionPane.showMessageDialog(
-                    null,
-                    "Program Packaging Failed",
-                    "",
-                    JOptionPane.ERROR_MESSAGE
-
-            );
-
-            PackageProgramDialog.this.dispose();
-            done.run();
-
-        }
-    };
-
-    private Runnable finished = new Runnable() {
-        @Override
-        public void run() {
-
-            setAlwaysOnTop(false);
-            String exeName = new File(PackageProgramDialog.this.scriptFilePath).getParentFile().getName();
-            File exePath = new File(".\\build_games\\scenemax3d_scene.exe");
-            int counter = 0;
-            while (!exePath.exists()) {
-                try {
-                    Thread.sleep(500);
-                    counter++;
-                    if (counter > 6) {
-                        break;
-                    }
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-
-            exeName = exeName.replace(" ", "_");
-            File renameExePath = new File(".\\build_games\\" + exeName + ".exe");
-            if (renameExePath.exists()) {
-                renameExePath.delete();
-            }
-
-            try {
-                FileUtils.moveFile(exePath, renameExePath);
-            } catch (IOException e) {
-                e.printStackTrace();
-                JOptionPane.showMessageDialog(null, "Error renaming exe file.\r\nUsing the original file name: '" + exePath.getName() + "'");
-                renameExePath = exePath;
-            }
-
-            int n = JOptionPane.showConfirmDialog(
-                    null,
-                    "Program packaging finished successfully. Open file location?",
-                    "Open File Location",
-                    JOptionPane.YES_NO_OPTION);
-
-            if (n == YES_OPTION) {
-                try {
-                    Process p = new ProcessBuilder("explorer.exe", "/select,.\\build_games\\" + renameExePath.getName()).start();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-
-            PackageProgramDialog.this.dispose();
-            done.run();
-
-        }
-    };
-
     public void run(String scriptFilePath, String prg, final Runnable callback) {
+        this.scriptFilePath = scriptFilePath;
+        this.prg = prg;
+        this.done = callback;
+        this.doneInvoked = false;
+        resetUi();
+    }
+
+    private JPanel createContentPane() {
+        JPanel root = new JPanel(new BorderLayout(0, 12));
+        root.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+
+        JPanel center = new JPanel();
+        center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
+
+        lblHeader1.setFont(lblHeader1.getFont().deriveFont(Font.BOLD, 18f));
+        center.add(lblHeader1);
+        center.add(Box.createVerticalStrut(8));
+
+        JLabel subtitle = new JLabel("All selected packages include the compiled game scripts and required resources.");
+        center.add(subtitle);
+        center.add(Box.createVerticalStrut(12));
+
+        JPanel targetPanel = new JPanel();
+        targetPanel.setLayout(new BoxLayout(targetPanel, BoxLayout.Y_AXIS));
+        targetPanel.setBorder(BorderFactory.createTitledBorder("Targets"));
+        targetPanel.add(chkWindows);
+        targetPanel.add(chkLinux);
+        targetPanel.add(chkMac);
+        center.add(targetPanel);
+        center.add(Box.createVerticalStrut(12));
+
+        JPanel iconPanel = new JPanel(new GridBagLayout());
+        iconPanel.setBorder(BorderFactory.createTitledBorder("Icons"));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(4, 4, 4, 4);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.gridy = 0;
+        gbc.gridx = 0;
+        gbc.weightx = 0;
+        iconPanel.add(new JLabel("Windows"), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1;
+        iconPanel.add(txtWindowsIcon, gbc);
+        gbc.gridx = 2;
+        gbc.weightx = 0;
+        iconPanel.add(btnBrowseWindowsIcon, gbc);
+
+        gbc.gridy = 1;
+        gbc.gridx = 0;
+        iconPanel.add(new JLabel("Linux"), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1;
+        iconPanel.add(txtLinuxIcon, gbc);
+        gbc.gridx = 2;
+        gbc.weightx = 0;
+        iconPanel.add(btnBrowseLinuxIcon, gbc);
+
+        gbc.gridy = 2;
+        gbc.gridx = 0;
+        iconPanel.add(new JLabel("Mac OSX"), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1;
+        iconPanel.add(txtMacIcon, gbc);
+        gbc.gridx = 2;
+        gbc.weightx = 0;
+        iconPanel.add(btnBrowseMacIcon, gbc);
+
+        center.add(iconPanel);
+        center.add(Box.createVerticalStrut(12));
+
+        lblStatus.setAlignmentX(Component.LEFT_ALIGNMENT);
+        center.add(lblStatus);
+        center.add(Box.createVerticalStrut(8));
+        center.add(progressBar1);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        buttons.add(buttonCancel);
+        buttons.add(buttonPackage);
+
+        root.add(center, BorderLayout.CENTER);
+        root.add(buttons, BorderLayout.SOUTH);
+        return root;
+    }
+
+    private void resetUi() {
+        progressBar1.setValue(0);
+        lblStatus.setText(" ");
+        setTargetsEnabled(true);
+        buttonPackage.setEnabled(true);
+        buttonCancel.setText("Cancel");
+    }
+
+    private void setTargetsEnabled(boolean enabled) {
+        chkWindows.setEnabled(enabled);
+        chkLinux.setEnabled(enabled);
+        chkMac.setEnabled(enabled);
+        txtWindowsIcon.setEnabled(enabled);
+        txtLinuxIcon.setEnabled(enabled);
+        txtMacIcon.setEnabled(enabled);
+        btnBrowseWindowsIcon.setEnabled(enabled);
+        btnBrowseLinuxIcon.setEnabled(enabled);
+        btnBrowseMacIcon.setEnabled(enabled);
+    }
+
+    private void startPackaging() {
+        List<PackageProgramTask.PackageTarget> targets = new ArrayList<>();
+        if (chkWindows.isSelected()) {
+            targets.add(PackageProgramTask.PackageTarget.WINDOWS);
+        }
+        if (chkLinux.isSelected()) {
+            targets.add(PackageProgramTask.PackageTarget.LINUX);
+        }
+        if (chkMac.isSelected()) {
+            targets.add(PackageProgramTask.PackageTarget.MAC_OSX);
+        }
+
+        if (targets.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Select at least one target platform.", "Package Error", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
 
         try {
-            this.scriptFilePath = scriptFilePath;
-            this.done = callback;
-            packageTask = new PackageProgramTask(scriptFilePath, prg, this.finished, this.canceled);
+            setTargetsEnabled(false);
+            buttonPackage.setEnabled(false);
+            buttonCancel.setText("Close");
+            lblHeader1.setText("Packaging program. Please wait...");
+            lblStatus.setText("Preparing selected target packages...");
+
+            packageTask = new PackageProgramTask(
+                    scriptFilePath,
+                    prg,
+                    targets,
+                    new PackageProgramTask.PackageOptions(
+                            toFileOrNull(txtWindowsIcon.getText()),
+                            toFileOrNull(txtLinuxIcon.getText()),
+                            toFileOrNull(txtMacIcon.getText())
+                    ),
+                    this::onPackagingFinished,
+                    this::onPackagingCanceled
+            );
             packageTask.addPropertyChangeListener(this);
             packageTask.execute();
-
         } catch (Exception e) {
             e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Packaging failed to start.", "Package Error", JOptionPane.ERROR_MESSAGE);
+            safeDone();
+            dispose();
+        }
+    }
+
+    private void onPackagingCanceled() {
+        setAlwaysOnTop(false);
+        JOptionPane.showMessageDialog(
+                this,
+                "Program Packaging Failed",
+                "Package Error",
+                JOptionPane.ERROR_MESSAGE
+        );
+        dispose();
+        safeDone();
+    }
+
+    private void onPackagingFinished() {
+        setAlwaysOnTop(false);
+
+        StringBuilder message = new StringBuilder("Program packaging finished successfully.");
+        List<File> outputs = packageTask.getProducedArtifacts();
+        if (!outputs.isEmpty()) {
+            message.append("\r\n\r\nGenerated outputs:");
+            for (File output : outputs) {
+                message.append("\r\n").append(output.getAbsolutePath());
+            }
         }
 
+        int n = JOptionPane.showConfirmDialog(
+                this,
+                message + "\r\n\r\nOpen output folder?",
+                "Open File Location",
+                JOptionPane.YES_NO_OPTION);
+
+        if (n == YES_OPTION) {
+            try {
+                ProcessBuilder pb = new ProcessBuilder("explorer.exe", packageTask.getOutputFolder().getAbsolutePath());
+                pb.start();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        dispose();
+        safeDone();
+    }
+
+    private void handleClose() {
+        if (packageTask != null && !packageTask.isDone()) {
+            JOptionPane.showMessageDialog(this, "Packaging is running. Please wait for it to finish.", "Package In Progress", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        dispose();
+        safeDone();
+    }
+
+    private void safeDone() {
+        if (doneInvoked) {
+            return;
+        }
+        doneInvoked = true;
+        if (done != null) {
+            done.run();
+        }
+    }
+
+    private void chooseIconFile(JTextField targetField, String title) {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle(title);
+        if (targetField.getText() != null && targetField.getText().trim().length() > 0) {
+            chooser.setSelectedFile(new File(targetField.getText().trim()));
+        }
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            targetField.setText(chooser.getSelectedFile().getAbsolutePath());
+        }
+    }
+
+    private File toFileOrNull(String text) {
+        if (text == null) {
+            return null;
+        }
+        String trimmed = text.trim();
+        if (trimmed.length() == 0) {
+            return null;
+        }
+        return new File(trimmed);
     }
 
     @Override
     public void propertyChange(PropertyChangeEvent evt) {
+        if (!"progress".equals(evt.getPropertyName()) || packageTask == null) {
+            return;
+        }
+
         int progress = packageTask.getProgress();
         progressBar1.setValue(progress);
         progressBar1.updateUI();
-
-
     }
-
-    {
-// GUI initializer generated by IntelliJ IDEA GUI Designer
-// >>> IMPORTANT!! <<<
-// DO NOT EDIT OR ADD ANY CODE HERE!
-        $$$setupUI$$$();
-    }
-
-    /**
-     * Method generated by IntelliJ IDEA GUI Designer
-     * >>> IMPORTANT!! <<<
-     * DO NOT edit this method OR call it in your code!
-     *
-     * @noinspection ALL
-     */
-    private void $$$setupUI$$$() {
-        contentPane = new JPanel();
-        contentPane.setLayout(new GridLayoutManager(1, 1, new Insets(10, 10, 10, 10), -1, -1));
-        final JPanel panel1 = new JPanel();
-        panel1.setLayout(new GridLayoutManager(2, 1, new Insets(0, 0, 0, 0), -1, -1));
-        contentPane.add(panel1, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null, 0, false));
-        progressBar1 = new JProgressBar();
-        progressBar1.setStringPainted(true);
-        panel1.add(progressBar1, new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
-        lblHeader1 = new JLabel();
-        Font lblHeader1Font = this.$$$getFont$$$(null, -1, 18, lblHeader1.getFont());
-        if (lblHeader1Font != null) lblHeader1.setFont(lblHeader1Font);
-        lblHeader1.setText("Packaging program. Please wait...");
-        panel1.add(lblHeader1, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
-    }
-
-    /**
-     * @noinspection ALL
-     */
-    private Font $$$getFont$$$(String fontName, int style, int size, Font currentFont) {
-        if (currentFont == null) return null;
-        String resultName;
-        if (fontName == null) {
-            resultName = currentFont.getName();
-        } else {
-            Font testFont = new Font(fontName, Font.PLAIN, 10);
-            if (testFont.canDisplay('a') && testFont.canDisplay('1')) {
-                resultName = fontName;
-            } else {
-                resultName = currentFont.getName();
-            }
-        }
-        Font font = new Font(resultName, style >= 0 ? style : currentFont.getStyle(), size >= 0 ? size : currentFont.getSize());
-        boolean isMac = System.getProperty("os.name", "").toLowerCase(Locale.ENGLISH).startsWith("mac");
-        Font fontWithFallback = isMac ? new Font(font.getFamily(), font.getStyle(), font.getSize()) : new StyleContext().getFont(font.getFamily(), font.getStyle(), font.getSize());
-        return fontWithFallback instanceof FontUIResource ? fontWithFallback : new FontUIResource(fontWithFallback);
-    }
-
-    /**
-     * @noinspection ALL
-     */
-    public JComponent $$$getRootComponent$$$() {
-        return contentPane;
-    }
-
 }

@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarInputStream;
 import java.util.jar.JarOutputStream;
@@ -21,6 +22,10 @@ public class JarUtils {
      * Add jar contents to the deployment archive under the given prefix
      */
     public static String[] addJar(JarOutputStream outputStream, String prefix, File jar, Runnable progress) {
+        return addJar(outputStream, prefix, jar, progress, null);
+    }
+
+    public static String[] addJar(JarOutputStream outputStream, String prefix, File jar, Runnable progress, Set<String> existingEntries) {
 
         try {
             ArrayList tmp = new ArrayList();
@@ -35,6 +40,10 @@ public class JarUtils {
 
                 if (entry.isDirectory() == false) {
                     String entryName = prefix + entry.getName();
+                    if (existingEntries != null && !existingEntries.add(entryName)) {
+                        entry = jis.getNextJarEntry();
+                        continue;
+                    }
                     tmp.add(entryName);
                     addJarEntry(outputStream, entryName, jis);
                 }

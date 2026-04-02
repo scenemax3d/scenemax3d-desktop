@@ -2,7 +2,6 @@ package com.scenemaxeng.projector;
 
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.UILoadCommand;
-
 import java.io.File;
 
 /**
@@ -35,6 +34,8 @@ public class UILoadController extends SceneMaxBaseController {
                 File uiFile = new File(loadCmd.filePath);
                 if (uiFile.exists()) {
                     app.loadUIDocument(uiFile);
+                } else if (app.loadPackagedUiDocument(loadCmd.uiName)) {
+                    // loaded from jar resources
                 } else {
                     app.handleRuntimeError("UI file not found: " + loadCmd.filePath);
                 }

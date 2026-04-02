@@ -1,5 +1,5 @@
-//canvas.size 1600,900
-screen.mode full 
+canvas.size 1600,900
+screen.mode borderless 
 
 add "/variables/constants", 
     "/variables/global_variables" code
