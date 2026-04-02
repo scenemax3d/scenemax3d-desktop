@@ -19,7 +19,8 @@ print_status = {
 	//life2.draw health_bar1 : pos (950,10) and size(450,50) and frame frame2
 	//timer.print round(timer) : pos (650,10,0) and font "xeno" and size 3.5 and color cyan
 	UI.layer1.panel2.score.text = timer	
-	 
+	UI.layer1.playerHealthBar.frame = frame1
+	UI.layer1.opponentHealthBar.frame = frame2
 }
 run print_status every 1 second
 
