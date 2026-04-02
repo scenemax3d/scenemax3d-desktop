@@ -16,6 +16,7 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
     private static final ImageIcon ICON_DESIGNER = createDesignerIcon();
     private static final ImageIcon ICON_UI_DESIGNER = createUIDesignerIcon();
     private static final ImageIcon ICON_SHADER_DESIGNER = createShaderDesignerIcon();
+    private static final ImageIcon ICON_ENVIRONMENT_SHADER_DESIGNER = createEnvironmentShaderDesignerIcon();
 
     private JLabel label;
 
@@ -44,6 +45,8 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
             label.setIcon(ICON_UI_DESIGNER);
         } else if (name.endsWith(".smshader")) {
             label.setIcon(ICON_SHADER_DESIGNER);
+        } else if (name.endsWith(".smenvshader")) {
+            label.setIcon(ICON_ENVIRONMENT_SHADER_DESIGNER);
         } else if (name.endsWith(".cs")) {
             label.setIcon(ICON_CSHARP);
         } else if (name.equals("main")) {
@@ -141,6 +144,27 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
         spark.lineTo(10.5, 9.5);
         spark.closePath();
         g.draw(spark);
+
+        g.dispose();
+        return new ImageIcon(img);
+    }
+
+    private static ImageIcon createEnvironmentShaderDesignerIcon() {
+        BufferedImage img = new BufferedImage(24, 24, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        GradientPaint paint = new GradientPaint(4, 4, new Color(114, 182, 255), 20, 20, new Color(58, 116, 196));
+        g.setPaint(paint);
+        g.fillRoundRect(3, 5, 18, 14, 7, 7);
+
+        g.setColor(new Color(244, 248, 252));
+        g.fillOval(6, 6, 7, 7);
+
+        g.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.drawLine(10, 14, 8, 18);
+        g.drawLine(14, 14, 12, 18);
+        g.drawLine(18, 14, 16, 18);
 
         g.dispose();
         return new ImageIcon(img);
