@@ -1,7 +1,7 @@
 package com.scenemax.designer.shader;
 
-import com.jme3.app.SimpleApplication;
-import com.jme3.asset.plugins.FileLocator;
+import com.jme3.asset.AssetInfo;
+import com.jme3.asset.AssetKey;
 import com.jme3.bounding.BoundingBox;
 import com.jme3.bounding.BoundingSphere;
 import com.jme3.bounding.BoundingVolume;
@@ -10,8 +10,6 @@ import com.jme3.input.controls.ActionListener;
 import com.jme3.input.controls.AnalogListener;
 import com.jme3.input.controls.MouseAxisTrigger;
 import com.jme3.input.controls.MouseButtonTrigger;
-import com.jme3.light.AmbientLight;
-import com.jme3.light.DirectionalLight;
 import com.jme3.material.MatParam;
 import com.jme3.material.MatParamTexture;
 import com.jme3.material.Material;
@@ -23,13 +21,13 @@ import com.jme3.math.Quaternion;
 import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.queue.RenderQueue;
-import com.jme3.scene.CameraNode;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
 import com.jme3.scene.shape.Box;
 import com.jme3.scene.shape.Quad;
 import com.jme3.scene.shape.Sphere;
+import com.jme3.shader.VarType;
 import com.jme3.texture.Texture;
 import com.scenemax.designer.DesignerEntity;
 import com.scenemax.designer.DesignerEntityType;
@@ -37,14 +35,20 @@ import com.scenemax.designer.gizmo.GizmoManager;
 import com.scenemax.designer.gizmo.GizmoMode;
 import com.scenemax.designer.gizmo.RotateGizmo;
 import com.scenemax.designer.gizmo.TranslateGizmo;
-import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.types.ResourceSetup;
+import com.scenemaxeng.projector.SceneMaxApp;
 
 import java.io.File;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.WeakHashMap;
 
-public class ShaderPreviewApp extends SimpleApplication {
+public class ShaderPreviewApp extends SceneMaxApp {
 
     private final Node pivotNode = new Node("ShaderPreviewPivot");
     private final Node previewContentNode = new Node("ShaderPreviewContent");
@@ -52,11 +56,7 @@ public class ShaderPreviewApp extends SimpleApplication {
     private ShaderDocument currentDocument;
     private File currentFile;
     private String resourcesFolder;
-    private boolean locatorRegistered = false;
-    private boolean defaultLocatorRegistered = false;
-    private Material currentMaterial;
     private float elapsedTime = 0f;
-    private AssetsMapping assetsMapping;
     private DesignerEntity previewEntity;
     private TranslateGizmo translateGizmo;
     private RotateGizmo rotateGizmo;
@@ -70,6 +70,7 @@ public class ShaderPreviewApp extends SimpleApplication {
     private boolean panning = false;
     private final Vector2f lastMousePos = new Vector2f();
     private final Map<Geometry, Material> originalPreviewMaterials = new IdentityHashMap<>();
+    private final Set<Material> previewShaderMaterials = Collections.newSetFromMap(new WeakHashMap<>());
     private ShaderPreviewTarget loadedPreviewTarget = null;
     private String loadedPreviewModelName = null;
 
@@ -81,6 +82,18 @@ public class ShaderPreviewApp extends SimpleApplication {
 
     @Override
     public void simpleInitApp() {
+        if (resourcesFolder != null && !resourcesFolder.isBlank()) {
+            File resourcesRoot = new File(resourcesFolder);
+            File projectRoot = resourcesRoot.getParentFile();
+            if (projectRoot != null) {
+                // SceneMaxApp derives the project root from workingFolder.parent.parent,
+                // so we give it a path that lives one level below the project's scripts folder.
+                File previewWorkingFolder = new File(new File(projectRoot, "scripts"), "_shader_preview");
+                setWorkingFolder(previewWorkingFolder.getAbsolutePath());
+            }
+        }
+
+        super.simpleInitApp();
         viewPort.setBackgroundColor(new ColorRGBA(0.05f, 0.08f, 0.12f, 1f));
         flyCam.setEnabled(false);
         setDisplayFps(false);
@@ -88,7 +101,6 @@ public class ShaderPreviewApp extends SimpleApplication {
 
         rootNode.attachChild(pivotNode);
         pivotNode.attachChild(previewContentNode);
-        addLights();
         initGizmos();
         registerInputMappings();
         rebuildGeometry(ShaderPreviewTarget.BOX);
@@ -97,6 +109,7 @@ public class ShaderPreviewApp extends SimpleApplication {
 
     @Override
     public void simpleUpdate(float tpf) {
+        super.simpleUpdate(tpf);
         elapsedTime += tpf;
         if ((orbiting || panning) && inputManager != null) {
             Vector2f currentMouse = inputManager.getCursorPosition();
@@ -117,8 +130,10 @@ public class ShaderPreviewApp extends SimpleApplication {
                 updateOrbitCamera();
             }
         }
-        if (currentMaterial != null) {
-            currentMaterial.setFloat("Time", elapsedTime);
+        for (Material material : previewShaderMaterials) {
+            if (material != null) {
+                material.setFloat("Time", elapsedTime);
+            }
         }
         if (gizmoManager != null) {
             if (gizmoManager.isDragging() && inputManager != null) {
@@ -143,17 +158,6 @@ public class ShaderPreviewApp extends SimpleApplication {
             applyDocument();
             return null;
         });
-    }
-
-    private void addLights() {
-        AmbientLight ambient = new AmbientLight();
-        ambient.setColor(new ColorRGBA(0.7f, 0.75f, 0.9f, 1f));
-        rootNode.addLight(ambient);
-
-        DirectionalLight keyLight = new DirectionalLight();
-        keyLight.setDirection(new Vector3f(-0.4f, -0.8f, -0.6f).normalizeLocal());
-        keyLight.setColor(new ColorRGBA(1f, 0.97f, 0.9f, 1f));
-        rootNode.addLight(keyLight);
     }
 
     private void initGizmos() {
@@ -208,7 +212,6 @@ public class ShaderPreviewApp extends SimpleApplication {
     }
 
     private void applyDocument() {
-        registerLocatorIfNeeded();
         ensurePreviewGeometry();
 
         if (resourcesFolder == null || resourcesFolder.isBlank()) {
@@ -253,37 +256,6 @@ public class ShaderPreviewApp extends SimpleApplication {
         ColorRGBA color = currentDocument != null ? currentDocument.getMainColor() : new ColorRGBA(0.9f, 0.6f, 0.2f, 1f);
         fallback.setColor("Color", color);
         applyFallbackMaterialRecursive(previewContentNode, fallback, RenderQueue.Bucket.Opaque);
-        currentMaterial = fallback;
-    }
-
-    private void registerLocatorIfNeeded() {
-        try {
-            if (!defaultLocatorRegistered) {
-                File defaultRoot = new File("./resources");
-                if (defaultRoot.exists()) {
-                    assetManager.registerLocator(defaultRoot.getCanonicalPath(), FileLocator.class);
-                }
-                defaultLocatorRegistered = true;
-            }
-
-            if (!locatorRegistered && resourcesFolder != null && !resourcesFolder.isBlank()) {
-                File root = new File(resourcesFolder);
-                if (root.exists()) {
-                    assetManager.registerLocator(root.getCanonicalPath(), FileLocator.class);
-                    locatorRegistered = true;
-                }
-            }
-
-            if (assetsMapping == null) {
-                if (resourcesFolder != null && !resourcesFolder.isBlank()) {
-                    assetsMapping = new AssetsMapping(new File(resourcesFolder).getCanonicalPath());
-                } else {
-                    assetsMapping = new AssetsMapping();
-                }
-            }
-        } catch (Exception ex) {
-            ex.printStackTrace();
-        }
     }
 
     private void rebuildGeometry(ShaderPreviewTarget target) {
@@ -293,6 +265,7 @@ public class ShaderPreviewApp extends SimpleApplication {
         previewContentNode.detachAllChildren();
         previewContentNode.setLocalRotation(Quaternion.IDENTITY);
         originalPreviewMaterials.clear();
+        previewShaderMaterials.clear();
 
         ShaderPreviewTarget safeTarget = target != null ? target : ShaderPreviewTarget.BOX;
         switch (safeTarget) {
@@ -369,7 +342,6 @@ public class ShaderPreviewApp extends SimpleApplication {
             Material material = buildPreviewMaterial(assetBase, sourceMaterial);
             if (material != null) {
                 geometry.setMaterial(material);
-                currentMaterial = material;
             }
             return;
         }
@@ -381,7 +353,15 @@ public class ShaderPreviewApp extends SimpleApplication {
     }
 
     private Material buildPreviewMaterial(String assetBase, Material sourceMaterial) {
+        Material shaderTemplate;
+        try {
+            shaderTemplate = assetManager.loadMaterial(assetBase + ".j3m");
+        } catch (Exception ex) {
+            shaderTemplate = null;
+        }
         Material material = new Material(assetManager, assetBase + ".j3md");
+        copyAllParams(shaderTemplate, material);
+        applyShaderMaterialDefaultsFromAsset(assetBase, material);
         material.setColor("MainColor", currentDocument.getMainColor());
         material.setFloat("Time", elapsedTime);
         material.setFloat("GlowStrength", currentDocument.getGlowStrength());
@@ -407,8 +387,101 @@ public class ShaderPreviewApp extends SimpleApplication {
             copyParamIfPresent(sourceMaterial, material, "VertexColor", "VertexColor");
         }
 
+        ensureDefaultColorParam(material, "MainColor", ColorRGBA.White);
         material.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
+        previewShaderMaterials.add(material);
         return material;
+    }
+
+    private void applyShaderMaterialDefaultsFromAsset(String assetBase, Material shaderMaterial) {
+        if (assetBase == null || shaderMaterial == null) {
+            return;
+        }
+
+        String j3mPath = assetBase + ".j3m";
+        try {
+            AssetInfo assetInfo = assetManager.locateAsset(new AssetKey(j3mPath));
+            if (assetInfo == null) {
+                return;
+            }
+
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(assetInfo.openStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    applyShaderMaterialDefaultLine(shaderMaterial, line);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void applyShaderMaterialDefaultLine(Material material, String line) {
+        if (material == null || line == null) {
+            return;
+        }
+
+        String trimmed = line.trim();
+        if (trimmed.isEmpty() || trimmed.startsWith("Material ") || trimmed.equals("{") || trimmed.equals("}")) {
+            return;
+        }
+
+        int sep = trimmed.indexOf(':');
+        if (sep <= 0) {
+            return;
+        }
+
+        String paramName = trimmed.substring(0, sep).trim();
+        String rawValue = trimmed.substring(sep + 1).trim();
+        if (paramName.isEmpty() || rawValue.isEmpty()) {
+            return;
+        }
+
+        MaterialDef def = material.getMaterialDef();
+        if (def == null || def.getMaterialParam(paramName) == null) {
+            return;
+        }
+
+        VarType varType = def.getMaterialParam(paramName).getVarType();
+        try {
+            if (varType == VarType.Float) {
+                material.setFloat(paramName, Float.parseFloat(rawValue));
+            } else if (varType == VarType.Boolean) {
+                material.setBoolean(paramName, Boolean.parseBoolean(rawValue));
+            } else if (varType == VarType.Vector4 || varType == VarType.Vector4Array) {
+                String[] parts = rawValue.split("\\s+");
+                if (parts.length >= 4) {
+                    material.setColor(paramName, new ColorRGBA(
+                            Float.parseFloat(parts[0]),
+                            Float.parseFloat(parts[1]),
+                            Float.parseFloat(parts[2]),
+                            Float.parseFloat(parts[3])
+                    ));
+                }
+            } else if (varType == VarType.Texture2D && !rawValue.isEmpty()) {
+                material.setTexture(paramName, assetManager.loadTexture(rawValue));
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void copyAllParams(Material sourceMaterial, Material targetMaterial) {
+        if (sourceMaterial == null || targetMaterial == null) {
+            return;
+        }
+
+        for (MatParam param : sourceMaterial.getParams()) {
+            if (param == null || param.getValue() == null) {
+                continue;
+            }
+
+            try {
+                VarType varType = param.getVarType();
+                if (varType != null) {
+                    targetMaterial.setParam(param.getName(), varType, param.getValue());
+                }
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     private void captureOriginalMaterials(Spatial spatial) {
@@ -462,6 +535,21 @@ public class ShaderPreviewApp extends SimpleApplication {
                 targetMaterial.setTexture(toName, ((MatParamTexture) param).getTextureValue());
                 return;
             }
+        }
+    }
+
+    private void ensureDefaultColorParam(Material material, String paramName, ColorRGBA defaultColor) {
+        if (material == null || defaultColor == null) {
+            return;
+        }
+
+        MaterialDef targetDef = material.getMaterialDef();
+        if (targetDef == null || targetDef.getMaterialParam(paramName) == null) {
+            return;
+        }
+
+        if (material.getParam(paramName) == null) {
+            material.setColor(paramName, defaultColor.clone());
         }
     }
 
