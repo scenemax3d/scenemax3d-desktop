@@ -55,6 +55,9 @@ public class DesignerEntity {
     // Material for BOX, SPHERE (empty = no material / default)
     private String material = "";
 
+    // Shader for 3D entities (empty = no shader / default)
+    private String shader = "";
+
     // Code node text (for CODE type)
     private String codeText = "";
 
@@ -144,6 +147,9 @@ public class DesignerEntity {
     public String getMaterial() { return material; }
     public void setMaterial(String material) { this.material = material != null ? material : ""; }
 
+    public String getShader() { return shader; }
+    public void setShader(String shader) { this.shader = shader != null ? shader : ""; }
+
     public String getCodeText() { return codeText; }
     public void setCodeText(String codeText) { this.codeText = codeText != null ? codeText : ""; }
 
@@ -220,6 +226,7 @@ public class DesignerEntity {
                 json.put("staticEntity", staticEntity);
                 json.put("colliderEntity", colliderEntity);
                 json.put("material", material);
+                json.put("shader", shader);
                 json.put("hidden", hidden);
                 json.put("shadowMode", shadowMode);
                 break;
@@ -230,6 +237,7 @@ public class DesignerEntity {
                 json.put("staticEntity", staticEntity);
                 json.put("colliderEntity", colliderEntity);
                 json.put("material", material);
+                json.put("shader", shader);
                 json.put("hidden", hidden);
                 json.put("shadowMode", shadowMode);
                 break;
@@ -240,6 +248,7 @@ public class DesignerEntity {
                 json.put("staticEntity", staticEntity);
                 json.put("colliderEntity", colliderEntity);
                 json.put("material", material);
+                json.put("shader", shader);
                 json.put("hidden", hidden);
                 json.put("shadowMode", shadowMode);
                 break;
@@ -252,6 +261,7 @@ public class DesignerEntity {
                 json.put("staticEntity", staticEntity);
                 json.put("colliderEntity", colliderEntity);
                 json.put("material", material);
+                json.put("shader", shader);
                 json.put("hidden", hidden);
                 json.put("shadowMode", shadowMode);
                 break;
@@ -261,6 +271,7 @@ public class DesignerEntity {
                 json.put("staticEntity", staticEntity);
                 json.put("colliderEntity", colliderEntity);
                 json.put("material", material);
+                json.put("shader", shader);
                 json.put("hidden", hidden);
                 json.put("shadowMode", shadowMode);
                 break;
@@ -270,6 +281,7 @@ public class DesignerEntity {
                 json.put("dynamicModel", dynamicModel);
                 json.put("vehicleModel", vehicleModel);
                 json.put("hidden", hidden);
+                json.put("shader", shader);
                 json.put("shadowMode", shadowMode);
                 json.put("jointMapping", jointMapping);
                 break;
@@ -308,6 +320,7 @@ public class DesignerEntity {
                 entity.staticEntity = json.optBoolean("staticEntity", false);
                 entity.colliderEntity = json.optBoolean("colliderEntity", false);
                 entity.material = json.optString("material", "");
+                entity.shader = json.optString("shader", "");
                 entity.hidden = json.optBoolean("hidden", false);
                 entity.shadowMode = json.optString("shadowMode", "none");
                 break;
@@ -318,6 +331,7 @@ public class DesignerEntity {
                 entity.staticEntity = json.optBoolean("staticEntity", false);
                 entity.colliderEntity = json.optBoolean("colliderEntity", false);
                 entity.material = json.optString("material", "");
+                entity.shader = json.optString("shader", "");
                 entity.hidden = json.optBoolean("hidden", false);
                 entity.shadowMode = json.optString("shadowMode", "none");
                 break;
@@ -328,6 +342,7 @@ public class DesignerEntity {
                 entity.staticEntity = json.optBoolean("staticEntity", false);
                 entity.colliderEntity = json.optBoolean("colliderEntity", false);
                 entity.material = json.optString("material", "");
+                entity.shader = json.optString("shader", "");
                 entity.hidden = json.optBoolean("hidden", false);
                 entity.shadowMode = json.optString("shadowMode", "none");
                 break;
@@ -340,6 +355,7 @@ public class DesignerEntity {
                 entity.staticEntity = json.optBoolean("staticEntity", false);
                 entity.colliderEntity = json.optBoolean("colliderEntity", false);
                 entity.material = json.optString("material", "");
+                entity.shader = json.optString("shader", "");
                 entity.hidden = json.optBoolean("hidden", false);
                 entity.shadowMode = json.optString("shadowMode", "none");
                 break;
@@ -349,6 +365,7 @@ public class DesignerEntity {
                 entity.staticEntity = json.optBoolean("staticEntity", false);
                 entity.colliderEntity = json.optBoolean("colliderEntity", false);
                 entity.material = json.optString("material", "");
+                entity.shader = json.optString("shader", "");
                 entity.hidden = json.optBoolean("hidden", false);
                 entity.shadowMode = json.optString("shadowMode", "none");
                 break;
@@ -358,6 +375,7 @@ public class DesignerEntity {
                 entity.dynamicModel = json.optBoolean("dynamicModel", false);
                 entity.vehicleModel = json.optBoolean("vehicleModel", false);
                 entity.hidden = json.optBoolean("hidden", false);
+                entity.shader = json.optString("shader", "");
                 entity.shadowMode = json.optString("shadowMode", "none");
                 entity.jointMapping = json.optString("jointMapping", "");
                 break;

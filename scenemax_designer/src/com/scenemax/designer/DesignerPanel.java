@@ -94,6 +94,8 @@ public class DesignerPanel extends JPanel {
     private JCheckBox chkStaticEntity, chkColliderEntity;
     private JCheckBox chkHidden;
     private JPanel hiddenPanel;
+    private JComboBox<String> cboShader;
+    private JPanel shaderPanel;
     private JComboBox<String> cboShadowMode;
     private JPanel shadowModePanel;
     private JCheckBox chkJointMapping;
@@ -609,6 +611,23 @@ public class DesignerPanel extends JPanel {
         chkHidden.addActionListener(e -> applyHiddenChange());
         hiddenPanel.setVisible(false);
         propertiesForm.add(hiddenPanel);
+
+        // Shader combo (3D entities only)
+        shaderPanel = new JPanel();
+        shaderPanel.setLayout(new BoxLayout(shaderPanel, BoxLayout.Y_AXIS));
+        shaderPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        shaderPanel.add(Box.createVerticalStrut(8));
+        JPanel shaderRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        shaderRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        shaderRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        shaderRow.add(new JLabel("Shader:"));
+        cboShader = new JComboBox<>(new String[]{"None"});
+        cboShader.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+        cboShader.addActionListener(e -> applyShaderChange());
+        shaderRow.add(cboShader);
+        shaderPanel.add(shaderRow);
+        shaderPanel.setVisible(false);
+        propertiesForm.add(shaderPanel);
 
         // Shadow Mode combo (BOX, SPHERE, MODEL)
         shadowModePanel = new JPanel();
@@ -1737,6 +1756,7 @@ public class DesignerPanel extends JPanel {
                 staticColliderPanel.setVisible(false);
                 materialPanel.setVisible(false);
                 hiddenPanel.setVisible(false);
+                shaderPanel.setVisible(false);
                 shadowModePanel.setVisible(false);
                 jointMappingPanel.setVisible(false);
                 pathPropertiesPanel.setVisible(false);
@@ -1822,6 +1842,9 @@ public class DesignerPanel extends JPanel {
                 chkHidden.setSelected(entity.isHidden());
                 hiddenPanel.setVisible(true);
 
+                refreshShaderChoices(entity.getShader());
+                shaderPanel.setVisible(true);
+
                 String sm = entity.getShadowMode();
                 if ("cast".equals(sm)) cboShadowMode.setSelectedItem("Cast");
                 else if ("receive".equals(sm)) cboShadowMode.setSelectedItem("Receive");
@@ -1840,6 +1863,7 @@ public class DesignerPanel extends JPanel {
                 }
             } else {
                 hiddenPanel.setVisible(false);
+                shaderPanel.setVisible(false);
                 shadowModePanel.setVisible(false);
                 jointMappingPanel.setVisible(false);
             }
@@ -2053,6 +2077,23 @@ public class DesignerPanel extends JPanel {
         });
     }
 
+    private void applyShaderChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null) return;
+        if (sel.getType() != DesignerEntityType.BOX && sel.getType() != DesignerEntityType.SPHERE
+                && sel.getType() != DesignerEntityType.CYLINDER && sel.getType() != DesignerEntityType.HOLLOW_CYLINDER
+                && sel.getType() != DesignerEntityType.QUAD && sel.getType() != DesignerEntityType.MODEL) return;
+
+        String selected = (String) cboShader.getSelectedItem();
+        String shader = (selected == null || "None".equals(selected)) ? "" : selected;
+
+        app.enqueue(() -> {
+            app.applyShader(sel, shader);
+            return null;
+        });
+    }
+
     private void applyShadowModeChange() {
         if (updatingProperties || app == null) return;
         DesignerEntity sel = app.getSelectionManager().getSelected();
@@ -2206,6 +2247,33 @@ public class DesignerPanel extends JPanel {
             app.applyMaterial(sel, mat);
             return null;
         });
+    }
+
+    private void refreshShaderChoices(String selectedShader) {
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+        model.addElement("None");
+
+        if (app != null) {
+            for (String shaderName : app.getAvailableProjectShaderNames()) {
+                model.addElement(shaderName);
+            }
+        }
+
+        if (selectedShader != null && !selectedShader.isBlank()) {
+            boolean exists = false;
+            for (int i = 0; i < model.getSize(); i++) {
+                if (selectedShader.equals(model.getElementAt(i))) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                model.addElement(selectedShader);
+            }
+        }
+
+        cboShader.setModel(model);
+        cboShader.setSelectedItem(selectedShader != null && !selectedShader.isBlank() ? selectedShader : "None");
     }
 
     // --- Lifecycle ---

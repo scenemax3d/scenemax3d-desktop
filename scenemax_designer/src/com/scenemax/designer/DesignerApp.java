@@ -27,9 +27,12 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 
@@ -70,6 +73,7 @@ public class DesignerApp extends SceneMaxApp {
         boolean staticEntity;
         boolean colliderEntity;
         String material;
+        String shader;
         boolean hidden;
         String shadowMode;
         String jointMapping;
@@ -776,6 +780,49 @@ public class DesignerApp extends SceneMaxApp {
         return res != null && res.isStatic;
     }
 
+    /** Returns sorted list of project shader names from resources/shaders/shaders-ext.json. */
+    public List<String> getAvailableProjectShaderNames() {
+        TreeSet<String> names = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        String resourcesFolder = getProjectResourcesFolder();
+        if (resourcesFolder == null || resourcesFolder.isBlank()) {
+            return new ArrayList<>();
+        }
+
+        File indexFile = new File(resourcesFolder, "shaders/shaders-ext.json");
+        if (!indexFile.exists()) {
+            return new ArrayList<>();
+        }
+
+        try {
+            String content = Files.readString(indexFile.toPath(), StandardCharsets.UTF_8);
+            if (content == null || content.isBlank()) {
+                return new ArrayList<>();
+            }
+
+            JSONObject root = new JSONObject(content);
+            JSONArray shaders = root.optJSONArray("shaders");
+            if (shaders == null) {
+                return new ArrayList<>();
+            }
+
+            for (int i = 0; i < shaders.length(); i++) {
+                JSONObject shader = shaders.optJSONObject(i);
+                if (shader == null) {
+                    continue;
+                }
+                String name = shader.optString("name", "").trim();
+                if (!name.isEmpty()) {
+                    names.add(name);
+                }
+            }
+        } catch (Exception ex) {
+            System.err.println("Failed to load project shaders list");
+            ex.printStackTrace();
+        }
+
+        return new ArrayList<>(names);
+    }
+
     /**
      * Executes SceneMax code to create an entity and queues a deferred lookup.
      * The node won't exist until simpleUpdate() runs the SceneMax controllers,
@@ -949,6 +996,7 @@ public class DesignerApp extends SceneMaxApp {
                         entity.setStaticEntity(pe.staticEntity);
                         entity.setColliderEntity(pe.colliderEntity);
                         entity.setMaterial(pe.material != null ? pe.material : "");
+                        entity.setShader(pe.shader != null ? pe.shader : "");
                         entity.setHidden(pe.hidden);
                         entity.setShadowMode(pe.shadowMode);
                         break;
@@ -959,6 +1007,7 @@ public class DesignerApp extends SceneMaxApp {
                         entity.setStaticEntity(pe.staticEntity);
                         entity.setColliderEntity(pe.colliderEntity);
                         entity.setMaterial(pe.material != null ? pe.material : "");
+                        entity.setShader(pe.shader != null ? pe.shader : "");
                         entity.setHidden(pe.hidden);
                         entity.setShadowMode(pe.shadowMode);
                         break;
@@ -969,6 +1018,7 @@ public class DesignerApp extends SceneMaxApp {
                         entity.setStaticEntity(pe.staticEntity);
                         entity.setColliderEntity(pe.colliderEntity);
                         entity.setMaterial(pe.material != null ? pe.material : "");
+                        entity.setShader(pe.shader != null ? pe.shader : "");
                         entity.setHidden(pe.hidden);
                         entity.setShadowMode(pe.shadowMode);
                         break;
@@ -981,6 +1031,7 @@ public class DesignerApp extends SceneMaxApp {
                         entity.setStaticEntity(pe.staticEntity);
                         entity.setColliderEntity(pe.colliderEntity);
                         entity.setMaterial(pe.material != null ? pe.material : "");
+                        entity.setShader(pe.shader != null ? pe.shader : "");
                         entity.setHidden(pe.hidden);
                         entity.setShadowMode(pe.shadowMode);
                         break;
@@ -990,6 +1041,7 @@ public class DesignerApp extends SceneMaxApp {
                         entity.setStaticEntity(pe.staticEntity);
                         entity.setColliderEntity(pe.colliderEntity);
                         entity.setMaterial(pe.material != null ? pe.material : "");
+                        entity.setShader(pe.shader != null ? pe.shader : "");
                         entity.setHidden(pe.hidden);
                         entity.setShadowMode(pe.shadowMode);
                         break;
@@ -999,6 +1051,7 @@ public class DesignerApp extends SceneMaxApp {
                         entity.setDynamicModel(pe.dynamicModel);
                         entity.setVehicleModel(pe.vehicleModel);
                         entity.setHidden(pe.hidden);
+                        entity.setShader(pe.shader != null ? pe.shader : "");
                         entity.setShadowMode(pe.shadowMode);
                         entity.setJointMapping(pe.jointMapping != null ? pe.jointMapping : "");
                         break;
@@ -1205,6 +1258,15 @@ public class DesignerApp extends SceneMaxApp {
         if (material != null && !material.isEmpty()) {
             runPartialCode(entity.getName() + ".material = \"" + material + "\"", null, false);
         }
+        markDocumentDirty();
+    }
+
+    /** Applies or clears a shader on a 3D entity and persists the change. */
+    public void applyShader(DesignerEntity entity, String shader) {
+        if (entity == null) return;
+        String shaderName = shader != null ? shader : "";
+        entity.setShader(shaderName);
+        runPartialCode(entity.getName() + ".shader = \"" + shaderName + "\"", null, false);
         markDocumentDirty();
     }
 
@@ -1796,6 +1858,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.staticEntity = entityTemplate.isStaticEntity();
                     pending.colliderEntity = entityTemplate.isColliderEntity();
                     pending.material = entityTemplate.getMaterial();
+                    pending.shader = entityTemplate.getShader();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
                     break;
@@ -1806,6 +1869,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.staticEntity = entityTemplate.isStaticEntity();
                     pending.colliderEntity = entityTemplate.isColliderEntity();
                     pending.material = entityTemplate.getMaterial();
+                    pending.shader = entityTemplate.getShader();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
                     break;
@@ -1816,6 +1880,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.staticEntity = entityTemplate.isStaticEntity();
                     pending.colliderEntity = entityTemplate.isColliderEntity();
                     pending.material = entityTemplate.getMaterial();
+                    pending.shader = entityTemplate.getShader();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
                     break;
@@ -1828,6 +1893,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.staticEntity = entityTemplate.isStaticEntity();
                     pending.colliderEntity = entityTemplate.isColliderEntity();
                     pending.material = entityTemplate.getMaterial();
+                    pending.shader = entityTemplate.getShader();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
                     break;
@@ -1837,6 +1903,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.staticEntity = entityTemplate.isStaticEntity();
                     pending.colliderEntity = entityTemplate.isColliderEntity();
                     pending.material = entityTemplate.getMaterial();
+                    pending.shader = entityTemplate.getShader();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
                     break;
@@ -1846,6 +1913,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.dynamicModel = entityTemplate.isDynamicModel();
                     pending.vehicleModel = entityTemplate.isVehicleModel();
                     pending.hidden = entityTemplate.isHidden();
+                    pending.shader = entityTemplate.getShader();
                     pending.shadowMode = entityTemplate.getShadowMode();
                     pending.jointMapping = entityTemplate.getJointMapping();
                     break;
@@ -1864,6 +1932,11 @@ public class DesignerApp extends SceneMaxApp {
             String mat = entityTemplate.getMaterial();
             if (mat != null && !mat.isEmpty()) {
                 runPartialCode(entityTemplate.getName() + ".material = \"" + mat + "\"", null, false);
+            }
+
+            String shader = entityTemplate.getShader();
+            if (shader != null && !shader.isEmpty()) {
+                runPartialCode(entityTemplate.getName() + ".shader = \"" + shader + "\"", null, false);
             }
 
             pendingEntities.add(pending);
