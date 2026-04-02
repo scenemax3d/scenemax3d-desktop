@@ -90,8 +90,6 @@ player1.character.ignore player2.joints // avoid collision of joints with charac
 player2.character.ignore player1.joints
 
 middleSphere is a sphere : hidden and radius 0.1 and material="alpha"
-profile2.draw old_man_profile1 : pos (1300,5)
-profile1.draw ninja_profile1 : pos (5,5) and size (120,200)
 
 ring.hide
 tg.switch to character mode
