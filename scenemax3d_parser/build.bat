@@ -11,9 +11,7 @@ cd build
 rmdir com
 "C:\Program Files\Java\jdk-11.0.12\bin\jar.exe" cvf scenemax_parser.jar *
 
-xcopy scenemax_parser.jar ..\..\scenemax_win_projector\libs
-xcopy scenemax_parser.jar ..\..\scenemax3d_compiler\libs
-xcopy scenemax_parser.jar ..\..\..\SceneMax3DGameHub\app\libs
-xcopy scenemax_parser.jar ..\..\..\scenemax3d-mobile-engine\libs
-
-pause
+xcopy /Y scenemax_parser.jar ..\..\scenemax_win_projector\libs
+xcopy /Y scenemax_parser.jar ..\..\scenemax3d_compiler\libs
+xcopy /Y scenemax_parser.jar ..\..\..\SceneMax3DGameHub\app\libs
+xcopy /Y scenemax_parser.jar ..\..\..\scenemax3d-mobile-engine\libs

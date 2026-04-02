@@ -182,6 +182,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private SceneMaxBaseController lastWaitController;
     private SkyControl skyControl;
     private Spatial skybox = null;
+    private Picture environmentShaderOverlay;
     private CollisionListener collisionListener;
     private SelectObjectOutliner outliner;
     private MiniMapState miniMapState;
@@ -764,6 +765,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         unloadAllUI();
 
         guiNode.detachAllChildren();
+        environmentShaderOverlay = null;
 
         if (cam != null) {
             this.cam.setLocation(new Vector3f(0, 0, 10));
@@ -821,6 +823,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         unloadAllUI();
 
         guiNode.detachAllChildren();
+        environmentShaderOverlay = null;
 
         if (cam != null) {
             this.cam.setLocation(new Vector3f(0, 0, 10));
@@ -1273,6 +1276,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             scope.add(ctl);
         } else if (action instanceof SceneActionCommand) {
             SceneActionController ctl = new SceneActionController(this,prg,scope,(SceneActionCommand)action);
+            ctl.async = action.isAsync;
+            scope.add(ctl);
+        } else if (action instanceof EnvironmentShaderCommand) {
+            EnvironmentShaderController ctl = new EnvironmentShaderController(this,prg,scope,(EnvironmentShaderCommand) action);
             ctl.async = action.isAsync;
             scope.add(ctl);
         } else if (action instanceof AttachToCommand) {
@@ -3822,6 +3829,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     public void simpleUpdate(float tpf) {
         runtimeShaderElapsedTime += tpf;
         updateRuntimeShaderMaterials();
+        updateEnvironmentShaderOverlaySize();
 
         if(hasRunTimeError) {
             hasRunTimeError=false;
@@ -7054,6 +7062,66 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             } else {
                 handleRuntimeError("Cannot find shader resource named: '" + shaderName + "'");
             }
+        }
+    }
+
+    public void setEnvironmentShader(String shaderName) {
+        if (shaderName == null || shaderName.trim().isEmpty()) {
+            clearEnvironmentShader();
+            return;
+        }
+
+        if (assetsMapping == null) {
+            handleRuntimeError("Cannot find shader resource named: '" + shaderName + "'");
+            return;
+        }
+
+        ResourceShader shader = assetsMapping.getShadersIndex().get(shaderName.toLowerCase(Locale.ROOT));
+        if (shader == null) {
+            handleRuntimeError("Cannot find shader resource named: '" + shaderName + "'");
+            return;
+        }
+
+        Material shaderMaterial = buildShaderMaterial(shader, null, true);
+        if (shaderMaterial == null) {
+            handleRuntimeError("Cannot load shader resource named: '" + shaderName + "'");
+            return;
+        }
+
+        Picture overlay = ensureEnvironmentShaderOverlay();
+        overlay.setMaterial(shaderMaterial);
+        updateEnvironmentShaderOverlaySize();
+    }
+
+    private Picture ensureEnvironmentShaderOverlay() {
+        if (environmentShaderOverlay == null) {
+            environmentShaderOverlay = new Picture("SceneEnvironmentShaderOverlay");
+            environmentShaderOverlay.setPosition(0, 0);
+            environmentShaderOverlay.setQueueBucket(RenderQueue.Bucket.Gui);
+            environmentShaderOverlay.setCullHint(Spatial.CullHint.Never);
+        }
+
+        if (environmentShaderOverlay.getParent() != guiNode) {
+            environmentShaderOverlay.removeFromParent();
+            guiNode.attachChildAt(environmentShaderOverlay, 0);
+        }
+
+        return environmentShaderOverlay;
+    }
+
+    private void updateEnvironmentShaderOverlaySize() {
+        if (environmentShaderOverlay == null || cam == null) {
+            return;
+        }
+
+        environmentShaderOverlay.setWidth(cam.getWidth());
+        environmentShaderOverlay.setHeight(cam.getHeight());
+    }
+
+    private void clearEnvironmentShader() {
+        if (environmentShaderOverlay != null) {
+            environmentShaderOverlay.removeFromParent();
+            environmentShaderOverlay = null;
         }
     }
 

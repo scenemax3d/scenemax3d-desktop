@@ -373,9 +373,10 @@ width_size : logical_expression ;
 height_size : logical_expression ;
 
 scene_actions : Scene '.' scene_action ;
-scene_action : scene_action_pause | scene_action_resume ;
+scene_action : scene_action_pause | scene_action_resume | scene_environment_shader_action ;
 scene_action_pause : Pause ;
 scene_action_resume : Resume ;
+scene_environment_shader_action : Environment '.' Shader Equals logical_expression ;
 
 screen_actions : Screen '.' screen_action ;
 screen_action : mode_full | mode_window ;
@@ -770,7 +771,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Input | Reverse | Break | HandBrake | Horn | Engine | Power | Breaking | Friction | Suspension | Compression | Damping |
     Stiffness | Length | Stop | Return | Animate | Animation | Print | Append | Color | Font | SystemColor | Ray | Check | Pos |
     Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
-    Screen | Scene | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
+    Screen | Scene | Environment | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader;
 
 Protected : 'Protected' | 'protected' ;
@@ -1036,6 +1037,7 @@ Body : 'Body' | 'body' ;
 Screen : 'Screen' | 'screen' ;
 
 Scene : 'Scene' | 'scene' ;
+Environment : 'Environment' | 'environment' ;
 Pause : 'Pause' | 'pause' ;
 Resume : 'Resume' | 'resume' ;
 

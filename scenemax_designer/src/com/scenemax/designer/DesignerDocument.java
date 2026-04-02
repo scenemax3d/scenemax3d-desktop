@@ -27,6 +27,7 @@ public class DesignerDocument {
     private Vector3f cameraPosition = new Vector3f(0, 5, -10);
     private Quaternion cameraRotation = new Quaternion(0, 1, 0, 0);
     private List<JSONObject> entityDefs = new ArrayList<>();
+    private String sceneEnvironmentShader = "";
 
     // Game camera (the user-placed camera entity that sets the initial in-game camera posture)
     private Vector3f gameCameraPos = new Vector3f(0, 2, 10);
@@ -58,6 +59,14 @@ public class DesignerDocument {
 
     public List<JSONObject> getEntityDefs() {
         return entityDefs;
+    }
+
+    public String getSceneEnvironmentShader() {
+        return sceneEnvironmentShader;
+    }
+
+    public void setSceneEnvironmentShader(String sceneEnvironmentShader) {
+        this.sceneEnvironmentShader = sceneEnvironmentShader != null ? sceneEnvironmentShader : "";
     }
 
     public Vector3f getGameCameraPos() {
@@ -119,6 +128,8 @@ public class DesignerDocument {
             }
         }
 
+        doc.sceneEnvironmentShader = root.optString("sceneEnvironmentShader", "");
+
         return doc;
     }
 
@@ -137,6 +148,7 @@ public class DesignerDocument {
         gameCamera.put("rotation", new float[]{gameCamRot.getX(), gameCamRot.getY(),
                 gameCamRot.getZ(), gameCamRot.getW()});
         root.put("gameCamera", gameCamera);
+        root.put("sceneEnvironmentShader", sceneEnvironmentShader);
 
         JSONArray entitiesArray = new JSONArray();
         for (DesignerEntity entity : entities) {
@@ -155,7 +167,8 @@ public class DesignerDocument {
      * @return true if the .code file was newly created (did not exist before)
      */
     public static boolean saveCodeFile(File smdesignFile, List<DesignerEntity> entities,
-                                       Vector3f gameCamPos, Quaternion gameCamRot) throws IOException {
+                                       Vector3f gameCamPos, Quaternion gameCamRot,
+                                       String sceneEnvironmentShader) throws IOException {
         File codeFile = getCodeFile(smdesignFile);
         boolean isNew = !codeFile.exists();
 
@@ -170,6 +183,12 @@ public class DesignerDocument {
             if (!initContent.isEmpty()) {
                 sb.append(initContent).append("\n\n");
             }
+        }
+
+        if (sceneEnvironmentShader != null && !sceneEnvironmentShader.trim().isEmpty()) {
+            sb.append("Scene.environment.shader = \"")
+              .append(sceneEnvironmentShader.trim())
+              .append("\"\n");
         }
 
         // Game camera setup
@@ -458,7 +477,7 @@ public class DesignerDocument {
             }
         }
 
-        saveCodeFile(smdesignFile, entities, doc.gameCameraPos, doc.gameCameraRot);
+        saveCodeFile(smdesignFile, entities, doc.gameCameraPos, doc.gameCameraRot, doc.sceneEnvironmentShader);
     }
 
     /**
@@ -499,6 +518,7 @@ public class DesignerDocument {
         root.put("gameCamera", new JSONObject()
                 .put("position", new float[]{0, 2, 10})
                 .put("rotation", new float[]{0, 1, 0, 0}));
+        root.put("sceneEnvironmentShader", "");
         root.put("entities", new JSONArray());
         Files.write(file.toPath(), root.toString(2).getBytes(StandardCharsets.UTF_8));
 
