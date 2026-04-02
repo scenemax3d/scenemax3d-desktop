@@ -1137,10 +1137,17 @@ public class SceneMaxLanguageParser implements IParser {
             }
 
             public StatementDef visitSceneActions(SceneMaxParser.SceneActionsContext ctx) {
-                SceneActionCommand cmd = new SceneActionCommand();
                 if(ctx.scene_actions().exception!=null) {
                     return null;
                 }
+
+                if (ctx.scene_actions().scene_action().scene_environment_shader_action() != null) {
+                    EnvironmentShaderCommand cmd = new EnvironmentShaderCommand();
+                    cmd.shaderNameExpr = ctx.scene_actions().scene_action().scene_environment_shader_action().logical_expression();
+                    return cmd;
+                }
+
+                SceneActionCommand cmd = new SceneActionCommand();
                 if (ctx.scene_actions().scene_action().scene_action_pause()!=null) {
                     cmd.pause=true;
                 } else {

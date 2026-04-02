@@ -188,6 +188,10 @@ public class DesignerApp extends SceneMaxApp {
         this.document = document;
     }
 
+    public DesignerDocument getDocument() {
+        return document;
+    }
+
     // --- Orbit camera state accessors (for save/restore across document switches) ---
 
     public float getCameraDistance() { return cameraDistance; }
@@ -823,6 +827,48 @@ public class DesignerApp extends SceneMaxApp {
         return new ArrayList<>(names);
     }
 
+    public List<String> getAvailableProjectEnvironmentShaderNames() {
+        TreeSet<String> names = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        String resourcesFolder = getProjectResourcesFolder();
+        if (resourcesFolder == null || resourcesFolder.isBlank()) {
+            return new ArrayList<>();
+        }
+
+        File indexFile = new File(resourcesFolder, "environment_shaders/environment-shaders-ext.json");
+        if (!indexFile.exists()) {
+            return new ArrayList<>();
+        }
+
+        try {
+            String content = Files.readString(indexFile.toPath(), StandardCharsets.UTF_8);
+            if (content == null || content.isBlank()) {
+                return new ArrayList<>();
+            }
+
+            JSONObject root = new JSONObject(content);
+            JSONArray shaders = root.optJSONArray("environmentShaders");
+            if (shaders == null) {
+                return new ArrayList<>();
+            }
+
+            for (int i = 0; i < shaders.length(); i++) {
+                JSONObject shader = shaders.optJSONObject(i);
+                if (shader == null) {
+                    continue;
+                }
+                String name = shader.optString("name", "").trim();
+                if (!name.isEmpty()) {
+                    names.add(name);
+                }
+            }
+        } catch (Exception ex) {
+            System.err.println("Failed to load project environment shaders list");
+            ex.printStackTrace();
+        }
+
+        return new ArrayList<>(names);
+    }
+
     /**
      * Executes SceneMax code to create an entity and queues a deferred lookup.
      * The node won't exist until simpleUpdate() runs the SceneMax controllers,
@@ -1267,6 +1313,14 @@ public class DesignerApp extends SceneMaxApp {
         String shaderName = shader != null ? shader : "";
         entity.setShader(shaderName);
         runPartialCode(entity.getName() + ".shader = \"" + shaderName + "\"", null, false);
+        markDocumentDirty();
+    }
+
+    public void applySceneEnvironmentShader(String shader) {
+        if (document == null) return;
+        String shaderName = shader != null ? shader.trim() : "";
+        document.setSceneEnvironmentShader(shaderName);
+        runPartialCode("Scene.environment.shader = \"" + shaderName + "\"", null, false);
         markDocumentDirty();
     }
 
@@ -1718,12 +1772,24 @@ public class DesignerApp extends SceneMaxApp {
         loadingDocument = true;
         loadingTotalEntities = document.getEntityDefs().size();
         notifyLoadingProgress(0, loadingTotalEntities);
+        applyDocumentSceneEnvironmentShader();
 
         // Record document entity order so we can restore it after async loading
         loadingEntityOrder = new ArrayList<>();
         collectEntityIdsRecursive(document.getEntityDefs(), loadingEntityOrder);
 
         loadEntityDefs(document.getEntityDefs(), entities);
+    }
+
+    private void applyDocumentSceneEnvironmentShader() {
+        if (document == null) {
+            return;
+        }
+
+        String shaderName = document.getSceneEnvironmentShader();
+        if (shaderName != null && !shaderName.trim().isEmpty()) {
+            runPartialCode("Scene.environment.shader = \"" + shaderName.trim() + "\"", null, false);
+        }
     }
 
     /**
@@ -2074,7 +2140,8 @@ public class DesignerApp extends SceneMaxApp {
                     .collect(Collectors.toList());
             Vector3f gameCamPos = cameraEntity != null ? cameraEntity.getPosition() : new Vector3f(0, 2, 5);
             Quaternion gameCamRot = cameraEntity != null ? cameraEntity.getRotation() : Quaternion.IDENTITY;
-            boolean wasNew = DesignerDocument.saveCodeFile(designerFile, sceneEntities, gameCamPos, gameCamRot);
+            boolean wasNew = DesignerDocument.saveCodeFile(designerFile, sceneEntities, gameCamPos, gameCamRot,
+                    document != null ? document.getSceneEnvironmentShader() : "");
             if (wasNew && scriptsTreeRefreshCallback != null) {
                 javax.swing.SwingUtilities.invokeLater(scriptsTreeRefreshCallback);
             }

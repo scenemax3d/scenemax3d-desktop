@@ -96,6 +96,8 @@ public class DesignerPanel extends JPanel {
     private JPanel hiddenPanel;
     private JComboBox<String> cboShader;
     private JPanel shaderPanel;
+    private JComboBox<String> cboSceneShader;
+    private JPanel sceneShaderPanel;
     private JComboBox<String> cboShadowMode;
     private JPanel shadowModePanel;
     private JCheckBox chkJointMapping;
@@ -629,6 +631,22 @@ public class DesignerPanel extends JPanel {
         shaderPanel.setVisible(false);
         propertiesForm.add(shaderPanel);
 
+        sceneShaderPanel = new JPanel();
+        sceneShaderPanel.setLayout(new BoxLayout(sceneShaderPanel, BoxLayout.Y_AXIS));
+        sceneShaderPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sceneShaderPanel.add(Box.createVerticalStrut(8));
+        JPanel sceneShaderRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        sceneShaderRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sceneShaderRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        sceneShaderRow.add(new JLabel("Environment Shader:"));
+        cboSceneShader = new JComboBox<>(new String[]{"None"});
+        cboSceneShader.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+        cboSceneShader.addActionListener(e -> applySceneShaderChange());
+        sceneShaderRow.add(cboSceneShader);
+        sceneShaderPanel.add(sceneShaderRow);
+        sceneShaderPanel.setVisible(false);
+        propertiesForm.add(sceneShaderPanel);
+
         // Shadow Mode combo (BOX, SPHERE, MODEL)
         shadowModePanel = new JPanel();
         shadowModePanel.setLayout(new BoxLayout(shadowModePanel, BoxLayout.Y_AXIS));
@@ -1121,6 +1139,17 @@ public class DesignerPanel extends JPanel {
     private void onTreeSelectionChanged(TreeSelectionEvent e) {
         if (updatingTreeSelection) return;
         DefaultMutableTreeNode selected = (DefaultMutableTreeNode) sceneTree.getLastSelectedPathComponent();
+        if (selected == sceneTreeRoot) {
+            if (app != null) {
+                app.enqueue(() -> {
+                    app.getSelectionManager().deselect();
+                    return null;
+                });
+            }
+            hideCodeEditor();
+            updateScenePropertiesPanel();
+            return;
+        }
         if (selected == null || !(selected.getUserObject() instanceof EntityTreeNode)) {
             hideCodeEditor();
             return;
@@ -1757,6 +1786,7 @@ public class DesignerPanel extends JPanel {
                 materialPanel.setVisible(false);
                 hiddenPanel.setVisible(false);
                 shaderPanel.setVisible(false);
+                sceneShaderPanel.setVisible(false);
                 shadowModePanel.setVisible(false);
                 jointMappingPanel.setVisible(false);
                 pathPropertiesPanel.setVisible(false);
@@ -1868,6 +1898,8 @@ public class DesignerPanel extends JPanel {
                 jointMappingPanel.setVisible(false);
             }
 
+            sceneShaderPanel.setVisible(false);
+
             // PATH properties
             if (entity.getType() == DesignerEntityType.PATH && entity.getBezierPath() != null) {
                 BezierPath path = entity.getBezierPath();
@@ -1899,6 +1931,37 @@ public class DesignerPanel extends JPanel {
         spnRotX.setValue(0.0); spnRotY.setValue(0.0); spnRotZ.setValue(0.0);
         spnScaleX.setValue(1.0); spnScaleY.setValue(1.0); spnScaleZ.setValue(1.0);
         lastScaleX = 1.0; lastScaleY = 1.0; lastScaleZ = 1.0;
+    }
+
+    private void updateScenePropertiesPanel() {
+        updatingProperties = true;
+        try {
+            txtName.setText("Scene");
+            lblType.setText("Type: Scene");
+            clearSpinners();
+
+            sizeFieldsPanel.setVisible(false);
+            radiusPanel.setVisible(false);
+            cylinderPanel.setVisible(false);
+            hollowCylinderPanel.setVisible(false);
+            staticColliderPanel.setVisible(false);
+            materialPanel.setVisible(false);
+            hiddenPanel.setVisible(false);
+            shaderPanel.setVisible(false);
+            shadowModePanel.setVisible(false);
+            jointMappingPanel.setVisible(false);
+            pathPropertiesPanel.setVisible(false);
+
+            DesignerDocument doc = app != null ? app.getDocument() : null;
+            refreshSceneShaderChoices(doc != null ? doc.getSceneEnvironmentShader() : "");
+            sceneShaderPanel.setVisible(true);
+
+            spnScaleX.setEnabled(false);
+            spnScaleY.setEnabled(false);
+            spnScaleZ.setEnabled(false);
+        } finally {
+            updatingProperties = false;
+        }
     }
 
     private void onScaleSpinnerChanged(JSpinner source) {
@@ -2094,6 +2157,23 @@ public class DesignerPanel extends JPanel {
         });
     }
 
+    private void applySceneShaderChange() {
+        if (updatingProperties || app == null || app.getDocument() == null) return;
+
+        TreePath selectionPath = sceneTree.getSelectionPath();
+        if (selectionPath == null || selectionPath.getLastPathComponent() != sceneTreeRoot) {
+            return;
+        }
+
+        String selected = (String) cboSceneShader.getSelectedItem();
+        String shader = (selected == null || "None".equals(selected)) ? "" : selected;
+
+        app.enqueue(() -> {
+            app.applySceneEnvironmentShader(shader);
+            return null;
+        });
+    }
+
     private void applyShadowModeChange() {
         if (updatingProperties || app == null) return;
         DesignerEntity sel = app.getSelectionManager().getSelected();
@@ -2274,6 +2354,33 @@ public class DesignerPanel extends JPanel {
 
         cboShader.setModel(model);
         cboShader.setSelectedItem(selectedShader != null && !selectedShader.isBlank() ? selectedShader : "None");
+    }
+
+    private void refreshSceneShaderChoices(String selectedShader) {
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+        model.addElement("None");
+
+        if (app != null) {
+            for (String shaderName : app.getAvailableProjectEnvironmentShaderNames()) {
+                model.addElement(shaderName);
+            }
+        }
+
+        if (selectedShader != null && !selectedShader.isBlank()) {
+            boolean exists = false;
+            for (int i = 0; i < model.getSize(); i++) {
+                if (selectedShader.equals(model.getElementAt(i))) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                model.addElement(selectedShader);
+            }
+        }
+
+        cboSceneShader.setModel(model);
+        cboSceneShader.setSelectedItem(selectedShader != null && !selectedShader.isBlank() ? selectedShader : "None");
     }
 
     // --- Lifecycle ---

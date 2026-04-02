@@ -60,6 +60,9 @@ public class AssetsMapping {
         res = getResourcesFolderIndex(extPath+"/shaders/shaders-ext.json");
         loadShadersFromJson(res);
 
+        res = getResourcesFolderIndex(extPath+"/environment_shaders/environment-shaders-ext.json");
+        loadShadersFromJson(res);
+
     }
 
     public AssetsMapping() {
@@ -89,6 +92,9 @@ public class AssetsMapping {
         loadSkyBoxesFromJson(res);
 
         res = getResourcesFolderIndex("./resources/shaders/shaders.json");
+        loadShadersFromJson(res);
+
+        res = getResourcesFolderIndex("./resources/environment_shaders/environment-shaders.json");
         loadShadersFromJson(res);
 
         /////////////////////////////// READ SELF - CONTAINED ASSETS /////////////////////////////
@@ -294,9 +300,20 @@ public class AssetsMapping {
     }
 
     private void loadShadersFromJson(JSONObject res) {
-        if(res==null || !res.has("shaders")) return;
+        if(res==null) return;
 
-        JSONArray shaders = res.getJSONArray("shaders");
+        JSONArray shaders = res.optJSONArray("shaders");
+        if (shaders != null) {
+            loadShaderArray(shaders);
+        }
+
+        JSONArray environmentShaders = res.optJSONArray("environmentShaders");
+        if (environmentShaders != null) {
+            loadShaderArray(environmentShaders);
+        }
+    }
+
+    private void loadShaderArray(JSONArray shaders) {
         for (int i = 0; i < shaders.length(); ++i) {
             JSONObject shader = shaders.getJSONObject(i);
             String name = shader.getString("name");
