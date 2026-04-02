@@ -108,6 +108,7 @@ import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
@@ -148,7 +149,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private static HashMap<String,ResourceMaterial> materials = new HashMap<>();
     private static final Map<Geometry, Material> originalMaterials = new WeakHashMap<>();
     private static final Map<Geometry, RenderQueue.Bucket> originalMaterialBuckets = new WeakHashMap<>();
-    private static final Set<Material> runtimeShaderMaterials = Collections.newSetFromMap(new WeakHashMap<>());
+    private static final Set<Material> runtimeShaderMaterials = ConcurrentHashMap.newKeySet();
     private static HashMap<String, AppModel> models = new HashMap<String, AppModel>();
 
     private static HashMap<String, List<java.lang.Object>> collisionControlsCache=new HashMap<>();
@@ -241,11 +242,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     @Override
     public void handleError(String errMsg, Throwable t) {
-        Collection<Caps> caps = renderer.getCaps();
+        Collection<Caps> caps = renderer != null ? renderer.getCaps() : Collections.emptyList();
 
         Logger logger = Logger.getLogger(SceneMaxApp.class.getName());
         logger.log(Level.SEVERE, errMsg, t);
-        if (this.context.getType() != JmeContext.Type.Headless) {
+        if (this.context != null && this.context.getType() != JmeContext.Type.Headless) {
             if (t != null) {
 
                 StringWriter sw = new StringWriter();
@@ -261,17 +262,20 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             try {
                 long currentTimeMillis = System.currentTimeMillis();
                 Date currentDate = new Date(currentTimeMillis);
-                SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
                 String formattedDateTime = dateFormat.format(currentDate);
                 FileUtils.writeStringToFile(new File("exception_"+formattedDateTime),errMsg,StandardCharsets.UTF_8);
             } catch (IOException e) {
-                this.clearThreads();
-                throw new RuntimeException(e);
+                logger.log(Level.SEVERE, "Failed to write exception report", e);
             }
         }
 
         this.clearThreads();
-        this.stop();
+        try {
+            this.stop();
+        } catch (Exception stopEx) {
+            logger.log(Level.SEVERE, "Failed to stop application after error", stopEx);
+        }
     }
 
     private void initKeyMapping() {
@@ -766,6 +770,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         guiNode.detachAllChildren();
         environmentShaderOverlay = null;
+        runtimeShaderMaterials.clear();
 
         if (cam != null) {
             this.cam.setLocation(new Vector3f(0, 0, 10));
@@ -824,6 +829,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         guiNode.detachAllChildren();
         environmentShaderOverlay = null;
+        runtimeShaderMaterials.clear();
 
         if (cam != null) {
             this.cam.setLocation(new Vector3f(0, 0, 10));
@@ -1264,10 +1270,6 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             scope.add(ctl);
         } else if(action instanceof RotateResetCommand) {
             ResetRotateController ctl = new ResetRotateController(this,prg,scope,(RotateResetCommand)action);
-            ctl.async = action.isAsync;
-            scope.add(ctl);
-        } else if(action instanceof ScreenActionCommand) {
-            ScreenActionController ctl = new ScreenActionController(this,prg,scope,(ScreenActionCommand)action);
             ctl.async = action.isAsync;
             scope.add(ctl);
         } else if(action instanceof FpsCameraCommand) {
@@ -5798,19 +5800,6 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         parent.attachChild(g);
         return g;
     }
-
-
-    public void runScreenCommand(ScreenActionCommand cmd) {
-
-//        if(cmd.actionFullWindow) {
-//            this.getContext().getSettings().setFullscreen(true);
-//            this.getContext().getSettings().setFrequency(60);
-//            this.restart();
-//        }
-
-    }
-
-
     public RunTimeVarDef findVarRuntime(ProgramDef prg, SceneMaxScope scope, String varName) {
 
         String varInstName = "";

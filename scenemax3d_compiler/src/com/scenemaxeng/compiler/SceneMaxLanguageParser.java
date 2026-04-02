@@ -139,6 +139,10 @@ public class SceneMaxLanguageParser implements IParser {
 
         prg.syntaxErrors.addAll(extPrg.syntaxErrors);
         prg.groups.putAll(extPrg.groups);
+        if (prg.screenMode == ProgramDef.ScreenMode.UNSPECIFIED
+                && extPrg.screenMode != ProgramDef.ScreenMode.UNSPECIFIED) {
+            prg.screenMode = extPrg.screenMode;
+        }
 
         if(prg.inParams!=null && extPrg.inParams!=null) {
             prg.inParams.addAll(extPrg.inParams);
@@ -1157,10 +1161,20 @@ public class SceneMaxLanguageParser implements IParser {
             }
 
             public StatementDef visitScreenActions(SceneMaxParser.ScreenActionsContext ctx) {
-                ScreenActionCommand cmd = new ScreenActionCommand();
-                cmd.actionFullWindow = ctx.screen_actions().screen_action().mode_full()!=null;
+                if (prg.screenMode != ProgramDef.ScreenMode.UNSPECIFIED) {
+                    return null;
+                }
 
-                return cmd;
+                SceneMaxParser.Screen_actionContext screenAction = ctx.screen_actions().screen_action();
+                if (screenAction.mode_full() != null) {
+                    prg.screenMode = ProgramDef.ScreenMode.FULL;
+                } else if (screenAction.mode_borderless() != null) {
+                    prg.screenMode = ProgramDef.ScreenMode.BORDERLESS;
+                } else if (screenAction.mode_window() != null) {
+                    prg.screenMode = ProgramDef.ScreenMode.WINDOW;
+                }
+
+                return null;
             }
 
             public StatementDef visitLightActions(SceneMaxParser.LightActionsContext ctx) {

@@ -1,6 +1,8 @@
 package com.scenemaxeng.projector;
 
 import com.scenemaxeng.common.types.*;
+import com.scenemaxeng.compiler.ProgramDef;
+import com.scenemaxeng.compiler.SceneMaxLanguageParser;
 import com.jme3.system.AppSettings;
 import com.jme3.system.JmeCanvasContext;
 import org.apache.commons.io.FileUtils;
@@ -21,6 +23,8 @@ public class MainWinApp implements IAppObserver {
     private SceneMaxApp sceneMaxApp;
     private int customWidth = 0;
     private int customHeight = 0;
+    private int windowPosX = 0;
+    private int windowPosY = 0;
     private String projectName = null;
 
     public MainWinApp(File entryScriptFile, String prg, boolean showCodeChangeButton) {
@@ -41,6 +45,9 @@ public class MainWinApp implements IAppObserver {
         sceneMaxApp.setPauseOnLostFocus(false);
         sceneMaxApp.setWorkingFolder(workingFolder);
         sceneMaxApp.setEntryScriptFileName(entryScriptFileName);
+        if (prg == null || prg.length() == 0) {
+            prg = loadAppScript();
+        }
         AppSettings settings = new AppSettings(true);
         settings.setGammaCorrection(false);
         settings.setSamples(4); // anti-aliasing
@@ -51,24 +58,23 @@ public class MainWinApp implements IAppObserver {
             sceneMaxApp.setProjectName(this.projectName);
         }
 
+        ProgramDef startupProgram = parseStartupProgram(prg, workingFolder);
         prg = setCanvasSize(settings,prg);
-        prg = setWindowMode(settings,prg);
+        applyWindowMode(settings, startupProgram);
 
         settings.setTitle("");
 
         sceneMaxApp.setSettings(settings);
         sceneMaxApp.createCanvas(); // create canvas!
 
-        Dimension dim = Toolkit.getDefaultToolkit().getScreenSize();
         JmeCanvasContext ctx = (JmeCanvasContext) sceneMaxApp.getContext();
         ctx.setSystemListener(sceneMaxApp);
-        ctx.getCanvas().setLocation(dim.width/2-this.customWidth/2, dim.height/2-this.customHeight/2);
+        Canvas canvas = ctx.getCanvas();
+        canvas.setPreferredSize(new Dimension(this.customWidth, this.customHeight));
+        canvas.setSize(this.customWidth, this.customHeight);
+        canvas.setBounds(windowPosX, windowPosY, this.customWidth, this.customHeight);
 
         sceneMaxApp.start();
-
-        if (prg == null || prg.length()==0) {
-            prg = loadAppScript();
-        }
 
         final String finalPrg = prg;
         runScript(finalPrg);
@@ -89,21 +95,46 @@ public class MainWinApp implements IAppObserver {
         return prg;
     }
 
-    private String setWindowMode(AppSettings settings, String prg) {
+    private void applyWindowMode(AppSettings settings, ProgramDef startupProgram) {
+        System.setProperty("org.lwjgl.opengl.Window.undecorated", "false");
 
-        String pat="screen\\.mode\\s+full";
-        Pattern p = Pattern.compile(pat,Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
-        Matcher m = p.matcher(prg);
-
-        if(m.find()) {
-            settings.setFullscreen(true);
-            settings.setFrequency(60);
+        if (startupProgram == null || startupProgram.screenMode == ProgramDef.ScreenMode.UNSPECIFIED) {
+            return;
         }
 
-        prg=prg.replaceFirst(pat,"");
+        if (startupProgram.screenMode == ProgramDef.ScreenMode.FULL) {
+            DisplayMode displayMode = GraphicsEnvironment
+                    .getLocalGraphicsEnvironment()
+                    .getDefaultScreenDevice()
+                    .getDisplayMode();
+            settings.setFullscreen(false);
+            settings.setWidth(displayMode.getWidth());
+            settings.setHeight(displayMode.getHeight());
+            this.customWidth = displayMode.getWidth();
+            this.customHeight = displayMode.getHeight();
+            this.windowPosX = 0;
+            this.windowPosY = 0;
+            System.setProperty("org.lwjgl.opengl.Window.undecorated", "true");
+            return;
+        }
 
-        return prg;
+        settings.setFullscreen(false);
+        if (startupProgram.screenMode == ProgramDef.ScreenMode.BORDERLESS) {
+            System.setProperty("org.lwjgl.opengl.Window.undecorated", "true");
+        }
 
+        Dimension dim = Toolkit.getDefaultToolkit().getScreenSize();
+        this.windowPosX = dim.width / 2 - this.customWidth / 2;
+        this.windowPosY = dim.height / 2 - this.customHeight / 2;
+    }
+
+    private ProgramDef parseStartupProgram(String prg, String workingFolder) {
+        if (prg == null || prg.isEmpty()) {
+            return null;
+        }
+
+        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, workingFolder);
+        return parser.parse(prg);
     }
 
     private String setCanvasSize(AppSettings settings, String prg) {

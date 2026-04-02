@@ -6,15 +6,17 @@
 using desert1 sprite
 intro.draw intro_page
 
-loading.print "Loading..." : pos (100,10,0) and font "yoshi" and color=green
+loading.print "Loading..." : pos (100,10,0) and font "arial_64" and color=Blue
 loading3.draw powered_by_scenemax3d : pos (100,700),size(200,200)
 lights.add probe "4"
 
+Scene.environment.shader = "ambient1"
 camera.pos(12.68647,-10.546852,58.799103)
 camera.rotate(0.0,180.0,0.0)
 
 floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material "rock2", shadow mode cast
 level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on async
+level2.shader = "shader_test1"
 ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0 async
 // rotate ring
 ring.turn left 360 in 50 seconds async
@@ -69,7 +71,7 @@ player2_right_foot_collider.attach to player2."mixamorig:RightFoot": pos (0,0,0)
 player2_left_foot_collider => collider sphere : pos (-4.7635937,0.5,0.0), radius 0.5
 // player2_left_foot_collider_attach
 player2_left_foot_collider.attach to player2."mixamorig:LeftFoot": pos (0,0,0)
-player2_right_hand_collider => collider sphere : pos (-10.128401,0.5,0.36325407), radius 0.5
+player2_right_hand_collider => collider sphere : pos (-10.128401,0.5,0.0), radius 0.5
 // player2_right_hand_collider_attach
 player2_right_hand_collider.attach to player2."mixamorig:RightHand": pos (0,0,0)
 player2_left_hand_collider => collider sphere : pos (-8.123157,0.5,0.0), radius 0.5
@@ -88,11 +90,8 @@ player1.switch to character mode : gravity 60
 player2.switch to character mode : gravity 40
 player1.character.ignore player2.joints // avoid collision of joints with character controls
 player2.character.ignore player1.joints
-// Draw Profiles
-middleSphere is a sphere : hidden and radius 0.1 and material="alpha"
-profile2.draw old_man_profile1 : pos (1300,5)
-profile1.draw ninja_profile1 : pos (5,5) and size (120,200)
 // Players Ready To Fight
+middleSphere is a sphere : hidden and radius 0.1 and material="alpha"
 ring.hide
 tg.switch to character mode
 tg.turn right 45 in 0.1 seconds
