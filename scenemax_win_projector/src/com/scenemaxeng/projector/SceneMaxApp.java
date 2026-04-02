@@ -731,10 +731,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         releaseInputHandlers.clear();
         sprites.clear();
 
-        for(AudioNode n:_audioNodes.values()) {
-           n.stop();
-        }
-        _audioNodes.clear();
+        stopTrackedAudioNodes();
         _printChannels.clear();
         _drawChannels.clear();
 
@@ -801,10 +798,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         releaseInputHandlers.clear();
         sprites.clear();
 
-        for(AudioNode n:_audioNodes.values()) {
-           n.stop();
-        }
-        _audioNodes.clear();
+        stopTrackedAudioNodes();
         _printChannels.clear();
         _drawChannels.clear();
 
@@ -3817,7 +3811,6 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     @Override
     public void destroy(){
-        super.destroy();
         this.pluginsCommunicationChannel.stop(); // call all subscribed clients to stop
         if(hostAppType==SceneMaxApp.HOST_APP_WINDOWS_ALLOW_CODE_CHANGE_BUTTON) {
             System.exit(0);
@@ -3825,6 +3818,21 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             clearScene();
             _appObserver.message(EVENT_DESTROY);
         }
+        super.destroy();
+    }
+
+    private void stopTrackedAudioNodes() {
+        for (AudioNode node : _audioNodes.values()) {
+            if (node == null) {
+                continue;
+            }
+            try {
+                node.stop();
+            } catch (NullPointerException ex) {
+                logger.log(Level.FINE, "Ignoring audio shutdown race while stopping audio node", ex);
+            }
+        }
+        _audioNodes.clear();
     }
 
     @Override

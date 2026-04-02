@@ -3,6 +3,6 @@
 using desert1 sprite
 intro.draw intro_page
 
-loading.print "Loading..." : pos (100,10,0) and font "yoshi" and color=green
+loading.print "Loading..." : pos (100,10,0) and font "arial_64" and color=Blue
 loading3.draw powered_by_scenemax3d : pos (100,700),size(200,200)
 lights.add probe "4"
