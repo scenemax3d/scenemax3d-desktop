@@ -56,7 +56,7 @@ public class UISetPropertyController extends SceneMaxBaseController {
         }
 
         // Apply the property based on widget type and property name
-        applyProperty(widget, propCmd.propertyName, value);
+        applyProperty(widget, propCmd, value);
 
         return true; // one-shot controller
     }
@@ -64,8 +64,12 @@ public class UISetPropertyController extends SceneMaxBaseController {
     /**
      * Applies a named property to the appropriate widget type.
      */
-    private void applyProperty(UIWidgetNode widget, String propertyName, String value) {
-        String prop = propertyName.toLowerCase();
+    private void applyProperty(UIWidgetNode widget, UISetPropertyCommand propCmd, String value) {
+        String prop = resolvePropertyName(widget, propCmd);
+        if (prop == null || prop.isEmpty()) {
+            app.handleRuntimeError("Unknown UI property target on widget " + widget.getName());
+            return;
+        }
 
         if (widget instanceof UITextViewNode) {
             UITextViewNode textView = (UITextViewNode) widget;
@@ -128,6 +132,14 @@ public class UISetPropertyController extends SceneMaxBaseController {
                 case "spritename":
                     image.setSprite(value);
                     break;
+                case "frame":
+                case "spriteframe":
+                    try {
+                        image.setSpriteFrame((int) Float.parseFloat(value));
+                    } catch (NumberFormatException e) {
+                        app.handleRuntimeError("Invalid sprite frame: " + value);
+                    }
+                    break;
                 default:
                     applyCommonProperty(widget, prop, value);
             }
@@ -169,5 +181,17 @@ public class UISetPropertyController extends SceneMaxBaseController {
                 app.handleRuntimeError("Unknown UI property '" + prop +
                         "' on widget " + widget.getName());
         }
+    }
+
+    private String resolvePropertyName(UIWidgetNode widget, UISetPropertyCommand propCmd) {
+        if (propCmd.propertyName != null && !propCmd.propertyName.isEmpty()) {
+            return propCmd.propertyName.toLowerCase();
+        }
+
+        if (propCmd.implicitWidgetValue && widget instanceof UIImageNode) {
+            return "sprite";
+        }
+
+        return null;
     }
 }

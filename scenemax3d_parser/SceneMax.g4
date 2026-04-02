@@ -62,10 +62,11 @@ statement
    ;
 
 // UI system commands
-ui_statement : ui_load | ui_show_hide | ui_set_property ;
+ui_statement : ui_load | ui_show_hide | ui_set_property | ui_set_default_property ;
 ui_load : UI '.' Load QUOTED_STRING ;
 ui_show_hide : UI '.' ui_dot_path '.' (Show | Hide) ;
 ui_set_property : UI '.' ui_dot_path '.' ui_property_name Equals logical_expression ;
+ui_set_default_property : UI '.' ui_dot_path Equals logical_expression ;
 ui_dot_path : var_decl ('.' var_decl)* ;
 ui_property_name : var_decl ;
 

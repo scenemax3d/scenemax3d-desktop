@@ -8,6 +8,7 @@ import com.abware.scenemaxlang.parser.SceneMaxParser;
  *   UI.layer1.text1.text = "Score: " + score
  *   UI.hud.layer1.text1.color = "#FF0000FF"
  *   UI.hud.layer1.image1.image = "textures/icon.png"
+ *   UI.hud.layer1.image1 = "hero_idle"
  *
  * The property name is the last segment before '='.
  * The value is a logical expression (can be a string literal, variable, or expression).
@@ -18,6 +19,7 @@ public class UISetPropertyCommand extends ActionStatementBase {
     public String layerName;       // layer name
     public String widgetPath;      // dot-separated path to the widget
     public String propertyName;    // property to set (text, color, image, fontSize, etc.)
+    public boolean implicitWidgetValue; // true when syntax omits the property name
 
     // The value expression is stored as a parser context for runtime evaluation.
     public SceneMaxParser.Logical_expressionContext valueExpr;
@@ -27,6 +29,6 @@ public class UISetPropertyCommand extends ActionStatementBase {
 
     @Override
     public boolean validate(ProgramDef prg) {
-        return layerName != null && propertyName != null;
+        return layerName != null && (propertyName != null || implicitWidgetValue);
     }
 }

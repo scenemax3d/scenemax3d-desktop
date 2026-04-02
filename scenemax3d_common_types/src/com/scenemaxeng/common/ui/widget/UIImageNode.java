@@ -20,6 +20,7 @@ public class UIImageNode extends UIWidgetNode {
 
     private Texture loadedTexture;
     private AssetsMapping assetsMapping;
+    private ResourceSetup2D activeSpriteResource;
 
     public UIImageNode(String name, UIWidgetDef widgetDef, AssetManager assetManager,
                        float designCanvasWidth, float designCanvasHeight,
@@ -42,18 +43,20 @@ public class UIImageNode extends UIWidgetNode {
 
     private void applyImageMaterial() {
         String spriteName = widgetDef.getSpriteName();
+        activeSpriteResource = null;
 
         // Sprite takes priority over imagePath
         if (spriteName != null && !spriteName.isEmpty() && assetsMapping != null) {
             ResourceSetup2D resource = assetsMapping.getSpriteSheetsIndex().get(spriteName.toLowerCase());
             if (resource != null) {
                 try {
+                    activeSpriteResource = resource;
                     loadedTexture = assetManager.loadTexture(resource.path);
                     Material mat = new Material(assetManager, "MatDefs/sprite_sheet.j3md");
                     mat.setTexture("ColorMap", loadedTexture);
                     mat.setFloat("SizeX", resource.cols);
                     mat.setFloat("SizeY", resource.rows);
-                    mat.setFloat("Position", 0f);
+                    mat.setFloat("Position", clampSpriteFrame(widgetDef.getSpriteFrame(), resource));
                     mat.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
                     backgroundGeom.setMaterial(mat);
                     return;
@@ -90,6 +93,7 @@ public class UIImageNode extends UIWidgetNode {
     public void setImage(String imagePath) {
         widgetDef.setImagePath(imagePath);
         widgetDef.setSpriteName(null);
+        widgetDef.setSpriteFrame(0);
         if (backgroundGeom != null) {
             applyImageMaterial();
         }
@@ -97,8 +101,37 @@ public class UIImageNode extends UIWidgetNode {
 
     public void setSprite(String spriteName) {
         widgetDef.setSpriteName(spriteName);
+        widgetDef.setImagePath(null);
         if (backgroundGeom != null) {
             applyImageMaterial();
         }
+    }
+
+    public void setSpriteFrame(int frame) {
+        widgetDef.setSpriteFrame(frame);
+        if (backgroundGeom == null) {
+            return;
+        }
+
+        if (activeSpriteResource == null) {
+            applyImageMaterial();
+            return;
+        }
+
+        Material mat = backgroundGeom.getMaterial();
+        if (mat == null) {
+            applyImageMaterial();
+            return;
+        }
+
+        mat.setFloat("Position", clampSpriteFrame(frame, activeSpriteResource));
+    }
+
+    private float clampSpriteFrame(int frame, ResourceSetup2D resource) {
+        if (resource == null) {
+            return Math.max(0, frame);
+        }
+        int maxFrame = Math.max(0, resource.cols * resource.rows - 1);
+        return Math.max(0, Math.min(frame, maxFrame));
     }
 }

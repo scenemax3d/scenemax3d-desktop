@@ -447,6 +447,33 @@ public class SceneMaxLanguageParser implements IParser {
                     }
                     cmd.widgetPath = widgetPath.toString();
                     return cmd;
+                } else if (uiCtx.ui_set_default_property() != null) {
+                    SceneMaxParser.Ui_set_default_propertyContext propCtx = uiCtx.ui_set_default_property();
+                    List<SceneMaxParser.Var_declContext> pathParts = propCtx.ui_dot_path().var_decl();
+                    if (pathParts.size() < 2) return null;
+
+                    UISetPropertyCommand cmd = new UISetPropertyCommand();
+                    cmd.implicitWidgetValue = true;
+                    cmd.valueExpr = propCtx.logical_expression();
+                    int widgetStartIndex;
+
+                    if (pathParts.size() == 2) {
+                        cmd.uiName = null;
+                        cmd.layerName = pathParts.get(0).getText();
+                        widgetStartIndex = 1;
+                    } else {
+                        cmd.uiName = pathParts.get(0).getText();
+                        cmd.layerName = pathParts.get(1).getText();
+                        widgetStartIndex = 2;
+                    }
+
+                    StringBuilder widgetPath = new StringBuilder();
+                    for (int i = widgetStartIndex; i < pathParts.size(); i++) {
+                        if (widgetPath.length() > 0) widgetPath.append(".");
+                        widgetPath.append(pathParts.get(i).getText());
+                    }
+                    cmd.widgetPath = widgetPath.toString();
+                    return cmd;
                 }
 
                 return null;
