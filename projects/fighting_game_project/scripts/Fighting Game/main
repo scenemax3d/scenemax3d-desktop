@@ -1,5 +1,5 @@
-canvas.size 1600,900
-//switch to "game_init"
+//canvas.size 1600,900
+screen.mode full 
 
 add "/variables/constants", 
     "/variables/global_variables" code

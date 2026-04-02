@@ -379,9 +379,10 @@ scene_action_resume : Resume ;
 scene_environment_shader_action : Environment '.' Shader Equals logical_expression ;
 
 screen_actions : Screen '.' screen_action ;
-screen_action : mode_full | mode_window ;
+screen_action : mode_full | mode_window | mode_borderless ;
 mode_full : Mode Full ;
 mode_window : Mode Window ;
+mode_borderless : Mode Borderless ;
 
 skybox_actions : SkyBox '.' skybox_action ;
 skybox_action : skybox_action_show | skybox_action_hide | skybox_setup ;
@@ -1049,6 +1050,7 @@ Save : 'Save' | 'save' ;
 Mode : 'Mode' | 'mode' ;
 Full : 'Full' | 'full' ;
 Window : 'Window' | 'window' ;
+Borderless : 'Borderless' | 'borderless' ;
 
 //Scope : 'public' | 'Public' | 'private' | 'Private' ;
 Class : 'class' | 'Class' ;

@@ -1,6 +1,8 @@
 {
+  "sceneEnvironmentShader": "ambient1",
   "entities": [
     {
+      "shader": "",
       "hidden": false,
       "shadowMode": "cast",
       "rotation": [
@@ -31,6 +33,7 @@
       "sizeZ": 50
     },
     {
+      "shader": "shader_test1",
       "dynamicModel": false,
       "hidden": false,
       "shadowMode": "both",
@@ -60,6 +63,7 @@
       ]
     },
     {
+      "shader": "",
       "dynamicModel": false,
       "hidden": false,
       "shadowMode": "none",
@@ -111,6 +115,7 @@
       "type": "CODE"
     },
     {
+      "shader": "",
       "dynamicModel": false,
       "hidden": false,
       "shadowMode": "both",
@@ -140,6 +145,7 @@
       ]
     },
     {
+      "shader": "",
       "dynamicModel": true,
       "hidden": true,
       "shadowMode": "cast",
@@ -215,6 +221,7 @@
     {
       "children": [
         {
+          "shader": "",
           "dynamicModel": true,
           "hidden": true,
           "shadowMode": "cast",
@@ -244,6 +251,7 @@
           ]
         },
         {
+          "shader": "",
           "hidden": false,
           "shadowMode": "none",
           "rotation": [
@@ -296,6 +304,7 @@
           "type": "CODE"
         },
         {
+          "shader": "",
           "hidden": false,
           "shadowMode": "none",
           "rotation": [
@@ -346,6 +355,7 @@
           "type": "CODE"
         },
         {
+          "shader": "",
           "hidden": false,
           "shadowMode": "none",
           "rotation": [
@@ -396,6 +406,7 @@
           "type": "CODE"
         },
         {
+          "shader": "",
           "hidden": false,
           "shadowMode": "none",
           "rotation": [
@@ -446,6 +457,7 @@
           "type": "CODE"
         },
         {
+          "shader": "",
           "hidden": false,
           "shadowMode": "none",
           "rotation": [
@@ -496,6 +508,7 @@
           "type": "CODE"
         },
         {
+          "shader": "",
           "hidden": false,
           "shadowMode": "none",
           "rotation": [
@@ -569,6 +582,7 @@
     {
       "children": [
         {
+          "shader": "",
           "dynamicModel": true,
           "hidden": true,
           "shadowMode": "both",
@@ -598,6 +612,7 @@
           ]
         },
         {
+          "shader": "",
           "hidden": false,
           "shadowMode": "none",
           "rotation": [
@@ -650,6 +665,7 @@
           "type": "CODE"
         },
         {
+          "shader": "",
           "hidden": false,
           "shadowMode": "none",
           "rotation": [
@@ -700,6 +716,7 @@
           "type": "CODE"
         },
         {
+          "shader": "",
           "hidden": false,
           "shadowMode": "none",
           "rotation": [
@@ -750,6 +767,7 @@
           "type": "CODE"
         },
         {
+          "shader": "",
           "hidden": false,
           "shadowMode": "none",
           "rotation": [
@@ -800,6 +818,7 @@
           "type": "CODE"
         },
         {
+          "shader": "",
           "hidden": false,
           "shadowMode": "none",
           "rotation": [
@@ -850,6 +869,7 @@
           "type": "CODE"
         },
         {
+          "shader": "",
           "hidden": false,
           "shadowMode": "none",
           "rotation": [
@@ -971,35 +991,13 @@
         0,
         1
       ],
-      "name": "Draw Profiles",
-      "scale": [
-        1,
-        1,
-        1
-      ],
-      "codeText": "// Draw Profiles\nmiddleSphere is a sphere : hidden and radius 0.1 and material=\"alpha\"\nprofile2.draw old_man_profile1 : pos (1300,5)\nprofile1.draw ninja_profile1 : pos (5,5) and size (120,200)",
-      "id": "08c0595a-da64-4a53-b675-6cfcadc3138b",
-      "position": [
-        0,
-        0,
-        0
-      ],
-      "type": "CODE"
-    },
-    {
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
       "name": "Players Ready To Fight",
       "scale": [
         1,
         1,
         1
       ],
-      "codeText": "// Players Ready To Fight\nring.hide\ntg.switch to character mode\ntg.turn right 45 in 0.1 seconds\ntg.hide\n\nplayer1.show\nplayer2.show\n\nplayer2.look at (player1)\nplayer1.look at (player2)",
+      "codeText": "// Players Ready To Fight\nmiddleSphere is a sphere : hidden and radius 0.1 and material=\"alpha\"\nring.hide\ntg.switch to character mode\ntg.turn right 45 in 0.1 seconds\ntg.hide\n\nplayer1.show\nplayer2.show\n\nplayer2.look at (player1)\nplayer1.look at (player2)",
       "id": "c6680fc9-423c-4804-a20a-a25cd910f730",
       "position": [
         0,
@@ -1024,15 +1022,15 @@
   },
   "camera": {
     "rotation": [
-      0,
-      1,
-      -0,
-      -4.371139E-8
+      -0.019043865,
+      0.97304124,
+      -0.0871238,
+      -0.2126912
     ],
     "position": [
-      0,
-      0,
-      10
+      19.91392,
+      8.616075,
+      43.375675
     ]
   },
   "version": 1

@@ -7,6 +7,13 @@ import java.util.List;
 
 public class ProgramDef {
 
+    public enum ScreenMode {
+        UNSPECIFIED,
+        WINDOW,
+        FULL,
+        BORDERLESS
+    }
+
     public ProgramDef parent = null;
 
     public static int scopeSeq=0;
@@ -27,6 +34,7 @@ public class ProgramDef {
     public ArrayList<StatementDef> actions = new ArrayList<>();
     public ArrayList<StatementDef> requireResourceActions = new ArrayList<>();
     public List<String> inParams=new ArrayList<>();
+    public ScreenMode screenMode = ScreenMode.UNSPECIFIED;
 
     public void addCameraVariableDef() {
         VariableDef def = new VariableDef();
