@@ -144,7 +144,7 @@ public class ShaderDesignerPanel extends JPanel {
 
         JPanel topBar = new JPanel(new BorderLayout());
         topBar.setOpaque(false);
-        JLabel title = new JLabel("Friendly Shader Effect Editor");
+        JLabel title = new JLabel("Shader Effect Editor");
         title.setForeground(new Color(245, 247, 250));
         title.setFont(title.getFont().deriveFont(Font.BOLD, 22f));
         topBar.add(title, BorderLayout.WEST);
