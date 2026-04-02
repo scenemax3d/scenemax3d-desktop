@@ -5,9 +5,8 @@ import org.apache.commons.io.FileUtils;
 import javax.swing.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
+import java.util.Locale;
 
 import static java.lang.System.getProperty;
 
@@ -22,11 +21,13 @@ public class SceneMaxLauncher implements IAppObserver {
 
         if (platform == null) {
             String model = getProperty("sun.arch.data.model");
-            String os = getProperty("os.name").toLowerCase();
+            String os = getProperty("os.name").toLowerCase(Locale.ENGLISH);
             if (os.startsWith("windows")) {
                 platform = "w";
+            } else if (os.startsWith("mac") || os.startsWith("darwin")) {
+                platform = "m";
             } else {
-                if (!os.equals("linux")) {
+                if (!os.startsWith("linux")) {
                     System.out.println(os);
                     throw new UnsupportedOperationException("Platform not supported " + os);
                 }
@@ -76,13 +77,47 @@ public class SceneMaxLauncher implements IAppObserver {
     }
 
     private void extractJniLibs() {
+        String os = getProperty("os.name", "").toLowerCase(Locale.ENGLISH);
+        String arch = getProperty("os.arch", "").toLowerCase(Locale.ENGLISH);
 
-        File f = new File("lwjgl.dll");
-        if(!f.exists()) { // extract only once
-            extractFileFromJarToDisk("lwjgl.dll");
-            extractFileFromJarToDisk("lwjgl64.dll");
+        if (os.startsWith("windows")) {
+            String[] libraries = arch.contains("64")
+                    ? new String[]{"lwjgl64.dll", "OpenAL64.dll", "jinput-raw_64.dll", "jinput-dx8_64.dll", "native/windows/x86_64/bulletjme.dll"}
+                    : new String[]{"lwjgl.dll", "OpenAL32.dll", "jinput-wintab.dll"};
+            extractLibrariesOnce("lwjgl" + (arch.contains("64") ? "64.dll" : ".dll"), libraries);
+            return;
         }
 
+        if (os.startsWith("linux")) {
+            String[] libraries = arch.contains("64")
+                    ? new String[]{"liblwjgl64.so", "libopenal64.so", "libjinput-linux64.so", "native/linux/x86_64/libbulletjme.so"}
+                    : new String[]{"liblwjgl.so", "libopenal.so"};
+            extractLibrariesOnce(arch.contains("64") ? "liblwjgl64.so" : "liblwjgl.so", libraries);
+            return;
+        }
+
+        if (os.startsWith("mac") || os.startsWith("darwin")) {
+            String bulletLib = arch.contains("aarch64") || arch.contains("arm64")
+                    ? "native/osx/arm64/libbulletjme.dylib"
+                    : "native/osx/x86_64/libbulletjme.dylib";
+            String[] libraries = new String[]{"liblwjgl.dylib", "openal.dylib", "libjinput-osx.jnilib", bulletLib};
+            extractLibrariesOnce("liblwjgl.dylib", libraries);
+        }
+    }
+
+    private void extractLibrariesOnce(String markerFileName, String[] libraries) {
+        File marker = new File(flattenLibraryName(markerFileName));
+        if (marker.exists()) {
+            return;
+        }
+
+        for (String library : libraries) {
+            extractFileFromJarToDisk(library);
+        }
+    }
+
+    private String flattenLibraryName(String fileName) {
+        return new File(fileName).getName();
     }
 
     private boolean extractFileFromJarToDisk(String fileName) {
@@ -94,7 +129,8 @@ public class SceneMaxLauncher implements IAppObserver {
                 return false;
             }
 
-            OutputStream outputStream = new FileOutputStream(new File(fileName));
+            File outputFile = new File(flattenLibraryName(fileName));
+            OutputStream outputStream = new FileOutputStream(outputFile);
 
             byte[] buffer = new byte[8 * 1024];
             int bytesRead;

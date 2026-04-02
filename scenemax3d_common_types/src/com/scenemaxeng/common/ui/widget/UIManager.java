@@ -62,6 +62,12 @@ public class UIManager {
         return loadDocument(doc);
     }
 
+    public String load(java.io.InputStream inputStream, String filePathHint) throws IOException {
+        LOGGER.log(Level.INFO, "UIManager loading document from packaged resource {0}", filePathHint);
+        UIDocument doc = UIDocument.load(inputStream, filePathHint);
+        return loadDocument(doc);
+    }
+
     public String loadDocument(UIDocument doc) {
         String name = doc.getName();
         LOGGER.log(Level.INFO, "UIManager building UI ''{0}'' canvas={1}x{2} layers={3}",

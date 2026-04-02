@@ -156,9 +156,18 @@ public class UIDocument {
 
     public static UIDocument load(File file) throws IOException {
         String content = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+        return loadFromContent(content, file.getAbsolutePath());
+    }
+
+    public static UIDocument load(java.io.InputStream inputStream, String filePathHint) throws IOException {
+        String content = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+        return loadFromContent(content, filePathHint);
+    }
+
+    private static UIDocument loadFromContent(String content, String filePathHint) {
         JSONObject root = new JSONObject(content);
 
-        UIDocument doc = new UIDocument(file.getAbsolutePath());
+        UIDocument doc = new UIDocument(filePathHint);
         doc.name = root.optString("name", doc.name);
         doc.canvasWidth = (float) root.optDouble("canvasWidth", 1920);
         doc.canvasHeight = (float) root.optDouble("canvasHeight", 1080);

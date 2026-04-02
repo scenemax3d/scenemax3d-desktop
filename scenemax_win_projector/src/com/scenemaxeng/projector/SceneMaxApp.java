@@ -1056,12 +1056,14 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             logger.log(Level.INFO, "UI.load '{0}' resolved to {1}", new Object[]{cmd.uiName, uiFile.getAbsolutePath()});
 
             if (!uiFile.exists()) {
-                logger.log(Level.WARNING, "UI.load '{0}' could not find file at {1}", new Object[]{cmd.uiName, uiFile.getAbsolutePath()});
-                handleRuntimeError("UI.load failed: UI file not found at '" + uiFile.getAbsolutePath() + "'");
-                return;
+                if (!loadPackagedUiDocument(cmd.uiName)) {
+                    logger.log(Level.WARNING, "UI.load '{0}' could not find file at {1}", new Object[]{cmd.uiName, uiFile.getAbsolutePath()});
+                    handleRuntimeError("UI.load failed: UI file not found at '" + uiFile.getAbsolutePath() + "'");
+                    return;
+                }
+            } else {
+                uiManager.load(uiFile);
             }
-
-            uiManager.load(uiFile);
             logger.log(Level.INFO, "UI.load '{0}' loaded successfully", cmd.uiName);
         } catch (Exception e) {
             logger.log(Level.SEVERE, "UI.load resource failed for '" + (cmd != null ? cmd.uiName : "<null>") + "'", e);
@@ -6444,6 +6446,37 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } catch (Exception e) {
             handleRuntimeError("Failed to load UI document: " + e.getMessage());
         }
+    }
+
+    public void loadUIDocument(String uiName, InputStream inputStream) {
+        try (InputStream in = inputStream) {
+            if (uiManager != null && in != null) {
+                uiManager.load(in, "running/" + uiName + ".smui");
+            }
+        } catch (Exception e) {
+            handleRuntimeError("Failed to load UI document: " + e.getMessage());
+        }
+    }
+
+    public boolean loadPackagedUiDocument(String uiName) {
+        if (uiName == null || uiName.trim().isEmpty()) {
+            return false;
+        }
+
+        String resourcePath = "running/" + uiName + ".smui";
+        InputStream inputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream(resourcePath);
+        if (inputStream == null) {
+            inputStream = SceneMaxApp.class.getClassLoader().getResourceAsStream(resourcePath);
+        }
+        if (inputStream == null) {
+            inputStream = SceneMaxApp.class.getResourceAsStream("/" + resourcePath);
+        }
+        if (inputStream == null) {
+            return false;
+        }
+
+        loadUIDocument(uiName, inputStream);
+        return true;
     }
 
     /**

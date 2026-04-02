@@ -1,5 +1,8 @@
 package com.scenemax.desktop;
 
+import com.scenemaxeng.common.ui.model.UIDocument;
+import com.scenemaxeng.common.ui.model.UILayerDef;
+import com.scenemaxeng.common.ui.model.UIWidgetDef;
 import com.scenemaxeng.compiler.ApplyMacroResults;
 import com.scenemaxeng.compiler.MacroFilter;
 import com.scenemaxeng.compiler.ProgramDef;
@@ -17,29 +20,69 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static com.scenemaxeng.compiler.SceneMaxLanguageParser.macroFilter;
 
 public class PackageProgramTask extends SwingWorker<Integer, String> {
 
     private static final float ESTIMATED_FILES_COUNT = 6610;// total files packed in an executable scene
+    private static final String SCENE_JAR_NAME = "scenemax3d_scene.jar";
     private File scriptFolder=null;
     private String prg;
     private Runnable finish;
     private Runnable canceled;
     private int globalCounter=0;
+    private final EnumSet<PackageTarget> targets;
+    private final List<File> producedArtifacts = new ArrayList<>();
+    private final Set<String> addedJarEntries = new LinkedHashSet<>();
+    private final Set<String> uiReferencedSpriteNames = new LinkedHashSet<>();
+    private final Set<String> uiReferencedFontNames = new LinkedHashSet<>();
+    private final Set<String> uiReferencedImagePaths = new LinkedHashSet<>();
+    private final PackageOptions options;
+    private File outputFolder;
 
-    public PackageProgramTask(String scriptFilePath, String prg, Runnable finish, Runnable canceled) {
+    public enum PackageTarget {
+        WINDOWS,
+        LINUX,
+        MAC_OSX
+    }
+
+    public static class PackageOptions {
+        public final File windowsIcon;
+        public final File linuxIcon;
+        public final File macIcon;
+
+        public PackageOptions(File windowsIcon, File linuxIcon, File macIcon) {
+            this.windowsIcon = windowsIcon;
+            this.linuxIcon = linuxIcon;
+            this.macIcon = macIcon;
+        }
+    }
+
+    public PackageProgramTask(String scriptFilePath, String prg, List<PackageTarget> targets, PackageOptions options, Runnable finish, Runnable canceled) {
         this.prg=prg;
         this.finish=finish;
         this.canceled=canceled;
+        this.options = options == null ? new PackageOptions(null, null, null) : options;
+        this.targets = targets == null || targets.isEmpty()
+                ? EnumSet.of(PackageTarget.WINDOWS)
+                : EnumSet.copyOf(targets);
 
         if(scriptFilePath!=null) {
             File f = new File(scriptFilePath);
@@ -60,6 +103,10 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         SceneMaxLanguageParser.spriteSheetUsed = new ArrayList<>();
         SceneMaxLanguageParser.audioUsed = new ArrayList<>();
         SceneMaxLanguageParser.fontsUsed = new ArrayList<>();
+        addedJarEntries.clear();
+        uiReferencedSpriteNames.clear();
+        uiReferencedFontNames.clear();
+        uiReferencedImagePaths.clear();
         SceneMaxLanguageParser.parseUsingResource = true; // look for manual resource declarations
         SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, this.scriptFolder.getAbsolutePath());
         MacroFilter macroFilter = new MacroFilter();
@@ -68,7 +115,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         ProgramDef program = parser.parse(this.prg);
         AssetsMapping assetsMapping = new AssetsMapping(Util.getResourcesFolder());
 
-        JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[] }");
+        JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], shaders:[], environmentShaders:[] }");
 
         File deployFolder = new File("deploy");
         FileUtils.deleteDirectory(deployFolder);
@@ -181,6 +228,23 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 });
 
 
+        collectUiDocumentReferences(scriptFolder);
+
+        for (String spriteName : uiReferencedSpriteNames) {
+            if (!SceneMaxLanguageParser.spriteSheetUsed.contains(spriteName)) {
+                SceneMaxLanguageParser.spriteSheetUsed.add(spriteName);
+            }
+        }
+        for (String fontName : uiReferencedFontNames) {
+            if (!SceneMaxLanguageParser.fontsUsed.contains(fontName)) {
+                SceneMaxLanguageParser.fontsUsed.add(fontName);
+            }
+        }
+
+        for (String imagePath : uiReferencedImagePaths) {
+            copyUiImageResource(imagePath);
+        }
+
         JSONArray sprites = resources.getJSONArray("sprites");
         for (String spriteSheet : SceneMaxLanguageParser.spriteSheetUsed) {
             ResourceSetup2D res = assetsMapping.getSpriteSheetsIndex().get(spriteSheet.toLowerCase());
@@ -253,6 +317,30 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             }
         }
 
+        copyResourceDirectoryToDeploy("fonts");
+        mergeIndexedResources(
+                new File("./resources/fonts/fonts.json"),
+                new File(Util.getResourcesFolder(), "fonts/fonts-ext.json"),
+                "fonts",
+                resources.getJSONArray("fonts")
+        );
+
+        copyResourceDirectoryToDeploy("shaders");
+        mergeIndexedResources(
+                new File("./resources/shaders/shaders.json"),
+                new File(Util.getResourcesFolder(), "shaders/shaders-ext.json"),
+                "shaders",
+                resources.getJSONArray("shaders")
+        );
+
+        copyResourceDirectoryToDeploy("environment_shaders");
+        mergeIndexedResources(
+                new File("./resources/environment_shaders/environment-shaders.json"),
+                new File(Util.getResourcesFolder(), "environment_shaders/environment-shaders-ext.json"),
+                "environmentShaders",
+                resources.getJSONArray("environmentShaders")
+        );
+
 
         JSONArray skyboxFiles = resources.getJSONArray("skyboxes");
         for (String sb : SceneMaxLanguageParser.skyboxUsed) {
@@ -276,7 +364,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         Manifest manifest = new Manifest();
         manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
         manifest.getMainAttributes().put(Attributes.Name.MAIN_CLASS, "com.scenemaxeng.projector.SceneMaxLauncher");//SceneMaxLauncher.class.getName()
-        JarOutputStream jarOutputStream = new JarOutputStream(new FileOutputStream("scenemax3d_scene.jar"), manifest);
+        JarOutputStream jarOutputStream = new JarOutputStream(new FileOutputStream(SCENE_JAR_NAME), manifest);
 
         String projectorJarPath = Util.getWorkingDir() + "/out/artifacts/scenemax_win_projector.jar";
         File projectorFile = new File(projectorJarPath);
@@ -290,16 +378,18 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 }
                 PackageProgramTask.this.setProgress(progress.intValue());
             }
-        });
+        }, addedJarEntries);
 
 
         for (File nestedFile : new File("deploy").listFiles()) {
             add(nestedFile, jarOutputStream);
         }
 
-        jarOutputStream.putNextEntry(new JarEntry("resources.json"));
-        jarOutputStream.write(resources.toString().getBytes());
-        jarOutputStream.closeEntry();
+        if (addedJarEntries.add("resources.json")) {
+            jarOutputStream.putNextEntry(new JarEntry("resources.json"));
+            jarOutputStream.write(resources.toString().getBytes());
+            jarOutputStream.closeEntry();
+        }
 
         File scriptFolderCopy = copyAndApplyMacro(scriptFolder);
         FileUtils.moveDirectory(scriptFolderCopy, new File(deployFolder, "running")); // rename
@@ -307,7 +397,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         add(scriptFolderCopy, jarOutputStream);
         // Close jar
         jarOutputStream.close();
-        //prepareExe();
+        prepareTargetPackages();
 
         return globalCounter;
     }
@@ -332,7 +422,42 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         }
     }
 
-    private void prepareExe() {
+    private void prepareTargetPackages() throws IOException {
+        String gameName = getGameName();
+        outputFolder = new File("build_games", gameName);
+        if (outputFolder.exists()) {
+            FileUtils.deleteDirectory(outputFolder);
+        }
+        FileUtils.forceMkdir(outputFolder);
+        producedArtifacts.clear();
+
+        if (targets.contains(PackageTarget.WINDOWS)) {
+            File windowsExe = prepareWindowsExecutable(gameName);
+            if (windowsExe != null && windowsExe.exists()) {
+                producedArtifacts.add(windowsExe);
+            }
+        }
+
+        if (targets.contains(PackageTarget.LINUX)) {
+            File linuxFolder = prepareScriptPackage(gameName, "linux", gameName + ".sh", false);
+            File linuxZip = createPlatformZip(linuxFolder, gameName + "_linux.zip");
+            if (linuxZip != null && linuxZip.exists()) {
+                producedArtifacts.add(linuxZip);
+            }
+            deletePlatformArtifactsExceptZip(linuxFolder, linuxZip);
+        }
+
+        if (targets.contains(PackageTarget.MAC_OSX)) {
+            File macFolder = prepareScriptPackage(gameName, "macos", gameName + ".command", true);
+            File macZip = createPlatformZip(macFolder, gameName + "_macos.zip");
+            if (macZip != null && macZip.exists()) {
+                producedArtifacts.add(macZip);
+            }
+            deletePlatformArtifactsExceptZip(macFolder, macZip);
+        }
+    }
+
+    private File prepareWindowsExecutable(String gameName) throws IOException {
         File buildFolder = new File("build_games");
         if(!buildFolder.exists()) {
             buildFolder.mkdir();
@@ -351,7 +476,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         String launcherName = "Launch4j\\launch4j.jar";
         command.add(launcherName);
-        command.add(".\\Launch4j\\scenemax3d_launch4j_project.xml");
+        File launch4jConfig = createLaunch4jConfig(gameName);
+        command.add(launch4jConfig.getAbsolutePath());
 
 
         ProcessBuilder processBuilder = new ProcessBuilder();
@@ -369,10 +495,291 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             Executors.newSingleThreadExecutor().submit(sg);
             int exitCode = process.waitFor();
             System.out.printf("Program ended with exitCode %d", exitCode);
+            if (exitCode != 0) {
+                throw new IOException("Launch4j failed with exit code " + exitCode);
+            }
 
         } catch (Exception e) {
             e.printStackTrace();
+            throw new RuntimeException(e);
+        } finally {
+            if (launch4jConfig.exists()) {
+                launch4jConfig.delete();
+            }
         }
+
+        File windowsFolder = new File(outputFolder, "windows");
+        if (!windowsFolder.exists()) {
+            windowsFolder.mkdirs();
+        }
+
+        File exePath = new File(windowsFolder, gameName + ".exe");
+        if (!exePath.exists()) {
+            throw new RuntimeException("Windows executable was not created.");
+        }
+
+        copyPlatformIcon(options.windowsIcon, windowsFolder, "icon");
+        return exePath;
+    }
+
+    private File prepareScriptPackage(String gameName, String platformFolderName, String launcherFileName, boolean macLauncher) throws IOException {
+        File platformFolder = new File(outputFolder, platformFolderName);
+        FileUtils.forceMkdir(platformFolder);
+
+        File targetJar = new File(platformFolder, gameName + ".jar");
+        FileUtils.copyFile(new File(SCENE_JAR_NAME), targetJar);
+
+        File launcherFile = new File(platformFolder, launcherFileName);
+        String launcherText = createLauncherScript(gameName, macLauncher);
+        FileUtils.writeStringToFile(launcherFile, launcherText, StandardCharsets.UTF_8);
+        FileUtils.writeStringToFile(
+                new File(platformFolder, "README.txt"),
+                createLauncherReadme(launcherFileName, macLauncher),
+                StandardCharsets.UTF_8
+        );
+        if ("linux".equals(platformFolderName)) {
+            copyPlatformIcon(options.linuxIcon, platformFolder, "icon");
+        } else if ("macos".equals(platformFolderName)) {
+            copyPlatformIcon(options.macIcon, platformFolder, "icon");
+        }
+
+        return platformFolder;
+    }
+
+    private String createLauncherScript(String gameName, boolean macLauncher) {
+        String lineBreak = "\n";
+        StringBuilder sb = new StringBuilder();
+        sb.append("#!/bin/sh").append(lineBreak);
+        sb.append("SCRIPT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"").append(lineBreak);
+        sb.append("cd \"$SCRIPT_DIR\"").append(lineBreak);
+        sb.append("java -XX:MaxDirectMemorySize=1024m -jar \"").append(gameName).append(".jar\"").append(lineBreak);
+        if (macLauncher) {
+            sb.append("exit $?").append(lineBreak);
+        }
+        return sb.toString();
+    }
+
+    private String createLauncherReadme(String launcherFileName, boolean macLauncher) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("SceneMax packaged game").append("\n\n");
+        sb.append("Requirements: Java 11 or newer installed on the target machine.").append("\n\n");
+        if (macLauncher) {
+            sb.append("Run: ./").append(launcherFileName).append("\n");
+            sb.append("If needed, make it executable first with: chmod +x ").append(launcherFileName).append("\n");
+        } else {
+            sb.append("Run: ./").append(launcherFileName).append("\n");
+            sb.append("If needed, make it executable first with: chmod +x ").append(launcherFileName).append("\n");
+        }
+        return sb.toString();
+    }
+
+    private String getGameName() {
+        String gameName = scriptFolder == null ? "scenemax_game" : scriptFolder.getName();
+        gameName = gameName.replace(" ", "_").trim();
+        if (gameName.length() == 0) {
+            gameName = "scenemax_game";
+        }
+        return gameName;
+    }
+
+    private void copyResourceDirectoryToDeploy(String relativePath) {
+        File defaultDir = new File("./resources", relativePath);
+        File projectDir = new File(Util.getResourcesFolder(), relativePath);
+        File deployDir = new File("./deploy", relativePath);
+
+        copyDirectoryContents(defaultDir, deployDir);
+        copyDirectoryContents(projectDir, deployDir);
+    }
+
+    private void copyDirectoryContents(File sourceDir, File targetDir) {
+        if (sourceDir == null || !sourceDir.exists() || !sourceDir.isDirectory()) {
+            return;
+        }
+
+        try {
+            FileUtils.forceMkdir(targetDir);
+            File[] children = sourceDir.listFiles();
+            if (children == null) {
+                return;
+            }
+
+            for (File child : children) {
+                File targetChild = new File(targetDir, child.getName());
+                if (child.isDirectory()) {
+                    FileUtils.copyDirectory(child, targetChild);
+                } else {
+                    FileUtils.copyFile(child, targetChild);
+                }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void mergeIndexedResources(File baseIndexFile, File projectIndexFile, String arrayKey, JSONArray targetArray) {
+        mergeIndexedResourcesFromFile(baseIndexFile, arrayKey, targetArray);
+        mergeIndexedResourcesFromFile(projectIndexFile, arrayKey, targetArray);
+    }
+
+    private void mergeIndexedResourcesFromFile(File indexFile, String arrayKey, JSONArray targetArray) {
+        if (indexFile == null || !indexFile.exists()) {
+            return;
+        }
+
+        try {
+            String content = FileUtils.readFileToString(indexFile, StandardCharsets.UTF_8);
+            if (content == null || content.trim().length() == 0) {
+                return;
+            }
+
+            JSONObject root = new JSONObject(content);
+            JSONArray sourceArray = root.optJSONArray(arrayKey);
+            if (sourceArray == null) {
+                return;
+            }
+
+            for (int i = 0; i < sourceArray.length(); i++) {
+                JSONObject resource = sourceArray.optJSONObject(i);
+                if (resource == null) {
+                    continue;
+                }
+                upsertIndexedResource(targetArray, resource);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void upsertIndexedResource(JSONArray targetArray, JSONObject resource) {
+        String name = resource.optString("name", "").toLowerCase();
+        String path = resource.optString("path", "").toLowerCase();
+
+        for (int i = 0; i < targetArray.length(); i++) {
+            JSONObject existing = targetArray.optJSONObject(i);
+            if (existing == null) {
+                continue;
+            }
+
+            String existingName = existing.optString("name", "").toLowerCase();
+            String existingPath = existing.optString("path", "").toLowerCase();
+            if ((!name.isEmpty() && name.equals(existingName)) || (!path.isEmpty() && path.equals(existingPath))) {
+                for (String key : resource.keySet()) {
+                    existing.put(key, resource.get(key));
+                }
+                return;
+            }
+        }
+
+        targetArray.put(new JSONObject(resource.toString()));
+    }
+
+    private void collectUiDocumentReferences(File folder) {
+        if (folder == null || !folder.exists()) {
+            return;
+        }
+
+        Iterator<File> files = FileUtils.iterateFiles(folder, new String[]{"smui"}, true);
+        while (files.hasNext()) {
+            File uiFile = files.next();
+            try {
+                UIDocument document = UIDocument.load(uiFile);
+                for (UILayerDef layer : document.getLayers()) {
+                    for (UIWidgetDef widget : layer.getWidgets()) {
+                        collectUiWidgetReferences(widget);
+                    }
+                }
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    private void collectUiWidgetReferences(UIWidgetDef widget) {
+        if (widget == null) {
+            return;
+        }
+
+        addIfNotBlank(uiReferencedFontNames, widget.getFontName());
+        addIfNotBlank(uiReferencedSpriteNames, widget.getSpriteName());
+        addIfNotBlank(uiReferencedImagePaths, widget.getImagePath());
+        addIfNotBlank(uiReferencedImagePaths, widget.getBackgroundImage());
+
+        for (UIWidgetDef child : widget.getChildren()) {
+            collectUiWidgetReferences(child);
+        }
+    }
+
+    private void addIfNotBlank(Set<String> target, String value) {
+        if (value == null) {
+            return;
+        }
+
+        String trimmed = value.trim();
+        if (trimmed.length() == 0) {
+            return;
+        }
+
+        target.add(trimmed);
+    }
+
+    private void copyUiImageResource(String imagePath) {
+        String normalized = imagePath.replace("\\", "/").trim();
+        if (normalized.length() == 0) {
+            return;
+        }
+
+        File directFile = new File(normalized);
+        if (!directFile.exists()) {
+            directFile = new File(Util.getResourcePath(normalized));
+        }
+
+        if (!directFile.exists() || !directFile.isFile()) {
+            return;
+        }
+
+        String deployRelativePath = inferDeployRelativePath(normalized, directFile);
+        File targetFile = new File("./deploy", deployRelativePath);
+        File parent = targetFile.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+
+        try {
+            FileUtils.copyFile(directFile, targetFile);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private String inferDeployRelativePath(String originalPath, File resolvedFile) {
+        String normalized = originalPath.replace("\\", "/");
+        if (normalized.startsWith("./")) {
+            normalized = normalized.substring(2);
+        }
+        if (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        if (normalized.startsWith("resources/")) {
+            normalized = normalized.substring("resources/".length());
+        }
+
+        if (normalized.length() > 0 && !normalized.contains(":")) {
+            return normalized;
+        }
+
+        String absolute = resolvedFile.getAbsolutePath().replace("\\", "/");
+        Map<String, String> roots = new LinkedHashMap<>();
+        roots.put(new File(Util.getResourcesFolder()).getAbsolutePath().replace("\\", "/"), "");
+        roots.put(new File("./resources").getAbsolutePath().replace("\\", "/"), "");
+
+        for (Map.Entry<String, String> entry : roots.entrySet()) {
+            String root = entry.getKey();
+            if (absolute.startsWith(root + "/")) {
+                return absolute.substring(root.length() + 1);
+            }
+        }
+
+        return resolvedFile.getName();
     }
 
 
@@ -455,14 +862,175 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         if(this.isCancelled()) {
             this.canceled.run();
         } else {
-            prepareExe();
             try {
-                Thread.sleep(500);
+                get();
+                finish.run();
             } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                this.canceled.run();
+            } catch (ExecutionException e) {
                 e.printStackTrace();
+                this.canceled.run();
             }
-            finish.run();
         }
+    }
+
+    public List<File> getProducedArtifacts() {
+        return Collections.unmodifiableList(producedArtifacts);
+    }
+
+    public File getOutputFolder() {
+        return outputFolder == null ? new File("build_games") : outputFolder;
+    }
+
+    private File createLaunch4jConfig(String gameName) throws IOException {
+        File windowsFolder = new File(outputFolder, "windows");
+        if (!windowsFolder.exists()) {
+            windowsFolder.mkdirs();
+        }
+
+        File configFile = File.createTempFile(gameName + "_launch4j_", ".xml");
+        String iconPath = resolveWindowsIconPath();
+        String xml =
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "<launch4jConfig>\n" +
+                "  <dontWrapJar>false</dontWrapJar>\n" +
+                "  <headerType>gui</headerType>\n" +
+                "  <jar>" + escapeXml(new File(SCENE_JAR_NAME).getAbsolutePath()) + "</jar>\n" +
+                "  <outfile>" + escapeXml(new File(windowsFolder, gameName + ".exe").getAbsolutePath()) + "</outfile>\n" +
+                "  <errTitle></errTitle>\n" +
+                "  <cmdLine></cmdLine>\n" +
+                "  <chdir>.</chdir>\n" +
+                "  <priority>normal</priority>\n" +
+                "  <downloadUrl>https://scenemax3d.com/java-run-time-install/</downloadUrl>\n" +
+                "  <supportUrl>https://www.scenemax3d.com</supportUrl>\n" +
+                "  <stayAlive>false</stayAlive>\n" +
+                "  <restartOnCrash>false</restartOnCrash>\n" +
+                "  <manifest></manifest>\n" +
+                "  <icon>" + escapeXml(iconPath) + "</icon>\n" +
+                "  <jre>\n" +
+                "    <path>%JAVA_HOME%;%PATH%</path>\n" +
+                "    <requiresJdk>false</requiresJdk>\n" +
+                "    <requires64Bit>true</requires64Bit>\n" +
+                "    <minVersion>11.0.21</minVersion>\n" +
+                "    <maxVersion></maxVersion>\n" +
+                "    <opt>-XX:MaxDirectMemorySize=1024m</opt>\n" +
+                "  </jre>\n" +
+                "</launch4jConfig>\n";
+        FileUtils.writeStringToFile(configFile, xml, StandardCharsets.UTF_8);
+        return configFile;
+    }
+
+    private String resolveWindowsIconPath() {
+        if (options.windowsIcon != null && options.windowsIcon.exists() && options.windowsIcon.isFile()) {
+            String name = options.windowsIcon.getName().toLowerCase();
+            if (name.endsWith(".ico")) {
+                return options.windowsIcon.getAbsolutePath();
+            }
+        }
+        if (options.windowsIcon != null && options.windowsIcon.exists()) {
+            System.out.println("Windows packaging icon must be a .ico file. Falling back to default application icon.");
+        }
+        File defaultIco = new File("scenemax.ico");
+        if (defaultIco.exists()) {
+            return defaultIco.getAbsolutePath();
+        }
+        if (options.windowsIcon != null && options.windowsIcon.exists()) {
+            return options.windowsIcon.getAbsolutePath();
+        }
+        return defaultIco.getAbsolutePath();
+    }
+
+    private String escapeXml(String value) {
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    private void copyPlatformIcon(File sourceIcon, File targetFolder, String targetBaseName) throws IOException {
+        if (sourceIcon == null || !sourceIcon.exists() || !sourceIcon.isFile()) {
+            return;
+        }
+
+        String name = sourceIcon.getName();
+        int idx = name.lastIndexOf('.');
+        String ext = idx >= 0 ? name.substring(idx) : "";
+        File target = new File(targetFolder, targetBaseName + ext);
+        FileUtils.copyFile(sourceIcon, target);
+    }
+
+    private File createPlatformZip(File platformFolder, String zipFileName) throws IOException {
+        if (platformFolder == null || !platformFolder.exists() || !platformFolder.isDirectory()) {
+            return null;
+        }
+
+        File zipFile = new File(platformFolder, zipFileName);
+        if (zipFile.exists()) {
+            zipFile.delete();
+        }
+
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFile))) {
+            File[] children = platformFolder.listFiles();
+            if (children == null) {
+                return zipFile;
+            }
+            for (File child : children) {
+                if (child.equals(zipFile)) {
+                    continue;
+                }
+                addToZip(child, child.getName(), zos);
+            }
+        }
+
+        return zipFile;
+    }
+
+    private void deletePlatformArtifactsExceptZip(File platformFolder, File zipFile) throws IOException {
+        if (platformFolder == null || !platformFolder.exists() || !platformFolder.isDirectory()) {
+            return;
+        }
+
+        File[] children = platformFolder.listFiles();
+        if (children == null) {
+            return;
+        }
+
+        for (File child : children) {
+            if (zipFile != null && child.equals(zipFile)) {
+                continue;
+            }
+            if (child.isDirectory()) {
+                FileUtils.deleteDirectory(child);
+            } else {
+                child.delete();
+            }
+        }
+    }
+
+    private void addToZip(File source, String entryName, ZipOutputStream zos) throws IOException {
+        String normalized = entryName.replace("\\", "/");
+        if (source.isDirectory()) {
+            if (!normalized.endsWith("/")) {
+                normalized += "/";
+            }
+            zos.putNextEntry(new ZipEntry(normalized));
+            zos.closeEntry();
+            File[] children = source.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    addToZip(child, normalized + child.getName(), zos);
+                }
+            }
+            return;
+        }
+
+        zos.putNextEntry(new ZipEntry(normalized));
+        try (InputStream in = new FileInputStream(source)) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                zos.write(buffer, 0, read);
+            }
+        }
+        zos.closeEntry();
     }
 
     private void addClass(Class c, JarOutputStream jarOutputStream) throws IOException
@@ -528,10 +1096,12 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                     if(!name.startsWith("deploy")) { // deploy folder & sub folders should not be added
                         if (!name.endsWith("/"))
                             name += "/";
-                        JarEntry entry = new JarEntry(name);
-                        entry.setTime(source.lastModified());
-                        target.putNextEntry(entry);
-                        target.closeEntry();
+                        if (addedJarEntries.add(name)) {
+                            JarEntry entry = new JarEntry(name);
+                            entry.setTime(source.lastModified());
+                            target.putNextEntry(entry);
+                            target.closeEntry();
+                        }
                     }
                 }
                 for (File nestedFile: source.listFiles())
@@ -539,7 +1109,12 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 return;
             }
 
-            JarEntry entry = new JarEntry(path.replace("deploy/",""));
+            String entryName = path.replace("deploy/","");
+            if (!addedJarEntries.add(entryName)) {
+                return;
+            }
+
+            JarEntry entry = new JarEntry(entryName);
                     //.replace("running/",""));
 
             entry.setTime(source.lastModified());
