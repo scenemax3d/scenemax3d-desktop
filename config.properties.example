@@ -12,9 +12,19 @@ sketchfab_api_token=
 
 # FTP upload settings
 ftp_upload_folder=http://he.scenemax3d.com/wp-content/downloads/
+file_transfer_protocol=FTP
 ftp_host_name=scenemax3d.com
+ftp_port=21
 ftp_user=YOUR_FTP_USERNAME_HERE
 ftp_password=YOUR_FTP_PASSWORD_HERE
+
+# Optional Web Start defaults
+webstart_base_url=https://your-domain.example/games/your-game
+webstart_vendor=SceneMax3D
+webstart_homepage=https://your-domain.example/games/your-game/index.html
+webstart_remote_folder=/public_html/games/your-game
+webstart_keystore_path=
+webstart_keystore_alias=scenemax
 
 # Encryption key (128-bit AES key, exactly 16 characters)
 aes_key=YOUR_AES_KEY_HERE

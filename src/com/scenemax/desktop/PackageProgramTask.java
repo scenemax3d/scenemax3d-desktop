@@ -56,22 +56,51 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     private final Set<String> uiReferencedImagePaths = new LinkedHashSet<>();
     private final PackageOptions options;
     private File outputFolder;
+    private final StringBuilder completionNotes = new StringBuilder();
+    private volatile String statusNote = "";
 
     public enum PackageTarget {
         WINDOWS,
         LINUX,
-        MAC_OSX
+        MAC_OSX,
+        WEB_START
     }
 
     public static class PackageOptions {
         public final File windowsIcon;
         public final File linuxIcon;
         public final File macIcon;
+        public final String webBaseUrl;
+        public final String webVendor;
+        public final String webHomepage;
+        public final String webRemoteFolder;
+        public final boolean uploadWebStart;
+        public final boolean signWebStart;
+        public final boolean generateSelfSignedCertificate;
+        public final File keystoreFile;
+        public final String keystoreAlias;
+        public final String keystorePassword;
+        public final String keyPassword;
 
-        public PackageOptions(File windowsIcon, File linuxIcon, File macIcon) {
+        public PackageOptions(File windowsIcon, File linuxIcon, File macIcon,
+                              String webBaseUrl, String webVendor, String webHomepage,
+                              String webRemoteFolder, boolean uploadWebStart, boolean signWebStart,
+                              boolean generateSelfSignedCertificate, File keystoreFile,
+                              String keystoreAlias, String keystorePassword, String keyPassword) {
             this.windowsIcon = windowsIcon;
             this.linuxIcon = linuxIcon;
             this.macIcon = macIcon;
+            this.webBaseUrl = webBaseUrl == null ? "" : webBaseUrl.trim();
+            this.webVendor = webVendor == null ? "" : webVendor.trim();
+            this.webHomepage = webHomepage == null ? "" : webHomepage.trim();
+            this.webRemoteFolder = webRemoteFolder == null ? "" : webRemoteFolder.trim();
+            this.uploadWebStart = uploadWebStart;
+            this.signWebStart = signWebStart;
+            this.generateSelfSignedCertificate = generateSelfSignedCertificate;
+            this.keystoreFile = keystoreFile;
+            this.keystoreAlias = keystoreAlias == null ? "" : keystoreAlias.trim();
+            this.keystorePassword = keystorePassword == null ? "" : keystorePassword;
+            this.keyPassword = keyPassword == null || keyPassword.trim().length() == 0 ? this.keystorePassword : keyPassword;
         }
     }
 
@@ -79,7 +108,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         this.prg=prg;
         this.finish=finish;
         this.canceled=canceled;
-        this.options = options == null ? new PackageOptions(null, null, null) : options;
+        this.options = options == null ? new PackageOptions(null, null, null, "", "", "", "", false, false, false, null, "", "", "") : options;
         this.targets = targets == null || targets.isEmpty()
                 ? EnumSet.of(PackageTarget.WINDOWS)
                 : EnumSet.copyOf(targets);
@@ -455,6 +484,13 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             }
             deletePlatformArtifactsExceptZip(macFolder, macZip);
         }
+
+        if (targets.contains(PackageTarget.WEB_START)) {
+            File webFolder = prepareWebStartPackage(gameName);
+            if (webFolder != null && webFolder.exists()) {
+                producedArtifacts.add(webFolder);
+            }
+        }
     }
 
     private File prepareWindowsExecutable(String gameName) throws IOException {
@@ -571,6 +607,347 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             sb.append("If needed, make it executable first with: chmod +x ").append(launcherFileName).append("\n");
         }
         return sb.toString();
+    }
+
+    private File prepareWebStartPackage(String gameName) throws IOException {
+        File webFolder = new File(outputFolder, "webstart");
+        FileUtils.forceMkdir(webFolder);
+
+        File webJar = new File(webFolder, gameName + ".jar");
+        FileUtils.copyFile(new File(SCENE_JAR_NAME), webJar);
+        if (options.signWebStart) {
+            signWebStartJar(webJar, options.webVendor.length() == 0 ? "SceneMax3D" : options.webVendor);
+        }
+        copyWebStartIcon(webFolder);
+
+        String normalizedBaseUrl = normalizeBaseUrl(options.webBaseUrl, gameName);
+        String vendor = options.webVendor.length() == 0 ? "SceneMax3D" : options.webVendor;
+        String homepage = options.webHomepage.length() == 0 ? normalizedBaseUrl + "/index.html" : options.webHomepage;
+
+        FileUtils.writeStringToFile(
+                new File(webFolder, "launch.jnlp"),
+                createJnlp(gameName, normalizedBaseUrl, vendor, homepage),
+                StandardCharsets.UTF_8
+        );
+        FileUtils.writeStringToFile(
+                new File(webFolder, "index.html"),
+                createWebLandingPage(gameName, vendor),
+                StandardCharsets.UTF_8
+        );
+        FileUtils.writeStringToFile(
+                new File(webFolder, "README.txt"),
+                createWebStartReadme(gameName, normalizedBaseUrl),
+                StandardCharsets.UTF_8
+        );
+
+        if (options.uploadWebStart) {
+            uploadWebStartFiles(webFolder, normalizedBaseUrl);
+        }
+
+        return webFolder;
+    }
+
+    private void copyWebStartIcon(File webFolder) throws IOException {
+        File preferred = options.windowsIcon;
+        if ((preferred == null || !preferred.exists()) && options.linuxIcon != null && options.linuxIcon.exists()) {
+            preferred = options.linuxIcon;
+        }
+        if ((preferred == null || !preferred.exists()) && options.macIcon != null && options.macIcon.exists()) {
+            preferred = options.macIcon;
+        }
+
+        File targetIcon = new File(webFolder, "icon.png");
+        if (preferred != null && preferred.exists() && preferred.isFile() && preferred.getName().toLowerCase().endsWith(".png")) {
+            FileUtils.copyFile(preferred, targetIcon);
+            return;
+        }
+
+        File defaultIcon = new File("assets/images/scenemax_icon.png");
+        if (defaultIcon.exists()) {
+            FileUtils.copyFile(defaultIcon, targetIcon);
+        }
+    }
+
+    private String normalizeBaseUrl(String baseUrl, String gameName) {
+        String normalized = baseUrl == null ? "" : baseUrl.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (normalized.length() == 0) {
+            normalized = "https://example.com/" + gameName;
+        }
+        return normalized;
+    }
+
+    private String createJnlp(String gameName, String codebase, String vendor, String homepage) {
+        String title = escapeXml(gameName.replace("_", " "));
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "<jnlp spec=\"1.0+\" codebase=\"" + escapeXml(codebase) + "\" href=\"launch.jnlp\">\n" +
+                "  <information>\n" +
+                "    <title>" + title + "</title>\n" +
+                "    <vendor>" + escapeXml(vendor) + "</vendor>\n" +
+                "    <homepage href=\"" + escapeXml(homepage) + "\"/>\n" +
+                "    <description>" + title + " for SceneMax Web Start deployment.</description>\n" +
+                "    <description kind=\"short\">Launch " + title + " with OpenWebStart.</description>\n" +
+                "    <icon href=\"icon.png\" kind=\"default\"/>\n" +
+                "    <offline-allowed/>\n" +
+                "    <shortcut online=\"true\">\n" +
+                "      <desktop/>\n" +
+                "      <menu submenu=\"" + title + "\"/>\n" +
+                "    </shortcut>\n" +
+                "  </information>\n" +
+                "  <resources>\n" +
+                "    <j2se version=\"11+\"/>\n" +
+                "    <jar href=\"" + escapeXml(gameName) + ".jar\" main=\"true\" download=\"eager\"/>\n" +
+                "  </resources>\n" +
+                "  <application-desc main-class=\"com.scenemaxeng.projector.SceneMaxLauncher\"/>\n" +
+                "</jnlp>\n";
+    }
+
+    private String createWebLandingPage(String gameName, String vendor) {
+        String title = escapeHtml(gameName.replace("_", " "));
+        String safeVendor = escapeHtml(vendor);
+        return "<!doctype html>\n" +
+                "<html lang=\"en\">\n" +
+                "<head>\n" +
+                "  <meta charset=\"utf-8\" />\n" +
+                "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n" +
+                "  <title>" + title + " | Web Start</title>\n" +
+                "  <style>\n" +
+                "    :root { --bg: #f7f2e9; --ink: #10221c; --muted: #5f6d68; --card: rgba(255,255,255,0.82); --accent: #0d8f63; --accent-dark: #0b6849; --line: rgba(16,34,28,0.12); }\n" +
+                "    * { box-sizing: border-box; }\n" +
+                "    body { margin: 0; font-family: 'Segoe UI', Tahoma, sans-serif; color: var(--ink); background: radial-gradient(circle at top left, #fff6d8 0%, rgba(255,246,216,0) 35%), linear-gradient(135deg, #f8f4ec 0%, #dbe7df 100%); min-height: 100vh; }\n" +
+                "    .shell { max-width: 1100px; margin: 0 auto; padding: 32px 20px 48px; }\n" +
+                "    .hero { display: grid; grid-template-columns: 1.3fr 0.9fr; gap: 24px; align-items: stretch; }\n" +
+                "    .panel { background: var(--card); backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: 28px; box-shadow: 0 24px 60px rgba(16,34,28,0.12); }\n" +
+                "    .lead { padding: 34px; }\n" +
+                "    .eyebrow { display: inline-block; padding: 7px 12px; border-radius: 999px; background: rgba(13,143,99,0.12); color: var(--accent-dark); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; }\n" +
+                "    h1 { margin: 18px 0 14px; font-size: clamp(32px, 5vw, 60px); line-height: 0.96; }\n" +
+                "    .sub { font-size: 18px; line-height: 1.6; color: var(--muted); max-width: 40rem; }\n" +
+                "    .actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 28px; }\n" +
+                "    .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 52px; padding: 0 22px; border-radius: 16px; text-decoration: none; font-weight: 700; transition: transform 120ms ease, box-shadow 120ms ease; }\n" +
+                "    .btn:hover { transform: translateY(-1px); }\n" +
+                "    .primary { background: linear-gradient(135deg, var(--accent) 0%, #22b07d 100%); color: white; box-shadow: 0 18px 30px rgba(13,143,99,0.22); }\n" +
+                "    .secondary { background: white; color: var(--ink); border: 1px solid var(--line); }\n" +
+                "    .side { padding: 26px; display: flex; flex-direction: column; justify-content: space-between; background: linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(243,249,246,0.92) 100%); }\n" +
+                "    .steps { display: grid; gap: 14px; margin-top: 20px; }\n" +
+                "    .step { border: 1px solid var(--line); border-radius: 18px; padding: 16px; background: rgba(255,255,255,0.78); }\n" +
+                "    .step strong { display: block; margin-bottom: 6px; }\n" +
+                "    .note { margin-top: 16px; font-size: 14px; line-height: 1.6; color: var(--muted); }\n" +
+                "    .footer { margin-top: 22px; font-size: 13px; color: var(--muted); }\n" +
+                "    @media (max-width: 860px) { .hero { grid-template-columns: 1fr; } .lead, .side { padding: 24px; } }\n" +
+                "  </style>\n" +
+                "</head>\n" +
+                "<body>\n" +
+                "  <main class=\"shell\">\n" +
+                "    <section class=\"hero\">\n" +
+                "      <div class=\"panel lead\">\n" +
+                "        <span class=\"eyebrow\">SceneMax Web Start</span>\n" +
+                "        <h1>" + title + "</h1>\n" +
+                "        <p class=\"sub\">Launch the desktop game straight from your browser using OpenWebStart. Click the green button, allow the <code>.jnlp</code> file to open, and the runtime will handle the rest.</p>\n" +
+                "        <div class=\"actions\">\n" +
+                "          <a class=\"btn primary\" href=\"launch.jnlp\">Launch Game</a>\n" +
+                "          <a class=\"btn secondary\" href=\"https://openwebstart.com/download/\" target=\"_blank\" rel=\"noreferrer\">Install OpenWebStart</a>\n" +
+                "        </div>\n" +
+                "        <p class=\"footer\">Published by " + safeVendor + "</p>\n" +
+                "      </div>\n" +
+                "      <aside class=\"panel side\">\n" +
+                "        <div>\n" +
+                "          <h2>First time?</h2>\n" +
+                "          <div class=\"steps\">\n" +
+                "            <div class=\"step\"><strong>1. Install OpenWebStart</strong>Use the installer once on the target machine.</div>\n" +
+                "            <div class=\"step\"><strong>2. Click Launch Game</strong>Your browser downloads <code>launch.jnlp</code>.</div>\n" +
+                "            <div class=\"step\"><strong>3. Open the file</strong>OpenWebStart downloads the game JAR and starts it.</div>\n" +
+                "          </div>\n" +
+                "        </div>\n" +
+                "        <p class=\"note\">For the smoothest experience, host these files over HTTPS and configure your web server to return the MIME type <code>application/x-java-jnlp-file</code> for <code>.jnlp</code> files.</p>\n" +
+                "      </aside>\n" +
+                "    </section>\n" +
+                "  </main>\n" +
+                "</body>\n" +
+                "</html>\n";
+    }
+
+    private String createWebStartReadme(String gameName, String baseUrl) {
+        return "SceneMax Web Start package\n\n" +
+                "Files in this folder:\n" +
+                "- index.html: browser landing page for players\n" +
+                "- launch.jnlp: OpenWebStart launcher descriptor\n" +
+                "- " + gameName + ".jar: packaged game runtime\n" +
+                "- icon.png: launcher icon\n\n" +
+                "Deploy steps:\n" +
+                "1. Upload every file in this folder to: " + baseUrl + "\n" +
+                "2. Serve launch.jnlp with MIME type application/x-java-jnlp-file\n" +
+                "3. Link players to index.html\n" +
+                "4. Prefer HTTPS for both the landing page and the JNLP/JAR files\n\n" +
+                "Signing note:\n" +
+                "- OpenWebStart can launch JNLP applications, but unsigned or self-signed JARs may show trust prompts.\n" +
+                "- For the most user-friendly production flow, sign the JAR with a certificate trusted by end-user machines.\n";
+    }
+
+    private void signWebStartJar(File webJar, String vendor) throws IOException {
+        File keystore = resolveKeystoreFile(webJar);
+        if (!keystore.exists()) {
+            if (!options.generateSelfSignedCertificate) {
+                throw new IOException("Web Start signing was requested, but the keystore file does not exist: " + keystore.getAbsolutePath());
+            }
+            generateSelfSignedCertificate(keystore, vendor);
+            appendCompletionNote("Created self-signed test certificate: " + keystore.getAbsolutePath());
+        }
+
+        List<String> command = new ArrayList<>();
+        command.add("jarsigner");
+        command.add("-keystore");
+        command.add(keystore.getAbsolutePath());
+        command.add("-storepass");
+        command.add(options.keystorePassword);
+        command.add("-keypass");
+        command.add(options.keyPassword);
+        command.add(webJar.getAbsolutePath());
+        command.add(options.keystoreAlias);
+        runCommand(command, webJar.getParentFile(), "jarsigner");
+        appendCompletionNote("Signed Web Start JAR with alias '" + options.keystoreAlias + "'.");
+    }
+
+    private File resolveKeystoreFile(File webJar) {
+        if (options.keystoreFile != null && options.keystoreFile.getPath().trim().length() > 0) {
+            return options.keystoreFile;
+        }
+        return new File(webJar.getParentFile(), "webstart-selfsigned.p12");
+    }
+
+    private void generateSelfSignedCertificate(File keystore, String vendor) throws IOException {
+        File parent = keystore.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        List<String> command = new ArrayList<>();
+        command.add("keytool");
+        command.add("-genkeypair");
+        command.add("-noprompt");
+        command.add("-storetype");
+        command.add("PKCS12");
+        command.add("-keystore");
+        command.add(keystore.getAbsolutePath());
+        command.add("-storepass");
+        command.add(options.keystorePassword);
+        command.add("-keypass");
+        command.add(options.keyPassword);
+        command.add("-alias");
+        command.add(options.keystoreAlias);
+        command.add("-dname");
+        command.add("CN=" + vendor + ", OU=SceneMax3D, O=" + vendor + ", L=Jerusalem, ST=Jerusalem, C=IL");
+        command.add("-validity");
+        command.add("3650");
+        command.add("-keyalg");
+        command.add("RSA");
+        command.add("-keysize");
+        command.add("2048");
+        runCommand(command, keystore.getParentFile(), "keytool");
+    }
+
+    private void uploadWebStartFiles(File webFolder, String normalizedBaseUrl) throws IOException {
+        if (options.webRemoteFolder.length() == 0) {
+            throw new IOException("Web Start upload was requested, but no FTP remote folder was provided.");
+        }
+        File[] children = webFolder.listFiles();
+        if (children == null || children.length == 0) {
+            return;
+        }
+        List<File> files = new ArrayList<>();
+        for (File child : children) {
+            if (child.isFile()) {
+                files.add(child);
+            }
+        }
+        updateStatus("Preparing upload...");
+        setProgress(0);
+        try {
+            Util.ftpUploadFiles(files, options.webRemoteFolder, new IMonitor() {
+                @Override
+                public void setNote(String note) {
+                    updateStatus(note);
+                }
+
+                @Override
+                public void setProgress(int progress) {
+                    PackageProgramTask.this.setProgress(progress);
+                }
+
+                @Override
+                public void onEnd() {
+                    updateStatus("Upload completed.");
+                }
+            });
+        } catch (Exception e) {
+            throw new IOException(buildUploadErrorMessage(e), e);
+        }
+        appendCompletionNote("Uploaded Web Start files to " + options.webRemoteFolder + ".");
+        appendCompletionNote("Public launch page: " + normalizedBaseUrl + "/index.html");
+    }
+
+    private String buildUploadErrorMessage(Exception e) {
+        Throwable root = e;
+        while (root.getCause() != null) {
+            root = root.getCause();
+        }
+        String message = root.getMessage() == null ? e.getMessage() : root.getMessage();
+        if (root instanceof java.net.NoRouteToHostException) {
+            return "Cannot reach the server. Check the host/IP, port, firewall rules, and whether SFTP is exposed from your current network.";
+        }
+        if (root instanceof java.net.ConnectException) {
+            return "Connection refused or timed out. Check the host/IP, port, and whether the server is accepting " + Util.FILE_TRANSFER_PROTOCOL + " connections.";
+        }
+        if (message == null || message.trim().length() == 0) {
+            message = e.toString();
+        }
+        return "Web Start upload failed: " + message;
+    }
+
+    private void runCommand(List<String> command, File workingDir, String toolName) throws IOException {
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
+        if (workingDir != null) {
+            processBuilder.directory(workingDir);
+        }
+        processBuilder.redirectErrorStream(true);
+        Process process;
+        try {
+            process = processBuilder.start();
+        } catch (IOException e) {
+            throw new IOException("Failed to start " + toolName + ". Make sure it is available in PATH.", e);
+        }
+
+        String output;
+        try (InputStream in = process.getInputStream()) {
+            output = new String(Util.toByteArray(in), StandardCharsets.UTF_8);
+        }
+
+        try {
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                throw new IOException(toolName + " failed with exit code " + exitCode + (output.trim().length() == 0 ? "" : ": " + output.trim()));
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException(toolName + " was interrupted.", e);
+        }
+    }
+
+    private void appendCompletionNote(String note) {
+        if (note == null || note.trim().length() == 0) {
+            return;
+        }
+        if (completionNotes.length() > 0) {
+            completionNotes.append("\r\n");
+        }
+        completionNotes.append(note.trim());
+    }
+
+    private void updateStatus(String note) {
+        String newValue = note == null ? "" : note.trim();
+        String oldValue = this.statusNote;
+        this.statusNote = newValue;
+        firePropertyChange("statusNote", oldValue, newValue);
     }
 
     private String getGameName() {
@@ -883,6 +1260,14 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         return outputFolder == null ? new File("build_games") : outputFolder;
     }
 
+    public String getCompletionNotes() {
+        return completionNotes.toString();
+    }
+
+    public String getStatusNote() {
+        return statusNote;
+    }
+
     private File createLaunch4jConfig(String gameName) throws IOException {
         File windowsFolder = new File(outputFolder, "windows");
         if (!windowsFolder.exists()) {
@@ -943,6 +1328,10 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
     private String escapeXml(String value) {
         return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    private String escapeHtml(String value) {
+        return escapeXml(value).replace("\"", "&quot;");
     }
 
     private void copyPlatformIcon(File sourceIcon, File targetFolder, String targetBaseName) throws IOException {

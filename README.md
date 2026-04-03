@@ -22,7 +22,7 @@ In Mar-22, 2026 the entire solution was uploaded to GitHub as an open source (MI
 - **Multi-Project Support** -- manage multiple projects from a single workspace
 - **Plugin System** -- extend functionality via plugins (WebSocket-based communication)
 - **Classroom Mode** -- collaborative features for educational settings
-- **Export Targets** -- package as PC executable (Launch4J + Inno Setup) or Android APK
+- **Export Targets** -- package as desktop builds or generate a Web Start bundle (JNLP + landing page)
 
 ## Requirements
 
@@ -77,7 +77,7 @@ assets/                      -- UI resources, images, code templates
 | Scripting | Custom DSL via ANTLR4 |
 | Build System | Gradle |
 | Code Editor | RSyntaxTextArea |
-| Packaging | Shadow JAR, Launch4J, Inno Setup |
+| Packaging | Shadow JAR, Launch4J, Web Start bundle generation |
 
 ## Third-Party Libraries
 
