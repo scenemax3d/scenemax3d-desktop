@@ -696,6 +696,9 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 "      <menu submenu=\"" + title + "\"/>\n" +
                 "    </shortcut>\n" +
                 "  </information>\n" +
+                "  <security>\n" +
+                "    <all-permissions/>\n" +
+                "  </security>\n" +
                 "  <resources>\n" +
                 "    <j2se version=\"11+\"/>\n" +
                 "    <jar href=\"" + escapeXml(gameName) + ".jar\" main=\"true\" download=\"eager\"/>\n" +

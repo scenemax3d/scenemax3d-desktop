@@ -34,12 +34,17 @@ public class SwitchStateController extends SceneMaxBaseController {
         String code = null;
         String codePath = this.app.getWorkingFolder();
         File runningFolder = new File(codePath);
-        // first, search code in file system
         File f = new File(runningFolder, filePath);
-        if(f.exists()) {
-            code = SceneMaxLanguageParser.readFile(f);
-        } else {
-            // code not exists in FS so search the in JAR itself (as a resource)
+        try {
+            if(f.exists()) {
+                code = SceneMaxLanguageParser.readFile(f);
+            }
+        } catch (SecurityException ex) {
+            // Packaged Web Start launches may deny direct local reads; try bundled resources below.
+            code = null;
+        }
+
+        if (code == null) {
             if (!filePath.startsWith("/")) {
                 filePath = "/" + filePath;
             }
@@ -52,7 +57,6 @@ public class SwitchStateController extends SceneMaxBaseController {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-
         }
 
         return code;

@@ -160,20 +160,21 @@ public class SceneMaxLauncher implements IAppObserver {
         File folder = new File("running");
         File f=new File(folder, "main");
 
-        String program = "";
-        if(!f.exists()) {
-            System.out.println("script file: "+f.getAbsolutePath()+" not found.");
-            return null;
-        }
-
         try {
-            program = FileUtils.readFileToString(f,StandardCharsets.UTF_8);
+            if(!f.exists()) {
+                System.out.println("script file: "+f.getAbsolutePath()+" not found.");
+                return null;
+            }
 
+            return FileUtils.readFileToString(f,StandardCharsets.UTF_8);
+        } catch (SecurityException ex) {
+            // Web Start sandboxes local file access unless the app is granted permissions.
+            System.out.println("script file access denied for " + f.getPath() + ", falling back to bundled resource.");
+            return null;
         } catch(Exception ex) {
             ex.printStackTrace();
         }
-
-        return program;
+        return null;
 
     }
 

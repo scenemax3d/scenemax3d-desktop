@@ -32,12 +32,22 @@ public class UILoadController extends SceneMaxBaseController {
         try {
             if (loadCmd.filePath != null && !loadCmd.filePath.isEmpty()) {
                 File uiFile = new File(loadCmd.filePath);
-                if (uiFile.exists()) {
-                    app.loadUIDocument(uiFile);
-                } else if (app.loadPackagedUiDocument(loadCmd.uiName)) {
-                    // loaded from jar resources
-                } else {
-                    app.handleRuntimeError("UI file not found: " + loadCmd.filePath);
+                boolean loadedFromFile = false;
+                try {
+                    if (uiFile.exists()) {
+                        app.loadUIDocument(uiFile);
+                        loadedFromFile = true;
+                    }
+                } catch (SecurityException ex) {
+                    loadedFromFile = false;
+                }
+
+                if (!loadedFromFile) {
+                    if (app.loadPackagedUiDocument(loadCmd.uiName)) {
+                        // loaded from jar resources
+                    } else {
+                        app.handleRuntimeError("UI file not found: " + loadCmd.filePath);
+                    }
                 }
             } else {
                 app.handleRuntimeError("UI.load: no file path resolved for '" + loadCmd.uiName + "'");
