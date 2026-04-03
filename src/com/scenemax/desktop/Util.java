@@ -82,6 +82,8 @@ public class Util {
     public static String FTP_HOST_NAME;
     public static String FTP_PASSWORD;
     public static String FTP_USER_NAME;
+    public static int FTP_PORT = 21;
+    public static String FILE_TRANSFER_PROTOCOL = "FTP";
     public static String CONSUMER_SECRET;
     public static String CONSUMER_KEY;
     public static String WRITE_CONSUMER_SECRET;
@@ -1222,7 +1224,7 @@ public class Util {
 
         try {
 
-            client.connect(FTP_HOST);
+            client.connect(FTP_HOST, FTP_PORT <= 0 ? 21 : FTP_PORT);
             client.login(USERNAME, PASSWORD);
             client.setType(FTPClient.TYPE_BINARY);
             //   client.changeDirectory("/upload/");
@@ -1239,6 +1241,128 @@ public class Util {
             }
         }
 
+    }
+
+    public static void ftpUploadFiles(List<File> files, String remoteFolder, IMonitor monitor) throws Exception {
+
+        if ("SFTP".equalsIgnoreCase(FILE_TRANSFER_PROTOCOL)) {
+            SFTP.uploadFiles(FTP_HOST_NAME, FTP_PORT <= 0 ? 22 : FTP_PORT, FTP_USER_NAME, FTP_PASSWORD, remoteFolder, files, monitor);
+            return;
+        }
+
+        FTPClient client = new FTPClient();
+
+        String username = FTP_USER_NAME;
+        String password = FTP_PASSWORD;
+        String ftpHost = FTP_HOST_NAME;
+
+        try {
+            client.connect(ftpHost, FTP_PORT <= 0 ? 21 : FTP_PORT);
+            client.login(username, password);
+            client.setType(FTPClient.TYPE_BINARY);
+            ensureFtpDirectory(client, remoteFolder);
+
+            long totalBytes = 0;
+            int totalFiles = 0;
+            for (File file : files) {
+                if (file != null && file.exists() && file.isFile()) {
+                    totalBytes += Math.max(1L, file.length());
+                    totalFiles += 1;
+                }
+            }
+
+            final long totalBytesFinal = totalBytes;
+            long uploadedBytes = 0;
+            int uploadedFiles = 0;
+            for (File file : files) {
+                if (file == null || !file.exists() || !file.isFile()) {
+                    continue;
+                }
+                uploadedFiles += 1;
+                long fileSize = Math.max(1L, file.length());
+                if (monitor != null) {
+                    monitor.setNote("Uploading file " + uploadedFiles + " of " + totalFiles + ": " + file.getName());
+                }
+                final long baseBytes = uploadedBytes;
+                client.upload(file, new FTPDataTransferListener() {
+                    private long fileTransferred;
+
+                    @Override
+                    public void started() {
+                    }
+
+                    @Override
+                    public void transferred(int length) {
+                        fileTransferred += length;
+                        if (monitor != null && totalBytesFinal > 0) {
+                            long aggregate = Math.min(totalBytesFinal, baseBytes + fileTransferred);
+                            int progress = (int) Math.min(100L, (aggregate * 100L) / totalBytesFinal);
+                            monitor.setProgress(progress);
+                        }
+                    }
+
+                    @Override
+                    public void completed() {
+                        if (monitor != null && totalBytesFinal > 0) {
+                            long aggregate = Math.min(totalBytesFinal, baseBytes + fileSize);
+                            int progress = (int) Math.min(100L, (aggregate * 100L) / totalBytesFinal);
+                            monitor.setProgress(progress);
+                        }
+                    }
+
+                    @Override
+                    public void aborted() {
+                    }
+
+                    @Override
+                    public void failed() {
+                    }
+                });
+                uploadedBytes += fileSize;
+            }
+            if (monitor != null) {
+                monitor.setProgress(100);
+                monitor.setNote("Upload completed.");
+                monitor.onEnd();
+            }
+        } catch (Exception e) {
+            try {
+                client.disconnect(true);
+            } catch (Exception ignored) {
+            }
+            throw e;
+        } finally {
+            try {
+                client.disconnect(true);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private static void ensureFtpDirectory(FTPClient client, String remoteFolder) throws Exception {
+        if (remoteFolder == null || remoteFolder.trim().length() == 0) {
+            return;
+        }
+
+        String normalized = remoteFolder.trim().replace("\\", "/");
+        boolean absolute = normalized.startsWith("/");
+        if (absolute) {
+            client.changeDirectory("/");
+        }
+
+        String[] parts = normalized.split("/");
+        for (String part : parts) {
+            String segment = part.trim();
+            if (segment.length() == 0) {
+                continue;
+            }
+            try {
+                client.changeDirectory(segment);
+            } catch (Exception changeFailed) {
+                client.createDirectory(segment);
+                client.changeDirectory(segment);
+            }
+        }
     }
 
     public static boolean isJSONValid(String test) {

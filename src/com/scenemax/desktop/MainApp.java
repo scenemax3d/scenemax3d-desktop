@@ -375,6 +375,12 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         Util.FTP_HOST_NAME = getParam("ftp_host_name", AppConfig.get("ftp_host_name", "scenemax3d.com"));
         Util.FTP_USER_NAME = getParam("ftp_user", AppConfig.get("ftp_user"));
         Util.FTP_PASSWORD = getParam("ftp_password", AppConfig.get("ftp_password"));
+        Util.FILE_TRANSFER_PROTOCOL = getParam("file_transfer_protocol", AppConfig.get("file_transfer_protocol", "FTP"));
+        try {
+            Util.FTP_PORT = Integer.parseInt(getParam("ftp_port", AppConfig.get("ftp_port", "21")));
+        } catch (Exception e) {
+            Util.FTP_PORT = "SFTP".equalsIgnoreCase(Util.FILE_TRANSFER_PROTOCOL) ? 22 : 21;
+        }
     }
 
     private String getParam(String key, String defaultVal) {
