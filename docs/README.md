@@ -26,6 +26,10 @@
 - [Path Replay](path-replay.md)
 - [Utilities](utilities.md)
 
+## Design Notes
+
+- [Effekseer Particle System Designer](effekseer-particle-designer.md)
+
 ## Quick Start
 
 ```scenemax

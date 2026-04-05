@@ -80,6 +80,7 @@ dependencies {
 
     implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: [])
 
+    implementation project(":scenemax_effekseer_runtime")
     implementation project(":scenemax3d_common_types")
     implementation project(":scenemax3d_compiler")
 

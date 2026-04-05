@@ -28,6 +28,8 @@ sourceSets {
 def jme3 = [v: '3.9.0-stable', g: 'org.jmonkeyengine']
 
 dependencies {
+    implementation project(":scenemax_effekseer_runtime")
+
     // SceneMaxApp from the projector module
     implementation project(":scenemax_win_projector")
     implementation project(":scenemax3d_compiler")
@@ -43,4 +45,17 @@ dependencies {
     // JSON for document format
     implementation 'org.json:json:20210307'
     implementation 'commons-io:commons-io:2.11.0'
+}
+
+tasks.register('runEffekseerNativeSmokeTest', JavaExec) {
+    group = 'application'
+    description = 'Runs a standalone native Effekseer smoke test using the real JME application loop.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.scenemax.designer.effekseer.EffekseerNativeRuntimeSmokeApp'
+    workingDir = rootProject.projectDir
+    systemProperty 'scenemax.effekseer.nativeLib',
+            new File(rootProject.projectDir, 'scenemax_effekseer_runtime/assets/native/windows-x86_64/scenemax_effekseer_jni.dll').absolutePath
+    if (project.hasProperty('effekseerTestEffect')) {
+        args(project.property('effekseerTestEffect').toString())
+    }
 }

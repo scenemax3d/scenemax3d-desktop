@@ -3,6 +3,7 @@ package com.scenemax.desktop;
 import com.scenemax.designer.DesignerDocument;
 import com.scenemax.designer.DesignerPanel;
 import com.scenemax.designer.Import3DModelPanel;
+import com.scenemax.designer.effekseer.EffekseerEffectDesignerPanel;
 import com.scenemax.designer.shader.EnvironmentShaderDesignerPanel;
 import com.scenemax.designer.shader.ShaderDesignerPanel;
 import com.scenemax.designer.ui.designer.UIDesignerPanel;
@@ -32,6 +33,8 @@ public class EditorTabPanel extends JPanel {
         DesignerPanel designerPanel;
         boolean isUIDesignerTab;
         UIDesignerPanel uiDesignerPanel;
+        boolean isEffekseerDesignerTab;
+        EffekseerEffectDesignerPanel effekseerDesignerPanel;
         boolean isShaderDesignerTab;
         ShaderDesignerPanel shaderDesignerPanel;
         boolean isEnvironmentShaderDesignerTab;
@@ -47,6 +50,8 @@ public class EditorTabPanel extends JPanel {
             this.designerPanel = null;
             this.isUIDesignerTab = false;
             this.uiDesignerPanel = null;
+            this.isEffekseerDesignerTab = false;
+            this.effekseerDesignerPanel = null;
             this.isShaderDesignerTab = false;
             this.shaderDesignerPanel = null;
             this.isEnvironmentShaderDesignerTab = false;
@@ -126,6 +131,8 @@ public class EditorTabPanel extends JPanel {
                 name = "\u25A6 " + name; // square with fill icon prefix
             } else if (tabData.isUIDesignerTab) {
                 name = "\u25A4 " + name; // UI designer icon prefix
+            } else if (tabData.isEffekseerDesignerTab) {
+                name = "\u2739 " + name; // effekseer designer icon prefix
             } else if (tabData.isShaderDesignerTab) {
                 name = "\u2726 " + name; // shader icon prefix
             } else if (tabData.isEnvironmentShaderDesignerTab) {
@@ -285,6 +292,38 @@ public class EditorTabPanel extends JPanel {
         switchToTab(tabData);
     }
 
+    public void openEffekseerDesignerFile(String filePath, EffekseerEffectDesignerPanel panel) {
+        String normalizedPath = new File(filePath).getAbsolutePath();
+
+        if (tabButtons.containsKey(normalizedPath)) {
+            TabData existing = null;
+            for (TabData td : tabs) {
+                if (td.filePath.equals(normalizedPath)) {
+                    existing = td;
+                    break;
+                }
+            }
+            if (existing != null) {
+                switchToTab(existing);
+                return;
+            }
+        }
+
+        TabData tabData = new TabData(normalizedPath, "");
+        tabData.isEffekseerDesignerTab = true;
+        tabData.effekseerDesignerPanel = panel;
+        tabs.add(tabData);
+
+        TabButton btn = new TabButton(tabData);
+        btn.updateTitle();
+        tabButtons.put(normalizedPath, btn);
+        tabBar.add(btn);
+        tabBar.revalidate();
+        tabBar.repaint();
+
+        switchToTab(tabData);
+    }
+
     public void openShaderDesignerFile(String filePath, ShaderDesignerPanel panel) {
         String normalizedPath = new File(filePath).getAbsolutePath();
 
@@ -354,6 +393,7 @@ public class EditorTabPanel extends JPanel {
 
         // Save current state from editor into old tab (only for non-designer tabs)
         if (activeTab != null && !activeTab.isDesignerTab && !activeTab.isUIDesignerTab
+                && !activeTab.isEffekseerDesignerTab
                 && !activeTab.isShaderDesignerTab && !activeTab.isEnvironmentShaderDesignerTab) {
             activeTab.content = getCurrentEditorText();
             activeTab.caretPosition = getCurrentCaretPosition();
@@ -378,6 +418,11 @@ public class EditorTabPanel extends JPanel {
             if (newTab.uiDesignerPanel != null) {
                 newTab.uiDesignerPanel.activatePanel();
                 centerContainer.add(newTab.uiDesignerPanel, BorderLayout.CENTER);
+            }
+        } else if (newTab.isEffekseerDesignerTab) {
+            if (newTab.effekseerDesignerPanel != null) {
+                newTab.effekseerDesignerPanel.activatePanel();
+                centerContainer.add(newTab.effekseerDesignerPanel, BorderLayout.CENTER);
             }
         } else if (newTab.isShaderDesignerTab) {
             if (newTab.shaderDesignerPanel != null) {
@@ -455,6 +500,10 @@ public class EditorTabPanel extends JPanel {
             if (tabData.uiDesignerPanel != null) {
                 tabData.uiDesignerPanel.deactivatePanel();
             }
+        } else if (tabData.isEffekseerDesignerTab) {
+            if (tabData.effekseerDesignerPanel != null) {
+                tabData.effekseerDesignerPanel.deactivatePanel();
+            }
         } else if (tabData.isShaderDesignerTab) {
             if (tabData.shaderDesignerPanel != null) {
                 tabData.shaderDesignerPanel.deactivatePanel();
@@ -518,6 +567,17 @@ public class EditorTabPanel extends JPanel {
             // Trigger UI designer save
             if (activeTab.uiDesignerPanel != null) {
                 activeTab.uiDesignerPanel.saveDocument();
+            }
+            activeTab.dirty = false;
+            TabButton btn = tabButtons.get(activeTab.filePath);
+            if (btn != null) {
+                btn.updateTitle();
+            }
+            return;
+        }
+        if (activeTab.isEffekseerDesignerTab) {
+            if (activeTab.effekseerDesignerPanel != null) {
+                activeTab.effekseerDesignerPanel.saveDocument();
             }
             activeTab.dirty = false;
             TabButton btn = tabButtons.get(activeTab.filePath);
@@ -618,6 +678,7 @@ public class EditorTabPanel extends JPanel {
         String normalizedPath = new File(filePath).getAbsolutePath();
         for (TabData td : tabs) {
             if (td.filePath.equals(normalizedPath) && !td.isDesignerTab && !td.isUIDesignerTab
+                    && !td.isEffekseerDesignerTab
                     && !td.isShaderDesignerTab && !td.isEnvironmentShaderDesignerTab) {
                 td.content = newContent;
                 td.dirty = false;
@@ -685,6 +746,11 @@ public class EditorTabPanel extends JPanel {
                 toClose.uiDesignerPanel.clearAndDeactivatePanel();
                 toClose.uiDesignerPanel = null;
                 toClose.isUIDesignerTab = false;
+            }
+            if (deleting && toClose.isEffekseerDesignerTab && toClose.effekseerDesignerPanel != null) {
+                toClose.effekseerDesignerPanel.clearAndDeactivatePanel();
+                toClose.effekseerDesignerPanel = null;
+                toClose.isEffekseerDesignerTab = false;
             }
             if (deleting && toClose.isShaderDesignerTab && toClose.shaderDesignerPanel != null) {
                 toClose.shaderDesignerPanel.clearAndDeactivatePanel();
