@@ -19,7 +19,7 @@ player1_slow_motion (tm, frame_count) = {
 }
 
 when player1_ko == 1 do
-  
+    
   do async
 		wait 0.5 seconds
 		audio.play "crash1"

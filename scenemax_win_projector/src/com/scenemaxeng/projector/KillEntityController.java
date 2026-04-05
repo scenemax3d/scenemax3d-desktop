@@ -24,6 +24,8 @@ public class KillEntityController extends SceneMaxBaseController{
             app.killBox(targetVar);
         } else if(targetVarDef.varType== VariableDef.VAR_TYPE_SPHERE) {
             app.killSphere(targetVar);
+        } else if(targetVarDef.varType== VariableDef.VAR_TYPE_EFFEKSEER) {
+            app.killEffekseerEffect(targetVar);
         } else if(targetVarDef.varType== VariableDef.VAR_TYPE_OBJECT) {
             //app.killSprite(targetVar);
         }

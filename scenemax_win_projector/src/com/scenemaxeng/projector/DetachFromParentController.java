@@ -26,6 +26,8 @@ public class DetachFromParentController extends SceneMaxBaseController {
                 app.detachBoxFromParent(targetVar);
             } else if (targetVarDef.varType == VariableDef.VAR_TYPE_2D) {
                 app.detachSpriteFromParent(targetVar);
+            } else if (targetVarDef.varType == VariableDef.VAR_TYPE_EFFEKSEER) {
+                app.detachEffekseerFromParent(targetVar);
             }
 
         }

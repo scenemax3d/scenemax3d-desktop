@@ -12,15 +12,18 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class EffekseerNativeBridge {
 
     private static final String PROPERTY_NATIVE_LIB = "scenemax.effekseer.nativeLib";
     private static final String LIBRARY_BASENAME = "scenemax_effekseer_jni";
     private static final Object LOAD_LOCK = new Object();
+    private static final AtomicBoolean missingTransformMethodLogged = new AtomicBoolean(false);
 
     private static volatile boolean loadAttempted;
     private static volatile boolean libraryLoaded;
+    private static volatile boolean effectTransformSupported = true;
     private static volatile String loadMessage = "Native bridge has not been loaded yet.";
     private static volatile File extractedLibraryFile;
 
@@ -131,6 +134,55 @@ public final class EffekseerNativeBridge {
         if (libraryLoaded && contextHandle != 0L) {
             nativeSetTargetLocation(contextHandle, x, y, z);
         }
+    }
+
+    public static void setEffectLocation(long contextHandle, float x, float y, float z) {
+        if (libraryLoaded && contextHandle != 0L) {
+            nativeSetEffectLocation(contextHandle, x, y, z);
+        }
+    }
+
+    public static void setDynamicInput(long contextHandle, int index, float value) {
+        if (libraryLoaded && contextHandle != 0L) {
+            nativeSetDynamicInput(contextHandle, index, value);
+        }
+    }
+
+    public static void playEffect(long contextHandle) {
+        if (libraryLoaded && contextHandle != 0L) {
+            nativePlayEffect(contextHandle);
+        }
+    }
+
+    public static void stopEffect(long contextHandle) {
+        if (libraryLoaded && contextHandle != 0L) {
+            nativeStopEffect(contextHandle);
+        }
+    }
+
+    public static boolean isEffectPlaying(long contextHandle) {
+        return libraryLoaded && contextHandle != 0L && nativeIsEffectPlaying(contextHandle);
+    }
+
+    public static void setEffectTransform(long contextHandle, Matrix4f worldTransform) {
+        if (libraryLoaded && contextHandle != 0L && worldTransform != null) {
+            if (!effectTransformSupported) {
+                return;
+            }
+            try {
+                nativeSetEffectTransform(contextHandle, toArray(worldTransform));
+            } catch (UnsatisfiedLinkError ex) {
+                effectTransformSupported = false;
+                if (missingTransformMethodLogged.compareAndSet(false, true)) {
+                    System.err.println("Effekseer native bridge loaded an older DLL without nativeSetEffectTransform(...). "
+                            + "Falling back without transform support until the native library is rebuilt.");
+                }
+            }
+        }
+    }
+
+    public static boolean isEffectTransformSupported() {
+        return effectTransformSupported;
     }
 
     public static void setCompositeEnabled(long contextHandle, boolean enabled) {
@@ -265,6 +317,12 @@ public final class EffekseerNativeBridge {
     private static native void nativeSetLooping(long contextHandle, boolean loop);
     private static native void nativeSetPlaybackSpeed(long contextHandle, float speed);
     private static native void nativeSetTargetLocation(long contextHandle, float x, float y, float z);
+    private static native void nativeSetEffectLocation(long contextHandle, float x, float y, float z);
+    private static native void nativeSetDynamicInput(long contextHandle, int index, float value);
+    private static native void nativePlayEffect(long contextHandle);
+    private static native void nativeStopEffect(long contextHandle);
+    private static native boolean nativeIsEffectPlaying(long contextHandle);
+    private static native void nativeSetEffectTransform(long contextHandle, float[] worldTransform);
     private static native void nativeSetCompositeEnabled(long contextHandle, boolean enabled);
     private static native void nativeSetCamera(long contextHandle, float[] viewMatrix, float[] projectionMatrix, float[] cameraPosition);
     private static native void nativeUpdate(long contextHandle, float deltaSeconds);

@@ -129,6 +129,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     protected Integer doInBackground() throws Exception {
 
         SceneMaxLanguageParser.modelsUsed = new ArrayList<>();
+        SceneMaxLanguageParser.effekseerUsed = new ArrayList<>();
         SceneMaxLanguageParser.spriteSheetUsed = new ArrayList<>();
         SceneMaxLanguageParser.audioUsed = new ArrayList<>();
         SceneMaxLanguageParser.fontsUsed = new ArrayList<>();
@@ -151,6 +152,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         File texDir = new File(deployFolder, "Textures");
         FileUtils.forceMkdir(texDir);
+        File effekseerDir = new File(deployFolder, "resources/effects");
+        FileUtils.forceMkdir(effekseerDir);
 
         try {
 //
@@ -228,6 +231,21 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 this.cancel(true);
                 return 0;
             }
+        }
+
+        for (String effectName : SceneMaxLanguageParser.effekseerUsed) {
+            String assetId = effectName;
+            String prefix = "effects.effekseer.";
+            if (assetId.toLowerCase().startsWith(prefix)) {
+                assetId = assetId.substring(prefix.length());
+            }
+            File sourceDir = new File(Util.getResourcesFolder(), "effects/" + assetId);
+            File targetDir = new File(deployFolder, "resources/effects/" + assetId);
+            if (!sourceDir.isDirectory()) {
+                this.cancel(true);
+                return 0;
+            }
+            FileUtils.copyDirectory(sourceDir, targetDir);
         }
 
         // copy all materials - in the future, check and copy just what is needed

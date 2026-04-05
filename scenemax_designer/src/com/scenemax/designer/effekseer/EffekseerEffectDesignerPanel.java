@@ -24,6 +24,7 @@ public class EffekseerEffectDesignerPanel extends JPanel {
     private EffekseerEffectDocument document;
     private boolean dirty = false;
     private Runnable onDirtyCallback;
+    private Runnable onSavedCallback;
     private EffekseerPreviewApp previewApp;
     private Canvas previewCanvas;
     private JPanel previewContainer;
@@ -64,6 +65,10 @@ public class EffekseerEffectDesignerPanel extends JPanel {
         this.onDirtyCallback = onDirtyCallback;
     }
 
+    public void setOnSavedCallback(Runnable onSavedCallback) {
+        this.onSavedCallback = onSavedCallback;
+    }
+
     public void activatePanel() {
         ensurePreviewInitialized();
         refreshToolPath();
@@ -97,8 +102,16 @@ public class EffekseerEffectDesignerPanel extends JPanel {
     public void saveDocument() {
         try {
             applyUiToDocument();
+            EffekseerImporter.ensureAssetForDocument(document, documentFile, resourcesFolder);
             document.save(documentFile);
             dirty = false;
+            txtAssetId.setText(document.getAssetId());
+            txtImportedEffect.setText(document.getImportedEffectFile());
+            refreshDiagnostics();
+            refreshEmbeddedPreview();
+            if (onSavedCallback != null) {
+                onSavedCallback.run();
+            }
         } catch (IOException ex) {
             ex.printStackTrace();
             JOptionPane.showMessageDialog(this,
@@ -282,6 +295,7 @@ public class EffekseerEffectDesignerPanel extends JPanel {
         txtName = new JTextField();
         txtName.getDocument().addDocumentListener(SimpleDocumentListener.of(this::markDirty));
         txtAssetId = readOnlyField();
+        txtAssetId.setToolTipText("Use this asset id in SceneMax code: effects.effekseer.<assetId>");
         txtImportedEffect = readOnlyField();
         txtOriginalPath = readOnlyField();
         txtImportedAt = readOnlyField();
@@ -548,6 +562,9 @@ public class EffekseerEffectDesignerPanel extends JPanel {
             dirty = false;
             refreshDiagnostics();
             refreshEmbeddedPreview();
+            if (onSavedCallback != null) {
+                onSavedCallback.run();
+            }
             JOptionPane.showMessageDialog(this,
                     "Reimported " + result.getImportedEffectFile().getName(),
                     "Effekseer Reimport",

@@ -76,6 +76,7 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
     protected Integer doInBackground() throws Exception {
 
         SceneMaxLanguageParser.modelsUsed=new ArrayList<>();
+        SceneMaxLanguageParser.effekseerUsed=new ArrayList<>();
         SceneMaxLanguageParser.spriteSheetUsed=new ArrayList<>();
         SceneMaxLanguageParser.audioUsed=new ArrayList<>();
         SceneMaxLanguageParser.fontsUsed=new ArrayList<>();
@@ -158,6 +159,11 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
                 probesDir.mkdir();
             }
 
+            File effectDir = new File(targetFolderName+"/resources/effects");
+            if(!effectDir.exists()) {
+                effectDir.mkdirs();
+            }
+
 
         }catch(Exception ex) {
 
@@ -230,6 +236,21 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
                         }
 
                     }
+                }
+            }
+        }
+
+        if(!exportCodeOnly) {
+            for (String effectName : SceneMaxLanguageParser.effekseerUsed) {
+                String assetId = effectName;
+                String prefix = "effects.effekseer.";
+                if (assetId.toLowerCase().startsWith(prefix)) {
+                    assetId = assetId.substring(prefix.length());
+                }
+                File src = new File(Util.getResourcesFolder(), "effects/" + assetId);
+                File dest = new File("./" + targetFolderName + "/resources/effects/" + assetId);
+                if (src.isDirectory()) {
+                    FileUtils.copyDirectory(src, dest);
                 }
             }
         }

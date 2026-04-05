@@ -45,7 +45,7 @@ d.hide
 Make one object face another:
 
 ```scenemax
-n look at (n2)
+n.look at (n2)
 ```
 
 ## Angle Between Objects

@@ -5,6 +5,7 @@ import com.intellij.uiDesigner.core.Spacer;
 import com.scenemax.designer.DesignerDocument;
 import com.scenemax.designer.DesignerPanel;
 import com.scenemax.designer.Import3DModelPanel;
+import com.scenemax.designer.effekseer.EffekseerEffectDocument;
 import com.scenemax.designer.effekseer.EffekseerEffectDesignerPanel;
 import com.scenemax.designer.effekseer.EffekseerImportResult;
 import com.scenemax.designer.effekseer.EffekseerImporter;
@@ -1232,10 +1233,11 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         // are not accidentally written to a future file
                         boolean isDesigner = f.getName().toLowerCase().endsWith(".smdesign");
                         boolean isUIDesigner = f.getName().toLowerCase().endsWith(".smui");
+                        boolean isEffekseerDesigner = f.getName().toLowerCase().endsWith(".smeffectdesign");
                         boolean isShaderDesigner = f.getName().toLowerCase().endsWith(".smshader");
                         boolean isEnvironmentShaderDesigner = f.getName().toLowerCase().endsWith(".smenvshader");
                         editorTabPanel.closeTabByPath(filePath,
-                                isDesigner || isUIDesigner || isShaderDesigner || isEnvironmentShaderDesigner);
+                                isDesigner || isUIDesigner || isEffekseerDesigner || isShaderDesigner || isEnvironmentShaderDesigner);
 
                         // If this is a .smdesign file, also delete its companion .code, _init.code
                         // and _end.code files and clean up any DB references (open_tabs)
@@ -1310,9 +1312,24 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                             }
                         }
 
+                        if (isEffekseerDesigner) {
+                            try {
+                                EffekseerEffectDocument doc = EffekseerEffectDocument.load(f);
+                                String resourcesFolder = Util.getResourcesFolder();
+                                if (resourcesFolder != null && !resourcesFolder.isBlank()) {
+                                    EffekseerImporter.deleteDocumentAsset(doc, new File(resourcesFolder));
+                                }
+                            } catch (IOException ex) {
+                                ex.printStackTrace();
+                            }
+                        }
+
                         f.delete();
                         obj.removeFromParent();
                         tree1.updateUI();
+                        if (isEffekseerDesigner) {
+                            refreshAssetsMenu();
+                        }
                     }
 
                 } else if (cmd.equals("upload_to_web")) {//
@@ -2059,6 +2076,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
         EffekseerEffectDesignerPanel effectPanel = new EffekseerEffectDesignerPanel(projectPath, f);
         effectPanel.setOnDirtyCallback(() -> editorTabPanel.markActiveTabDirty());
+        effectPanel.setOnSavedCallback(() -> {
+            loadScriptsFolder();
+            refreshAssetsMenu();
+        });
         editorTabPanel.openEffekseerDesignerFile(f.getAbsolutePath(), effectPanel);
 
         lastSelectedFilePath = f.getAbsolutePath();

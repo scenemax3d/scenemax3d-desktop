@@ -24,7 +24,7 @@ public class EffekseerImporter {
         String baseName = baseName(sourceEffectFile.getName());
         String assetId = uniqueAssetId(new File(resourcesFolder, "effects"),
                 EffekseerEffectDocument.sanitizeAssetId(baseName));
-        return importEffectInternal(sourceEffectFile, resourcesFolder, targetScriptsFolder, assetId, assetId + ".smeffectdesign");
+        return importEffectInternal(sourceEffectFile, resourcesFolder, targetScriptsFolder, assetId, assetId + ".smeffectdesign", baseName);
     }
 
     public static EffekseerImportResult reimport(EffekseerEffectDocument document,
@@ -41,14 +41,99 @@ public class EffekseerImporter {
                 resourcesFolder,
                 documentFile.getParentFile(),
                 EffekseerEffectDocument.sanitizeAssetId(document.getAssetId()),
-                documentFile.getName());
+                documentFile.getName(),
+                document.getName());
+    }
+
+    public static EffekseerImportResult ensureAssetForDocument(EffekseerEffectDocument document,
+                                                               File documentFile,
+                                                               File resourcesFolder) throws IOException {
+        if (document == null || documentFile == null) {
+            throw new IOException("Effect document is missing.");
+        }
+        if (resourcesFolder == null) {
+            throw new IOException("Project resources folder is not available.");
+        }
+
+        String assetId = EffekseerEffectDocument.sanitizeAssetId(document.getAssetId());
+        document.setAssetId(assetId);
+
+        File effectsRoot = new File(resourcesFolder, "effects");
+        if (!effectsRoot.exists() && !effectsRoot.mkdirs()) {
+            throw new IOException("Failed to create effects folder: " + effectsRoot.getAbsolutePath());
+        }
+
+        File targetAssetFolder = new File(effectsRoot, assetId);
+        File importedEffectFile = resolveImportedEffectFile(document, resourcesFolder);
+        if (importedEffectFile != null && importedEffectFile.isFile()) {
+            File currentAssetFolder = importedEffectFile.getParentFile();
+            if (currentAssetFolder != null && !sameFile(currentAssetFolder, targetAssetFolder)) {
+                if (targetAssetFolder.exists()) {
+                    FileUtils.deleteDirectory(targetAssetFolder);
+                }
+                FileUtils.moveDirectory(currentAssetFolder, targetAssetFolder);
+                importedEffectFile = new File(targetAssetFolder, importedEffectFile.getName());
+                document.setImportedEffectFile(resourcesFolder.toPath().relativize(importedEffectFile.toPath()).toString().replace("\\", "/"));
+            }
+            List<String> diagnostics = new ArrayList<>();
+            diagnostics.add("Effekseer asset synchronized under " + targetAssetFolder.getAbsolutePath());
+            return new EffekseerImportResult(documentFile, targetAssetFolder, importedEffectFile, diagnostics);
+        }
+
+        File targetEffectFile = firstRuntimeCandidate(targetAssetFolder);
+        if (targetEffectFile != null) {
+            document.setImportedEffectFile(resourcesFolder.toPath().relativize(targetEffectFile.toPath()).toString().replace("\\", "/"));
+            List<String> diagnostics = new ArrayList<>();
+            diagnostics.add("Effekseer asset linked from " + targetAssetFolder.getAbsolutePath());
+            return new EffekseerImportResult(documentFile, targetAssetFolder, targetEffectFile, diagnostics);
+        }
+
+        String originalImportPath = document.getOriginalImportPath();
+        if (originalImportPath != null && !originalImportPath.isBlank()) {
+            File sourceEffectFile = new File(originalImportPath);
+            if (sourceEffectFile.isFile()) {
+                return importEffectInternal(sourceEffectFile,
+                        resourcesFolder,
+                        documentFile.getParentFile(),
+                        assetId,
+                        documentFile.getName(),
+                        document.getName());
+            }
+        }
+
+        throw new IOException("No Effekseer resource is linked to this document yet. Import or reimport an effect first.");
+    }
+
+    public static void deleteDocumentAsset(EffekseerEffectDocument document, File resourcesFolder) throws IOException {
+        if (document == null || resourcesFolder == null) {
+            return;
+        }
+
+        File importedEffectFile = resolveImportedEffectFile(document, resourcesFolder);
+        File effectsRoot = new File(resourcesFolder, "effects");
+        File assetFolder = new File(effectsRoot, EffekseerEffectDocument.sanitizeAssetId(document.getAssetId()));
+
+        if (assetFolder.isDirectory()) {
+            FileUtils.deleteDirectory(assetFolder);
+        }
+
+        File importedAssetFolder = importedEffectFile != null ? importedEffectFile.getParentFile() : null;
+        if (importedAssetFolder != null && importedAssetFolder.isDirectory() && !sameFile(importedAssetFolder, assetFolder)) {
+            File canonicalRoot = effectsRoot.getCanonicalFile();
+            File canonicalImportedAssetFolder = importedAssetFolder.getCanonicalFile();
+            if (canonicalImportedAssetFolder.getParentFile() != null
+                    && sameFile(canonicalImportedAssetFolder.getParentFile(), canonicalRoot)) {
+                FileUtils.deleteDirectory(importedAssetFolder);
+            }
+        }
     }
 
     private static EffekseerImportResult importEffectInternal(File sourceEffectFile,
                                                               File resourcesFolder,
                                                               File targetScriptsFolder,
                                                               String assetId,
-                                                              String documentName) throws IOException {
+                                                              String documentName,
+                                                              String displayName) throws IOException {
         File effectsRoot = new File(resourcesFolder, "effects");
         if (!effectsRoot.exists() && !effectsRoot.mkdirs()) {
             throw new IOException("Failed to create effects folder: " + effectsRoot.getAbsolutePath());
@@ -94,7 +179,7 @@ public class EffekseerImporter {
         String extension = extension(sourceEffectFile.getName());
         EffekseerEffectDocument document = EffekseerEffectDocument.createImported(
                 documentFile.getAbsolutePath(),
-                baseName(sourceEffectFile.getName()),
+                displayName,
                 assetId,
                 relativeEffectPath,
                 extension.startsWith(".") ? extension.substring(1) : extension,
@@ -173,5 +258,34 @@ public class EffekseerImporter {
     private static String extension(String fileName) {
         int dot = fileName.lastIndexOf('.');
         return dot >= 0 ? fileName.substring(dot) : "";
+    }
+
+    private static File resolveImportedEffectFile(EffekseerEffectDocument document, File resourcesFolder) {
+        if (document == null || resourcesFolder == null) {
+            return null;
+        }
+        String importedEffectFile = document.getImportedEffectFile();
+        if (importedEffectFile == null || importedEffectFile.isBlank()) {
+            return null;
+        }
+        return new File(resourcesFolder, importedEffectFile);
+    }
+
+    private static File firstRuntimeCandidate(File assetFolder) {
+        if (assetFolder == null || !assetFolder.isDirectory()) {
+            return null;
+        }
+        File[] candidates = assetFolder.listFiles((dir, name) -> {
+            String lower = name.toLowerCase(Locale.ROOT);
+            return lower.endsWith(".efkefc") || lower.endsWith(".efk") || lower.endsWith(".efkproj");
+        });
+        return candidates != null && candidates.length > 0 ? candidates[0] : null;
+    }
+
+    private static boolean sameFile(File a, File b) throws IOException {
+        if (a == null || b == null) {
+            return false;
+        }
+        return a.getCanonicalFile().equals(b.getCanonicalFile());
     }
 }
