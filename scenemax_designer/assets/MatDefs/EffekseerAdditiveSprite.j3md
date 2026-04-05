@@ -1,0 +1,24 @@
+MaterialDef EffekseerAdditiveSprite {
+
+    MaterialParameters {
+        Texture2D ColorMap
+        Color Color
+        Float AlphaDiscardThreshold
+        Float BlackThreshold
+        Float BrightnessPower
+        Float EdgeSoftness
+    }
+
+    Technique {
+        VertexShader GLSL100:   MatDefs/EffekseerAdditiveSprite.vert
+        FragmentShader GLSL100: MatDefs/EffekseerAdditiveSprite.frag
+
+        WorldParameters {
+            WorldViewProjectionMatrix
+        }
+
+        Defines {
+            HAS_COLORMAP : ColorMap
+        }
+    }
+}
