@@ -4,8 +4,6 @@
 .gradle.old/
 build/
 */build/
-gradlew
-gradlew.bat
 gradle/
 
 # IntelliJ IDEA
@@ -176,3 +174,9 @@ config.properties
 !/.github/workflows/
 !/.github/workflows/**
 /.github/workflows/effekseer-native-desktop.yml
+!/gradlew
+!/gradlew.bat
+!/gradle/
+!/gradle/wrapper/
+!/gradle/wrapper/gradle-wrapper.jar
+!/gradle/wrapper/gradle-wrapper.properties

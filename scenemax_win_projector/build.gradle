@@ -77,6 +77,7 @@ dependencies {
     implementation "com.github.stephengold:Garrett:0.5.4"
 
     implementation("com.google.guava:guava:33.5.0-jre")
+    implementation 'org.antlr:antlr4-runtime:4.5.3'
 
     implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: [])
 
@@ -85,5 +86,6 @@ dependencies {
     implementation project(":scenemax3d_compiler")
 
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.antlr:antlr4-runtime:4.5.3'
 }
 
