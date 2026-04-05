@@ -15,6 +15,7 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
     private static final ImageIcon ICON_SCRIPT   = new ImageIcon(ScriptsTreeCellRenderer.class.getResource("/images/3d_script_2_24x24.png"));
     private static final ImageIcon ICON_DESIGNER = createDesignerIcon();
     private static final ImageIcon ICON_UI_DESIGNER = createUIDesignerIcon();
+    private static final ImageIcon ICON_EFFEKSEER_DESIGNER = createEffekseerDesignerIcon();
     private static final ImageIcon ICON_SHADER_DESIGNER = createShaderDesignerIcon();
     private static final ImageIcon ICON_ENVIRONMENT_SHADER_DESIGNER = createEnvironmentShaderDesignerIcon();
 
@@ -41,6 +42,8 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
         String name = value.toString();
         if (name.endsWith(".smdesign")) {
             label.setIcon(ICON_DESIGNER);
+        } else if (name.endsWith(".smeffectdesign")) {
+            label.setIcon(ICON_EFFEKSEER_DESIGNER);
         } else if (name.endsWith(".smui")) {
             label.setIcon(ICON_UI_DESIGNER);
         } else if (name.endsWith(".smshader")) {
@@ -111,6 +114,30 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
         // Small filled rectangle (button representation)
         g.setColor(new Color(0, 150, 180));
         g.fillRoundRect(4, 4, 16, 3, 1, 1);
+
+        g.dispose();
+        return new ImageIcon(img);
+    }
+
+    private static ImageIcon createEffekseerDesignerIcon() {
+        BufferedImage img = new BufferedImage(24, 24, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        GradientPaint paint = new GradientPaint(4, 4, new Color(255, 170, 80), 20, 20, new Color(255, 85, 85));
+        g.setPaint(paint);
+        g.fillOval(4, 4, 16, 16);
+
+        g.setColor(new Color(28, 33, 42));
+        g.setStroke(new BasicStroke(1.7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.drawLine(12, 2, 12, 8);
+        g.drawLine(12, 16, 12, 22);
+        g.drawLine(2, 12, 8, 12);
+        g.drawLine(16, 12, 22, 12);
+        g.drawLine(5, 5, 9, 9);
+        g.drawLine(15, 15, 19, 19);
+        g.drawLine(5, 19, 9, 15);
+        g.drawLine(15, 9, 19, 5);
 
         g.dispose();
         return new ImageIcon(img);

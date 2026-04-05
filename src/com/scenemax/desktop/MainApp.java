@@ -5,6 +5,9 @@ import com.intellij.uiDesigner.core.Spacer;
 import com.scenemax.designer.DesignerDocument;
 import com.scenemax.designer.DesignerPanel;
 import com.scenemax.designer.Import3DModelPanel;
+import com.scenemax.designer.effekseer.EffekseerEffectDesignerPanel;
+import com.scenemax.designer.effekseer.EffekseerImportResult;
+import com.scenemax.designer.effekseer.EffekseerImporter;
 import com.scenemax.designer.shader.EnvironmentShaderDesignerPanel;
 import com.scenemax.designer.shader.EnvironmentShaderDocument;
 import com.scenemax.designer.shader.EnvironmentShaderTemplatePreset;
@@ -29,6 +32,7 @@ import com.formdev.flatlaf.FlatDarkLaf;
 import javax.net.ssl.*;
 import javax.swing.*;
 import javax.swing.event.*;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
@@ -226,6 +230,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 isDocumentChanged = active.dirty;
                 lastSelectedNodeIsFile = true;
                 boolean visualDesignerTab = active.isDesignerTab || active.isUIDesignerTab
+                        || active.isEffekseerDesignerTab
                         || active.isShaderDesignerTab || active.isEnvironmentShaderDesignerTab;
                 textArea.setEnabled(!visualDesignerTab);
                 textAreaRTL.setEnabled(!visualDesignerTab);
@@ -450,6 +455,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     refreshAssetsMenu();
                 } else if (cmd.equals("add_model")) {
                     openImport3DModelDocument();
+                } else if (cmd.equals("import_effekseer")) {
+                    importEffekseerEffect();
                 } else if (cmd.equals("font_generator")) {
                     FontGeneratorDialog dlg = new FontGeneratorDialog(MainApp.this);
                     dlg.setLocationRelativeTo(MainApp.this);
@@ -2038,6 +2045,29 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         saveSelectedTreeNodePosition(f.getParentFile().getPath(), f.getName());
     }
 
+    private void openEffekseerDesignerDocument(File f) {
+        if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
+            editorTabPanel.openEffekseerDesignerFile(f.getAbsolutePath(), null);
+            return;
+        }
+
+        String projectPath = null;
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject != null) {
+            projectPath = activeProject.path;
+        }
+
+        EffekseerEffectDesignerPanel effectPanel = new EffekseerEffectDesignerPanel(projectPath, f);
+        effectPanel.setOnDirtyCallback(() -> editorTabPanel.markActiveTabDirty());
+        editorTabPanel.openEffekseerDesignerFile(f.getAbsolutePath(), effectPanel);
+
+        lastSelectedFilePath = f.getAbsolutePath();
+        lastSelectedNodeIsFile = true;
+        btnRunScript.setEnabled(false);
+
+        saveSelectedTreeNodePosition(f.getParentFile().getPath(), f.getName());
+    }
+
     private void openEnvironmentShaderDesignerDocument(File f) {
         if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
             editorTabPanel.openEnvironmentShaderDesignerFile(f.getAbsolutePath(), null);
@@ -2155,6 +2185,70 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
         editorTabPanel.openDesignerFile(tabPath, importPanel);
         btnRunScript.setEnabled(false);
+    }
+
+    private void importEffekseerEffect() {
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject == null) {
+            JOptionPane.showMessageDialog(this,
+                    "No active project. Please create or select a project first.",
+                    "Effekseer Import",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Import Effekseer Effect");
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        chooser.setFileFilter(new FileNameExtensionFilter(
+                "Effekseer effects (*.efkefc, *.efkproj, *.efk)",
+                "efkefc", "efkproj", "efk"));
+        int result = chooser.showOpenDialog(this);
+        if (result != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+
+        File sourceFile = chooser.getSelectedFile();
+        File targetScriptsFolder = getSelectedScriptsFolder();
+        File resourcesFolder = new File(activeProject.getResourcesPath());
+
+        try {
+            EffekseerImportResult importResult = EffekseerImporter.importEffect(
+                    sourceFile,
+                    resourcesFolder,
+                    targetScriptsFolder
+            );
+            loadScriptsFolder();
+            openEffekseerDesignerDocument(importResult.getDocumentFile());
+            refreshAssetsMenu();
+
+            StringBuilder msg = new StringBuilder();
+            msg.append("Imported ").append(sourceFile.getName()).append("\n");
+            msg.append("Document: ").append(importResult.getDocumentFile().getAbsolutePath()).append("\n");
+            msg.append("Assets: ").append(importResult.getAssetFolder().getAbsolutePath());
+            JOptionPane.showMessageDialog(this, msg.toString(), "Effekseer Import", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this,
+                    ex.getMessage(),
+                    "Effekseer Import",
+                    JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private File getSelectedScriptsFolder() {
+        DefaultMutableTreeNode selectedNode = (DefaultMutableTreeNode) tree1.getLastSelectedPathComponent();
+        if (selectedNode != null && selectedNode.getUserObject() instanceof ScriptPathNode) {
+            File selectedFile = new File(((ScriptPathNode) selectedNode.getUserObject()).getPath());
+            if (selectedFile.isDirectory()) {
+                return selectedFile;
+            }
+            File parent = selectedFile.getParentFile();
+            if (parent != null) {
+                return parent;
+            }
+        }
+        return new File(Util.getScriptsFolder());
     }
 
     private JMenuItem addScriptsTreePopupMenuItem(String label, String action, JPopupMenu popup,
@@ -2333,6 +2427,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     if (f.isFile()) {
                         if (f.getName().endsWith(".smdesign")) {
                             openDesignerDocument(f);
+                        } else if (f.getName().endsWith(".smeffectdesign")) {
+                            openEffekseerDesignerDocument(f);
                         } else if (f.getName().endsWith(".smui")) {
                             openUIDesignerDocument(f);
                         } else if (f.getName().endsWith(".smshader")) {
@@ -2372,6 +2468,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     protected void loadFileToTextEditor(File f) {
         if (f.getName().endsWith(".smdesign")) {
             openDesignerDocument(f);
+        } else if (f.getName().endsWith(".smeffectdesign")) {
+            openEffekseerDesignerDocument(f);
         } else if (f.getName().endsWith(".smui")) {
             openUIDesignerDocument(f);
         } else if (f.getName().endsWith(".smshader")) {
@@ -2502,6 +2600,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             if (f.isFile()) {
                 if (f.getName().endsWith(".smdesign")) {
                     openDesignerDocument(f);
+                } else if (f.getName().endsWith(".smeffectdesign")) {
+                    openEffekseerDesignerDocument(f);
                 } else if (f.getName().endsWith(".smui")) {
                     openUIDesignerDocument(f);
                 } else if (f.getName().endsWith(".smshader")) {

@@ -9,6 +9,7 @@ gallery_api_secret=YOUR_CONSUMER_SECRET_HERE
 write_gallery_api_key=
 write_gallery_api_secret=
 sketchfab_api_token=
+effekseer_tool_path=
 
 # FTP upload settings
 ftp_upload_folder=http://he.scenemax3d.com/wp-content/downloads/

@@ -429,7 +429,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         this.setDisplayFps(false);
         this.setDisplayStatView(false);
 
-        this.flyCam.setEnabled(false); // eliminates the mouse binding to the camera
+        if (this.flyCam != null) {
+            this.flyCam.setEnabled(false); // eliminates the mouse binding to the camera
+        }
 
         // You must add a light to make the model visible
         addLighting();
@@ -443,10 +445,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         // Initialize UI system manager
         uiManager = new com.scenemaxeng.common.ui.widget.UIManager(this, guiNode, rootNode, assetsMapping);
 
-        GuiGlobals.initialize(this);
-        loadGlassStyle(this);
-
-        addConsoleShowHideListener();
+        if (inputManager != null) {
+            GuiGlobals.initialize(this);
+            loadGlassStyle(this);
+            addConsoleShowHideListener();
+        }
 
         stateManager.attach(
             new ChunkManager()
