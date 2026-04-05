@@ -1,0 +1,117 @@
+plugins {
+    id 'java'
+}
+
+group 'com.scenemax.effekseer'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = 11
+targetCompatibility = 11
+[compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
+
+repositories {
+    mavenCentral()
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+        resources {
+            srcDirs = ['assets']
+        }
+    }
+}
+
+def jme3 = [v: '3.9.0-stable', g: 'org.jmonkeyengine']
+
+dependencies {
+    implementation "${jme3.g}:jme3-core:${jme3.v}"
+}
+
+def effekseerNativePlatforms = [
+        'windows-x86_64': 'scenemax_effekseer_jni.dll',
+        'linux-x86_64'  : 'libscenemax_effekseer_jni.so',
+        'macos-x86_64'  : 'libscenemax_effekseer_jni.dylib',
+        'macos-aarch64' : 'libscenemax_effekseer_jni.dylib'
+]
+
+def currentPlatformFolder = {
+    String os = System.getProperty('os.name', '').toLowerCase(Locale.ROOT)
+    String arch = System.getProperty('os.arch', '').toLowerCase(Locale.ROOT)
+    String normalizedArch
+    switch (arch) {
+        case 'amd64':
+        case 'x86_64':
+            normalizedArch = 'x86_64'
+            break
+        case 'arm64':
+        case 'aarch64':
+            normalizedArch = 'aarch64'
+            break
+        default:
+            normalizedArch = arch
+            break
+    }
+    if (os.contains('win')) {
+        return "windows-${normalizedArch}"
+    }
+    if (os.contains('mac')) {
+        return "macos-${normalizedArch}"
+    }
+    return "linux-${normalizedArch}"
+}
+
+tasks.named('processResources') {
+    exclude 'native/**/*.ilk'
+    exclude 'native/**/*.pdb'
+}
+
+tasks.register('verifyEffekseerNativeResources') {
+    group = 'verification'
+    description = 'Prints the expected packaged native library layout for Effekseer desktop deployments.'
+    doLast {
+        println 'Effekseer packaged native resource layout:'
+        effekseerNativePlatforms.each { platform, fileName ->
+            File candidate = new File(project.projectDir, "assets/native/${platform}/${fileName}")
+            println " - ${platform}: ${candidate.exists() ? 'FOUND' : 'MISSING'} -> ${candidate}"
+        }
+        println 'These files are loaded from the classpath/JAR at runtime when present.'
+    }
+}
+
+tasks.register('verifyEffekseerNativeResourcesForCurrentPlatform') {
+    group = 'verification'
+    description = 'Fails if the packaged native Effekseer library for the current desktop platform is missing.'
+    doLast {
+        String platform = currentPlatformFolder()
+        String fileName = effekseerNativePlatforms[platform]
+        if (fileName == null) {
+            throw new GradleException("Unsupported desktop platform for Effekseer packaging: ${platform}")
+        }
+        File candidate = new File(project.projectDir, "assets/native/${platform}/${fileName}")
+        if (!candidate.exists()) {
+            throw new GradleException("Missing packaged Effekseer native library for ${platform}: ${candidate}")
+        }
+        println "Effekseer native library present for current platform ${platform}: ${candidate}"
+    }
+}
+
+tasks.register('verifyEffekseerNativeResourcesForRelease') {
+    group = 'verification'
+    description = 'Fails if any desktop Effekseer native library required for release packaging is missing.'
+    doLast {
+        List<String> missing = []
+        effekseerNativePlatforms.each { platform, fileName ->
+            File candidate = new File(project.projectDir, "assets/native/${platform}/${fileName}")
+            if (!candidate.exists()) {
+                missing << "${platform} -> ${candidate}"
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException("Missing Effekseer desktop native libraries:\n - " + missing.join('\n - '))
+        }
+        println 'All required desktop Effekseer native libraries are present.'
+    }
+}
