@@ -52,12 +52,15 @@ repositories {
 
 def parserDir = file('scenemax3d_parser')
 def parserGrammar = file('scenemax3d_parser/SceneMax.g4')
-def parserAntlrJar = file('scenemax3d_parser/antlr-4.5.3-complete.jar')
 def parserGeneratedSrcDir = file("$buildDir/generated/scenemax-parser/src")
 def parserGeneratedClassesDir = file("$buildDir/generated/scenemax-parser/classes")
 def parserJarOutput = file("$buildDir/generated/scenemax-parser/scenemax_parser.jar")
 def parserCompilerLib = file('scenemax3d_compiler/libs/scenemax_parser.jar')
 def parserProjectorLib = file('scenemax_win_projector/libs/scenemax_parser.jar')
+
+configurations {
+    antlrTool
+}
 
 tasks.register('cleanSceneMaxParserGenerated', Delete) {
     delete parserGeneratedSrcDir, parserGeneratedClassesDir, parserJarOutput
@@ -67,12 +70,12 @@ tasks.register('generateSceneMaxParserSources', JavaExec) {
     group = 'build setup'
     description = 'Generates Java sources from SceneMax.g4 using ANTLR.'
     dependsOn tasks.named('cleanSceneMaxParserGenerated')
-    classpath = files(parserAntlrJar)
+    classpath = configurations.antlrTool
     mainClass = 'org.antlr.v4.Tool'
     workingDir = parserDir
     args '-no-listener', '-visitor', '-o', parserGeneratedSrcDir.absolutePath, parserGrammar.absolutePath
     inputs.file(parserGrammar)
-    inputs.file(parserAntlrJar)
+    inputs.files(configurations.antlrTool)
     outputs.dir(parserGeneratedSrcDir)
 }
 
@@ -83,7 +86,7 @@ tasks.register('compileSceneMaxParser', JavaCompile) {
     source = fileTree(parserGeneratedSrcDir) {
         include 'SceneMax*.java'
     }
-    classpath = files(parserAntlrJar)
+    classpath = configurations.antlrTool
     destinationDirectory = parserGeneratedClassesDir
     sourceCompatibility = '1.8'
     targetCompatibility = '1.8'
@@ -160,6 +163,7 @@ sourceSets {
 }
 
 dependencies {
+    antlrTool 'org.antlr:antlr4:4.5.3'
     implementation 'com.intellij:forms_rt:7.0.3'
     implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: [])
     implementation 'org.antlr:antlr4-runtime:4.5.3'
