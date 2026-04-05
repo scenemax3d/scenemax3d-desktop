@@ -12,6 +12,11 @@ end do
 
 [@allow_move]
 when key W is pressed once do 
+  
+    laser_effect => effects.effekseer.Homing_Laser01_3//Laser02_3
+    //laser_effect.look at (player2)
+    laser_effect.play pos (player1)
+    
   audio.play "jump1"
   player1.data.is_jumping = 1
   do async

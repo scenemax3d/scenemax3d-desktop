@@ -1,5 +1,24 @@
 # Effekseer Particle System Designer
 
+## Status Update
+
+The original goal of this document was import plus preview first, with runtime scripting deferred until later.
+
+That runtime step is now available.
+
+Current SceneMax support includes:
+
+- importing Effekseer assets into `resources/effects/<assetId>/`
+- previewing them in the Effekseer designer
+- declaring runtime effect objects with `effects.effekseer.<assetId>`
+- playing them with `pos (...)`
+- passing runtime attributes through `attr = [ ... ]`
+- aiming them with `look at`
+- attaching and detaching them like other scene objects
+- showing, hiding, deleting, packaging, and scene-switch cleanup
+
+For the scripting/runtime reference and examples, see [Effects](./effects.md).
+
 ## Goal
 
 Create a new particle-system designer flow in SceneMax that is based on the open source [Effekseer](https://effekseer.github.io/en/) project, not on JME's particle system.

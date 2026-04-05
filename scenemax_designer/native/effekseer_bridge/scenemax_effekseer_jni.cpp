@@ -19,8 +19,20 @@
 #define GL_DRAW_FRAMEBUFFER 0x8CA9
 #endif
 
+#ifndef GL_READ_FRAMEBUFFER_BINDING
+#define GL_READ_FRAMEBUFFER_BINDING 0x8CAA
+#endif
+
+#ifndef GL_DRAW_FRAMEBUFFER_BINDING
+#define GL_DRAW_FRAMEBUFFER_BINDING 0x8CA6
+#endif
+
 #ifndef GL_SHADING_LANGUAGE_VERSION
 #define GL_SHADING_LANGUAGE_VERSION 0x8B8C
+#endif
+
+#ifndef GL_ACTIVE_TEXTURE
+#define GL_ACTIVE_TEXTURE 0x84E0
 #endif
 
 #ifndef GL_FRAMEBUFFER_COMPLETE
@@ -108,6 +120,101 @@ Effekseer::Matrix44 matrixFromArray(JNIEnv* env, jfloatArray values) {
     return result;
 }
 
+Effekseer::Matrix43 matrix43FromArray(JNIEnv* env, jfloatArray values) {
+    Effekseer::Matrix43 result;
+    result.Indentity();
+    if (values == nullptr || env->GetArrayLength(values) < 16) {
+        return result;
+    }
+    jfloat* raw = env->GetFloatArrayElements(values, nullptr);
+    for (int row = 0; row < 3; row++) {
+        for (int col = 0; col < 4; col++) {
+            result.Value[row][col] = raw[col * 4 + row];
+        }
+    }
+    env->ReleaseFloatArrayElements(values, raw, JNI_ABORT);
+    return result;
+}
+
+struct SavedGlState {
+    GLint framebuffer = 0;
+    GLint readFramebuffer = 0;
+    GLint drawFramebuffer = 0;
+    GLint viewport[4] = {0, 0, 0, 0};
+    GLint scissorBox[4] = {0, 0, 0, 0};
+    GLint currentProgram = 0;
+    GLint activeTexture = GL_TEXTURE0;
+    GLint textureBinding2D = 0;
+    GLint arrayBufferBinding = 0;
+    GLint elementArrayBufferBinding = 0;
+    GLint vertexArrayBinding = 0;
+    GLint blendSrcRgb = GL_ONE;
+    GLint blendDstRgb = GL_ZERO;
+    GLint blendEquation = GL_FUNC_ADD;
+    GLint depthFunc = GL_LESS;
+    GLint cullFaceMode = GL_BACK;
+    GLint frontFace = GL_CCW;
+    GLboolean depthMask = GL_TRUE;
+    GLboolean colorMask[4] = {GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE};
+    GLboolean blendEnabled = GL_FALSE;
+    GLboolean depthTestEnabled = GL_FALSE;
+    GLboolean cullFaceEnabled = GL_FALSE;
+    GLboolean scissorTestEnabled = GL_FALSE;
+};
+
+SavedGlState captureGlState() {
+    SavedGlState state;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &state.framebuffer);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &state.readFramebuffer);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &state.drawFramebuffer);
+    glGetIntegerv(GL_VIEWPORT, state.viewport);
+    glGetIntegerv(GL_SCISSOR_BOX, state.scissorBox);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &state.currentProgram);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &state.activeTexture);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &state.textureBinding2D);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &state.arrayBufferBinding);
+    glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &state.elementArrayBufferBinding);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &state.vertexArrayBinding);
+    glGetIntegerv(GL_BLEND_SRC_RGB, &state.blendSrcRgb);
+    glGetIntegerv(GL_BLEND_DST_RGB, &state.blendDstRgb);
+    glGetIntegerv(GL_BLEND_EQUATION, &state.blendEquation);
+    glGetIntegerv(GL_DEPTH_FUNC, &state.depthFunc);
+    glGetIntegerv(GL_CULL_FACE_MODE, &state.cullFaceMode);
+    glGetIntegerv(GL_FRONT_FACE, &state.frontFace);
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &state.depthMask);
+    glGetBooleanv(GL_COLOR_WRITEMASK, state.colorMask);
+    state.blendEnabled = glIsEnabled(GL_BLEND);
+    state.depthTestEnabled = glIsEnabled(GL_DEPTH_TEST);
+    state.cullFaceEnabled = glIsEnabled(GL_CULL_FACE);
+    state.scissorTestEnabled = glIsEnabled(GL_SCISSOR_TEST);
+    return state;
+}
+
+void restoreGlState(const SavedGlState& state) {
+    EffekseerRendererGL::GLExt::glBindFramebuffer(GL_READ_FRAMEBUFFER, state.readFramebuffer);
+    EffekseerRendererGL::GLExt::glBindFramebuffer(GL_DRAW_FRAMEBUFFER, state.drawFramebuffer);
+    EffekseerRendererGL::GLExt::glBindFramebuffer(GL_FRAMEBUFFER, state.framebuffer);
+    glViewport(state.viewport[0], state.viewport[1], state.viewport[2], state.viewport[3]);
+    glScissor(state.scissorBox[0], state.scissorBox[1], state.scissorBox[2], state.scissorBox[3]);
+    if (state.scissorTestEnabled) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+    if (state.cullFaceEnabled) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+    if (state.depthTestEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    if (state.blendEnabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    glDepthMask(state.depthMask);
+    glColorMask(state.colorMask[0], state.colorMask[1], state.colorMask[2], state.colorMask[3]);
+    glDepthFunc(state.depthFunc);
+    glCullFace(state.cullFaceMode);
+    glFrontFace(state.frontFace);
+    EffekseerRendererGL::GLExt::glBlendEquation(state.blendEquation);
+    glBlendFunc(state.blendSrcRgb, state.blendDstRgb);
+    EffekseerRendererGL::GLExt::glUseProgram(state.currentProgram);
+    EffekseerRendererGL::GLExt::glActiveTexture(state.activeTexture);
+    EffekseerRendererGL::GLExt::glBindVertexArray(static_cast<GLuint>(state.vertexArrayBinding));
+    EffekseerRendererGL::GLExt::glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(state.arrayBufferBinding));
+    EffekseerRendererGL::GLExt::glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(state.elementArrayBufferBinding));
+    glBindTexture(GL_TEXTURE_2D, state.textureBinding2D);
+}
+
 void setupModules(PreviewContext* ctx) {
     if (ctx == nullptr) {
         return;
@@ -155,7 +262,7 @@ void clearRuntimeObjects(PreviewContext* ctx) {
     ctx->loadThreadId = 0;
     ctx->stableRenderContextFrames = 0;
     ctx->useQuadCompositeFallback = false;
-    ctx->preferDefaultFramebufferComposite = false;
+    ctx->preferDefaultFramebufferComposite = true;
     ctx->lastRequestedWidth = 0;
     ctx->lastRequestedHeight = 0;
     ctx->stableSizeFrames = 0;
@@ -476,6 +583,7 @@ JNIEXPORT jlong JNICALL Java_com_scenemax_effekseer_runtime_EffekseerNativeBridg
     captureCreateBinding(context.get());
     context->deviceType = EffekseerRendererGL::OpenGLDeviceType::OpenGL2;
     context->helperInitialized = initializeBridgeGlHelpers();
+    context->preferDefaultFramebufferComposite = true;
     return toHandle(std::move(context));
 }
 
@@ -553,6 +661,68 @@ JNIEXPORT void JNICALL Java_com_scenemax_effekseer_runtime_EffekseerNativeBridge
         if (context->manager != nullptr && context->handle >= 0) {
             context->manager->SetTargetLocation(context->handle, context->targetLocation);
         }
+    }
+}
+
+JNIEXPORT void JNICALL Java_com_scenemax_effekseer_runtime_EffekseerNativeBridge_nativeSetEffectLocation
+  (JNIEnv*, jclass, jlong handle, jfloat x, jfloat y, jfloat z) {
+    auto* context = fromHandle<PreviewContext>(handle);
+    if (context != nullptr && context->manager != nullptr && context->handle >= 0) {
+        context->manager->SetLocation(context->handle, x, y, z);
+    }
+}
+
+JNIEXPORT void JNICALL Java_com_scenemax_effekseer_runtime_EffekseerNativeBridge_nativeSetDynamicInput
+  (JNIEnv*, jclass, jlong handle, jint index, jfloat value) {
+    auto* context = fromHandle<PreviewContext>(handle);
+    if (context != nullptr && context->manager != nullptr && context->handle >= 0) {
+        context->manager->SetDynamicInput(context->handle, index, value);
+    }
+}
+
+JNIEXPORT void JNICALL Java_com_scenemax_effekseer_runtime_EffekseerNativeBridge_nativePlayEffect
+  (JNIEnv*, jclass, jlong handle) {
+    auto* context = fromHandle<PreviewContext>(handle);
+    if (context == nullptr) {
+        return;
+    }
+    if (context->effect == nullptr && !context->effectPath.empty()) {
+        loadEffectOnCurrentContext(context);
+    }
+    if (context->manager == nullptr || context->effect == nullptr) {
+        return;
+    }
+    if (context->handle >= 0) {
+        context->manager->StopEffect(context->handle);
+    }
+    context->handle = context->manager->Play(context->effect, 0.0f, 0.0f, 0.0f);
+    if (context->handle >= 0) {
+        context->manager->SetTargetLocation(context->handle, context->targetLocation);
+    }
+}
+
+JNIEXPORT void JNICALL Java_com_scenemax_effekseer_runtime_EffekseerNativeBridge_nativeStopEffect
+  (JNIEnv*, jclass, jlong handle) {
+    auto* context = fromHandle<PreviewContext>(handle);
+    if (context != nullptr && context->manager != nullptr && context->handle >= 0) {
+        context->manager->StopEffect(context->handle);
+    }
+}
+
+JNIEXPORT jboolean JNICALL Java_com_scenemax_effekseer_runtime_EffekseerNativeBridge_nativeIsEffectPlaying
+  (JNIEnv*, jclass, jlong handle) {
+    auto* context = fromHandle<PreviewContext>(handle);
+    if (context == nullptr || context->manager == nullptr || context->handle < 0) {
+        return JNI_FALSE;
+    }
+    return context->manager->Exists(context->handle) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL Java_com_scenemax_effekseer_runtime_EffekseerNativeBridge_nativeSetEffectTransform
+  (JNIEnv* env, jclass, jlong handle, jfloatArray worldTransform) {
+    auto* context = fromHandle<PreviewContext>(handle);
+    if (context != nullptr && context->manager != nullptr && context->handle >= 0) {
+        context->manager->SetBaseMatrix(context->handle, matrix43FromArray(env, worldTransform));
     }
 }
 
@@ -674,16 +844,13 @@ JNIEXPORT void JNICALL Java_com_scenemax_effekseer_runtime_EffekseerNativeBridge
     __try
     {
 #endif
-        GLint previousFramebuffer = 0;
-        GLint viewport[4] = {0, 0, width, height};
-        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
-        glGetIntegerv(GL_VIEWPORT, viewport);
+        SavedGlState savedState = captureGlState();
 
         const GLint effekseerFramebuffer = renderDirectToDefaultFramebuffer ? 0 : context->offscreenFramebuffer;
-        const GLint renderViewportX = renderDirectToDefaultFramebuffer ? viewport[0] : 0;
-        const GLint renderViewportY = renderDirectToDefaultFramebuffer ? viewport[1] : 0;
-        const GLint renderViewportWidth = renderDirectToDefaultFramebuffer ? viewport[2] : width;
-        const GLint renderViewportHeight = renderDirectToDefaultFramebuffer ? viewport[3] : height;
+        const GLint renderViewportX = renderDirectToDefaultFramebuffer ? savedState.viewport[0] : 0;
+        const GLint renderViewportY = renderDirectToDefaultFramebuffer ? savedState.viewport[1] : 0;
+        const GLint renderViewportWidth = renderDirectToDefaultFramebuffer ? savedState.viewport[2] : width;
+        const GLint renderViewportHeight = renderDirectToDefaultFramebuffer ? savedState.viewport[3] : height;
         EffekseerRendererGL::GLExt::glBindFramebuffer(GL_FRAMEBUFFER, effekseerFramebuffer);
         logGlError(renderDirectToDefaultFramebuffer ? "bind-default-direct" : "bind-offscreen");
         glViewport(renderViewportX, renderViewportY, renderViewportWidth, renderViewportHeight);
@@ -691,7 +858,7 @@ JNIEXPORT void JNICALL Java_com_scenemax_effekseer_runtime_EffekseerNativeBridge
         glDisable(GL_SCISSOR_TEST);
         logGlError("disable-scissor");
         if (!renderDirectToDefaultFramebuffer) {
-            glClearColor(0.04f, 0.05f, 0.08f, 1.0f);
+            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             logGlError("clear-color");
             glClear(GL_COLOR_BUFFER_BIT);
             logGlError("clear-color-buffer");
@@ -716,29 +883,11 @@ JNIEXPORT void JNICALL Java_com_scenemax_effekseer_runtime_EffekseerNativeBridge
         context->lastDrawCalls = context->renderer->GetDrawCallCount();
         context->lastDrawVertices = context->renderer->GetDrawVertexCount();
 
-        if (compositeEnabled && !renderDirectToDefaultFramebuffer && !context->useQuadCompositeFallback && !context->preferDefaultFramebufferComposite) {
-            EffekseerRendererGL::GLExt::glBindFramebuffer(GL_READ_FRAMEBUFFER, context->offscreenFramebuffer);
-            logGlError("bind-read-offscreen");
-            EffekseerRendererGL::GLExt::glBindFramebuffer(GL_DRAW_FRAMEBUFFER, previousFramebuffer);
-            logGlError("bind-draw-main");
-            clearGlErrors();
-            g_glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-            auto blitError = glGetError();
-            if (blitError != GL_NO_ERROR) {
-                std::fprintf(stderr, "SceneMax Effekseer JNI GL error at blit-offscreen: 0x%x\n",
-                             static_cast<unsigned int>(blitError));
-                context->useQuadCompositeFallback = true;
-            }
+        if (compositeEnabled && !renderDirectToDefaultFramebuffer) {
+            compositeOffscreenTexture(context, savedState.framebuffer, savedState.viewport[0], savedState.viewport[1], savedState.viewport[2], savedState.viewport[3]);
         }
-        if (compositeEnabled && !renderDirectToDefaultFramebuffer && (context->useQuadCompositeFallback || context->preferDefaultFramebufferComposite)) {
-            compositeOffscreenTexture(context, previousFramebuffer, viewport[0], viewport[1], viewport[2], viewport[3]);
-        }
-        EffekseerRendererGL::GLExt::glBindFramebuffer(GL_READ_FRAMEBUFFER, previousFramebuffer);
-        EffekseerRendererGL::GLExt::glBindFramebuffer(GL_DRAW_FRAMEBUFFER, previousFramebuffer);
-        EffekseerRendererGL::GLExt::glBindFramebuffer(GL_FRAMEBUFFER, previousFramebuffer);
-        logGlError("restore-framebuffer");
-        glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-        logGlError("restore-viewport");
+        restoreGlState(savedState);
+        logGlError("restore-gl-state");
 
         context->renderFailed = false;
 #if _WIN32

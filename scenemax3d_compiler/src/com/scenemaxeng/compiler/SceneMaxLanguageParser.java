@@ -23,6 +23,7 @@ public class SceneMaxLanguageParser implements IParser {
     public static List<String> terrainsUsed = new ArrayList<>();
     public static List<String> spriteSheetUsed = new ArrayList<>();
     public static List<String> modelsUsed = new ArrayList<>();
+    public static List<String> effekseerUsed = new ArrayList<>();
     public static List<String> audioUsed = new ArrayList<>();
     public static List<String> fontsUsed = new ArrayList<>();
     public static List<String> filesUsed = new ArrayList<>();
@@ -86,6 +87,7 @@ public class SceneMaxLanguageParser implements IParser {
             fontsUsed.clear();
             audioUsed.clear();
             modelsUsed.clear();
+            effekseerUsed.clear();
             spriteSheetUsed.clear();
         }
 
@@ -277,7 +279,11 @@ public class SceneMaxLanguageParser implements IParser {
                         VariableDef var = (VariableDef)stDef;
                         GraphicEntityCreationCommand cmd = new GraphicEntityCreationCommand(var);
 
-                        if(!var.validate(prg)) {
+                        if(var.varType == VariableDef.VAR_TYPE_EFFEKSEER) {
+                            prg.vars.add(var);
+                            prg.vars_index.put(var.varName, var);
+                            prg.actions.add(cmd);
+                        } else if(!var.validate(prg)) {
                             // assume implicit declaration of a 3d model
                             var.varType=VariableDef.VAR_TYPE_3D;
 
@@ -293,12 +299,14 @@ public class SceneMaxLanguageParser implements IParser {
                                 }
                             }
 
+                            prg.vars.add(var);
+                            prg.vars_index.put(var.varName, var);
+                            prg.actions.add(cmd);
+                        } else {
+                            prg.vars.add(var);
+                            prg.vars_index.put(var.varName, var);
+                            prg.actions.add(cmd);
                         }
-
-                        prg.vars.add(var);
-                        prg.vars_index.put(var.varName, var);
-                        prg.actions.add(cmd);
-
 
                     } else if(stDef instanceof VariableDeclarationCommand) {
 
@@ -1756,7 +1764,9 @@ public class SceneMaxLanguageParser implements IParser {
                 String varName = ctx.var_decl().getText();
                 String resName = null;
                 SceneMaxParser.Logical_expressionContext resNameExpr = null;
-                if (ctx.dynamic_model_type().res_var_decl()!=null) {
+                if (ctx.dynamic_model_type().effect_resource_decl() != null) {
+                    resName = "effects.effekseer." + ctx.dynamic_model_type().effect_resource_decl().res_var_decl().getText();
+                } else if (ctx.dynamic_model_type().res_var_decl()!=null) {
                     resName = ctx.dynamic_model_type().res_var_decl().getText();
                 } else {
                     resNameExpr = ctx.dynamic_model_type().dynamic_model_type_name().logical_expression();
@@ -1772,6 +1782,12 @@ public class SceneMaxLanguageParser implements IParser {
                 varDef.isVehicle=ctx.Vehicle()!=null;
                 varDef.isStatic = ctx.Static()!=null;
                 varDef.isDynamic = ctx.Dynamic()!=null;
+                if (resName != null && resName.toLowerCase().startsWith("effects.effekseer.")) {
+                    varDef.varType = VariableDef.VAR_TYPE_EFFEKSEER;
+                    if (!effekseerUsed.contains(resName)) {
+                        effekseerUsed.add(resName);
+                    }
+                }
 
                 if(ctx.scene_entity_having_expr()!=null) {
                     for (SceneMaxParser.Model_attrContext attr : ctx.scene_entity_having_expr().model_attributes().model_attr()) {
@@ -3086,37 +3102,69 @@ public class SceneMaxLanguageParser implements IParser {
             public ActionStatementBase visitPlay(SceneMaxParser.PlayContext ctx) {
 
                 try {
-                    String var = ctx.var_decl().getText();
-                    //System.out.println("Going to play frames on: " + var);
+                    if (ctx.sprite_play() != null) {
+                        String var = ctx.sprite_play().var_decl().getText();
 
-                    ActionCommandPlay cmd = new ActionCommandPlay();
-                    VariableDef vd = prg.getVar(var);
-                    cmd.varDef=vd;
-                    cmd.targetVar = var;
+                        ActionCommandPlay cmd = new ActionCommandPlay();
+                        VariableDef vd = prg.getVar(var);
+                        cmd.varDef=vd;
+                        cmd.targetVar = var;
 
-                    cmd.fromFrameExpr = ctx.frames_expr().from_frame().logical_expression();//new ActionLogicalExpression(ctx.frames_expr().from_frame().logical_expression(),prg);
-                    cmd.toFrameExpr = ctx.frames_expr().to_frame().logical_expression();//new ActionLogicalExpression(ctx.frames_expr().to_frame().logical_expression(),prg);
-                    cmd.speedExpr = ctx.speed_expr()==null?null:ctx.speed_expr().logical_expression();//new ActionLogicalExpression(ctx.speed_expr().logical_expression(),prg);
+                        cmd.fromFrameExpr = ctx.sprite_play().frames_expr().from_frame().logical_expression();
+                        cmd.toFrameExpr = ctx.sprite_play().frames_expr().to_frame().logical_expression();
+                        cmd.speedExpr = ctx.sprite_play().speed_expr()==null?null:ctx.sprite_play().speed_expr().logical_expression();
 
-                    if(ctx.play_duration_strategy()==null) {
-                        cmd.durationStrategy=0;//once
-                    } else if(ctx.play_duration_strategy().Once()!=null) {
-                        cmd.durationStrategy=0;//once
-                    } else if(ctx.play_duration_strategy().play_duration_loop_strategy()!=null) {
-                        cmd.durationStrategy=2;//loop
-                        if(ctx.play_duration_strategy().play_duration_loop_strategy().number()!=null) {
-                            cmd.loopTimes = ctx.play_duration_strategy().play_duration_loop_strategy().number().getText();
-                        } else {
-                            cmd.loopTimes="-1";// endless loop
+                        if(ctx.sprite_play().play_duration_strategy()==null) {
+                            cmd.durationStrategy=0;//once
+                        } else if(ctx.sprite_play().play_duration_strategy().Once()!=null) {
+                            cmd.durationStrategy=0;//once
+                        } else if(ctx.sprite_play().play_duration_strategy().play_duration_loop_strategy()!=null) {
+                            cmd.durationStrategy=2;//loop
+                            if(ctx.sprite_play().play_duration_strategy().play_duration_loop_strategy().number()!=null) {
+                                cmd.loopTimes = ctx.sprite_play().play_duration_strategy().play_duration_loop_strategy().number().getText();
+                            } else {
+                                cmd.loopTimes="-1";// endless loop
+                            }
                         }
-                    }
-                    else {
-                        cmd.durationStrategy=1;//time
-                        //cmd.forTime = ctx.play_duration_strategy().for_time_expr().number().getText();
-                        cmd.forTimeExpr = ctx.play_duration_strategy().for_time_expr().logical_expression();//new ActionLogicalExpression(ctx.play_duration_strategy().for_time_expr().logical_expression(),prg);
-                    }
+                        else {
+                            cmd.durationStrategy=1;//time
+                            cmd.forTimeExpr = ctx.sprite_play().play_duration_strategy().for_time_expr().logical_expression();
+                        }
 
-                    return cmd;
+                        return cmd;
+                    } else if (ctx.effect_play() != null) {
+                        String var = ctx.effect_play().var_decl().getText();
+                        EffekseerPlayCommand cmd = new EffekseerPlayCommand();
+                        cmd.targetVar = var;
+                        cmd.varDef = prg.getVar(var);
+
+                        for (SceneMaxParser.Effect_play_optionContext opt : ctx.effect_play().effect_play_options().effect_play_option()) {
+                            if (opt.print_pos_attr() != null) {
+                                if (opt.print_pos_attr().pos_axes() != null) {
+                                    if (opt.print_pos_attr().pos_axes().exception != null) {
+                                        return null;
+                                    }
+                                    cmd.xExpr = opt.print_pos_attr().pos_axes().print_pos_x().logical_expression();
+                                    cmd.yExpr = opt.print_pos_attr().pos_axes().print_pos_y().logical_expression();
+                                    cmd.zExpr = opt.print_pos_attr().pos_axes().print_pos_z().logical_expression();
+                                } else if (opt.print_pos_attr().pos_entity() != null) {
+                                    cmd.entityPos = new EntityPos();
+                                    setEntityPos(cmd.entityPos, opt.print_pos_attr().pos_entity());
+                                }
+                            } else if (opt.effect_play_attr_list() != null) {
+                                for (SceneMaxParser.Effect_play_attrContext attr : opt.effect_play_attr_list().effect_play_attr()) {
+                                    String key = attr.effect_play_attr_name().getText();
+                                    if (key.startsWith("\"") && key.endsWith("\"")) {
+                                        key = stripQutes(key);
+                                    }
+                                    cmd.attrExprs.put(key.toLowerCase(), attr.logical_expression());
+                                }
+                            }
+                        }
+
+                        return cmd;
+                    }
+                    return null;
                 }catch(Exception e) {
                     return null;
                 }

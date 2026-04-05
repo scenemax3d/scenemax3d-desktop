@@ -78,6 +78,8 @@ public class EntityPosController extends SceneMaxBaseController {
             app.posSphere(targetVar,valX,valY,valZ,entityForPos, calculatedPosition);
         } else if(targetVarDef.varType== VariableDef.VAR_TYPE_BOX){
             app.posBox(targetVar,valX,valY,valZ,entityForPos, calculatedPosition);
+        } else if(targetVarDef.varType== VariableDef.VAR_TYPE_EFFEKSEER){
+            app.posEffekseer(targetVar,valX,valY,valZ,entityForPos, calculatedPosition);
         }
 
         return true;

@@ -2,6 +2,7 @@ package com.scenemaxeng.projector;
 
 
 import com.jayfella.jme.vehicle.skid.SkidMarksState;
+import com.scenemax.effekseer.runtime.EffekseerNativeBridge;
 import com.jme3.bullet.collision.PhysicsCollisionObject;
 import com.scenemaxeng.common.types.*;
 import com.scenemaxeng.compiler.*;
@@ -63,7 +64,11 @@ import com.jme3.post.FilterPostProcessor;
 import com.jme3.post.filters.DepthOfFieldFilter;
 import com.jme3.post.filters.FXAAFilter;
 import com.jme3.post.ssao.SSAOFilter;
+import com.jme3.profile.AppProfiler;
+import com.jme3.renderer.Camera;
 import com.jme3.renderer.Caps;
+import com.jme3.renderer.RenderManager;
+import com.jme3.renderer.ViewPort;
 import com.jme3.renderer.queue.RenderQueue;
 import com.jme3.scene.*;
 import com.jme3.scene.control.BillboardControl;
@@ -145,6 +150,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private static HashMap<String,Node> cylinders = new HashMap<>();
     private static HashMap<String,Node> hollowCylinders = new HashMap<>();
     private static HashMap<String,Node> quads = new HashMap<>();
+    private static HashMap<String, EffekseerInst> effekseerEffects = new HashMap<>();
     //private static HashMap<String,SkyBoxMaterial> skyboxMaterials = new HashMap<>();
     private static HashMap<String,ResourceMaterial> materials = new HashMap<>();
     private static final Map<Geometry, Material> originalMaterials = new WeakHashMap<>();
@@ -196,6 +202,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private HashMap<String, EntityInstBase> cylinderInstances = new HashMap<>();
     private HashMap<String, EntityInstBase> hollowCylinderInstances = new HashMap<>();
     private HashMap<String, EntityInstBase> quadInstances = new HashMap<>();
+    private HashMap<String, EntityInstBase> effekseerInstances = new HashMap<>();
     private String projectName = null;
     private DungeonCameraAppState dungeonCameraState = null;
     private FollowCameraAppState followCameraState = null;
@@ -204,9 +211,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private int eventHandlersCount;
     private String switchStateCode = null;
     private Logger logger;
+    private EffekseerRenderProcessor effekseerRenderProcessor;
 
     // UI system manager for .smui documents
     private com.scenemaxeng.common.ui.widget.UIManager uiManager;
+    private float effekseerFrameTpf;
 
     public void clearThreads() {
         if (executorService!=null) {
@@ -435,6 +444,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         // You must add a light to make the model visible
         addLighting();
+        ensureEffekseerRenderProcessor();
 
 
         terrainHandler = new UITerrainHandler();
@@ -757,6 +767,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
         }
 
+        for (Object key : effekseerEffects.keySet().toArray()) {
+            EffekseerInst inst = effekseerEffects.get(key);
+            if (inst != null && !inst.varDef.isShared) {
+                this.killEffekseerEffect((String) key);
+            }
+        }
+
         //collisionControlsCache.clear();
         //geoName2ModelName.clear();
         //geoName2EntityInst.clear();
@@ -784,6 +801,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         spriteInstances = new HashMap<>();
         sphereInstances = new HashMap<>();
         boxInstances = new HashMap<>();
+        effekseerInstances = new HashMap<>();
         //this.mainScope.clearVars();
     }
 
@@ -818,6 +836,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             this.killSphere((String) key);
         }
 
+        for (Object key : effekseerEffects.keySet().toArray()) {
+            this.killEffekseerEffect((String) key);
+        }
+
         rootNode.removeControl(SkinningControl.class);
         this.skyControl = null;
 
@@ -839,6 +861,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         spriteInstances = new HashMap<>();
         sphereInstances = new HashMap<>();
         boxInstances = new HashMap<>();
+        effekseerInstances = new HashMap<>();
     }
 
     private void clearNode(Node n) {
@@ -1155,6 +1178,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             ActionCommandPlay cmd = (ActionCommandPlay) action;
             SpritePlayFramesController c = new SpritePlayFramesController(this,scope,cmd);
             c.async=action.isAsync || (cmd.durationStrategy==2 && cmd.loopTimes.equals("-1"));
+            scope.add(c);
+        } else if(action instanceof EffekseerPlayCommand) {
+            EffekseerPlayController c = new EffekseerPlayController(this, prg, scope, (EffekseerPlayCommand) action);
+            c.async = action.isAsync;
             scope.add(c);
 
         } else if(action instanceof DoBlockCommand) {
@@ -1567,6 +1594,15 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 return;
             }
 
+        }
+
+        if (var.varType == VariableDef.VAR_TYPE_EFFEKSEER) {
+            EffekseerInst inst = createEffekseerInst(prg, var, scope);
+            if (inst != null) {
+                scope.entities.put(var.varName, inst);
+                loadEffekseerEffect(inst);
+            }
+            return;
         }
 
         if(var.resName.equals("sphere")) {
@@ -3821,7 +3857,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             System.exit(0);
         } else {
             clearScene();
-            _appObserver.message(EVENT_DESTROY);
+            if (_appObserver != null) {
+                _appObserver.message(EVENT_DESTROY);
+            }
         }
         super.destroy();
     }
@@ -3842,6 +3880,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     @Override
     public void simpleUpdate(float tpf) {
+        effekseerFrameTpf = tpf;
         runtimeShaderElapsedTime += tpf;
         updateRuntimeShaderMaterials();
         updateEnvironmentShaderOverlaySize();
@@ -3947,8 +3986,25 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
         }
 
+        EffekseerInst effect = effekseerEffects.get(varName);
+        if (effect != null) {
+            return effect.node.getUserData(fieldName);
+        }
+
         return 0;
 
+    }
+
+    @Override
+    public void simpleRender(RenderManager rm) {
+        super.simpleRender(rm);
+    }
+
+    private void ensureEffekseerRenderProcessor() {
+        if (effekseerRenderProcessor == null) {
+            effekseerRenderProcessor = new EffekseerRenderProcessor(this);
+            viewPort.addProcessor(effekseerRenderProcessor);
+        }
     }
 
     public String getSpatialTransitionRecord(Spatial sp) {
@@ -4057,6 +4113,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         SpriteEmitter se = sprites.get(varName);
         if(se != null) {
             return getGeometryFieldValue(se.getSpatial(),fieldName);
+        }
+
+        EffekseerInst effect = effekseerEffects.get(varName);
+        if (effect != null) {
+            return getGeometryNodeFieldValue(effect.node, fieldName);
         }
 
         if(fieldName.equalsIgnoreCase("hit")) {
@@ -5140,6 +5201,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return sprites.get(varName).getSpatial();
         }
 
+        if(effekseerEffects.containsKey(varName)) {
+            return effekseerEffects.get(varName).node;
+        }
+
         return null;
 
     }
@@ -5175,6 +5240,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             m=hollowCylinders.get(targetVar);
         } else if(varType==VariableDef.VAR_TYPE_QUAD) {
             m=quads.get(targetVar);
+        } else if(varType==VariableDef.VAR_TYPE_EFFEKSEER) {
+            EffekseerInst inst = effekseerEffects.get(targetVar);
+            m = inst != null ? inst.node : null;
         }
 
         return m;
@@ -7531,6 +7599,276 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         return inst;
+    }
+
+    public EffekseerInst createEffekseerInst(ProgramDef prg, VariableDef var, SceneMaxScope scope) {
+        String effectResourceName = var.resName != null
+                ? var.resName
+                : new ActionLogicalExpressionVm(var.resNameExpr, scope).evaluate().toString();
+        String assetId = effectResourceName;
+        if (effectResourceName.toLowerCase().startsWith("effects.effekseer.")) {
+            assetId = effectResourceName.substring("effects.effekseer.".length());
+        }
+        String effectPath = resolveEffekseerEffectPath(assetId);
+        if (effectPath == null) {
+            handleRuntimeError("Effekseer effect '" + assetId + "' was not found under resources/effects");
+            return null;
+        }
+
+        EffekseerInst inst = new EffekseerInst(var, scope, effectResourceName, assetId, effectPath);
+        String key = var.varName + "_" + ++entityInstCounter;
+        inst.entityKey = key;
+        effekseerInstances.put(key, inst);
+        effekseerEffects.put(inst.node.getName(), inst);
+        geoName2EntityInst.put(inst.node.getName(), inst);
+
+        if (var.entityPos != null) {
+            inst.entityForPos = findVarRuntime(prg, scope, var.entityPos.entityName);
+        }
+        if (var.entityRot != null) {
+            inst.entityForRot = findVarRuntime(prg, scope, var.entityRot);
+        }
+
+        applyEffekseerInitialTransform(inst);
+        if (var.visible) {
+            rootNode.attachChild(inst.node);
+        }
+        return inst;
+    }
+
+    private void applyEffekseerInitialTransform(EffekseerInst inst) {
+        if (inst == null) {
+            return;
+        }
+
+        if (inst.entityForRot != null) {
+            Spatial sp = getEntitySpatial(inst.entityForRot.varName, inst.entityForRot.varDef.varType);
+            if (sp != null) {
+                inst.node.setLocalRotation(sp.getLocalRotation());
+            }
+        } else if (inst.varDef.useVerbalTurn) {
+            float rx = inst.varDef.rxExpr != null ? Float.parseFloat(new ActionLogicalExpressionVm(inst.varDef.rxExpr, inst.scope).evaluate().toString()) * inst.varDef.rotDir : 0f;
+            float ry = inst.varDef.ryExpr != null ? Float.parseFloat(new ActionLogicalExpressionVm(inst.varDef.ryExpr, inst.scope).evaluate().toString()) * inst.varDef.rotDir : 0f;
+            float rz = inst.varDef.rzExpr != null ? Float.parseFloat(new ActionLogicalExpressionVm(inst.varDef.rzExpr, inst.scope).evaluate().toString()) * inst.varDef.rotDir : 0f;
+            inst.node.setLocalRotation(new Quaternion().fromAngles(rx * FastMath.DEG_TO_RAD, ry * FastMath.DEG_TO_RAD, rz * FastMath.DEG_TO_RAD));
+        } else if (inst.varDef.rxExpr != null) {
+            float rx = Float.parseFloat(new ActionLogicalExpressionVm(inst.varDef.rxExpr, inst.scope).evaluate().toString());
+            float ry = Float.parseFloat(new ActionLogicalExpressionVm(inst.varDef.ryExpr, inst.scope).evaluate().toString());
+            float rz = Float.parseFloat(new ActionLogicalExpressionVm(inst.varDef.rzExpr, inst.scope).evaluate().toString());
+            inst.node.setLocalRotation(new Quaternion().fromAngles(rx * FastMath.DEG_TO_RAD, ry * FastMath.DEG_TO_RAD, rz * FastMath.DEG_TO_RAD));
+        }
+
+        if (inst.entityForPos != null) {
+            Spatial sp = getEntitySpatial(inst.entityForPos.varName, inst.entityForPos.varDef.varType);
+            if (sp != null) {
+                inst.node.setLocalTranslation(sp.getLocalTranslation());
+            }
+        } else if (inst.varDef.xExpr != null) {
+            float x = Float.parseFloat(new ActionLogicalExpressionVm(inst.varDef.xExpr, inst.scope).evaluate().toString());
+            float y = Float.parseFloat(new ActionLogicalExpressionVm(inst.varDef.yExpr, inst.scope).evaluate().toString());
+            float z = Float.parseFloat(new ActionLogicalExpressionVm(inst.varDef.zExpr, inst.scope).evaluate().toString());
+            inst.node.setLocalTranslation(x, y, z);
+        }
+    }
+
+    private String resolveEffekseerEffectPath(String assetId) {
+        File resourcesFolder = resolveRuntimeResourcesFolder();
+        if (resourcesFolder == null) {
+            return null;
+        }
+        File assetFolder = new File(resourcesFolder, "effects/" + assetId);
+        if (!assetFolder.isDirectory()) {
+            return null;
+        }
+        File[] preferred = assetFolder.listFiles((dir, name) -> name.toLowerCase().endsWith(".efkefc") || name.toLowerCase().endsWith(".efk"));
+        if (preferred != null && preferred.length > 0) {
+            return preferred[0].getAbsolutePath();
+        }
+        return null;
+    }
+
+    private File resolveRuntimeResourcesFolder() {
+        try {
+            if (projectName != null && !projectName.isBlank()) {
+                return new File("./projects/" + projectName + "/resources").getCanonicalFile();
+            }
+            if (workingFolder != null && !workingFolder.isBlank()) {
+                File folder = new File(workingFolder);
+                if (folder.isFile()) {
+                    folder = folder.getParentFile();
+                }
+                File current = folder.getCanonicalFile();
+                while (current != null) {
+                    File resources = new File(current, "resources");
+                    if (resources.isDirectory()) {
+                        return resources;
+                    }
+                    current = current.getParentFile();
+                }
+            }
+            File local = new File("./resources").getCanonicalFile();
+            return local.isDirectory() ? local : null;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    public void loadEffekseerEffect(EffekseerInst inst) {
+        if (inst == null || inst.loaded) {
+            return;
+        }
+        if (!EffekseerNativeBridge.isAvailable()) {
+            handleRuntimeError("Effekseer native runtime is unavailable: " + EffekseerNativeBridge.getLoadMessage());
+            return;
+        }
+        long context = EffekseerNativeBridge.createPreviewContext(8192);
+        if (context == 0L) {
+            handleRuntimeError("Failed to create Effekseer runtime context for '" + inst.assetId + "'");
+            return;
+        }
+        if (!EffekseerNativeBridge.loadEffect(context, inst.effectPath, new File(inst.effectPath).getParent())) {
+            EffekseerNativeBridge.destroyPreviewContext(context);
+            handleRuntimeError("Failed to load Effekseer effect '" + inst.assetId + "'");
+            return;
+        }
+        EffekseerNativeBridge.setLooping(context, false);
+        EffekseerNativeBridge.setCompositeEnabled(context, true);
+        inst.nativeContextHandle = context;
+        inst.loaded = true;
+    }
+
+    public void playEffekseerEffect(String targetVar, Double x, Double y, Double z, RunTimeVarDef posEntity, float playbackSpeed, float[] dynamicInputs) {
+        EffekseerInst inst = effekseerEffects.get(targetVar);
+        if (inst == null) {
+            return;
+        }
+        if (!inst.loaded) {
+            loadEffekseerEffect(inst);
+        }
+        if (!inst.loaded) {
+            return;
+        }
+
+        if (x != null) {
+            inst.node.setLocalTranslation(x.floatValue(), y.floatValue(), z.floatValue());
+        } else if (posEntity != null) {
+            Spatial sp = getEntitySpatial(posEntity.varName, posEntity.varDef.varType);
+            if (sp != null) {
+                inst.node.setLocalTranslation(sp.getWorldTranslation());
+            }
+        }
+
+        inst.playbackSpeed = playbackSpeed;
+        System.arraycopy(dynamicInputs, 0, inst.dynamicInputs, 0, inst.dynamicInputs.length);
+        inst.pendingPlay = true;
+        inst.playing = false;
+        if (inst.node.getParent() == null && inst.visible) {
+            rootNode.attachChild(inst.node);
+        }
+    }
+
+    public void renderEffekseerEffects(float tpf, ViewPort viewPort) {
+        if (!EffekseerNativeBridge.isAvailable() || effekseerEffects.isEmpty() || viewPort == null) {
+            return;
+        }
+
+        Camera activeCamera = viewPort.getCamera();
+        Matrix4f view = activeCamera.getViewMatrix().clone();
+        Matrix4f projection = activeCamera.getProjectionMatrix().clone();
+        float[] cameraPosition = new float[] {activeCamera.getLocation().x, activeCamera.getLocation().y, activeCamera.getLocation().z};
+
+        for (EffekseerInst inst : effekseerEffects.values()) {
+            if (inst == null || !inst.visible || inst.node.getParent() == null || !inst.loaded) {
+                continue;
+            }
+
+            EffekseerNativeBridge.setCamera(inst.nativeContextHandle, view, projection, cameraPosition);
+            Vector3f worldPos = inst.node.getWorldTranslation();
+            Matrix4f worldMatrix = new Matrix4f();
+            inst.node.getWorldTransform().toTransformMatrix(worldMatrix);
+            EffekseerNativeBridge.setEffectLocation(inst.nativeContextHandle, worldPos.x, worldPos.y, worldPos.z);
+            EffekseerNativeBridge.setEffectTransform(inst.nativeContextHandle, worldMatrix);
+            if (inst.pendingPlay) {
+                EffekseerNativeBridge.playEffect(inst.nativeContextHandle);
+                EffekseerNativeBridge.setEffectLocation(inst.nativeContextHandle, worldPos.x, worldPos.y, worldPos.z);
+                EffekseerNativeBridge.setEffectTransform(inst.nativeContextHandle, worldMatrix);
+                EffekseerNativeBridge.setPlaybackSpeed(inst.nativeContextHandle, inst.playbackSpeed);
+                for (int i = 0; i < inst.dynamicInputs.length; i++) {
+                    EffekseerNativeBridge.setDynamicInput(inst.nativeContextHandle, i, inst.dynamicInputs[i]);
+                }
+                inst.pendingPlay = false;
+                inst.playing = true;
+            }
+            EffekseerNativeBridge.update(inst.nativeContextHandle, tpf);
+            if (inst.playing && !EffekseerNativeBridge.isEffectPlaying(inst.nativeContextHandle)) {
+                inst.playing = false;
+                inst.node.removeFromParent();
+                continue;
+            }
+            EffekseerNativeBridge.render(inst.nativeContextHandle, activeCamera.getWidth(), activeCamera.getHeight());
+        }
+    }
+
+    public void posEffekseer(String targetVar, Double valX, Double valY, Double valZ, RunTimeVarDef varForPos, Vector3f calculatedPosition) {
+        EffekseerInst inst = effekseerEffects.get(targetVar);
+        if (inst == null) {
+            return;
+        }
+        if (calculatedPosition != null) {
+            inst.node.setLocalTranslation(calculatedPosition);
+        } else if (varForPos != null) {
+            Spatial sp = getEntitySpatial(varForPos.varName, varForPos.varDef.varType);
+            if (sp != null) {
+                inst.node.setLocalTranslation(sp.getWorldTranslation());
+            }
+        } else {
+            inst.node.setLocalTranslation(valX.floatValue(), valY.floatValue(), valZ.floatValue());
+        }
+    }
+
+    public void showHideEffekseer(String targetVar, ActionCommandShowHide show) {
+        EffekseerInst inst = effekseerEffects.get(targetVar);
+        if (inst == null) {
+            return;
+        }
+        inst.visible = show.show;
+        if (!show.show) {
+            inst.playing = false;
+            inst.node.removeFromParent();
+        } else if (inst.node.getParent() == null) {
+            rootNode.attachChild(inst.node);
+        }
+    }
+
+    public void killEffekseerEffect(String varName) {
+        EffekseerInst inst = effekseerEffects.get(varName);
+        if (inst == null) {
+            return;
+        }
+        if (inst.nativeContextHandle != 0L) {
+            EffekseerNativeBridge.stopEffect(inst.nativeContextHandle);
+            EffekseerNativeBridge.unloadEffect(inst.nativeContextHandle);
+            EffekseerNativeBridge.destroyPreviewContext(inst.nativeContextHandle);
+            inst.nativeContextHandle = 0L;
+        }
+        inst.playing = false;
+        inst.node.removeFromParent();
+        effekseerEffects.remove(varName);
+        effekseerInstances.remove(inst.entityKey);
+        geoName2EntityInst.remove(varName);
+    }
+
+    public void detachEffekseerFromParent(String targetVar) {
+        EffekseerInst inst = effekseerEffects.get(targetVar);
+        if (inst == null) {
+            return;
+        }
+        Vector3f worldPos = inst.node.getWorldTranslation().clone();
+        Quaternion worldRot = inst.node.getWorldRotation().clone();
+        inst.node.removeFromParent();
+        rootNode.attachChild(inst.node);
+        inst.node.setLocalTranslation(worldPos);
+        inst.node.setLocalRotation(worldRot);
     }
 
     public void ignoreJoints(String targetVar, RunTimeVarDef ignoreVarDef) {
