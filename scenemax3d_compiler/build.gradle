@@ -25,5 +25,6 @@ sourceSets {
 dependencies {
     implementation 'commons-io:commons-io:2.11.0'
     implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: [])
+    implementation 'org.antlr:antlr4-runtime:4.5.3'
 
 }

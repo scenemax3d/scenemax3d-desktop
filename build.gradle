@@ -50,6 +50,38 @@ repositories {
     mavenCentral()
 }
 
+def parserBuildScript = file('scenemax3d_parser/build.bat')
+
+tasks.register('generateSceneMaxParser', Exec) {
+    group = 'build setup'
+    description = 'Generates the SceneMax ANTLR parser jar used by compiler and projector modules.'
+    workingDir = file('scenemax3d_parser')
+    commandLine 'cmd', '/c', parserBuildScript.absolutePath
+    inputs.file(file('scenemax3d_parser/SceneMax.g4'))
+    inputs.file(file('scenemax3d_parser/antlr-4.5.3-complete.jar'))
+    outputs.file(file('scenemax3d_compiler/libs/scenemax_parser.jar'))
+    outputs.file(file('scenemax_win_projector/libs/scenemax_parser.jar'))
+}
+
+tasks.named('build') {
+    dependsOn tasks.named('generateSceneMaxParser')
+}
+
+tasks.withType(JavaCompile).configureEach {
+    dependsOn tasks.named('generateSceneMaxParser')
+}
+
+gradle.projectsEvaluated {
+    [':scenemax3d_compiler', ':scenemax_win_projector'].each { projectPath ->
+        Project targetProject = findProject(projectPath)
+        if (targetProject != null) {
+            targetProject.tasks.matching { it.name == 'compileJava' || it.name == 'compileTestJava' }.configureEach {
+                dependsOn rootProject.tasks.named('generateSceneMaxParser')
+            }
+        }
+    }
+}
+
 sourceSets {
     main {
         java {
@@ -70,6 +102,7 @@ sourceSets {
 dependencies {
     implementation 'com.intellij:forms_rt:7.0.3'
     implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: [])
+    implementation 'org.antlr:antlr4-runtime:4.5.3'
     testImplementation 'junit:junit:4.12'
 
     implementation project(':scenemax3d_common_types')

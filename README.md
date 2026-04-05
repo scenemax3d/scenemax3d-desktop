@@ -46,6 +46,12 @@ cp config.properties.example config.properties
 ./gradlew build
 ```
 
+Notes:
+
+- The Gradle wrapper (`gradlew`, `gradlew.bat`, and `gradle/wrapper/*`) is the supported build entry point and is included in the repository.
+- The build automatically runs `scenemax3d_parser/build.bat` first to generate the SceneMax parser jar required by the compiler and projector modules.
+- On Windows, `build.bat` is non-interactive and uses `JAVA_HOME` when available, otherwise it falls back to `java`, `javac`, and `jar` from `PATH`.
+
 ## Configuration
 
 Application credentials and service endpoints are stored in `config.properties` (git-ignored).
