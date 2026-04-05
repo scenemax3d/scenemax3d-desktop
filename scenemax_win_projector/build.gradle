@@ -41,6 +41,27 @@ shadowJar {
 }
 assemble.dependsOn shadowJar
 
+def projectorArtifactDir = rootProject.file('out/artifacts')
+def projectorArtifactFile = new File(projectorArtifactDir, 'scenemax_win_projector.jar')
+
+tasks.register('publishProjectorArtifact', Copy) {
+    group = 'build'
+    description = 'Copies the projector fat jar to out/artifacts and removes stale launcher jars.'
+    dependsOn tasks.named('shadowJar')
+    from(tasks.named('shadowJar').flatMap { it.archiveFile })
+    into(projectorArtifactDir)
+    rename { 'scenemax_win_projector.jar' }
+    doLast {
+        delete rootProject.fileTree(rootProject.projectDir) {
+            include 'launcher*.jar'
+        }
+    }
+}
+
+tasks.named('build') {
+    dependsOn tasks.named('publishProjectorArtifact')
+}
+
 jar {
     from("$buildDir/dependencies")
 

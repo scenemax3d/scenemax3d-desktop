@@ -50,17 +50,78 @@ repositories {
     mavenCentral()
 }
 
-def parserBuildScript = file('scenemax3d_parser/build.bat')
+def parserDir = file('scenemax3d_parser')
+def parserGrammar = file('scenemax3d_parser/SceneMax.g4')
+def parserGeneratedSrcDir = file("$buildDir/generated/scenemax-parser/src")
+def parserGeneratedClassesDir = file("$buildDir/generated/scenemax-parser/classes")
+def parserJarOutput = file("$buildDir/generated/scenemax-parser/scenemax_parser.jar")
+def parserCompilerLib = file('scenemax3d_compiler/libs/scenemax_parser.jar')
+def parserProjectorLib = file('scenemax_win_projector/libs/scenemax_parser.jar')
 
-tasks.register('generateSceneMaxParser', Exec) {
+configurations {
+    antlrTool
+}
+
+tasks.register('cleanSceneMaxParserGenerated', Delete) {
+    delete parserGeneratedSrcDir, parserGeneratedClassesDir, parserJarOutput
+}
+
+tasks.register('generateSceneMaxParserSources', JavaExec) {
+    group = 'build setup'
+    description = 'Generates Java sources from SceneMax.g4 using ANTLR.'
+    dependsOn tasks.named('cleanSceneMaxParserGenerated')
+    classpath = configurations.antlrTool
+    mainClass = 'org.antlr.v4.Tool'
+    workingDir = parserDir
+    args '-no-listener', '-visitor', '-o', parserGeneratedSrcDir.absolutePath, parserGrammar.absolutePath
+    inputs.file(parserGrammar)
+    inputs.files(configurations.antlrTool)
+    outputs.dir(parserGeneratedSrcDir)
+}
+
+tasks.register('compileSceneMaxParser', JavaCompile) {
+    group = 'build setup'
+    description = 'Compiles generated SceneMax parser sources.'
+    dependsOn tasks.named('generateSceneMaxParserSources')
+    source = fileTree(parserGeneratedSrcDir) {
+        include 'SceneMax*.java'
+    }
+    classpath = configurations.antlrTool
+    destinationDirectory = parserGeneratedClassesDir
+    sourceCompatibility = '1.8'
+    targetCompatibility = '1.8'
+    options.encoding = 'UTF-8'
+    inputs.dir(parserGeneratedSrcDir)
+    outputs.dir(parserGeneratedClassesDir)
+}
+
+tasks.register('jarSceneMaxParser', Jar) {
+    group = 'build setup'
+    description = 'Packages the generated SceneMax parser jar.'
+    dependsOn tasks.named('compileSceneMaxParser')
+    archiveFileName = 'scenemax_parser.jar'
+    destinationDirectory = parserJarOutput.parentFile
+    from parserGeneratedClassesDir
+    inputs.dir(parserGeneratedClassesDir)
+    outputs.file(parserJarOutput)
+}
+
+tasks.register('generateSceneMaxParser', Copy) {
     group = 'build setup'
     description = 'Generates the SceneMax ANTLR parser jar used by compiler and projector modules.'
-    workingDir = file('scenemax3d_parser')
-    commandLine 'cmd', '/c', parserBuildScript.absolutePath
-    inputs.file(file('scenemax3d_parser/SceneMax.g4'))
-    inputs.file(file('scenemax3d_parser/antlr-4.5.3-complete.jar'))
-    outputs.file(file('scenemax3d_compiler/libs/scenemax_parser.jar'))
-    outputs.file(file('scenemax_win_projector/libs/scenemax_parser.jar'))
+    dependsOn tasks.named('jarSceneMaxParser')
+    from parserJarOutput
+    into file('scenemax3d_compiler/libs')
+    rename { 'scenemax_parser.jar' }
+    doLast {
+        copy {
+            from parserJarOutput
+            into file('scenemax_win_projector/libs')
+        }
+    }
+    inputs.file(parserJarOutput)
+    outputs.file(parserCompilerLib)
+    outputs.file(parserProjectorLib)
 }
 
 tasks.named('build') {
@@ -68,7 +129,9 @@ tasks.named('build') {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    dependsOn tasks.named('generateSceneMaxParser')
+    if (name != 'compileSceneMaxParser') {
+        dependsOn tasks.named('generateSceneMaxParser')
+    }
 }
 
 gradle.projectsEvaluated {
@@ -100,6 +163,7 @@ sourceSets {
 }
 
 dependencies {
+    antlrTool 'org.antlr:antlr4:4.5.3'
     implementation 'com.intellij:forms_rt:7.0.3'
     implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: [])
     implementation 'org.antlr:antlr4-runtime:4.5.3'

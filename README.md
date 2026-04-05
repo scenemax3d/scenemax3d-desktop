@@ -49,8 +49,10 @@ cp config.properties.example config.properties
 Notes:
 
 - The Gradle wrapper (`gradlew`, `gradlew.bat`, and `gradle/wrapper/*`) is the supported build entry point and is included in the repository.
-- The build automatically runs `scenemax3d_parser/build.bat` first to generate the SceneMax parser jar required by the compiler and projector modules.
-- On Windows, `build.bat` is non-interactive and uses `JAVA_HOME` when available, otherwise it falls back to `java`, `javac`, and `jar` from `PATH`.
+- The build automatically generates the SceneMax parser jar from `scenemax3d_parser/SceneMax.g4` before compiling the compiler and projector modules.
+- Parser generation is implemented in Gradle and works from the root wrapper on Windows, Linux, and macOS.
+- The ANTLR tool is resolved automatically from Maven Central during the build; the local parser convenience script is not required for a clean clone build.
+- `scenemax3d_parser/build.bat` is kept as a Windows convenience script and is non-interactive. It uses `JAVA_HOME` when available, otherwise it falls back to `java`, `javac`, and `jar` from `PATH`.
 
 ## Configuration
 
