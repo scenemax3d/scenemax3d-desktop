@@ -26,6 +26,12 @@ scenemax3d_compiler/src/com/scenemaxeng/compiler/META-INF/
 *.dll
 *.exe
 INNO-SETUP/Output/
+*.so
+*.dylib
+*.exp
+*.ilk
+*.lib
+*.pdb
 
 # Runtime / data directories
 run_dir/
@@ -117,3 +123,56 @@ config.properties
 
 # Claude memory (local only)
 .claude/
+
+# Local crash/export artifacts
+/exception_*
+/scenemax_designer/exception_*
+/hello.obj
+
+# Downloaded local tooling
+/tools/
+
+# Effekseer native local build outputs
+/scenemax_designer/native/effekseer_bridge/build-*/
+/scenemax_designer/native/effekseer_bridge/Dev/release/
+/scenemax_designer/assets/native/
+/scenemax_effekseer_runtime/assets/native/windows-x86_64/*.dll
+/scenemax_effekseer_runtime/assets/native/linux-x86_64/*.so
+/scenemax_effekseer_runtime/assets/native/macos-x86_64/*.dylib
+/scenemax_effekseer_runtime/assets/native/macos-aarch64/*.dylib
+/scenemax_effekseer_runtime/assets/native/windows-x86_64/*.pdb
+/scenemax_effekseer_runtime/assets/native/windows-x86_64/*.ilk
+
+# Keep Effekseer source/runtime files visible despite older broad patterns like effekseer/ and *.txt
+!/docs/effekseer-particle-designer.md
+!/scenemax_effekseer_runtime/
+!/scenemax_effekseer_runtime/build.gradle
+!/scenemax_effekseer_runtime/src/
+!/scenemax_effekseer_runtime/src/**
+!/scenemax_effekseer_runtime/assets/
+!/scenemax_effekseer_runtime/assets/native/
+!/scenemax_effekseer_runtime/assets/native/README.md
+!/scenemax_effekseer_runtime/assets/native/linux-x86_64/
+!/scenemax_effekseer_runtime/assets/native/linux-x86_64/.gitkeep
+!/scenemax_effekseer_runtime/assets/native/macos-x86_64/
+!/scenemax_effekseer_runtime/assets/native/macos-x86_64/.gitkeep
+!/scenemax_effekseer_runtime/assets/native/macos-aarch64/
+!/scenemax_effekseer_runtime/assets/native/macos-aarch64/.gitkeep
+!/scenemax_designer/native/
+!/scenemax_designer/native/effekseer_bridge/
+!/scenemax_designer/native/effekseer_bridge/CMakeLists.txt
+!/scenemax_designer/native/effekseer_bridge/README.md
+!/scenemax_designer/native/effekseer_bridge/scenemax_effekseer_jni.cpp
+!/scenemax_designer/native/effekseer_bridge/build-linux.sh
+!/scenemax_designer/native/effekseer_bridge/build-macos.sh
+!/scenemax_designer/assets/
+!/scenemax_designer/assets/MatDefs/
+!/scenemax_designer/assets/MatDefs/**
+!/scenemax_designer/src/com/scenemax/designer/effekseer/
+!/scenemax_designer/src/com/scenemax/designer/effekseer/**
+!/scenemax_designer/src/com/scenemax/designer/particle/
+!/scenemax_designer/src/com/scenemax/designer/particle/**
+!/.github/
+!/.github/workflows/
+!/.github/workflows/**
+/.github/workflows/effekseer-native-desktop.yml
