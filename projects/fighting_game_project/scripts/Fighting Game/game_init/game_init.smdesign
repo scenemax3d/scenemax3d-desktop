@@ -1005,32 +1005,167 @@
         0
       ],
       "type": "CODE"
+    },
+    {
+      "cinematicTargetEntityId": "f0af5cf2-e250-48cb-b3b1-68726126925a",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "cinematicTargetOffset": [
+        0,
+        4.6,
+        0
+      ],
+      "cinematicEaseIn": "ease_in_expo",
+      "type": "CINEMATIC_RIG",
+      "cinematicTargetEntityName": "player1",
+      "children": [
+        {
+          "rotation": [
+            0.07921649,
+            0.6205561,
+            0.29452312,
+            -0.72242033
+          ],
+          "name": "cinematic_track_1",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "id": "f6372e24-8f3b-4ff1-a3fe-bbd4f972dda2",
+          "position": [
+            9.616329,
+            3.1959724,
+            39.558445
+          ],
+          "type": "CINEMATIC_TRACK",
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 30,
+            "selectedStartAnchor": 104,
+            "radiusZ": 8.6,
+            "radiusX": 6.4,
+            "selectedEndAnchor": 315
+          }
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "cinematic_track_2",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "id": "50e4d671-e906-4b59-ac19-6f7aec13ebf2",
+          "position": [
+            13.241514,
+            5.2419777,
+            42.234844
+          ],
+          "type": "CINEMATIC_TRACK",
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 51,
+            "selectedStartAnchor": 80,
+            "radiusZ": 0.5,
+            "radiusX": 16.6,
+            "selectedEndAnchor": -1
+          }
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "cinematic_track_3",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "id": "1b765554-e9eb-40a9-9414-12982c128886",
+          "position": [
+            0,
+            5.3814564,
+            36.72294
+          ],
+          "type": "CINEMATIC_TRACK",
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 30,
+            "selectedStartAnchor": -1,
+            "radiusZ": 2.5,
+            "radiusX": 2.5,
+            "selectedEndAnchor": -1
+          }
+        }
+      ],
+      "cinematicEaseOut": "ease_out_quad",
+      "name": "Cinematic Rig",
+      "cinematicSegments": [
+        {
+          "startAnchor": 104,
+          "trackId": "f6372e24-8f3b-4ff1-a3fe-bbd4f972dda2",
+          "endAnchor": 315,
+          "trackName": "cinematic_track_1",
+          "speed": 30
+        },
+        {
+          "startAnchor": 12,
+          "trackId": "50e4d671-e906-4b59-ac19-6f7aec13ebf2",
+          "endAnchor": 188,
+          "trackName": "cinematic_track_2",
+          "speed": 30
+        }
+      ],
+      "id": "e6071413-726b-4a6e-8532-d47cd9ba7743",
+      "position": [
+        0,
+        -54.68586,
+        4.3755417
+      ]
     }
   ],
   "gameCamera": {
     "rotation": [
-      0,
-      1,
-      0,
-      0
+      0.09438024,
+      0.87408334,
+      -0.18849707,
+      0.4376524
     ],
     "position": [
-      12.68647,
-      -10.546852,
-      58.799103
+      8.015769,
+      -8.97224,
+      51.23
     ]
   },
   "camera": {
     "rotation": [
       -0.09904575,
       0.8923991,
-      -0.2391176,
-      -0.36964384
+      -0.23911761,
+      -0.3696438
     ],
     "position": [
-      9.185587,
-      7.5,
-      9.185586
+      27.780962,
+      28.064516,
+      64.5039
     ]
   },
   "version": 1

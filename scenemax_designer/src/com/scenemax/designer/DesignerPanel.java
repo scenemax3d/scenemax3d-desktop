@@ -4,6 +4,8 @@ import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
 import com.jme3.system.AppSettings;
 import com.jme3.system.JmeCanvasContext;
+import com.scenemax.designer.cinematic.CinematicSegment;
+import com.scenemax.designer.cinematic.CinematicTrackData;
 import com.scenemax.designer.gizmo.GizmoMode;
 import com.scenemax.designer.path.BezierPath;
 import com.scenemax.designer.path.PathSample;
@@ -107,6 +109,18 @@ public class DesignerPanel extends JPanel {
     private JLabel lblPathPointCount;
     private JSpinner spnPathSubdivisions;
     private JCheckBox chkPathClosed;
+    private JPanel cinematicTrackPanel;
+    private JSpinner spnCinematicRadiusX, spnCinematicRadiusZ;
+    private JSpinner spnCinematicPreviewSpeed;
+    private JLabel lblCinematicSelection;
+    private JPanel cinematicRigPanel;
+    private DefaultListModel<String> cinematicStackListModel;
+    private JList<String> cinematicStackList;
+    private JSpinner spnCinematicSegmentSpeed;
+    private JComboBox<String> cboCinematicTarget;
+    private JComboBox<EasingOption> cboCinematicEaseIn, cboCinematicEaseOut;
+    private JSpinner spnCinematicTargetOffsetX, spnCinematicTargetOffsetY, spnCinematicTargetOffsetZ;
+    private java.util.List<DesignerEntity> cinematicTargetChoices = new ArrayList<>();
     private JPanel staticColliderPanel;
     private JComboBox<String> cboMaterial;
     private JPanel materialPanel;
@@ -196,6 +210,12 @@ public class DesignerPanel extends JPanel {
             if (app != null) app.enqueue(() -> { app.enterPathMode(); return null; });
         });
 
+        JButton btnAddCinematic = new JButton(createDesignerToolbarIcon("cinematic"));
+        btnAddCinematic.setToolTipText("Add Cinematic Track");
+        btnAddCinematic.addActionListener(e -> {
+            if (app != null) app.enqueue(() -> { app.addDefaultCinematicTrack(); return null; });
+        });
+
         JButton btnDelete = new JButton(createDesignerToolbarIcon("delete"));
         btnDelete.setToolTipText("Delete Selected");
         btnDelete.addActionListener(e -> {
@@ -216,6 +236,7 @@ public class DesignerPanel extends JPanel {
         toolbar.add(btnAddQuad);
         toolbar.add(btnAddModel);
         toolbar.add(btnAddPath);
+        toolbar.add(btnAddCinematic);
         toolbar.addSeparator();
         toolbar.add(btnDelete);
         toolbar.addSeparator();
@@ -728,6 +749,170 @@ public class DesignerPanel extends JPanel {
         pathPropertiesPanel.setVisible(false);
         propertiesForm.add(pathPropertiesPanel);
 
+        cinematicTrackPanel = new JPanel();
+        cinematicTrackPanel.setLayout(new BoxLayout(cinematicTrackPanel, BoxLayout.Y_AXIS));
+        cinematicTrackPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        cinematicTrackPanel.add(Box.createVerticalStrut(8));
+        JLabel lblCinematicTrack = new JLabel("Cinematic Track:");
+        lblCinematicTrack.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblCinematicTrack.setFont(lblCinematicTrack.getFont().deriveFont(Font.BOLD));
+        cinematicTrackPanel.add(lblCinematicTrack);
+
+        JPanel radiusXRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        radiusXRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        radiusXRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        spnCinematicRadiusX = new JSpinner(new SpinnerNumberModel(2.5, 0.1, 9999.0, 0.1));
+        spnCinematicRadiusX.setPreferredSize(new Dimension(80, 24));
+        radiusXRow.add(new JLabel("Radius X:"));
+        radiusXRow.add(spnCinematicRadiusX);
+        cinematicTrackPanel.add(radiusXRow);
+
+        JPanel radiusZRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        radiusZRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        radiusZRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        spnCinematicRadiusZ = new JSpinner(new SpinnerNumberModel(2.5, 0.1, 9999.0, 0.1));
+        spnCinematicRadiusZ.setPreferredSize(new Dimension(80, 24));
+        radiusZRow.add(new JLabel("Radius Z:"));
+        radiusZRow.add(spnCinematicRadiusZ);
+        cinematicTrackPanel.add(radiusZRow);
+
+        JPanel previewSpeedRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        previewSpeedRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        previewSpeedRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        spnCinematicPreviewSpeed = new JSpinner(new SpinnerNumberModel(30.0, 0.1, 9999.0, 1.0));
+        spnCinematicPreviewSpeed.setPreferredSize(new Dimension(80, 24));
+        previewSpeedRow.add(new JLabel("Preview Speed:"));
+        previewSpeedRow.add(spnCinematicPreviewSpeed);
+        cinematicTrackPanel.add(previewSpeedRow);
+
+        lblCinematicSelection = new JLabel("Selected Range: none");
+        lblCinematicSelection.setAlignmentX(Component.LEFT_ALIGNMENT);
+        cinematicTrackPanel.add(lblCinematicSelection);
+
+        JPanel cinematicButtonRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        cinematicButtonRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        cinematicButtonRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        JButton btnAddRangeToStack = new JButton("Add Range");
+        btnAddRangeToStack.addActionListener(e -> addSelectedCinematicRange());
+        JButton btnClearRange = new JButton("Clear Range");
+        btnClearRange.addActionListener(e -> clearSelectedCinematicRange());
+        JButton btnPlayTrack = new JButton("Play");
+        btnPlayTrack.addActionListener(e -> playSelectedCinematicTrack());
+        JButton btnStopTrack = new JButton("Stop");
+        btnStopTrack.addActionListener(e -> stopCinematicPlayback());
+        cinematicButtonRow.add(btnAddRangeToStack);
+        cinematicButtonRow.add(btnClearRange);
+        cinematicButtonRow.add(btnPlayTrack);
+        cinematicButtonRow.add(btnStopTrack);
+        cinematicTrackPanel.add(cinematicButtonRow);
+
+        spnCinematicRadiusX.addChangeListener(e -> applyCinematicTrackChange());
+        spnCinematicRadiusZ.addChangeListener(e -> applyCinematicTrackChange());
+        spnCinematicPreviewSpeed.addChangeListener(e -> applyCinematicTrackChange());
+
+        cinematicTrackPanel.setVisible(false);
+        propertiesForm.add(cinematicTrackPanel);
+
+        cinematicRigPanel = new JPanel();
+        cinematicRigPanel.setLayout(new BoxLayout(cinematicRigPanel, BoxLayout.Y_AXIS));
+        cinematicRigPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        cinematicRigPanel.add(Box.createVerticalStrut(8));
+        JLabel lblRig = new JLabel("Cinematic Stack:");
+        lblRig.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblRig.setFont(lblRig.getFont().deriveFont(Font.BOLD));
+        cinematicRigPanel.add(lblRig);
+
+        JPanel rigTopButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        rigTopButtons.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JButton btnAddTrackToRig = new JButton("Add Rail");
+        btnAddTrackToRig.setToolTipText("Add a new cinematic circle/ellipse rail to this rig");
+        btnAddTrackToRig.addActionListener(e -> addTrackToSelectedRig());
+        rigTopButtons.add(btnAddTrackToRig);
+        cinematicRigPanel.add(rigTopButtons);
+
+        JPanel targetRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        targetRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        targetRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        targetRow.add(new JLabel("Look At Target:"));
+        cboCinematicTarget = new JComboBox<>(new String[]{"None"});
+        cboCinematicTarget.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+        cboCinematicTarget.addActionListener(e -> applyCinematicRigTargetChange());
+        targetRow.add(cboCinematicTarget);
+        cinematicRigPanel.add(targetRow);
+
+        JPanel targetOffsetRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
+        targetOffsetRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        targetOffsetRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        spnCinematicTargetOffsetX = new JSpinner(new SpinnerNumberModel(0.0, -9999.0, 9999.0, 0.1));
+        spnCinematicTargetOffsetY = new JSpinner(new SpinnerNumberModel(1.5, -9999.0, 9999.0, 0.1));
+        spnCinematicTargetOffsetZ = new JSpinner(new SpinnerNumberModel(0.0, -9999.0, 9999.0, 0.1));
+        targetOffsetRow.add(new JLabel("Target Offset:"));
+        targetOffsetRow.add(new JLabel("X:"));
+        targetOffsetRow.add(spnCinematicTargetOffsetX);
+        targetOffsetRow.add(new JLabel("Y:"));
+        targetOffsetRow.add(spnCinematicTargetOffsetY);
+        targetOffsetRow.add(new JLabel("Z:"));
+        targetOffsetRow.add(spnCinematicTargetOffsetZ);
+        cinematicRigPanel.add(targetOffsetRow);
+
+        JPanel easeInRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        easeInRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        easeInRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        easeInRow.add(new JLabel("Ease In:"));
+        cboCinematicEaseIn = new JComboBox<>(buildCinematicEasingOptions());
+        cboCinematicEaseIn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+        cboCinematicEaseIn.addActionListener(e -> applyCinematicRigEasingChange());
+        easeInRow.add(cboCinematicEaseIn);
+        cinematicRigPanel.add(easeInRow);
+
+        JPanel easeOutRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        easeOutRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        easeOutRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        easeOutRow.add(new JLabel("Ease Out:"));
+        cboCinematicEaseOut = new JComboBox<>(buildCinematicEasingOptions());
+        cboCinematicEaseOut.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+        cboCinematicEaseOut.addActionListener(e -> applyCinematicRigEasingChange());
+        easeOutRow.add(cboCinematicEaseOut);
+        cinematicRigPanel.add(easeOutRow);
+
+        cinematicStackListModel = new DefaultListModel<>();
+        cinematicStackList = new JList<>(cinematicStackListModel);
+        cinematicStackList.setVisibleRowCount(6);
+        JScrollPane cinematicStackScroll = new JScrollPane(cinematicStackList);
+        cinematicStackScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
+        cinematicStackScroll.setPreferredSize(new Dimension(200, 120));
+        cinematicRigPanel.add(cinematicStackScroll);
+
+        JPanel segmentSpeedRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        segmentSpeedRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        spnCinematicSegmentSpeed = new JSpinner(new SpinnerNumberModel(30.0, 0.1, 9999.0, 1.0));
+        spnCinematicSegmentSpeed.setPreferredSize(new Dimension(80, 24));
+        segmentSpeedRow.add(new JLabel("Segment Speed:"));
+        segmentSpeedRow.add(spnCinematicSegmentSpeed);
+        cinematicRigPanel.add(segmentSpeedRow);
+
+        JPanel stackButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        stackButtons.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JButton btnRemoveSegment = new JButton("Remove Selected");
+        btnRemoveSegment.addActionListener(e -> removeSelectedCinematicSegment());
+        JButton btnPlayCinematic = new JButton("Play");
+        btnPlayCinematic.addActionListener(e -> playSelectedCinematicRig());
+        JButton btnStopCinematic = new JButton("Stop");
+        btnStopCinematic.addActionListener(e -> stopCinematicPlayback());
+        stackButtons.add(btnPlayCinematic);
+        stackButtons.add(btnStopCinematic);
+        stackButtons.add(btnRemoveSegment);
+        cinematicRigPanel.add(stackButtons);
+
+        cinematicStackList.addListSelectionListener(e -> onCinematicSegmentSelectionChanged());
+        spnCinematicSegmentSpeed.addChangeListener(e -> applySelectedCinematicSegmentSpeed());
+        spnCinematicTargetOffsetX.addChangeListener(e -> applyCinematicRigTargetOffsetChange());
+        spnCinematicTargetOffsetY.addChangeListener(e -> applyCinematicRigTargetOffsetChange());
+        spnCinematicTargetOffsetZ.addChangeListener(e -> applyCinematicRigTargetOffsetChange());
+
+        cinematicRigPanel.setVisible(false);
+        propertiesForm.add(cinematicRigPanel);
+
         propertiesForm.revalidate();
     }
 
@@ -956,10 +1141,33 @@ public class DesignerPanel extends JPanel {
             @Override
             public void onSelectionChanged(DesignerEntity entity) {
                 SwingUtilities.invokeLater(() -> {
-                    updatePropertiesPanel(entity);
-                    selectEntityInTree(entity);
+                    DesignerEntity effective = entity;
+                    if (effective == null) {
+                        DesignerEntity treeEntity = getSelectedTreeEntity();
+                    if (treeEntity != null && (treeEntity.getType() == DesignerEntityType.SECTION
+                                || treeEntity.getType() == DesignerEntityType.CINEMATIC_RIG)) {
+                            effective = treeEntity;
+                        }
+                    }
+                    if (app != null) {
+                        final DesignerEntity cinematicTarget = effective;
+                        if (effective != null && (effective.getType() == DesignerEntityType.CINEMATIC_TRACK
+                                || effective.getType() == DesignerEntityType.CINEMATIC_RIG)) {
+                            app.enqueue(() -> {
+                                app.setCinematicAuthoringTarget(cinematicTarget);
+                                return null;
+                            });
+                        } else {
+                            app.enqueue(() -> {
+                                app.setCinematicAuthoringTarget(null);
+                                return null;
+                            });
+                        }
+                    }
+                    updatePropertiesPanel(effective);
+                    selectEntityInTree(effective);
                     // Hide code editor when a 3D entity is selected via viewport
-                    if (entity != null && entity.getType() != DesignerEntityType.CODE) {
+                    if (effective != null && effective.getType() != DesignerEntityType.CODE) {
                         hideCodeEditor();
                     }
                 });
@@ -1100,7 +1308,8 @@ public class DesignerPanel extends JPanel {
             System.out.println("[TRACE] refreshSceneTree: top-level entities count=" + snapshot.size());
             for (DesignerEntity e : snapshot) {
                 System.out.println("[TRACE]   entity: " + e.getName() + " type=" + e.getType()
-                        + (e.getType() == DesignerEntityType.SECTION ? " children=" + e.getChildren().size() : ""));
+                        + ((e.getType() == DesignerEntityType.SECTION || e.getType() == DesignerEntityType.CINEMATIC_RIG)
+                        ? " children=" + e.getChildren().size() : ""));
             }
             buildTreeNodes(sceneTreeRoot, snapshot);
         }
@@ -1115,7 +1324,7 @@ public class DesignerPanel extends JPanel {
         for (DesignerEntity entity : entities) {
             DefaultMutableTreeNode node = new DefaultMutableTreeNode(new EntityTreeNode(entity, entity.getName()));
             parent.add(node);
-            if (entity.getType() == DesignerEntityType.SECTION) {
+            if (entity.getType() == DesignerEntityType.SECTION || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
                 buildTreeNodes(node, entity.getChildren());
             }
         }
@@ -1126,7 +1335,7 @@ public class DesignerPanel extends JPanel {
             DefaultMutableTreeNode child = (DefaultMutableTreeNode) parent.getChildAt(i);
             if (child.getUserObject() instanceof EntityTreeNode) {
                 EntityTreeNode etn = (EntityTreeNode) child.getUserObject();
-                if (etn.entity.getType() == DesignerEntityType.SECTION) {
+                if (etn.entity.getType() == DesignerEntityType.SECTION || etn.entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
                     if (expandedIds.contains(etn.entity.getId())) {
                         sceneTree.expandPath(new TreePath(child.getPath()));
                     }
@@ -1143,6 +1352,7 @@ public class DesignerPanel extends JPanel {
             if (app != null) {
                 app.enqueue(() -> {
                     app.getSelectionManager().deselect();
+                    app.setCinematicAuthoringTarget(null);
                     return null;
                 });
             }
@@ -1161,6 +1371,7 @@ public class DesignerPanel extends JPanel {
             if (app != null) {
                 app.enqueue(() -> {
                     app.getSelectionManager().deselect();
+                    app.setCinematicAuthoringTarget(null);
                     return null;
                 });
             }
@@ -1173,6 +1384,7 @@ public class DesignerPanel extends JPanel {
             if (app != null) {
                 app.enqueue(() -> {
                     app.getSelectionManager().deselect();
+                    app.setCinematicAuthoringTarget(null);
                     return null;
                 });
             }
@@ -1185,6 +1397,9 @@ public class DesignerPanel extends JPanel {
         if (app != null) {
             app.enqueue(() -> {
                 app.getSelectionManager().select(etn.entity);
+                app.setCinematicAuthoringTarget(
+                        (etn.entity.getType() == DesignerEntityType.CINEMATIC_TRACK
+                                || etn.entity.getType() == DesignerEntityType.CINEMATIC_RIG) ? etn.entity : null);
                 return null;
             });
         }
@@ -1219,7 +1434,7 @@ public class DesignerPanel extends JPanel {
                     return child;
                 }
                 // Search inside section children
-                if (etn.entity.getType() == DesignerEntityType.SECTION) {
+                if (etn.entity.getType() == DesignerEntityType.SECTION || etn.entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
                     DefaultMutableTreeNode found = findTreeNode(child, entity);
                     if (found != null) return found;
                 }
@@ -1790,6 +2005,8 @@ public class DesignerPanel extends JPanel {
                 shadowModePanel.setVisible(false);
                 jointMappingPanel.setVisible(false);
                 pathPropertiesPanel.setVisible(false);
+                cinematicTrackPanel.setVisible(false);
+                cinematicRigPanel.setVisible(false);
                 return;
             }
 
@@ -1911,8 +2128,57 @@ public class DesignerPanel extends JPanel {
                 pathPropertiesPanel.setVisible(false);
             }
 
+            if (entity.getType() == DesignerEntityType.CINEMATIC_TRACK && entity.getCinematicTrackData() != null) {
+                CinematicTrackData data = entity.getCinematicTrackData();
+                spnCinematicRadiusX.setValue((double) data.getRadiusX());
+                spnCinematicRadiusZ.setValue((double) data.getRadiusZ());
+                spnCinematicPreviewSpeed.setValue((double) data.getPreviewSpeed());
+                if (data.getSelectedStartAnchor() >= 0 && data.getSelectedEndAnchor() >= 0) {
+                    lblCinematicSelection.setText("Selected Range: "
+                            + data.getSelectedStartAnchor() + " - " + data.getSelectedEndAnchor());
+                } else if (data.getSelectedStartAnchor() >= 0) {
+                    lblCinematicSelection.setText("Selected Range: start " + data.getSelectedStartAnchor());
+                } else {
+                    lblCinematicSelection.setText("Selected Range: none");
+                }
+                cinematicTrackPanel.setVisible(true);
+            } else {
+                cinematicTrackPanel.setVisible(false);
+            }
+
+            if (entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                refreshCinematicTargetChoices(entity.getCinematicTargetEntityId(), entity.getCinematicTargetEntityName());
+                Vector3f targetOffset = entity.getCinematicTargetOffset();
+                spnCinematicTargetOffsetX.setValue((double) targetOffset.x);
+                spnCinematicTargetOffsetY.setValue((double) targetOffset.y);
+                spnCinematicTargetOffsetZ.setValue((double) targetOffset.z);
+                selectCinematicEasingOption(cboCinematicEaseIn, entity.getCinematicEaseIn());
+                selectCinematicEasingOption(cboCinematicEaseOut, entity.getCinematicEaseOut());
+                cinematicStackListModel.clear();
+                for (CinematicSegment segment : entity.getCinematicSegments()) {
+                    cinematicStackListModel.addElement(segment.toDisplayString());
+                }
+                if (!entity.getCinematicSegments().isEmpty()) {
+                    if (cinematicStackList.getSelectedIndex() < 0
+                            || cinematicStackList.getSelectedIndex() >= entity.getCinematicSegments().size()) {
+                        cinematicStackList.setSelectedIndex(0);
+                    }
+                    int idx = cinematicStackList.getSelectedIndex();
+                    if (idx >= 0 && idx < entity.getCinematicSegments().size()) {
+                        spnCinematicSegmentSpeed.setValue((double) entity.getCinematicSegments().get(idx).getSpeed());
+                    }
+                } else {
+                    cinematicStackList.clearSelection();
+                    spnCinematicSegmentSpeed.setValue(30.0);
+                }
+                cinematicRigPanel.setVisible(true);
+            } else {
+                cinematicRigPanel.setVisible(false);
+            }
+
             // Camera entities don't need scale
-            if (entity.getType() == DesignerEntityType.CAMERA) {
+            if (entity.getType() == DesignerEntityType.CAMERA
+                    || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
                 spnScaleX.setEnabled(false);
                 spnScaleY.setEnabled(false);
                 spnScaleZ.setEnabled(false);
@@ -1951,6 +2217,8 @@ public class DesignerPanel extends JPanel {
             shadowModePanel.setVisible(false);
             jointMappingPanel.setVisible(false);
             pathPropertiesPanel.setVisible(false);
+            cinematicTrackPanel.setVisible(false);
+            cinematicRigPanel.setVisible(false);
 
             DesignerDocument doc = app != null ? app.getDocument() : null;
             refreshSceneShaderChoices(doc != null ? doc.getSceneEnvironmentShader() : "");
@@ -2311,6 +2579,245 @@ public class DesignerPanel extends JPanel {
         });
     }
 
+    private void applyCinematicTrackChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_TRACK || sel.getCinematicTrackData() == null) return;
+
+        float radiusX = ((Number) spnCinematicRadiusX.getValue()).floatValue();
+        float radiusZ = ((Number) spnCinematicRadiusZ.getValue()).floatValue();
+        float previewSpeed = ((Number) spnCinematicPreviewSpeed.getValue()).floatValue();
+
+        app.enqueue(() -> {
+            sel.getCinematicTrackData().setRadiusX(radiusX);
+            sel.getCinematicTrackData().setRadiusZ(radiusZ);
+            sel.getCinematicTrackData().setPreviewSpeed(previewSpeed);
+            app.rebuildCinematicTrackVisual(sel);
+            app.markDocumentDirty();
+            return null;
+        });
+    }
+
+    private void addSelectedCinematicRange() {
+        if (app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_TRACK) return;
+        app.enqueue(() -> {
+            app.addSelectedRangeToCinematicStack(sel);
+            return null;
+        });
+    }
+
+    private void clearSelectedCinematicRange() {
+        if (app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_TRACK) return;
+        app.enqueue(() -> {
+            app.clearCinematicRangeSelection(sel);
+            return null;
+        });
+    }
+
+    private void removeSelectedCinematicSegment() {
+        if (app == null) return;
+        DesignerEntity sel = getSelectedTreeEntity();
+        if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        int selectedIndex = cinematicStackList.getSelectedIndex();
+        if (selectedIndex < 0) return;
+        app.enqueue(() -> {
+            app.removeCinematicSegment(sel, selectedIndex);
+            return null;
+        });
+    }
+
+    private void onCinematicSegmentSelectionChanged() {
+        if (updatingProperties) return;
+        DesignerEntity sel = getSelectedTreeEntity();
+        if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        int idx = cinematicStackList.getSelectedIndex();
+        if (idx >= 0 && idx < sel.getCinematicSegments().size()) {
+            updatingProperties = true;
+            try {
+                spnCinematicSegmentSpeed.setValue((double) sel.getCinematicSegments().get(idx).getSpeed());
+            } finally {
+                updatingProperties = false;
+            }
+        }
+    }
+
+    private void applySelectedCinematicSegmentSpeed() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = getSelectedTreeEntity();
+        if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        int idx = cinematicStackList.getSelectedIndex();
+        if (idx < 0) return;
+        float speed = ((Number) spnCinematicSegmentSpeed.getValue()).floatValue();
+        app.enqueue(() -> {
+            app.updateCinematicSegmentSpeed(sel, idx, speed);
+            return null;
+        });
+    }
+
+    private void playSelectedCinematicRig() {
+        if (app == null) return;
+        DesignerEntity sel = getSelectedTreeEntity();
+        if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        app.enqueue(() -> {
+            app.playCinematicRig(sel);
+            return null;
+        });
+    }
+
+    private void playSelectedCinematicTrack() {
+        if (app == null) return;
+        DesignerEntity sel = getSelectedTreeEntity();
+        if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_TRACK) return;
+        app.enqueue(() -> {
+            app.playCinematicTrack(sel);
+            return null;
+        });
+    }
+
+    private void stopCinematicPlayback() {
+        if (app == null) return;
+        app.enqueue(() -> {
+            app.stopCinematicPlayback();
+            return null;
+        });
+    }
+
+    private void addTrackToSelectedRig() {
+        if (app == null) return;
+        DesignerEntity sel = getSelectedTreeEntity();
+        if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        app.enqueue(() -> {
+            app.addDefaultCinematicTrack(sel);
+            return null;
+        });
+    }
+
+    private void refreshCinematicTargetChoices(String selectedId, String selectedName) {
+        if (app == null || cboCinematicTarget == null) return;
+        cinematicTargetChoices = app.getCinematicTargetCandidates();
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+        model.addElement("None");
+        int selectedIndex = 0;
+        for (int i = 0; i < cinematicTargetChoices.size(); i++) {
+            DesignerEntity entity = cinematicTargetChoices.get(i);
+            String label = entity.getName();
+            model.addElement(label);
+            if (selectedId != null && !selectedId.isBlank() && selectedId.equals(entity.getId())) {
+                selectedIndex = i + 1;
+            }
+        }
+        if (selectedIndex == 0 && selectedId != null && !selectedId.isBlank()
+                && selectedName != null && !selectedName.isBlank()) {
+            model.addElement(selectedName + " (missing)");
+            selectedIndex = model.getSize() - 1;
+        }
+        cboCinematicTarget.setModel(model);
+        cboCinematicTarget.setSelectedIndex(selectedIndex);
+    }
+
+    private void applyCinematicRigTargetChange() {
+        if (updatingProperties || app == null || cboCinematicTarget == null) return;
+        DesignerEntity sel = getSelectedTreeEntity();
+        if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        int idx = cboCinematicTarget.getSelectedIndex();
+        if (idx <= 0) {
+            app.enqueue(() -> {
+                app.setCinematicRigTarget(sel, "", "");
+                return null;
+            });
+            return;
+        }
+        int entityIdx = idx - 1;
+        if (entityIdx < 0 || entityIdx >= cinematicTargetChoices.size()) return;
+        DesignerEntity target = cinematicTargetChoices.get(entityIdx);
+        app.enqueue(() -> {
+            app.setCinematicRigTarget(sel, target.getId(), target.getName());
+            return null;
+        });
+    }
+
+    private void applyCinematicRigTargetOffsetChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = getSelectedTreeEntity();
+        if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        float x = ((Number) spnCinematicTargetOffsetX.getValue()).floatValue();
+        float y = ((Number) spnCinematicTargetOffsetY.getValue()).floatValue();
+        float z = ((Number) spnCinematicTargetOffsetZ.getValue()).floatValue();
+        app.enqueue(() -> {
+            app.setCinematicRigTargetOffset(sel, new Vector3f(x, y, z));
+            return null;
+        });
+    }
+
+    private void applyCinematicRigEasingChange() {
+        if (updatingProperties || app == null || cboCinematicEaseIn == null || cboCinematicEaseOut == null) return;
+        DesignerEntity sel = getSelectedTreeEntity();
+        if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        EasingOption easeIn = (EasingOption) cboCinematicEaseIn.getSelectedItem();
+        EasingOption easeOut = (EasingOption) cboCinematicEaseOut.getSelectedItem();
+        String easeInId = easeIn != null ? easeIn.id : "linear";
+        String easeOutId = easeOut != null ? easeOut.id : "linear";
+        app.enqueue(() -> {
+            app.setCinematicRigEasing(sel, easeInId, easeOutId);
+            return null;
+        });
+    }
+
+    private ComboBoxModel<EasingOption> buildCinematicEasingOptions() {
+        DefaultComboBoxModel<EasingOption> model = new DefaultComboBoxModel<>();
+        model.addElement(new EasingOption("linear", "Linear - constant speed, no easing"));
+        model.addElement(new EasingOption("ease_in_quad", "Ease In Quad - simple acceleration"));
+        model.addElement(new EasingOption("ease_out_quad", "Ease Out Quad - natural stopping"));
+        model.addElement(new EasingOption("ease_in_cubic", "Ease In Cubic - stronger acceleration"));
+        model.addElement(new EasingOption("ease_out_cubic", "Ease Out Cubic - smoother dramatic stop"));
+        model.addElement(new EasingOption("ease_in_expo", "Ease In Expo - very fast ramp-up after a gentle start"));
+        model.addElement(new EasingOption("ease_out_expo", "Ease Out Expo - dramatic deceleration into the stop"));
+        model.addElement(new EasingOption("ease_in_sine", "Ease In Sine - soft cinematic acceleration"));
+        model.addElement(new EasingOption("ease_out_sine", "Ease Out Sine - soft cinematic settling"));
+        return model;
+    }
+
+    private void selectCinematicEasingOption(JComboBox<EasingOption> comboBox, String easingId) {
+        if (comboBox == null) return;
+        String targetId = easingId != null ? easingId : "linear";
+        ComboBoxModel<EasingOption> model = comboBox.getModel();
+        for (int i = 0; i < model.getSize(); i++) {
+            EasingOption option = model.getElementAt(i);
+            if (option != null && option.id.equals(targetId)) {
+                comboBox.setSelectedIndex(i);
+                return;
+            }
+        }
+        comboBox.setSelectedIndex(0);
+    }
+
+    private DesignerEntity getSelectedTreeEntity() {
+        DefaultMutableTreeNode selected = (DefaultMutableTreeNode) sceneTree.getLastSelectedPathComponent();
+        if (selected != null && selected.getUserObject() instanceof EntityTreeNode) {
+            return ((EntityTreeNode) selected.getUserObject()).entity;
+        }
+        return null;
+    }
+
+    private static final class EasingOption {
+        final String id;
+        final String label;
+
+        EasingOption(String id, String label) {
+            this.id = id;
+            this.label = label;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
     private void applyMaterialChange() {
         if (updatingProperties || app == null) return;
         DesignerEntity sel = app.getSelectionManager().getSelected();
@@ -2645,6 +3152,7 @@ public class DesignerPanel extends JPanel {
             case "orbit":     drawToolbarOrbit(g);     break;
             case "pan":       drawToolbarPan(g);       break;
             case "path":      drawToolbarPath(g);      break;
+            case "cinematic": drawToolbarCinematic(g); break;
         }
         g.dispose();
         return new ImageIcon(img);
@@ -2846,6 +3354,16 @@ public class DesignerPanel extends JPanel {
         g.fill(new Ellipse2D.Float(15.5f, 2.5f, 3, 3));
     }
 
+    private static void drawToolbarCinematic(Graphics2D g) {
+        g.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.draw(new Ellipse2D.Float(2, 5, 16, 10));
+        g.fill(new Ellipse2D.Float(3, 9, 2.5f, 2.5f));
+        g.fill(new Ellipse2D.Float(14.5f, 9, 2.5f, 2.5f));
+        g.setColor(DT_HIGHLIGHT);
+        g.setStroke(new BasicStroke(2.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.draw(new java.awt.geom.Arc2D.Float(2, 5, 16, 10, 200, 80, java.awt.geom.Arc2D.OPEN));
+    }
+
     /**
      * Custom tree cell renderer that draws elegant white icons for each entity type.
      */
@@ -2914,6 +3432,12 @@ public class DesignerPanel extends JPanel {
                     break;
                 case PATH:
                     drawPath(g);
+                    break;
+                case CINEMATIC_RIG:
+                    drawSection(g);
+                    break;
+                case CINEMATIC_TRACK:
+                    drawCinematic(g);
                     break;
             }
             g.dispose();
@@ -3069,6 +3593,15 @@ public class DesignerPanel extends JPanel {
             g.draw(curve);
             g.fill(new Ellipse2D.Float(1, 12, 2.5f, 2.5f));
             g.fill(new Ellipse2D.Float(12.5f, 1.5f, 2.5f, 2.5f));
+        }
+
+        private static void drawCinematic(Graphics2D g) {
+            g.draw(new Ellipse2D.Float(1.5f, 4.5f, 13, 7));
+            g.fill(new Ellipse2D.Float(2, 7, 2, 2));
+            g.fill(new Ellipse2D.Float(12, 7, 2, 2));
+            g.setColor(new Color(255, 255, 255, 100));
+            g.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g.draw(new java.awt.geom.Arc2D.Float(1.5f, 4.5f, 13, 7, 200, 80, java.awt.geom.Arc2D.OPEN));
         }
     }
 

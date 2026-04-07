@@ -71,7 +71,8 @@ public class SelectionManager {
                                DesignerEntity[] closest, float[] closestDist) {
         for (DesignerEntity entity : entities) {
             // Recurse into section children
-            if (entity.getType() == DesignerEntityType.SECTION) {
+            if (entity.getType() == DesignerEntityType.SECTION
+                    || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
                 pickRecursive(ray, entity.getChildren(), closest, closestDist);
                 continue;
             }

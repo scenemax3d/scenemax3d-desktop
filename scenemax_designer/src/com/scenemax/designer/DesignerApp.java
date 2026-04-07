@@ -13,6 +13,9 @@ import com.jme3.material.Material;
 import com.jme3.material.RenderState;
 import com.jme3.scene.shape.Box;
 import com.jme3.scene.shape.Sphere;
+import com.scenemax.designer.cinematic.CinematicSegment;
+import com.scenemax.designer.cinematic.CinematicTrackData;
+import com.scenemax.designer.cinematic.CinematicTrackVisual;
 import com.scenemax.designer.gizmo.*;
 import com.scenemax.designer.grid.GridPlane;
 import com.scenemax.designer.path.*;
@@ -118,6 +121,8 @@ public class DesignerApp extends SceneMaxApp {
     private int pathCounter = 0;
     // Map from PATH entity ID to its PathVisual node
     private final java.util.Map<String, PathVisual> pathVisuals = new java.util.HashMap<>();
+    private int cinematicTrackCounter = 0;
+    private final java.util.Map<String, CinematicTrackVisual> cinematicTrackVisuals = new java.util.HashMap<>();
 
     // Camera animation state (for view preset transitions)
     private boolean animatingCamera = false;
@@ -155,6 +160,18 @@ public class DesignerApp extends SceneMaxApp {
     private int hollowCylinderCounter = 0;
     private int quadCounter = 0;
     private int modelCounter = 0;
+
+    private DesignerEntity cinematicAuthoringTarget;
+    private boolean cinematicCameraPreviewActive = false;
+    private Vector3f savedCameraPreviewPos;
+    private Quaternion savedCameraPreviewRot;
+    private boolean cinematicPlaybackActive = false;
+    private DesignerEntity cinematicPlaybackRig;
+    private List<CinematicSegment> cinematicPlaybackSegments = new ArrayList<>();
+    private int cinematicPlaybackSegmentIndex = -1;
+    private float cinematicPlaybackAnchorCursor = 0f;
+    private float cinematicPlaybackSegmentDistance = 0f;
+    private float cinematicPlaybackSegmentLinearProgress = 0f;
 
     private boolean loadingDocument = false;
     private int loadingTotalEntities = 0;
@@ -389,6 +406,12 @@ public class DesignerApp extends SceneMaxApp {
             } else {
                 pathEditGizmo.detach();
             }
+            if (entity != null && (entity.getType() == DesignerEntityType.CINEMATIC_TRACK
+                    || entity.getType() == DesignerEntityType.CINEMATIC_RIG)) {
+                setCinematicAuthoringTarget(entity);
+            } else if (!cinematicPlaybackActive) {
+                setCinematicAuthoringTarget(null);
+            }
             if (panelCallback != null) {
                 panelCallback.onSelectionChanged(entity);
             }
@@ -563,6 +586,308 @@ public class DesignerApp extends SceneMaxApp {
         return section;
     }
 
+    public void addDefaultCinematicTrack() {
+        DesignerEntity rig = findOrCreateCinematicRig();
+        addDefaultCinematicTrack(rig);
+    }
+
+    public void addDefaultCinematicTrack(DesignerEntity rig) {
+        if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG) {
+            rig = findOrCreateCinematicRig();
+        }
+        String name = "cinematic_track_" + (++cinematicTrackCounter);
+
+        DesignerEntity track = new DesignerEntity(name, DesignerEntityType.CINEMATIC_TRACK);
+        track.setCinematicTrackData(new CinematicTrackData());
+
+        Node trackNode = new Node(name);
+        trackNode.setLocalTranslation(computeDefaultCinematicTrackPosition(rig));
+
+        CinematicTrackVisual visual = new CinematicTrackVisual(assetManager);
+        visual.rebuild(track.getCinematicTrackData());
+        trackNode.attachChild(visual);
+        track.setSceneNode(trackNode);
+
+        Node parentNode = rig.getSceneNode() != null ? rig.getSceneNode() : rootNode;
+        parentNode.attachChild(trackNode);
+        cinematicTrackVisuals.put(track.getId(), visual);
+        rig.addChild(track);
+
+        markDocumentDirty();
+        selectionManager.select(track);
+        notifySceneChanged();
+    }
+
+    private Vector3f computeDefaultCinematicTrackPosition(DesignerEntity rig) {
+        int existingTracks = 0;
+        Vector3f lastPos = null;
+        for (DesignerEntity child : rig.getChildren()) {
+            if (child.getType() == DesignerEntityType.CINEMATIC_TRACK && child.getSceneNode() != null) {
+                existingTracks++;
+                lastPos = child.getSceneNode().getLocalTranslation().clone();
+            }
+        }
+        if (lastPos == null) {
+            return new Vector3f(0, 1.5f, 0);
+        }
+        float angle = existingTracks * 0.85f;
+        float radius = 0.75f;
+        return lastPos.add(new Vector3f(FastMath.cos(angle) * radius, 0f, FastMath.sin(angle) * radius));
+    }
+
+    private DesignerEntity findOrCreateCinematicRig() {
+        for (DesignerEntity entity : entities) {
+            if (entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                ensureCinematicRigNode(entity);
+                return entity;
+            }
+        }
+        DesignerEntity rig = new DesignerEntity("Cinematic Rig", DesignerEntityType.CINEMATIC_RIG);
+        ensureCinematicRigNode(rig);
+        entities.add(rig);
+        notifySceneChanged();
+        return rig;
+    }
+
+    public DesignerEntity findCinematicRig() {
+        for (DesignerEntity entity : entities) {
+            if (entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                ensureCinematicRigNode(entity);
+                return entity;
+            }
+        }
+        return null;
+    }
+
+    private void ensureCinematicRigNode(DesignerEntity rig) {
+        if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        if (rig.getSceneNode() != null) return;
+        Node rigNode = new Node(rig.getName());
+        rig.setSceneNode(rigNode);
+        rootNode.attachChild(rigNode);
+    }
+
+    public void setCinematicAuthoringTarget(DesignerEntity entity) {
+        cinematicAuthoringTarget = entity;
+        if (entity == null || (entity.getType() != DesignerEntityType.CINEMATIC_TRACK
+                && entity.getType() != DesignerEntityType.CINEMATIC_RIG)) {
+            stopCinematicCameraPreview();
+        }
+    }
+
+    public void rebuildCinematicTrackVisual(DesignerEntity entity) {
+        if (entity == null || entity.getType() != DesignerEntityType.CINEMATIC_TRACK) return;
+        CinematicTrackVisual visual = cinematicTrackVisuals.get(entity.getId());
+        if (visual != null) {
+            visual.rebuild(entity.getCinematicTrackData());
+        }
+    }
+
+    public boolean trySelectCinematicAnchor(DesignerEntity entity, Vector2f screenPos) {
+        if (entity == null || entity.getType() != DesignerEntityType.CINEMATIC_TRACK
+                || entity.getSceneNode() == null || entity.getCinematicTrackData() == null) {
+            return false;
+        }
+        float bestDist = 18f;
+        int bestAnchor = -1;
+        CinematicTrackData data = entity.getCinematicTrackData();
+        for (int i = 0; i < data.getAnchorCount(); i++) {
+            Vector3f local = data.getAnchorLocalPoint(i);
+            Vector3f world = entity.getSceneNode().localToWorld(local, null);
+            Vector3f screen = cam.getScreenCoordinates(world);
+            float dist = screenPos.distance(new Vector2f(screen.x, screen.y));
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestAnchor = i;
+            }
+        }
+        if (bestAnchor < 0) {
+            return false;
+        }
+
+        if (data.getSelectedStartAnchor() < 0 || data.getSelectedEndAnchor() >= 0) {
+            data.setSelectedStartAnchor(bestAnchor);
+            data.setSelectedEndAnchor(-1);
+        } else {
+            data.setSelectedEndAnchor(bestAnchor);
+        }
+        rebuildCinematicTrackVisual(entity);
+        if (panelCallback != null) {
+            panelCallback.onSelectionChanged(entity);
+        }
+        markDocumentDirty();
+        return true;
+    }
+
+    public void clearCinematicRangeSelection(DesignerEntity track) {
+        if (track == null || track.getType() != DesignerEntityType.CINEMATIC_TRACK
+                || track.getCinematicTrackData() == null) {
+            return;
+        }
+        track.getCinematicTrackData().clearSelection();
+        rebuildCinematicTrackVisual(track);
+        markDocumentDirty();
+        if (panelCallback != null) {
+            panelCallback.onSelectionChanged(track);
+        }
+    }
+
+    public void addSelectedRangeToCinematicStack(DesignerEntity track) {
+        if (track == null || track.getType() != DesignerEntityType.CINEMATIC_TRACK
+                || track.getCinematicTrackData() == null) {
+            return;
+        }
+        CinematicTrackData data = track.getCinematicTrackData();
+        if (data.getSelectedStartAnchor() < 0 || data.getSelectedEndAnchor() < 0) {
+            return;
+        }
+        DesignerEntity rig = findParentRig(track, entities);
+        if (rig == null) {
+            rig = findOrCreateCinematicRig();
+        }
+        rig.getCinematicSegments().add(new CinematicSegment(
+                track.getId(), track.getName(), data.getSelectedStartAnchor(), data.getSelectedEndAnchor()));
+        markDocumentDirty();
+        notifySceneChanged();
+        if (panelCallback != null) {
+            panelCallback.onSelectionChanged(track);
+        }
+    }
+
+    public void removeCinematicSegment(DesignerEntity rig, int index) {
+        if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        if (index < 0 || index >= rig.getCinematicSegments().size()) return;
+        rig.getCinematicSegments().remove(index);
+        markDocumentDirty();
+        notifySceneChanged();
+        if (panelCallback != null) {
+            panelCallback.onSelectionChanged(rig);
+        }
+    }
+
+    public void updateCinematicSegmentSpeed(DesignerEntity rig, int index, float speed) {
+        if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        if (index < 0 || index >= rig.getCinematicSegments().size()) return;
+        rig.getCinematicSegments().get(index).setSpeed(speed);
+        markDocumentDirty();
+        if (panelCallback != null) {
+            panelCallback.onSelectionChanged(rig);
+        }
+    }
+
+    public void setCinematicRigTarget(DesignerEntity rig, String targetEntityId, String targetEntityName) {
+        if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        rig.setCinematicTargetEntityId(targetEntityId);
+        rig.setCinematicTargetEntityName(targetEntityName);
+        markDocumentDirty();
+        if (panelCallback != null) {
+            panelCallback.onSelectionChanged(rig);
+        }
+    }
+
+    public void setCinematicRigTargetOffset(DesignerEntity rig, Vector3f offset) {
+        if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        rig.setCinematicTargetOffset(offset);
+        markDocumentDirty();
+        if (panelCallback != null) {
+            panelCallback.onSelectionChanged(rig);
+        }
+    }
+
+    public void setCinematicRigEasing(DesignerEntity rig, String easeIn, String easeOut) {
+        if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        rig.setCinematicEaseIn(easeIn);
+        rig.setCinematicEaseOut(easeOut);
+        markDocumentDirty();
+        if (panelCallback != null) {
+            panelCallback.onSelectionChanged(rig);
+        }
+    }
+
+    public List<DesignerEntity> getCinematicTargetCandidates() {
+        List<DesignerEntity> result = new ArrayList<>();
+        collectCinematicTargetCandidates(entities, result);
+        return result;
+    }
+
+    private void collectCinematicTargetCandidates(List<DesignerEntity> source, List<DesignerEntity> out) {
+        for (DesignerEntity entity : source) {
+            if (entity.getType() == DesignerEntityType.SECTION || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                collectCinematicTargetCandidates(entity.getChildren(), out);
+                continue;
+            }
+            if (entity.getType() == DesignerEntityType.CODE
+                    || entity.getType() == DesignerEntityType.CAMERA
+                    || entity.getType() == DesignerEntityType.CINEMATIC_TRACK) {
+                continue;
+            }
+            out.add(entity);
+        }
+    }
+
+    public void playCinematicRig(DesignerEntity rig) {
+        if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG || rig.getCinematicSegments().isEmpty()) {
+            return;
+        }
+        ensureCinematicCameraPreviewSaved();
+        cinematicPlaybackRig = rig;
+        cinematicPlaybackSegments = new ArrayList<>(rig.getCinematicSegments());
+        cinematicPlaybackActive = true;
+        cinematicCameraPreviewActive = true;
+        startPlaybackSegment(0);
+    }
+
+    public void playCinematicTrack(DesignerEntity track) {
+        if (track == null || track.getType() != DesignerEntityType.CINEMATIC_TRACK || track.getCinematicTrackData() == null) {
+            return;
+        }
+        ensureCinematicCameraPreviewSaved();
+        DesignerEntity rig = findParentRig(track, entities);
+        cinematicPlaybackRig = rig;
+        cinematicPlaybackSegments = new ArrayList<>();
+        CinematicTrackData data = track.getCinematicTrackData();
+        int start = data.getSelectedStartAnchor() >= 0 ? data.getSelectedStartAnchor() : 0;
+        int end = data.getSelectedEndAnchor() >= 0 ? data.getSelectedEndAnchor() : data.getAnchorCount() - 1;
+        cinematicPlaybackSegments.add(new CinematicSegment(
+                track.getId(), track.getName(), start, end, data.getPreviewSpeed()));
+        cinematicPlaybackActive = true;
+        cinematicCameraPreviewActive = true;
+        startPlaybackSegment(0);
+    }
+
+    public void stopCinematicPlayback() {
+        cinematicPlaybackActive = false;
+        clearAllCinematicPlaybackPreviews(entities);
+        cinematicPlaybackRig = null;
+        cinematicPlaybackSegments.clear();
+        cinematicPlaybackSegmentIndex = -1;
+        cinematicPlaybackSegmentDistance = 0f;
+        cinematicPlaybackSegmentLinearProgress = 0f;
+        if (cinematicAuthoringTarget == null) {
+            stopCinematicCameraPreview();
+        }
+    }
+
+    private DesignerEntity findParentRig(DesignerEntity target, List<DesignerEntity> list) {
+        for (DesignerEntity entity : list) {
+            if (entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                if (entity.getChildren().contains(target)) {
+                    return entity;
+                }
+                DesignerEntity nested = findParentRig(target, entity.getChildren());
+                if (nested != null) {
+                    return nested;
+                }
+            } else if (entity.getType() == DesignerEntityType.SECTION) {
+                DesignerEntity nested = findParentRig(target, entity.getChildren());
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        return null;
+    }
+
     // --- Path entity management ---
 
     /** Enters path drawing mode. Called from toolbar button. */
@@ -674,7 +999,7 @@ public class DesignerApp extends SceneMaxApp {
      */
     private void removeEntityFromAllSections(DesignerEntity target, List<DesignerEntity> list) {
         for (DesignerEntity e : list) {
-            if (e.getType() == DesignerEntityType.SECTION) {
+            if (e.getType() == DesignerEntityType.SECTION || e.getType() == DesignerEntityType.CINEMATIC_RIG) {
                 e.removeChild(target);
                 removeEntityFromAllSections(target, e.getChildren());
             }
@@ -687,12 +1012,15 @@ public class DesignerApp extends SceneMaxApp {
      */
     private void removeSceneNodesRecursive(List<DesignerEntity> list) {
         for (DesignerEntity child : list) {
-            if (child.getType() == DesignerEntityType.SECTION) {
+            if (child.getType() == DesignerEntityType.SECTION || child.getType() == DesignerEntityType.CINEMATIC_RIG) {
                 removeSceneNodesRecursive(child.getChildren());
             }
             if (child.getType() == DesignerEntityType.PATH) {
                 PathVisual visual = pathVisuals.remove(child.getId());
                 if (visual != null) visual.removeFromParent();
+            }
+            if (child.getType() == DesignerEntityType.CINEMATIC_TRACK) {
+                cinematicTrackVisuals.remove(child.getId());
             }
             if (child.getSceneNode() != null) {
                 child.getSceneNode().removeFromParent();
@@ -1344,9 +1672,12 @@ public class DesignerApp extends SceneMaxApp {
                 visual.removeFromParent();
             }
         }
+        if (entity.getType() == DesignerEntityType.CINEMATIC_TRACK) {
+            cinematicTrackVisuals.remove(entity.getId());
+        }
 
         // For SECTION nodes, recursively remove 3D scene nodes of children
-        if (entity.getType() == DesignerEntityType.SECTION) {
+        if (entity.getType() == DesignerEntityType.SECTION || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
             removeSceneNodesRecursive(entity.getChildren());
         }
 
@@ -1778,7 +2109,7 @@ public class DesignerApp extends SceneMaxApp {
         loadingEntityOrder = new ArrayList<>();
         collectEntityIdsRecursive(document.getEntityDefs(), loadingEntityOrder);
 
-        loadEntityDefs(document.getEntityDefs(), entities);
+        loadEntityDefs(document.getEntityDefs(), entities, null);
     }
 
     private void applyDocumentSceneEnvironmentShader() {
@@ -1804,7 +2135,8 @@ public class DesignerApp extends SceneMaxApp {
             return Integer.compare(idxA, idxB);
         });
         for (DesignerEntity e : list) {
-            if (e.getType() == DesignerEntityType.SECTION && !e.getChildren().isEmpty()) {
+            if ((e.getType() == DesignerEntityType.SECTION || e.getType() == DesignerEntityType.CINEMATIC_RIG)
+                    && !e.getChildren().isEmpty()) {
                 sortEntitiesByLoadOrder(e.getChildren(), order);
             }
         }
@@ -1816,7 +2148,8 @@ public class DesignerApp extends SceneMaxApp {
     private void collectEntityIdsRecursive(List<JSONObject> entityDefs, List<String> ids) {
         for (JSONObject entityDef : entityDefs) {
             ids.add(entityDef.getString("id"));
-            if ("SECTION".equals(entityDef.optString("type")) && entityDef.has("children")) {
+            String type = entityDef.optString("type");
+            if (("SECTION".equals(type) || "CINEMATIC_RIG".equals(type)) && entityDef.has("children")) {
                 JSONArray children = entityDef.getJSONArray("children");
                 List<JSONObject> childDefs = new ArrayList<>();
                 for (int i = 0; i < children.length(); i++) {
@@ -1832,7 +2165,7 @@ public class DesignerApp extends SceneMaxApp {
      * specially. 3D entities (SPHERE, BOX, MODEL) are created via code execution.
      * SECTION entities are added directly with their children loaded recursively.
      */
-    private void loadEntityDefs(List<JSONObject> entityDefs, List<DesignerEntity> targetList) {
+    private void loadEntityDefs(List<JSONObject> entityDefs, List<DesignerEntity> targetList, Node parentSceneNode) {
         for (JSONObject entityDef : entityDefs) {
             DesignerEntity entityTemplate = DesignerEntity.fromJSON(entityDef);
 
@@ -1871,10 +2204,52 @@ public class DesignerApp extends SceneMaxApp {
                 continue;
             }
 
+            if (entityTemplate.getType() == DesignerEntityType.CINEMATIC_TRACK) {
+                DesignerEntity trackEntity = new DesignerEntity(
+                        entityTemplate.getId(), entityTemplate.getName(), DesignerEntityType.CINEMATIC_TRACK);
+                trackEntity.setCinematicTrackData(entityTemplate.getCinematicTrackData());
+
+                Node trackNode = new Node(trackEntity.getName());
+                trackNode.setLocalTranslation(DesignerEntity.positionFromJSON(entityDef));
+                trackNode.setLocalRotation(DesignerEntity.rotationFromJSON(entityDef));
+                trackNode.setLocalScale(DesignerEntity.scaleFromJSON(entityDef));
+
+                CinematicTrackVisual visual = new CinematicTrackVisual(assetManager);
+                visual.rebuild(trackEntity.getCinematicTrackData());
+                trackNode.attachChild(visual);
+                trackEntity.setSceneNode(trackNode);
+                if (parentSceneNode != null) {
+                    parentSceneNode.attachChild(trackNode);
+                } else {
+                    rootNode.attachChild(trackNode);
+                }
+                cinematicTrackVisuals.put(trackEntity.getId(), visual);
+
+                targetList.add(trackEntity);
+                continue;
+            }
+
             // Section nodes — add directly and load children recursively
-            if (entityTemplate.getType() == DesignerEntityType.SECTION) {
+            if (entityTemplate.getType() == DesignerEntityType.SECTION
+                    || entityTemplate.getType() == DesignerEntityType.CINEMATIC_RIG) {
                 DesignerEntity sectionEntity = new DesignerEntity(
-                        entityTemplate.getId(), entityTemplate.getName(), DesignerEntityType.SECTION);
+                        entityTemplate.getId(), entityTemplate.getName(), entityTemplate.getType());
+                sectionEntity.setCinematicSegments(entityTemplate.getCinematicSegments());
+                sectionEntity.setCinematicTargetEntityId(entityTemplate.getCinematicTargetEntityId());
+                sectionEntity.setCinematicTargetEntityName(entityTemplate.getCinematicTargetEntityName());
+                sectionEntity.setCinematicTargetOffset(entityTemplate.getCinematicTargetOffset().clone());
+                sectionEntity.setCinematicEaseIn(entityTemplate.getCinematicEaseIn());
+                sectionEntity.setCinematicEaseOut(entityTemplate.getCinematicEaseOut());
+                Node nextParentNode = parentSceneNode;
+                if (entityTemplate.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                    Node rigNode = new Node(sectionEntity.getName());
+                    rigNode.setLocalTranslation(DesignerEntity.positionFromJSON(entityDef));
+                    rigNode.setLocalRotation(DesignerEntity.rotationFromJSON(entityDef));
+                    rigNode.setLocalScale(DesignerEntity.scaleFromJSON(entityDef));
+                    sectionEntity.setSceneNode(rigNode);
+                    rootNode.attachChild(rigNode);
+                    nextParentNode = rigNode;
+                }
                 targetList.add(sectionEntity);
                 // Recursively load children into the section's children list
                 if (entityDef.has("children")) {
@@ -1883,7 +2258,7 @@ public class DesignerApp extends SceneMaxApp {
                     for (int i = 0; i < childrenArr.length(); i++) {
                         childDefs.add(childrenArr.getJSONObject(i));
                     }
-                    loadEntityDefs(childDefs, sectionEntity.getChildren());
+                    loadEntityDefs(childDefs, sectionEntity.getChildren(), nextParentNode);
                 }
                 continue;
             }
@@ -2024,7 +2399,11 @@ public class DesignerApp extends SceneMaxApp {
      */
     private void syncCountersFromEntities() {
         if (document == null) return;
-        for (JSONObject entityDef : document.getEntityDefs()) {
+        syncCountersFromEntityDefs(document.getEntityDefs());
+    }
+
+    private void syncCountersFromEntityDefs(List<JSONObject> defs) {
+        for (JSONObject entityDef : defs) {
             DesignerEntity e = DesignerEntity.fromJSON(entityDef);
             String name = e.getName();
             if (name == null) continue;
@@ -2041,6 +2420,17 @@ public class DesignerApp extends SceneMaxApp {
             } else if (name.startsWith("path_")) {
                 int idx = parseTrailingIndex(name, "path_");
                 if (idx > pathCounter) pathCounter = idx;
+            } else if (name.startsWith("cinematic_track_")) {
+                int idx = parseTrailingIndex(name, "cinematic_track_");
+                if (idx > cinematicTrackCounter) cinematicTrackCounter = idx;
+            }
+            if (entityDef.has("children")) {
+                JSONArray children = entityDef.getJSONArray("children");
+                List<JSONObject> childDefs = new ArrayList<>();
+                for (int i = 0; i < children.length(); i++) {
+                    childDefs.add(children.getJSONObject(i));
+                }
+                syncCountersFromEntityDefs(childDefs);
             }
         }
     }
@@ -2114,8 +2504,8 @@ public class DesignerApp extends SceneMaxApp {
                 List<DesignerEntity> sceneEntities = entities.stream()
                         .filter(e -> e.getType() != DesignerEntityType.CAMERA)
                         .collect(Collectors.toList());
-                Vector3f gameCamPos = cameraEntity != null ? cameraEntity.getPosition() : new Vector3f(0, 2, 5);
-                Quaternion gameCamRot = cameraEntity != null ? cameraEntity.getRotation() : Quaternion.IDENTITY;
+                Vector3f gameCamPos = getPersistedGameCameraPos();
+                Quaternion gameCamRot = getPersistedGameCameraRot();
                 document.save(new File(document.getFilePath()), sceneEntities,
                         cam.getLocation(), cam.getRotation(), gameCamPos, gameCamRot);
             } catch (IOException e) {
@@ -2138,8 +2528,8 @@ public class DesignerApp extends SceneMaxApp {
             List<DesignerEntity> sceneEntities = entities.stream()
                     .filter(e -> e.getType() != DesignerEntityType.CAMERA)
                     .collect(Collectors.toList());
-            Vector3f gameCamPos = cameraEntity != null ? cameraEntity.getPosition() : new Vector3f(0, 2, 5);
-            Quaternion gameCamRot = cameraEntity != null ? cameraEntity.getRotation() : Quaternion.IDENTITY;
+            Vector3f gameCamPos = getPersistedGameCameraPos();
+            Quaternion gameCamRot = getPersistedGameCameraRot();
             boolean wasNew = DesignerDocument.saveCodeFile(designerFile, sceneEntities, gameCamPos, gameCamRot,
                     document != null ? document.getSceneEnvironmentShader() : "");
             if (wasNew && scriptsTreeRefreshCallback != null) {
@@ -2167,14 +2557,28 @@ public class DesignerApp extends SceneMaxApp {
             List<DesignerEntity> sceneEntities = entities.stream()
                     .filter(e -> e.getType() != DesignerEntityType.CAMERA)
                     .collect(Collectors.toList());
-            Vector3f gameCamPos = cameraEntity != null ? cameraEntity.getPosition() : new Vector3f(0, 2, 5);
-            Quaternion gameCamRot = cameraEntity != null ? cameraEntity.getRotation() : Quaternion.IDENTITY;
+            Vector3f gameCamPos = getPersistedGameCameraPos();
+            Quaternion gameCamRot = getPersistedGameCameraRot();
             document.save(new File(document.getFilePath()), sceneEntities,
                     cam.getLocation(), cam.getRotation(), gameCamPos, gameCamRot);
         } catch (IOException e) {
             System.err.println("Failed to save camera state");
             e.printStackTrace();
         }
+    }
+
+    private Vector3f getPersistedGameCameraPos() {
+        if (cinematicCameraPreviewActive && savedCameraPreviewPos != null) {
+            return savedCameraPreviewPos.clone();
+        }
+        return cameraEntity != null ? cameraEntity.getPosition() : new Vector3f(0, 2, 5);
+    }
+
+    private Quaternion getPersistedGameCameraRot() {
+        if (cinematicCameraPreviewActive && savedCameraPreviewRot != null) {
+            return savedCameraPreviewRot.clone();
+        }
+        return cameraEntity != null ? cameraEntity.getRotation() : Quaternion.IDENTITY;
     }
 
     // --- Input handling ---
@@ -2271,6 +2675,13 @@ public class DesignerApp extends SceneMaxApp {
             }
         }
 
+        DesignerEntity selected = selectionManager.getSelected();
+        if (selected != null && selected.getType() == DesignerEntityType.CINEMATIC_TRACK) {
+            if (trySelectCinematicAnchor(selected, click)) {
+                return;
+            }
+        }
+
         // Try gizmo drag
         if (gizmoManager.tryStartDrag(cam, click)) {
             return;
@@ -2290,43 +2701,64 @@ public class DesignerApp extends SceneMaxApp {
         DesignerEntity picked = selectionManager.pick(cam, screenPos, entities);
 
         // Also check PATH entities using screen-space proximity to curve
-        float bestDist = picked != null ? PICK_THRESHOLD_PX : Float.MAX_VALUE;
-        DesignerEntity bestPath = picked;
+        float[] bestDist = { picked != null ? PICK_THRESHOLD_PX : Float.MAX_VALUE };
+        DesignerEntity[] bestEntity = { picked };
 
-        for (DesignerEntity entity : entities) {
-            if (entity.getType() != DesignerEntityType.PATH) continue;
-            BezierPath path = entity.getBezierPath();
-            if (path == null || path.getPointCount() < 2) continue;
+        pickSpecialEntitiesRecursive(entities, screenPos, bestDist, bestEntity);
 
-            // Check screen-space distance to control points
-            for (int i = 0; i < path.getPointCount(); i++) {
-                Vector3f cpScreen = cam.getScreenCoordinates(path.getPoint(i).getPosition());
-                float dist = screenPos.distance(new Vector2f(cpScreen.x, cpScreen.y));
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    bestPath = entity;
-                }
+        if (bestDist[0] < PICK_THRESHOLD_PX) {
+            return bestEntity[0];
+        }
+        return picked;
+    }
+
+    private void pickSpecialEntitiesRecursive(List<DesignerEntity> source, Vector2f screenPos,
+                                              float[] bestDist, DesignerEntity[] bestEntity) {
+        for (DesignerEntity entity : source) {
+            if (entity.getType() == DesignerEntityType.SECTION || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                pickSpecialEntitiesRecursive(entity.getChildren(), screenPos, bestDist, bestEntity);
+                continue;
             }
+            if (entity.getType() == DesignerEntityType.PATH) {
+                BezierPath path = entity.getBezierPath();
+                if (path == null || path.getPointCount() < 2) continue;
 
-            // Check screen-space distance to curve segments
-            for (int seg = 0; seg < path.getSegmentCount(); seg++) {
-                for (int s = 0; s <= 20; s++) {
-                    float t = (float) s / 20;
-                    Vector3f worldPt = path.evaluate(seg, t);
+                for (int i = 0; i < path.getPointCount(); i++) {
+                    Vector3f cpScreen = cam.getScreenCoordinates(path.getPoint(i).getPosition());
+                    float dist = screenPos.distance(new Vector2f(cpScreen.x, cpScreen.y));
+                    if (dist < bestDist[0]) {
+                        bestDist[0] = dist;
+                        bestEntity[0] = entity;
+                    }
+                }
+
+                for (int seg = 0; seg < path.getSegmentCount(); seg++) {
+                    for (int s = 0; s <= 20; s++) {
+                        float t = (float) s / 20;
+                        Vector3f worldPt = path.evaluate(seg, t);
+                        Vector3f screenPt = cam.getScreenCoordinates(worldPt);
+                        float dist = screenPos.distance(new Vector2f(screenPt.x, screenPt.y));
+                        if (dist < bestDist[0]) {
+                            bestDist[0] = dist;
+                            bestEntity[0] = entity;
+                        }
+                    }
+                }
+            } else if (entity.getType() == DesignerEntityType.CINEMATIC_TRACK
+                    && entity.getSceneNode() != null
+                    && entity.getCinematicTrackData() != null) {
+                CinematicTrackData data = entity.getCinematicTrackData();
+                for (int i = 0; i < data.getAnchorCount(); i++) {
+                    Vector3f worldPt = entity.getSceneNode().localToWorld(data.getAnchorLocalPoint(i), null);
                     Vector3f screenPt = cam.getScreenCoordinates(worldPt);
                     float dist = screenPos.distance(new Vector2f(screenPt.x, screenPt.y));
-                    if (dist < bestDist) {
-                        bestDist = dist;
-                        bestPath = entity;
+                    if (dist < bestDist[0]) {
+                        bestDist[0] = dist;
+                        bestEntity[0] = entity;
                     }
                 }
             }
         }
-
-        if (bestDist < PICK_THRESHOLD_PX) {
-            return bestPath;
-        }
-        return picked;
     }
 
     private static final float PICK_THRESHOLD_PX = 18f;
@@ -2350,6 +2782,369 @@ public class DesignerApp extends SceneMaxApp {
         Vector3f camPos = cameraTarget.add(x, y, z);
         cam.setLocation(camPos);
         cam.lookAt(cameraTarget, Vector3f.UNIT_Y);
+    }
+
+    private void ensureCinematicCameraPreviewSaved() {
+        if (cinematicCameraPreviewActive || cameraEntity == null || cameraEntity.getSceneNode() == null) {
+            return;
+        }
+        savedCameraPreviewPos = cameraEntity.getSceneNode().getLocalTranslation().clone();
+        savedCameraPreviewRot = cameraEntity.getSceneNode().getLocalRotation().clone();
+        cinematicCameraPreviewActive = true;
+    }
+
+    private void stopCinematicCameraPreview() {
+        if (!cinematicCameraPreviewActive || cameraEntity == null || cameraEntity.getSceneNode() == null) {
+            return;
+        }
+        if (savedCameraPreviewPos != null) {
+            cameraEntity.getSceneNode().setLocalTranslation(savedCameraPreviewPos);
+        }
+        if (savedCameraPreviewRot != null) {
+            cameraEntity.getSceneNode().setLocalRotation(savedCameraPreviewRot);
+        }
+        cinematicCameraPreviewActive = false;
+        savedCameraPreviewPos = null;
+        savedCameraPreviewRot = null;
+    }
+
+    private void updateCinematicCameraPreview(float tpf) {
+        if (cinematicPlaybackActive) {
+            updateCinematicPlayback(tpf);
+            return;
+        }
+        DesignerEntity focus = cinematicAuthoringTarget;
+        if (focus == null) {
+            return;
+        }
+        if (focus.getType() != DesignerEntityType.CINEMATIC_TRACK && focus.getType() != DesignerEntityType.CINEMATIC_RIG) {
+            return;
+        }
+        ensureCinematicCameraPreviewSaved();
+
+        DesignerEntity track = resolveAuthoringTrack(focus);
+        if (track == null) {
+            return;
+        }
+        int anchor = resolveAuthoringAnchor(track, focus);
+        applyCameraPoseAtTrackAnchor(track, anchor);
+    }
+
+    private DesignerEntity resolveAuthoringTrack(DesignerEntity focus) {
+        if (focus.getType() == DesignerEntityType.CINEMATIC_TRACK) {
+            return focus;
+        }
+        if (focus.getType() == DesignerEntityType.CINEMATIC_RIG) {
+            if (!focus.getCinematicSegments().isEmpty()) {
+                DesignerEntity fromSegment = findTrackById(focus.getCinematicSegments().get(0).getTrackId(), focus);
+                if (fromSegment != null) {
+                    return fromSegment;
+                }
+            }
+            return findFirstTrack(focus);
+        }
+        return null;
+    }
+
+    private int resolveAuthoringAnchor(DesignerEntity track, DesignerEntity focus) {
+        if (focus.getType() == DesignerEntityType.CINEMATIC_TRACK && focus.getCinematicTrackData() != null) {
+            if (focus.getCinematicTrackData().getSelectedStartAnchor() >= 0) {
+                return focus.getCinematicTrackData().getSelectedStartAnchor();
+            }
+            return 0;
+        }
+        if (focus.getType() == DesignerEntityType.CINEMATIC_RIG && !focus.getCinematicSegments().isEmpty()) {
+            return focus.getCinematicSegments().get(0).getStartAnchor();
+        }
+        DesignerEntity rig = findParentRig(track, entities);
+        if (rig != null && !rig.getCinematicSegments().isEmpty()) {
+            CinematicSegment segment = rig.getCinematicSegments().get(0);
+            if (track.getId().equals(segment.getTrackId())) {
+                return segment.getStartAnchor();
+            }
+        }
+        return 0;
+    }
+
+    private DesignerEntity findFirstTrack(DesignerEntity parent) {
+        if (parent == null) return null;
+        for (DesignerEntity child : parent.getChildren()) {
+            if (child.getType() == DesignerEntityType.CINEMATIC_TRACK) {
+                return child;
+            }
+            if (child.getType() == DesignerEntityType.SECTION || child.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                DesignerEntity nested = findFirstTrack(child);
+                if (nested != null) return nested;
+            }
+        }
+        return null;
+    }
+
+    private DesignerEntity findTrackById(String trackId, DesignerEntity parent) {
+        if (parent == null || trackId == null || trackId.isBlank()) return null;
+        for (DesignerEntity child : parent.getChildren()) {
+            if (child.getType() == DesignerEntityType.CINEMATIC_TRACK && trackId.equals(child.getId())) {
+                return child;
+            }
+            if (child.getType() == DesignerEntityType.SECTION || child.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                DesignerEntity nested = findTrackById(trackId, child);
+                if (nested != null) return nested;
+            }
+        }
+        return null;
+    }
+
+    private DesignerEntity findTrackById(String trackId, List<DesignerEntity> source) {
+        if (trackId == null || trackId.isBlank()) return null;
+        for (DesignerEntity entity : source) {
+            if (entity.getType() == DesignerEntityType.CINEMATIC_TRACK && trackId.equals(entity.getId())) {
+                return entity;
+            }
+            if (entity.getType() == DesignerEntityType.SECTION || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                DesignerEntity nested = findTrackById(trackId, entity.getChildren());
+                if (nested != null) return nested;
+            }
+        }
+        return null;
+    }
+
+    private void applyCameraPoseAtTrackAnchor(DesignerEntity track, int anchorIndex) {
+        applyCameraPoseAtTrackPosition(track, anchorIndex, anchorIndex + 1f);
+    }
+
+    private void applyCameraPoseAtTrackPosition(DesignerEntity track, float anchorCursor, float lookAheadCursor) {
+        if (cameraEntity == null || cameraEntity.getSceneNode() == null || track == null
+                || track.getSceneNode() == null || track.getCinematicTrackData() == null) {
+            return;
+        }
+        Vector3f pos = computeTrackWorldPosition(track, anchorCursor);
+        DesignerEntity rig = findParentRig(track, entities);
+        Vector3f lookAt = resolveCinematicLookAtPoint(track, rig, pos, lookAheadCursor);
+        if (lookAt == null) {
+            lookAt = computeTrackWorldPosition(track, lookAheadCursor);
+        }
+        Vector3f dir = lookAt.subtract(pos);
+        if (dir.lengthSquared() < 1e-6f) {
+            dir = Vector3f.UNIT_Z.clone();
+        } else {
+            dir.normalizeLocal();
+        }
+        Quaternion rot = new Quaternion();
+        rot.lookAt(dir, Vector3f.UNIT_Y);
+        cameraEntity.getSceneNode().setLocalTranslation(pos);
+        cameraEntity.getSceneNode().setLocalRotation(rot);
+    }
+
+    private Vector3f resolveCinematicLookAtPoint(DesignerEntity track, DesignerEntity rig, Vector3f cameraPos, float lookAheadCursor) {
+        if (rig != null) {
+            DesignerEntity target = findEntityById(rig.getCinematicTargetEntityId(), entities);
+            if (target != null && target.getSceneNode() != null) {
+                return target.getSceneNode().getWorldTranslation().add(rig.getCinematicTargetOffset());
+            }
+        }
+        return computeTrackWorldPosition(track, lookAheadCursor);
+    }
+
+    private DesignerEntity findEntityById(String id, List<DesignerEntity> source) {
+        if (id == null || id.isBlank()) return null;
+        for (DesignerEntity entity : source) {
+            if (id.equals(entity.getId())) {
+                return entity;
+            }
+            if (entity.getType() == DesignerEntityType.SECTION || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                DesignerEntity nested = findEntityById(id, entity.getChildren());
+                if (nested != null) return nested;
+            }
+        }
+        return null;
+    }
+
+    private Vector3f computeTrackWorldPosition(DesignerEntity track, float anchorCursor) {
+        CinematicTrackData data = track.getCinematicTrackData();
+        int count = data.getAnchorCount();
+        float wrapped = anchorCursor % count;
+        if (wrapped < 0) {
+            wrapped += count;
+        }
+        int index0 = (int) FastMath.floor(wrapped);
+        int index1 = (index0 + 1) % count;
+        float alpha = wrapped - index0;
+        Vector3f local0 = data.getAnchorLocalPoint(index0);
+        Vector3f local1 = data.getAnchorLocalPoint(index1);
+        Vector3f local = local0.interpolateLocal(local1, alpha);
+        return track.getSceneNode().localToWorld(local, null);
+    }
+
+    private void updateCinematicPlayback(float tpf) {
+        if (!cinematicPlaybackActive) {
+            return;
+        }
+        List<CinematicSegment> segments = cinematicPlaybackSegments;
+        if (segments.isEmpty()) {
+            stopCinematicPlayback();
+            return;
+        }
+        if (cinematicPlaybackSegmentIndex < 0 || cinematicPlaybackSegmentIndex >= segments.size()) {
+            stopCinematicPlayback();
+            return;
+        }
+        CinematicSegment segment = segments.get(cinematicPlaybackSegmentIndex);
+        DesignerEntity track = findTrackById(segment.getTrackId(), entities);
+        if (track == null) {
+            stopCinematicPlayback();
+            return;
+        }
+        if (cinematicPlaybackSegmentDistance <= 1e-6f) {
+            cinematicPlaybackAnchorCursor = segment.getEndAnchor();
+            applyPlaybackCameraPose(cinematicPlaybackRig, segment, cinematicPlaybackAnchorCursor);
+            setPlaybackPreview(track, segment.getStartAnchor(), cinematicPlaybackAnchorCursor);
+            if (!startPlaybackSegment(cinematicPlaybackSegmentIndex + 1)) {
+                cinematicPlaybackActive = false;
+                if (cinematicAuthoringTarget == null) {
+                    stopCinematicCameraPreview();
+                }
+            }
+            return;
+        }
+        float deltaProgress = (Math.max(0.1f, segment.getSpeed()) * tpf) / cinematicPlaybackSegmentDistance;
+        cinematicPlaybackSegmentLinearProgress = Math.min(1f, cinematicPlaybackSegmentLinearProgress + deltaProgress);
+        boolean firstSegment = cinematicPlaybackSegmentIndex == 0;
+        boolean lastSegment = cinematicPlaybackSegmentIndex == segments.size() - 1;
+        float easedProgress = applyCinematicRigEasing(
+                cinematicPlaybackRig, cinematicPlaybackSegmentLinearProgress, firstSegment, lastSegment);
+        cinematicPlaybackAnchorCursor = advanceAnchorCursor(segment.getStartAnchor(), cinematicPlaybackSegmentDistance,
+                easedProgress, track.getCinematicTrackData().getAnchorCount());
+        applyPlaybackCameraPose(cinematicPlaybackRig, segment, cinematicPlaybackAnchorCursor);
+        setPlaybackPreview(track, segment.getStartAnchor(), cinematicPlaybackAnchorCursor);
+        if (cinematicPlaybackSegmentLinearProgress >= 1f - 1e-6f) {
+            if (!startPlaybackSegment(cinematicPlaybackSegmentIndex + 1)) {
+                cinematicPlaybackActive = false;
+                if (cinematicAuthoringTarget == null) {
+                    stopCinematicCameraPreview();
+                }
+            }
+        }
+    }
+
+    private float computeForwardAnchorDistance(float currentCursor, int endAnchor, int anchorCount) {
+        float current = currentCursor % anchorCount;
+        if (current < 0) current += anchorCount;
+        float end = endAnchor % anchorCount;
+        if (end < 0) end += anchorCount;
+        if (end >= current) {
+            return end - current;
+        }
+        return (anchorCount - current) + end;
+    }
+
+    private void applyPlaybackCameraPose(DesignerEntity rig, CinematicSegment segment, float anchorCursor) {
+        DesignerEntity track = findTrackById(segment.getTrackId(), entities);
+        if (track == null) return;
+        applyCameraPoseAtTrackPosition(track, anchorCursor, anchorCursor + 1f);
+    }
+
+    private boolean startPlaybackSegment(int index) {
+        if (index < 0 || index >= cinematicPlaybackSegments.size()) {
+            cinematicPlaybackSegmentIndex = -1;
+            cinematicPlaybackSegmentDistance = 0f;
+            cinematicPlaybackSegmentLinearProgress = 0f;
+            return false;
+        }
+        cinematicPlaybackSegmentIndex = index;
+        CinematicSegment segment = cinematicPlaybackSegments.get(index);
+        DesignerEntity track = findTrackById(segment.getTrackId(), entities);
+        if (track == null || track.getCinematicTrackData() == null) {
+            cinematicPlaybackSegmentDistance = 0f;
+            cinematicPlaybackSegmentLinearProgress = 0f;
+            return false;
+        }
+        cinematicPlaybackSegmentDistance = computeForwardAnchorDistance(
+                segment.getStartAnchor(), segment.getEndAnchor(), track.getCinematicTrackData().getAnchorCount());
+        cinematicPlaybackSegmentLinearProgress = 0f;
+        cinematicPlaybackAnchorCursor = segment.getStartAnchor();
+        setPlaybackPreview(track, segment.getStartAnchor(), cinematicPlaybackAnchorCursor);
+        applyPlaybackCameraPose(cinematicPlaybackRig, segment, cinematicPlaybackAnchorCursor);
+        return true;
+    }
+
+    private float advanceAnchorCursor(int startAnchor, float distance, float progress, int anchorCount) {
+        float cursor = startAnchor + distance * FastMath.clamp(progress, 0f, 1f);
+        while (cursor >= anchorCount) {
+            cursor -= anchorCount;
+        }
+        return cursor;
+    }
+
+    private float applyCinematicRigEasing(DesignerEntity rig, float progress, boolean firstSegment, boolean lastSegment) {
+        float p = FastMath.clamp(progress, 0f, 1f);
+        if (rig == null) {
+            return p;
+        }
+        String easeIn = firstSegment ? rig.getCinematicEaseIn() : "linear";
+        String easeOut = lastSegment ? rig.getCinematicEaseOut() : "linear";
+        boolean useEaseIn = easeIn != null && !easeIn.equals("linear");
+        boolean useEaseOut = easeOut != null && !easeOut.equals("linear");
+        if (!useEaseIn && !useEaseOut) {
+            return p;
+        }
+        if (useEaseIn && !useEaseOut) {
+            return applySingleEase(easeIn, p);
+        }
+        if (!useEaseIn) {
+            return applySingleEase(easeOut, p);
+        }
+        if (p < 0.5f) {
+            return 0.5f * applySingleEase(easeIn, p * 2f);
+        }
+        return 0.5f + 0.5f * applySingleEase(easeOut, (p - 0.5f) * 2f);
+    }
+
+    private float applySingleEase(String easeId, float t) {
+        float p = FastMath.clamp(t, 0f, 1f);
+        if (easeId == null || easeId.isBlank() || "linear".equals(easeId)) {
+            return p;
+        }
+        switch (easeId) {
+            case "ease_in_quad":
+                return p * p;
+            case "ease_out_quad":
+                return 1f - (1f - p) * (1f - p);
+            case "ease_in_cubic":
+                return p * p * p;
+            case "ease_out_cubic":
+                return 1f - FastMath.pow(1f - p, 3f);
+            case "ease_in_expo":
+                return p <= 0f ? 0f : FastMath.pow(2f, 10f * (p - 1f));
+            case "ease_out_expo":
+                return p >= 1f ? 1f : 1f - FastMath.pow(2f, -10f * p);
+            case "ease_in_sine":
+                return 1f - FastMath.cos((p * FastMath.PI) / 2f);
+            case "ease_out_sine":
+                return FastMath.sin((p * FastMath.PI) / 2f);
+            default:
+                return p;
+        }
+    }
+
+    private void setPlaybackPreview(DesignerEntity track, int startAnchor, float cursorAnchor) {
+        clearAllCinematicPlaybackPreviews(entities);
+        if (track == null || track.getCinematicTrackData() == null) return;
+        track.getCinematicTrackData().setPlaybackStartAnchor(startAnchor);
+        track.getCinematicTrackData().setPlaybackCursorAnchor(cursorAnchor);
+        rebuildCinematicTrackVisual(track);
+    }
+
+    private void clearAllCinematicPlaybackPreviews(List<DesignerEntity> source) {
+        for (DesignerEntity entity : source) {
+            if (entity.getType() == DesignerEntityType.CINEMATIC_TRACK && entity.getCinematicTrackData() != null) {
+                if (entity.getCinematicTrackData().hasPlaybackPreview()) {
+                    entity.getCinematicTrackData().clearPlaybackPreview();
+                    rebuildCinematicTrackVisual(entity);
+                }
+            } else if (entity.getType() == DesignerEntityType.SECTION || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                clearAllCinematicPlaybackPreviews(entity.getChildren());
+            }
+        }
     }
 
     /**
@@ -2515,6 +3310,8 @@ public class DesignerApp extends SceneMaxApp {
         if (gizmoManager.isDragging()) {
             gizmoManager.updateDrag(cam, inputManager.getCursorPosition());
         }
+
+        updateCinematicCameraPreview(tpf);
 
         // Scale gizmo based on camera distance
         gizmoManager.scaleGizmoToCamera(cam);

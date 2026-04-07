@@ -10,5 +10,7 @@ public enum DesignerEntityType {
     CAMERA,
     CODE,
     SECTION,
-    PATH
+    PATH,
+    CINEMATIC_RIG,
+    CINEMATIC_TRACK
 }
