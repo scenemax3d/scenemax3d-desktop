@@ -31,7 +31,7 @@ import static java.lang.System.getProperty;
 
 public class Util {
 
-    private static final String APPLICATION_VERSION = "1.9.2";
+    private static final String APPLICATION_VERSION = "2.0";
 
     /**
      * Applies the Monokai dark theme to an RSyntaxTextArea so it matches FlatDarkLaf.
