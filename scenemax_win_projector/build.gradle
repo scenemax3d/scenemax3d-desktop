@@ -41,6 +41,18 @@ shadowJar {
 }
 assemble.dependsOn shadowJar
 
+tasks.register('deleteDesktopLauncherJars', Delete) {
+    group = 'build'
+    description = 'Deletes stale desktop launcher jars so the IDE regenerates the launcher from the latest projector build.'
+    delete rootProject.fileTree(rootProject.projectDir) {
+        include 'launcher*.jar'
+    }
+}
+
+tasks.named('shadowJar') {
+    finalizedBy tasks.named('deleteDesktopLauncherJars')
+}
+
 def projectorArtifactDir = rootProject.file('out/artifacts')
 def projectorArtifactFile = new File(projectorArtifactDir, 'scenemax_win_projector.jar')
 
@@ -51,11 +63,6 @@ tasks.register('publishProjectorArtifact', Copy) {
     from(tasks.named('shadowJar').flatMap { it.archiveFile })
     into(projectorArtifactDir)
     rename { 'scenemax_win_projector.jar' }
-    doLast {
-        delete rootProject.fileTree(rootProject.projectDir) {
-            include 'launcher*.jar'
-        }
-    }
 }
 
 tasks.named('build') {

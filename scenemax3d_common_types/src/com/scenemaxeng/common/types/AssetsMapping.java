@@ -110,6 +110,7 @@ public class AssetsMapping {
             loadFontsFromJson(res);
             loadSkyBoxesFromJson(res);
             loadShadersFromJson(res);
+            loadCinematicsFromJson(res);
         }
     }
 
@@ -324,6 +325,50 @@ public class AssetsMapping {
         }
     }
 
+    private void loadCinematicsFromJson(JSONObject res) {
+        if (res == null) {
+            return;
+        }
+
+        JSONArray cinematics = res.optJSONArray("cinematics");
+        if (cinematics == null) {
+            return;
+        }
+
+        for (int i = 0; i < cinematics.length(); i++) {
+            JSONObject cinematic = cinematics.optJSONObject(i);
+            if (cinematic == null) {
+                continue;
+            }
+
+            String runtimeId = cinematic.optString("name", "").toLowerCase();
+            if (runtimeId.isBlank()) {
+                runtimeId = cinematic.optString("runtimeId", "").toLowerCase();
+            }
+            if (runtimeId.isBlank()) {
+                continue;
+            }
+
+            String sourcePath = cinematic.optString("sourcePath", "");
+            String jsonBuffer = cinematic.has("jsonBuffer")
+                    ? cinematic.optJSONObject("jsonBuffer") != null
+                        ? cinematic.getJSONObject("jsonBuffer").toString()
+                        : cinematic.optString("jsonBuffer", "")
+                    : "";
+            String documentBuffer = cinematic.has("documentBuffer")
+                    ? cinematic.optJSONObject("documentBuffer") != null
+                        ? cinematic.getJSONObject("documentBuffer").toString()
+                        : cinematic.optString("documentBuffer", "")
+                    : "";
+
+            if (jsonBuffer.isBlank()) {
+                continue;
+            }
+
+            _cinematics.put(runtimeId, new ResourceCinematicRig(runtimeId, sourcePath, jsonBuffer, documentBuffer));
+        }
+    }
+
     private void loadTerrainsFromJson(JSONObject res) {
         if(res==null || !res.has("terrains")) return;
 
@@ -421,7 +466,7 @@ public class AssetsMapping {
                     if (projectRoot != null) {
                         relativePath = projectRoot.toURI().relativize(designerFile.toURI()).getPath();
                     }
-                    _cinematics.put(runtimeId, new ResourceCinematicRig(runtimeId, relativePath, entity.toString()));
+                    _cinematics.put(runtimeId, new ResourceCinematicRig(runtimeId, relativePath, entity.toString(), rootDocumentBuffer(designerFile)));
                 }
             }
 
@@ -436,6 +481,10 @@ public class AssetsMapping {
         String s = Util.readFile(f);
         if(s==null || s.length()==0) return null;
         return new JSONObject(s);
+    }
+
+    private String rootDocumentBuffer(File designerFile) {
+        return designerFile == null ? null : Util.readFile(designerFile);
     }
 
 

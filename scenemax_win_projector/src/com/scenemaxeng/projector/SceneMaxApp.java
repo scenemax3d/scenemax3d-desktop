@@ -108,16 +108,20 @@ import org.lwjgl.opengl.Display;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.*;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -6041,7 +6045,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         try {
-            RuntimeCinematicRig resolved = parseCinematicRig(new JSONObject(resource.jsonBuffer), resource.sourcePath);
+            RuntimeCinematicRig resolved = parseCinematicRig(
+                    new JSONObject(resource.jsonBuffer),
+                    resource.sourcePath,
+                    resource.documentBuffer
+            );
             if (resolved != null && resolved.id != null && !resolved.id.isBlank()) {
                 cinematicRigCache.put(resolved.id.toLowerCase(Locale.ROOT), resolved);
             }
@@ -6072,7 +6080,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         return workingFolder;
     }
 
-    private RuntimeCinematicRig parseCinematicRig(JSONObject json, String sourcePath) {
+    private RuntimeCinematicRig parseCinematicRig(JSONObject json, String sourcePath, String sourceDocumentBuffer) {
         RuntimeCinematicRig rig = new RuntimeCinematicRig();
         rig.id = json.optString("cinematicRuntimeId", json.optString("id", ""));
         rig.name = json.optString("name", "Cinematic Rig");
@@ -6114,18 +6122,28 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
         }
 
-        populateCinematicRigRelativeTargetPlacement(rig, json, sourcePath);
+        populateCinematicRigRelativeTargetPlacement(rig, json, sourcePath, sourceDocumentBuffer);
 
         return rig;
     }
 
-    private void populateCinematicRigRelativeTargetPlacement(RuntimeCinematicRig rig, JSONObject rigJson, String sourcePath) {
-        if (rig == null || sourcePath == null || sourcePath.isBlank()
+    private void populateCinematicRigRelativeTargetPlacement(RuntimeCinematicRig rig, JSONObject rigJson, String sourcePath, String sourceDocumentBuffer) {
+        if (rig == null
                 || rig.targetEntityName == null || rig.targetEntityName.isBlank()) {
             return;
         }
         try {
-            String fileText = java.nio.file.Files.readString(new File(sourcePath).toPath());
+            String fileText = sourceDocumentBuffer;
+            if ((fileText == null || fileText.isBlank()) && sourcePath != null && !sourcePath.isBlank()) {
+                File sourceFile = new File(sourcePath);
+                if (sourceFile.isFile()) {
+                    fileText = java.nio.file.Files.readString(sourceFile.toPath());
+                }
+            }
+            if (fileText == null || fileText.isBlank()) {
+                return;
+            }
+
             JSONObject root = new JSONObject(fileText);
             JSONArray entities = root.optJSONArray("entities");
             if (entities == null) {
@@ -7904,11 +7922,15 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     private String resolveEffekseerEffectPath(String assetId) {
         File resourcesFolder = resolveRuntimeResourcesFolder();
-        if (resourcesFolder == null) {
-            return null;
+        File assetFolder = resourcesFolder == null ? null : new File(resourcesFolder, "effects/" + assetId);
+        if ((assetFolder == null || !assetFolder.isDirectory()) && resourcesFolder != null) {
+            assetFolder = extractBundledEffekseerEffect(resourcesFolder, assetId);
         }
-        File assetFolder = new File(resourcesFolder, "effects/" + assetId);
-        if (!assetFolder.isDirectory()) {
+        return findEffekseerEffectFile(assetFolder);
+    }
+
+    private String findEffekseerEffectFile(File assetFolder) {
+        if (assetFolder == null || !assetFolder.isDirectory()) {
             return null;
         }
         File[] preferred = assetFolder.listFiles((dir, name) -> name.toLowerCase().endsWith(".efkefc") || name.toLowerCase().endsWith(".efk"));
@@ -7916,6 +7938,59 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return preferred[0].getAbsolutePath();
         }
         return null;
+    }
+
+    private File extractBundledEffekseerEffect(File resourcesFolder, String assetId) {
+        String entryPrefix = "resources/effects/" + assetId + "/";
+        File targetFolder = new File(resourcesFolder, "effects/" + assetId);
+        if (targetFolder.isDirectory()) {
+            return targetFolder;
+        }
+
+        try {
+            File jarFile = resolveOwningJarFile();
+            if (jarFile == null || !jarFile.isFile()) {
+                return null;
+            }
+
+            boolean extractedAny = false;
+            try (JarFile jar = new JarFile(jarFile)) {
+                Enumeration<JarEntry> entries = jar.entries();
+                while (entries.hasMoreElements()) {
+                    JarEntry entry = entries.nextElement();
+                    String entryName = entry.getName();
+                    if (!entryName.startsWith(entryPrefix) || entry.isDirectory()) {
+                        continue;
+                    }
+
+                    File output = new File(resourcesFolder, entryName.substring("resources/".length()));
+                    File parent = output.getParentFile();
+                    if (parent != null && !parent.exists()) {
+                        parent.mkdirs();
+                    }
+
+                    try (InputStream in = jar.getInputStream(entry)) {
+                        Files.copy(in, output.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    extractedAny = true;
+                }
+            }
+
+            return extractedAny ? targetFolder : null;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private File resolveOwningJarFile() throws URISyntaxException {
+        if (SceneMaxApp.class.getProtectionDomain() == null
+                || SceneMaxApp.class.getProtectionDomain().getCodeSource() == null
+                || SceneMaxApp.class.getProtectionDomain().getCodeSource().getLocation() == null) {
+            return null;
+        }
+
+        File file = Paths.get(SceneMaxApp.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toFile();
+        return file.isFile() ? file : null;
     }
 
     private File resolveRuntimeResourcesFolder() {
