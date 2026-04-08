@@ -55,6 +55,92 @@ import java.util.Map;
  */
 public class DesignerPanel extends JPanel {
 
+    private class CinematicSegmentTableModel extends javax.swing.table.AbstractTableModel {
+        private final String[] columns = {"Rail", "Start", "End", "Weight"};
+
+        @Override
+        public int getRowCount() {
+            DesignerEntity rig = getSelectedTreeEntity();
+            if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG) {
+                return 0;
+            }
+            return rig.getCinematicSegments().size();
+        }
+
+        @Override
+        public int getColumnCount() {
+            return columns.length;
+        }
+
+        @Override
+        public String getColumnName(int column) {
+            return columns[column];
+        }
+
+        @Override
+        public boolean isCellEditable(int rowIndex, int columnIndex) {
+            return columnIndex >= 1;
+        }
+
+        @Override
+        public Object getValueAt(int rowIndex, int columnIndex) {
+            DesignerEntity rig = getSelectedTreeEntity();
+            if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG
+                    || rowIndex < 0 || rowIndex >= rig.getCinematicSegments().size()) {
+                return null;
+            }
+            CinematicSegment segment = rig.getCinematicSegments().get(rowIndex);
+            switch (columnIndex) {
+                case 0:
+                    return segment.getTrackName();
+                case 1:
+                    return segment.getStartAnchor();
+                case 2:
+                    return segment.getEndAnchor();
+                case 3:
+                    return segment.getSpeed();
+                default:
+                    return null;
+            }
+        }
+
+        @Override
+        public void setValueAt(Object aValue, int rowIndex, int columnIndex) {
+            if (updatingProperties || app == null) return;
+            DesignerEntity rig = getSelectedTreeEntity();
+            if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG
+                    || rowIndex < 0 || rowIndex >= rig.getCinematicSegments().size()) {
+                return;
+            }
+            CinematicSegment segment = rig.getCinematicSegments().get(rowIndex);
+            try {
+                if (columnIndex == 1 || columnIndex == 2) {
+                    int start = segment.getStartAnchor();
+                    int end = segment.getEndAnchor();
+                    int parsed = Integer.parseInt(String.valueOf(aValue).trim());
+                    if (columnIndex == 1) {
+                        start = parsed;
+                    } else {
+                        end = parsed;
+                    }
+                    final int newStart = start;
+                    final int newEnd = end;
+                    app.enqueue(() -> {
+                        app.updateCinematicSegmentRange(rig, rowIndex, newStart, newEnd);
+                        return null;
+                    });
+                } else if (columnIndex == 3) {
+                    float weight = Float.parseFloat(String.valueOf(aValue).trim());
+                    app.enqueue(() -> {
+                        app.updateCinematicSegmentSpeed(rig, rowIndex, weight);
+                        return null;
+                    });
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+    }
+
     // --- Shared JME3 canvas (singleton across all designer documents) ---
     private static DesignerApp sharedApp;
     private static Canvas sharedCanvas;
@@ -114,10 +200,12 @@ public class DesignerPanel extends JPanel {
     private JSpinner spnCinematicPreviewSpeed;
     private JLabel lblCinematicSelection;
     private JPanel cinematicRigPanel;
-    private DefaultListModel<String> cinematicStackListModel;
-    private JList<String> cinematicStackList;
-    private JSpinner spnCinematicSegmentSpeed;
+    private JTable cinematicStackTable;
+    private CinematicSegmentTableModel cinematicStackTableModel;
+    private JSpinner spnCinematicPreviewDuration;
     private JComboBox<String> cboCinematicTarget;
+    private JTextField txtCinematicRuntimeId;
+    private JTextField txtCinematicRuntimePosHint;
     private JComboBox<EasingOption> cboCinematicEaseIn, cboCinematicEaseOut;
     private JSpinner spnCinematicTargetOffsetX, spnCinematicTargetOffsetY, spnCinematicTargetOffsetZ;
     private java.util.List<DesignerEntity> cinematicTargetChoices = new ArrayList<>();
@@ -211,9 +299,14 @@ public class DesignerPanel extends JPanel {
         });
 
         JButton btnAddCinematic = new JButton(createDesignerToolbarIcon("cinematic"));
-        btnAddCinematic.setToolTipText("Add Cinematic Track");
+        btnAddCinematic.setToolTipText("Create Cinematic Rig or Add Rail");
         btnAddCinematic.addActionListener(e -> {
-            if (app != null) app.enqueue(() -> { app.addDefaultCinematicTrack(); return null; });
+            if (app == null) return;
+            if (app.findCinematicRig() == null) {
+                showCreateCinematicRigDialog();
+            } else {
+                app.enqueue(() -> { app.addDefaultCinematicTrack(); return null; });
+            }
         });
 
         JButton btnDelete = new JButton(createDesignerToolbarIcon("delete"));
@@ -830,6 +923,22 @@ public class DesignerPanel extends JPanel {
         rigTopButtons.add(btnAddTrackToRig);
         cinematicRigPanel.add(rigTopButtons);
 
+        JPanel runtimeIdRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        runtimeIdRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        runtimeIdRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        runtimeIdRow.add(new JLabel("Runtime ID:"));
+        txtCinematicRuntimeId = new JTextField(18);
+        txtCinematicRuntimeId.setToolTipText("Use this id in SceneMax code: my_camera=>cinematic.camera.<runtime_id>");
+        txtCinematicRuntimeId.addActionListener(e -> applyCinematicRigRuntimeIdChange());
+        txtCinematicRuntimeId.addFocusListener(new java.awt.event.FocusAdapter() {
+            @Override
+            public void focusLost(java.awt.event.FocusEvent e) {
+                applyCinematicRigRuntimeIdChange();
+            }
+        });
+        runtimeIdRow.add(txtCinematicRuntimeId);
+        cinematicRigPanel.add(runtimeIdRow);
+
         JPanel targetRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
         targetRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         targetRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
@@ -855,6 +964,16 @@ public class DesignerPanel extends JPanel {
         targetOffsetRow.add(spnCinematicTargetOffsetZ);
         cinematicRigPanel.add(targetOffsetRow);
 
+        JPanel runtimePosHintRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        runtimePosHintRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        runtimePosHintRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        runtimePosHintRow.add(new JLabel("Runtime Pos Hint:"));
+        txtCinematicRuntimePosHint = new JTextField(20);
+        txtCinematicRuntimePosHint.setEditable(false);
+        txtCinematicRuntimePosHint.setToolTipText("Suggested relative runtime start position, for example: player1 forward 10.5 up 3.1");
+        runtimePosHintRow.add(txtCinematicRuntimePosHint);
+        cinematicRigPanel.add(runtimePosHintRow);
+
         JPanel easeInRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
         easeInRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         easeInRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
@@ -875,21 +994,24 @@ public class DesignerPanel extends JPanel {
         easeOutRow.add(cboCinematicEaseOut);
         cinematicRigPanel.add(easeOutRow);
 
-        cinematicStackListModel = new DefaultListModel<>();
-        cinematicStackList = new JList<>(cinematicStackListModel);
-        cinematicStackList.setVisibleRowCount(6);
-        JScrollPane cinematicStackScroll = new JScrollPane(cinematicStackList);
+        JPanel previewDurationRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        previewDurationRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        previewDurationRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        previewDurationRow.add(new JLabel("Preview Duration:"));
+        spnCinematicPreviewDuration = new JSpinner(new SpinnerNumberModel(10.0, 0.1, 9999.0, 0.5));
+        spnCinematicPreviewDuration.setPreferredSize(new Dimension(80, 24));
+        previewDurationRow.add(spnCinematicPreviewDuration);
+        previewDurationRow.add(new JLabel("seconds"));
+        cinematicRigPanel.add(previewDurationRow);
+
+        cinematicStackTableModel = new CinematicSegmentTableModel();
+        cinematicStackTable = new JTable(cinematicStackTableModel);
+        cinematicStackTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        cinematicStackTable.putClientProperty("terminateEditOnFocusLost", Boolean.TRUE);
+        JScrollPane cinematicStackScroll = new JScrollPane(cinematicStackTable);
         cinematicStackScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
         cinematicStackScroll.setPreferredSize(new Dimension(200, 120));
         cinematicRigPanel.add(cinematicStackScroll);
-
-        JPanel segmentSpeedRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
-        segmentSpeedRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        spnCinematicSegmentSpeed = new JSpinner(new SpinnerNumberModel(30.0, 0.1, 9999.0, 1.0));
-        spnCinematicSegmentSpeed.setPreferredSize(new Dimension(80, 24));
-        segmentSpeedRow.add(new JLabel("Segment Speed:"));
-        segmentSpeedRow.add(spnCinematicSegmentSpeed);
-        cinematicRigPanel.add(segmentSpeedRow);
 
         JPanel stackButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
         stackButtons.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -897,15 +1019,18 @@ public class DesignerPanel extends JPanel {
         btnRemoveSegment.addActionListener(e -> removeSelectedCinematicSegment());
         JButton btnPlayCinematic = new JButton("Play");
         btnPlayCinematic.addActionListener(e -> playSelectedCinematicRig());
+        JButton btnPlaySelectedSegment = new JButton("Play Selected Track");
+        btnPlaySelectedSegment.addActionListener(e -> playSelectedCinematicSegment());
         JButton btnStopCinematic = new JButton("Stop");
         btnStopCinematic.addActionListener(e -> stopCinematicPlayback());
         stackButtons.add(btnPlayCinematic);
+        stackButtons.add(btnPlaySelectedSegment);
         stackButtons.add(btnStopCinematic);
         stackButtons.add(btnRemoveSegment);
         cinematicRigPanel.add(stackButtons);
 
-        cinematicStackList.addListSelectionListener(e -> onCinematicSegmentSelectionChanged());
-        spnCinematicSegmentSpeed.addChangeListener(e -> applySelectedCinematicSegmentSpeed());
+        cinematicStackTable.getSelectionModel().addListSelectionListener(e -> onCinematicSegmentSelectionChanged());
+        spnCinematicPreviewDuration.addChangeListener(e -> applyCinematicRigPreviewDurationChange());
         spnCinematicTargetOffsetX.addChangeListener(e -> applyCinematicRigTargetOffsetChange());
         spnCinematicTargetOffsetY.addChangeListener(e -> applyCinematicRigTargetOffsetChange());
         spnCinematicTargetOffsetZ.addChangeListener(e -> applyCinematicRigTargetOffsetChange());
@@ -953,6 +1078,67 @@ public class DesignerPanel extends JPanel {
 
     private void showModelPickerDialog() {
         showModelPickerDialog(null, -1);
+    }
+
+    private void showCreateCinematicRigDialog() {
+        if (app == null) return;
+
+        JComboBox<CinematicPresetOption> cboPreset = new JComboBox<>(new CinematicPresetOption[]{
+                new CinematicPresetOption("empty", "Empty Rig - start from scratch"),
+                new CinematicPresetOption("football_flyover", "Football Flyover - high arc then drop toward the field"),
+                new CinematicPresetOption("orbit_push_in", "Orbit Push-In - wide orbit resolving into a close orbit"),
+                new CinematicPresetOption("sideline_sweep", "Sideline Sweep - long low-angle stadium-style pass")
+        });
+        cboPreset.setPreferredSize(new Dimension(340, 26));
+
+        List<DesignerEntity> targetCandidates = app.getCinematicTargetCandidates();
+        List<DesignerEntity> targetValues = new ArrayList<>();
+        DefaultComboBoxModel<String> targetModel = new DefaultComboBoxModel<>();
+        targetModel.addElement("None");
+        for (DesignerEntity entity : targetCandidates) {
+            targetModel.addElement(entity.getName());
+            targetValues.add(entity);
+        }
+        JComboBox<String> cboTarget = new JComboBox<>(targetModel);
+        cboTarget.setPreferredSize(new Dimension(340, 26));
+
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(4, 4, 4, 4);
+        gbc.anchor = GridBagConstraints.WEST;
+
+        gbc.gridx = 0; gbc.gridy = 0;
+        panel.add(new JLabel("Preset Rig:"), gbc);
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1;
+        panel.add(cboPreset, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        panel.add(new JLabel("Look At Target:"), gbc);
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1;
+        panel.add(cboTarget, gbc);
+
+        int result = JOptionPane.showConfirmDialog(this, panel,
+                "Create Cinematic Rig", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+
+        if (result == JOptionPane.OK_OPTION) {
+            CinematicPresetOption preset = (CinematicPresetOption) cboPreset.getSelectedItem();
+            int targetIndex = cboTarget.getSelectedIndex();
+            final String presetId = preset != null ? preset.id : "empty";
+            final String targetId;
+            final String targetName;
+            if (targetIndex > 0 && targetIndex - 1 < targetValues.size()) {
+                DesignerEntity target = targetValues.get(targetIndex - 1);
+                targetId = target.getId();
+                targetName = target.getName();
+            } else {
+                targetId = "";
+                targetName = "";
+            }
+            app.enqueue(() -> {
+                app.createCinematicRigWithPreset(presetId, targetId, targetName);
+                return null;
+            });
+        }
     }
 
     private void showModelPickerDialog(java.util.List<DesignerEntity> targetList, int insertIndex) {
@@ -1181,6 +1367,15 @@ public class DesignerPanel extends JPanel {
             @Override
             public void onLoadingProgress(int loaded, int total) {
                 SwingUtilities.invokeLater(() -> updateLoadingProgress(loaded, total));
+            }
+
+            @Override
+            public void onCinematicRuntimeHintChanged(String hintText) {
+                SwingUtilities.invokeLater(() -> {
+                    if (txtCinematicRuntimePosHint != null) {
+                        txtCinematicRuntimePosHint.setText(hintText != null ? hintText : "");
+                    }
+                });
             }
         });
     }
@@ -2147,32 +2342,33 @@ public class DesignerPanel extends JPanel {
             }
 
             if (entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                txtCinematicRuntimeId.setText(entity.getCinematicRuntimeId());
                 refreshCinematicTargetChoices(entity.getCinematicTargetEntityId(), entity.getCinematicTargetEntityName());
                 Vector3f targetOffset = entity.getCinematicTargetOffset();
                 spnCinematicTargetOffsetX.setValue((double) targetOffset.x);
                 spnCinematicTargetOffsetY.setValue((double) targetOffset.y);
                 spnCinematicTargetOffsetZ.setValue((double) targetOffset.z);
+                spnCinematicPreviewDuration.setValue((double) entity.getCinematicPreviewDuration());
                 selectCinematicEasingOption(cboCinematicEaseIn, entity.getCinematicEaseIn());
                 selectCinematicEasingOption(cboCinematicEaseOut, entity.getCinematicEaseOut());
-                cinematicStackListModel.clear();
-                for (CinematicSegment segment : entity.getCinematicSegments()) {
-                    cinematicStackListModel.addElement(segment.toDisplayString());
-                }
+                cinematicStackTableModel.fireTableDataChanged();
                 if (!entity.getCinematicSegments().isEmpty()) {
-                    if (cinematicStackList.getSelectedIndex() < 0
-                            || cinematicStackList.getSelectedIndex() >= entity.getCinematicSegments().size()) {
-                        cinematicStackList.setSelectedIndex(0);
-                    }
-                    int idx = cinematicStackList.getSelectedIndex();
-                    if (idx >= 0 && idx < entity.getCinematicSegments().size()) {
-                        spnCinematicSegmentSpeed.setValue((double) entity.getCinematicSegments().get(idx).getSpeed());
+                    if (cinematicStackTable.getSelectedRow() < 0
+                            || cinematicStackTable.getSelectedRow() >= entity.getCinematicSegments().size()) {
+                        cinematicStackTable.setRowSelectionInterval(0, 0);
                     }
                 } else {
-                    cinematicStackList.clearSelection();
-                    spnCinematicSegmentSpeed.setValue(30.0);
+                    cinematicStackTable.clearSelection();
+                }
+                if (txtCinematicRuntimePosHint != null && (entity.getCinematicTargetEntityId() == null
+                        || entity.getCinematicTargetEntityId().isBlank())) {
+                    txtCinematicRuntimePosHint.setText("");
                 }
                 cinematicRigPanel.setVisible(true);
             } else {
+                if (txtCinematicRuntimePosHint != null) {
+                    txtCinematicRuntimePosHint.setText("");
+                }
                 cinematicRigPanel.setVisible(false);
             }
 
@@ -2218,6 +2414,12 @@ public class DesignerPanel extends JPanel {
             jointMappingPanel.setVisible(false);
             pathPropertiesPanel.setVisible(false);
             cinematicTrackPanel.setVisible(false);
+            if (txtCinematicRuntimeId != null) {
+                txtCinematicRuntimeId.setText("");
+            }
+            if (txtCinematicRuntimePosHint != null) {
+                txtCinematicRuntimePosHint.setText("");
+            }
             cinematicRigPanel.setVisible(false);
 
             DesignerDocument doc = app != null ? app.getDocument() : null;
@@ -2622,7 +2824,7 @@ public class DesignerPanel extends JPanel {
         if (app == null) return;
         DesignerEntity sel = getSelectedTreeEntity();
         if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_RIG) return;
-        int selectedIndex = cinematicStackList.getSelectedIndex();
+        int selectedIndex = cinematicStackTable.getSelectedRow();
         if (selectedIndex < 0) return;
         app.enqueue(() -> {
             app.removeCinematicSegment(sel, selectedIndex);
@@ -2631,29 +2833,18 @@ public class DesignerPanel extends JPanel {
     }
 
     private void onCinematicSegmentSelectionChanged() {
-        if (updatingProperties) return;
-        DesignerEntity sel = getSelectedTreeEntity();
-        if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_RIG) return;
-        int idx = cinematicStackList.getSelectedIndex();
-        if (idx >= 0 && idx < sel.getCinematicSegments().size()) {
-            updatingProperties = true;
-            try {
-                spnCinematicSegmentSpeed.setValue((double) sel.getCinematicSegments().get(idx).getSpeed());
-            } finally {
-                updatingProperties = false;
-            }
-        }
+        // Row selection should not rebuild the whole table model, otherwise
+        // Swing tears down the active editor and the grid appears non-editable.
     }
 
-    private void applySelectedCinematicSegmentSpeed() {
+    private void applyCinematicRigPreviewDurationChange() {
         if (updatingProperties || app == null) return;
         DesignerEntity sel = getSelectedTreeEntity();
         if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_RIG) return;
-        int idx = cinematicStackList.getSelectedIndex();
-        if (idx < 0) return;
-        float speed = ((Number) spnCinematicSegmentSpeed.getValue()).floatValue();
+        float duration = ((Number) spnCinematicPreviewDuration.getValue()).floatValue();
         app.enqueue(() -> {
-            app.updateCinematicSegmentSpeed(sel, idx, speed);
+            sel.setCinematicPreviewDuration(duration);
+            app.markDocumentDirty();
             return null;
         });
     }
@@ -2678,6 +2869,18 @@ public class DesignerPanel extends JPanel {
         });
     }
 
+    private void playSelectedCinematicSegment() {
+        if (app == null) return;
+        DesignerEntity rig = getSelectedTreeEntity();
+        if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        int idx = cinematicStackTable.getSelectedRow();
+        if (idx < 0) return;
+        app.enqueue(() -> {
+            app.playCinematicSegment(rig, idx);
+            return null;
+        });
+    }
+
     private void stopCinematicPlayback() {
         if (app == null) return;
         app.enqueue(() -> {
@@ -2695,6 +2898,7 @@ public class DesignerPanel extends JPanel {
             return null;
         });
     }
+
 
     private void refreshCinematicTargetChoices(String selectedId, String selectedName) {
         if (app == null || cboCinematicTarget == null) return;
@@ -2736,6 +2940,17 @@ public class DesignerPanel extends JPanel {
         DesignerEntity target = cinematicTargetChoices.get(entityIdx);
         app.enqueue(() -> {
             app.setCinematicRigTarget(sel, target.getId(), target.getName());
+            return null;
+        });
+    }
+
+    private void applyCinematicRigRuntimeIdChange() {
+        if (updatingProperties || app == null || txtCinematicRuntimeId == null) return;
+        DesignerEntity sel = getSelectedTreeEntity();
+        if (sel == null || sel.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        String runtimeId = txtCinematicRuntimeId.getText();
+        app.enqueue(() -> {
+            app.setCinematicRigRuntimeId(sel, runtimeId);
             return null;
         });
     }
@@ -2808,6 +3023,21 @@ public class DesignerPanel extends JPanel {
         final String label;
 
         EasingOption(String id, String label) {
+            this.id = id;
+            this.label = label;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    private static final class CinematicPresetOption {
+        final String id;
+        final String label;
+
+        CinematicPresetOption(String id, String label) {
             this.id = id;
             this.label = label;
         }

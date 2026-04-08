@@ -58,7 +58,7 @@ public class MainWinApp implements IAppObserver {
             sceneMaxApp.setProjectName(this.projectName);
         }
 
-        ProgramDef startupProgram = parseStartupProgram(prg, workingFolder);
+        ProgramDef startupProgram = parseStartupProgram(prg, workingFolder, entryScriptFileName);
         prg = setCanvasSize(settings,prg);
         applyWindowMode(settings, startupProgram);
 
@@ -128,12 +128,16 @@ public class MainWinApp implements IAppObserver {
         this.windowPosY = dim.height / 2 - this.customHeight / 2;
     }
 
-    private ProgramDef parseStartupProgram(String prg, String workingFolder) {
+    private ProgramDef parseStartupProgram(String prg, String workingFolder, String entryScriptFileName) {
         if (prg == null || prg.isEmpty()) {
             return null;
         }
 
-        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, workingFolder);
+        String parserPath = workingFolder;
+        if (entryScriptFileName != null && !entryScriptFileName.isBlank()) {
+            parserPath = new File(workingFolder, entryScriptFileName).getAbsolutePath();
+        }
+        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, parserPath);
         return parser.parse(prg);
     }
 

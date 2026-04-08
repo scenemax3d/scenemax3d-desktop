@@ -99,6 +99,8 @@ import de.lessvoid.nifty.Nifty;
 import de.lessvoid.nifty.screen.Screen;
 import jme3utilities.sky.SkyControl;
 import jme3utilities.sky.StarsOption;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.apache.commons.io.FileUtils;
 import org.lwjgl.opengl.Display;
 
@@ -212,6 +214,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private String switchStateCode = null;
     private Logger logger;
     private EffekseerRenderProcessor effekseerRenderProcessor;
+    private final Map<String, RuntimeCinematicRig> cinematicRigCache = new HashMap<>();
 
     // UI system manager for .smui documents
     private com.scenemaxeng.common.ui.widget.UIManager uiManager;
@@ -403,6 +406,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 this.logger.log(Level.INFO, "SimpleInitApp projectName = "+this.projectName);
                 String projFolder = "./projects/"+this.projectName;
                 assetsMapping = new AssetsMapping(projFolder+"/resources");
+                assetsMapping.loadCinematicsFromProject(projFolder);
                 assetManager.registerLocator(new File(projFolder+"/resources").getCanonicalPath(), FileLocator.class);
             } else if(workingFolder!=null) {
                 this.logger.log(Level.INFO, "SimpleInitApp workingFolder = "+this.workingFolder);
@@ -413,6 +417,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                     assetsMapping = new AssetsMapping(projFolder + "/resources");
                     assetManager.registerLocator(f2.getCanonicalPath(), FileLocator.class);
                 }
+                if (assetsMapping == null) {
+                    assetsMapping = new AssetsMapping();
+                }
+                assetsMapping.loadCinematicsFromProject(projFolder);
             }
 
             if(assetsMapping==null) {
@@ -877,6 +885,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     public void run(String code) {
 
         this.initThreads();
+        clearCinematicRigCache();
         mainScope = mainScope == null ? new SceneMaxScope() : mainScope;
         mainScope.mainController.adhereToPauseStatus=false; // main scope never pauses
 
@@ -891,8 +900,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         // parse & compile the source code
         SceneMaxLanguageParser.parseUsingResource=false; // do not look for manual resource declarations
-        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null,
-                this.workingFolder + this.currentLevel);
+        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, resolveCurrentScriptContextPath());
         if (this.prg != null) {
             parser.setCurrentProgramState(this.prg);
         }
@@ -939,7 +947,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     public void runPartialCode(String code, SceneMaxScope scope, boolean closeOnError) {
 
         // parse & compile the source code
-        final ProgramDef prg = new SceneMaxLanguageParser(this.prg).parse(code);
+        final ProgramDef prg = new SceneMaxLanguageParser(this.prg, resolveCurrentScriptContextPath()).parse(code);
         if(prg==null){
             onEndCode();
             return;
@@ -1174,6 +1182,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
             scope.add(animateController);
 
+        } else if(action instanceof CinematicCameraPlayCommand) {
+            CinematicCameraController ctl = new CinematicCameraController(this, prg, scope, (CinematicCameraPlayCommand) action);
+            ctl.async = action.isAsync;
+            scope.add(ctl);
         } else if(action instanceof ActionCommandPlay) {
             ActionCommandPlay cmd = (ActionCommandPlay) action;
             SpritePlayFramesController c = new SpritePlayFramesController(this,scope,cmd);
@@ -1602,6 +1614,22 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 scope.entities.put(var.varName, inst);
                 loadEffekseerEffect(inst);
             }
+            return;
+        }
+
+        if (var.varType == VariableDef.VAR_TYPE_CINEMATIC_CAMERA) {
+            CinematicCameraVariableDef cinematicVar = (CinematicCameraVariableDef) var;
+            RuntimeCinematicRig rig = resolveCinematicRig(cinematicVar.cinematicCameraId);
+            if (rig == null) {
+                handleRuntimeError(formatRuntimeLocation(var.varLineNum)
+                        + "Failed to create cinematic camera '" + var.varName + "': cinematic rig runtime ID '"
+                        + cinematicVar.cinematicCameraId + "' was not found.");
+                return;
+            }
+            CinematicCameraInst inst = new CinematicCameraInst(cinematicVar, rig, scope);
+            String key = var.varName + "_" + ++entityInstCounter;
+            inst.entityKey = key;
+            scope.entities.put(var.varName, inst);
             return;
         }
 
@@ -4192,8 +4220,20 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     @Override
     public void handleRuntimeError(String err) {
+        if (this.hasRunTimeError && this.runTimeError != null && !this.runTimeError.isBlank()) {
+            return;
+        }
         this.hasRunTimeError=true;
         this.runTimeError=err;
+    }
+
+    public String formatRuntimeLocation(int lineNumber) {
+        String scriptPath = resolveCurrentScriptContextPath();
+        String scriptLabel = scriptPath == null || scriptPath.isBlank() ? "<unknown script>" : scriptPath;
+        if (lineNumber > 0) {
+            return "File '" + scriptLabel + "', line " + lineNumber + ": ";
+        }
+        return "File '" + scriptLabel + "': ";
     }
 
 
@@ -5971,11 +6011,202 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     }
 
-    private void turnOffCameraStates() {
+    public void turnOffCameraStates() {
         setChaseCameraOff();
         setAttachCameraOff();
         setDungeonCameraOff();
         setFollowCameraOff();
+    }
+
+    private void clearCinematicRigCache() {
+        cinematicRigCache.clear();
+    }
+
+    private RuntimeCinematicRig resolveCinematicRig(String rigId) {
+        if (rigId == null || rigId.isBlank()) {
+            return null;
+        }
+        String rigKey = rigId.toLowerCase(Locale.ROOT);
+        RuntimeCinematicRig cached = cinematicRigCache.get(rigKey);
+        if (cached != null) {
+            return cached;
+        }
+        if (assetsMapping == null) {
+            return null;
+        }
+
+        ResourceCinematicRig resource = assetsMapping.getCinematicsIndex().get(rigKey);
+        if (resource == null || resource.jsonBuffer == null || resource.jsonBuffer.isBlank()) {
+            return null;
+        }
+
+        try {
+            RuntimeCinematicRig resolved = parseCinematicRig(new JSONObject(resource.jsonBuffer), resource.sourcePath);
+            if (resolved != null && resolved.id != null && !resolved.id.isBlank()) {
+                cinematicRigCache.put(resolved.id.toLowerCase(Locale.ROOT), resolved);
+            }
+            return resolved;
+        } catch (Exception e) {
+            logger.log(Level.WARNING, "Failed to parse cinematic rig resource '" + rigId + "'", e);
+            return null;
+        }
+    }
+
+    private String resolveCurrentScriptContextPath() {
+        if (currentLevel != null && !currentLevel.isBlank()) {
+            File levelFile = new File(currentLevel);
+            if (!levelFile.isAbsolute()) {
+                levelFile = new File(workingFolder, currentLevel);
+            }
+            return levelFile.getAbsolutePath();
+        }
+
+        if (entryScriptFileName != null && !entryScriptFileName.isBlank()) {
+            File entryFile = new File(entryScriptFileName);
+            if (!entryFile.isAbsolute()) {
+                entryFile = new File(workingFolder, entryScriptFileName);
+            }
+            return entryFile.getAbsolutePath();
+        }
+
+        return workingFolder;
+    }
+
+    private RuntimeCinematicRig parseCinematicRig(JSONObject json, String sourcePath) {
+        RuntimeCinematicRig rig = new RuntimeCinematicRig();
+        rig.id = json.optString("cinematicRuntimeId", json.optString("id", ""));
+        rig.name = json.optString("name", "Cinematic Rig");
+        rig.position = jsonArrayToVector3f(json.optJSONArray("position"), new Vector3f());
+        rig.rotation = jsonArrayToQuaternion(json.optJSONArray("rotation"), new Quaternion());
+        rig.scale = jsonArrayToVector3f(json.optJSONArray("scale"), new Vector3f(1f, 1f, 1f));
+        rig.targetEntityName = json.optString("cinematicTargetEntityName", "");
+        rig.targetOffset = jsonArrayToVector3f(json.optJSONArray("cinematicTargetOffset"), new Vector3f(0f, 1.5f, 0f));
+        rig.easeIn = json.optString("cinematicEaseIn", "linear");
+        rig.easeOut = json.optString("cinematicEaseOut", "linear");
+
+        JSONArray children = json.optJSONArray("children");
+        if (children != null) {
+            for (int i = 0; i < children.length(); i++) {
+                JSONObject child = children.optJSONObject(i);
+                if (child == null || !"CINEMATIC_TRACK".equals(child.optString("type", ""))) {
+                    continue;
+                }
+                RuntimeCinematicTrack track = parseCinematicTrack(child);
+                if (track != null && track.id != null && !track.id.isBlank()) {
+                    rig.tracksById.put(track.id, track);
+                }
+            }
+        }
+
+        JSONArray segments = json.optJSONArray("cinematicSegments");
+        if (segments != null) {
+            for (int i = 0; i < segments.length(); i++) {
+                JSONObject segmentJson = segments.optJSONObject(i);
+                if (segmentJson == null) {
+                    continue;
+                }
+                RuntimeCinematicSegment segment = new RuntimeCinematicSegment();
+                segment.trackId = segmentJson.optString("trackId", "");
+                segment.startAnchor = segmentJson.optInt("startAnchor", 0);
+                segment.endAnchor = segmentJson.optInt("endAnchor", 0);
+                segment.authoredSpeed = (float) segmentJson.optDouble("speed", 30.0);
+                rig.segments.add(segment);
+            }
+        }
+
+        populateCinematicRigRelativeTargetPlacement(rig, json, sourcePath);
+
+        return rig;
+    }
+
+    private void populateCinematicRigRelativeTargetPlacement(RuntimeCinematicRig rig, JSONObject rigJson, String sourcePath) {
+        if (rig == null || sourcePath == null || sourcePath.isBlank()
+                || rig.targetEntityName == null || rig.targetEntityName.isBlank()) {
+            return;
+        }
+        try {
+            String fileText = java.nio.file.Files.readString(new File(sourcePath).toPath());
+            JSONObject root = new JSONObject(fileText);
+            JSONArray entities = root.optJSONArray("entities");
+            if (entities == null) {
+                return;
+            }
+            JSONObject targetJson = findEntityJsonByIdOrName(entities,
+                    rigJson.optString("cinematicTargetEntityId", ""),
+                    rig.targetEntityName);
+            if (targetJson == null) {
+                return;
+            }
+            Vector3f targetPos = jsonArrayToVector3f(targetJson.optJSONArray("position"), new Vector3f());
+            Quaternion targetRot = jsonArrayToQuaternion(targetJson.optJSONArray("rotation"), new Quaternion());
+            Vector3f targetPoint = targetPos.add(rig.targetOffset.clone());
+            rig.relativeRigPositionToTarget = targetRot.inverse().mult(rig.position.subtract(targetPoint));
+            rig.relativeRigRotationToTarget = targetRot.inverse().mult(rig.rotation);
+            rig.hasRelativeTargetPlacement = true;
+        } catch (Exception e) {
+            logger.log(Level.FINE, "Unable to derive cinematic rig relative target placement from " + sourcePath, e);
+        }
+    }
+
+    private JSONObject findEntityJsonByIdOrName(JSONArray entities, String targetId, String targetName) {
+        for (int i = 0; i < entities.length(); i++) {
+            JSONObject entity = entities.optJSONObject(i);
+            if (entity == null) {
+                continue;
+            }
+            String entityId = entity.optString("id", "");
+            String entityName = entity.optString("name", "");
+            if ((!targetId.isBlank() && targetId.equals(entityId))
+                    || (!targetName.isBlank() && targetName.equals(entityName))) {
+                return entity;
+            }
+            JSONArray children = entity.optJSONArray("children");
+            if (children != null) {
+                JSONObject nested = findEntityJsonByIdOrName(children, targetId, targetName);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        return null;
+    }
+
+    private RuntimeCinematicTrack parseCinematicTrack(JSONObject json) {
+        RuntimeCinematicTrack track = new RuntimeCinematicTrack();
+        track.id = json.optString("id", "");
+        track.name = json.optString("name", "cinematic_track");
+        track.localPosition = jsonArrayToVector3f(json.optJSONArray("position"), new Vector3f());
+        track.localRotation = jsonArrayToQuaternion(json.optJSONArray("rotation"), new Quaternion());
+        track.localScale = jsonArrayToVector3f(json.optJSONArray("scale"), new Vector3f(1f, 1f, 1f));
+
+        JSONObject trackData = json.optJSONObject("cinematicTrackData");
+        if (trackData != null) {
+            track.radiusX = (float) trackData.optDouble("radiusX", 2.5);
+            track.radiusZ = (float) trackData.optDouble("radiusZ", 2.5);
+            track.anchorCount = Math.max(8, trackData.optInt("anchorCount", 360));
+        }
+        return track;
+    }
+
+    private Vector3f jsonArrayToVector3f(JSONArray arr, Vector3f fallback) {
+        if (arr == null || arr.length() < 3) {
+            return fallback.clone();
+        }
+        return new Vector3f(
+                (float) arr.optDouble(0, fallback.x),
+                (float) arr.optDouble(1, fallback.y),
+                (float) arr.optDouble(2, fallback.z));
+    }
+
+    private Quaternion jsonArrayToQuaternion(JSONArray arr, Quaternion fallback) {
+        if (arr == null || arr.length() < 4) {
+            return fallback.clone();
+        }
+        return new Quaternion(
+                (float) arr.optDouble(0, fallback.getX()),
+                (float) arr.optDouble(1, fallback.getY()),
+                (float) arr.optDouble(2, fallback.getZ()),
+                (float) arr.optDouble(3, fallback.getW()));
     }
 
     private void setFollowCameraOff() {

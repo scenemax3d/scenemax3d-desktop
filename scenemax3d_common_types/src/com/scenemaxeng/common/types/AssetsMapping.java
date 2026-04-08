@@ -8,6 +8,7 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collection;
 import java.util.HashMap;
 
 public class AssetsMapping {
@@ -19,6 +20,7 @@ public class AssetsMapping {
     private HashMap<String, ResourceShader> _shaders = new HashMap<>();
     private HashMap<String,TerrainResource> _terrains=new HashMap<>();
     private HashMap<String,SkyBoxResource> _skyboxes=new HashMap<>();
+    private HashMap<String, ResourceCinematicRig> _cinematics = new HashMap<>();
 
     private JSONObject getResourcesIndex() {
         String json = "";
@@ -366,6 +368,65 @@ public class AssetsMapping {
 
     public HashMap<String, ResourceShader> getShadersIndex() {
         return _shaders;
+    }
+
+    public HashMap<String, ResourceCinematicRig> getCinematicsIndex() {
+        return _cinematics;
+    }
+
+    public void loadCinematicsFromProject(String projectRootPath) {
+        if (projectRootPath == null || projectRootPath.isBlank()) {
+            return;
+        }
+
+        File projectRoot = new File(projectRootPath);
+        if (!projectRoot.exists()) {
+            return;
+        }
+
+        Collection<File> designerFiles = org.apache.commons.io.FileUtils.listFiles(projectRoot, new String[]{"smdesign"}, true);
+        for (File designerFile : designerFiles) {
+            loadCinematicsFromDesignerFile(projectRoot, designerFile);
+        }
+    }
+
+    private void loadCinematicsFromDesignerFile(File projectRoot, File designerFile) {
+        String raw = Util.readFile(designerFile);
+        if (raw == null || raw.isBlank()) {
+            return;
+        }
+
+        try {
+            JSONObject root = new JSONObject(raw);
+            loadCinematicsRecursive(projectRoot, designerFile, root.optJSONArray("entities"));
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void loadCinematicsRecursive(File projectRoot, File designerFile, JSONArray entities) {
+        if (entities == null) {
+            return;
+        }
+
+        for (int i = 0; i < entities.length(); i++) {
+            JSONObject entity = entities.optJSONObject(i);
+            if (entity == null) {
+                continue;
+            }
+
+            if ("CINEMATIC_RIG".equals(entity.optString("type", ""))) {
+                String runtimeId = entity.optString("cinematicRuntimeId", entity.optString("id", "")).toLowerCase();
+                if (!runtimeId.isBlank()) {
+                    String relativePath = designerFile.getAbsolutePath();
+                    if (projectRoot != null) {
+                        relativePath = projectRoot.toURI().relativize(designerFile.toURI()).getPath();
+                    }
+                    _cinematics.put(runtimeId, new ResourceCinematicRig(runtimeId, relativePath, entity.toString()));
+                }
+            }
+
+            loadCinematicsRecursive(projectRoot, designerFile, entity.optJSONArray("children"));
+        }
     }
 
     private JSONObject getResourcesFolderIndex(String path) {

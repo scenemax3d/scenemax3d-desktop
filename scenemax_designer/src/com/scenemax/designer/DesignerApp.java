@@ -53,6 +53,7 @@ public class DesignerApp extends SceneMaxApp {
         void onSelectionChanged(DesignerEntity entity);
         void onSceneChanged();
         void onLoadingProgress(int loaded, int total);
+        void onCinematicRuntimeHintChanged(String hintText);
     }
 
     /**
@@ -122,6 +123,7 @@ public class DesignerApp extends SceneMaxApp {
     // Map from PATH entity ID to its PathVisual node
     private final java.util.Map<String, PathVisual> pathVisuals = new java.util.HashMap<>();
     private int cinematicTrackCounter = 0;
+    private int cinematicRigCounter = 0;
     private final java.util.Map<String, CinematicTrackVisual> cinematicTrackVisuals = new java.util.HashMap<>();
 
     // Camera animation state (for view preset transitions)
@@ -172,6 +174,9 @@ public class DesignerApp extends SceneMaxApp {
     private float cinematicPlaybackAnchorCursor = 0f;
     private float cinematicPlaybackSegmentDistance = 0f;
     private float cinematicPlaybackSegmentLinearProgress = 0f;
+    private float cinematicPlaybackSegmentDuration = 0f;
+    private boolean cinematicPlaybackHoldLastPose = false;
+    private String cinematicRuntimeHintText = "";
 
     private boolean loadingDocument = false;
     private int loadingTotalEntities = 0;
@@ -592,16 +597,33 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     public void addDefaultCinematicTrack(DesignerEntity rig) {
+        createCinematicTrack(rig, null, computeDefaultCinematicTrackPosition(rig), 0f, 2.5f, 2.5f, true);
+        markDocumentDirty();
+        notifySceneChanged();
+    }
+
+    private DesignerEntity createCinematicTrack(DesignerEntity rig, String explicitName, Vector3f localPos,
+                                                float yawDegrees, float radiusX, float radiusZ,
+                                                boolean selectAfterCreation) {
         if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG) {
             rig = findOrCreateCinematicRig();
         }
         String name = "cinematic_track_" + (++cinematicTrackCounter);
+        if (explicitName != null && !explicitName.isBlank()) {
+            name = explicitName;
+        }
 
         DesignerEntity track = new DesignerEntity(name, DesignerEntityType.CINEMATIC_TRACK);
-        track.setCinematicTrackData(new CinematicTrackData());
+        CinematicTrackData data = new CinematicTrackData();
+        data.setRadiusX(radiusX);
+        data.setRadiusZ(radiusZ);
+        track.setCinematicTrackData(data);
 
         Node trackNode = new Node(name);
-        trackNode.setLocalTranslation(computeDefaultCinematicTrackPosition(rig));
+        trackNode.setLocalTranslation(localPos != null ? localPos : computeDefaultCinematicTrackPosition(rig));
+        Quaternion yawRotation = new Quaternion();
+        yawRotation.fromAngles(0f, yawDegrees * FastMath.DEG_TO_RAD, 0f);
+        trackNode.setLocalRotation(yawRotation);
 
         CinematicTrackVisual visual = new CinematicTrackVisual(assetManager);
         visual.rebuild(track.getCinematicTrackData());
@@ -613,9 +635,10 @@ public class DesignerApp extends SceneMaxApp {
         cinematicTrackVisuals.put(track.getId(), visual);
         rig.addChild(track);
 
-        markDocumentDirty();
-        selectionManager.select(track);
-        notifySceneChanged();
+        if (selectAfterCreation) {
+            selectionManager.select(track);
+        }
+        return track;
     }
 
     private Vector3f computeDefaultCinematicTrackPosition(DesignerEntity rig) {
@@ -639,10 +662,12 @@ public class DesignerApp extends SceneMaxApp {
         for (DesignerEntity entity : entities) {
             if (entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
                 ensureCinematicRigNode(entity);
+                ensureCinematicRigRuntimeId(entity);
                 return entity;
             }
         }
         DesignerEntity rig = new DesignerEntity("Cinematic Rig", DesignerEntityType.CINEMATIC_RIG);
+        rig.setCinematicRuntimeId(generateDefaultCinematicRigRuntimeId());
         ensureCinematicRigNode(rig);
         entities.add(rig);
         notifySceneChanged();
@@ -653,6 +678,7 @@ public class DesignerApp extends SceneMaxApp {
         for (DesignerEntity entity : entities) {
             if (entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
                 ensureCinematicRigNode(entity);
+                ensureCinematicRigRuntimeId(entity);
                 return entity;
             }
         }
@@ -667,10 +693,144 @@ public class DesignerApp extends SceneMaxApp {
         rootNode.attachChild(rigNode);
     }
 
+    public void createCinematicRigWithPreset(String presetId, String targetEntityId, String targetEntityName) {
+        if (findCinematicRig() != null) {
+            DesignerEntity existing = findCinematicRig();
+            if (existing != null) {
+                selectionManager.select(existing);
+            }
+            return;
+        }
+
+        DesignerEntity rig = new DesignerEntity("Cinematic Rig", DesignerEntityType.CINEMATIC_RIG);
+        rig.setCinematicRuntimeId(generateDefaultCinematicRigRuntimeId());
+        ensureCinematicRigNode(rig);
+        if (targetEntityId != null && !targetEntityId.isBlank()) {
+            rig.setCinematicTargetEntityId(targetEntityId);
+            rig.setCinematicTargetEntityName(targetEntityName);
+        }
+        entities.add(rig);
+
+        String preset = presetId != null ? presetId : "empty";
+        switch (preset) {
+            case "football_flyover": {
+                DesignerEntity highArc = createCinematicTrack(rig, null, new Vector3f(0, 18f, 0), 0f, 22f, 18f, false);
+                DesignerEntity fieldDrop = createCinematicTrack(rig, null, new Vector3f(0, 8f, -6f), 12f, 12f, 8f, false);
+                rig.getCinematicSegments().add(new CinematicSegment(highArc.getId(), highArc.getName(), 300, 40, 45f));
+                rig.getCinematicSegments().add(new CinematicSegment(fieldDrop.getId(), fieldDrop.getName(), 210, 320, 35f));
+                break;
+            }
+            case "orbit_push_in": {
+                DesignerEntity wideOrbit = createCinematicTrack(rig, null, new Vector3f(0, 10f, 0), 0f, 14f, 11f, false);
+                DesignerEntity closeOrbit = createCinematicTrack(rig, null, new Vector3f(0, 4f, 1.5f), -10f, 7f, 5f, false);
+                rig.getCinematicSegments().add(new CinematicSegment(wideOrbit.getId(), wideOrbit.getName(), 260, 340, 28f));
+                rig.getCinematicSegments().add(new CinematicSegment(closeOrbit.getId(), closeOrbit.getName(), 240, 320, 22f));
+                break;
+            }
+            case "sideline_sweep": {
+                DesignerEntity sweep = createCinematicTrack(rig, null, new Vector3f(0, 3.5f, 0), 90f, 20f, 6f, false);
+                rig.getCinematicSegments().add(new CinematicSegment(sweep.getId(), sweep.getName(), 180, 340, 26f));
+                break;
+            }
+            case "empty":
+            default:
+                break;
+        }
+
+        markDocumentDirty();
+        selectionManager.select(rig);
+        notifySceneChanged();
+    }
+
+    public void setCinematicRigRuntimeId(DesignerEntity rig, String runtimeId) {
+        if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        String sanitized = sanitizeCinematicRuntimeId(runtimeId);
+        if (sanitized.isBlank()) {
+            sanitized = generateDefaultCinematicRigRuntimeId();
+        }
+        if (sanitized.equals(rig.getCinematicRuntimeId())) {
+            return;
+        }
+        rig.setCinematicRuntimeId(sanitized);
+        markDocumentDirty();
+        notifySceneChanged();
+    }
+
+    private void ensureCinematicRigRuntimeId(DesignerEntity rig) {
+        if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG) {
+            return;
+        }
+        if (rig.getCinematicRuntimeId() == null || rig.getCinematicRuntimeId().isBlank()) {
+            rig.setCinematicRuntimeId(generateDefaultCinematicRigRuntimeId());
+        }
+    }
+
+    private String generateDefaultCinematicRigRuntimeId() {
+        int candidate = Math.max(1, cinematicRigCounter + 1);
+        String runtimeId;
+        do {
+            runtimeId = "cinematic_rig_" + candidate++;
+        } while (hasCinematicRigRuntimeId(runtimeId, entities));
+        cinematicRigCounter = candidate - 1;
+        return runtimeId;
+    }
+
+    private boolean hasCinematicRigRuntimeId(String runtimeId, List<DesignerEntity> source) {
+        if (runtimeId == null || runtimeId.isBlank() || source == null) {
+            return false;
+        }
+        for (DesignerEntity entity : source) {
+            if (entity.getType() == DesignerEntityType.CINEMATIC_RIG
+                    && runtimeId.equalsIgnoreCase(entity.getCinematicRuntimeId())) {
+                return true;
+            }
+            if ((entity.getType() == DesignerEntityType.SECTION || entity.getType() == DesignerEntityType.CINEMATIC_RIG)
+                    && hasCinematicRigRuntimeId(runtimeId, entity.getChildren())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String sanitizeCinematicRuntimeId(String runtimeId) {
+        if (runtimeId == null) {
+            return "";
+        }
+        String trimmed = runtimeId.trim().toLowerCase(java.util.Locale.ROOT);
+        StringBuilder sb = new StringBuilder();
+        boolean lastUnderscore = false;
+        for (int i = 0; i < trimmed.length(); i++) {
+            char ch = trimmed.charAt(i);
+            boolean allowed = (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_';
+            if (!allowed) {
+                ch = '_';
+            }
+            if (ch == '_') {
+                if (lastUnderscore) {
+                    continue;
+                }
+                lastUnderscore = true;
+            } else {
+                lastUnderscore = false;
+            }
+            sb.append(ch);
+        }
+        String sanitized = sb.toString();
+        while (sanitized.startsWith("_")) {
+            sanitized = sanitized.substring(1);
+        }
+        while (sanitized.endsWith("_")) {
+            sanitized = sanitized.substring(0, sanitized.length() - 1);
+        }
+        return sanitized;
+    }
+
     public void setCinematicAuthoringTarget(DesignerEntity entity) {
+        cinematicPlaybackHoldLastPose = false;
         cinematicAuthoringTarget = entity;
         if (entity == null || (entity.getType() != DesignerEntityType.CINEMATIC_TRACK
                 && entity.getType() != DesignerEntityType.CINEMATIC_RIG)) {
+            updateCinematicRuntimeHint(null, null);
             stopCinematicCameraPreview();
         }
     }
@@ -749,8 +909,10 @@ public class DesignerApp extends SceneMaxApp {
                 track.getId(), track.getName(), data.getSelectedStartAnchor(), data.getSelectedEndAnchor()));
         markDocumentDirty();
         notifySceneChanged();
-        if (panelCallback != null) {
-            panelCallback.onSelectionChanged(track);
+        if (selectionManager != null) {
+            selectionManager.select(rig);
+        } else if (panelCallback != null) {
+            panelCallback.onSelectionChanged(rig);
         }
     }
 
@@ -769,6 +931,18 @@ public class DesignerApp extends SceneMaxApp {
         if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG) return;
         if (index < 0 || index >= rig.getCinematicSegments().size()) return;
         rig.getCinematicSegments().get(index).setSpeed(speed);
+        markDocumentDirty();
+        if (panelCallback != null) {
+            panelCallback.onSelectionChanged(rig);
+        }
+    }
+
+    public void updateCinematicSegmentRange(DesignerEntity rig, int index, int startAnchor, int endAnchor) {
+        if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG) return;
+        if (index < 0 || index >= rig.getCinematicSegments().size()) return;
+        CinematicSegment segment = rig.getCinematicSegments().get(index);
+        segment.setStartAnchor(startAnchor);
+        segment.setEndAnchor(endAnchor);
         markDocumentDirty();
         if (panelCallback != null) {
             panelCallback.onSelectionChanged(rig);
@@ -834,6 +1008,26 @@ public class DesignerApp extends SceneMaxApp {
         cinematicPlaybackSegments = new ArrayList<>(rig.getCinematicSegments());
         cinematicPlaybackActive = true;
         cinematicCameraPreviewActive = true;
+        cinematicPlaybackHoldLastPose = false;
+        startPlaybackSegment(0);
+    }
+
+    public void playCinematicSegment(DesignerEntity rig, int segmentIndex) {
+        if (rig == null || rig.getType() != DesignerEntityType.CINEMATIC_RIG || rig.getCinematicSegments().isEmpty()) {
+            return;
+        }
+        if (segmentIndex < 0 || segmentIndex >= rig.getCinematicSegments().size()) {
+            return;
+        }
+        ensureCinematicCameraPreviewSaved();
+        cinematicPlaybackRig = rig;
+        cinematicPlaybackSegments = new ArrayList<>();
+        CinematicSegment source = rig.getCinematicSegments().get(segmentIndex);
+        cinematicPlaybackSegments.add(new CinematicSegment(
+                source.getTrackId(), source.getTrackName(), source.getStartAnchor(), source.getEndAnchor(), source.getSpeed()));
+        cinematicPlaybackActive = true;
+        cinematicCameraPreviewActive = true;
+        cinematicPlaybackHoldLastPose = true;
         startPlaybackSegment(0);
     }
 
@@ -852,6 +1046,7 @@ public class DesignerApp extends SceneMaxApp {
                 track.getId(), track.getName(), start, end, data.getPreviewSpeed()));
         cinematicPlaybackActive = true;
         cinematicCameraPreviewActive = true;
+        cinematicPlaybackHoldLastPose = true;
         startPlaybackSegment(0);
     }
 
@@ -863,6 +1058,8 @@ public class DesignerApp extends SceneMaxApp {
         cinematicPlaybackSegmentIndex = -1;
         cinematicPlaybackSegmentDistance = 0f;
         cinematicPlaybackSegmentLinearProgress = 0f;
+        cinematicPlaybackSegmentDuration = 0f;
+        cinematicPlaybackHoldLastPose = false;
         if (cinematicAuthoringTarget == null) {
             stopCinematicCameraPreview();
         }
@@ -2240,6 +2437,7 @@ public class DesignerApp extends SceneMaxApp {
                 sectionEntity.setCinematicTargetOffset(entityTemplate.getCinematicTargetOffset().clone());
                 sectionEntity.setCinematicEaseIn(entityTemplate.getCinematicEaseIn());
                 sectionEntity.setCinematicEaseOut(entityTemplate.getCinematicEaseOut());
+                sectionEntity.setCinematicRuntimeId(entityTemplate.getCinematicRuntimeId());
                 Node nextParentNode = parentSceneNode;
                 if (entityTemplate.getType() == DesignerEntityType.CINEMATIC_RIG) {
                     Node rigNode = new Node(sectionEntity.getName());
@@ -2806,11 +3004,15 @@ public class DesignerApp extends SceneMaxApp {
         cinematicCameraPreviewActive = false;
         savedCameraPreviewPos = null;
         savedCameraPreviewRot = null;
+        updateCinematicRuntimeHint(null, null);
     }
 
     private void updateCinematicCameraPreview(float tpf) {
         if (cinematicPlaybackActive) {
             updateCinematicPlayback(tpf);
+            return;
+        }
+        if (cinematicPlaybackHoldLastPose) {
             return;
         }
         DesignerEntity focus = cinematicAuthoringTarget;
@@ -2933,6 +3135,62 @@ public class DesignerApp extends SceneMaxApp {
         rot.lookAt(dir, Vector3f.UNIT_Y);
         cameraEntity.getSceneNode().setLocalTranslation(pos);
         cameraEntity.getSceneNode().setLocalRotation(rot);
+        updateCinematicRuntimeHint(track, pos);
+    }
+
+    private void updateCinematicRuntimeHint(DesignerEntity track, Vector3f cameraPos) {
+        String next = "";
+        if (track != null) {
+            DesignerEntity rig = findParentRig(track, entities);
+            if (rig != null && rig.getSceneNode() != null) {
+                DesignerEntity target = findEntityById(rig.getCinematicTargetEntityId(), entities);
+                if (target != null && target.getSceneNode() != null) {
+                    Vector3f delta = rig.getSceneNode().getWorldTranslation().subtract(target.getSceneNode().getWorldTranslation());
+                    Quaternion inv = target.getSceneNode().getWorldRotation() != null
+                            ? target.getSceneNode().getWorldRotation().inverse()
+                            : new Quaternion();
+                    Vector3f local = inv.mult(delta);
+                    next = buildRuntimePositionHint(local);
+                }
+            }
+        }
+        if (!next.equals(cinematicRuntimeHintText)) {
+            cinematicRuntimeHintText = next;
+            if (panelCallback != null) {
+                panelCallback.onCinematicRuntimeHintChanged(next);
+            }
+        }
+    }
+
+    private String buildRuntimePositionHint(Vector3f local) {
+        if (local == null) {
+            return "";
+        }
+        final float eps = 0.05f;
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        if (local.z > eps) {
+            parts.add("forward " + formatHintNumber(local.z));
+        } else if (local.z < -eps) {
+            parts.add("backward " + formatHintNumber(-local.z));
+        }
+        if (local.x > eps) {
+            parts.add("left " + formatHintNumber(local.x));
+        } else if (local.x < -eps) {
+            parts.add("right " + formatHintNumber(-local.x));
+        }
+        if (local.y > eps) {
+            parts.add("up " + formatHintNumber(local.y));
+        } else if (local.y < -eps) {
+            parts.add("down " + formatHintNumber(-local.y));
+        }
+        if (parts.isEmpty()) {
+            return "same position as target";
+        }
+        return String.join(" ", parts);
+    }
+
+    private String formatHintNumber(float value) {
+        return String.format(java.util.Locale.US, "%.1f", value);
     }
 
     private Vector3f resolveCinematicLookAtPoint(DesignerEntity track, DesignerEntity rig, Vector3f cameraPos, float lookAheadCursor) {
@@ -3000,13 +3258,13 @@ public class DesignerApp extends SceneMaxApp {
             setPlaybackPreview(track, segment.getStartAnchor(), cinematicPlaybackAnchorCursor);
             if (!startPlaybackSegment(cinematicPlaybackSegmentIndex + 1)) {
                 cinematicPlaybackActive = false;
-                if (cinematicAuthoringTarget == null) {
+                if (!cinematicPlaybackHoldLastPose && cinematicAuthoringTarget == null) {
                     stopCinematicCameraPreview();
                 }
             }
             return;
         }
-        float deltaProgress = (Math.max(0.1f, segment.getSpeed()) * tpf) / cinematicPlaybackSegmentDistance;
+        float deltaProgress = cinematicPlaybackSegmentDuration <= 1e-6f ? 1f : (tpf / cinematicPlaybackSegmentDuration);
         cinematicPlaybackSegmentLinearProgress = Math.min(1f, cinematicPlaybackSegmentLinearProgress + deltaProgress);
         boolean firstSegment = cinematicPlaybackSegmentIndex == 0;
         boolean lastSegment = cinematicPlaybackSegmentIndex == segments.size() - 1;
@@ -3019,7 +3277,7 @@ public class DesignerApp extends SceneMaxApp {
         if (cinematicPlaybackSegmentLinearProgress >= 1f - 1e-6f) {
             if (!startPlaybackSegment(cinematicPlaybackSegmentIndex + 1)) {
                 cinematicPlaybackActive = false;
-                if (cinematicAuthoringTarget == null) {
+                if (!cinematicPlaybackHoldLastPose && cinematicAuthoringTarget == null) {
                     stopCinematicCameraPreview();
                 }
             }
@@ -3048,6 +3306,7 @@ public class DesignerApp extends SceneMaxApp {
             cinematicPlaybackSegmentIndex = -1;
             cinematicPlaybackSegmentDistance = 0f;
             cinematicPlaybackSegmentLinearProgress = 0f;
+            cinematicPlaybackSegmentDuration = 0f;
             return false;
         }
         cinematicPlaybackSegmentIndex = index;
@@ -3056,15 +3315,35 @@ public class DesignerApp extends SceneMaxApp {
         if (track == null || track.getCinematicTrackData() == null) {
             cinematicPlaybackSegmentDistance = 0f;
             cinematicPlaybackSegmentLinearProgress = 0f;
+            cinematicPlaybackSegmentDuration = 0f;
             return false;
         }
         cinematicPlaybackSegmentDistance = computeForwardAnchorDistance(
                 segment.getStartAnchor(), segment.getEndAnchor(), track.getCinematicTrackData().getAnchorCount());
+        cinematicPlaybackSegmentDuration = computePlaybackSegmentDuration(index);
         cinematicPlaybackSegmentLinearProgress = 0f;
         cinematicPlaybackAnchorCursor = segment.getStartAnchor();
         setPlaybackPreview(track, segment.getStartAnchor(), cinematicPlaybackAnchorCursor);
         applyPlaybackCameraPose(cinematicPlaybackRig, segment, cinematicPlaybackAnchorCursor);
         return true;
+    }
+
+    private float computePlaybackSegmentDuration(int segmentIndex) {
+        if (cinematicPlaybackSegments.isEmpty()) {
+            return 0f;
+        }
+        if (cinematicPlaybackRig == null) {
+            return Math.max(0.1f, cinematicPlaybackSegments.get(segmentIndex).getSpeed());
+        }
+        float totalDuration = Math.max(0.1f, cinematicPlaybackRig.getCinematicPreviewDuration());
+        float totalWeight = 0f;
+        for (CinematicSegment seg : cinematicPlaybackSegments) {
+            totalWeight += Math.max(0.1f, seg.getSpeed());
+        }
+        if (totalWeight <= 1e-6f) {
+            return totalDuration / cinematicPlaybackSegments.size();
+        }
+        return totalDuration * (Math.max(0.1f, cinematicPlaybackSegments.get(segmentIndex).getSpeed()) / totalWeight);
     }
 
     private float advanceAnchorCursor(int startAnchor, float distance, float progress, int anchorCount) {

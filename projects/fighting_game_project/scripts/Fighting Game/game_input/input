@@ -10,6 +10,14 @@ when key P is pressed once do
 	}
 end do
 
+when key P is pressed once do 
+    camera_mode = CAMERA_MODE_SHAKE
+		cincam1=>cinematic.camera.cinematic1
+		cincam1.play : target (player1), duration 10 //  forward 1 up 3
+		// Restore camera mode and hand off
+		camera_mode = CAMERA_MODE_DEFAULT
+end do
+
 [@allow_move]
 when key W is pressed once do 
   

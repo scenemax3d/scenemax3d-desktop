@@ -37,8 +37,16 @@ public class CinematicSegment {
         return startAnchor;
     }
 
+    public void setStartAnchor(int startAnchor) {
+        this.startAnchor = Math.max(0, startAnchor);
+    }
+
     public int getEndAnchor() {
         return endAnchor;
+    }
+
+    public void setEndAnchor(int endAnchor) {
+        this.endAnchor = Math.max(0, endAnchor);
     }
 
     public float getSpeed() {

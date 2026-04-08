@@ -83,6 +83,8 @@ public class DesignerEntity {
     private Vector3f cinematicTargetOffset = new Vector3f(0, 1.5f, 0);
     private String cinematicEaseIn = "linear";
     private String cinematicEaseOut = "linear";
+    private String cinematicRuntimeId = "";
+    private float cinematicPreviewDuration = 10f;
 
     // Children (for SECTION type only)
     private List<DesignerEntity> children = new ArrayList<>();
@@ -200,6 +202,14 @@ public class DesignerEntity {
     public String getCinematicEaseOut() { return cinematicEaseOut != null ? cinematicEaseOut : "linear"; }
     public void setCinematicEaseOut(String cinematicEaseOut) {
         this.cinematicEaseOut = cinematicEaseOut != null ? cinematicEaseOut : "linear";
+    }
+    public String getCinematicRuntimeId() { return cinematicRuntimeId != null ? cinematicRuntimeId : ""; }
+    public void setCinematicRuntimeId(String cinematicRuntimeId) {
+        this.cinematicRuntimeId = cinematicRuntimeId != null ? cinematicRuntimeId : "";
+    }
+    public float getCinematicPreviewDuration() { return Math.max(0.1f, cinematicPreviewDuration); }
+    public void setCinematicPreviewDuration(float cinematicPreviewDuration) {
+        this.cinematicPreviewDuration = Math.max(0.1f, cinematicPreviewDuration);
     }
 
     public String getSceneMaxCode() { return sceneMaxCode; }
@@ -356,6 +366,8 @@ public class DesignerEntity {
                 json.put("cinematicTargetOffset", new float[]{offset.x, offset.y, offset.z});
                 json.put("cinematicEaseIn", getCinematicEaseIn());
                 json.put("cinematicEaseOut", getCinematicEaseOut());
+                json.put("cinematicRuntimeId", getCinematicRuntimeId());
+                json.put("cinematicPreviewDuration", getCinematicPreviewDuration());
                 break;
             case CINEMATIC_TRACK:
                 if (cinematicTrackData != null) {
@@ -481,6 +493,8 @@ public class DesignerEntity {
                 }
                 entity.cinematicEaseIn = json.optString("cinematicEaseIn", "linear");
                 entity.cinematicEaseOut = json.optString("cinematicEaseOut", "linear");
+                entity.cinematicRuntimeId = json.optString("cinematicRuntimeId", "");
+                entity.cinematicPreviewDuration = (float) json.optDouble("cinematicPreviewDuration", 10.0);
                 break;
             case CINEMATIC_TRACK:
                 if (json.has("cinematicTrackData")) {
