@@ -20,12 +20,14 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
@@ -145,7 +147,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         ProgramDef program = parser.parse(this.prg);
         AssetsMapping assetsMapping = new AssetsMapping(Util.getResourcesFolder());
 
-        JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], shaders:[], environmentShaders:[] }");
+        JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], shaders:[], environmentShaders:[], cinematics:[] }");
 
         File deployFolder = new File("deploy");
         FileUtils.deleteDirectory(deployFolder);
@@ -233,20 +235,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             }
         }
 
-        for (String effectName : SceneMaxLanguageParser.effekseerUsed) {
-            String assetId = effectName;
-            String prefix = "effects.effekseer.";
-            if (assetId.toLowerCase().startsWith(prefix)) {
-                assetId = assetId.substring(prefix.length());
-            }
-            File sourceDir = new File(Util.getResourcesFolder(), "effects/" + assetId);
-            File targetDir = new File(deployFolder, "resources/effects/" + assetId);
-            if (!sourceDir.isDirectory()) {
-                this.cancel(true);
-                return 0;
-            }
-            FileUtils.copyDirectory(sourceDir, targetDir);
-        }
+        copyEffekseerResourcesToDeploy(deployFolder);
 
         // copy all materials - in the future, check and copy just what is needed
         File materials = new File("./deploy/Materials");
@@ -388,6 +377,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 resources.getJSONArray("environmentShaders")
         );
 
+        appendCinematicResources(resources.getJSONArray("cinematics"));
+
 
         JSONArray skyboxFiles = resources.getJSONArray("skyboxes");
         for (String sb : SceneMaxLanguageParser.skyboxUsed) {
@@ -470,6 +461,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     }
 
     private void prepareTargetPackages() throws IOException {
+        verifyEffekseerNativeResourcesForSelectedTargets();
         String gameName = getGameName();
         outputFolder = new File("build_games", gameName);
         if (outputFolder.exists()) {
@@ -977,13 +969,181 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         return gameName;
     }
 
+    private File getPackagedProjectRoot() {
+        File current = scriptFolder;
+        while (current != null) {
+            File resourcesDir = new File(current, "resources");
+            if (resourcesDir.isDirectory()) {
+                return current;
+            }
+
+            if ("scripts".equalsIgnoreCase(current.getName())) {
+                File candidate = current.getParentFile();
+                if (candidate != null && new File(candidate, "resources").isDirectory()) {
+                    return candidate;
+                }
+            }
+
+            current = current.getParentFile();
+        }
+
+        return null;
+    }
+
+    private File getPackagedProjectResourcesFolder() {
+        File projectRoot = getPackagedProjectRoot();
+        if (projectRoot != null) {
+            File resourcesDir = new File(projectRoot, "resources");
+            if (resourcesDir.isDirectory()) {
+                return resourcesDir;
+            }
+        }
+
+        String activeResources = Util.getResourcesFolder();
+        return activeResources == null ? null : new File(activeResources);
+    }
+
+    private void copyEffekseerResourcesToDeploy(File deployFolder) {
+        File deployEffectsDir = new File(deployFolder, "resources/effects");
+        File projectResources = getPackagedProjectResourcesFolder();
+        if (projectResources != null) {
+            copyDirectoryContents(new File(projectResources, "effects"), deployEffectsDir);
+        }
+
+        for (String effectName : SceneMaxLanguageParser.effekseerUsed) {
+            String assetId = effectName;
+            String prefix = "effects.effekseer.";
+            if (assetId.toLowerCase().startsWith(prefix)) {
+                assetId = assetId.substring(prefix.length());
+            }
+
+            File targetDir = new File(deployEffectsDir, assetId);
+            if (targetDir.isDirectory()) {
+                continue;
+            }
+
+            File sourceDir = resolveEffekseerEffectSource(assetId);
+            if (!sourceDir.isDirectory()) {
+                this.cancel(true);
+                return;
+            }
+
+            try {
+                FileUtils.copyDirectory(sourceDir, targetDir);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    private File resolveEffekseerEffectSource(String assetId) {
+        File projectResources = getPackagedProjectResourcesFolder();
+        if (projectResources != null) {
+            File projectEffect = new File(projectResources, "effects/" + assetId);
+            if (projectEffect.isDirectory()) {
+                return projectEffect;
+            }
+        }
+
+        return new File(Util.getDefaultResourcesFolder(), "effects/" + assetId);
+    }
+
+    private void verifyEffekseerNativeResourcesForSelectedTargets() throws IOException {
+        LinkedHashMap<String, String> requiredPlatforms = new LinkedHashMap<>();
+        if (targets.contains(PackageTarget.WINDOWS)) {
+            requiredPlatforms.put("windows-x86_64", "scenemax_effekseer_jni.dll");
+        }
+        if (targets.contains(PackageTarget.LINUX)) {
+            requiredPlatforms.put("linux-x86_64", "libscenemax_effekseer_jni.so");
+        }
+        if (targets.contains(PackageTarget.MAC_OSX)) {
+            requiredPlatforms.put("macos-x86_64", "libscenemax_effekseer_jni.dylib");
+            requiredPlatforms.put("macos-aarch64", "libscenemax_effekseer_jni.dylib");
+        }
+        if (targets.contains(PackageTarget.WEB_START)) {
+            requiredPlatforms.put("windows-x86_64", "scenemax_effekseer_jni.dll");
+            requiredPlatforms.put("linux-x86_64", "libscenemax_effekseer_jni.so");
+            requiredPlatforms.put("macos-x86_64", "libscenemax_effekseer_jni.dylib");
+            requiredPlatforms.put("macos-aarch64", "libscenemax_effekseer_jni.dylib");
+        }
+
+        List<String> missing = new ArrayList<>();
+        for (Map.Entry<String, String> entry : requiredPlatforms.entrySet()) {
+            File nativeLib = new File("scenemax_effekseer_runtime/assets/native/" + entry.getKey() + "/" + entry.getValue());
+            if (!nativeLib.isFile()) {
+                missing.add(entry.getKey() + " -> " + nativeLib.getPath());
+            }
+        }
+
+        if (!missing.isEmpty()) {
+            throw new IOException("Missing Effekseer native runtime libraries for the selected package targets:\n - "
+                    + String.join("\n - ", missing));
+        }
+    }
+
     private void copyResourceDirectoryToDeploy(String relativePath) {
         File defaultDir = new File("./resources", relativePath);
-        File projectDir = new File(Util.getResourcesFolder(), relativePath);
+        File projectResources = getPackagedProjectResourcesFolder();
+        File projectDir = projectResources == null ? null : new File(projectResources, relativePath);
         File deployDir = new File("./deploy", relativePath);
 
         copyDirectoryContents(defaultDir, deployDir);
         copyDirectoryContents(projectDir, deployDir);
+    }
+
+    private void appendCinematicResources(JSONArray targetArray) {
+        File projectRoot = getPackagedProjectRoot();
+        if (projectRoot == null || !projectRoot.isDirectory()) {
+            return;
+        }
+
+        Collection<File> designerFiles = FileUtils.listFiles(projectRoot, new String[]{"smdesign"}, true);
+        for (File designerFile : designerFiles) {
+            String raw;
+            try {
+                raw = FileUtils.readFileToString(designerFile, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+
+            if (raw == null || raw.isBlank()) {
+                continue;
+            }
+
+            try {
+                JSONObject root = new JSONObject(raw);
+                appendCinematicResourcesRecursive(projectRoot, designerFile, root.optJSONArray("entities"), raw, targetArray);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private void appendCinematicResourcesRecursive(File projectRoot, File designerFile, JSONArray entities, String documentBuffer, JSONArray targetArray) {
+        if (entities == null) {
+            return;
+        }
+
+        for (int i = 0; i < entities.length(); i++) {
+            JSONObject entity = entities.optJSONObject(i);
+            if (entity == null) {
+                continue;
+            }
+
+            if ("CINEMATIC_RIG".equals(entity.optString("type", ""))) {
+                String runtimeId = entity.optString("cinematicRuntimeId", entity.optString("id", "")).toLowerCase(Locale.ROOT);
+                if (!runtimeId.isBlank()) {
+                    JSONObject resource = new JSONObject();
+                    resource.put("name", runtimeId);
+                    resource.put("runtimeId", runtimeId);
+                    resource.put("sourcePath", projectRoot.toURI().relativize(designerFile.toURI()).getPath());
+                    resource.put("jsonBuffer", new JSONObject(entity.toString()));
+                    resource.put("documentBuffer", documentBuffer);
+                    upsertIndexedResource(targetArray, resource);
+                }
+            }
+
+            appendCinematicResourcesRecursive(projectRoot, designerFile, entity.optJSONArray("children"), documentBuffer, targetArray);
+        }
     }
 
     private void copyDirectoryContents(File sourceDir, File targetDir) {
@@ -1164,7 +1324,10 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         String absolute = resolvedFile.getAbsolutePath().replace("\\", "/");
         Map<String, String> roots = new LinkedHashMap<>();
-        roots.put(new File(Util.getResourcesFolder()).getAbsolutePath().replace("\\", "/"), "");
+        File projectResources = getPackagedProjectResourcesFolder();
+        if (projectResources != null) {
+            roots.put(projectResources.getAbsolutePath().replace("\\", "/"), "");
+        }
         roots.put(new File("./resources").getAbsolutePath().replace("\\", "/"), "");
 
         for (Map.Entry<String, String> entry : roots.entrySet()) {

@@ -241,18 +241,7 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
         }
 
         if(!exportCodeOnly) {
-            for (String effectName : SceneMaxLanguageParser.effekseerUsed) {
-                String assetId = effectName;
-                String prefix = "effects.effekseer.";
-                if (assetId.toLowerCase().startsWith(prefix)) {
-                    assetId = assetId.substring(prefix.length());
-                }
-                File src = new File(Util.getResourcesFolder(), "effects/" + assetId);
-                File dest = new File("./" + targetFolderName + "/resources/effects/" + assetId);
-                if (src.isDirectory()) {
-                    FileUtils.copyDirectory(src, dest);
-                }
-            }
+            copyEffekseerResourcesToExport();
         }
 
 
@@ -400,6 +389,89 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
         jarOutputStream.close();
 
         return this.resourcesHash;
+    }
+
+    private File getPackagedProjectRoot() {
+        File current = scriptFolder;
+        while (current != null) {
+            File resourcesDir = new File(current, "resources");
+            if (resourcesDir.isDirectory()) {
+                return current;
+            }
+
+            if ("scripts".equalsIgnoreCase(current.getName())) {
+                File candidate = current.getParentFile();
+                if (candidate != null && new File(candidate, "resources").isDirectory()) {
+                    return candidate;
+                }
+            }
+
+            current = current.getParentFile();
+        }
+
+        return null;
+    }
+
+    private File getPackagedProjectResourcesFolder() {
+        File projectRoot = getPackagedProjectRoot();
+        if (projectRoot != null) {
+            File resourcesDir = new File(projectRoot, "resources");
+            if (resourcesDir.isDirectory()) {
+                return resourcesDir;
+            }
+        }
+
+        String activeResources = Util.getResourcesFolder();
+        return activeResources == null ? null : new File(activeResources);
+    }
+
+    private void copyEffekseerResourcesToExport() {
+        File exportEffectsDir = new File("./" + targetFolderName + "/resources/effects");
+        File projectResources = getPackagedProjectResourcesFolder();
+        if (projectResources != null) {
+            File projectEffectsDir = new File(projectResources, "effects");
+            if (projectEffectsDir.isDirectory()) {
+                try {
+                    FileUtils.copyDirectory(projectEffectsDir, exportEffectsDir);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+
+        for (String effectName : SceneMaxLanguageParser.effekseerUsed) {
+            String assetId = effectName;
+            String prefix = "effects.effekseer.";
+            if (assetId.toLowerCase().startsWith(prefix)) {
+                assetId = assetId.substring(prefix.length());
+            }
+
+            File dest = new File(exportEffectsDir, assetId);
+            if (dest.isDirectory()) {
+                continue;
+            }
+
+            File src = resolveEffekseerEffectSource(assetId);
+            if (src.isDirectory()) {
+                try {
+                    FileUtils.copyDirectory(src, dest);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+    }
+
+    private File resolveEffekseerEffectSource(String assetId) {
+        File projectResources = getPackagedProjectResourcesFolder();
+        if (projectResources != null) {
+            File projectEffect = new File(projectResources, "effects/" + assetId);
+            if (projectEffect.isDirectory()) {
+                return projectEffect;
+            }
+        }
+
+        return new File(Util.getDefaultResourcesFolder(), "effects/" + assetId);
     }
 
     private void copyFileFromResourceToDeploy(String path) {

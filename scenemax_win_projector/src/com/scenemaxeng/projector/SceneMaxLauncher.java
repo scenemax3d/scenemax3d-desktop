@@ -4,9 +4,15 @@ import com.scenemaxeng.common.types.*;
 import org.apache.commons.io.FileUtils;
 import javax.swing.*;
 import java.io.*;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 
 import static java.lang.System.getProperty;
 
@@ -47,6 +53,7 @@ public class SceneMaxLauncher implements IAppObserver {
 
         try {
             extractJniLibs();
+            extractBundledRunningFiles();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -151,6 +158,66 @@ public class SceneMaxLauncher implements IAppObserver {
 
         return false;
 
+    }
+
+    private void extractBundledRunningFiles() {
+        File runningDir = new File("running");
+        File marker = new File(runningDir, ".scenemax-extracted");
+        if (marker.exists()) {
+            return;
+        }
+
+        try {
+            File jarFile = resolveOwningJarFile();
+            if (jarFile == null || !jarFile.isFile()) {
+                return;
+            }
+
+            boolean extractedAny = false;
+            try (JarFile jar = new JarFile(jarFile)) {
+                Enumeration<JarEntry> entries = jar.entries();
+                while (entries.hasMoreElements()) {
+                    JarEntry entry = entries.nextElement();
+                    String name = entry.getName();
+                    if (!name.startsWith("running/") || entry.isDirectory()) {
+                        continue;
+                    }
+
+                    File output = new File(name.replace("/", File.separator));
+                    File parent = output.getParentFile();
+                    if (parent != null && !parent.exists()) {
+                        parent.mkdirs();
+                    }
+
+                    try (InputStream in = jar.getInputStream(entry)) {
+                        Files.copy(in, output.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    extractedAny = true;
+                }
+            }
+
+            if (extractedAny) {
+                if (!runningDir.exists()) {
+                    runningDir.mkdirs();
+                }
+                if (!marker.exists()) {
+                    marker.createNewFile();
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private File resolveOwningJarFile() throws URISyntaxException {
+        if (SceneMaxLauncher.class.getProtectionDomain() == null
+                || SceneMaxLauncher.class.getProtectionDomain().getCodeSource() == null
+                || SceneMaxLauncher.class.getProtectionDomain().getCodeSource().getLocation() == null) {
+            return null;
+        }
+
+        File file = new File(SceneMaxLauncher.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        return file.isFile() ? file : null;
     }
 
     public static void main(String[] args) {
