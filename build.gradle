@@ -57,6 +57,7 @@ def parserGeneratedClassesDir = file("$buildDir/generated/scenemax-parser/classe
 def parserJarOutput = file("$buildDir/generated/scenemax-parser/scenemax_parser.jar")
 def parserCompilerLib = file('scenemax3d_compiler/libs/scenemax_parser.jar')
 def parserProjectorLib = file('scenemax_win_projector/libs/scenemax_parser.jar')
+def windowsInstallerScript = file('INNO-SETUP/build-installer.ps1')
 
 configurations {
     antlrTool
@@ -126,6 +127,63 @@ tasks.register('generateSceneMaxParser', Copy) {
 
 tasks.named('build') {
     dependsOn tasks.named('generateSceneMaxParser')
+}
+
+tasks.register('buildWindowsSetup', Exec) {
+    group = 'distribution'
+    description = 'Builds the signed Windows installer through INNO-SETUP/build-installer.ps1.'
+    dependsOn tasks.named('build')
+    dependsOn project(':scenemax_win_projector').tasks.named('publishProjectorArtifact')
+
+    inputs.file(windowsInstallerScript)
+    inputs.file(file('INNO-SETUP/scenemax-setup-project.iss'))
+    inputs.file(file('src/com/scenemax/desktop/Util.java'))
+    def installerVersion = (project.findProperty('installerAppVersion') ?: '1.9.2').toString()
+    outputs.file(file("INNO-SETUP/Output/scenemax3d-${installerVersion}-setup.exe"))
+
+    doFirst {
+        if (!org.gradle.internal.os.OperatingSystem.current().isWindows()) {
+            throw new GradleException('buildWindowsSetup can only run on Windows.')
+        }
+        if (!windowsInstallerScript.exists()) {
+            throw new GradleException("Missing installer script: ${windowsInstallerScript}")
+        }
+    }
+
+    def command = [
+        'powershell',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', windowsInstallerScript.absolutePath,
+        '-SkipGradleBuild'
+    ]
+
+    def appVersion = project.findProperty('installerAppVersion')
+    if (appVersion) {
+        command += ['-AppVersion', appVersion.toString()]
+    }
+
+    def signPfxPath = project.findProperty('installerSignPfxPath')
+    if (signPfxPath) {
+        command += ['-SignPfxPath', signPfxPath.toString()]
+    }
+
+    def signPfxPassword = project.findProperty('installerSignPfxPassword')
+    if (signPfxPassword) {
+        command += ['-SignPfxPassword', signPfxPassword.toString()]
+    }
+
+    def signAlias = project.findProperty('installerSignAlias')
+    if (signAlias) {
+        command += ['-SignAlias', signAlias.toString()]
+    }
+
+    def timestampUrl = project.findProperty('installerTimestampUrl')
+    if (timestampUrl != null) {
+        command += ['-TimestampUrl', timestampUrl.toString()]
+    }
+
+    workingDir = projectDir
+    commandLine command
 }
 
 tasks.withType(JavaCompile).configureEach {

@@ -1454,7 +1454,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
         addScriptsTreePopupMenuItem("Move To...", "move_file_to", popup, popupActionListener, false, true, file);
 
-        if (!LicenseService.getStorageAppKey().equals("NA")) {
+        if (!"NA".equals(LicenseService.getStorageAppKey())) {
             addScriptsTreePopupMenuItem("Deploy To GameBox 3D...", "upload_to_hub", popup, popupActionListener, true, false, file);
         }
 
