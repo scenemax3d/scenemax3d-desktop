@@ -6,18 +6,17 @@ game_over = {
 	
 	game_status=GAME_STATE_OVER // game over
 	gameover.draw game_over3 : size (550,160) and pos(550,150)
-
-  do async
-  if (camera_mode==CAMERA_MODE_DEFAULT) {
-    camera_mode = CAMERA_MODE_SHAKE
+ 
+  wait for camera_mode==CAMERA_MODE_DEFAULT
+  camera_mode = CAMERA_MODE_SHAKE 
+  do async 
 	  cincam1=>cinematic.camera.cinematic1
 	  cincam1.play : target (player1 forward 1 up 3), duration 10
 	  camera_mode = CAMERA_MODE_DEFAULT
 	  run set_camera_on_player
-  } else {
-  	sys.print "not default cam"
-  }
   end do
+
+  
   
 	player1.stunned1
   wait 1 second
@@ -28,16 +27,7 @@ game_over = {
   player2.Idle loop
 
 	msg2.draw press_space_to_continue : pos (544,450)
-	//msg2.print "Press T To Continue..." : pos (500,460,0) and color = green and font = "yoshi"
-
-	//do async
-		// Block ambient_camera for the entire KO cinematic
-		
-		  
-		// Restore camera mode and hand off
-		
-	//end do
-
+	
   wait for key space to be pressed
   msg2.draw clear
 	run restart_game
