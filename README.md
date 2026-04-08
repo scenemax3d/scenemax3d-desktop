@@ -12,13 +12,25 @@ In Mar-22, 2026 the entire solution was uploaded to GitHub as an open source (MI
 ## Product Website
 [SceneMax3D](https://scenemax3d.com/cook-book/)
 
+## Documentation
+
+SceneMax3D includes project documentation in the [`docs/`](docs/) folder, covering the scripting language, control flow, and other engine concepts.
+
+For hands-on examples, see the demo projects guide in [`projects/readme.md`](projects/readme.md), which walks through the sample games and explains how they are structured.
+
+## Ready-to-Use Binaries
+
+If you want to try SceneMax3D without building from source, download the Windows setup binaries from the [latest GitHub release](https://github.com/scenemax3d/scenemax3d-desktop/releases/latest).
+
 ## Features
 
 - **Visual 3D Scene Designer** -- drag-and-drop scene composition with real-time preview
 - **Custom Scripting Language** -- purpose-built DSL (ANTLR4-based parser) for game logic and interactivity
 - **Code Editor** -- syntax-highlighted editor with code folding 
+- **Effekseer Particle Effects** -- create and play advanced real-time particle effects integrated into scenes and gameplay
 - **Physics Engine** -- integrated Minie / Bullet physics
 - **3D Model Import** -- load models into your scenes
+- **Cinematic Camera System** -- build dynamic camera moves, chase cameras, and dramatic gameplay cutaways
 - **Multi-Project Support** -- manage multiple projects from a single workspace
 - **Plugin System** -- extend functionality via plugins (WebSocket-based communication)
 - **Classroom Mode** -- collaborative features for educational settings
