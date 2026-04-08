@@ -79,3 +79,252 @@ Attach to object `s` and rotate to face object `m`:
 ```scenemax
 Camera.attach to s : rotation (m)
 ```
+
+## Cinematic Camera
+
+The cinematic camera lets you author a reusable camera rig in the UI Designer and trigger it at run-time from SceneMax code.
+
+The workflow is:
+
+1. Create a `Cinematic Rig` in the designer.
+2. Add one or more rails to the rig.
+3. Pick ranges on those rails and add them to the cinematic sequence.
+4. Give the rig a `Runtime ID`.
+5. Trigger that rig from code with `cinematic.camera.<runtime_id>`.
+
+Unlike a regular chase or attach camera, a cinematic camera replays an authored multi-segment motion path.
+
+### Designer Concepts
+
+A cinematic rig contains:
+
+- A transformable parent rig node.
+- One or more rails.
+- A sequence of segments built from rail ranges.
+- Optional look-at target settings used for preview and as authored reference data.
+
+Each sequence segment stores:
+
+- The source rail.
+- Start anchor.
+- End anchor.
+- Segment weight.
+
+The rig also stores sequence-level settings such as:
+
+- Preview duration.
+- Ease-in.
+- Ease-out.
+- Look-at target and target offset.
+- Runtime ID.
+
+### Runtime Declaration
+
+Declare a cinematic camera instance from a designer-authored rig:
+
+```scenemax
+intro_cam=>cinematic.camera.stadium_intro
+```
+
+`stadium_intro` is the rig `Runtime ID` from the designer.
+
+### Runtime Playback
+
+Play the cinematic camera by providing:
+
+- `target`
+- `duration`
+
+Example:
+
+```scenemax
+intro_cam.play : target (player1 forward 1 up 3), duration 10
+```
+
+This means:
+
+- use the authored cinematic rig `stadium_intro`
+- anchor the rig relative to `player1`
+- keep the authored rig-to-target relationship during playback
+- play the entire cinematic sequence in `10` seconds
+
+### Important Runtime Rule
+
+The cinematic `play` command no longer uses `pos(...)`.
+
+The rig position is derived from:
+
+- the designer-authored relationship between the cinematic rig and its target
+- the run-time `target` statement you pass into `play`
+
+This makes run-time playback match design-time framing more accurately, especially when reusing the same cinematic around different objects or in different scenes.
+
+### Target Forms
+
+The `target` attribute supports:
+
+- a game object name
+- a full position statement
+
+Simple object target:
+
+```scenemax
+intro_cam.play : target player1, duration 8
+```
+
+Target with a relative position statement:
+
+```scenemax
+intro_cam.play : target (player1 forward 1 up 2), duration 8
+```
+
+This is useful when you want the cinematic to be framed relative to the moving character instead of targeting the character origin directly.
+
+### Moving Targets
+
+During playback, the engine keeps the rig-to-target relationship alive while the target is moving.
+
+That means the system recalculates the rig placement continuously, so the authored cinematic remains attached to the moving target instead of only snapping once at the beginning.
+
+This is especially useful for:
+
+- boss introductions
+- sports replay cameras
+- cutscenes around walking characters
+- dramatic orbit shots around moving vehicles
+
+### Duration And Segment Weights
+
+At run-time, `duration` is the total time in seconds for the entire cinematic sequence.
+
+Example:
+
+```scenemax
+intro_cam.play : target player1, duration 6
+```
+
+If the rig contains multiple segments, their authored weights decide how that total time is distributed.
+
+For example, if the sequence contains:
+
+- segment A with weight `45`
+- segment B with weight `35`
+
+Then SceneMax splits the total duration proportionally:
+
+- A gets `45 / 80`
+- B gets `35 / 80`
+
+So with `duration 8`, segment A gets `4.5` seconds and segment B gets `3.5` seconds.
+
+### Ease-In And Ease-Out
+
+The cinematic rig supports sequence-level easing:
+
+- `Ease In` affects only the beginning of the first segment
+- `Ease Out` affects only the ending of the last segment
+
+Middle segments keep their authored path without extra sequence entrance/exit easing.
+
+### Authoring Tips
+
+- Use multiple rails to build more expressive composite motion.
+- Keep the rig target set in the designer while authoring, so the preview camera shows the intended framing.
+- Use segment weights to shape pacing between wide establishing motion and tighter closing motion.
+- Use track-level preview to fine-tune a single segment range before testing the whole sequence.
+- Use rig-level preview duration to match the intended run-time duration.
+
+### Common Use Cases
+
+#### Character Intro
+
+Orbit around the hero and settle into a final framed shot:
+
+```scenemax
+hero_intro=>cinematic.camera.hero_intro
+hero_intro.play : target (player1 forward 1 up 2), duration 5
+```
+
+Use this when gameplay pauses briefly and you want a polished hero reveal.
+
+#### Sports Broadcast Fly-In
+
+Use a multi-rail stadium camera that starts high and ends close to the field:
+
+```scenemax
+match_cam=>cinematic.camera.stadium_flyover
+match_cam.play : target (ball forward 0 up 1), duration 7
+```
+
+This works well for:
+
+- match introductions
+- replay transitions
+- halftime presentation shots
+
+#### Boss Entrance
+
+Keep the cinematic attached to a moving enemy while it enters the arena:
+
+```scenemax
+boss_cam=>cinematic.camera.boss_arrival
+boss_cam.play : target (boss forward 2 up 4), duration 6
+```
+
+Because the rig follows the moving target relationship during playback, the shot remains usable even if the boss is animated or moving forward.
+
+#### Triggered In An Event
+
+You can create and play the cinematic inside a code block:
+
+```scenemax
+when key space Is pressed once do
+    intro_cam=>cinematic.camera.cinematic1
+    intro_cam.play : target (player1 forward 1 up 3), duration 8
+end do
+```
+
+This is useful for:
+
+- debug testing
+- interaction-triggered cutscenes
+- scripted encounter starts
+
+#### Reuse The Same Rig For Different Actors
+
+Because the cinematic is anchored from the target statement at run-time, the same rig can often be reused for different actors:
+
+```scenemax
+cam_a=>cinematic.camera.close_orbit
+cam_a.play : target (player1 forward 1 up 2), duration 4
+
+cam_b=>cinematic.camera.close_orbit
+cam_b.play : target (player2 forward 1 up 2), duration 4
+```
+
+This is one of the main advantages of the target-driven cinematic model.
+
+### Troubleshooting
+
+If a cinematic does not play as expected, check the following:
+
+- The designer rig has a valid `Runtime ID`.
+- The requested runtime ID exists in one of the project designer scenes.
+- The rig has at least one sequence segment.
+- The run-time target object exists when playback begins.
+- The target offset in the designer is reasonable for the character or object height.
+
+### Full Example
+
+```scenemax
+// Create the player
+player1=>sinbad
+
+// Trigger a cinematic when the player presses space
+when key space Is pressed once do
+    intro_cam=>cinematic.camera.cinematic1
+    intro_cam.play : target (player1 forward 1 up 3), duration 8
+end do
+```
+
+This gives you a reusable designer-authored cinematic path that can be replayed around the player with consistent framing.
