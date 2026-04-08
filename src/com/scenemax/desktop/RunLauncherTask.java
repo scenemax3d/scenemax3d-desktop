@@ -22,6 +22,8 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
     private final String launcherName;
     private final MacroFilter macroFilter;
     private File scriptFolder=null;
+    private File sourceScriptFile = null;
+    private String sourceScriptRelativePath = null;
     private File runningFolder = null;
     private String prg;
     private Runnable finish;
@@ -42,6 +44,7 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
         if(scriptFilePath!=null) {
             File f = new File(scriptFilePath);
             if(f.isFile()) {
+                this.sourceScriptFile = f;
                 f=f.getParentFile();
             }
 
@@ -82,6 +85,9 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
         if(scriptFolder!=null) {
             prg = "//$[project]=" + scriptFolder.getParentFile().getParentFile().getName() + ";" + prg;
         }
+        if(sourceScriptRelativePath!=null && !sourceScriptRelativePath.isBlank()) {
+            prg = "//$[source_rel]=" + sourceScriptRelativePath + ";" + prg;
+        }
 
         String path="main";
         try {
@@ -97,12 +103,16 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
     @Override
     protected Integer doInBackground() throws Exception {
 
+        if (sourceScriptFile != null) {
+            sourceScriptRelativePath = getScriptRelativePath(sourceScriptFile);
+        }
         saveScript();
 
         if(scriptFolder!=null) {
 
             try {
-                SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, scriptFolder.getAbsolutePath());
+                String parserPath = sourceScriptFile != null ? sourceScriptFile.getAbsolutePath() : scriptFolder.getAbsolutePath();
+                SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, parserPath);
                 SceneMaxLanguageParser.setMacroFilter(this.macroFilter);
                 String cleanCode = getCleanCode(this.prg);
                 parser.parse(cleanCode);
@@ -210,6 +220,18 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
 
         while(m.find()) {
             prg=prg.replaceFirst("//\\$\\[project\\]=(.+?);","");
+        }
+
+        p = Pattern.compile("//\\$\\[source\\]=(.+?);", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
+        m = p.matcher(prg);
+        while(m.find()) {
+            prg=prg.replaceFirst("//\\$\\[source\\]=(.+?);","");
+        }
+
+        p = Pattern.compile("//\\$\\[source_rel\\]=(.+?);", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
+        m = p.matcher(prg);
+        while(m.find()) {
+            prg=prg.replaceFirst("//\\$\\[source_rel\\]=(.+?);","");
         }
 
         return prg;

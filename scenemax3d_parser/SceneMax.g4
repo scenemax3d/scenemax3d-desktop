@@ -301,9 +301,10 @@ define_quad: Shared? res_var_decl isa_expr Collider? Static? Quad (quad_having_e
 define_sprite_implicit : Shared? var_decl isa_expr dynamic_model_type Sprite (sprite_having_expr)? ;
 
 define_variable : Shared? var_decl isa_expr Dynamic? Static? dynamic_model_type Vehicle? (scene_entity_having_expr)? (async_expr)? ;
-dynamic_model_type : res_var_decl | dynamic_model_type_name | effect_resource_decl ;
+dynamic_model_type : res_var_decl | dynamic_model_type_name | effect_resource_decl | cinematic_resource_decl ;
 dynamic_model_type_name : '(' logical_expression ')' ;
 effect_resource_decl : Effects '.' Effekseer '.' res_var_decl ;
+cinematic_resource_decl : Cinematic '.' Camera '.' res_var_decl ;
 scene_entity_having_expr : (Having model_attributes) ;
 model_attributes : model_attr (and_expr model_attr)* ;
 and_expr: And | ',';
@@ -645,7 +646,7 @@ character_action : character_action_jump | character_ignore ;
 character_action_jump : Jump speed_of_expr? ;
 character_ignore : Ignore var_decl '.' Joints ;
 
-play : sprite_play | effect_play ;
+play : sprite_play | effect_play | cinematic_play ;
 sprite_play : var_decl '.' Play '(' frames_expr (In speed_expr)? ')' play_duration_strategy? ;
 effect_play : var_decl '.' Play effect_play_options ;
 effect_play_options : effect_play_option (',' effect_play_option)* ;
@@ -653,6 +654,11 @@ effect_play_option : print_pos_attr | effect_play_attr_list ;
 effect_play_attr_list : Attr Equals? '[' effect_play_attr (',' effect_play_attr)* ']' ;
 effect_play_attr : effect_play_attr_name logical_expression ;
 effect_play_attr_name : QUOTED_STRING | var_decl ;
+cinematic_play : var_decl '.' Play Having cinematic_play_options ;
+cinematic_play_options : cinematic_play_option (and_expr cinematic_play_option)* ;
+cinematic_play_option : cinematic_target_attr | cinematic_duration_attr ;
+cinematic_target_attr : Target Equals? ( var_decl | position_statement ) ;
+cinematic_duration_attr : Duration Equals? logical_expression ;
 hide : var_decl '.' Hide show_options? ;
 show : var_decl '.' Show show_options? ;
 show_options : show_axis_option | Wireframe | show_info_option | Speedo | Tacho | show_joints_option | Outline;
@@ -783,7 +789,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
     Screen | Scene | Environment | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
-    Effekseer | Attr;
+    Effekseer | Attr | Cinematic | Target;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
@@ -835,6 +841,7 @@ Collision : 'Collision' | 'collision' ;
 Shape : 'Shape' | 'shape' ;
 
 Effects : 'Effects' | 'effects' ;
+Cinematic : 'Cinematic' | 'cinematic' ;
 Effekseer : 'Effekseer' | 'effekseer' ;
 Attr : 'Attr' | 'attr' ;
 Flash : 'Flash' | 'flash' ;
@@ -922,6 +929,7 @@ Be : 'Be' | 'be' ;
 Frames : 'frames' | 'Frames' | 'frame' | 'Frame' ;
 Seconds : 'seconds' | 'Seconds' | 'second' | 'Second' ;
 Wait : 'Wait' | 'wait' ;
+Target : 'Target' | 'target' ;
 Using : 'Using' | 'using' ;
 At : 'at' | 'At' ;
 Speed : 'speed' | 'Speed' ;

@@ -9,11 +9,17 @@ import com.abware.scenemaxlang.parser.SceneMaxParser.StatementContext;
 import org.antlr.v4.runtime.*;
 import org.antlr.v4.runtime.tree.TerminalNode;
 import org.apache.commons.io.FileUtils;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 public class SceneMaxLanguageParser implements IParser {
 
@@ -28,6 +34,7 @@ public class SceneMaxLanguageParser implements IParser {
     public static List<String> fontsUsed = new ArrayList<>();
     public static List<String> filesUsed = new ArrayList<>();
     public static List<String> macroFilesUsed = new ArrayList<>();
+    private static final HashMap<String, String> cinematicRigLocationCache = new HashMap<>();
 
     private ProgramDef prg = null;
     private String codePath="";
@@ -57,6 +64,122 @@ public class SceneMaxLanguageParser implements IParser {
         }
 
         return text;
+    }
+
+    private static File resolveCodeDirectory(String codePath) {
+        if (codePath == null || codePath.isBlank()) {
+            return null;
+        }
+        File codeLocation = new File(codePath);
+        File codeDir = codeLocation;
+        if (codeLocation.exists()) {
+            if (!codeLocation.isDirectory()) {
+                codeDir = codeLocation.getParentFile();
+            }
+        } else if (codeLocation.getName().contains(".")) {
+            codeDir = codeLocation.getParentFile();
+        }
+        return codeDir;
+    }
+
+    private static List<File> collectCinematicSearchRoots(String codePath) {
+        LinkedHashSet<File> roots = new LinkedHashSet<>();
+        File codeDir = resolveCodeDirectory(codePath);
+        if (codeDir == null) {
+            return new ArrayList<>();
+        }
+
+        File current = codeDir;
+        while (current != null) {
+            try {
+                roots.add(current.getCanonicalFile());
+            } catch (IOException ignored) {
+                roots.add(current.getAbsoluteFile());
+            }
+            current = current.getParentFile();
+        }
+
+        return new ArrayList<>(roots);
+    }
+
+    private static String findCinematicRigInDirectory(File searchRoot, String runtimeId) {
+        if (searchRoot == null || !searchRoot.exists() || runtimeId == null || runtimeId.isBlank()) {
+            return null;
+        }
+
+        Collection<File> designerFiles = FileUtils.listFiles(searchRoot, new String[]{"smdesign"}, true);
+        for (File designerFile : designerFiles) {
+            try {
+                String raw = FileUtils.readFileToString(designerFile, StandardCharsets.UTF_8);
+                JSONObject root = new JSONObject(raw);
+                if (containsCinematicRigRuntimeId(root.optJSONArray("entities"), runtimeId)) {
+                    return designerFile.getAbsolutePath();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        return null;
+    }
+
+    private static String findCinematicRigSourceFile(String codePath, String runtimeId) {
+        if (runtimeId == null || runtimeId.isBlank()) {
+            return null;
+        }
+        String cacheKey = (codePath != null ? codePath : "") + "|" + runtimeId.toLowerCase();
+        if (cinematicRigLocationCache.containsKey(cacheKey)) {
+            return cinematicRigLocationCache.get(cacheKey);
+        }
+
+        List<File> searchRoots = collectCinematicSearchRoots(codePath);
+        if (searchRoots.isEmpty()) {
+            cinematicRigLocationCache.put(cacheKey, null);
+            return null;
+        }
+
+        Set<String> visitedRoots = new LinkedHashSet<>();
+        for (File root : searchRoots) {
+            String canonicalPath;
+            try {
+                canonicalPath = root.getCanonicalPath();
+            } catch (IOException e) {
+                canonicalPath = root.getAbsolutePath();
+            }
+            if (!visitedRoots.add(canonicalPath)) {
+                continue;
+            }
+
+            String resolved = findCinematicRigInDirectory(root, runtimeId);
+            if (resolved != null) {
+                cinematicRigLocationCache.put(cacheKey, resolved);
+                return resolved;
+            }
+        }
+
+        cinematicRigLocationCache.put(cacheKey, null);
+        return null;
+    }
+
+    private static boolean containsCinematicRigRuntimeId(JSONArray entities, String runtimeId) {
+        if (entities == null || runtimeId == null || runtimeId.isBlank()) {
+            return false;
+        }
+        for (int i = 0; i < entities.length(); i++) {
+            JSONObject entity = entities.optJSONObject(i);
+            if (entity == null) {
+                continue;
+            }
+            if ("CINEMATIC_RIG".equals(entity.optString("type", ""))) {
+                String candidate = entity.optString("cinematicRuntimeId", entity.optString("id", ""));
+                if (runtimeId.equalsIgnoreCase(candidate)) {
+                    return true;
+                }
+            }
+            if (containsCinematicRigRuntimeId(entity.optJSONArray("children"), runtimeId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public SceneMaxLanguageParser(ProgramDef prg, String codePath) {
@@ -89,6 +212,7 @@ public class SceneMaxLanguageParser implements IParser {
             modelsUsed.clear();
             effekseerUsed.clear();
             spriteSheetUsed.clear();
+            cinematicRigLocationCache.clear();
         }
 
         final List<String> errors = new ArrayList<>();
@@ -283,6 +407,16 @@ public class SceneMaxLanguageParser implements IParser {
                             prg.vars.add(var);
                             prg.vars_index.put(var.varName, var);
                             prg.actions.add(cmd);
+                        } else if (var.varType == VariableDef.VAR_TYPE_CINEMATIC_CAMERA) {
+                            if (!var.validate(prg)) {
+                                CinematicCameraVariableDef cinematicVar = (CinematicCameraVariableDef) var;
+                                prg.syntaxErrors.add("Cinematic rig '" + cinematicVar.cinematicCameraId
+                                        + "' was not found in any designer scene under the project");
+                            } else {
+                                prg.vars.add(var);
+                                prg.vars_index.put(var.varName, var);
+                                prg.actions.add(cmd);
+                            }
                         } else if(!var.validate(prg)) {
                             // assume implicit declaration of a 3d model
                             var.varType=VariableDef.VAR_TYPE_3D;
@@ -672,9 +806,11 @@ public class SceneMaxLanguageParser implements IParser {
                     }
 
                     // get code from file or resource
-                    String code = getExternalCode(file);
+                    File resolvedFile = resolveExternalCodeFile(file);
+                    String code = getExternalCode(file, resolvedFile);
                     if(code!=null) {
-                        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(this.prg);
+                        String childCodePath = resolvedFile != null ? resolvedFile.getAbsolutePath() : this.codePath;
+                        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(this.prg, childCodePath);
                         parser.setParserSourceFileName(file);
                         parser.enableChildParserMode(true);
                         //parser.setMacroFilter(SceneMaxLanguageParser.getMacroFilter());
@@ -690,13 +826,21 @@ public class SceneMaxLanguageParser implements IParser {
 
             }
 
-            private String getExternalCode(String file) {
+            private File resolveExternalCodeFile(String file) {
+                File baseDir = resolveCodeDirectory(this.codePath);
+                if (baseDir == null) {
+                    return null;
+                }
+                File candidate = new File(baseDir, file);
+                return candidate.exists() ? candidate : null;
+            }
+
+            private String getExternalCode(String file, File resolvedFile) {
 
                 String code = null;
                 // first, search code in file system
-                File f = new File(this.codePath+"/"+file);
-                if(f.exists()) {
-                    code = readFile(f);
+                if(resolvedFile != null && resolvedFile.exists()) {
+                    code = readFile(resolvedFile);
                 } else {
                     // code not exists in FS so search the in JAR itself (as a resource)
                     if (!file.startsWith("/")) {
@@ -1764,7 +1908,11 @@ public class SceneMaxLanguageParser implements IParser {
                 String varName = ctx.var_decl().getText();
                 String resName = null;
                 SceneMaxParser.Logical_expressionContext resNameExpr = null;
-                if (ctx.dynamic_model_type().effect_resource_decl() != null) {
+                boolean isCinematicCamera = false;
+                if (ctx.dynamic_model_type().cinematic_resource_decl() != null) {
+                    resName = "cinematic.camera." + ctx.dynamic_model_type().cinematic_resource_decl().res_var_decl().getText();
+                    isCinematicCamera = true;
+                } else if (ctx.dynamic_model_type().effect_resource_decl() != null) {
                     resName = "effects.effekseer." + ctx.dynamic_model_type().effect_resource_decl().res_var_decl().getText();
                 } else if (ctx.dynamic_model_type().res_var_decl()!=null) {
                     resName = ctx.dynamic_model_type().res_var_decl().getText();
@@ -1772,7 +1920,7 @@ public class SceneMaxLanguageParser implements IParser {
                     resNameExpr = ctx.dynamic_model_type().dynamic_model_type_name().logical_expression();
                 }
 
-                VariableDef varDef = new VariableDef();
+                VariableDef varDef = isCinematicCamera ? new CinematicCameraVariableDef() : new VariableDef();
                 varDef.isShared = ctx.Shared() != null;
                 varDef.isAsync = ctx.async_expr() != null;
                 varDef.varName = varName;
@@ -1787,6 +1935,12 @@ public class SceneMaxLanguageParser implements IParser {
                     if (!effekseerUsed.contains(resName)) {
                         effekseerUsed.add(resName);
                     }
+                } else if (isCinematicCamera) {
+                    varDef.varType = VariableDef.VAR_TYPE_CINEMATIC_CAMERA;
+                    CinematicCameraVariableDef cinematicVar = (CinematicCameraVariableDef) varDef;
+                    cinematicVar.cinematicCameraId =
+                            ctx.dynamic_model_type().cinematic_resource_decl().res_var_decl().getText();
+                    cinematicVar.cinematicSourceFile = findCinematicRigSourceFile(this.codePath, cinematicVar.cinematicCameraId);
                 }
 
                 if(ctx.scene_entity_having_expr()!=null) {
@@ -2154,14 +2308,16 @@ public class SceneMaxLanguageParser implements IParser {
 
             private final ProgramDef prg;
             private List<String> inParams=null;
+            private final String codePath;
 
             public DoBlockVisitor(ProgramDef prg) {
-                this.prg=prg;
+                this(prg, null);
             }
 
             public DoBlockVisitor(ProgramDef prg, List<String> inParams) {
                 this.prg=prg;
                 this.inParams = inParams;
+                this.codePath = ProgramVisitor.this.codePath;
             }
 
             @Override
@@ -2189,7 +2345,7 @@ public class SceneMaxLanguageParser implements IParser {
 
                 if(ctx.program_statements()!=null) {
                     prg.inParams=inParams;
-                    doCmd.prg = new ProgramStatementsVisitor(prg,null).visit(ctx.program_statements());
+                    doCmd.prg = new ProgramStatementsVisitor(prg, this.codePath).visit(ctx.program_statements());
                     doCmd.isAsync = ctx.async_expr() != null;
                 } else {
                     prg.syntaxErrors.add("Do block has invalid statements at: ");
@@ -3102,7 +3258,25 @@ public class SceneMaxLanguageParser implements IParser {
             public ActionStatementBase visitPlay(SceneMaxParser.PlayContext ctx) {
 
                 try {
-                    if (ctx.sprite_play() != null) {
+                    if (ctx.cinematic_play() != null) {
+                        CinematicCameraPlayCommand cmd = new CinematicCameraPlayCommand();
+                        cmd.targetVar = ctx.cinematic_play().var_decl().getText();
+                        cmd.varLineNum = ctx.cinematic_play().var_decl().getStart().getLine();
+
+                        for (SceneMaxParser.Cinematic_play_optionContext option : ctx.cinematic_play().cinematic_play_options().cinematic_play_option()) {
+                            if (option.cinematic_target_attr() != null) {
+                                if (option.cinematic_target_attr().position_statement() != null) {
+                                    cmd.lookAtPosStatement = parsePositionStatement(option.cinematic_target_attr().position_statement());
+                                } else if (option.cinematic_target_attr().var_decl() != null) {
+                                    cmd.lookAtTargetVar = option.cinematic_target_attr().var_decl().getText();
+                                }
+                            } else if (option.cinematic_duration_attr() != null) {
+                                cmd.speedExpr = option.cinematic_duration_attr().logical_expression();
+                            }
+                        }
+
+                        return cmd;
+                    } else if (ctx.sprite_play() != null) {
                         String var = ctx.sprite_play().var_decl().getText();
 
                         ActionCommandPlay cmd = new ActionCommandPlay();

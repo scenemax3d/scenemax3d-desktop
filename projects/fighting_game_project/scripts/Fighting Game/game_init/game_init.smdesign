@@ -1005,32 +1005,176 @@
         0
       ],
       "type": "CODE"
+    },
+    {
+      "cinematicTargetEntityId": "f0af5cf2-e250-48cb-b3b1-68726126925a",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "cinematicTargetOffset": [
+        0,
+        1.5,
+        0
+      ],
+      "cinematicEaseIn": "linear",
+      "type": "CINEMATIC_RIG",
+      "cinematicTargetEntityName": "player1",
+      "children": [
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "cinematic_track_4",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "id": "9cea26a0-3703-472d-ac18-0fda19493fd7",
+          "position": [
+            19.897793,
+            3.9387856,
+            18.21473
+          ],
+          "type": "CINEMATIC_TRACK",
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 30,
+            "selectedStartAnchor": -1,
+            "radiusZ": 18,
+            "radiusX": 22,
+            "selectedEndAnchor": -1
+          }
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "cinematic_track_5",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "id": "bf026758-e670-472f-b750-40ad7197fcf3",
+          "position": [
+            20.280842,
+            3.8571434,
+            25.833563
+          ],
+          "type": "CINEMATIC_TRACK",
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 30,
+            "selectedStartAnchor": 124,
+            "radiusZ": 10.8,
+            "radiusX": 15,
+            "selectedEndAnchor": 288
+          }
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "cinematic_track_6",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "id": "f0b270c6-dcd6-4712-91cb-0606161b33e4",
+          "position": [
+            23.877895,
+            3.8571434,
+            19.769173
+          ],
+          "type": "CINEMATIC_TRACK",
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 30,
+            "selectedStartAnchor": 291,
+            "radiusZ": 4.5,
+            "radiusX": 2.5,
+            "selectedEndAnchor": 39
+          }
+        }
+      ],
+      "cinematicEaseOut": "linear",
+      "name": "Cinematic Rig",
+      "cinematicSegments": [
+        {
+          "startAnchor": 300,
+          "trackId": "9cea26a0-3703-472d-ac18-0fda19493fd7",
+          "endAnchor": 110,
+          "trackName": "cinematic_track_4",
+          "speed": 45
+        },
+        {
+          "startAnchor": 124,
+          "trackId": "bf026758-e670-472f-b750-40ad7197fcf3",
+          "endAnchor": 288,
+          "trackName": "cinematic_track_5",
+          "speed": 30
+        },
+        {
+          "startAnchor": 291,
+          "trackId": "f0b270c6-dcd6-4712-91cb-0606161b33e4",
+          "endAnchor": 39,
+          "trackName": "cinematic_track_6",
+          "speed": 30
+        }
+      ],
+      "cinematicPreviewDuration": 10,
+      "id": "2fea4ba8-52fe-4a1f-a848-3241cfe9b9d7",
+      "position": [
+        18.025543,
+        -87.260925,
+        0
+      ],
+      "cinematicRuntimeId": "cinematic1"
     }
   ],
   "gameCamera": {
     "rotation": [
-      0,
-      1,
-      0,
-      0
+      0.09438024,
+      0.87408334,
+      -0.18849707,
+      0.4376524
     ],
     "position": [
-      12.68647,
-      -10.546852,
-      58.799103
+      8.015769,
+      -8.97224,
+      51.23
     ]
   },
   "camera": {
     "rotation": [
-      -0.09904575,
-      0.8923991,
-      -0.2391176,
-      -0.36964384
+      0.2587635,
+      -0.5531344,
+      0.18594587,
+      0.7697454
     ],
     "position": [
-      9.185587,
-      7.5,
-      9.185586
+      73.72485,
+      -55.077465,
+      13.915026
     ]
   },
   "version": 1

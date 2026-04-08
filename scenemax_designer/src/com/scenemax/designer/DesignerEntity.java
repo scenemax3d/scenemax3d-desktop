@@ -3,6 +3,8 @@ package com.scenemax.designer;
 import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
+import com.scenemax.designer.cinematic.CinematicSegment;
+import com.scenemax.designer.cinematic.CinematicTrackData;
 import com.scenemax.designer.path.BezierPath;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -72,6 +74,17 @@ public class DesignerEntity {
 
     // Path data (for PATH type only)
     private BezierPath bezierPath;
+
+    // Cinematic authoring data
+    private CinematicTrackData cinematicTrackData;
+    private List<CinematicSegment> cinematicSegments = new ArrayList<>();
+    private String cinematicTargetEntityId = "";
+    private String cinematicTargetEntityName = "";
+    private Vector3f cinematicTargetOffset = new Vector3f(0, 1.5f, 0);
+    private String cinematicEaseIn = "linear";
+    private String cinematicEaseOut = "linear";
+    private String cinematicRuntimeId = "";
+    private float cinematicPreviewDuration = 10f;
 
     // Children (for SECTION type only)
     private List<DesignerEntity> children = new ArrayList<>();
@@ -164,6 +177,40 @@ public class DesignerEntity {
 
     public BezierPath getBezierPath() { return bezierPath; }
     public void setBezierPath(BezierPath bezierPath) { this.bezierPath = bezierPath; }
+    public CinematicTrackData getCinematicTrackData() { return cinematicTrackData; }
+    public void setCinematicTrackData(CinematicTrackData cinematicTrackData) { this.cinematicTrackData = cinematicTrackData; }
+    public List<CinematicSegment> getCinematicSegments() { return cinematicSegments; }
+    public void setCinematicSegments(List<CinematicSegment> cinematicSegments) {
+        this.cinematicSegments = cinematicSegments != null ? cinematicSegments : new ArrayList<>();
+    }
+    public String getCinematicTargetEntityId() { return cinematicTargetEntityId; }
+    public void setCinematicTargetEntityId(String cinematicTargetEntityId) {
+        this.cinematicTargetEntityId = cinematicTargetEntityId != null ? cinematicTargetEntityId : "";
+    }
+    public String getCinematicTargetEntityName() { return cinematicTargetEntityName; }
+    public void setCinematicTargetEntityName(String cinematicTargetEntityName) {
+        this.cinematicTargetEntityName = cinematicTargetEntityName != null ? cinematicTargetEntityName : "";
+    }
+    public Vector3f getCinematicTargetOffset() { return cinematicTargetOffset != null ? cinematicTargetOffset : new Vector3f(0, 1.5f, 0); }
+    public void setCinematicTargetOffset(Vector3f cinematicTargetOffset) {
+        this.cinematicTargetOffset = cinematicTargetOffset != null ? cinematicTargetOffset : new Vector3f(0, 1.5f, 0);
+    }
+    public String getCinematicEaseIn() { return cinematicEaseIn != null ? cinematicEaseIn : "linear"; }
+    public void setCinematicEaseIn(String cinematicEaseIn) {
+        this.cinematicEaseIn = cinematicEaseIn != null ? cinematicEaseIn : "linear";
+    }
+    public String getCinematicEaseOut() { return cinematicEaseOut != null ? cinematicEaseOut : "linear"; }
+    public void setCinematicEaseOut(String cinematicEaseOut) {
+        this.cinematicEaseOut = cinematicEaseOut != null ? cinematicEaseOut : "linear";
+    }
+    public String getCinematicRuntimeId() { return cinematicRuntimeId != null ? cinematicRuntimeId : ""; }
+    public void setCinematicRuntimeId(String cinematicRuntimeId) {
+        this.cinematicRuntimeId = cinematicRuntimeId != null ? cinematicRuntimeId : "";
+    }
+    public float getCinematicPreviewDuration() { return Math.max(0.1f, cinematicPreviewDuration); }
+    public void setCinematicPreviewDuration(float cinematicPreviewDuration) {
+        this.cinematicPreviewDuration = Math.max(0.1f, cinematicPreviewDuration);
+    }
 
     public String getSceneMaxCode() { return sceneMaxCode; }
     public void setSceneMaxCode(String sceneMaxCode) { this.sceneMaxCode = sceneMaxCode; }
@@ -302,6 +349,31 @@ public class DesignerEntity {
                     json.put("pathData", bezierPath.toJSON());
                 }
                 break;
+            case CINEMATIC_RIG:
+                JSONArray rigChildren = new JSONArray();
+                for (DesignerEntity child : children) {
+                    rigChildren.put(child.toJSON());
+                }
+                json.put("children", rigChildren);
+                JSONArray segmentsArray = new JSONArray();
+                for (CinematicSegment segment : cinematicSegments) {
+                    segmentsArray.put(segment.toJSON());
+                }
+                json.put("cinematicSegments", segmentsArray);
+                json.put("cinematicTargetEntityId", cinematicTargetEntityId != null ? cinematicTargetEntityId : "");
+                json.put("cinematicTargetEntityName", cinematicTargetEntityName != null ? cinematicTargetEntityName : "");
+                Vector3f offset = getCinematicTargetOffset();
+                json.put("cinematicTargetOffset", new float[]{offset.x, offset.y, offset.z});
+                json.put("cinematicEaseIn", getCinematicEaseIn());
+                json.put("cinematicEaseOut", getCinematicEaseOut());
+                json.put("cinematicRuntimeId", getCinematicRuntimeId());
+                json.put("cinematicPreviewDuration", getCinematicPreviewDuration());
+                break;
+            case CINEMATIC_TRACK:
+                if (cinematicTrackData != null) {
+                    json.put("cinematicTrackData", cinematicTrackData.toJSON());
+                }
+                break;
         }
 
         return json;
@@ -395,6 +467,40 @@ public class DesignerEntity {
             case PATH:
                 if (json.has("pathData")) {
                     entity.bezierPath = BezierPath.fromJSON(json.getJSONObject("pathData"));
+                }
+                break;
+            case CINEMATIC_RIG:
+                if (json.has("children")) {
+                    JSONArray childrenArr = json.getJSONArray("children");
+                    for (int i = 0; i < childrenArr.length(); i++) {
+                        entity.children.add(fromJSON(childrenArr.getJSONObject(i)));
+                    }
+                }
+                if (json.has("cinematicSegments")) {
+                    JSONArray segmentsArr = json.getJSONArray("cinematicSegments");
+                    for (int i = 0; i < segmentsArr.length(); i++) {
+                        entity.cinematicSegments.add(CinematicSegment.fromJSON(segmentsArr.getJSONObject(i)));
+                    }
+                }
+                entity.cinematicTargetEntityId = json.optString("cinematicTargetEntityId", "");
+                entity.cinematicTargetEntityName = json.optString("cinematicTargetEntityName", "");
+                if (json.has("cinematicTargetOffset")) {
+                    JSONArray arr = json.getJSONArray("cinematicTargetOffset");
+                    entity.cinematicTargetOffset = new Vector3f(
+                            (float) arr.optDouble(0, 0.0),
+                            (float) arr.optDouble(1, 1.5),
+                            (float) arr.optDouble(2, 0.0));
+                }
+                entity.cinematicEaseIn = json.optString("cinematicEaseIn", "linear");
+                entity.cinematicEaseOut = json.optString("cinematicEaseOut", "linear");
+                entity.cinematicRuntimeId = json.optString("cinematicRuntimeId", "");
+                entity.cinematicPreviewDuration = (float) json.optDouble("cinematicPreviewDuration", 10.0);
+                break;
+            case CINEMATIC_TRACK:
+                if (json.has("cinematicTrackData")) {
+                    entity.cinematicTrackData = CinematicTrackData.fromJSON(json.getJSONObject("cinematicTrackData"));
+                } else {
+                    entity.cinematicTrackData = new CinematicTrackData();
                 }
                 break;
         }

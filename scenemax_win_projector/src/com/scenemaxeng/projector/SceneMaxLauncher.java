@@ -14,6 +14,7 @@ public class SceneMaxLauncher implements IAppObserver {
 
     private final String program;
     private MainWinApp mainApp;
+    private File sourceScriptFile;
 
     public static synchronized String getPlatform() {
 
@@ -71,7 +72,8 @@ public class SceneMaxLauncher implements IAppObserver {
         }
 
         this.program = prg;
-        mainApp = new MainWinApp(null,prg,false);
+        prg = extractSourceScriptPath(prg);
+        mainApp = new MainWinApp(sourceScriptFile,prg,false);
         mainApp.parent=this;
 
     }
@@ -175,6 +177,27 @@ public class SceneMaxLauncher implements IAppObserver {
 
         return program;
 
+    }
+
+    private String extractSourceScriptPath(String prg) {
+        if (prg == null || prg.isEmpty()) {
+            return prg;
+        }
+
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile("//\\$\\[source_rel\\]=(.+?);", java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.MULTILINE);
+        java.util.regex.Matcher m = p.matcher(prg);
+        if (m.find()) {
+            String path = m.group(1).trim().replace("/", File.separator);
+            if (path.startsWith(File.separator)) {
+                path = path.substring(1);
+            }
+            if (!path.isBlank()) {
+                sourceScriptFile = new File(new File("running"), path);
+            }
+            prg = prg.replaceFirst("//\\$\\[source_rel\\]=(.+?);", "");
+        }
+
+        return prg;
     }
 
     @Override

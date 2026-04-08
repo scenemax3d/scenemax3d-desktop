@@ -257,7 +257,8 @@ public class DesignerDocument {
      */
     private static void appendEntitiesCode(StringBuilder sb, List<DesignerEntity> entities) {
         for (DesignerEntity entity : entities) {
-            if (entity.getType() == DesignerEntityType.SECTION) {
+            if (entity.getType() == DesignerEntityType.SECTION
+                    || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
                 // Sections are purely organizational — recurse into children
                 appendEntitiesCode(sb, entity.getChildren());
                 continue;
@@ -272,6 +273,9 @@ public class DesignerDocument {
             if (entity.getType() == DesignerEntityType.PATH) {
                 // PATH entities generate a comment with the sampled path data
                 generatePathCode(sb, entity);
+                continue;
+            }
+            if (entity.getType() == DesignerEntityType.CINEMATIC_TRACK) {
                 continue;
             }
             String code = generateEntityCode(entity);
@@ -457,10 +461,22 @@ public class DesignerDocument {
                 entities.add(entity);
                 continue;
             }
-            if (entity.getType() == DesignerEntityType.CODE || entity.getType() == DesignerEntityType.SECTION) {
+            if (entity.getType() == DesignerEntityType.CINEMATIC_TRACK) {
+                Node tempNode = new Node(entity.getName());
+                tempNode.setLocalTranslation(DesignerEntity.positionFromJSON(json));
+                tempNode.setLocalRotation(DesignerEntity.rotationFromJSON(json));
+                tempNode.setLocalScale(DesignerEntity.scaleFromJSON(json));
+                entity.setSceneNode(tempNode);
+                entities.add(entity);
+                continue;
+            }
+            if (entity.getType() == DesignerEntityType.CODE
+                    || entity.getType() == DesignerEntityType.SECTION
+                    || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
                 // Code and section nodes don't need a scene node;
                 // section children are reconstructed recursively by fromJSON
-                if (entity.getType() == DesignerEntityType.SECTION) {
+                if (entity.getType() == DesignerEntityType.SECTION
+                        || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
                     attachTempSceneNodesRecursive(entity.getChildren(), json.optJSONArray("children"));
                 }
                 entities.add(entity);
@@ -493,7 +509,16 @@ public class DesignerDocument {
                     || entity.getType() == DesignerEntityType.PATH) {
                 continue;
             }
-            if (entity.getType() == DesignerEntityType.SECTION) {
+            if (entity.getType() == DesignerEntityType.CINEMATIC_TRACK) {
+                Node tempNode = new Node(entity.getName());
+                tempNode.setLocalTranslation(DesignerEntity.positionFromJSON(json));
+                tempNode.setLocalRotation(DesignerEntity.rotationFromJSON(json));
+                tempNode.setLocalScale(DesignerEntity.scaleFromJSON(json));
+                entity.setSceneNode(tempNode);
+                continue;
+            }
+            if (entity.getType() == DesignerEntityType.SECTION
+                    || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
                 attachTempSceneNodesRecursive(entity.getChildren(), json.optJSONArray("children"));
                 continue;
             }
