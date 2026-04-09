@@ -59,4 +59,22 @@ public class UIMessageParsingTest {
         assertEquals("fade_in", cmd.effectNames.get(0));
         assertEquals("zoom_in", cmd.effectNames.get(1));
     }
+
+    @Test
+    public void parsesUiMessageCommandWithAsync() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "UI.layer1.panelMsg.txtMsg.message(\"GAME OVER\", TextEffect.fade_in | TextEffect.zoom_in, 2) async"
+        );
+
+        assertTrue(prg.syntaxErrors.isEmpty());
+        assertTrue(prg.actions.get(0) instanceof UIMessageCommand);
+
+        UIMessageCommand cmd = (UIMessageCommand) prg.actions.get(0);
+        assertEquals("layer1", cmd.layerName);
+        assertEquals("panelMsg.txtMsg", cmd.widgetPath);
+        assertTrue(cmd.isAsync);
+        assertEquals(2, cmd.effectNames.size());
+        assertEquals("fade_in", cmd.effectNames.get(0));
+        assertEquals("zoom_in", cmd.effectNames.get(1));
+    }
 }

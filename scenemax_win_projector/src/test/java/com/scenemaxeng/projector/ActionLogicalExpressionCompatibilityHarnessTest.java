@@ -92,7 +92,16 @@ public class ActionLogicalExpressionCompatibilityHarnessTest {
         assertVmValue("num + whole * 2", scope, "10.5");
         assertVmValue("\"x\" + 2 + 3", scope, "x23");
         assertVmValue("\"x\" + (2 + 3)", scope, "x5");
+        assertVmValue("\"score: \" + 10", scope, "score: 10");
+        assertVmValue("\"score: \" + floor(10.9)", scope, "score: 10");
         assertVmValue("newline + \"x\"", scope, "\nx");
+    }
+
+    @Test
+    public void stringFormattingHelperTrimsOnlyWholeNumberFractions() {
+        assertEquals("10", ActionLogicalExpressionVm.formatValueForStringContext(Double.valueOf(10.0)));
+        assertEquals("10.5", ActionLogicalExpressionVm.formatValueForStringContext(Double.valueOf(10.5)));
+        assertEquals("10", ActionLogicalExpressionVm.formatValueForStringContext(Integer.valueOf(10)));
     }
 
     @Test

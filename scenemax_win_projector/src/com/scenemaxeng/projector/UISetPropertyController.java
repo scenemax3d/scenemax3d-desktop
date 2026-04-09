@@ -47,7 +47,8 @@ public class UISetPropertyController extends SceneMaxBaseController {
         String value;
         if (propCmd.valueExpr != null) {
             // Runtime expression evaluation
-            value = new ActionLogicalExpressionVm(propCmd.valueExpr, this.scope).evaluate().toString();
+            value = ActionLogicalExpressionVm.formatValueForStringContext(
+                    new ActionLogicalExpressionVm(propCmd.valueExpr, this.scope).evaluate());
         } else if (propCmd.stringValue != null) {
             value = propCmd.stringValue;
         } else {

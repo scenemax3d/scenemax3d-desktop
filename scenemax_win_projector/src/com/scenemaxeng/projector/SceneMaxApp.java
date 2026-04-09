@@ -1471,6 +1471,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             scope.add(ctl);
         } else if (action instanceof com.scenemaxeng.compiler.UIMessageCommand) {
             UIMessageController ctl = new UIMessageController(this, prg, scope, (com.scenemaxeng.compiler.UIMessageCommand) action);
+            ctl.async = action.isAsync;
             scope.add(ctl);
         }
 

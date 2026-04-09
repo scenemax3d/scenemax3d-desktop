@@ -624,6 +624,7 @@ public class SceneMaxLanguageParser implements IParser {
                     UIMessageCommand cmd = new UIMessageCommand();
                     cmd.messageExpr = msgCtx.logical_expression(0);
                     cmd.durationExpr = msgCtx.logical_expression(1);
+                    cmd.isAsync = msgCtx.async_expr() != null;
                     for (SceneMaxParser.Ui_text_effect_flagContext effectCtx : msgCtx.ui_text_effect().ui_text_effect_flag()) {
                         cmd.effectNames.add(effectCtx.var_decl().getText());
                     }

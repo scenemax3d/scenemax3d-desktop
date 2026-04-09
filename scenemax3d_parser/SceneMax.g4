@@ -67,7 +67,7 @@ ui_load : UI '.' Load QUOTED_STRING ;
 ui_show_hide : UI '.' ui_dot_path '.' (Show | Hide) ;
 ui_set_property : UI '.' ui_dot_path '.' ui_property_name Equals logical_expression ;
 ui_set_default_property : UI '.' ui_dot_path Equals logical_expression ;
-ui_message : UI '.' ui_dot_path '.' Message '(' logical_expression ',' ui_text_effect ',' logical_expression ')' ;
+ui_message : UI '.' ui_dot_path '.' Message '(' logical_expression ',' ui_text_effect ',' logical_expression ')' (async_expr)? ;
 ui_text_effect : ui_text_effect_flag ('|' ui_text_effect_flag)* ;
 ui_text_effect_flag : TextEffect '.' var_decl ;
 ui_dot_path : var_decl ('.' var_decl)* ;

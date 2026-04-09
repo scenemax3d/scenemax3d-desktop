@@ -73,6 +73,20 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
         return Double.parseDouble(obj.toString());
     }
 
+    static String formatValueForStringContext(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof Double || value instanceof Float) {
+            double number = ((Number) value).doubleValue();
+            if (Double.isFinite(number) && number == Math.rint(number)
+                    && number >= Long.MIN_VALUE && number <= Long.MAX_VALUE) {
+                return Long.toString((long) number);
+            }
+        }
+        return value.toString();
+    }
+
     private static CompiledProgram compileCached(ParserRuleContext ctx) {
         CompiledProgram cached = PROGRAM_CACHE.get(ctx);
         if (cached != null) {
@@ -832,11 +846,7 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
         }
 
         private static String normalizeConcat(Object value) {
-            if (value == null) {
-                return "null";
-            }
-            String s = value.toString();
-            return s.endsWith(".0") ? s.substring(0, s.length() - 2) : s;
+            return formatValueForStringContext(value);
         }
 
         private static boolean equalsStrict(Object left, Object right, int line) {
