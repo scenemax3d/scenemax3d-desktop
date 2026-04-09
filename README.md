@@ -126,9 +126,11 @@ The items below are planned for future delivery, but they will not necessarily b
 
 - **Messaging System** -- display in-game and runtime messages
 - **Health Bar System** -- built-in support for health bar setup and management
-- **Weapons System** -- easy picking up and using weapons at runtime
+- **Weapons/Inventory System** -- easy picking up and using weapons at runtime
 - **Climbing System** -- easy definition of climbable objects and a climbing game state machine
 - **Leaderboard System** -- support for game leaderboards
+- **UI Frames** -- show messages inside frames
+- **MiniMap System** - Customized minimap system
 - **Itch.io Integration** -- upload and maintain your game on Itch.io
 - **Gallery** -- a shared place for presenting SceneMax3D projects
 - **Terrain Builder** -- tools for creating and editing terrain
