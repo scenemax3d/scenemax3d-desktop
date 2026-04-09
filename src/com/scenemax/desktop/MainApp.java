@@ -2029,6 +2029,9 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         uiPanel.setOnDirtyCallback(() -> {
             editorTabPanel.markActiveTabDirty();
         });
+        uiPanel.setOnSavedCallback(() -> {
+            editorTabPanel.markTabClean(f.getAbsolutePath());
+        });
 
         // Open UI designer tab
         editorTabPanel.openUIDesignerFile(f.getAbsolutePath(), uiPanel);

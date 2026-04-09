@@ -535,12 +535,7 @@ public class ActionLogicalExpression extends ActionStatementBase {
                                 if (sb.length() == 0) {
                                     sb.append(retvalStr);
                                 }
-                                String addStr = res.toString();
-                                if (addStr.endsWith(".0")) {
-                                    sb.append(addStr, 0, addStr.length() - 2);
-                                } else {
-                                    sb.append(addStr);
-                                }
+                                sb.append(ActionLogicalExpressionVm.formatValueForStringContext(res));
                             } else {
                                 retval += toDouble(res);
                             }
@@ -874,9 +869,7 @@ public class ActionLogicalExpression extends ActionStatementBase {
         private void turnOnIsString() {
             isResString = true;
             if (hasNumericRetval) {
-                // Convert accumulated numeric to string - use efficient formatting
-                long l = (long) retval;
-                retvalStr = (retval == l) ? Long.toString(l) : Double.toString(retval);
+                retvalStr = ActionLogicalExpressionVm.formatValueForStringContext(retval);
                 hasNumericRetval = false;
             }
         }

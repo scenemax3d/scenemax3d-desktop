@@ -17,6 +17,8 @@ public class UITextViewNode extends UIWidgetNode {
 
     private BitmapText textNode;
     private AssetsMapping assetsMapping;
+    private float visualScale = 1f;
+    private float visualAlpha = 1f;
 
     public UITextViewNode(String name, UIWidgetDef widgetDef, AssetManager assetManager,
                           float designCanvasWidth, float designCanvasHeight,
@@ -32,7 +34,7 @@ public class UITextViewNode extends UIWidgetNode {
         textNode = new BitmapText(font, false);
         textNode.setSize(widgetDef.getFontSize());
         textNode.setText(widgetDef.getText());
-        textNode.setColor(parseColor(widgetDef.getTextColor()));
+        applyVisualColor(parseColor(widgetDef.getTextColor()));
         textNode.setQueueBucket(RenderQueue.Bucket.Gui);
         attachChild(textNode);
 
@@ -81,6 +83,7 @@ public class UITextViewNode extends UIWidgetNode {
         float ty = (layoutRect.height + textHeight) / 2f;
         // Keep text slightly in front of UI quads so it doesn't get occluded.
         textNode.setLocalTranslation(tx, ty, 0.1f);
+        textNode.setLocalScale(visualScale);
     }
 
     public void setText(String text) {
@@ -94,7 +97,7 @@ public class UITextViewNode extends UIWidgetNode {
     public void setTextColor(String hexColor) {
         widgetDef.setTextColor(hexColor);
         if (textNode != null) {
-            textNode.setColor(parseColor(hexColor));
+            applyVisualColor(parseColor(hexColor));
         }
     }
 
@@ -119,7 +122,7 @@ public class UITextViewNode extends UIWidgetNode {
             textNode = new BitmapText(font, false);
             textNode.setSize(currentSize);
             textNode.setText(currentText);
-            textNode.setColor(parseColor(currentColor));
+            applyVisualColor(parseColor(currentColor));
             textNode.setQueueBucket(com.jme3.renderer.queue.RenderQueue.Bucket.Gui);
             attachChild(textNode);
             positionText();
@@ -128,6 +131,34 @@ public class UITextViewNode extends UIWidgetNode {
 
     public String getText() {
         return widgetDef.getText();
+    }
+
+    public void setVisualScale(float scale) {
+        visualScale = Math.max(0.0001f, scale);
+        if (textNode != null) {
+            textNode.setLocalScale(visualScale);
+        }
+    }
+
+    public void resetVisualScale() {
+        setVisualScale(1f);
+    }
+
+    public void setVisualAlpha(float alpha) {
+        visualAlpha = Math.max(0f, Math.min(1f, alpha));
+        if (textNode != null) {
+            applyVisualColor(parseColor(widgetDef.getTextColor()));
+        }
+    }
+
+    public void resetVisualAlpha() {
+        setVisualAlpha(1f);
+    }
+
+    private void applyVisualColor(com.jme3.math.ColorRGBA color) {
+        com.jme3.math.ColorRGBA finalColor = color.clone();
+        finalColor.a *= visualAlpha;
+        textNode.setColor(finalColor);
     }
 
     @Override
