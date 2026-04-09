@@ -117,3 +117,27 @@ Contributions are welcome! Please open an issue to discuss your idea before subm
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+## Roadmap
+
+A product roadmap is a high-level view of the capabilities and improvements planned for future versions of SceneMax3D. It helps communicate the direction of the product and the areas that are expected to evolve over time.
+
+The items below are planned for future delivery, but they will not necessarily be implemented in the order they are listed:
+
+- **Messaging System** -- display in-game and runtime messages
+- **Health Bar System** -- built-in support for health bar setup and management
+- **Weapons System** -- easy picking up and using weapons at runtime
+- **Climbing System** -- easy definition of climbable objects and a climbing game state machine
+- **Leaderboard System** -- support for game leaderboards
+- **Itch.io Integration** -- upload and maintain your game on Itch.io
+- **Gallery** -- a shared place for presenting SceneMax3D projects
+- **Terrain Builder** -- tools for creating and editing terrain
+- **Material Builder** -- tools for defining and tuning materials
+- **Lighting System** -- improved lighting authoring and control
+- **Physics System** -- manipulate object rigs and test physical effects
+- **Audio System** -- built-in audio workflow and tooling
+- **Android Package & Deployment** -- streamlined Android build packaging and deployment
+- **Move to Jolt Physics** -- transition from the current physics backend to the Jolt physics engine
+- **Debugger** -- easier runtime breakpoints and debugging information
+- **Multiplayer Support** -- support for multiplayer game experiences
+- **Web Browser Projector** -- run exported projects directly in the browser
