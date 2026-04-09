@@ -5,7 +5,8 @@ game_over = {
 	}
 	
 	game_status=GAME_STATE_OVER // game over
-	gameover.draw game_over3 : size (550,160) and pos(550,150)
+	//gameover.draw game_over3 : size (550,160) and pos(550,150)
+  UI.layer1.panelMsg.txtMsg.message("GAME OVER", TextEffect.fade_in | TextEffect.zoom_in, 2) 
  
   wait for camera_mode==CAMERA_MODE_DEFAULT
   camera_mode = CAMERA_MODE_SHAKE 
@@ -26,10 +27,12 @@ game_over = {
   player2.BackFlip
   player2.Idle loop
 
-	msg2.draw press_space_to_continue : pos (544,450)
+	//msg2.draw press_space_to_continue : pos (544,450)
+	UI.layer1.panelMsg.txtSubMessage.text = "PRESS SPACE TO CONTINUE"
 	
   wait for key space to be pressed
-  msg2.draw clear
+  UI.layer1.panelMsg.txtSubMessage.text = ""
+  
 	run restart_game
 	
 }
@@ -54,7 +57,8 @@ restart_game = {
 	player1.jumping
 	player1.idle2 loop
 	
-	gameover.draw clear
+	//gameover.draw clear
+  UI.layer1.panelMsg.txtMsg.text = "";//message("GAME OVER", TextEffect.fade_in, 2)
 
 	run game_start
 

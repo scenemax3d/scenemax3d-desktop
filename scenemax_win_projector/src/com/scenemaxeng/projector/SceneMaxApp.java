@@ -1469,6 +1469,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if (action instanceof com.scenemaxeng.compiler.UISetPropertyCommand) {
             UISetPropertyController ctl = new UISetPropertyController(this, prg, scope, (com.scenemaxeng.compiler.UISetPropertyCommand) action);
             scope.add(ctl);
+        } else if (action instanceof com.scenemaxeng.compiler.UIMessageCommand) {
+            UIMessageController ctl = new UIMessageController(this, prg, scope, (com.scenemaxeng.compiler.UIMessageCommand) action);
+            scope.add(ctl);
         }
 
         return null;

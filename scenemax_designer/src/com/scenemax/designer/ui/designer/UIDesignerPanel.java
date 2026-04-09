@@ -11,6 +11,8 @@ import javax.swing.tree.*;
 import java.awt.*;
 import java.awt.datatransfer.*;
 import java.awt.dnd.*;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.*;
@@ -91,6 +93,7 @@ public class UIDesignerPanel extends JPanel {
 
     // Callback for notifying the IDE that the file has been modified
     private Runnable onDirtyCallback;
+    private Runnable onSavedCallback;
 
     // Sprite resource mapping for design-time rendering
     private AssetsMapping assetsMapping;
@@ -129,6 +132,7 @@ public class UIDesignerPanel extends JPanel {
             document.save(uiFile);
             document.saveCodeFile(uiFile);
             dirty = false;
+            if (onSavedCallback != null) onSavedCallback.run();
         } catch (IOException e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(this,
@@ -143,6 +147,10 @@ public class UIDesignerPanel extends JPanel {
 
     public void setOnDirtyCallback(Runnable callback) {
         this.onDirtyCallback = callback;
+    }
+
+    public void setOnSavedCallback(Runnable callback) {
+        this.onSavedCallback = callback;
     }
 
     private void markDirty() {
@@ -301,6 +309,7 @@ public class UIDesignerPanel extends JPanel {
         // Widget name
         txtWidgetName = new JTextField(15);
         txtWidgetName.addActionListener(e -> applyWidgetNameChange());
+        installAutoSaveOnFocusLost(txtWidgetName, this::applyWidgetNameChange);
         addFormRow("Name:", txtWidgetName);
 
         propertiesPanel.add(Box.createVerticalStrut(8));
@@ -309,18 +318,22 @@ public class UIDesignerPanel extends JPanel {
         // Width mode + value
         cboWidthMode = new JComboBox<>(new String[]{"Fixed", "Wrap Content", "Match Constraint"});
         cboWidthMode.addActionListener(e -> applySizeModeChange());
+        installAutoSaveOnFocusLost(cboWidthMode, null);
         addFormRow("Width Mode:", cboWidthMode);
 
         spnWidth = new JSpinner(new SpinnerNumberModel(100.0, 0.0, 9999.0, 1.0));
         spnWidth.addChangeListener(e -> applySizeChange());
+        installAutoSaveOnFocusLost(spnWidth, this::applySizeChange);
         addFormRow("Width:", spnWidth);
 
         cboHeightMode = new JComboBox<>(new String[]{"Fixed", "Wrap Content", "Match Constraint"});
         cboHeightMode.addActionListener(e -> applySizeModeChange());
+        installAutoSaveOnFocusLost(cboHeightMode, null);
         addFormRow("Height Mode:", cboHeightMode);
 
         spnHeight = new JSpinner(new SpinnerNumberModel(50.0, 0.0, 9999.0, 1.0));
         spnHeight.addChangeListener(e -> applySizeChange());
+        installAutoSaveOnFocusLost(spnHeight, this::applySizeChange);
         addFormRow("Height:", spnHeight);
 
         // --- Constraints ---
@@ -357,6 +370,8 @@ public class UIDesignerPanel extends JPanel {
         chkCenterVertical = new JCheckBox("Center Vertical");
         chkCenterHorizontal.addActionListener(e -> applyCenterChange());
         chkCenterVertical.addActionListener(e -> applyCenterChange());
+        installAutoSaveOnFocusLost(chkCenterHorizontal, null);
+        installAutoSaveOnFocusLost(chkCenterVertical, null);
 
         JPanel centerRow = new JPanel(new GridBagLayout());
         centerRow.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -379,6 +394,10 @@ public class UIDesignerPanel extends JPanel {
         spnMarginRight = new JSpinner(new SpinnerNumberModel(0.0, -9999.0, 9999.0, 1.0));
         spnMarginTop = new JSpinner(new SpinnerNumberModel(0.0, -9999.0, 9999.0, 1.0));
         spnMarginBottom = new JSpinner(new SpinnerNumberModel(0.0, -9999.0, 9999.0, 1.0));
+        installAutoSaveOnFocusLost(spnMarginLeft, this::applyMarginChange);
+        installAutoSaveOnFocusLost(spnMarginRight, this::applyMarginChange);
+        installAutoSaveOnFocusLost(spnMarginTop, this::applyMarginChange);
+        installAutoSaveOnFocusLost(spnMarginBottom, this::applyMarginChange);
 
         addFormRow("L:", spnMarginLeft, "R:", spnMarginRight);
         addFormRow("T:", spnMarginTop, "B:", spnMarginBottom);
@@ -394,6 +413,8 @@ public class UIDesignerPanel extends JPanel {
 
         spnHBias = new JSpinner(new SpinnerNumberModel(0.5, 0.0, 1.0, 0.05));
         spnVBias = new JSpinner(new SpinnerNumberModel(0.5, 0.0, 1.0, 0.05));
+        installAutoSaveOnFocusLost(spnHBias, this::applyBiasChange);
+        installAutoSaveOnFocusLost(spnVBias, this::applyBiasChange);
         addFormRow("H:", spnHBias, "V:", spnVBias);
 
         spnHBias.addChangeListener(e -> applyBiasChange());
@@ -407,6 +428,10 @@ public class UIDesignerPanel extends JPanel {
         spnPaddingRight = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 9999.0, 1.0));
         spnPaddingTop = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 9999.0, 1.0));
         spnPaddingBottom = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 9999.0, 1.0));
+        installAutoSaveOnFocusLost(spnPaddingLeft, this::applyPaddingChange);
+        installAutoSaveOnFocusLost(spnPaddingRight, this::applyPaddingChange);
+        installAutoSaveOnFocusLost(spnPaddingTop, this::applyPaddingChange);
+        installAutoSaveOnFocusLost(spnPaddingBottom, this::applyPaddingChange);
 
         addFormRow("L:", spnPaddingLeft, "R:", spnPaddingRight);
         addFormRow("T:", spnPaddingTop, "B:", spnPaddingBottom);
@@ -424,20 +449,24 @@ public class UIDesignerPanel extends JPanel {
 
         txtText = new JTextField(15);
         txtText.addActionListener(e -> applyTextChange());
+        installAutoSaveOnFocusLost(txtText, this::applyTextChange);
         addFormRowTo(textPropsPanel, "Text:", txtText);
 
         spnFontSize = new JSpinner(new SpinnerNumberModel(16.0, 1.0, 200.0, 1.0));
         spnFontSize.addChangeListener(e -> applyTextChange());
+        installAutoSaveOnFocusLost(spnFontSize, this::applyTextChange);
         addFormRowTo(textPropsPanel, "Font Size:", spnFontSize);
 
         cboTextAlign = new JComboBox<>(new String[]{"left", "center", "right"});
         cboTextAlign.addActionListener(e -> applyTextChange());
+        installAutoSaveOnFocusLost(cboTextAlign, null);
         addFormRowTo(textPropsPanel, "Align:", cboTextAlign);
 
         cboFont = new JComboBox<>();
         cboFont.addItem("(default)");
         loadFontNames();
         cboFont.addActionListener(e -> applyTextChange());
+        installAutoSaveOnFocusLost(cboFont, null);
         addFormRowTo(textPropsPanel, "Font:", cboFont);
 
         textPropsPanel.setVisible(false);
@@ -451,6 +480,7 @@ public class UIDesignerPanel extends JPanel {
 
         txtButtonText = new JTextField(15);
         txtButtonText.addActionListener(e -> applyButtonTextChange());
+        installAutoSaveOnFocusLost(txtButtonText, this::applyButtonTextChange);
         addFormRowTo(buttonPropsPanel, "Button Text:", txtButtonText);
 
         buttonPropsPanel.setVisible(false);
@@ -466,10 +496,12 @@ public class UIDesignerPanel extends JPanel {
         cboSprite.addItem("(none)");
         loadSpriteNames();
         cboSprite.addActionListener(e -> applySpriteChange());
+        installAutoSaveOnFocusLost(cboSprite, null);
         addFormRowTo(imagePropsPanel, "Sprite:", cboSprite);
 
         txtImagePath = new JTextField(15);
         txtImagePath.addActionListener(e -> applyImagePathChange());
+        installAutoSaveOnFocusLost(txtImagePath, this::applyImagePathChange);
         addFormRowTo(imagePropsPanel, "Image Path:", txtImagePath);
 
         imagePropsPanel.setVisible(false);
@@ -1292,6 +1324,8 @@ public class UIDesignerPanel extends JPanel {
 
         targetCombo.addActionListener(e -> applyConstraintChange());
         sideCombo.addActionListener(e -> applyConstraintChange());
+        installAutoSaveOnFocusLost(targetCombo, null);
+        installAutoSaveOnFocusLost(sideCombo, null);
     }
 
     private void addFormRowTo(JPanel panel, String label, JComponent field) {
@@ -1305,6 +1339,49 @@ public class UIDesignerPanel extends JPanel {
         row.add(field, BorderLayout.CENTER);
         row.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
         panel.add(row);
+    }
+
+    private void installAutoSaveOnFocusLost(JComponent component, Runnable beforeSave) {
+        component.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent e) {
+                if (beforeSave != null) {
+                    if (component instanceof JSpinner) {
+                        try {
+                            ((JSpinner) component).commitEdit();
+                        } catch (java.text.ParseException ignored) {
+                        }
+                    }
+                    beforeSave.run();
+                }
+                autoSaveIfDirty();
+            }
+        });
+
+        if (component instanceof JSpinner) {
+            JComponent editor = ((JSpinner) component).getEditor();
+            if (editor instanceof JSpinner.DefaultEditor) {
+                ((JSpinner.DefaultEditor) editor).getTextField().addFocusListener(new FocusAdapter() {
+                    @Override
+                    public void focusLost(FocusEvent e) {
+                        try {
+                            ((JSpinner) component).commitEdit();
+                        } catch (java.text.ParseException ignored) {
+                        }
+                        if (beforeSave != null) {
+                            beforeSave.run();
+                        }
+                        autoSaveIfDirty();
+                    }
+                });
+            }
+        }
+    }
+
+    private void autoSaveIfDirty() {
+        if (dirty) {
+            saveDocument();
+        }
     }
 
     // ========================================================================

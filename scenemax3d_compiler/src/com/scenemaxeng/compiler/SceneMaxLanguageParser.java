@@ -616,6 +616,36 @@ public class SceneMaxLanguageParser implements IParser {
                     }
                     cmd.widgetPath = widgetPath.toString();
                     return cmd;
+                } else if (uiCtx.ui_message() != null) {
+                    SceneMaxParser.Ui_messageContext msgCtx = uiCtx.ui_message();
+                    List<SceneMaxParser.Var_declContext> pathParts = msgCtx.ui_dot_path().var_decl();
+                    if (pathParts.size() < 2) return null;
+
+                    UIMessageCommand cmd = new UIMessageCommand();
+                    cmd.messageExpr = msgCtx.logical_expression(0);
+                    cmd.durationExpr = msgCtx.logical_expression(1);
+                    for (SceneMaxParser.Ui_text_effect_flagContext effectCtx : msgCtx.ui_text_effect().ui_text_effect_flag()) {
+                        cmd.effectNames.add(effectCtx.var_decl().getText());
+                    }
+                    int widgetStartIndex;
+
+                    if (pathParts.size() == 2 || pathParts.get(0).getText().toLowerCase().startsWith("layer")) {
+                        cmd.uiName = null;
+                        cmd.layerName = pathParts.get(0).getText();
+                        widgetStartIndex = 1;
+                    } else {
+                        cmd.uiName = pathParts.get(0).getText();
+                        cmd.layerName = pathParts.get(1).getText();
+                        widgetStartIndex = 2;
+                    }
+
+                    StringBuilder widgetPath = new StringBuilder();
+                    for (int i = widgetStartIndex; i < pathParts.size(); i++) {
+                        if (widgetPath.length() > 0) widgetPath.append(".");
+                        widgetPath.append(pathParts.get(i).getText());
+                    }
+                    cmd.widgetPath = widgetPath.toString();
+                    return cmd;
                 }
 
                 return null;

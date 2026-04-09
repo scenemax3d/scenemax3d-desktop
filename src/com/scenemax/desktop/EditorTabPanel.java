@@ -640,6 +640,21 @@ public class EditorTabPanel extends JPanel {
         }
     }
 
+    public void markTabClean(String filePath) {
+        if (filePath == null) return;
+        String normalizedPath = new File(filePath).getAbsolutePath();
+        for (TabData tab : tabs) {
+            if (tab.filePath.equals(normalizedPath)) {
+                tab.dirty = false;
+                TabButton btn = tabButtons.get(tab.filePath);
+                if (btn != null) {
+                    btn.updateTitle();
+                }
+                break;
+            }
+        }
+    }
+
     public boolean isSuppressingDocumentEvents() {
         return suppressDocumentEvents;
     }
