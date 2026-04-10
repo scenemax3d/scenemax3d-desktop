@@ -213,6 +213,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private DungeonCameraAppState dungeonCameraState = null;
     private FollowCameraAppState followCameraState = null;
     private FightingCameraAppState fightingCameraState = null;
+    private GameplayCameraAppState gameplayCameraState = null;
     private ExecutorService executorService = null;
     private RunTimeVarDef cameraRuntimeVarDef = null;
     private int eventHandlersCount;
@@ -220,6 +221,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private Logger logger;
     private EffekseerRenderProcessor effekseerRenderProcessor;
     private final Map<String, RuntimeCinematicRig> cinematicRigCache = new HashMap<>();
+    private int activeCinematicCameraCount = 0;
+    private final CameraModifierManager cameraModifierManager = new CameraModifierManager();
+    private RuntimeCameraSystemValue activeCameraSystemValue = null;
 
     // UI system manager for .smui documents
     private com.scenemaxeng.common.ui.widget.UIManager uiManager;
@@ -1220,6 +1224,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if(action instanceof VariableAssignmentCommand) {
             VariableAssignmentCommand cmd= (VariableAssignmentCommand)action;
             VariableAssignmentController ctl = new VariableAssignmentController(this,scope,prg,cmd);
+            scope.add(ctl);
+        } else if(action instanceof CameraModifierApplyCommand) {
+            CameraModifierApplyController ctl = new CameraModifierApplyController(this, prg, scope, (CameraModifierApplyCommand) action);
             scope.add(ctl);
         } else if(action instanceof CameraSystemAssignmentCommand) {
             CameraSystemAssignmentController ctl = new CameraSystemAssignmentController(this,prg,scope,(CameraSystemAssignmentCommand) action);
@@ -3975,6 +3982,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
           if(fightingCameraState!=null) {
               fightingCameraState.update(tpf);
           }
+          if(gameplayCameraState!=null) {
+              gameplayCameraState.update(tpf);
+          }
 
         if (this.switchStateCode != null) {
             this.switchState();
@@ -5305,6 +5315,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     public void setChaseCameraOn(String targetVar, int varType, ChaseCameraCommand cmd) {
+        if (isCinematicCameraPlaying()) {
+            return;
+        }
 
         turnOffCameraStates();
 
@@ -6005,6 +6018,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     public void setFollowCameraOn(SceneMaxScope scope, String var, VariableDef vd, FpsCameraCommand cmd) {
+        if (isCinematicCameraPlaying()) {
+            return;
+        }
         // turn off existing camera states
         turnOffCameraStates();
 
@@ -6016,6 +6032,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     public void setDungeonCameraOn(SceneMaxScope scope, String var, VariableDef vd, FpsCameraCommand cmd) {
+        if (isCinematicCameraPlaying()) {
+            return;
+        }
 
         // turn off existing camera states
         turnOffCameraStates();
@@ -6027,8 +6046,21 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     public void setFightingCameraOn(SceneMaxScope scope, RuntimeCameraSystemValue settings) {
+        if (isCinematicCameraPlaying()) {
+            return;
+        }
         turnOffCameraStates();
+        activeCameraSystemValue = settings;
         fightingCameraState = new FightingCameraAppState(this, scope, settings);
+    }
+
+    public void setGameplayCameraOn(SceneMaxScope scope, RuntimeCameraSystemValue settings) {
+        if (isCinematicCameraPlaying()) {
+            return;
+        }
+        turnOffCameraStates();
+        activeCameraSystemValue = settings;
+        gameplayCameraState = new GameplayCameraAppState(this, scope, settings);
     }
 
     public void turnOffCameraStates() {
@@ -6037,6 +6069,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         setDungeonCameraOff();
         setFollowCameraOff();
         setFightingCameraOff();
+        setGameplayCameraOff();
+        cameraModifierManager.clear();
+        activeCameraSystemValue = null;
     }
 
     private void clearCinematicRigCache() {
@@ -6265,7 +6300,17 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
     }
 
+    private void setGameplayCameraOff() {
+        if(gameplayCameraState!=null) {
+            gameplayCameraState.cleanup();
+            gameplayCameraState = null;
+        }
+    }
+
     public void setFpsCameraOn(String var, VariableDef vd, Vector3f offsetPos, Vector3f offsetRot) {
+        if (isCinematicCameraPlaying()) {
+            return;
+        }
 
         turnOffCameraStates();// turn off chase camera if its activated
         Node sp = (Node) getEntitySpatial(var, vd.varType);
@@ -6298,6 +6343,116 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     public void setFpsCameraOff() {
         //this.flyCam.setEnabled(false);
+    }
+
+    public void onCinematicCameraStarted() {
+        activeCinematicCameraCount++;
+    }
+
+    public void onCinematicCameraStopped() {
+        if (activeCinematicCameraCount > 0) {
+            activeCinematicCameraCount--;
+        }
+    }
+
+    public boolean isCinematicCameraPlaying() {
+        return activeCinematicCameraCount > 0;
+    }
+
+    public void applyCameraModifier(RuntimeCameraSystemValue targetSystem,
+                                    RuntimeCameraModifierValue modifier,
+                                    Map<String, Float> overrides,
+                                    String targetVarName,
+                                    int targetVarLine) {
+        if (activeCameraSystemValue == null) {
+            return;
+        }
+        if (activeCameraSystemValue != targetSystem) {
+            return;
+        }
+
+        RuntimeCameraModifierValue finalValue = modifier.copy();
+        applyCameraModifierOverrides(finalValue, overrides);
+        cameraModifierManager.add(finalValue);
+    }
+
+    public void applySystemCameraFrame(Vector3f basePos, Vector3f baseLookAt, float baseFov, float tpf) {
+        Vector3f finalPos = basePos.clone();
+        Vector3f finalLookAt = baseLookAt.clone();
+        float finalFov = baseFov;
+
+        if (cameraModifierManager.hasActive()) {
+            CameraModifierManager.CameraModifierFrame frame = cameraModifierManager.update(tpf, basePos, baseLookAt);
+            finalPos.addLocal(frame.positionOffset);
+            finalLookAt.addLocal(frame.lookAtOffset);
+            finalFov += frame.fovOffset;
+
+            Vector3f direction = finalLookAt.subtract(finalPos).normalizeLocal();
+            if (direction.lengthSquared() < FastMath.ZERO_TOLERANCE) {
+                direction.set(Vector3f.UNIT_Z);
+            }
+            Quaternion baseRotation = new Quaternion();
+            baseRotation.lookAt(direction, Vector3f.UNIT_Y);
+            Quaternion modifierRotation = new Quaternion().fromAngles(
+                    frame.rxDegrees * FastMath.DEG_TO_RAD,
+                    frame.ryDegrees * FastMath.DEG_TO_RAD,
+                    frame.rzDegrees * FastMath.DEG_TO_RAD);
+            getCamera().setLocation(finalPos);
+            getCamera().setRotation(baseRotation.mult(modifierRotation));
+        } else {
+            getCamera().setLocation(finalPos);
+            getCamera().lookAt(finalLookAt, Vector3f.UNIT_Y);
+        }
+
+        float aspect = getCamera().getHeight() == 0 ? 1f : (float) getCamera().getWidth() / (float) getCamera().getHeight();
+        getCamera().setFrustumPerspective(finalFov, aspect, getCamera().getFrustumNear(), getCamera().getFrustumFar());
+    }
+
+    private void applyCameraModifierOverrides(RuntimeCameraModifierValue value, Map<String, Float> overrides) {
+        if (overrides == null) {
+            return;
+        }
+        for (Map.Entry<String, Float> entry : overrides.entrySet()) {
+            String key = entry.getKey();
+            Float overrideValue = entry.getValue();
+            if (overrideValue == null) {
+                continue;
+            }
+            switch (key) {
+                case "duration":
+                    value.duration = overrideValue;
+                    break;
+                case "amplitude":
+                    value.amplitude = overrideValue;
+                    break;
+                case "frequency":
+                    value.frequency = overrideValue;
+                    break;
+                case "x":
+                    value.x = overrideValue;
+                    break;
+                case "y":
+                    value.y = overrideValue;
+                    break;
+                case "z":
+                    value.z = overrideValue;
+                    break;
+                case "rx":
+                    value.rx = overrideValue;
+                    break;
+                case "ry":
+                    value.ry = overrideValue;
+                    break;
+                case "rz":
+                    value.rz = overrideValue;
+                    break;
+                case "fov":
+                    value.fov = overrideValue;
+                    break;
+                default:
+                    break;
+            }
+        }
     }
 
     public void pauseScene() {

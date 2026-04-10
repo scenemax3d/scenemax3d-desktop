@@ -22,7 +22,6 @@ end do
 when key W is pressed once do 
   
     laser_effect => effects.effekseer.Homing_Laser01_3//Laser02_3
-    //laser_effect.look at (player2)
     laser_effect.play pos (player1)
     
   audio.play "jump1"
@@ -50,6 +49,7 @@ when key W is pressed once do
 		wait 0.1 second
 		//effects.explosion.show : pos (p."mixamorig:RightFoot"), duration 0.5 async
 		run shake_the_world2
+		//
 	end do
 	
   player1.move forward 0.5 for 0.5 seconds async

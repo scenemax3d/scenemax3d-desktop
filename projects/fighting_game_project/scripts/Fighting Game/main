@@ -14,15 +14,11 @@ add "/game_states/game_start",
     "/utils/printing" code
 add "boss_ai", 
     "enemy_ai", 
-    //"opponent_hit", 
-    //"check_opponent_hit", 
-    //"collision", 
     "collision_new", 
     "/states/player1_attack_states", "/states/player2_attack_states", 
     "/states/player1_general_states", "/states/player2_general_states",
     "enemy_knockout" , 
     "/utils/tiger_utils" code
-
 
 player1.idle2 loop
 player2.Idle loop

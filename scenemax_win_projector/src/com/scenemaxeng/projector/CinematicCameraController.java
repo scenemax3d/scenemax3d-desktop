@@ -31,6 +31,7 @@ class CinematicCameraController extends SceneMaxBaseController {
     private Vector3f runtimeRigScale;
     private RunTimeVarDef explicitTarget;
     private RunTimeVarDef rigTarget;
+    private boolean playbackRegistered;
 
     private static class RuntimeTargetReference {
         Vector3f point;
@@ -108,6 +109,8 @@ class CinematicCameraController extends SceneMaxBaseController {
         }
 
         app.turnOffCameraStates();
+        app.onCinematicCameraStarted();
+        playbackRegistered = true;
         logPlaybackSummary();
         applyCameraAtElapsed(0f);
         targetCalculated = true;
@@ -116,21 +119,35 @@ class CinematicCameraController extends SceneMaxBaseController {
     @Override
     public boolean run(float tpf) {
         if (forceStop) {
+            finishPlayback();
             return true;
         }
         if (!targetCalculated) {
             init();
             if (forceStop) {
+                finishPlayback();
                 return true;
             }
         }
         if (StopModelController.forceStopCommands.get(targetVar) != null) {
+            finishPlayback();
             return true;
         }
 
         elapsed = Math.min(totalDuration, elapsed + tpf);
         applyCameraAtElapsed(elapsed);
-        return elapsed >= totalDuration - 1e-6f;
+        boolean finished = elapsed >= totalDuration - 1e-6f;
+        if (finished) {
+            finishPlayback();
+        }
+        return finished;
+    }
+
+    private void finishPlayback() {
+        if (playbackRegistered) {
+            playbackRegistered = false;
+            app.onCinematicCameraStopped();
+        }
     }
 
     private void applyCameraAtElapsed(float timeSeconds) {

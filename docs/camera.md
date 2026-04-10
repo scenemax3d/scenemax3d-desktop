@@ -371,3 +371,100 @@ Supported runtime options:
 - `arena max x`
 - `arena min z`
 - `arena max z`
+
+### Third-Person Camera
+
+```scenemax
+follow_cam = camera.system.third_person(player1, distance 9, height 3, side 1, look ahead 2, damping 7, fov 55, max fov 62)
+camera.system = follow_cam
+```
+
+Useful options:
+
+- `distance`
+- `height`
+- `side`
+- `look ahead`
+- `damping`
+- `fov`
+- `max fov`
+- `min x` / `max x` / `min y` / `max y` / `min z` / `max z`
+
+### First-Person Camera
+
+```scenemax
+fps_cam = camera.system.first_person(player1, height 1.7, depth 0.15, side 0.05, fov 72)
+camera.system = fps_cam
+```
+
+Useful options:
+
+- `height`
+- `depth`
+- `side`
+- `look ahead`
+- `fov`
+- bounds options
+
+### Racing Camera
+
+```scenemax
+race_cam = camera.system.racing(car1, distance 14, height 4, side 0, look ahead 8, zoom_factor 1.2, fov 58, max fov 68)
+camera.system = race_cam
+```
+
+Useful options:
+
+- `distance`
+- `height`
+- `side`
+- `look ahead`
+- `zoom_factor`
+- `min distance`
+- `max distance`
+- `damping`
+- `fov`
+- `max fov`
+
+### Platformer Camera
+
+```scenemax
+platform_cam = camera.system.platformer(player1, distance 10, height 3, look ahead 3, dead zone 2, vertical bias 2.5, damping 6)
+camera.system = platform_cam
+```
+
+Useful options:
+
+- `distance`
+- `height`
+- `side`
+- `look ahead`
+- `dead zone`
+- `vertical bias`
+- `damping`
+- `fov`
+- `max fov`
+
+### RTS Camera
+
+```scenemax
+strategy_cam = camera.system.rts(distance 30, angle 60, height 4, depth 0, damping 5, fov 50, min x -50, max x 50, min z -50, max z 50)
+camera.system = strategy_cam
+```
+
+You can also anchor it to a target at runtime:
+
+```scenemax
+focus_cam = camera.system.rts(commander, distance 28, angle 58)
+camera.system = focus_cam
+```
+
+Useful options:
+
+- `distance`
+- `angle`
+- `height`
+- `depth`
+- `damping`
+- `fov`
+- bounds options
