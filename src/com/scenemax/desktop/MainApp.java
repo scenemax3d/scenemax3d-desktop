@@ -38,6 +38,7 @@ import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 import java.awt.*;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.*;
 import java.awt.geom.*;
 import java.awt.image.BufferedImage;
@@ -1395,6 +1396,9 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
                 } else if (cmd.equals("connect_to_doc")) {
                     //connectToGoogleDoc(filePath);
+                } else if (cmd.equals("copy_absolute_path")) {
+                    String absolutePath = new File(filePath).getAbsolutePath();
+                    Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(absolutePath), null);
                 }
 
             }
@@ -1411,6 +1415,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             popup.addSeparator();
         }
         addScriptsTreePopupMenuItem("Save", "save", popup, popupActionListener, false, true, file);
+        addScriptsTreePopupMenuItem("Copy Absolute Path", "copy_absolute_path", popup, popupActionListener, false, true, file);
         JMenuItem item = addScriptsTreePopupMenuItem("Delete...", "delete", popup, popupActionListener, false, true, file);
         if (item != null) {
             item.setEnabled(!file.getName().equals("main"));

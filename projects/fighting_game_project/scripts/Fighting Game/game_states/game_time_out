@@ -18,8 +18,7 @@ time_out = {
   player2.Idle loop
 	
 	msg2.draw press_space_to_continue : pos (544,450)
-	//msg2.print "Press T To Continue..." : pos (500,460,0) and color = green and font = "yoshi"
-
+	
 	do async
 		wait 2 seconds
 		run set_camera_on_player
@@ -27,6 +26,7 @@ time_out = {
 
   wait for key space to be pressed
   msg2.draw clear
+  gameover.draw clear
 	run restart_game
 
 }

@@ -83,7 +83,7 @@ public class SceneMaxAutoComplete {
         "Gravity",
         "Shadow", "Mode", "Hidden", "Collision", "Shape",
         "Calibrate", "Joints", "Data",
-        "Camera", "Chase", "Follow", "Trailing", "Dungeon",
+        "Camera", "Chase", "Follow", "Trailing", "Dungeon", "Default", "Fighting",
         "Vertical", "Horizontal", "Rotation",
         "Max", "Min", "Distance", "Damping", "Type",
         "SkyBox", "Solar", "System", "Terrain", "Water",

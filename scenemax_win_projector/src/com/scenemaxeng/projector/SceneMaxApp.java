@@ -212,6 +212,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private String projectName = null;
     private DungeonCameraAppState dungeonCameraState = null;
     private FollowCameraAppState followCameraState = null;
+    private FightingCameraAppState fightingCameraState = null;
     private ExecutorService executorService = null;
     private RunTimeVarDef cameraRuntimeVarDef = null;
     private int eventHandlersCount;
@@ -414,17 +415,17 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 assetManager.registerLocator(new File(projFolder+"/resources").getCanonicalPath(), FileLocator.class);
             } else if(workingFolder!=null) {
                 this.logger.log(Level.INFO, "SimpleInitApp workingFolder = "+this.workingFolder);
-                File wf = new File (workingFolder);
-                String projFolder = wf.getParentFile().getParentFile().getAbsolutePath();
-                File f2 = new File(projFolder+"/resources");
-                if(f2.exists()) {
-                    assetsMapping = new AssetsMapping(projFolder + "/resources");
-                    assetManager.registerLocator(f2.getCanonicalPath(), FileLocator.class);
+                File projectRoot = resolveRuntimeProjectRoot();
+                File resourcesFolder = resolveRuntimeResourcesFolder();
+                if (projectRoot != null && resourcesFolder != null && resourcesFolder.isDirectory()) {
+                    String projFolder = projectRoot.getAbsolutePath();
+                    assetsMapping = new AssetsMapping(resourcesFolder.getAbsolutePath());
+                    assetManager.registerLocator(resourcesFolder.getCanonicalPath(), FileLocator.class);
+                    assetsMapping.loadCinematicsFromProject(projFolder);
                 }
                 if (assetsMapping == null) {
                     assetsMapping = new AssetsMapping();
                 }
-                assetsMapping.loadCinematicsFromProject(projFolder);
             }
 
             if(assetsMapping==null) {
@@ -1219,6 +1220,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if(action instanceof VariableAssignmentCommand) {
             VariableAssignmentCommand cmd= (VariableAssignmentCommand)action;
             VariableAssignmentController ctl = new VariableAssignmentController(this,scope,prg,cmd);
+            scope.add(ctl);
+        } else if(action instanceof CameraSystemAssignmentCommand) {
+            CameraSystemAssignmentController ctl = new CameraSystemAssignmentController(this,prg,scope,(CameraSystemAssignmentCommand) action);
             scope.add(ctl);
 
         } else if(action instanceof PrintStatementCommand) {
@@ -3968,6 +3972,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
           if(followCameraState!=null) {
               followCameraState.update(tpf);
           }
+          if(fightingCameraState!=null) {
+              fightingCameraState.update(tpf);
+          }
 
         if (this.switchStateCode != null) {
             this.switchState();
@@ -6019,11 +6026,17 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     }
 
+    public void setFightingCameraOn(SceneMaxScope scope, RuntimeCameraSystemValue settings) {
+        turnOffCameraStates();
+        fightingCameraState = new FightingCameraAppState(this, scope, settings);
+    }
+
     public void turnOffCameraStates() {
         setChaseCameraOff();
         setAttachCameraOff();
         setDungeonCameraOff();
         setFollowCameraOff();
+        setFightingCameraOff();
     }
 
     private void clearCinematicRigCache() {
@@ -6242,6 +6255,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         if(dungeonCameraState!=null) {
             getStateManager().detach(dungeonCameraState);
             dungeonCameraState=null;
+        }
+    }
+
+    private void setFightingCameraOff() {
+        if(fightingCameraState!=null) {
+            fightingCameraState.cleanup();
+            fightingCameraState = null;
         }
     }
 
@@ -8002,18 +8022,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             if (projectName != null && !projectName.isBlank()) {
                 return new File("./projects/" + projectName + "/resources").getCanonicalFile();
             }
-            if (workingFolder != null && !workingFolder.isBlank()) {
-                File folder = new File(workingFolder);
-                if (folder.isFile()) {
-                    folder = folder.getParentFile();
-                }
-                File current = folder.getCanonicalFile();
-                while (current != null) {
-                    File resources = new File(current, "resources");
-                    if (resources.isDirectory()) {
-                        return resources;
-                    }
-                    current = current.getParentFile();
+            File projectRoot = resolveRuntimeProjectRoot();
+            if (projectRoot != null) {
+                File resources = new File(projectRoot, "resources").getCanonicalFile();
+                if (resources.isDirectory()) {
+                    return resources;
                 }
             }
             File local = new File("./resources").getCanonicalFile();
@@ -8021,6 +8034,33 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } catch (Exception ex) {
             return null;
         }
+    }
+
+    private File resolveRuntimeProjectRoot() {
+        try {
+            if (projectName != null && !projectName.isBlank()) {
+                File projectFolder = new File("./projects/" + projectName).getCanonicalFile();
+                return projectFolder.isDirectory() ? projectFolder : null;
+            }
+            if (workingFolder == null || workingFolder.isBlank()) {
+                return null;
+            }
+            File folder = new File(workingFolder);
+            if (folder.isFile()) {
+                folder = folder.getParentFile();
+            }
+            File current = folder != null ? folder.getCanonicalFile() : null;
+            while (current != null) {
+                File resources = new File(current, "resources");
+                if (resources.isDirectory()) {
+                    return current;
+                }
+                current = current.getParentFile();
+            }
+        } catch (Exception ex) {
+            return null;
+        }
+        return null;
     }
 
     public void loadEffekseerEffect(EffekseerInst inst) {

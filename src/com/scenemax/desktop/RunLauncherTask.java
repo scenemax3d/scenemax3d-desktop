@@ -82,8 +82,9 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
     private void saveScript() {
 
         prg=prg.replaceAll("\r","");
-        if(scriptFolder!=null) {
-            prg = "//$[project]=" + scriptFolder.getParentFile().getParentFile().getName() + ";" + prg;
+        String projectName = resolveProjectName();
+        if(projectName != null && !projectName.isBlank()) {
+            prg = "//$[project]=" + projectName + ";" + prg;
         }
         if(sourceScriptRelativePath!=null && !sourceScriptRelativePath.isBlank()) {
             prg = "//$[source_rel]=" + sourceScriptRelativePath + ";" + prg;
@@ -97,6 +98,22 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             e.printStackTrace();
         }
 
+    }
+
+    private String resolveProjectName() {
+        File current = sourceScriptFile != null ? sourceScriptFile.getParentFile() : scriptFolder;
+        while (current != null) {
+            File resourcesFolder = new File(current, "resources");
+            File scriptsFolder = new File(current, "scripts");
+            if (resourcesFolder.isDirectory() && scriptsFolder.isDirectory()) {
+                return current.getName();
+            }
+            current = current.getParentFile();
+        }
+        if (scriptFolder != null && scriptFolder.getParentFile() != null && scriptFolder.getParentFile().getParentFile() != null) {
+            return scriptFolder.getParentFile().getParentFile().getName();
+        }
+        return null;
     }
 
 

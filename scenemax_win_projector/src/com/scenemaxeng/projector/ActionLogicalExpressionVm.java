@@ -103,6 +103,7 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
         LOAD_VARIABLE_FIELD,
         LOAD_VARIABLE_DATA_FIELD,
         LOAD_FUNCTION_VALUE,
+        LOAD_CAMERA_SYSTEM_VALUE,
         LOAD_EXPR_POINTER,
         LOAD_ARRAY_VALUE,
         LOAD_ARRAY_LENGTH,
@@ -372,6 +373,11 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                 return null;
             }
 
+            if (ctx.camera_system_expr() != null) {
+                code.add(new Instruction(OpCode.LOAD_CAMERA_SYSTEM_VALUE, ctx.camera_system_expr(), line));
+                return null;
+            }
+
             if (ctx.logical_expression_pointer() != null) {
                 String varName = ctx.logical_expression_pointer().var_decl().getText();
                 code.add(new Instruction(OpCode.LOAD_EXPR_POINTER, varName, line));
@@ -503,6 +509,9 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                         break;
                     case LOAD_FUNCTION_VALUE:
                         pushValue(stack, loadFunctionValue(scope, (SceneMaxParser.Function_valueContext) ins.a, ins.line));
+                        break;
+                    case LOAD_CAMERA_SYSTEM_VALUE:
+                        pushValue(stack, loadCameraSystemValue(scope, (SceneMaxParser.Camera_system_exprContext) ins.a, ins.line));
                         break;
                     case LOAD_EXPR_POINTER:
                         pushValue(stack, loadExpressionPointer(scope, (String) ins.a, ins.line));
@@ -689,6 +698,101 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
             }
             app.handleRuntimeError("Line: " + line + ", " + fi.runtimeError);
             return null;
+        }
+
+        private Object loadCameraSystemValue(SceneMaxScope scope, SceneMaxParser.Camera_system_exprContext ctx, int line) {
+            String systemType = ctx.res_var_decl().getText();
+            if (!RuntimeCameraSystemValue.TYPE_FIGHTING.equalsIgnoreCase(systemType)) {
+                app.handleRuntimeError("Line " + line + ": Unsupported camera system '" + systemType + "'");
+                return null;
+            }
+
+            SceneMaxParser.Camera_system_argsContext argsCtx = ctx.camera_system_args();
+            if (argsCtx == null) {
+                app.handleRuntimeError("Line " + line + ": camera.system.fighting requires player and opponent");
+                return null;
+            }
+
+            RuntimeCameraSystemValue value = new RuntimeCameraSystemValue();
+            value.systemType = systemType.toLowerCase();
+            value.playerVar = argsCtx.var_decl(0).getText();
+            value.opponentVar = argsCtx.var_decl(1).getText();
+
+            if (argsCtx.camera_system_option() != null) {
+                for (SceneMaxParser.Camera_system_optionContext option : argsCtx.camera_system_option()) {
+                    if (option.camera_system_depth_option() != null) {
+                        value.depth = evaluateFloat(scope, option.camera_system_depth_option().logical_expression());
+                    } else if (option.camera_system_height_option() != null) {
+                        value.height = evaluateFloat(scope, option.camera_system_height_option().logical_expression());
+                    } else if (option.camera_system_side_option() != null) {
+                        String key = option.camera_system_side_option().ID().getText();
+                        if ("side".equalsIgnoreCase(key)) {
+                            value.side = evaluateFloat(scope, option.camera_system_side_option().logical_expression());
+                        }
+                    } else if (option.camera_system_min_distance_option() != null) {
+                        value.minDistance = evaluateFloat(scope, option.camera_system_min_distance_option().logical_expression());
+                    } else if (option.camera_system_max_distance_option() != null) {
+                        value.maxDistance = evaluateFloat(scope, option.camera_system_max_distance_option().logical_expression());
+                    } else if (option.camera_system_zoom_factor_option() != null) {
+                        String key = option.camera_system_zoom_factor_option().ID().getText();
+                        if ("zoom_factor".equalsIgnoreCase(key) || "zoomfactor".equalsIgnoreCase(key)) {
+                            value.zoomFactor = evaluateFloat(scope, option.camera_system_zoom_factor_option().logical_expression());
+                        }
+                    } else if (option.camera_system_damping_option() != null) {
+                        value.damping = evaluateFloat(scope, option.camera_system_damping_option().logical_expression());
+                    } else if (option.camera_system_look_ahead_option() != null) {
+                        String key = option.camera_system_look_ahead_option().ID().getText();
+                        if ("ahead".equalsIgnoreCase(key)) {
+                            value.lookAhead = evaluateFloat(scope, option.camera_system_look_ahead_option().logical_expression());
+                        }
+                    } else if (option.camera_system_fov_option() != null) {
+                        String key = option.camera_system_fov_option().ID().getText();
+                        if ("fov".equalsIgnoreCase(key)) {
+                            value.fov = evaluateFloat(scope, option.camera_system_fov_option().logical_expression());
+                        }
+                    } else if (option.camera_system_max_fov_option() != null) {
+                        String key = option.camera_system_max_fov_option().ID().getText();
+                        if ("fov".equalsIgnoreCase(key)) {
+                            value.maxFov = evaluateFloat(scope, option.camera_system_max_fov_option().logical_expression());
+                        }
+                    } else if (option.camera_system_arena_min_x_option() != null) {
+                        String key = option.camera_system_arena_min_x_option().ID().getText();
+                        if ("arena".equalsIgnoreCase(key)) {
+                            value.arenaMinX = Float.valueOf(evaluateFloat(scope, option.camera_system_arena_min_x_option().logical_expression()));
+                        }
+                    } else if (option.camera_system_arena_max_x_option() != null) {
+                        String key = option.camera_system_arena_max_x_option().ID().getText();
+                        if ("arena".equalsIgnoreCase(key)) {
+                            value.arenaMaxX = Float.valueOf(evaluateFloat(scope, option.camera_system_arena_max_x_option().logical_expression()));
+                        }
+                    } else if (option.camera_system_arena_min_z_option() != null) {
+                        String key = option.camera_system_arena_min_z_option().ID().getText();
+                        if ("arena".equalsIgnoreCase(key)) {
+                            value.arenaMinZ = Float.valueOf(evaluateFloat(scope, option.camera_system_arena_min_z_option().logical_expression()));
+                        }
+                    } else if (option.camera_system_arena_max_z_option() != null) {
+                        String key = option.camera_system_arena_max_z_option().ID().getText();
+                        if ("arena".equalsIgnoreCase(key)) {
+                            value.arenaMaxZ = Float.valueOf(evaluateFloat(scope, option.camera_system_arena_max_z_option().logical_expression()));
+                        }
+                    }
+                }
+            }
+
+            if (value.maxDistance < value.minDistance) {
+                float temp = value.maxDistance;
+                value.maxDistance = value.minDistance;
+                value.minDistance = temp;
+            }
+            if (value.maxFov < value.fov) {
+                value.maxFov = value.fov;
+            }
+
+            return value;
+        }
+
+        private float evaluateFloat(SceneMaxScope scope, SceneMaxParser.Logical_expressionContext expr) {
+            return (float) toDouble(execute(compileCached(expr), scope, new ArrayDeque<Object>(16)));
         }
 
         private static Object loadExpressionPointer(SceneMaxScope scope, String varName, int line) {

@@ -24,6 +24,7 @@ public class ShaderDocument {
     private float transparency = 0.05f;
     private float edgeWidth = 0.15f;
     private float scrollSpeed = 0.35f;
+    private float previewScale = 1.0f;
     private String texturePath = "";
     private boolean useOriginalTexture = true;
     private String previewModelName = "";
@@ -104,6 +105,14 @@ public class ShaderDocument {
         this.scrollSpeed = scrollSpeed;
     }
 
+    public float getPreviewScale() {
+        return previewScale;
+    }
+
+    public void setPreviewScale(float previewScale) {
+        this.previewScale = previewScale > 0f ? previewScale : 1.0f;
+    }
+
     public String getTexturePath() {
         return texturePath;
     }
@@ -139,6 +148,7 @@ public class ShaderDocument {
         copy.transparency = transparency;
         copy.edgeWidth = edgeWidth;
         copy.scrollSpeed = scrollSpeed;
+        copy.previewScale = previewScale;
         copy.texturePath = texturePath;
         copy.useOriginalTexture = useOriginalTexture;
         copy.previewModelName = previewModelName;
@@ -158,6 +168,7 @@ public class ShaderDocument {
         root.put("transparency", transparency);
         root.put("edgeWidth", edgeWidth);
         root.put("scrollSpeed", scrollSpeed);
+        root.put("previewScale", previewScale);
         root.put("texture", texturePath);
         root.put("useOriginalTexture", useOriginalTexture);
         root.put("previewModelName", previewModelName);
@@ -218,6 +229,7 @@ public class ShaderDocument {
         doc.transparency = (float) root.optDouble("transparency", 0.05);
         doc.edgeWidth = (float) root.optDouble("edgeWidth", 0.15);
         doc.scrollSpeed = (float) root.optDouble("scrollSpeed", 0.35);
+        doc.previewScale = Math.max(0.01f, (float) root.optDouble("previewScale", 1.0));
         doc.texturePath = root.optString("texture", "");
         doc.useOriginalTexture = root.optBoolean("useOriginalTexture", true);
         doc.previewModelName = root.optString("previewModelName", "");
@@ -332,6 +344,15 @@ public class ShaderDocument {
                 "        Boolean UseOriginalTexture : " + useOriginalTexture + "\n" +
                 "        Boolean VertexColor : false\n" +
                 "        Texture2D ColorMap\n" +
+                "\n" +
+                "        // For hardware skinning\n" +
+                "        Int NumberOfBones\n" +
+                "        Matrix4Array BoneMatrices\n" +
+                "\n" +
+                "        // For Morph animation\n" +
+                "        FloatArray MorphWeights\n" +
+                "        Int NumberOfMorphTargets\n" +
+                "        Int NumberOfTargetsBuffers\n" +
                 "    }\n" +
                 "\n" +
                 "    Technique {\n" +
@@ -346,6 +367,7 @@ public class ShaderDocument {
                 "        Defines {\n" +
                 "            USE_TEXTURE : ColorMap\n" +
                 "            USE_VERTEX_COLOR : VertexColor\n" +
+                "            NUM_BONES : NumberOfBones\n" +
                 "        }\n" +
                 "\n" +
                 "        RenderState {\n" +
@@ -376,7 +398,10 @@ public class ShaderDocument {
     }
 
     private String buildVertexShader() {
-        return "uniform mat4 g_WorldViewProjectionMatrix;\n" +
+        return "#import \"Common/ShaderLib/GLSLCompat.glsllib\"\n" +
+                "#import \"Common/ShaderLib/Skinning.glsllib\"\n" +
+                "#import \"Common/ShaderLib/Instancing.glsllib\"\n" +
+                "\n" +
                 "attribute vec3 inPosition;\n" +
                 "attribute vec2 inTexCoord;\n" +
                 "attribute vec3 inNormal;\n" +
@@ -388,12 +413,19 @@ public class ShaderDocument {
                 "varying vec4 vColor;\n" +
                 "\n" +
                 "void main() {\n" +
+                "    vec4 modelSpacePos = vec4(inPosition, 1.0);\n" +
+                "    vec3 modelSpaceNormal = inNormal;\n" +
+                "\n" +
+                "    #ifdef NUM_BONES\n" +
+                "    Skinning_Compute(modelSpacePos, modelSpaceNormal);\n" +
+                "    #endif\n" +
+                "\n" +
                 "    vUv = inTexCoord;\n" +
-                "    float normalLen = dot(inNormal, inNormal);\n" +
-                "    vWorldNormal = normalLen > 0.0001 ? normalize(inNormal) : vec3(0.0, 0.0, 1.0);\n" +
-                "    vLocalPos = inPosition;\n" +
+                "    float normalLen = dot(modelSpaceNormal, modelSpaceNormal);\n" +
+                "    vWorldNormal = normalLen > 0.0001 ? normalize(modelSpaceNormal) : vec3(0.0, 0.0, 1.0);\n" +
+                "    vLocalPos = modelSpacePos.xyz;\n" +
                 "    vColor = inColor;\n" +
-                "    gl_Position = g_WorldViewProjectionMatrix * vec4(inPosition, 1.0);\n" +
+                "    gl_Position = TransformWorldViewProjection(modelSpacePos);\n" +
                 "}\n";
     }
 

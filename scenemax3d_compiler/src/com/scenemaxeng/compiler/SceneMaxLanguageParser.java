@@ -1721,6 +1721,17 @@ public class SceneMaxLanguageParser implements IParser {
                 return cmd;
             }
 
+            public StatementDef visitCameraSystemAssignment(SceneMaxParser.CameraSystemAssignmentContext ctx) {
+                CameraSystemAssignmentCommand cmd = new CameraSystemAssignmentCommand();
+                cmd.targetVar = "camera";
+                if (ctx.camera_system_assignment().camera_system_assignment_value().camera_system_default() != null) {
+                    cmd.resetToDefault = true;
+                } else {
+                    cmd.valueExpr = ctx.camera_system_assignment().camera_system_assignment_value().logical_expression();
+                }
+                return cmd;
+            }
+
             public StatementDef visitInputStatement(SceneMaxParser.InputStatementContext ctx) {
 
                 InputStatementCommand cmd = new InputStatementCommand();
@@ -2156,11 +2167,18 @@ public class SceneMaxLanguageParser implements IParser {
                     String varName = modify_variableContext.res_var_decl().getText();
                     VariableDef variableDef = prg.getVar(varName);
                     if (variableDef == null) {
-                        prg.syntaxErrors.add(_sourceFileName+": line " + ctx.start.getLine() + ", variable '" + varName + "' not exists");
+                        SceneMaxParser.Logical_expressionContext valueExpr = modify_variableContext.var_value_option().single_value_option() != null
+                                ? modify_variableContext.var_value_option().single_value_option().logical_expression()
+                                : null;
+                        if (isCameraSystemValueExpression(valueExpr)) {
+                            variableDef = createImplicitVariableDef(prg, varName);
+                        } else {
+                            prg.syntaxErrors.add(_sourceFileName+": line " + ctx.start.getLine() + ", variable '" + varName + "' not exists");
+                        }
                     }
 
                     cmd.vars.add(variableDef);
-                    if (modify_variableContext.array_accessor() != null) {
+                    if (variableDef != null && modify_variableContext.array_accessor() != null) {
                         variableDef.varType = VariableDef.VAR_TYPE_ARRAY;
                         cmd.arrayIndexes.put(variableDef, modify_variableContext.array_accessor().logical_expression());
                     }
@@ -3509,6 +3527,42 @@ public class SceneMaxLanguageParser implements IParser {
         } else {
             return "";
         }
+    }
+
+    private VariableDef createImplicitVariableDef(ProgramDef program, String varName) {
+        VariableDef vd = new VariableDef();
+        vd.resName = "var";
+        vd.varName = varName;
+        program.vars.add(vd);
+        program.vars_index.put(vd.varName, vd);
+        return vd;
+    }
+
+    private boolean isCameraSystemValueExpression(SceneMaxParser.Logical_expressionContext expr) {
+        if (expr == null || expr.booleanAndExpression().size() != 1) {
+            return false;
+        }
+        SceneMaxParser.BooleanAndExpressionContext andExpr = expr.booleanAndExpression(0);
+        if (andExpr.relationalExpression().size() != 1) {
+            return false;
+        }
+        SceneMaxParser.RelationalExpressionContext relExpr = andExpr.relationalExpression(0);
+        if (relExpr.additiveExpression().size() != 1) {
+            return false;
+        }
+        SceneMaxParser.AdditiveExpressionContext addExpr = relExpr.additiveExpression(0);
+        if (addExpr.multiplicativeExpression().size() != 1) {
+            return false;
+        }
+        SceneMaxParser.MultiplicativeExpressionContext multExpr = addExpr.multiplicativeExpression(0);
+        if (multExpr.unaryExpression().size() != 1) {
+            return false;
+        }
+        SceneMaxParser.UnaryExpressionContext unaryExpr = multExpr.unaryExpression(0);
+        if (unaryExpr.primaryExpression() == null || unaryExpr.primaryExpression().value() == null) {
+            return false;
+        }
+        return unaryExpr.primaryExpression().value().camera_system_expr() != null;
     }
 
     private void setParserSourceFileName(String file) {
