@@ -3,6 +3,7 @@ package com.scenemaxeng.projector;
 import com.abware.scenemaxlang.parser.SceneMaxParser;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.VariableAssignmentCommand;
+import com.scenemaxeng.compiler.VariableDeclarationCommand;
 import com.scenemaxeng.compiler.VariableDef;
 
 import java.util.ArrayList;
@@ -86,19 +87,22 @@ public class VariableAssignmentController extends CompositeController {
                 }
 
                 var.value = retval;
-                boolean minSet = false;
-                if (var.varDef.declaration.minExpr != null) {
-                    Object min = new ActionLogicalExpressionVm(var.varDef.declaration.minExpr, this.scope).evaluate();
-                    if ((Double) var.value < (Double) min) {
-                        var.value = min;
-                        minSet = true;
+                VariableDeclarationCommand declaration = var.varDef != null ? var.varDef.declaration : null;
+                if (declaration != null) {
+                    boolean minSet = false;
+                    if (declaration.minExpr != null) {
+                        Object min = new ActionLogicalExpressionVm(declaration.minExpr, this.scope).evaluate();
+                        if ((Double) var.value < (Double) min) {
+                            var.value = min;
+                            minSet = true;
+                        }
                     }
-                }
 
-                if (!minSet && var.varDef.declaration.maxExpr != null) {
-                    Object max = new ActionLogicalExpressionVm(var.varDef.declaration.maxExpr, this.scope).evaluate();
-                    if ((Double) var.value > (Double) max) {
-                        var.value = max;
+                    if (!minSet && declaration.maxExpr != null) {
+                        Object max = new ActionLogicalExpressionVm(declaration.maxExpr, this.scope).evaluate();
+                        if ((Double) var.value > (Double) max) {
+                            var.value = max;
+                        }
                     }
                 }
 

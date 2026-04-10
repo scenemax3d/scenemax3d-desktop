@@ -328,3 +328,46 @@ end do
 ```
 
 This gives you a reusable designer-authored cinematic path that can be replayed around the player with consistent framing.
+
+## Camera Systems
+
+You can create a reusable camera system value and then apply it to the scene camera:
+
+```scenemax
+fight_cam = camera.system.fighting(player1, player2, depth 18, height 5, side 1.5, min distance 12, max distance 28, damping 8)
+camera.system = fight_cam
+```
+
+Only one camera system can be active on a camera at a time. Applying a new one automatically turns the previous system off.
+
+Reset the camera back to its default manual behavior with:
+
+```scenemax
+camera.system = default
+```
+
+### Fighting Camera
+
+The fighting camera keeps two targets framed together and smoothly adjusts position and FOV while preserving a stable side view.
+
+Required arguments:
+
+- `player`
+- `opponent`
+
+Supported runtime options:
+
+- `depth`
+- `height`
+- `side`
+- `min distance`
+- `max distance`
+- `zoom_factor`
+- `damping`
+- `look ahead`
+- `fov`
+- `max fov`
+- `arena min x`
+- `arena max x`
+- `arena min z`
+- `arena max z`

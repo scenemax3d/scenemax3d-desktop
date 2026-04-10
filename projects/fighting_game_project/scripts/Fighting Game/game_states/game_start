@@ -1,5 +1,8 @@
 
 game_start = {
+	
+  camera.system = default
+  
   score=0
   life1=INITIAL_PLAYER_STRENGTH
   life2=INITIAL_PLAYER_STRENGTH

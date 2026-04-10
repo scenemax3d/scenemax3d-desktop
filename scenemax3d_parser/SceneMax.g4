@@ -41,6 +41,7 @@ statement
    | print_statement    # printStatement
    | wait_statement     # waitStatement
    | wait_for_statement # waitForStatement
+   | camera_system_assignment # cameraSystemAssignment
    | stop_statement     # stopBlock
    | return_statement   # returnStatement
    | play_sound         # playSound
@@ -142,6 +143,40 @@ wait_for_options : wait_for_input | wait_for_expression ;
 wait_for_input : input_source To Be Pressed ;
 wait_for_expression : logical_expression ;
 
+camera_system_assignment : Camera '.' System Equals camera_system_assignment_value ;
+camera_system_assignment_value : camera_system_default | logical_expression ;
+camera_system_default : Default ;
+camera_system_expr : Camera '.' System '.' res_var_decl '(' camera_system_args? ')' ;
+camera_system_args : var_decl ',' var_decl (',' camera_system_option (',' camera_system_option)*)? ;
+camera_system_option : camera_system_depth_option
+                     | camera_system_height_option
+                     | camera_system_side_option
+                     | camera_system_min_distance_option
+                     | camera_system_max_distance_option
+                     | camera_system_zoom_factor_option
+                     | camera_system_damping_option
+                     | camera_system_look_ahead_option
+                     | camera_system_fov_option
+                     | camera_system_max_fov_option
+                     | camera_system_arena_min_x_option
+                     | camera_system_arena_max_x_option
+                     | camera_system_arena_min_z_option
+                     | camera_system_arena_max_z_option ;
+camera_system_depth_option : Depth Equals? logical_expression ;
+camera_system_height_option : Height Equals? logical_expression ;
+camera_system_side_option : ID Equals? logical_expression ;
+camera_system_min_distance_option : Min Distance Equals? logical_expression ;
+camera_system_max_distance_option : Max Distance Equals? logical_expression ;
+camera_system_zoom_factor_option : ID Equals? logical_expression ;
+camera_system_damping_option : Damping Equals? logical_expression ;
+camera_system_look_ahead_option : Look ID Equals? logical_expression ;
+camera_system_fov_option : ID Equals? logical_expression ;
+camera_system_max_fov_option : Max ID Equals? logical_expression ;
+camera_system_arena_min_x_option : ID Min X Equals? logical_expression ;
+camera_system_arena_max_x_option : ID Max X Equals? logical_expression ;
+camera_system_arena_min_z_option : ID Min Z Equals? logical_expression ;
+camera_system_arena_max_z_option : ID Max Z Equals? logical_expression ;
+
 using_resource : Using resource_declaration (and_expr resource_declaration)* ;
 resource_declaration : res_var_decl (',' res_var_decl)* (Sprite | Model | Audio) ;
 
@@ -212,6 +247,7 @@ value    :
          number_expr
     |    QUOTED_STRING
     |    BOOLEAN
+    |    camera_system_expr
     |    var_decl
     |    variable_field
     |    variable_data_field
@@ -1048,6 +1084,7 @@ UI : 'UI' | 'ui' | 'Ui' ;
 Load : 'Load' | 'load' ;
 Message : 'Message' | 'message' ;
 TextEffect : 'TextEffect' | 'texteffect' | 'textEffect' ;
+Default : 'Default' | 'default' ;
 Plugins: 'plugins' | 'Plugins' ;
 Switch : 'Switch' | 'switch' ;
 //Car : 'Car' | 'car' ;
