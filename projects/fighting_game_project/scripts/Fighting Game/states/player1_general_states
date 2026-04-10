@@ -1,7 +1,6 @@
 
 player1_slow_motion (tm, frame_count) = {
 
-player1.shader = "dramatic_hit";
 	slow_motion=1
 	do async
 		player2_hit2.show
@@ -16,7 +15,7 @@ player1.shader = "dramatic_hit";
 	player1.animation speed 0.01	for tm seconds when frames > frame_count // 10 times slower
 	wait tm second
 	slow_motion=0
-	player1.shader = "";
+	
 									
 }
 
@@ -27,14 +26,20 @@ when player1_ko == 1 do
 		audio.play "crash1"
   end do
   
-  
+  do async
+    player1.shader = "dramatic_hit";
+	  wait 1 second
+	  player1.shader = "";
+	end do
+		
 	if(rnd(2)==0) {
 		player1.back_death1 at speed of 1.2 : protected
 	} else {
 		player1.right_death1 at speed of 1.2: protected
 	}
 
-	wait 1.5 seconds
+	wait 1 seconds
+	
 	player1.standing_up at speed of 1.2 : protected
 	player1.idle2 loop
 	

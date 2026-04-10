@@ -292,6 +292,8 @@ public class ShaderPreviewApp extends SceneMaxApp {
             previewSpatial = new Geometry("ShaderPreviewBoxFallback", new Box(0.95f, 0.95f, 0.95f));
         }
 
+        applyPreviewScale();
+
         previewContentNode.attachChild(previewSpatial);
         captureOriginalMaterials(previewSpatial);
         centerPreviewContent();
@@ -350,6 +352,15 @@ public class ShaderPreviewApp extends SceneMaxApp {
                 applyMaterialRecursive(child, assetBase, bucket);
             }
         }
+    }
+
+    private void applyPreviewScale() {
+        if (previewSpatial == null || currentDocument == null) {
+            return;
+        }
+        float scale = Math.max(0.1f, currentDocument.getPreviewScale());
+        Vector3f baseScale = previewSpatial.getLocalScale().clone();
+        previewSpatial.setLocalScale(baseScale.mult(scale));
     }
 
     private Material buildPreviewMaterial(String assetBase, Material sourceMaterial) {

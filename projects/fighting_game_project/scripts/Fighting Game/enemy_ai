@@ -114,7 +114,7 @@ opponent_ai (p1, p2) = {
       // Aggressive dash FlyKick
       op_action = 3
       audio.play "kick3"
-      p2.StepForward at speed of 2.5 async
+      //p2.StepForward at speed of 2.5 async
       p2.move forward 0.35 for 0.2 seconds async
       p2.FlyKick at speed of 2.5
       op_action = 0
@@ -124,7 +124,7 @@ opponent_ai (p1, p2) = {
       // Dash HighKick
       op_action = 2
       audio.play "kick2"
-      p2.StepForward at speed of 2.5 async
+      //p2.StepForward at speed of 2.5 async
       p2.move forward 0.3 for 0.2 seconds async
       p2.HighKick at speed of 2.0
       op_action = 0
@@ -136,7 +136,7 @@ opponent_ai (p1, p2) = {
 
   // --- Far range (>= 5.0): always charge — no idle jumping ---
   // Sprint in hard, then hit with a powerful combo
-  p2.StepForward at speed of 2.5 async
+  //p2.StepForward at speed of 2.5 async
   p2.move forward 0.4 for 0.2 seconds async
 
   var far_choice = rnd(3)
@@ -179,7 +179,7 @@ opponent_ai_orig (p1,p2) = {
 	    	run old_fighter_jump(p2)
 	    	return
 	    } 
-	    p2.StepForward at speed of 1.5 async
+	    //p2.StepForward at speed of 1.5 async
 			p2.move forward 0.2 for 0.2 seconds async
 			if(distance(p1,p2)<7) {
 				op_action=3
@@ -220,7 +220,7 @@ opponent_ai_orig (p1,p2) = {
 	    	return
 		  }
       if(dist>5.3) {
-      	p2.StepForward at speed of 1.5 async
+      	//p2.StepForward at speed of 1.5 async
 			  p2.move forward 0.2 for 0.2 seconds async
       }
 //  Hit, CrossPunch, ButterflyKick, FlyKick, Idle, Backflip, HighKick, Knockout,       

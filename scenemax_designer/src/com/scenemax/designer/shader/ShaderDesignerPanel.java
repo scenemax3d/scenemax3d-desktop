@@ -54,6 +54,7 @@ public class ShaderDesignerPanel extends JPanel {
     private JSpinner spnTransparency;
     private JSpinner spnEdgeWidth;
     private JSpinner spnScrollSpeed;
+    private JSpinner spnPreviewScale;
     private JTextField txtTexture;
     private JCheckBox chkUseOriginalTexture;
     private JLabel lblExportPath;
@@ -87,10 +88,22 @@ public class ShaderDesignerPanel extends JPanel {
     }
 
     public void saveDocument() {
+        saveDocument(false);
+    }
+
+    private void saveDocument(boolean showSuccessMessage) {
         try {
             document.save(shaderFile);
             document.exportRuntimeAssets(shaderFile, resourcesFolder);
             dirty = false;
+            if (showSuccessMessage) {
+                String exportTarget = resourcesFolder != null
+                        ? new File(resourcesFolder, "shaders/" + ShaderDocument.getRuntimeName(shaderFile)).getPath()
+                        : "project resources/shaders";
+                JOptionPane.showMessageDialog(this,
+                        "Shader saved successfully.\nExported runtime files to:\n" + exportTarget,
+                        "Shader Saved", JOptionPane.INFORMATION_MESSAGE);
+            }
         } catch (IOException ex) {
             ex.printStackTrace();
             JOptionPane.showMessageDialog(this,
@@ -367,6 +380,15 @@ public class ShaderDesignerPanel extends JPanel {
             }
         });
 
+        spnPreviewScale = createSpinner(1.0, 0.1, 10.0, 0.1);
+        addRow(form, "Preview Scale", spnPreviewScale);
+        spnPreviewScale.addChangeListener(e -> {
+            if (!updatingUi) {
+                document.setPreviewScale(((Double) spnPreviewScale.getValue()).floatValue());
+                markDirtyAndRefresh();
+            }
+        });
+
         txtTexture = new JTextField();
         txtTexture.addActionListener(e -> {
             document.setTexturePath(txtTexture.getText());
@@ -406,7 +428,7 @@ public class ShaderDesignerPanel extends JPanel {
         right.add(params, BorderLayout.CENTER);
 
         JButton btnSave = new JButton("Save Shader");
-        btnSave.addActionListener(e -> saveDocument());
+        btnSave.addActionListener(e -> saveDocument(true));
         right.add(btnSave, BorderLayout.SOUTH);
 
         return right;
@@ -473,6 +495,7 @@ public class ShaderDesignerPanel extends JPanel {
             spnTransparency.setValue((double) document.getTransparency());
             spnEdgeWidth.setValue((double) document.getEdgeWidth());
             spnScrollSpeed.setValue((double) document.getScrollSpeed());
+            spnPreviewScale.setValue((double) document.getPreviewScale());
             txtTexture.setText(document.getTexturePath());
             chkUseOriginalTexture.setSelected(document.isUseOriginalTexture());
             for (Map.Entry<ShaderBlockType, JCheckBox> entry : blockChecks.entrySet()) {
