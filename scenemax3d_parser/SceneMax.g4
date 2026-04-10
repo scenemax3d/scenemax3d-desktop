@@ -146,36 +146,64 @@ wait_for_expression : logical_expression ;
 camera_system_assignment : Camera '.' System Equals camera_system_assignment_value ;
 camera_system_assignment_value : camera_system_default | logical_expression ;
 camera_system_default : Default ;
-camera_system_expr : Camera '.' System '.' res_var_decl '(' camera_system_args? ')' ;
-camera_system_args : var_decl ',' var_decl (',' camera_system_option (',' camera_system_option)*)? ;
+camera_system_expr : camera_system_dual_target_expr
+                   | camera_system_single_target_expr
+                   | camera_system_zero_target_expr ;
+camera_system_dual_target_expr : Camera '.' System '.' res_var_decl '(' var_decl ',' var_decl (',' camera_system_option (',' camera_system_option)*)? ')' ;
+camera_system_single_target_expr : Camera '.' System '.' res_var_decl '(' var_decl (',' camera_system_option (',' camera_system_option)*)? ')' ;
+camera_system_zero_target_expr : Camera '.' System '.' res_var_decl '(' (camera_system_option (',' camera_system_option)*)? ')' ;
 camera_system_option : camera_system_depth_option
                      | camera_system_height_option
                      | camera_system_side_option
+                     | camera_system_distance_option
                      | camera_system_min_distance_option
                      | camera_system_max_distance_option
                      | camera_system_zoom_factor_option
                      | camera_system_damping_option
                      | camera_system_look_ahead_option
+                     | camera_system_dead_zone_option
+                     | camera_system_vertical_bias_option
+                     | camera_system_angle_option
                      | camera_system_fov_option
                      | camera_system_max_fov_option
                      | camera_system_arena_min_x_option
                      | camera_system_arena_max_x_option
                      | camera_system_arena_min_z_option
-                     | camera_system_arena_max_z_option ;
+                     | camera_system_arena_max_z_option
+                     | camera_system_min_x_option
+                     | camera_system_max_x_option
+                     | camera_system_min_y_option
+                     | camera_system_max_y_option
+                     | camera_system_min_z_option
+                     | camera_system_max_z_option ;
 camera_system_depth_option : Depth Equals? logical_expression ;
 camera_system_height_option : Height Equals? logical_expression ;
 camera_system_side_option : ID Equals? logical_expression ;
+camera_system_distance_option : Distance Equals? logical_expression ;
 camera_system_min_distance_option : Min Distance Equals? logical_expression ;
 camera_system_max_distance_option : Max Distance Equals? logical_expression ;
 camera_system_zoom_factor_option : ID Equals? logical_expression ;
 camera_system_damping_option : Damping Equals? logical_expression ;
 camera_system_look_ahead_option : Look ID Equals? logical_expression ;
+camera_system_dead_zone_option : ID ID Equals? logical_expression ;
+camera_system_vertical_bias_option : Vertical ID Equals? logical_expression ;
+camera_system_angle_option : Angle Equals? logical_expression ;
 camera_system_fov_option : ID Equals? logical_expression ;
 camera_system_max_fov_option : Max ID Equals? logical_expression ;
 camera_system_arena_min_x_option : ID Min X Equals? logical_expression ;
 camera_system_arena_max_x_option : ID Max X Equals? logical_expression ;
 camera_system_arena_min_z_option : ID Min Z Equals? logical_expression ;
 camera_system_arena_max_z_option : ID Max Z Equals? logical_expression ;
+camera_system_min_x_option : Min X Equals? logical_expression ;
+camera_system_max_x_option : Max X Equals? logical_expression ;
+camera_system_min_y_option : Min Y Equals? logical_expression ;
+camera_system_max_y_option : Max Y Equals? logical_expression ;
+camera_system_min_z_option : Min Z Equals? logical_expression ;
+camera_system_max_z_option : Max Z Equals? logical_expression ;
+camera_modifier_expr : Camera '.' System '.' Modifiers '.' res_var_decl ;
+camera_modifier_apply : var_decl '.' Apply var_decl (Having camera_modifier_override_list)? ;
+camera_modifier_override_list : camera_modifier_override (and_expr camera_modifier_override)* ;
+camera_modifier_override : res_var_decl (res_var_decl)? Equals? logical_expression ;
 
 using_resource : Using resource_declaration (and_expr resource_declaration)* ;
 resource_declaration : res_var_decl (',' res_var_decl)* (Sprite | Model | Audio) ;
@@ -248,6 +276,7 @@ value    :
     |    QUOTED_STRING
     |    BOOLEAN
     |    camera_system_expr
+    |    camera_modifier_expr
     |    var_decl
     |    variable_field
     |    variable_data_field
@@ -527,6 +556,7 @@ action_operation
    | user_data  # userDataStatement
    | ray_check  # rayCheckStatement
    | attach_to # attachTo
+   | camera_modifier_apply # cameraModifierApply
    | accelerate # accelerateStatement
    | steer # steerStatement
    | brake # brakeStatement
@@ -1085,6 +1115,8 @@ Load : 'Load' | 'load' ;
 Message : 'Message' | 'message' ;
 TextEffect : 'TextEffect' | 'texteffect' | 'textEffect' ;
 Default : 'Default' | 'default' ;
+Modifiers : 'Modifiers' | 'modifiers' ;
+Apply : 'Apply' | 'apply' ;
 Plugins: 'plugins' | 'Plugins' ;
 Switch : 'Switch' | 'switch' ;
 //Car : 'Car' | 'car' ;

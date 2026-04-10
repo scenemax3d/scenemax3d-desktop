@@ -13,6 +13,10 @@ player1_head_hit = {
 	audio.play "hurt1"
 	run shake_the_world async
 	player1.medium_hit1 async
+
+	laser_effect => effects.effekseer.Simple_Sprite_BillBoard
+  laser_effect.play pos (player2)
+    
 	player1.move backward 0.4 for 0.3 seconds
 	player2.data.hand_attack_hit = 0
 	player2.data.foot_attack_hit = 0

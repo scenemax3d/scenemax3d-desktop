@@ -2170,7 +2170,7 @@ public class SceneMaxLanguageParser implements IParser {
                         SceneMaxParser.Logical_expressionContext valueExpr = modify_variableContext.var_value_option().single_value_option() != null
                                 ? modify_variableContext.var_value_option().single_value_option().logical_expression()
                                 : null;
-                        if (isCameraSystemValueExpression(valueExpr)) {
+                        if (isCameraSystemValueExpression(valueExpr) || isCameraModifierValueExpression(valueExpr)) {
                             variableDef = createImplicitVariableDef(prg, varName);
                         } else {
                             prg.syntaxErrors.add(_sourceFileName+": line " + ctx.start.getLine() + ", variable '" + varName + "' not exists");
@@ -2435,6 +2435,28 @@ public class SceneMaxLanguageParser implements IParser {
                 ArrayCommand cmd = new ArrayCommand();
                 cmd.action = ArrayCommand.ArrayAction.Clear;
                 cmd.varName = ctx.array_clear().var_decl().getText();
+
+                return cmd;
+            }
+
+            public ActionStatementBase visitCameraModifierApply(SceneMaxParser.CameraModifierApplyContext ctx) {
+                CameraModifierApplyCommand cmd = new CameraModifierApplyCommand();
+                cmd.targetVar = ctx.camera_modifier_apply().var_decl(0).getText();
+                cmd.varDef = prg.getVar(cmd.targetVar);
+                cmd.targetVarLine = ctx.camera_modifier_apply().var_decl(0).getStart().getLine();
+                cmd.modifierVar = ctx.camera_modifier_apply().var_decl(1).getText();
+                cmd.modifierVarDef = prg.getVar(cmd.modifierVar);
+
+                if (ctx.camera_modifier_apply().camera_modifier_override_list() != null) {
+                    for (SceneMaxParser.Camera_modifier_overrideContext overrideCtx
+                            : ctx.camera_modifier_apply().camera_modifier_override_list().camera_modifier_override()) {
+                        String key = overrideCtx.res_var_decl(0).getText().toLowerCase();
+                        if (overrideCtx.res_var_decl().size() > 1) {
+                            key = key + "_" + overrideCtx.res_var_decl(1).getText().toLowerCase();
+                        }
+                        cmd.overrideExprs.put(key, overrideCtx.logical_expression());
+                    }
+                }
 
                 return cmd;
             }
@@ -3539,30 +3561,40 @@ public class SceneMaxLanguageParser implements IParser {
     }
 
     private boolean isCameraSystemValueExpression(SceneMaxParser.Logical_expressionContext expr) {
+        SceneMaxParser.ValueContext valueCtx = resolveSimpleValueExpression(expr);
+        return valueCtx != null && valueCtx.camera_system_expr() != null;
+    }
+
+    private boolean isCameraModifierValueExpression(SceneMaxParser.Logical_expressionContext expr) {
+        SceneMaxParser.ValueContext valueCtx = resolveSimpleValueExpression(expr);
+        return valueCtx != null && valueCtx.camera_modifier_expr() != null;
+    }
+
+    private SceneMaxParser.ValueContext resolveSimpleValueExpression(SceneMaxParser.Logical_expressionContext expr) {
         if (expr == null || expr.booleanAndExpression().size() != 1) {
-            return false;
+            return null;
         }
         SceneMaxParser.BooleanAndExpressionContext andExpr = expr.booleanAndExpression(0);
         if (andExpr.relationalExpression().size() != 1) {
-            return false;
+            return null;
         }
         SceneMaxParser.RelationalExpressionContext relExpr = andExpr.relationalExpression(0);
         if (relExpr.additiveExpression().size() != 1) {
-            return false;
+            return null;
         }
         SceneMaxParser.AdditiveExpressionContext addExpr = relExpr.additiveExpression(0);
         if (addExpr.multiplicativeExpression().size() != 1) {
-            return false;
+            return null;
         }
         SceneMaxParser.MultiplicativeExpressionContext multExpr = addExpr.multiplicativeExpression(0);
         if (multExpr.unaryExpression().size() != 1) {
-            return false;
+            return null;
         }
         SceneMaxParser.UnaryExpressionContext unaryExpr = multExpr.unaryExpression(0);
         if (unaryExpr.primaryExpression() == null || unaryExpr.primaryExpression().value() == null) {
-            return false;
+            return null;
         }
-        return unaryExpr.primaryExpression().value().camera_system_expr() != null;
+        return unaryExpr.primaryExpression().value();
     }
 
     private void setParserSourceFileName(String file) {

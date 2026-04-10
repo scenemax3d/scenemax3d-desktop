@@ -30,6 +30,12 @@ public class CameraSystemAssignmentController extends SceneMaxBaseController {
         RuntimeCameraSystemValue systemValue = (RuntimeCameraSystemValue) value;
         if (RuntimeCameraSystemValue.TYPE_FIGHTING.equalsIgnoreCase(systemValue.systemType)) {
             app.setFightingCameraOn(this.scope, systemValue);
+        } else if (RuntimeCameraSystemValue.TYPE_THIRD_PERSON.equalsIgnoreCase(systemValue.systemType)
+                || RuntimeCameraSystemValue.TYPE_FIRST_PERSON.equalsIgnoreCase(systemValue.systemType)
+                || RuntimeCameraSystemValue.TYPE_RACING.equalsIgnoreCase(systemValue.systemType)
+                || RuntimeCameraSystemValue.TYPE_PLATFORMER.equalsIgnoreCase(systemValue.systemType)
+                || RuntimeCameraSystemValue.TYPE_RTS.equalsIgnoreCase(systemValue.systemType)) {
+            app.setGameplayCameraOn(this.scope, systemValue);
         } else {
             app.handleRuntimeError("Unsupported camera system '" + systemValue.systemType + "'");
         }

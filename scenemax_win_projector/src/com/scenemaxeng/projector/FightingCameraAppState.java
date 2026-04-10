@@ -31,8 +31,8 @@ class FightingCameraAppState {
     }
 
     void update(float tpf) {
-        Spatial player = resolveSpatial(settings.playerVar);
-        Spatial opponent = resolveSpatial(settings.opponentVar);
+        Spatial player = resolveSpatial(settings.primaryTargetVar);
+        Spatial opponent = resolveSpatial(settings.secondaryTargetVar);
         if (player == null || opponent == null) {
             return;
         }
@@ -90,12 +90,9 @@ class FightingCameraAppState {
         }
 
         Vector3f smoothedPos = cam.getLocation().clone().interpolateLocal(desiredPos, alpha);
-        cam.setLocation(smoothedPos);
-        cam.lookAt(smoothedLookAt, Vector3f.UNIT_Y);
-
         float distanceFactor = clamp01((fighterDistance - settings.minDistance) / Math.max(0.001f, settings.maxDistance - settings.minDistance));
         float targetFov = FastMath.interpolateLinear(distanceFactor, settings.fov, settings.maxFov);
-        applyPerspectiveFov(FastMath.interpolateLinear(alpha, currentFovDegrees(), targetFov));
+        app.applySystemCameraFrame(smoothedPos, smoothedLookAt, FastMath.interpolateLinear(alpha, currentFovDegrees(), targetFov), tpf);
     }
 
     void cleanup() {
