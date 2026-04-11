@@ -5,6 +5,7 @@ import com.intellij.uiDesigner.core.Spacer;
 import com.scenemax.designer.DesignerDocument;
 import com.scenemax.designer.DesignerPanel;
 import com.scenemax.designer.Import3DModelPanel;
+import com.scenemax.designer.animation.ImportAnimationPanel;
 import com.scenemax.designer.effekseer.EffekseerEffectDocument;
 import com.scenemax.designer.effekseer.EffekseerEffectDesignerPanel;
 import com.scenemax.designer.effekseer.EffekseerImportResult;
@@ -233,7 +234,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 lastSelectedNodeIsFile = true;
                 boolean visualDesignerTab = active.isDesignerTab || active.isUIDesignerTab
                         || active.isEffekseerDesignerTab
-                        || active.isShaderDesignerTab || active.isEnvironmentShaderDesignerTab;
+                        || active.isShaderDesignerTab || active.isEnvironmentShaderDesignerTab
+                        || active.isAnimationImportTab;
                 textArea.setEnabled(!visualDesignerTab);
                 textAreaRTL.setEnabled(!visualDesignerTab);
                 btnRunScript.setEnabled(!visualDesignerTab && !active.filePath.endsWith(".cs"));
@@ -457,6 +459,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     refreshAssetsMenu();
                 } else if (cmd.equals("add_model")) {
                     openImport3DModelDocument();
+                } else if (cmd.equals("import_animation")) {
+                    openImportAnimationDocument();
                 } else if (cmd.equals("import_effekseer")) {
                     importEffekseerEffect();
                 } else if (cmd.equals("font_generator")) {
@@ -2213,6 +2217,40 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         });
 
         editorTabPanel.openDesignerFile(tabPath, importPanel);
+        btnRunScript.setEnabled(false);
+    }
+
+    private void openImportAnimationDocument() {
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject == null) {
+            JOptionPane.showMessageDialog(this,
+                    "No active project. Please create or select a project first.",
+                    "Animation Import",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        File tmpDir = new File(Util.getScriptsFolder() + "/tmp");
+        if (!tmpDir.exists()) {
+            tmpDir.mkdirs();
+        }
+        File tabFile = new File(tmpDir, "_import_animation.smanimimport");
+        String tabPath = tabFile.getAbsolutePath();
+
+        if (editorTabPanel.isFileOpen(tabPath)) {
+            editorTabPanel.openAnimationImportFile(tabPath, null);
+            return;
+        }
+
+        ImportAnimationPanel panel = new ImportAnimationPanel(new File(activeProject.getResourcesPath()));
+        panel.setOnCloseCallback(imported -> {
+            editorTabPanel.closeTabByPath(tabPath);
+            if (imported) {
+                refreshAssetsMenu();
+            }
+        });
+
+        editorTabPanel.openAnimationImportFile(tabPath, panel);
         btnRunScript.setEnabled(false);
     }
 

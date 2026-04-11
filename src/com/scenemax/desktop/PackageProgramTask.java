@@ -147,7 +147,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         ProgramDef program = parser.parse(this.prg);
         AssetsMapping assetsMapping = new AssetsMapping(Util.getResourcesFolder());
 
-        JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], shaders:[], environmentShaders:[], cinematics:[] }");
+        JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], shaders:[], environmentShaders:[], cinematics:[], animations:[] }");
 
         File deployFolder = new File("deploy");
         FileUtils.deleteDirectory(deployFolder);
@@ -236,6 +236,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         }
 
         copyEffekseerResourcesToDeploy(deployFolder);
+        copyAnimationResourcesToDeploy(deployFolder, resources.getJSONArray("animations"));
 
         // copy all materials - in the future, check and copy just what is needed
         File materials = new File("./deploy/Materials");
@@ -1034,6 +1035,26 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 throw new RuntimeException(e);
             }
         }
+    }
+
+    private void copyAnimationResourcesToDeploy(File deployFolder, JSONArray targetArray) {
+        File projectResources = getPackagedProjectResourcesFolder();
+        if (projectResources == null) {
+            return;
+        }
+
+        File projectAnimationsDir = new File(projectResources, "animations");
+        File deployAnimationsDir = new File(deployFolder, "animations");
+        if (projectAnimationsDir.isDirectory()) {
+            try {
+                FileUtils.copyDirectory(projectAnimationsDir, deployAnimationsDir);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        mergeIndexedResourcesFromFile(new File("./resources/animations/animations.json"), "animations", targetArray);
+        mergeIndexedResourcesFromFile(new File(projectAnimationsDir, "animations-ext.json"), "animations", targetArray);
     }
 
     private File resolveEffekseerEffectSource(String assetId) {

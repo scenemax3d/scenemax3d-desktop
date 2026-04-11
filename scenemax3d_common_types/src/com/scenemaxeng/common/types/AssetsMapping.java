@@ -21,6 +21,7 @@ public class AssetsMapping {
     private HashMap<String,TerrainResource> _terrains=new HashMap<>();
     private HashMap<String,SkyBoxResource> _skyboxes=new HashMap<>();
     private HashMap<String, ResourceCinematicRig> _cinematics = new HashMap<>();
+    private HashMap<String, ResourceAnimation> _animations = new HashMap<>();
 
     private JSONObject getResourcesIndex() {
         String json = "";
@@ -65,6 +66,9 @@ public class AssetsMapping {
         res = getResourcesFolderIndex(extPath+"/environment_shaders/environment-shaders-ext.json");
         loadShadersFromJson(res);
 
+        res = getResourcesFolderIndex(extPath+"/animations/animations-ext.json");
+        loadAnimationsFromJson(res);
+
     }
 
     public AssetsMapping() {
@@ -99,6 +103,9 @@ public class AssetsMapping {
         res = getResourcesFolderIndex("./resources/environment_shaders/environment-shaders.json");
         loadShadersFromJson(res);
 
+        res = getResourcesFolderIndex("./resources/animations/animations.json");
+        loadAnimationsFromJson(res);
+
         /////////////////////////////// READ SELF - CONTAINED ASSETS /////////////////////////////
         // self contained exec will read from embedded class-path resource file
         res = getResourcesIndex();
@@ -111,6 +118,7 @@ public class AssetsMapping {
             loadSkyBoxesFromJson(res);
             loadShadersFromJson(res);
             loadCinematicsFromJson(res);
+            loadAnimationsFromJson(res);
         }
     }
 
@@ -369,6 +377,29 @@ public class AssetsMapping {
         }
     }
 
+    private void loadAnimationsFromJson(JSONObject res) {
+        if (res == null || !res.has("animations")) {
+            return;
+        }
+
+        JSONArray animations = res.getJSONArray("animations");
+        for (int i = 0; i < animations.length(); i++) {
+            JSONObject animation = animations.optJSONObject(i);
+            if (animation == null) {
+                continue;
+            }
+
+            String name = animation.optString("name", "");
+            String path = animation.optString("path", "");
+            if (name.isBlank() || path.isBlank()) {
+                continue;
+            }
+
+            String clipName = animation.optString("clipName", name);
+            _animations.put(name.toLowerCase(), new ResourceAnimation(name, path, clipName));
+        }
+    }
+
     private void loadTerrainsFromJson(JSONObject res) {
         if(res==null || !res.has("terrains")) return;
 
@@ -417,6 +448,10 @@ public class AssetsMapping {
 
     public HashMap<String, ResourceCinematicRig> getCinematicsIndex() {
         return _cinematics;
+    }
+
+    public HashMap<String, ResourceAnimation> getAnimationsIndex() {
+        return _animations;
     }
 
     public void loadCinematicsFromProject(String projectRootPath) {

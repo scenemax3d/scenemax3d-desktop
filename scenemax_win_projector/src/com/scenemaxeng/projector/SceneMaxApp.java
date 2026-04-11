@@ -25,6 +25,7 @@ import com.jme3.app.Application;
 import com.jme3.app.state.AppState;
 import com.jme3.asset.AssetInfo;
 import com.jme3.asset.AssetKey;
+import com.jme3.asset.AssetManager;
 import com.jme3.asset.plugins.FileLocator;
 import com.jme3.audio.AudioNode;
 
@@ -486,6 +487,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     public AssetsMapping getAssetsMapping() {
         return SceneMaxApp.assetsMapping;
+    }
+
+    public AssetManager getAssetManager() {
+        return assetManager;
     }
 
     private void initBulletAppState() {
@@ -3899,7 +3904,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     @Override
     public void destroy(){
-        this.pluginsCommunicationChannel.stop(); // call all subscribed clients to stop
+        if (this.pluginsCommunicationChannel != null) {
+            this.pluginsCommunicationChannel.stop(); // call all subscribed clients to stop
+        }
         if(hostAppType==SceneMaxApp.HOST_APP_WINDOWS_ALLOW_CODE_CHANGE_BUTTON) {
             System.exit(0);
         } else {

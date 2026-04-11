@@ -26,6 +26,11 @@ sourceSets {
 }
 
 def jme3 = [v: '3.9.0-stable', g: 'org.jmonkeyengine']
+def lwjgl3 = '3.3.6'
+
+configurations {
+    animationImporterRuntime
+}
 
 dependencies {
     implementation project(":scenemax_effekseer_runtime")
@@ -42,9 +47,43 @@ dependencies {
     implementation "${jme3.g}:jme3-effects:${jme3.v}"
     implementation "${jme3.g}:jme3-plugins:${jme3.v}"
 
+    // Design-time importer for FBX/DAE/BVH/etc. Animation files are converted to J3O in a worker JVM.
+    compileOnly 'com.github.stephengold:MonkeyWrench:1.0.0'
+    animationImporterRuntime('com.github.stephengold:MonkeyWrench:1.0.0') {
+        transitive = false
+    }
+    animationImporterRuntime "org.lwjgl:lwjgl:${lwjgl3}"
+    animationImporterRuntime "org.lwjgl:lwjgl-assimp:${lwjgl3}"
+    animationImporterRuntime "org.lwjgl:lwjgl:${lwjgl3}:natives-windows@jar"
+    animationImporterRuntime "org.lwjgl:lwjgl-assimp:${lwjgl3}:natives-windows@jar"
+
     // JSON for document format
     implementation 'org.json:json:20210307'
     implementation 'commons-io:commons-io:2.11.0'
+}
+
+def animationImporterLibsDir = layout.buildDirectory.dir("generated/animation-importer-libs")
+
+tasks.register('copyAnimationImporterRuntime', Copy) {
+    from configurations.animationImporterRuntime
+    into animationImporterLibsDir
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    doLast {
+        def dir = animationImporterLibsDir.get().asFile
+        def indexFile = new File(dir, "index.txt")
+        indexFile.text = dir.listFiles()
+                .findAll { it.name.endsWith('.jar') }
+                .collect { it.name }
+                .sort()
+                .join(System.lineSeparator())
+    }
+}
+
+processResources {
+    dependsOn tasks.named('copyAnimationImporterRuntime')
+    from(animationImporterLibsDir) {
+        into 'animation-importer-libs'
+    }
 }
 
 tasks.register('runEffekseerNativeSmokeTest', JavaExec) {

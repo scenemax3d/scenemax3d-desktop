@@ -60,10 +60,16 @@ public class AppModelAnimationController implements AnimEventListener {
                     return;
                 }
 
+                boolean attachedExternal = m.attachExternalAnimation(hostController.app.getAssetManager(), hostController.app.getAssetsMapping(), animationName);
                 Action ac = composer.getAction(animationName);
+                if (ac == null && !attachedExternal && !composer.hasAnimClip(animationName)) {
+                    System.out.println("Animation not found on model or external animation resources: " + animationName);
+                    animationFinished = true;
+                    return;
+                }
 
-                if (ac == null) {
-                    Action originalAction = composer.action(animationName);
+                if (!(ac instanceof CharacterAction)) {
+                    Action originalAction = ac != null ? ac : composer.action(animationName);
                     ac = new CharacterAction(this, originalAction, composer);
                     composer.addAction(animationName, ac);
 

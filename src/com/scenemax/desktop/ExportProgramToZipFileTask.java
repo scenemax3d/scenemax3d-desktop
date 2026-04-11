@@ -89,7 +89,7 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
         ProgramDef program = new SceneMaxLanguageParser(null,scriptFolder.getAbsolutePath()).parse(this.prg);
         AssetsMapping assetsMapping = new AssetsMapping(Util.getResourcesFolder());
 
-        JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[] }");
+        JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], animations:[] }");
         JSONObject config = new JSONObject("{ }");
         config.put("targetFolder",scriptFolder.getName());
         config.put("scriptFile",mainScriptFile.getName());
@@ -242,6 +242,7 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
 
         if(!exportCodeOnly) {
             copyEffekseerResourcesToExport();
+            copyAnimationResourcesToExport(resources.getJSONArray("animations"));
         }
 
 
@@ -459,6 +460,47 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
                     throw new RuntimeException(e);
                 }
             }
+        }
+    }
+
+    private void copyAnimationResourcesToExport(JSONArray targetArray) {
+        File projectResources = getPackagedProjectResourcesFolder();
+        if (projectResources == null) {
+            return;
+        }
+
+        File projectAnimationsDir = new File(projectResources, "animations");
+        File exportAnimationsDir = new File("./" + targetFolderName + "/animations");
+        if (projectAnimationsDir.isDirectory()) {
+            try {
+                FileUtils.copyDirectory(projectAnimationsDir, exportAnimationsDir);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        appendAnimationIndex(new File("./resources/animations/animations.json"), targetArray);
+        appendAnimationIndex(new File(projectAnimationsDir, "animations-ext.json"), targetArray);
+    }
+
+    private void appendAnimationIndex(File indexFile, JSONArray targetArray) {
+        if (indexFile == null || !indexFile.isFile()) {
+            return;
+        }
+        try {
+            JSONObject root = new JSONObject(FileUtils.readFileToString(indexFile, java.nio.charset.StandardCharsets.UTF_8));
+            JSONArray source = root.optJSONArray("animations");
+            if (source == null) {
+                return;
+            }
+            for (int i = 0; i < source.length(); i++) {
+                JSONObject animation = source.optJSONObject(i);
+                if (animation != null) {
+                    targetArray.put(new JSONObject(animation.toString()));
+                }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 
