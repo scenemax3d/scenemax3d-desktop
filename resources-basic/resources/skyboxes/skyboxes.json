@@ -1,0 +1,29 @@
+{"skyboxes": [
+  {
+    "name": "lagoon",
+    "back": "skyboxes/lagoon/back.jpg",
+    "front": "skyboxes/lagoon/front.jpg",
+    "left": "skyboxes/lagoon/left.jpg",
+    "down": "skyboxes/lagoon/down.jpg",
+    "right": "skyboxes/lagoon/right.jpg",
+    "up": "skyboxes/lagoon/up.jpg"
+  },
+  {
+    "name": "sky1",
+    "back": "skyboxes/sky1/back.png",
+    "left": "skyboxes/sky1/left.png",
+    "front": "skyboxes/sky1/front.png",
+    "down": "skyboxes/sky1/bottom.png",
+    "right": "skyboxes/sky1/right.png",
+    "up": "skyboxes/sky1/top.png"
+  },
+  {
+    "name": "sky2",
+    "back": "skyboxes/sky2/back.png",
+    "front": "skyboxes/sky2/front.png",
+    "left": "skyboxes/sky2/left.png",
+    "down": "skyboxes/sky2/bottom.png",
+    "right": "skyboxes/sky2/right.png",
+    "up": "skyboxes/sky2/top.png"
+  }
+]}

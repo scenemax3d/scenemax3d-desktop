@@ -20,7 +20,7 @@
       "type": "BOX",
       "sizeX": 50,
       "sceneMaxCode": "floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material \"rock2\"",
-      "material": "rock2",
+      "material": "wall",
       "name": "floor",
       "staticEntity": true,
       "id": "76d36d14-001f-4156-bd68-32f575cd1e36",
@@ -1166,15 +1166,15 @@
   },
   "camera": {
     "rotation": [
-      0.2587635,
-      -0.5531344,
-      0.18594587,
-      0.7697454
+      -0.09904575,
+      0.8923991,
+      -0.2391176,
+      -0.36964384
     ],
     "position": [
-      73.72485,
-      -55.077465,
-      13.915026
+      9.185587,
+      7.5,
+      9.185586
     ]
   },
   "version": 1

@@ -1,0 +1,14 @@
+{
+	"fonts": [
+	
+		{ "name":"game1", path: "fonts/game1.fnt" },
+		{ "name":"geomarice", path: "fonts/geomarice.fnt" },
+		{ "name":"xeno", path: "fonts/xeno.fnt" },
+		{ "name":"pack", path: "fonts/pack.fnt" },
+		{ "name":"ioman", path: "fonts/iomanoid.fnt" },
+		{ "name":"palamecia", path: "fonts/palamecia.fnt" },
+		{ "name":"yoshi", path: "fonts/yoshi.fnt" }
+	]
+
+
+}

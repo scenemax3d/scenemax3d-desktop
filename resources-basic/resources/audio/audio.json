@@ -1,0 +1,90 @@
+{"sounds": [
+  {
+    "path": "audio/laser1.wav",
+    "name": "laser1"
+  },
+  {
+    "path": "audio/dance-kit-sample.ogg",
+    "name": "dance1"
+  },
+  {
+    "path": "audio/win1.wav",
+    "name": "win1"
+  },
+  {
+    "path": "audio/coins-1.wav",
+    "name": "coin1"
+  },
+  {
+    "path": "audio/coins-2.wav",
+    "name": "coin2"
+  },
+  {
+    "path": "audio/sweep-explode.wav",
+    "name": "explode1"
+  },
+  {
+    "path": "audio/game-over-mono.wav",
+    "name": "gameover1"
+  },
+  {
+    "path": "audio/announcement-begin.wav",
+    "name": "begin1"
+  },
+  {
+    "path": "audio/walking-piano.ogg",
+    "name": "walking1"
+  },
+  {
+    "path": "audio/robotic-countdown-3.wav",
+    "name": "countdown3"
+  },
+  {
+    "path": "audio/melody-loop-mix.ogg",
+    "name": "melody1"
+  },
+  {
+    "path": "audio/jingle-win-01.ogg",
+    "name": "win2"
+  },
+  {
+    "path": "audio/fantasy-start.wav",
+    "name": "begin2"
+  },
+  {
+    "path": "audio/electro-win-sound.wav",
+    "name": "win3"
+  },
+  {
+    "path": "audio/background-melody-music.ogg",
+    "name": "melody2"
+  },
+  {
+    "path": "audio/45624__flick3r__riser-flicker.ogg",
+    "name": "riser1"
+  },
+  {
+    "path": "audio/shoot1.ogg",
+    "name": "shoot1"
+  },
+  {
+    "path": "audio/gun1.ogg",
+    "name": "gun1"
+  },
+  {
+    "path": "audio/mayday.ogg",
+    "name": "mayday"
+  },
+  {
+    "path": "audio/old-piano-drama.ogg",
+    "name": "drama1"
+  },
+  {
+    "path": "audio/old-piano-drama-2.ogg",
+    "name": "drama2"
+  },
+  {
+    "path": "audio/game_over.ogg",
+    "name": "gameover2"
+  }
+]}

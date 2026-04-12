@@ -18,6 +18,7 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
     private static final ImageIcon ICON_EFFEKSEER_DESIGNER = createEffekseerDesignerIcon();
     private static final ImageIcon ICON_SHADER_DESIGNER = createShaderDesignerIcon();
     private static final ImageIcon ICON_ENVIRONMENT_SHADER_DESIGNER = createEnvironmentShaderDesignerIcon();
+    private static final ImageIcon ICON_MATERIAL_DESIGNER = createMaterialDesignerIcon();
 
     private JLabel label;
 
@@ -50,6 +51,8 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
             label.setIcon(ICON_SHADER_DESIGNER);
         } else if (name.endsWith(".smenvshader")) {
             label.setIcon(ICON_ENVIRONMENT_SHADER_DESIGNER);
+        } else if (name.endsWith(".mat")) {
+            label.setIcon(ICON_MATERIAL_DESIGNER);
         } else if (name.endsWith(".cs")) {
             label.setIcon(ICON_CSHARP);
         } else if (name.equals("main")) {
@@ -192,6 +195,30 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
         g.drawLine(10, 14, 8, 18);
         g.drawLine(14, 14, 12, 18);
         g.drawLine(18, 14, 16, 18);
+
+        g.dispose();
+        return new ImageIcon(img);
+    }
+
+    private static ImageIcon createMaterialDesignerIcon() {
+        BufferedImage img = new BufferedImage(24, 24, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        GradientPaint paint = new GradientPaint(4, 4, new Color(255, 196, 87), 20, 20, new Color(244, 105, 61));
+        g.setPaint(paint);
+        g.fillOval(3, 3, 18, 18);
+
+        g.setColor(new Color(30, 36, 44));
+        g.fillOval(7, 7, 10, 10);
+
+        g.setColor(Color.WHITE);
+        g.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.drawArc(6, 6, 12, 12, 215, 190);
+        g.drawLine(15, 15, 20, 20);
+        g.fillOval(9, 9, 2, 2);
+        g.fillOval(13, 9, 2, 2);
+        g.fillOval(11, 13, 2, 2);
 
         g.dispose();
         return new ImageIcon(img);

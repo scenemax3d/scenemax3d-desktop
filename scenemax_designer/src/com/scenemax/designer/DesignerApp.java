@@ -1394,6 +1394,58 @@ public class DesignerApp extends SceneMaxApp {
         return new ArrayList<>(names);
     }
 
+    public List<String> getAvailableProjectMaterialNames() {
+        TreeSet<String> names = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        names.add("pond");
+        names.add("rock");
+        names.add("rock2");
+        names.add("brickwall");
+        names.add("dirt");
+        names.add("grass");
+        names.add("road");
+        names.add("alpha");
+        names.add("alpha2");
+
+        String resourcesFolder = getProjectResourcesFolder();
+        if (resourcesFolder == null || resourcesFolder.isBlank()) {
+            return new ArrayList<>(names);
+        }
+
+        File indexFile = new File(resourcesFolder, "material/materials-ext.json");
+        if (!indexFile.exists()) {
+            return new ArrayList<>(names);
+        }
+
+        try {
+            String content = Files.readString(indexFile.toPath(), StandardCharsets.UTF_8);
+            if (content == null || content.isBlank()) {
+                return new ArrayList<>(names);
+            }
+
+            JSONObject root = new JSONObject(content);
+            JSONArray materials = root.optJSONArray("materials");
+            if (materials == null) {
+                return new ArrayList<>(names);
+            }
+
+            for (int i = 0; i < materials.length(); i++) {
+                JSONObject material = materials.optJSONObject(i);
+                if (material == null) {
+                    continue;
+                }
+                String name = material.optString("name", "").trim();
+                if (!name.isEmpty()) {
+                    names.add(name);
+                }
+            }
+        } catch (Exception ex) {
+            System.err.println("Failed to load project materials list");
+            ex.printStackTrace();
+        }
+
+        return new ArrayList<>(names);
+    }
+
     /**
      * Executes SceneMax code to create an entity and queues a deferred lookup.
      * The node won't exist until simpleUpdate() runs the SceneMax controllers,

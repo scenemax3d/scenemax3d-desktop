@@ -14,7 +14,7 @@ Scene.environment.shader = "ambient1"
 camera.pos(8.015769,-8.97224,51.23)
 camera.rotate(24.339067,126.80586,0.0)
 
-floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material "rock2", shadow mode cast
+floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material "wall", shadow mode cast
 level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on async
 level2.shader = "shader_test1"
 ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0 async

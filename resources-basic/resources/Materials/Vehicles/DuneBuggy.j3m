@@ -1,0 +1,10 @@
+Material Hatchback : Common/MatDefs/Light/PBRLighting.j3md {
+
+    MaterialParameters {
+
+        BaseColor : 1.0 1.0 0.0 1.0
+        Metallic : 0.00004
+        Roughness : 0.01
+    }
+
+}

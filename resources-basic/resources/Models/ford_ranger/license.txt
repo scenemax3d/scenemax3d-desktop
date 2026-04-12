@@ -1,0 +1,35 @@
+Licensing history for files in "src/main/resources/Models/ford_ranger" and its
+subfolders
+
+Based on "Ford Ranger":
+* download file:     ford_ranger.zip
+* downloaded from:   https://sketchfab.com/3d-models/ford-ranger-dade78dc96e34f1a8cbcf14dd47d84de
+* download options:  Autoconverted format (glTF)
+* author:            mauro.zampaoli
+* author URL:        https://sketchfab.com/mauro.zampaoli
+* license type:      CC-BY-4.0 (Creative Commons Attribution)
+* license URL:       https://creativecommons.org/licenses/by/4.0/
+
+Extracted files used without modification:
+* rangerFordlambert2_baseColor.jpeg
+
+Derived files (also licensed CC-BY-4.0):
+* chassis-shape.j3o
+* license.txt
+* pickup.j3o
+* wheel.j3o
+
+The original "license.txt" is appended below the fold.
+===============================================================================
+
+Model Information:
+* title:	Ford Ranger
+* source:	https://sketchfab.com/3d-models/ford-ranger-dade78dc96e34f1a8cbcf14dd47d84de
+* author:	mauro.zampaoli (https://sketchfab.com/mauro.zampaoli)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Ford Ranger" (https://sketchfab.com/3d-models/ford-ranger-dade78dc96e34f1a8cbcf14dd47d84de) by mauro.zampaoli (https://sketchfab.com/mauro.zampaoli) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

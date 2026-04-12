@@ -1,0 +1,147 @@
+{"sprites": [
+  {
+    "path": "sprites/bird_5x3.png",
+    "name": "bird",
+    "rows": 3,
+    "cols": 5
+  },
+  {
+    "path": "sprites/runningman_6x5.png",
+    "name": "runningman",
+    "rows": 5,
+    "cols": 6
+  },
+  {
+    "path": "sprites/runningcat_2x4.png",
+    "name": "cat1",
+    "rows": 4,
+    "cols": 2
+  },
+  {
+    "path": "sprites/unicorn_8x2.png",
+    "name": "unicorn1",
+    "rows": 2,
+    "cols": 8
+  },
+  {
+    "path": "sprites/soldier1_12x4.png",
+    "name": "soldier1",
+    "rows": 4,
+    "cols": 12
+  },
+  {
+    "path": "sprites/running_woman_4x4.png",
+    "name": "runningwoman",
+    "rows": 4,
+    "cols": 4
+  },
+  {
+    "path": "sprites/dance_man_6x4.png",
+    "name": "danceman",
+    "rows": 4,
+    "cols": 6
+  },
+  {
+    "path": "sprites/classic_noris_6x8.png",
+    "name": "classic_noris1",
+    "rows": 8,
+    "cols": 6
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/sight2.png",
+    "frameWidth": 1,
+    "name": "sight",
+    "rows": 1,
+    "cols": 1
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/shira1.png",
+    "frameWidth": 1,
+    "name": "shira1",
+    "rows": 1,
+    "cols": 1
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/one.png",
+    "frameWidth": 1,
+    "name": "one",
+    "rows": 1,
+    "cols": 1
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/two.png",
+    "frameWidth": 1,
+    "name": "two",
+    "rows": 1,
+    "cols": 1
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/three.png",
+    "frameWidth": 1,
+    "name": "three",
+    "rows": 1,
+    "cols": 1
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/four.png",
+    "frameWidth": 1,
+    "name": "four",
+    "rows": 1,
+    "cols": 1
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/five.png",
+    "frameWidth": 1,
+    "name": "five",
+    "rows": 1,
+    "cols": 1
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/six.png",
+    "frameWidth": 1,
+    "name": "six",
+    "rows": 1,
+    "cols": 1
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/seven.png",
+    "frameWidth": 1,
+    "name": "seven",
+    "rows": 1,
+    "cols": 1
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/eight.png",
+    "frameWidth": 1,
+    "name": "eight",
+    "rows": 1,
+    "cols": 1
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/nine.png",
+    "frameWidth": 1,
+    "name": "nine",
+    "rows": 1,
+    "cols": 1
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/ten.png",
+    "frameWidth": 1,
+    "name": "ten",
+    "rows": 1,
+    "cols": 1
+  }
+  
+]}

@@ -147,7 +147,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         ProgramDef program = parser.parse(this.prg);
         AssetsMapping assetsMapping = new AssetsMapping(Util.getResourcesFolder());
 
-        JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], shaders:[], environmentShaders:[], cinematics:[], animations:[] }");
+        JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], shaders:[], environmentShaders:[], materials:[], cinematics:[], animations:[] }");
 
         File deployFolder = new File("deploy");
         FileUtils.deleteDirectory(deployFolder);
@@ -376,6 +376,14 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 new File(Util.getResourcesFolder(), "environment_shaders/environment-shaders-ext.json"),
                 "environmentShaders",
                 resources.getJSONArray("environmentShaders")
+        );
+
+        copyResourceDirectoryToDeploy("material");
+        mergeIndexedResources(
+                new File("./resources/material/materials.json"),
+                new File(Util.getResourcesFolder(), "material/materials-ext.json"),
+                "materials",
+                resources.getJSONArray("materials")
         );
 
         appendCinematicResources(resources.getJSONArray("cinematics"));

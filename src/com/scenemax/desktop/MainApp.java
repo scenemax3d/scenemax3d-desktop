@@ -10,6 +10,9 @@ import com.scenemax.designer.effekseer.EffekseerEffectDocument;
 import com.scenemax.designer.effekseer.EffekseerEffectDesignerPanel;
 import com.scenemax.designer.effekseer.EffekseerImportResult;
 import com.scenemax.designer.effekseer.EffekseerImporter;
+import com.scenemax.designer.material.MaterialDesignerPanel;
+import com.scenemax.designer.material.MaterialDocument;
+import com.scenemax.designer.material.MaterialTemplatePreset;
 import com.scenemax.designer.shader.EnvironmentShaderDesignerPanel;
 import com.scenemax.designer.shader.EnvironmentShaderDocument;
 import com.scenemax.designer.shader.EnvironmentShaderTemplatePreset;
@@ -235,6 +238,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 boolean visualDesignerTab = active.isDesignerTab || active.isUIDesignerTab
                         || active.isEffekseerDesignerTab
                         || active.isShaderDesignerTab || active.isEnvironmentShaderDesignerTab
+                        || active.isMaterialDesignerTab
                         || active.isAnimationImportTab;
                 textArea.setEnabled(!visualDesignerTab);
                 textAreaRTL.setEnabled(!visualDesignerTab);
@@ -463,6 +467,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     openImportAnimationDocument();
                 } else if (cmd.equals("import_effekseer")) {
                     importEffekseerEffect();
+                } else if (cmd.equals("create_material_document")) {
+                    createNewMaterialDocument(getSelectedScriptsFolder().getAbsolutePath());
                 } else if (cmd.equals("font_generator")) {
                     FontGeneratorDialog dlg = new FontGeneratorDialog(MainApp.this);
                     dlg.setLocationRelativeTo(MainApp.this);
@@ -1189,6 +1195,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     createNewUIDocument(filePath);
                 } else if (cmd.equals("new_shader_document")) {
                     createNewShaderDocument(filePath);
+                } else if (cmd.equals("new_material_document")) {
+                    createNewMaterialDocument(filePath);
                 } else if (cmd.equals("new_environment_shader_document")) {
                     createNewEnvironmentShaderDocument(filePath);
                 } else if (cmd.equals("clean_backup_files")) {
@@ -1241,8 +1249,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         boolean isEffekseerDesigner = f.getName().toLowerCase().endsWith(".smeffectdesign");
                         boolean isShaderDesigner = f.getName().toLowerCase().endsWith(".smshader");
                         boolean isEnvironmentShaderDesigner = f.getName().toLowerCase().endsWith(".smenvshader");
+                        boolean isMaterialDesigner = f.getName().toLowerCase().endsWith(".mat");
                         editorTabPanel.closeTabByPath(filePath,
-                                isDesigner || isUIDesigner || isEffekseerDesigner || isShaderDesigner || isEnvironmentShaderDesigner);
+                                isDesigner || isUIDesigner || isEffekseerDesigner || isShaderDesigner
+                                        || isEnvironmentShaderDesigner || isMaterialDesigner);
 
                         // If this is a .smdesign file, also delete its companion .code, _init.code
                         // and _end.code files and clean up any DB references (open_tabs)
@@ -1314,6 +1324,14 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                                 } catch (IOException ex) {
                                     ex.printStackTrace();
                                 }
+                            }
+                        }
+
+                        if (isMaterialDesigner) {
+                            try {
+                                MaterialDocument.removeRuntimeAssets(f, Util.getResourcesFolder());
+                            } catch (IOException ex) {
+                                ex.printStackTrace();
                             }
                         }
 
@@ -1389,6 +1407,16 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                                     FileUtils.moveDirectory(oldOutput, newOutput);
                                 }
                             }
+                            if (oldPath.toLowerCase().endsWith(".mat")) {
+                                File oldFile = new File(oldPath);
+                                File newFile = dest.toFile();
+                                try {
+                                    MaterialDocument.removeRuntimeAssets(oldFile, Util.getResourcesFolder());
+                                    MaterialDocument.load(newFile).exportRuntimeAssets(newFile, Util.getResourcesFolder());
+                                } catch (IOException ex) {
+                                    ex.printStackTrace();
+                                }
+                            }
                             obj.setUserObject(new ScriptPathNode(dest.toString(), newName.trim()));
                             tree1.updateUI();
                             editorTabPanel.updateTabForRename(oldPath, dest.toString());
@@ -1428,6 +1456,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         addScriptsTreePopupMenuItem("Create New Script", "new", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Designer Document", "new_designer", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create UI Document", "new_ui_document", popup, popupActionListener, true, false, file);
+        addScriptsTreePopupMenuItem("Create Material Document", "new_material_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Shader Document", "new_shader_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Environment Shader Document", "new_environment_shader_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Sub Folder...", "create_sub_folder", popup, popupActionListener, true, false, file);
@@ -2018,6 +2047,52 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         openLastTreeNode();
     }
 
+    private void createNewMaterialDocument(String path) {
+        String docName = (String) JOptionPane.showInputDialog(
+                null,
+                "Type new material document name",
+                "Material Document Name",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                null,
+                "");
+
+        if (docName == null || docName.trim().length() == 0) {
+            return;
+        }
+
+        MaterialTemplatePreset preset = (MaterialTemplatePreset) JOptionPane.showInputDialog(
+                null,
+                "Choose a starter template",
+                "Starter Template",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                MaterialTemplatePreset.values(),
+                MaterialTemplatePreset.MATTE_PAINT
+        );
+        if (preset == null) {
+            preset = MaterialTemplatePreset.MATTE_PAINT;
+        }
+
+        docName = docName.trim();
+        if (!docName.endsWith(".mat")) {
+            docName = docName + ".mat";
+        }
+
+        File f = new File(path + "/" + docName);
+        try {
+            MaterialDocument.writeEmptyFile(f, preset);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return;
+        }
+
+        File parentDir = new File(path);
+        saveSelectedTreeNodePosition(parentDir.getPath(), docName);
+        loadScriptsFolder();
+        openLastTreeNode();
+    }
+
     private void openUIDesignerDocument(File f) {
         // If this UI designer file is already open, just switch to its tab
         if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
@@ -2117,6 +2192,34 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         environmentPanel.setOnDirtyCallback(() -> editorTabPanel.markActiveTabDirty());
 
         editorTabPanel.openEnvironmentShaderDesignerFile(f.getAbsolutePath(), environmentPanel);
+
+        lastSelectedFilePath = f.getAbsolutePath();
+        lastSelectedNodeIsFile = true;
+        btnRunScript.setEnabled(false);
+
+        saveSelectedTreeNodePosition(f.getParentFile().getPath(), f.getName());
+    }
+
+    private void openMaterialDesignerDocument(File f) {
+        if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
+            editorTabPanel.openMaterialDesignerFile(f.getAbsolutePath(), null);
+            return;
+        }
+
+        String projectPath = null;
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject != null) {
+            projectPath = activeProject.path;
+        }
+
+        MaterialDesignerPanel materialPanel = new MaterialDesignerPanel(projectPath, f);
+        materialPanel.setOnDirtyCallback(() -> editorTabPanel.markActiveTabDirty());
+        materialPanel.setOnSavedCallback(() -> {
+            editorTabPanel.markTabClean(f.getAbsolutePath());
+            refreshAssetsMenu();
+        });
+
+        editorTabPanel.openMaterialDesignerFile(f.getAbsolutePath(), materialPanel);
 
         lastSelectedFilePath = f.getAbsolutePath();
         lastSelectedNodeIsFile = true;
@@ -2502,6 +2605,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                             openShaderDesignerDocument(f);
                         } else if (f.getName().endsWith(".smenvshader")) {
                             openEnvironmentShaderDesignerDocument(f);
+                        } else if (f.getName().endsWith(".mat")) {
+                            openMaterialDesignerDocument(f);
                         } else {
                             openFileInTab(f);
                         }
@@ -2543,6 +2648,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             openShaderDesignerDocument(f);
         } else if (f.getName().endsWith(".smenvshader")) {
             openEnvironmentShaderDesignerDocument(f);
+        } else if (f.getName().endsWith(".mat")) {
+            openMaterialDesignerDocument(f);
         } else {
             openFileInTab(f);
         }
@@ -2675,6 +2782,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     openShaderDesignerDocument(f);
                 } else if (f.getName().endsWith(".smenvshader")) {
                     openEnvironmentShaderDesignerDocument(f);
+                } else if (f.getName().endsWith(".mat")) {
+                    openMaterialDesignerDocument(f);
                 } else {
                     openFileInTab(f);
                 }

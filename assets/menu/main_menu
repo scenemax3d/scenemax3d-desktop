@@ -20,6 +20,7 @@
     ]},
 
     {"name": "Assets", "items": [
+      {"name": "Create New Material...","command": "create_material_document", "enabled": true},
       {"name": "Import Effekseer Effect...","command": "import_effekseer", "enabled": true},
       {"name": "Import Animation...","command": "import_animation", "enabled": true},
       {"name": "Import Audio...","command": "import_audio", "enabled": true},
