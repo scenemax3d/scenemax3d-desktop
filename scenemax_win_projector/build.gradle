@@ -103,6 +103,7 @@ dependencies {
     implementation "com.github.stephengold:MaVehicles:0.7.2"
     implementation "com.github.stephengold:Minie:9.0.3"
     implementation "com.github.stephengold:Garrett:0.5.4"
+    implementation "com.github.stephengold:Wes:0.8.1"
 
     implementation("com.google.guava:guava:33.5.0-jre")
     implementation 'org.antlr:antlr4-runtime:4.5.3'

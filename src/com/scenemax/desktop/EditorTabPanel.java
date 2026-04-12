@@ -3,6 +3,7 @@ package com.scenemax.desktop;
 import com.scenemax.designer.DesignerDocument;
 import com.scenemax.designer.DesignerPanel;
 import com.scenemax.designer.Import3DModelPanel;
+import com.scenemax.designer.animation.ImportAnimationPanel;
 import com.scenemax.designer.effekseer.EffekseerEffectDesignerPanel;
 import com.scenemax.designer.shader.EnvironmentShaderDesignerPanel;
 import com.scenemax.designer.shader.ShaderDesignerPanel;
@@ -39,6 +40,8 @@ public class EditorTabPanel extends JPanel {
         ShaderDesignerPanel shaderDesignerPanel;
         boolean isEnvironmentShaderDesignerTab;
         EnvironmentShaderDesignerPanel environmentShaderDesignerPanel;
+        boolean isAnimationImportTab;
+        ImportAnimationPanel animationImportPanel;
 
         public TabData(String filePath, String content) {
             this.filePath = filePath;
@@ -56,6 +59,8 @@ public class EditorTabPanel extends JPanel {
             this.shaderDesignerPanel = null;
             this.isEnvironmentShaderDesignerTab = false;
             this.environmentShaderDesignerPanel = null;
+            this.isAnimationImportTab = false;
+            this.animationImportPanel = null;
         }
 
         public String getFileName() {
@@ -137,6 +142,8 @@ public class EditorTabPanel extends JPanel {
                 name = "\u2726 " + name; // shader icon prefix
             } else if (tabData.isEnvironmentShaderDesignerTab) {
                 name = "\u2601 " + name; // cloud icon prefix
+            } else if (tabData.isAnimationImportTab) {
+                name = "\u25B6 " + name;
             }
             titleLabel.setText(name);
         }
@@ -388,13 +395,46 @@ public class EditorTabPanel extends JPanel {
         switchToTab(tabData);
     }
 
+    public void openAnimationImportFile(String filePath, ImportAnimationPanel panel) {
+        String normalizedPath = new File(filePath).getAbsolutePath();
+
+        if (tabButtons.containsKey(normalizedPath)) {
+            TabData existing = null;
+            for (TabData td : tabs) {
+                if (td.filePath.equals(normalizedPath)) {
+                    existing = td;
+                    break;
+                }
+            }
+            if (existing != null) {
+                switchToTab(existing);
+                return;
+            }
+        }
+
+        TabData tabData = new TabData(normalizedPath, "");
+        tabData.isAnimationImportTab = true;
+        tabData.animationImportPanel = panel;
+        tabs.add(tabData);
+
+        TabButton btn = new TabButton(tabData);
+        btn.updateTitle();
+        tabButtons.put(normalizedPath, btn);
+        tabBar.add(btn);
+        tabBar.revalidate();
+        tabBar.repaint();
+
+        switchToTab(tabData);
+    }
+
     public void switchToTab(TabData newTab) {
         if (newTab == activeTab) return;
 
         // Save current state from editor into old tab (only for non-designer tabs)
         if (activeTab != null && !activeTab.isDesignerTab && !activeTab.isUIDesignerTab
                 && !activeTab.isEffekseerDesignerTab
-                && !activeTab.isShaderDesignerTab && !activeTab.isEnvironmentShaderDesignerTab) {
+                && !activeTab.isShaderDesignerTab && !activeTab.isEnvironmentShaderDesignerTab
+                && !activeTab.isAnimationImportTab) {
             activeTab.content = getCurrentEditorText();
             activeTab.caretPosition = getCurrentCaretPosition();
             activeTab.isRtlMode = textAreaRtlSP.isVisible();
@@ -433,6 +473,10 @@ public class EditorTabPanel extends JPanel {
             if (newTab.environmentShaderDesignerPanel != null) {
                 newTab.environmentShaderDesignerPanel.activatePanel();
                 centerContainer.add(newTab.environmentShaderDesignerPanel, BorderLayout.CENTER);
+            }
+        } else if (newTab.isAnimationImportTab) {
+            if (newTab.animationImportPanel != null) {
+                centerContainer.add(newTab.animationImportPanel, BorderLayout.CENTER);
             }
         } else {
             // Show the code editor
@@ -512,6 +556,8 @@ public class EditorTabPanel extends JPanel {
             if (tabData.environmentShaderDesignerPanel != null) {
                 tabData.environmentShaderDesignerPanel.deactivatePanel();
             }
+        } else if (tabData.isAnimationImportTab) {
+            // No shared JME context to deactivate.
         } else {
             // Auto-save if dirty
             if (tabData.dirty) {
@@ -608,6 +654,7 @@ public class EditorTabPanel extends JPanel {
             }
             return;
         }
+        if (activeTab.isAnimationImportTab) return;
 
         // Sync content from editor
         activeTab.content = getCurrentEditorText();
@@ -694,7 +741,8 @@ public class EditorTabPanel extends JPanel {
         for (TabData td : tabs) {
             if (td.filePath.equals(normalizedPath) && !td.isDesignerTab && !td.isUIDesignerTab
                     && !td.isEffekseerDesignerTab
-                    && !td.isShaderDesignerTab && !td.isEnvironmentShaderDesignerTab) {
+                    && !td.isShaderDesignerTab && !td.isEnvironmentShaderDesignerTab
+                    && !td.isAnimationImportTab) {
                 td.content = newContent;
                 td.dirty = false;
                 if (td == activeTab) {
@@ -776,6 +824,10 @@ public class EditorTabPanel extends JPanel {
                 toClose.environmentShaderDesignerPanel.clearAndDeactivatePanel();
                 toClose.environmentShaderDesignerPanel = null;
                 toClose.isEnvironmentShaderDesignerTab = false;
+            }
+            if (deleting && toClose.isAnimationImportTab) {
+                toClose.animationImportPanel = null;
+                toClose.isAnimationImportTab = false;
             }
             closeTab(toClose);
         }

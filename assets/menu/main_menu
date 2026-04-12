@@ -21,6 +21,7 @@
 
     {"name": "Assets", "items": [
       {"name": "Import Effekseer Effect...","command": "import_effekseer", "enabled": true},
+      {"name": "Import Animation...","command": "import_animation", "enabled": true},
       {"name": "Import Audio...","command": "import_audio", "enabled": true},
       {"name": "Import Sprite...","command": "add_sprite", "enabled": true},
       {"name": "Import 3D Model...","command": "add_model","enabled": true},
