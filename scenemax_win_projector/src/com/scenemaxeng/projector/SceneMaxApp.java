@@ -655,6 +655,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     private void loadMaterialsMap() {
+        materials.clear();
         materials.put("pond", new ResourceMaterial("Textures/Terrain/Pond/Pond.jpg","Textures/Terrain/Pond/Pond_normal.png"));
         materials.put("rock", new ResourceMaterial("Textures/Terrain/Rock/rock.png","Textures/Terrain/Rock/rock_normal.png"));
         materials.put("rock2", new ResourceMaterial("Textures/Terrain/Rock/rock2.jpg","Textures/Terrain/Rock/rock_normal.png"));
@@ -2432,7 +2433,26 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         materialName=materialName.toLowerCase();
         ResourceSetup2D resource = null;
         ResourceMaterial m = materials.get(materialName.toLowerCase());
+        ResourceMaterialAsset materialAsset = assetsMapping != null
+                ? assetsMapping.getMaterialsIndex().get(materialName.toLowerCase())
+                : null;
         if(m==null) {
+            if (materialAsset != null && materialAsset.path != null && !materialAsset.path.isBlank()) {
+                try {
+                    Material loaded = assetManager.loadMaterial(materialAsset.path);
+                    if (loaded == null) {
+                        return false;
+                    }
+                    geo.setMaterial(loaded.clone());
+                    geo.setQueueBucket(materialAsset.transparent
+                            ? RenderQueue.Bucket.Transparent
+                            : RenderQueue.Bucket.Opaque);
+                    return true;
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    return false;
+                }
+            }
             resource = assetsMapping.getSpriteSheetsIndex().get(materialName);
 
             if(resource==null) {

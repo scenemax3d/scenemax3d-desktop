@@ -1,0 +1,27 @@
+Licensing history for files in "src/main/resources/Models/gtr_nismo" and its
+subfolders
+
+Based on "Nissan GT-R":
+* download file:     nissan_gt-r.zip
+* downloaded from:   https://sketchfab.com/3d-models/nissan-gt-r-5f5781614c6f4ff4b7cb1d3cff9d931c
+* download options:  Autoconverted format (glTF)
+* author:            iSteven
+* author URL:        https://sketchfab.com/Steven007
+* license type:      CC-BY-NC-SA (CC Attribution-NonCommercial-ShareAlike)
+* license URL:       https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+Extracted files used without modification:
+* Material.010_baseColor.png
+* material_17_baseColor.jpeg
+* sidewal_baseColor.png
+* sidewal_normal.png
+* tyre_baseColor.png
+* tyre_normal.png
+
+Derived files (also licensed CC-BY-NC-SA):
+* chassis-shape.j3o
+* dark_alloy.gltf.j3o
+* scene.gltf.j3o
+
+Added files (also licensed CC-BY-NC-SA):
+* license.txt

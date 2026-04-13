@@ -1,0 +1,40 @@
+Licensing history for files in "src/main/resources/Models/modern_hatchback" and
+its subfolders
+
+Based on "Modern Hatchback - Low Poly model":
+* download file:     modern_hatchback_-_low_poly_model.zip
+* downloaded from:   https://sketchfab.com/3d-models/modern-hatchback-low-poly-model-055ff8a21b8d4d279debca089e2fafcd
+* download options:  Autoconverted format (glTF)
+* author:            Daniel Zhabotinsky
+* author URL:        https://sketchfab.com/DanielZhabotinsky
+* license type:      CC-BY-4.0 (Creative Commons Attribution)
+* license URL:       https://creativecommons.org/licenses/by/4.0/
+
+Extracted files used without modification:
+* MODERNHATCH_body_baseColor.png
+* MODERNHATCH_body_metallicRoughness.png
+* MODERNHATCH_body_normal.png
+* MODERNHATCH_INTERIOR_baseColor.png
+* MODERNHATCH_INTERIOR_metallicRoughness.png
+* MODERNHATCH_INTERIOR_normal.png
+
+Derived files (also licensed CC-BY-4.0):
+* chassis-shape.j3o
+* hatchback.j3o
+* license.txt
+* wheel.j3o
+
+The original "license.txt" is appended below the fold.
+===============================================================================
+
+Model Information:
+* title:	Modern Hatchback - Low Poly model
+* source:	https://sketchfab.com/3d-models/modern-hatchback-low-poly-model-055ff8a21b8d4d279debca089e2fafcd
+* author:	Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Modern Hatchback - Low Poly model" (https://sketchfab.com/3d-models/modern-hatchback-low-poly-model-055ff8a21b8d4d279debca089e2fafcd) by Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

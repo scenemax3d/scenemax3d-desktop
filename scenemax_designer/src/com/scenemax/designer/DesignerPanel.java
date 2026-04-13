@@ -702,9 +702,7 @@ public class DesignerPanel extends JPanel {
         lblMaterial.setFont(lblMaterial.getFont().deriveFont(Font.BOLD));
         materialPanel.add(lblMaterial);
 
-        cboMaterial = new JComboBox<>(new String[]{
-                "", "pond", "rock", "rock2", "brickwall", "dirt", "grass", "road", "alpha", "alpha2"
-        });
+        cboMaterial = new JComboBox<>();
         cboMaterial.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
         cboMaterial.setAlignmentX(Component.LEFT_ALIGNMENT);
         cboMaterial.addActionListener(e -> applyMaterialChange());
@@ -2270,7 +2268,7 @@ public class DesignerPanel extends JPanel {
                 chkColliderEntity.setSelected(entity.isColliderEntity());
                 staticColliderPanel.setVisible(true);
 
-                cboMaterial.setSelectedItem(entity.getMaterial());
+                refreshMaterialChoices(entity.getMaterial());
                 materialPanel.setVisible(true);
             } else {
                 staticColliderPanel.setVisible(false);
@@ -3064,6 +3062,33 @@ public class DesignerPanel extends JPanel {
             app.applyMaterial(sel, mat);
             return null;
         });
+    }
+
+    private void refreshMaterialChoices(String selectedMaterial) {
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+        model.addElement("");
+
+        if (app != null) {
+            for (String materialName : app.getAvailableProjectMaterialNames()) {
+                model.addElement(materialName);
+            }
+        }
+
+        if (selectedMaterial != null && !selectedMaterial.isBlank()) {
+            boolean exists = false;
+            for (int i = 0; i < model.getSize(); i++) {
+                if (selectedMaterial.equals(model.getElementAt(i))) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                model.addElement(selectedMaterial);
+            }
+        }
+
+        cboMaterial.setModel(model);
+        cboMaterial.setSelectedItem(selectedMaterial != null ? selectedMaterial : "");
     }
 
     private void refreshShaderChoices(String selectedShader) {

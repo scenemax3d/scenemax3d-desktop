@@ -1,0 +1,10 @@
+Material Wheel : Common/MatDefs/Light/PBRLighting.j3md {
+
+    MaterialParameters {
+
+        BaseColorMap    : Textures/Vehicles/Wheel_1/albedo.png
+        MetallicMap     : Textures/Vehicles/Wheel_1/metallic.png
+        RoughnessMap    : Textures/Vehicles/Wheel_1/roughness.png
+    }
+
+}

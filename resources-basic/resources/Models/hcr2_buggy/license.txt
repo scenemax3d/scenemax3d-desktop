@@ -1,0 +1,26 @@
+Licensing history for files in "src/main/resources/Models/hcr2_buggy" and its
+subfolders
+
+Based on "HCR2 Buggy":
+* download file:     hcr2_buggy.zip
+* downloaded from:   https://sketchfab.com/3d-models/hcr2-buggy-a65fe5c27464448cbce7fe61c49159ef
+* download options:  Autoconverted format (glTF)
+* author:            oakar258
+* author URL:        https://sketchfab.com/oakar258
+* license type:      CC-BY-4.0 (Creative Commons Attribution)
+* license URL:       https://creativecommons.org/licenses/by/4.0/
+
+Extracted files used without modification:
+* Buggy_Main_baseColor.png
+* Buggy_Main_metallicRoughness.png
+* Buggy_Wheel_baseColor.png
+* Buggy_Wheel_metallicRoughness.png
+
+Derived files (also licensed CC-BY-4.0):
+* chassis-shape.j3o
+* dune-buggy.j3o
+* front-wheel.j3o
+* rear-wheel.j3o
+
+Added files (also licensed CC-BY-4.0):
+* license.txt

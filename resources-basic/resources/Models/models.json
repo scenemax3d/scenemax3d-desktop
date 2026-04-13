@@ -1,0 +1,691 @@
+{"models": [
+  {
+    "scaleX": 0.5,
+    "scaleY": 0.5,
+    "path": "Models/Sinbad/Sinbad.mesh.j3o",
+    "transZ": 0,
+    "transX": 0,
+    "transY": -1,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": 0,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "name": "sinbad",
+    "rotateY": 0,
+    "scaleZ": 0.5
+  },
+  {
+    "scaleX": 0.03,
+    "scaleY": 0.03,
+    "path": "Models/Ninja/Ninja.mesh.j3o",
+    "transZ": 0,
+    "transX": 0,
+    "transY": -4,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": -3,
+      "capsuleRadius": 2,
+      "capsuleHeight": 3,
+      "stepHeight": 0.05
+    }},
+    "name": "ninja",
+    "rotateY": 180,
+    "scaleZ": 0.03
+  },
+ 
+  {
+    "scaleX": 1,
+    "scaleY": 1,
+    "path": "Models/Jaime/Jaime.j3o",
+    "transZ": 0,
+    "transX": 0,
+    "transY": 0,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": 0,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "name": "monkey",
+    "rotateY": 0,
+    "scaleZ": 1
+  },
+  {
+    "scaleX": 0.1,
+    "scaleY": 0.1,
+    "path": "Models/dragon1/scene.j3o",
+    "transZ": 0,
+    "transX": 0,
+    "transY": 0,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": 0,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "name": "dragon",
+    "rotateY": 0,
+    "scaleZ": 0.1
+  },
+  {
+    "scaleX": 0.01,
+    "scaleY": 0.01,
+    "path": "Models/pnxbird/scene.j3o",
+    "transZ": 0,
+    "transX": 0,
+    "transY": 0,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": 0,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "name": "phoenix",
+    "rotateY": 0,
+    "scaleZ": 0.01
+  },
+  {
+    "scaleX": 1,
+    "scaleY": 1,
+    "path": "Models/coin2/scene.j3o",
+    "transZ": 0,
+    "transX": 0,
+    "transY": 0,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": 0,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "name": "coin",
+    "rotateY": 0,
+    "scaleZ": 1
+  },
+  {
+    "scaleX": 0.025,
+    "scaleY": 0.025,
+    "path": "Models/gemini/scene.gltf",
+    "transZ": 0,
+    "transX": 0,
+    "transY": 0,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": 0,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "name": "gemini",
+    "rotateY": 0,
+    "scaleZ": 0.025
+  },
+  {
+    "scaleX": 0.001,
+    "scaleY": 0.001,
+    "path": "Models/low_poly_helicopter/scene.gltf",
+    "transZ": 0,
+    "transX": 0,
+    "transY": 0,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": 0,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "name": "helicopter",
+    "rotateY": 0,
+    "scaleZ": 0.001
+  },
+  {
+    "scaleX": 0.5,
+    "scaleY": 0.5,
+    "path": "Models/bell_huey_helicopter/scene.gltf",
+    "transZ": 0,
+    "transX": 0,
+    "transY": 0,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": 0,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "name": "helicopter2",
+    "rotateY": 0,
+    "scaleZ": 0.5
+  },
+ 
+  {
+    "scaleX": 50,
+    "scaleY": 50,
+    "path": "Models/killarney_raceway/scene.gltf",
+    "static": true,
+    "transZ": 0,
+    "transX": 0,
+    "transY": 0,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": 0,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "name": "track",
+    "rotateY": 0,
+    "scaleZ": 50
+  },
+  {
+    "scaleX": 1,
+    "path": "Models/race_track1/race_track1.glb",
+    "scaleY": 1,
+    "transZ": 0,
+    "transX": 0,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": 0,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "transY": 0,
+    "name": "race_track1",
+    "scaleZ": 1,
+    "rotateY": 0
+  },
+   {
+    "name": "gtr_nismo",
+    "rotateY": 0,
+    "scaleZ": 1,
+    "scaleX": 1,
+    "scaleY": 1,
+    "path": "Models/gtr_nismo/scene.gltf.j3o",
+    "transZ": 0,
+    "transX": 0,
+    "transY": 0,
+    "physics": {"vehicle": {
+	  
+      "horn": "audio/horn-1.ogg",
+      "engine": {
+        "name": "Basic 600",
+        "audio": "2",
+        "power": 2000,
+        "maxRevs": 9000,
+        "braking": 20
+      },
+      "mass": 1525,
+      "wheelModel": "Models/gtr_nismo/dark_alloy.gltf.j3o",
+	  "frontWheel": {
+	    "diameter": 0.74,
+        "brake": 25000,
+        "offset": {
+          "x": 0.8,
+          "y": 0.32,
+          "z": 1.4
+        },
+        "accelerationForce": 1,
+        "scale": 0.75,
+        "steering": true,
+        "suspension": {
+          "maxForce": 7000,
+          "length": 0.1,
+          "damping": 0.4,
+          "stiffness": 12.5,
+          "compression": 0.3
+        },
+        "friction": 1.6
+      },
+      "backWheel": {
+	    "diameter": 0.74,
+        "brake": 25000,
+        "offset": {
+          "x": 0.8,
+          "y": 0.32,
+          "z": -1.4
+        },
+        "accelerationForce": 1,
+        "scale": 0.75,
+        "steering": false,
+        "suspension": {
+          "maxForce": 7000,
+          "length": 0.1,
+          "damping": 0.4,
+          "stiffness": 12.5,
+          "compression": 0.3
+        },
+        "friction": 2.6
+      },
+      "gearBox": {"gears": [
+        {
+          "start": 0,
+          "end": 30
+        },
+        {
+          "start": 15,
+          "end": 70
+        },
+        {
+          "start": 50,
+          "end": 130
+        },
+        {
+          "start": 120,
+          "end": 190
+        },
+        {
+          "start": 180,
+          "end": 255
+        },
+        {
+          "start": 250,
+          "end": 320
+        }
+      ]}
+      
+    }}
+    
+  },
+  
+  {
+    "name": "buggy",
+    "scaleX": 1.75,
+    "scaleY": 1.75,
+	"scaleZ": 1.75,
+	
+	"transZ": 0,
+    "transX": 0,
+    "transY": 0,
+	"rotateY": 0,
+    	
+    "path": "Models/hcr2_buggy/dune-buggy.j3o",
+    	
+    "physics": {"vehicle": {
+      
+      "horn": "audio/horn-1.ogg",
+	  "mass": 600,
+      "wheelModel": "Models/hcr2_buggy/rear-wheel.j3o",
+	  "rearWheelModel": "Models/hcr2_buggy/rear-wheel.j3o",
+	  "localScale": 2,
+	  
+      "engine": {
+        "name": "Basic 600",
+        "audio": "5",
+        "power": 2000,
+        "maxRevs": 9000,
+        "braking": 10
+      },
+      
+	  "frontWheel": {
+	    "diameter": 0.944, 
+        "brake": 10000,
+        "offset": {
+          "x": 1.92,
+          "y": 0.53,
+          "z": 2.24
+        },
+        "accelerationForce": 1,
+        "scale": 2,
+        "steering": true,
+        "suspension": {
+          "maxForce": 24000,
+          "length": 0.25,
+          "damping": 0.65,
+          "stiffness": 24,
+          "compression": 0.5
+        },
+        "friction": 4
+      },
+	  
+      "backWheel": {
+	    "diameter": 0.944,
+        "brake": 0,
+        "offset": {
+          "x": 1.92,
+          "y": 0.63,
+          "z": -2.66
+        },
+        "accelerationForce": 0.8,
+        "scale": 2,
+        "steering": false,
+        "suspension": {
+          "maxForce": 24000,
+          "length": 0.25,
+          "damping": 0.65,
+          "stiffness": 24,
+          "compression": 0.8
+        },
+        "friction": 3.8
+      },
+      "gearBox": {"gears": [
+        {
+          "start": 0,
+          "end": 15
+        },
+        {
+          "start": 15,
+          "end": 30
+        },
+        {
+          "start": 30,
+          "end": 45
+        },
+        {
+          "start": 45,
+          "end": 80
+        },
+        {
+          "start": 80,
+          "end": 140
+        },
+        {
+          "start": 140,
+          "end": 220
+        }
+      ]},
+      
+    }},
+    
+   
+  },
+  
+  {
+    "name": "hatchback",
+    "scaleX": 1,
+    "scaleY": 1,
+	"scaleZ": 1,
+	
+	"transZ": 0,
+    "transX": 0,
+    "transY": 0,
+	"rotateY": 0,
+    	
+    "path": "Models/modern_hatchback/hatchback.j3o",
+    
+    "physics": {"vehicle": {
+      
+      "horn": "audio/horn-1.ogg",
+	  "mass": 1140,
+      "wheelModel": "Models/modern_hatchback/wheel.j3o",
+	  
+      "engine": {
+        "name": "Basic 600",
+        "audio": "4",
+        "power": 1000,
+        "maxRevs": 5500,
+        "braking": 10
+      },
+      
+	  "frontWheel": {
+	    "diameter": 0.65,
+        "brake": 5000,
+        "offset": {
+          "x": 0.66,
+          "y": -0.02,
+          "z": 1.2
+        },
+        "accelerationForce": 1,
+        "scale": 0.75,
+        "steering": true,
+        "suspension": {
+          "maxForce": 12000,
+          "length": 0.01,
+          "damping": 0.8,
+          "stiffness": 20,
+          "compression": 0.6
+        },
+        "friction": 1.2
+      },
+	  
+      "backWheel": {
+	    "diameter": 0.65,
+        "brake": 5000,
+        "offset": {
+          "x": 0.66,
+          "y": -0.02,
+          "z": -1.19
+        },
+        "accelerationForce": 0.4,
+        "scale": 0.75,
+        "steering": false,
+        "suspension": {
+          "maxForce": 12000,
+          "length": 0.01,
+          "damping": 0.8,
+          "stiffness": 20,
+          "compression": 0.6
+        },
+        "friction": 1.2
+      },
+      "gearBox": {"gears": [
+        {
+          "start": 0,
+          "end": 30
+        },
+        {
+          "start": 20,
+          "end": 60
+        },
+        {
+          "start": 50,
+          "end": 100
+        },
+        {
+          "start": 80,
+          "end": 140
+        }
+      ]},
+      
+    }},
+    
+   
+  },
+  
+  {
+    "name": "grand_tourer",
+    "scaleX": 1,
+    "scaleY": 1,
+	"scaleZ": 1,
+	
+	"transZ": 0,
+    "transX": 0,
+    "transY": 0,
+	"rotateY": 0,
+    	
+    "path": "Models/GT/scene.gltf.j3o",
+    
+    "physics": {"vehicle": {
+      
+      "horn": "audio/horn-1.ogg",
+	  "mass": 1525,
+      "wheelModel": "Models/GT/cruiser_wheel.gltf.j3o",
+	  	  
+      "engine": {
+        "name": "Basic 600",
+        "audio": "1",
+        "power": 2000,
+        "maxRevs": 5500,
+        "braking": 10
+      },
+      
+	  "frontWheel": {
+	    "diameter": 0.85,
+        "brake": 6000,
+        "offset": {
+          "x": 0.85,
+          "y": 0.35,
+          "z": 1.6
+        },
+        "accelerationForce": 0.5,
+        "scale": 1,
+        "steering": true,
+        "suspension": {
+          "maxForce": 8000,
+          "length": 0.225,
+          "damping": 0.45,
+          "stiffness": 10,
+          "compression": 0.33
+        },
+        "friction": 1.6
+      },
+	  
+      "backWheel": {
+	    "diameter": 0.85,
+        "brake": 25000,
+        "offset": {
+          "x": 0.85,
+          "y": 0.45,
+          "z": -1.6
+        },
+        "accelerationForce": 0.4,
+        "scale": 1,
+        "steering": false,
+        "suspension": {
+          "maxForce": 8000,
+          "length": 0.285,
+          "damping": 0.45,
+          "stiffness": 10,
+          "compression": 0.33
+        },
+        "friction": 1.6
+      },
+      "gearBox": {"gears": [
+        {
+          "start": 0,
+          "end": 15
+        },
+        {
+          "start": 5,
+          "end": 40
+        },
+        {
+          "start": 25,
+          "end": 75
+        },
+        {
+          "start": 55,
+          "end": 130
+        },
+        {
+          "start": 120,
+          "end": 190
+        }
+      ]},
+      
+    }},
+    
+   
+  },
+  
+  
+  {
+    "name": "pickup_truck",
+    "scaleX": 1,
+    "scaleY": 1,
+	"scaleZ": 1,
+	
+	"transZ": 0,
+    "transX": 0,
+    "transY": 0,
+	"rotateY": 0,
+    	
+    "path": "Models/ford_ranger/pickup.j3o",
+    
+    "physics": {"vehicle": {
+      
+      "horn": "audio/horn-1.ogg",
+	  "mass": 1400,
+      "wheelModel": "Models/ford_ranger/wheel.j3o",
+	  	  
+      "engine": {
+        "name": "Basic 600",
+        "audio": "1",
+        "power": 2000,
+        "maxRevs": 5500,
+        "braking": 10
+      },
+      
+	  "frontWheel": {
+	    "diameter": 0.8,
+        "brake": 4000,
+        "offset": {
+          "x": 0.75,
+          "y": 0.45,
+          "z": 1.76
+        },
+        "accelerationForce": 0.2,
+        "scale": 1,
+        "steering": true,
+        "suspension": {
+          "maxForce": 20000,
+          "length": 0.51,
+          "damping": 0.45,
+          "stiffness": 20,
+          "compression": 0.33
+        },
+        "friction": 1
+      },
+	  
+      "backWheel": {
+	    "diameter": 0.8,
+        "brake": 4000,
+        "offset": {
+          "x": 0.75,
+          "y": 0.45,
+          "z": -1.42
+        },
+        "accelerationForce": 0.2,
+        "scale": 1,
+        "steering": false,
+        "suspension": {
+          "maxForce": 20000,
+          "length": 0.51,
+          "damping": 0.45,
+          "stiffness": 20,
+          "compression": 0.33
+        },
+        "friction": 1
+      },
+      "gearBox": {"gears": [
+        {
+          "start": 0,
+          "end": 19
+        },
+        {
+          "start": 12,
+          "end": 50
+        },
+        {
+          "start": 40,
+          "end": 80
+        },
+        {
+          "start": 70,
+          "end": 110
+        }
+      ]},
+      
+    }},
+   
+   
+  }
+
+  
+]}

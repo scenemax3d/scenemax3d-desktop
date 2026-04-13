@@ -1,0 +1,29 @@
+Licensing history for files in "src/main/resources/Models/GT" and its subfolders
+
+Based on "Opel GT Retopo":
+* download file:     opel_gt_retopo.zip
+* downloaded from:   https://sketchfab.com/3d-models/opel-gt-retopo-badcab3c8a3d42359c8416db8a7427fe
+* download options:  Autoconverted format (glTF)
+* author:            systmh (Thomas Glenn Thorne)
+* author URL:        https://www.tgthorne.com/
+* license type:      CC-BY-NC-SA (CC Attribution-NonCommercial-ShareAlike)
+* license URL:       https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+Extracted files used without modification:
+* bodyMAT_baseColor.png
+* bodyMAT_emissive.png
+* bodyMAT_metallicRoughness.png
+* bodyMAT_normal.png
+* matte_baseColor.png
+* matte_metallicRoughness.png
+* matte_normal.png
+* shadow_baseColor.png
+
+Derived files (also licensed CC-BY-NC-SA):
+* chassis-shape.j3o
+* cruiser_wheel.gltf.j3o
+* scene.gltf.j3o
+
+Added files (also licensed CC-BY-NC-SA):
+* license.txt
+* pure_white.png

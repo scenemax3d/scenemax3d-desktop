@@ -18,6 +18,7 @@ public class AssetsMapping {
     private HashMap<String, ResourceSetup> _resources = new HashMap<>();
     private HashMap<String, ResourceSetup2D> _resources2D = new HashMap<>();
     private HashMap<String, ResourceShader> _shaders = new HashMap<>();
+    private HashMap<String, ResourceMaterialAsset> _materials = new HashMap<>();
     private HashMap<String,TerrainResource> _terrains=new HashMap<>();
     private HashMap<String,SkyBoxResource> _skyboxes=new HashMap<>();
     private HashMap<String, ResourceCinematicRig> _cinematics = new HashMap<>();
@@ -66,6 +67,9 @@ public class AssetsMapping {
         res = getResourcesFolderIndex(extPath+"/environment_shaders/environment-shaders-ext.json");
         loadShadersFromJson(res);
 
+        res = getResourcesFolderIndex(extPath+"/material/materials-ext.json");
+        loadMaterialsFromJson(res);
+
         res = getResourcesFolderIndex(extPath+"/animations/animations-ext.json");
         loadAnimationsFromJson(res);
 
@@ -103,6 +107,9 @@ public class AssetsMapping {
         res = getResourcesFolderIndex("./resources/environment_shaders/environment-shaders.json");
         loadShadersFromJson(res);
 
+        res = getResourcesFolderIndex("./resources/material/materials.json");
+        loadMaterialsFromJson(res);
+
         res = getResourcesFolderIndex("./resources/animations/animations.json");
         loadAnimationsFromJson(res);
 
@@ -117,6 +124,7 @@ public class AssetsMapping {
             loadFontsFromJson(res);
             loadSkyBoxesFromJson(res);
             loadShadersFromJson(res);
+            loadMaterialsFromJson(res);
             loadCinematicsFromJson(res);
             loadAnimationsFromJson(res);
         }
@@ -333,6 +341,33 @@ public class AssetsMapping {
         }
     }
 
+    private void loadMaterialsFromJson(JSONObject res) {
+        if (res == null || !res.has("materials")) {
+            return;
+        }
+
+        JSONArray materials = res.getJSONArray("materials");
+        for (int i = 0; i < materials.length(); i++) {
+            JSONObject material = materials.optJSONObject(i);
+            if (material == null) {
+                continue;
+            }
+
+            String name = material.optString("name", "").trim();
+            String path = material.optString("path", "").trim();
+            if (name.isEmpty() || path.isEmpty()) {
+                continue;
+            }
+
+            _materials.put(name.toLowerCase(), new ResourceMaterialAsset(
+                    name,
+                    path,
+                    material.optBoolean("transparent", false),
+                    material.optBoolean("doubleSided", false)
+            ));
+        }
+    }
+
     private void loadCinematicsFromJson(JSONObject res) {
         if (res == null) {
             return;
@@ -444,6 +479,10 @@ public class AssetsMapping {
 
     public HashMap<String, ResourceShader> getShadersIndex() {
         return _shaders;
+    }
+
+    public HashMap<String, ResourceMaterialAsset> getMaterialsIndex() {
+        return _materials;
     }
 
     public HashMap<String, ResourceCinematicRig> getCinematicsIndex() {
