@@ -143,3 +143,7 @@ The items below are planned for future delivery, but they will not necessarily b
 - **Debugger** -- easier runtime breakpoints and debugging information
 - **Multiplayer Support** -- support for multiplayer game experiences
 - **Web Browser Projector** -- run exported projects directly in the browser
+- **MCP Server**
+- **Java Extensibility**
+- **Scene Sharing**
+
