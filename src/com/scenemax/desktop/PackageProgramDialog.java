@@ -30,10 +30,12 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
     private final JCheckBox chkSignWebStart = new JCheckBox("Sign Web Start JAR", false);
     private final JCheckBox chkGenerateSelfSigned = new JCheckBox("Generate free self-signed certificate if missing", false);
     private final JCheckBox chkShowAdvancedWebOptions = new JCheckBox("Show advanced signing options", false);
+    private final JCheckBox chkUploadToItch = new JCheckBox("Automatically upload desktop builds to itch.io with butler", false);
     private final JTextField txtKeystorePath = new JTextField();
     private final JTextField txtKeystoreAlias = new JTextField();
     private final JPasswordField txtKeystorePassword = new JPasswordField();
     private final JPasswordField txtKeyPassword = new JPasswordField();
+    private final JLabel lblItchInfo = new JLabel(" ");
     private final JButton btnBrowseWindowsIcon = new JButton("Browse...");
     private final JButton btnBrowseLinuxIcon = new JButton("Browse...");
     private final JButton btnBrowseMacIcon = new JButton("Browse...");
@@ -266,6 +268,26 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         center.add(signingPanel);
         center.add(Box.createVerticalStrut(8));
 
+        JPanel itchPanel = new JPanel(new GridBagLayout());
+        itchPanel.setBorder(BorderFactory.createTitledBorder("itch.io"));
+        itchPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        itchPanel.setMaximumSize(new Dimension(445, Integer.MAX_VALUE));
+        GridBagConstraints itchGbc = new GridBagConstraints();
+        itchGbc.insets = new Insets(3, 4, 3, 4);
+        itchGbc.fill = GridBagConstraints.HORIZONTAL;
+        itchGbc.anchor = GridBagConstraints.NORTHWEST;
+        itchGbc.gridx = 0;
+        itchGbc.gridy = 0;
+        itchGbc.weightx = 1;
+        itchPanel.add(chkUploadToItch, itchGbc);
+
+        itchGbc.gridy++;
+        lblItchInfo.setForeground(new Color(92, 92, 92));
+        itchPanel.add(lblItchInfo, itchGbc);
+
+        center.add(itchPanel);
+        center.add(Box.createVerticalStrut(8));
+
         lblStatus.setAlignmentX(Component.LEFT_ALIGNMENT);
         center.add(lblStatus);
         center.add(Box.createVerticalStrut(6));
@@ -300,6 +322,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         buttonPackage.setEnabled(true);
         buttonCancel.setText("Cancel");
         loadWebStartDefaults();
+        loadItchDefaults();
         updatePlatformSections();
     }
 
@@ -318,6 +341,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         chkShowAdvancedWebOptions.setEnabled(enabled);
         chkSignWebStart.setEnabled(enabled);
         chkGenerateSelfSigned.setEnabled(enabled);
+        chkUploadToItch.setEnabled(enabled);
         txtKeystorePath.setEnabled(enabled);
         txtKeystoreAlias.setEnabled(enabled);
         txtKeystorePassword.setEnabled(enabled);
@@ -389,6 +413,66 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
             }
         }
 
+        SceneMaxProject activeProject = Util.getActiveProject();
+        String itchTarget = "";
+        String butlerPath = "";
+        String itchApiKey = "";
+        if (chkUploadToItch.isSelected()) {
+            if (activeProject == null) {
+                JOptionPane.showMessageDialog(this, "Create or select a project first, then configure itch.io in File > Projects > Project Settings...", "Package Error", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+
+            try {
+                itchTarget = ItchIoHelper.normalizeGameTarget(activeProject.itchGamePage);
+            } catch (IllegalArgumentException ex) {
+                JOptionPane.showMessageDialog(this, "Open File > Projects > Project Settings... and enter a valid itch.io game page before enabling automatic upload.\r\n\r\n" + ex.getMessage(), "Package Error", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+
+            boolean hasUploadableDesktopTarget = chkWindows.isSelected() || chkLinux.isSelected() || chkMac.isSelected();
+            if (!hasUploadableDesktopTarget) {
+                JOptionPane.showMessageDialog(this, "Automatic itch.io upload currently supports Windows, Linux, and macOS packages. Select at least one desktop target.", "Package Error", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+
+            butlerPath = valueOrBlank(activeProject.itchButlerPath);
+            itchApiKey = Util.getProjectItchApiKey(activeProject);
+            if (itchApiKey.length() == 0 && !ItchIoHelper.hasLocalCredentials()) {
+                int loginChoice = JOptionPane.showConfirmDialog(
+                        this,
+                        "No project API key is saved for this itch.io upload.\r\n\r\n" +
+                                "Would you like SceneMax to start `butler login` for you now?\r\n" +
+                                "This opens the itch.io sign-in flow in your browser and brings you back here when it finishes.",
+                        "itch.io Login",
+                        JOptionPane.YES_NO_OPTION
+                );
+                if (loginChoice != JOptionPane.YES_OPTION) {
+                    return;
+                }
+
+                String usedButlerPath = ItchIoHelper.promptAndRunButlerLogin(this, butlerPath);
+                if (usedButlerPath == null || !ItchIoHelper.hasLocalCredentials()) {
+                    JOptionPane.showMessageDialog(
+                            this,
+                            "Butler login did not complete, so SceneMax cannot upload to itch.io yet.\r\n\r\n" +
+                                    "You can try again, or open File > Projects > Project Settings... to paste an API key instead.",
+                            "Package Error",
+                            JOptionPane.INFORMATION_MESSAGE
+                    );
+                    return;
+                }
+
+                if (!"butler".equalsIgnoreCase(usedButlerPath)) {
+                    butlerPath = usedButlerPath;
+                    if (!usedButlerPath.equals(valueOrBlank(activeProject.itchButlerPath))) {
+                        activeProject.itchButlerPath = usedButlerPath;
+                        Util.saveProjectSettings(activeProject);
+                    }
+                }
+            }
+        }
+
         try {
             AppDB.getInstance().setParam("webstart_base_url", webBaseUrl);
             AppDB.getInstance().setParam("webstart_vendor", valueOrBlank(txtWebVendor.getText()));
@@ -421,7 +505,14 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
                             toFileOrNull(keystorePath),
                             keystoreAlias,
                             storePassword,
-                            keyPassword
+                            keyPassword,
+                            chkUploadToItch.isSelected(),
+                            butlerPath,
+                            itchTarget,
+                            itchApiKey,
+                            activeProject == null ? "" : valueOrBlank(activeProject.itchWindowsChannel),
+                            activeProject == null ? "" : valueOrBlank(activeProject.itchLinuxChannel),
+                            activeProject == null ? "" : valueOrBlank(activeProject.itchMacChannel)
                     ),
                     this::onPackagingFinished,
                     this::onPackagingCanceled
@@ -438,9 +529,13 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
 
     private void onPackagingCanceled() {
         setAlwaysOnTop(false);
+        String failureMessage = packageTask == null ? "" : valueOrBlank(packageTask.getFailureMessage());
+        if (failureMessage.length() == 0) {
+            failureMessage = "Program Packaging Failed";
+        }
         JOptionPane.showMessageDialog(
                 this,
-                "Program Packaging Failed",
+                failureMessage,
                 "Package Error",
                 JOptionPane.ERROR_MESSAGE
         );
@@ -568,6 +663,30 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         txtWebRemoteFolder.setText(readSavedOrConfig("webstart_remote_folder", ""));
         txtKeystorePath.setText(readSavedOrConfig("webstart_keystore_path", ""));
         txtKeystoreAlias.setText(readSavedOrConfig("webstart_keystore_alias", "scenemax"));
+    }
+
+    private void loadItchDefaults() {
+        chkUploadToItch.setSelected(false);
+        SceneMaxProject project = Util.getActiveProject();
+        if (project == null) {
+            lblItchInfo.setText("<html>No active project. Create or select a project first.</html>");
+            return;
+        }
+
+        String savedTarget = "";
+        try {
+            savedTarget = ItchIoHelper.normalizeGameTarget(project.itchGamePage);
+        } catch (IllegalArgumentException ignored) {
+            savedTarget = "";
+        }
+
+        if (savedTarget.length() == 0) {
+            lblItchInfo.setText("<html>Configure File > Projects > Project Settings... to set the itch.io page, channels, and optional API key.</html>");
+            return;
+        }
+
+        String authMode = Util.getProjectItchApiKey(project).length() > 0 ? "project API key saved" : (ItchIoHelper.hasLocalCredentials() ? "using local butler login" : "authentication still needed");
+        lblItchInfo.setText("<html>Configured target: <b>" + savedTarget + "</b> (" + authMode + ").</html>");
     }
 
     private String readSavedOrConfig(String key, String fallback) {

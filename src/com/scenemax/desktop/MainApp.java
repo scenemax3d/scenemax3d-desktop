@@ -436,6 +436,19 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
                 } else if (cmd.equals("new_project_scripts_folder")) {
                     createNewProjectScriptsFolder();
+                } else if (cmd.equals("project_settings")) {
+                    SceneMaxProject activeProject = Util.getActiveProject();
+                    if (activeProject == null) {
+                        JOptionPane.showMessageDialog(
+                                MainApp.this,
+                                "Create or select a project first.",
+                                "Project Settings",
+                                JOptionPane.INFORMATION_MESSAGE
+                        );
+                        return;
+                    }
+                    ProjectSettingsDialog dlg = new ProjectSettingsDialog(MainApp.this, activeProject);
+                    dlg.setVisible(true);
                 } else if (cmd.equals("new_folder")) {
                     createNewScriptsFolder();
                 } else if (cmd.equals("exit")) {

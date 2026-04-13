@@ -60,6 +60,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     private File outputFolder;
     private final StringBuilder completionNotes = new StringBuilder();
     private volatile String statusNote = "";
+    private volatile String failureMessage = "";
 
     public enum PackageTarget {
         WINDOWS,
@@ -83,12 +84,22 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         public final String keystoreAlias;
         public final String keystorePassword;
         public final String keyPassword;
+        public final boolean uploadToItch;
+        public final String itchButlerPath;
+        public final String itchGameTarget;
+        public final String itchApiKey;
+        public final String itchWindowsChannel;
+        public final String itchLinuxChannel;
+        public final String itchMacChannel;
 
         public PackageOptions(File windowsIcon, File linuxIcon, File macIcon,
                               String webBaseUrl, String webVendor, String webHomepage,
                               String webRemoteFolder, boolean uploadWebStart, boolean signWebStart,
                               boolean generateSelfSignedCertificate, File keystoreFile,
-                              String keystoreAlias, String keystorePassword, String keyPassword) {
+                              String keystoreAlias, String keystorePassword, String keyPassword,
+                              boolean uploadToItch, String itchButlerPath, String itchGameTarget,
+                              String itchApiKey, String itchWindowsChannel, String itchLinuxChannel,
+                              String itchMacChannel) {
             this.windowsIcon = windowsIcon;
             this.linuxIcon = linuxIcon;
             this.macIcon = macIcon;
@@ -103,6 +114,13 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             this.keystoreAlias = keystoreAlias == null ? "" : keystoreAlias.trim();
             this.keystorePassword = keystorePassword == null ? "" : keystorePassword;
             this.keyPassword = keyPassword == null || keyPassword.trim().length() == 0 ? this.keystorePassword : keyPassword;
+            this.uploadToItch = uploadToItch;
+            this.itchButlerPath = itchButlerPath == null ? "" : itchButlerPath.trim();
+            this.itchGameTarget = itchGameTarget == null ? "" : itchGameTarget.trim();
+            this.itchApiKey = itchApiKey == null ? "" : itchApiKey.trim();
+            this.itchWindowsChannel = itchWindowsChannel == null ? "" : itchWindowsChannel.trim();
+            this.itchLinuxChannel = itchLinuxChannel == null ? "" : itchLinuxChannel.trim();
+            this.itchMacChannel = itchMacChannel == null ? "" : itchMacChannel.trim();
         }
     }
 
@@ -110,7 +128,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         this.prg=prg;
         this.finish=finish;
         this.canceled=canceled;
-        this.options = options == null ? new PackageOptions(null, null, null, "", "", "", "", false, false, false, null, "", "", "") : options;
+        this.options = options == null ? new PackageOptions(null, null, null, "", "", "", "", false, false, false, null, "", "", "", false, "", "", "", "", "", "") : options;
         this.targets = targets == null || targets.isEmpty()
                 ? EnumSet.of(PackageTarget.WINDOWS)
                 : EnumSet.copyOf(targets);
@@ -445,6 +463,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         // Close jar
         jarOutputStream.close();
         prepareTargetPackages();
+        uploadToItchIfRequested();
 
         return globalCounter;
     }
@@ -510,6 +529,95 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 producedArtifacts.add(webFolder);
             }
         }
+    }
+
+    private void uploadToItchIfRequested() throws IOException {
+        if (!options.uploadToItch) {
+            return;
+        }
+
+        List<String> butlerCommand = resolveButlerCommand();
+        ensureButlerAvailable(butlerCommand);
+
+        boolean uploadedAny = false;
+        String gameName = getGameName();
+
+        if (targets.contains(PackageTarget.WINDOWS)) {
+            File windowsArtifact = new File(new File(outputFolder, "windows"), gameName + ".exe");
+            uploadArtifactToItch(butlerCommand, windowsArtifact, ItchIoHelper.defaultChannel("windows", options.itchWindowsChannel), "Windows");
+            uploadedAny = true;
+        }
+
+        if (targets.contains(PackageTarget.LINUX)) {
+            File linuxArtifact = new File(new File(outputFolder, "linux"), gameName + "_linux.zip");
+            uploadArtifactToItch(butlerCommand, linuxArtifact, ItchIoHelper.defaultChannel("linux", options.itchLinuxChannel), "Linux");
+            uploadedAny = true;
+        }
+
+        if (targets.contains(PackageTarget.MAC_OSX)) {
+            File macArtifact = new File(new File(outputFolder, "macos"), gameName + "_macos.zip");
+            uploadArtifactToItch(butlerCommand, macArtifact, ItchIoHelper.defaultChannel("macos", options.itchMacChannel), "macOS");
+            uploadedAny = true;
+        }
+
+        if (targets.contains(PackageTarget.WEB_START)) {
+            appendCompletionNote("Web Start packaging completed locally. Automatic itch.io upload currently skips Web Start artifacts.");
+        }
+
+        if (uploadedAny) {
+            appendCompletionNote("Updated itch.io page " + options.itchGameTarget + " using butler.");
+        }
+    }
+
+    private List<String> resolveButlerCommand() throws IOException {
+        if (options.itchButlerPath.length() > 0) {
+            File configured = new File(options.itchButlerPath);
+            if (!configured.isFile()) {
+                throw new IOException("Configured butler executable was not found: " + configured.getAbsolutePath());
+            }
+            return Collections.singletonList(configured.getAbsolutePath());
+        }
+
+        String bundledButler = ItchIoHelper.findBundledButlerExecutable();
+        if (bundledButler != null && bundledButler.trim().length() > 0) {
+            return Collections.singletonList(bundledButler);
+        }
+
+        return Collections.singletonList("butler");
+    }
+
+    private void ensureButlerAvailable(List<String> butlerCommand) throws IOException {
+        List<String> versionCommand = new ArrayList<>(butlerCommand);
+        versionCommand.add("version");
+        try {
+            runCommand(versionCommand, null, "butler");
+        } catch (IOException e) {
+            if (butlerCommand.size() == 1 && "butler".equalsIgnoreCase(butlerCommand.get(0))) {
+                throw new IOException(ItchIoHelper.buildButlerInstallInstructions(), e);
+            }
+            throw new IOException("Unable to run butler from " + butlerCommand.get(0) + ". " + e.getMessage(), e);
+        }
+    }
+
+    private void uploadArtifactToItch(List<String> butlerCommand, File artifact, String channel, String platformLabel) throws IOException {
+        if (artifact == null || !artifact.exists()) {
+            throw new IOException(platformLabel + " artifact was not found for itch.io upload: " + (artifact == null ? "(missing)" : artifact.getAbsolutePath()));
+        }
+
+        updateStatus("Uploading " + platformLabel + " build to itch.io...");
+        List<String> command = new ArrayList<>(butlerCommand);
+        command.add("push");
+        command.add(artifact.getAbsolutePath());
+        command.add(options.itchGameTarget + ":" + channel);
+
+        Map<String, String> env = Collections.emptyMap();
+        if (options.itchApiKey.length() > 0) {
+            env = new LinkedHashMap<>();
+            env.put("BUTLER_API_KEY", options.itchApiKey);
+        }
+
+        runCommand(command, artifact.getParentFile(), "butler", env, "butler:");
+        appendCompletionNote("Uploaded " + platformLabel + " build to " + options.itchGameTarget + ":" + channel + ".");
     }
 
     private File prepareWindowsExecutable(String gameName) throws IOException {
@@ -924,9 +1032,16 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     }
 
     private void runCommand(List<String> command, File workingDir, String toolName) throws IOException {
+        runCommand(command, workingDir, toolName, Collections.emptyMap(), null);
+    }
+
+    private void runCommand(List<String> command, File workingDir, String toolName, Map<String, String> extraEnvironment, String statusPrefix) throws IOException {
         ProcessBuilder processBuilder = new ProcessBuilder(command);
         if (workingDir != null) {
             processBuilder.directory(workingDir);
+        }
+        if (extraEnvironment != null && !extraEnvironment.isEmpty()) {
+            processBuilder.environment().putAll(extraEnvironment);
         }
         processBuilder.redirectErrorStream(true);
         Process process;
@@ -936,15 +1051,22 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             throw new IOException("Failed to start " + toolName + ". Make sure it is available in PATH.", e);
         }
 
-        String output;
-        try (InputStream in = process.getInputStream()) {
-            output = new String(Util.toByteArray(in), StandardCharsets.UTF_8);
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line).append('\n');
+                if (statusPrefix != null && line.trim().length() > 0) {
+                    updateStatus(statusPrefix + " " + line.trim());
+                }
+            }
         }
 
         try {
             int exitCode = process.waitFor();
             if (exitCode != 0) {
-                throw new IOException(toolName + " failed with exit code " + exitCode + (output.trim().length() == 0 ? "" : ": " + output.trim()));
+                String text = output.toString().trim();
+                throw new IOException(toolName + " failed with exit code " + exitCode + (text.length() == 0 ? "" : ": " + text));
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -1454,9 +1576,13 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 finish.run();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                failureMessage = "Packaging was interrupted.";
                 this.canceled.run();
             } catch (ExecutionException e) {
                 e.printStackTrace();
+                Throwable cause = e.getCause() == null ? e : e.getCause();
+                String message = cause.getMessage();
+                failureMessage = message == null || message.trim().length() == 0 ? cause.toString() : message.trim();
                 this.canceled.run();
             }
         }
@@ -1476,6 +1602,10 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
     public String getStatusNote() {
         return statusNote;
+    }
+
+    public String getFailureMessage() {
+        return failureMessage;
     }
 
     private File createLaunch4jConfig(String gameName) throws IOException {
