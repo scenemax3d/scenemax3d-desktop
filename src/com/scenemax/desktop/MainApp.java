@@ -20,6 +20,12 @@ import com.scenemax.designer.shader.ShaderDesignerPanel;
 import com.scenemax.designer.shader.ShaderDocument;
 import com.scenemax.designer.shader.ShaderTemplatePreset;
 import com.scenemax.designer.ui.designer.UIDesignerPanel;
+import com.scenemax.desktop.ai.SceneMaxAutomationBootstrap;
+import com.scenemax.desktop.ai.SceneMaxToolContext;
+import com.scenemax.desktop.ai.SceneMaxToolRegistry;
+import com.scenemax.desktop.ai.mcp.SceneMaxMcpHttpServer;
+import com.scenemax.desktop.ai.mcp.SceneMaxMcpLogEntry;
+import com.scenemax.desktop.ai.mcp.SceneMaxMcpServer;
 import com.scenemaxeng.common.ui.model.UIDocument;
 import com.scenemaxeng.compiler.ApplyMacroResults;
 import com.scenemaxeng.compiler.MacroFilter;
@@ -113,6 +119,12 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private JMenu assetsMenu;
     private EditorTabPanel editorTabPanel;
     private SceneMaxAutoComplete autoComplete;
+    private SceneMaxToolRegistry automationToolRegistry;
+    private SceneMaxToolContext automationToolContext;
+    private SceneMaxMcpServer automationMcpServer;
+    private SceneMaxMcpHttpServer automationHttpServer;
+    private final java.util.List<SceneMaxMcpLogEntry> mcpLogEntries = Collections.synchronizedList(new ArrayList<>());
+    private McpLogDialog mcpLogDialog;
     // (Designer panels are managed per-tab inside EditorTabPanel)
 
     public MainApp() {
@@ -301,7 +313,23 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
         this.mainSplitPane.setResizeWeight(0.065);
         initGitStatusLabel();
+        initAutomationTools();
         loadPlugins();
+    }
+
+    private void initAutomationTools() {
+        automationToolRegistry = SceneMaxAutomationBootstrap.createDefaultRegistry();
+        automationToolContext = new SceneMaxToolContext(this);
+        automationMcpServer = new SceneMaxMcpServer(automationToolRegistry, automationToolContext);
+        automationHttpServer = new SceneMaxMcpHttpServer(automationMcpServer, this::recordMcpLogEntry);
+        automationHttpServer.start(getConfiguredMcpPort());
+        updateMcpStatusLabel();
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                stopAutomationServer();
+            }
+        });
     }
 
     private void loadPlugins() {
@@ -528,13 +556,14 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     dlg.setModal(true);
                     dlg.setVisible(true);
                 } else if (cmd.equals("settings")) {
-                    SettingsDialog dlg = new SettingsDialog();
+                    SettingsDialog dlg = new SettingsDialog(MainApp.this);
                     dlg.setSize(800, 600);
                     dlg.setLocationRelativeTo(null);
                     dlg.setModal(true);
                     dlg.setVisible(true);
 
                     initUtils();
+                    restartAutomationServer();
 
                 // ─── Git commands ───
                 } else if (cmd.startsWith("git_")) {
@@ -875,6 +904,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     private JLabel lblGitBranch;
+    private JLabel lblMcpStatus;
 
     private void initGitStatusLabel() {
         if (lblGitBranch == null) {
@@ -897,14 +927,26 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     }
                 }
             });
+            lblMcpStatus = new JLabel();
+            lblMcpStatus.setFont(lblGitBranch.getFont().deriveFont(Font.PLAIN, 11f));
+            lblMcpStatus.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            lblMcpStatus.setToolTipText("Click to open the MCP monitor");
+            lblMcpStatus.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    showMcpMonitor();
+                }
+            });
             gitStatusPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
             gitStatusPanel.setOpaque(false);
             gitStatusPanel.add(lblGitBranch);
+            gitStatusPanel.add(lblMcpStatus);
             topPanel.add(gitStatusPanel, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST,
                     GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW,
                     GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
         }
         updateGitStatusLabel();
+        updateMcpStatusLabel();
     }
 
     private void updateGitStatusLabel() {
@@ -936,6 +978,33 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             lblGitBranch.setText("  \u2387 " + branch + changedIndicator);
             lblGitBranch.setForeground(hasChanges ? new Color(255, 200, 100) : new Color(100, 200, 100));
         });
+    }
+
+    private void updateMcpStatusLabel() {
+        if (lblMcpStatus == null) {
+            return;
+        }
+
+        SwingUtilities.invokeLater(() -> {
+            if (automationHttpServer != null && automationHttpServer.isRunning()) {
+                lblMcpStatus.setText("  MCP: ready @" + automationHttpServer.getPort());
+                lblMcpStatus.setForeground(new Color(100, 200, 100));
+                lblMcpStatus.setToolTipText(automationHttpServer.getEndpointUrl());
+            } else {
+                lblMcpStatus.setText("  MCP: unavailable");
+                lblMcpStatus.setForeground(new Color(220, 120, 120));
+                String error = automationHttpServer != null ? automationHttpServer.getLastError() : null;
+                lblMcpStatus.setToolTipText(error == null || error.isBlank() ? "Local MCP server is not running" : error);
+            }
+        });
+    }
+
+    private void showMcpMonitor() {
+        if (mcpLogDialog == null) {
+            mcpLogDialog = new McpLogDialog(this);
+        }
+        mcpLogDialog.refreshFromHost();
+        mcpLogDialog.setVisible(true);
     }
 
     private void initButtonHandlers() {
@@ -3303,6 +3372,32 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         return editorTabPanel;
     }
 
+    public SceneMaxToolRegistry getAutomationToolRegistry() {
+        return automationToolRegistry;
+    }
+
+    public SceneMaxToolContext getAutomationToolContext() {
+        return automationToolContext;
+    }
+
+    public SceneMaxMcpServer getAutomationMcpServer() {
+        return automationMcpServer;
+    }
+
+    public SceneMaxMcpHttpServer getAutomationHttpServer() {
+        return automationHttpServer;
+    }
+
+    public java.util.List<String> getMcpLogLinesSnapshot() {
+        java.util.List<String> lines = new ArrayList<>();
+        synchronized (mcpLogEntries) {
+            for (SceneMaxMcpLogEntry entry : mcpLogEntries) {
+                lines.add(entry.formatLine());
+            }
+        }
+        return lines;
+    }
+
     public void refreshAppTitle() {
         String title = Util.getAppTitle(this.licenseExists);
         this.setTitle(title);
@@ -3311,6 +3406,91 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     public void refreshScriptsFolder() {
         loadScriptsFolder();
         openLastTreeNode();
+    }
+
+    public void refreshWorkspaceViews() {
+        loadScriptsFolder();
+        refreshAssetsMenu();
+    }
+
+    public void openFileFromAutomation(File file) {
+        if (file == null || !file.exists()) {
+            return;
+        }
+        loadFileToTextEditor(file);
+    }
+
+    public void openOrRefreshTextFileFromAutomation(File file, String content) {
+        if (file == null) {
+            return;
+        }
+        if (editorTabPanel != null) {
+            editorTabPanel.refreshOrOpenTextTab(file.getAbsolutePath(), content);
+        }
+        openFileFromAutomation(file);
+    }
+
+    public void saveActiveEditorTab() {
+        if (editorTabPanel != null) {
+            editorTabPanel.saveActiveTab();
+        }
+    }
+
+    public void stopAutomationServer() {
+        if (automationHttpServer != null) {
+            automationHttpServer.stop();
+            updateMcpStatusLabel();
+        }
+    }
+
+    public void clearMcpLogEntries() {
+        synchronized (mcpLogEntries) {
+            mcpLogEntries.clear();
+        }
+        if (mcpLogDialog != null) {
+            mcpLogDialog.refreshFromHost();
+        }
+    }
+
+    private int getConfiguredMcpPort() {
+        String raw = AppDB.getInstance().getParam("mcp_server_port");
+        if (raw == null || raw.trim().isEmpty()) {
+            return 0;
+        }
+        try {
+            int port = Integer.parseInt(raw.trim());
+            return port >= 1 && port <= 65535 ? port : 0;
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
+    private void restartAutomationServer() {
+        if (automationHttpServer == null) {
+            return;
+        }
+        automationHttpServer.stop();
+        automationHttpServer.start(getConfiguredMcpPort());
+        updateMcpStatusLabel();
+        if (mcpLogDialog != null) {
+            mcpLogDialog.refreshFromHost();
+        }
+    }
+
+    public void restartAutomationServerFromSettings() {
+        restartAutomationServer();
+    }
+
+    private void recordMcpLogEntry(SceneMaxMcpLogEntry entry) {
+        synchronized (mcpLogEntries) {
+            mcpLogEntries.add(entry);
+            while (mcpLogEntries.size() > 200) {
+                mcpLogEntries.remove(0);
+            }
+        }
+        if (mcpLogDialog != null && mcpLogDialog.isVisible()) {
+            SwingUtilities.invokeLater(() -> mcpLogDialog.appendLogLine(entry.formatLine()));
+        }
     }
 
     private void createNewScriptsFolder() {
