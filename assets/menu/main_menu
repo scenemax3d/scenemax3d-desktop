@@ -4,7 +4,8 @@
     {"name": "File", "items": [
 
       {"name": "Projects", "items": [
-          {"name": "New Project...","command": "new_project_scripts_folder"}
+          {"name": "New Project...","command": "new_project_scripts_folder"},
+          {"name": "Project Settings...","command": "project_settings"}
 
         ]
       },

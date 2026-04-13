@@ -204,6 +204,12 @@ public class Util {
                 p.selectedNode = o.getString("selectedNode");
             }
 
+            p.itchGamePage = o.optString("itchGamePage", "");
+            p.itchButlerPath = o.optString("itchButlerPath", "");
+            p.itchWindowsChannel = o.optString("itchWindowsChannel", "");
+            p.itchLinuxChannel = o.optString("itchLinuxChannel", "");
+            p.itchMacChannel = o.optString("itchMacChannel", "");
+
             projects.add(p);
         }
 
@@ -362,6 +368,11 @@ public class Util {
             if(obj.getString("name").equals(p.name)) {
                 obj.put("selectedParent",p.selectedParent);
                 obj.put("selectedNode",p.selectedNode);
+                obj.put("itchGamePage", safeProjectValue(p.itchGamePage));
+                obj.put("itchButlerPath", safeProjectValue(p.itchButlerPath));
+                obj.put("itchWindowsChannel", safeProjectValue(p.itchWindowsChannel));
+                obj.put("itchLinuxChannel", safeProjectValue(p.itchLinuxChannel));
+                obj.put("itchMacChannel", safeProjectValue(p.itchMacChannel));
 
                 try {
                     File f = new File("projects/projects.json");
@@ -376,6 +387,33 @@ public class Util {
 
         return true;
 
+    }
+
+    public static boolean saveProjectSettings(SceneMaxProject project) {
+        if (project == null) {
+            return false;
+        }
+        return saveProject(project);
+    }
+
+    private static String safeProjectValue(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private static String getProjectScopedKey(SceneMaxProject project, String suffix) {
+        if (project == null || project.name == null) {
+            return suffix;
+        }
+        return "project~" + project.name + "~" + suffix;
+    }
+
+    public static String getProjectItchApiKey(SceneMaxProject project) {
+        String value = AppDB.getInstance().getParam(getProjectScopedKey(project, "itch_api_key"));
+        return value == null ? "" : value.trim();
+    }
+
+    public static void setProjectItchApiKey(SceneMaxProject project, String apiKey) {
+        AppDB.getInstance().setParam(getProjectScopedKey(project, "itch_api_key"), apiKey == null ? "" : apiKey.trim());
     }
 
     ////////////////////////////////

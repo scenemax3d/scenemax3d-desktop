@@ -26,6 +26,7 @@
 - [Levels & Shared State](levels-and-shared-state.md)
 - [Path Replay](path-replay.md)
 - [Utilities](utilities.md)
+- [itch.io Integration Guide](itchio-integration.md)
 
 ## Design Notes
 
