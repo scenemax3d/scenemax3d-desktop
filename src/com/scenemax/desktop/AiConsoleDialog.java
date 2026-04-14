@@ -27,6 +27,7 @@ import java.util.Locale;
 public class AiConsoleDialog extends JDialog {
 
     private static final int MAX_HISTORY_MESSAGES = 12;
+    private static final String STATUS_EVENT_PREFIX = "__STATUS__:";
 
     private final MainApp host;
     private final JTextArea txtTranscript = new JTextArea();
@@ -34,6 +35,7 @@ public class AiConsoleDialog extends JDialog {
     private final JButton btnSend = new JButton("Send");
     private final JButton btnClear = new JButton("Clear");
     private final JLabel lblStatus = new JLabel("Ready");
+    private final JProgressBar progressBar = new JProgressBar();
     private final JComboBox<ConsoleProvider> cboProvider = new JComboBox<>(ConsoleProvider.values());
     private final List<ConsoleMessage> history = new ArrayList<>();
 
@@ -108,8 +110,18 @@ public class AiConsoleDialog extends JDialog {
         btnClear.addActionListener(e -> clearConversation());
         buttons.add(btnClear);
         buttons.add(btnSend);
+
+        progressBar.setIndeterminate(false);
+        progressBar.setVisible(false);
+        progressBar.setStringPainted(true);
+        progressBar.setString("");
+
+        JPanel activityPanel = new JPanel(new BorderLayout(6, 6));
+        activityPanel.add(lblStatus, BorderLayout.NORTH);
+        activityPanel.add(progressBar, BorderLayout.CENTER);
+
         controls.add(buttons, BorderLayout.EAST);
-        controls.add(lblStatus, BorderLayout.WEST);
+        controls.add(activityPanel, BorderLayout.CENTER);
         bottom.add(controls, BorderLayout.SOUTH);
 
         root.add(bottom, BorderLayout.SOUTH);
@@ -145,9 +157,11 @@ public class AiConsoleDialog extends JDialog {
             @Override
             protected Void doInBackground() throws Exception {
                 if (provider == ConsoleProvider.LOCAL_GEMMA) {
-                    runGemmaConversationLoop(this::publish);
+                    publish(statusEvent("Preparing Local Gemma request..."));
+                    runGemmaConversationLoop(this::publish, status -> publish(statusEvent(status)));
                 } else {
-                    String answer = runExternalProvider(provider, userText);
+                    publish(statusEvent("Preparing " + provider + " request..."));
+                    String answer = runExternalProvider(provider, userText, status -> publish(statusEvent(status)));
                     publish(provider + "\n" + answer + "\n\n");
                     history.add(new ConsoleMessage("assistant", answer));
                 }
@@ -157,7 +171,11 @@ public class AiConsoleDialog extends JDialog {
             @Override
             protected void process(List<String> chunks) {
                 for (String chunk : chunks) {
-                    appendTranscript(chunk);
+                    if (chunk.startsWith(STATUS_EVENT_PREFIX)) {
+                        updateProgressStatus(chunk.substring(STATUS_EVENT_PREFIX.length()));
+                    } else {
+                        appendTranscript(chunk);
+                    }
                 }
             }
 
@@ -195,8 +213,10 @@ public class AiConsoleDialog extends JDialog {
         }
     }
 
-    private void runGemmaConversationLoop(java.util.function.Consumer<String> sink) throws Exception {
+    private void runGemmaConversationLoop(java.util.function.Consumer<String> sink,
+                                          java.util.function.Consumer<String> statusSink) throws Exception {
         for (int step = 0; step < 6; step++) {
+            statusSink.accept("Sending request to Local Gemma...");
             LocalGemmaBridgeResponse response = host.getLocalGemmaBridge().generate(new LocalGemmaBridgeRequest(
                     buildGemmaSystemPrompt(host.getAutomationToolRegistry()),
                     toGemmaHistory(),
@@ -204,17 +224,20 @@ public class AiConsoleDialog extends JDialog {
                     0.2
             ));
 
+            statusSink.accept("Receiving response from Local Gemma...");
             ParsedConsoleResponse parsed = parseConsoleResponse(response.getText());
             if (!parsed.assistantText.isBlank()) {
                 sink.accept("Local Gemma\n" + parsed.assistantText + "\n\n");
             }
 
             if (parsed.toolCalls.isEmpty()) {
+                statusSink.accept("Updating conversation...");
                 history.add(new ConsoleMessage("assistant", parsed.assistantText.isBlank() ? response.getText() : parsed.assistantText));
                 return;
             }
 
             if (!parsed.assistantText.isBlank()) {
+                statusSink.accept("Updating conversation...");
                 history.add(new ConsoleMessage("assistant", parsed.assistantText));
             }
 
@@ -226,12 +249,14 @@ public class AiConsoleDialog extends JDialog {
                 }
 
                 sink.accept("Tool\n" + name + " " + arguments + "\n");
+                statusSink.accept("Running tool: " + name + "...");
                 SceneMaxToolResult result = host.getAutomationToolRegistry().call(name, host.getAutomationToolContext(), arguments);
                 JSONObject payload = result.getData();
                 String toolSummary = result.isError()
                         ? "ERROR: " + payload.optString("message", "Tool failed")
                         : payload.toString(2);
                 sink.accept(toolSummary + "\n\n");
+                statusSink.accept("Updating tool results...");
                 history.add(new ConsoleMessage("tool", "Tool " + name + " result:\n" + toolSummary));
             }
         }
@@ -248,18 +273,22 @@ public class AiConsoleDialog extends JDialog {
         return messages;
     }
 
-    private String runExternalProvider(ConsoleProvider provider, String userPrompt) throws Exception {
+    private String runExternalProvider(ConsoleProvider provider, String userPrompt,
+                                       java.util.function.Consumer<String> statusSink) throws Exception {
         File workingDirectory = resolveConsoleWorkingDirectory();
         if (provider == ConsoleProvider.CLAUDE_CODE) {
-            return runClaudeCode(userPrompt, workingDirectory);
+            return runClaudeCode(userPrompt, workingDirectory, statusSink);
         }
-        return runCodex(buildExternalPrompt(provider, userPrompt), workingDirectory);
+        return runCodex(buildExternalPrompt(provider, userPrompt), workingDirectory, statusSink);
     }
 
-    private String runClaudeCode(String userPrompt, File workingDirectory) throws Exception {
+    private String runClaudeCode(String userPrompt, File workingDirectory,
+                                 java.util.function.Consumer<String> statusSink) throws Exception {
         String executable = AiCliSupport.normalizeForInvocation(AiCliSupport.resolveClaudeExecutable(), "claude");
         String endpoint = resolveLiveMcpEndpoint();
+        statusSink.accept("Creating Claude MCP config...");
         File mcpConfig = createClaudeMcpConfigFile(endpoint);
+        statusSink.accept("Preparing Claude system prompt...");
         File systemPromptFile = createClaudeSystemPromptFile(buildExternalSystemPrompt(ConsoleProvider.CLAUDE_CODE, userPrompt));
         try {
             List<String> args = new ArrayList<>();
@@ -274,11 +303,12 @@ public class AiConsoleDialog extends JDialog {
             args.add("--mcp-config");
             args.add(mcpConfig.getAbsolutePath());
 
-            ProcessResult result = runExternalCommand(executable, args, workingDirectory);
+            ProcessResult result = runExternalCommand(executable, args, workingDirectory, statusSink, "Claude Code");
             if (result.exitCode != 0) {
                 throw new IOException(buildProcessFailure("Claude Code", result));
             }
 
+            statusSink.accept("Parsing Claude response...");
             String parsed = extractClaudeResult(result.stdout);
             if (!parsed.isBlank()) {
                 return parsed;
@@ -293,7 +323,8 @@ public class AiConsoleDialog extends JDialog {
         }
     }
 
-    private String runCodex(String prompt, File workingDirectory) throws Exception {
+    private String runCodex(String prompt, File workingDirectory,
+                            java.util.function.Consumer<String> statusSink) throws Exception {
         String executable = AiCliSupport.normalizeForInvocation(AiCliSupport.resolveCodexExecutable(), "codex");
         List<String> args = new ArrayList<>();
         args.add("exec");
@@ -301,11 +332,12 @@ public class AiConsoleDialog extends JDialog {
         args.add("--json");
         args.add(prompt);
 
-        ProcessResult result = runExternalCommand(executable, args, workingDirectory);
+        ProcessResult result = runExternalCommand(executable, args, workingDirectory, statusSink, "Codex");
         if (result.exitCode != 0) {
             throw new IOException(buildProcessFailure("Codex", result));
         }
 
+        statusSink.accept("Parsing Codex response...");
         String parsed = extractCodexResult(result.stdout);
         if (!parsed.isBlank()) {
             return parsed;
@@ -316,7 +348,9 @@ public class AiConsoleDialog extends JDialog {
         throw new IOException("Codex returned no output.");
     }
 
-    private ProcessResult runExternalCommand(String executable, List<String> args, File workingDirectory) throws Exception {
+    private ProcessResult runExternalCommand(String executable, List<String> args, File workingDirectory,
+                                             java.util.function.Consumer<String> statusSink,
+                                             String providerName) throws Exception {
         List<String> command = new ArrayList<>();
         boolean useCmd = !executable.contains("\\") && !executable.contains("/")
                 || executable.toLowerCase(Locale.ROOT).endsWith(".cmd");
@@ -332,13 +366,16 @@ public class AiConsoleDialog extends JDialog {
             pb.directory(workingDirectory);
         }
         pb.redirectErrorStream(false);
+        statusSink.accept("Sending request to " + providerName + "...");
         Process process = pb.start();
+        statusSink.accept("Waiting for " + providerName + " response...");
 
         StringBuilder stdout = new StringBuilder();
         StringBuilder stderr = new StringBuilder();
         Thread stdoutThread = readStreamAsync(process.getInputStream(), stdout);
         Thread stderrThread = readStreamAsync(process.getErrorStream(), stderr);
         int exitCode = process.waitFor();
+        statusSink.accept("Receiving " + providerName + " output...");
         stdoutThread.join();
         stderrThread.join();
         return new ProcessResult(exitCode, stdout.toString().trim(), stderr.toString().trim(), String.join(" ", command));
@@ -664,6 +701,18 @@ public class AiConsoleDialog extends JDialog {
         btnClear.setEnabled(!busy);
         cboProvider.setEnabled(!busy);
         lblStatus.setText(status);
+        progressBar.setVisible(busy);
+        progressBar.setIndeterminate(busy);
+        progressBar.setString(busy ? status : "");
+    }
+
+    private String statusEvent(String text) {
+        return STATUS_EVENT_PREFIX + text;
+    }
+
+    private void updateProgressStatus(String status) {
+        lblStatus.setText(status);
+        progressBar.setString(status);
     }
 
     private ConsoleProvider getSelectedProvider() {

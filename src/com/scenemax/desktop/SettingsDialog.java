@@ -48,8 +48,6 @@ public class SettingsDialog extends JDialog {
     private JTextField txtScenemaxServer;
     private JTextField txtMcpPort;
     private JLabel lblMcpEndpoint;
-    private JButton btnConnectClaude;
-    private JButton btnConnectCodex;
     private JTextField txtClaudeCliPath;
     private JTextField txtCodexCliPath;
     private JCheckBox chkGemmaEnabled;
@@ -73,7 +71,7 @@ public class SettingsDialog extends JDialog {
         this.host = host;
         setContentPane(contentPane);
         setModal(true);
-        setMinimumSize(new Dimension(960, 840));
+        setMinimumSize(new Dimension(1120, 920));
         getRootPane().setDefaultButton(buttonOK);
 
         String jvmArch = AppDB.getInstance().getParam("projector_jvm_arch");
@@ -319,30 +317,11 @@ public class SettingsDialog extends JDialog {
         panel.add(lblMcpEndpoint, gbc);
 
         gbc.gridy = 5;
-        gbc.gridwidth = 1;
-        gbc.weightx = 0;
-        btnConnectClaude = new JButton("Connect Claude Code");
-        btnConnectClaude.addActionListener(e -> connectClient("Claude Code"));
-        panel.add(btnConnectClaude, gbc);
-
-        gbc.gridx = 1;
-        btnConnectCodex = new JButton("Connect Codex");
-        btnConnectCodex.addActionListener(e -> connectClient("Codex"));
-        panel.add(btnConnectCodex, gbc);
-
-        gbc.gridy = 6;
-        gbc.gridx = 0;
-        gbc.gridwidth = 2;
-        JButton btnSeeClaudeConfig = new JButton("See config");
-        btnSeeClaudeConfig.addActionListener(e -> showClaudeDesktopConfigDialog());
-        panel.add(btnSeeClaudeConfig, gbc);
-
-        gbc.gridy = 7;
         gbc.gridx = 0;
         gbc.gridwidth = 2;
         panel.add(new JLabel("Claude CLI Path Override (optional):"), gbc);
 
-        gbc.gridy = 8;
+        gbc.gridy = 6;
         gbc.gridwidth = 1;
         gbc.weightx = 1;
         panel.add(txtClaudeCliPath, gbc);
@@ -356,17 +335,20 @@ public class SettingsDialog extends JDialog {
         btnInstallClaude.addActionListener(e -> installCli("Claude Code", AiCliSupport.CLAUDE_NPM_PACKAGE, txtClaudeCliPath));
         JButton btnLoginClaude = new JButton("Login");
         btnLoginClaude.addActionListener(e -> launchCliLogin("Claude Code", txtClaudeCliPath));
+        JButton btnSeeClaudeConfig = new JButton("See config");
+        btnSeeClaudeConfig.addActionListener(e -> showClaudeDesktopConfigDialog());
         claudeActions.add(btnBrowseClaude);
         claudeActions.add(btnInstallClaude);
         claudeActions.add(btnLoginClaude);
+        claudeActions.add(btnSeeClaudeConfig);
         panel.add(claudeActions, gbc);
 
         gbc.gridx = 0;
-        gbc.gridy = 9;
+        gbc.gridy = 7;
         gbc.gridwidth = 2;
         panel.add(new JLabel("Codex CLI Path Override (optional):"), gbc);
 
-        gbc.gridy = 10;
+        gbc.gridy = 8;
         gbc.gridwidth = 1;
         gbc.weightx = 1;
         panel.add(txtCodexCliPath, gbc);
@@ -383,11 +365,11 @@ public class SettingsDialog extends JDialog {
         panel.add(codexActions, gbc);
 
         gbc.gridx = 0;
-        gbc.gridy = 11;
+        gbc.gridy = 9;
         gbc.gridwidth = 2;
-        panel.add(new JLabel("Use 'See config' for Claude Desktop, or the buttons to register the endpoint with CLI clients."), gbc);
+        panel.add(new JLabel("Use Browse/Install/Login to prepare the CLI, and See config to add SceneMax to Claude Desktop."), gbc);
 
-        gbc.gridy = 12;
+        gbc.gridy = 10;
         gbc.weighty = 1;
         gbc.fill = GridBagConstraints.BOTH;
         panel.add(new JPanel(), gbc);
@@ -923,12 +905,7 @@ public class SettingsDialog extends JDialog {
     }
 
     private void setConnectButtonsEnabled(boolean enabled) {
-        if (btnConnectClaude != null) {
-            btnConnectClaude.setEnabled(enabled);
-        }
-        if (btnConnectCodex != null) {
-            btnConnectCodex.setEnabled(enabled);
-        }
+        // Legacy connect buttons were removed from the MCP panel.
     }
 
     private List<String> buildClaudeArgs(String endpoint) {
@@ -1390,7 +1367,7 @@ public class SettingsDialog extends JDialog {
 
     public static void main(String[] args) {
         SettingsDialog dialog = new SettingsDialog();
-        dialog.setSize(960, 840);
+        dialog.setSize(1120, 920);
         dialog.setVisible(true);
         System.exit(0);
     }

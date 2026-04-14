@@ -578,7 +578,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     showAiConsole();
                 } else if (cmd.equals("settings")) {
                     SettingsDialog dlg = new SettingsDialog(MainApp.this);
-                    dlg.setSize(960, 840);
+                    dlg.setSize(1120, 920);
                     dlg.setLocationRelativeTo(null);
                     dlg.setModal(true);
                     dlg.setVisible(true);
