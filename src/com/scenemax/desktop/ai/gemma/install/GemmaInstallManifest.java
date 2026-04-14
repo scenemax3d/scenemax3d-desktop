@@ -41,6 +41,18 @@ public class GemmaInstallManifest {
         );
     }
 
+    public GemmaInstallManifest withRuntime(Path runtimePath, String runtimeDownloadUrl) {
+        return new GemmaInstallManifest(
+                Instant.now().toString(),
+                modelId,
+                modelDisplayName,
+                modelPath,
+                runtimePath.toAbsolutePath().normalize().toString(),
+                runtimeDownloadUrl,
+                modelDownloadUrl
+        );
+    }
+
     public static GemmaInstallManifest load(Path manifestFile) throws IOException {
         if (manifestFile == null || !Files.exists(manifestFile)) {
             return null;
@@ -91,5 +103,13 @@ public class GemmaInstallManifest {
 
     public String getRuntimePath() {
         return runtimePath;
+    }
+
+    public String getRuntimeDownloadUrl() {
+        return runtimeDownloadUrl;
+    }
+
+    public String getModelDownloadUrl() {
+        return modelDownloadUrl;
     }
 }

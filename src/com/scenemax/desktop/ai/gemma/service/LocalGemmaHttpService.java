@@ -16,6 +16,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executors;
@@ -148,6 +149,7 @@ public class LocalGemmaHttpService {
         List<String> command = new ArrayList<>();
         Path runtimePath = Path.of(manifest.getRuntimePath());
         String runtimeName = runtimePath.getFileName().toString().toLowerCase();
+        Path promptFile = createPromptFile(runtimePath, prompt);
         if (runtimeName.endsWith(".cmd") || runtimeName.endsWith(".bat")) {
             command.add("cmd.exe");
             command.add("/c");
@@ -155,30 +157,38 @@ public class LocalGemmaHttpService {
         } else {
             command.add(runtimePath.toString());
         }
+        command.add("--min_log_level");
+        command.add("4");
+        command.add("run");
+        command.add(manifest.getModelPath());
         command.add("--backend=cpu");
-        command.add("--async=false");
-        command.add("--model_path=" + manifest.getModelPath());
-        command.add("--input_prompt=" + prompt);
+        command.add("-f");
+        command.add(promptFile.toString());
 
         ProcessBuilder builder = new ProcessBuilder(command);
         builder.redirectErrorStream(true);
         if (runtimePath.getParent() != null) {
             builder.directory(runtimePath.getParent().toFile());
         }
-        Process process = builder.start();
-        String output = readProcess(process.getInputStream());
-        int exitCode = waitForProcess(process, "Local Gemma execution was interrupted.");
-        if (exitCode == STATUS_DLL_NOT_FOUND) {
-            throw buildMissingDllException(runtimePath, Path.of(manifest.getModelPath()));
-        }
-        if (exitCode != 0) {
-            String details = output == null ? "" : output.trim();
-            if (details.isEmpty()) {
-                details = "No stdout/stderr was captured. Exit code=" + exitCode
-                        + ", runtime=" + runtimePath + ", model=" + manifest.getModelPath()
-                        + ". This can happen when the LiteRT-LM executable rejects the prompt/flags or Windows blocks startup.";
+        String output;
+        try {
+            Process process = builder.start();
+            output = readProcess(process.getInputStream());
+            int exitCode = waitForProcess(process, "Local Gemma execution was interrupted.");
+            if (exitCode == STATUS_DLL_NOT_FOUND) {
+                throw buildMissingDllException(runtimePath, Path.of(manifest.getModelPath()));
             }
-            throw new IOException("Local Gemma process failed: " + details);
+            if (exitCode != 0) {
+                String details = output == null ? "" : output.trim();
+                if (details.isEmpty()) {
+                    details = "No stdout/stderr was captured. Exit code=" + exitCode
+                            + ", runtime=" + runtimePath + ", model=" + manifest.getModelPath()
+                            + ". This can happen when the LiteRT-LM executable rejects the prompt/flags or Windows blocks startup.";
+                }
+                throw new IOException("Local Gemma process failed: " + details);
+            }
+        } finally {
+            Files.deleteIfExists(promptFile);
         }
         return extractAssistantText(output, prompt);
     }
@@ -226,6 +236,14 @@ public class LocalGemmaHttpService {
                         + "Runtime=" + runtimePath + ", model=" + modelPath);
     }
 
+    private Path createPromptFile(Path runtimePath, String prompt) throws IOException {
+        Path dir = runtimePath.getParent() != null ? runtimePath.getParent() : Path.of(".");
+        Path promptFile = Files.createTempFile(dir, "scenemax-gemma-", ".prompt.txt");
+        Files.writeString(promptFile, prompt == null ? "" : prompt, StandardCharsets.UTF_8,
+                StandardOpenOption.TRUNCATE_EXISTING);
+        return promptFile;
+    }
+
     private String buildPrompt(JSONObject request) {
         StringBuilder prompt = new StringBuilder();
         JSONArray messages = request.optJSONArray("messages");
@@ -250,7 +268,27 @@ public class LocalGemmaHttpService {
     }
 
     private String extractAssistantText(String rawOutput, String prompt) {
-        String text = rawOutput == null ? "" : rawOutput.trim();
+        String raw = rawOutput == null ? "" : rawOutput.replace('\r', '\n');
+        StringBuilder filtered = new StringBuilder();
+        String[] lines = raw.split("\n");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (trimmed.startsWith("INFO:")
+                    || trimmed.startsWith("WARNING:")
+                    || trimmed.startsWith("ERROR:")
+                    || trimmed.startsWith("VERBOSE:")) {
+                continue;
+            }
+            if (filtered.length() > 0) {
+                filtered.append('\n');
+            }
+            filtered.append(trimmed);
+        }
+
+        String text = filtered.toString().trim();
         if (text.startsWith(prompt)) {
             text = text.substring(prompt.length()).trim();
         }

@@ -1037,6 +1037,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private void initLocalGemmaBridge() {
         localGemmaBridge = new OpenAiCompatibleGemmaBridge(LocalGemmaBridgeConfig.fromAppSettings());
         refreshLocalGemmaBridgeStatusAsync();
+        autoStartLocalGemmaServiceIfPossible();
     }
 
     private void updateGemmaStatusLabel() {
@@ -3662,9 +3663,15 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     public LocalGemmaBridgeStatus startInstalledLocalGemmaService() {
-        GemmaInstallManifest manifest = new GemmaInstaller().loadInstalledManifest();
+        GemmaInstaller installer = new GemmaInstaller();
+        GemmaInstallManifest manifest = installer.loadInstalledManifest();
         if (manifest == null) {
             throw new IllegalStateException("No Gemma model is installed yet. Download Gemma first.");
+        }
+        try {
+            manifest = installer.ensureSupportedRuntimeInstalled(manifest, null);
+        } catch (IOException ex) {
+            throw new RuntimeException("Failed to prepare the LiteRT-LM runtime: " + ex.getMessage(), ex);
         }
 
         LocalGemmaBridgeConfig config = LocalGemmaBridgeConfig.fromAppSettings();
@@ -3675,6 +3682,56 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         localGemmaHttpService.start(endpointUri, manifest);
         reloadLocalGemmaBridgeFromSettings();
         return pingLocalGemmaBridge();
+    }
+
+    private void autoStartLocalGemmaServiceIfPossible() {
+        LocalGemmaBridgeConfig config = LocalGemmaBridgeConfig.fromAppSettings();
+        if (!config.isEnabled()) {
+            return;
+        }
+        if (!isLocalGemmaEndpointLocal(config.getEndpointUrl())) {
+            return;
+        }
+        if (isLocalGemmaServiceRunning()) {
+            return;
+        }
+
+        GemmaInstallManifest manifest = new GemmaInstaller().loadInstalledManifest();
+        if (manifest == null) {
+            return;
+        }
+
+        Thread thread = new Thread(() -> {
+            try {
+                startInstalledLocalGemmaService();
+            } catch (Exception ex) {
+                localGemmaBridgeStatus = LocalGemmaBridgeStatus.unreachable(
+                        config,
+                        "Auto-start failed: " + ex.getMessage());
+                updateGemmaStatusLabel();
+            }
+        }, "scenemax-gemma-autostart");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private boolean isLocalGemmaEndpointLocal(String endpointUrl) {
+        if (endpointUrl == null || endpointUrl.isBlank()) {
+            return false;
+        }
+        try {
+            URI uri = URI.create(endpointUrl);
+            String host = uri.getHost();
+            if (host == null || host.isBlank()) {
+                return false;
+            }
+            String normalized = host.trim().toLowerCase(Locale.ROOT);
+            return normalized.equals("127.0.0.1")
+                    || normalized.equals("localhost")
+                    || normalized.equals("0.0.0.0");
+        } catch (Exception ex) {
+            return false;
+        }
     }
 
     public void stopLocalGemmaService() {

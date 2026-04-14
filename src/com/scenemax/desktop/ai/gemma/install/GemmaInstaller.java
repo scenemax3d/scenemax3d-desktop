@@ -11,9 +11,10 @@ import java.nio.file.Paths;
 
 public class GemmaInstaller {
 
-    public static final String LITERT_RUNTIME_URL =
-            "https://github.com/google-ai-edge/LiteRT-LM/releases/latest/download/litert_lm_main.windows_x86_64.exe";
-    public static final String RUNTIME_FILE_NAME = "litert_lm_main.windows_x86_64.exe";
+    public static final String LIT_CLI_RUNTIME_URL =
+            "https://github.com/google-ai-edge/LiteRT-LM/releases/latest/download/lit_windows_x86_64.exe";
+    public static final String RUNTIME_FILE_NAME = "lit_windows_x86_64.exe";
+    public static final String LEGACY_RUNTIME_FILE_NAME = "litert_lm_main.windows_x86_64.exe";
 
     private final Path installRoot;
 
@@ -42,11 +43,7 @@ public class GemmaInstaller {
         Files.createDirectories(variantDir);
 
         emit(listener, 2, "Preparing install folders...");
-        if (!Files.exists(runtimeFile) || Files.size(runtimeFile) == 0) {
-            downloadToFile(LITERT_RUNTIME_URL, runtimeFile, listener, 5, 20, "Downloading LiteRT-LM runtime");
-        } else {
-            emit(listener, 20, "LiteRT-LM runtime already installed.");
-        }
+        ensureRuntimeFile(runtimeFile, listener, 5, 20, "Downloading LiteRT-LM runtime");
 
         if (!Files.exists(modelFile) || Files.size(modelFile) == 0) {
             downloadToFile(variant.getDownloadUrl(), modelFile, listener, 22, 96, "Downloading " + variant.getDisplayName());
@@ -54,10 +51,31 @@ public class GemmaInstaller {
             emit(listener, 96, variant.getDisplayName() + " is already installed.");
         }
 
-        GemmaInstallManifest manifest = GemmaInstallManifest.now(variant, modelFile, runtimeFile, LITERT_RUNTIME_URL);
+        GemmaInstallManifest manifest = GemmaInstallManifest.now(variant, modelFile, runtimeFile, LIT_CLI_RUNTIME_URL);
         manifest.save(manifestFile);
         emit(listener, 100, "Gemma installation finished.");
         return manifest;
+    }
+
+    public GemmaInstallManifest ensureSupportedRuntimeInstalled(GemmaInstallManifest manifest, GemmaInstallListener listener) throws IOException {
+        if (manifest == null) {
+            throw new IllegalArgumentException("Gemma install manifest is required.");
+        }
+
+        Path runtimeDir = installRoot.resolve(Paths.get("AI", "runtime", "litert-lm"));
+        Path runtimeFile = runtimeDir.resolve(RUNTIME_FILE_NAME);
+        Files.createDirectories(runtimeDir);
+        ensureRuntimeFile(runtimeFile, listener, 5, 45, "Downloading LiteRT-LM runtime");
+
+        Path manifestPath = getManifestPath();
+        GemmaInstallManifest updated = manifest;
+        Path configuredRuntime = Path.of(manifest.getRuntimePath());
+        if (!configuredRuntime.toAbsolutePath().normalize().equals(runtimeFile.toAbsolutePath().normalize())
+                || !Files.exists(configuredRuntime)) {
+            updated = manifest.withRuntime(runtimeFile, LIT_CLI_RUNTIME_URL);
+            updated.save(manifestPath);
+        }
+        return updated;
     }
 
     public GemmaInstallManifest loadInstalledManifest() {
@@ -74,6 +92,18 @@ public class GemmaInstaller {
 
     public Path getInstallRoot() {
         return installRoot;
+    }
+
+    public Path getRuntimePath() {
+        return installRoot.resolve(Paths.get("AI", "runtime", "litert-lm", RUNTIME_FILE_NAME));
+    }
+
+    private void ensureRuntimeFile(Path runtimeFile, GemmaInstallListener listener, int fromPercent, int toPercent, String label) throws IOException {
+        if (!Files.exists(runtimeFile) || Files.size(runtimeFile) == 0) {
+            downloadToFile(LIT_CLI_RUNTIME_URL, runtimeFile, listener, fromPercent, toPercent, label);
+        } else {
+            emit(listener, toPercent, "LiteRT-LM runtime already installed.");
+        }
     }
 
     private void downloadToFile(String url, Path target, GemmaInstallListener listener, int fromPercent, int toPercent, String label) throws IOException {
