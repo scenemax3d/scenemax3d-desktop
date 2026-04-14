@@ -791,6 +791,36 @@ public class EditorTabPanel extends JPanel {
         return tabButtons.containsKey(normalizedPath);
     }
 
+    public boolean isActiveTabDirty() {
+        return activeTab != null && activeTab.dirty;
+    }
+
+    public String getActiveTabKind() {
+        return activeTab != null ? getTabKind(activeTab) : null;
+    }
+
+    public boolean isTabDirty(String filePath) {
+        TabData tab = findTabByPath(filePath);
+        return tab != null && tab.dirty;
+    }
+
+    public String getTabKind(String filePath) {
+        TabData tab = findTabByPath(filePath);
+        return tab != null ? getTabKind(tab) : null;
+    }
+
+    public void refreshOrOpenTextTab(String filePath, String content) {
+        TabData tab = findTabByPath(filePath);
+        if (tab == null) {
+            openFile(filePath, content);
+            return;
+        }
+        if (!isTextEditorTab(tab)) {
+            return;
+        }
+        refreshTabContent(filePath, content);
+    }
+
     /**
      * Refreshes the content of an already-open tab (e.g. when an auto-generated
      * file like .code is updated on disk by the designer).  If the tab is
@@ -815,6 +845,58 @@ public class EditorTabPanel extends JPanel {
                 break;
             }
         }
+    }
+
+    private TabData findTabByPath(String filePath) {
+        if (filePath == null) {
+            return null;
+        }
+        String normalizedPath = new File(filePath).getAbsolutePath();
+        for (TabData td : tabs) {
+            if (td.filePath.equals(normalizedPath)) {
+                return td;
+            }
+        }
+        return null;
+    }
+
+    private boolean isTextEditorTab(TabData tab) {
+        return tab != null
+                && !tab.isDesignerTab
+                && !tab.isUIDesignerTab
+                && !tab.isEffekseerDesignerTab
+                && !tab.isShaderDesignerTab
+                && !tab.isEnvironmentShaderDesignerTab
+                && !tab.isMaterialDesignerTab
+                && !tab.isAnimationImportTab;
+    }
+
+    private String getTabKind(TabData tab) {
+        if (tab == null) {
+            return null;
+        }
+        if (tab.isDesignerTab) {
+            return "scene_designer";
+        }
+        if (tab.isUIDesignerTab) {
+            return "ui_designer";
+        }
+        if (tab.isEffekseerDesignerTab) {
+            return "effect_designer";
+        }
+        if (tab.isShaderDesignerTab) {
+            return "shader_designer";
+        }
+        if (tab.isEnvironmentShaderDesignerTab) {
+            return "environment_shader_designer";
+        }
+        if (tab.isMaterialDesignerTab) {
+            return "material_designer";
+        }
+        if (tab.isAnimationImportTab) {
+            return "animation_import";
+        }
+        return "text";
     }
 
     /**

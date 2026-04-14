@@ -10,11 +10,17 @@ import javax.swing.plaf.FontUIResource;
 import javax.swing.text.StyleContext;
 import java.awt.*;
 import java.awt.event.*;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 public class SettingsDialog extends JDialog {
+    private final MainApp host;
     private JPanel contentPane;
     private JButton buttonOK;
     private JButton buttonCancel;
@@ -31,8 +37,19 @@ public class SettingsDialog extends JDialog {
     private JTextField txtProjJvmArch;
     private JButton btnResetRuntime;
     private JTextField txtScenemaxServer;
+    private JTextField txtMcpPort;
+    private JLabel lblMcpEndpoint;
+    private JButton btnConnectClaude;
+    private JButton btnConnectCodex;
+    private JTextField txtClaudeCliPath;
+    private JTextField txtCodexCliPath;
 
     public SettingsDialog() {
+        this(null);
+    }
+
+    public SettingsDialog(MainApp host) {
+        this.host = host;
         setContentPane(contentPane);
         setModal(true);
         getRootPane().setDefaultButton(buttonOK);
@@ -41,6 +58,13 @@ public class SettingsDialog extends JDialog {
         if (jvmArch != null && (jvmArch.equals("64") || jvmArch.equals("32"))) {
             txtProjJvmArch.setText(jvmArch);
         }
+        String mcpPort = AppDB.getInstance().getParam("mcp_server_port");
+        txtMcpPort = new JTextField();
+        txtMcpPort.setText(mcpPort == null || mcpPort.trim().isEmpty() ? "8765" : mcpPort.trim());
+        txtClaudeCliPath = new JTextField(AppDB.getInstance().getParam("mcp_claude_cli_path"));
+        txtCodexCliPath = new JTextField(AppDB.getInstance().getParam("mcp_codex_cli_path"));
+        tabbedPane1.addTab("MCP", createMcpPanel());
+        refreshMcpPanelState();
 
         txtGalleryHost.setText(isDefault("gallery_host", Util.GALLERY_HOST) ? "DEFAULT" : "CUSTOM");
         txtConsumerKey.setText(Util.WRITE_CONSUMER_KEY.isEmpty() ? "MISSING" : "CUSTOM");
@@ -138,8 +162,41 @@ public class SettingsDialog extends JDialog {
         updateParam("ftp_host_name", txtFtpHostName.getText().trim());
         updateParam("ftp_user", txtFtpUser.getText().trim());
         updateParam("ftp_password", txtFtpPassword.getText().trim());
+        try {
+            updateMcpPort();
+        } catch (NumberFormatException ex) {
+            return;
+        }
+        AppDB.getInstance().setParam("mcp_claude_cli_path", normalizeOptionalPath(txtClaudeCliPath.getText()));
+        AppDB.getInstance().setParam("mcp_codex_cli_path", normalizeOptionalPath(txtCodexCliPath.getText()));
 
         dispose();
+    }
+
+    private String normalizeOptionalPath(String raw) {
+        return raw == null ? "" : raw.trim();
+    }
+
+    private void updateMcpPort() {
+        String portText = txtMcpPort.getText().trim();
+        if (portText.isEmpty() || portText.equalsIgnoreCase("default")) {
+            AppDB.getInstance().setParam("mcp_server_port", "");
+            return;
+        }
+
+        try {
+            int port = Integer.parseInt(portText);
+            if (port < 1 || port > 65535) {
+                throw new NumberFormatException("Port out of range");
+            }
+            AppDB.getInstance().setParam("mcp_server_port", String.valueOf(port));
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(this,
+                    "MCP port must be a number between 1 and 65535.",
+                    "Invalid MCP Port",
+                    JOptionPane.ERROR_MESSAGE);
+            throw ex;
+        }
     }
 
     private void updateParam(String key, String val) {
@@ -160,6 +217,389 @@ public class SettingsDialog extends JDialog {
     private static boolean isDefault(String configKey, String currentValue) {
         String configDefault = AppConfig.get(configKey);
         return currentValue.equalsIgnoreCase(configDefault);
+    }
+
+    private JPanel createMcpPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(6, 6, 6, 6);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 0;
+        panel.add(new JLabel("Fixed MCP Port:"), gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 1;
+        panel.add(txtMcpPort, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        gbc.gridwidth = 2;
+        panel.add(new JLabel("Set a fixed localhost port for Claude Code / Codex MCP clients."), gbc);
+
+        gbc.gridy = 2;
+        panel.add(new JLabel("Use \"DEFAULT\" or leave blank to fall back to automatic local port selection."), gbc);
+
+        gbc.gridy = 3;
+        panel.add(new JLabel("Current Endpoint:"), gbc);
+
+        gbc.gridy = 4;
+        lblMcpEndpoint = new JLabel("Unavailable");
+        panel.add(lblMcpEndpoint, gbc);
+
+        gbc.gridy = 5;
+        gbc.gridwidth = 1;
+        gbc.weightx = 0;
+        btnConnectClaude = new JButton("Connect Claude Code");
+        btnConnectClaude.addActionListener(e -> connectClient("Claude Code"));
+        panel.add(btnConnectClaude, gbc);
+
+        gbc.gridx = 1;
+        btnConnectCodex = new JButton("Connect Codex");
+        btnConnectCodex.addActionListener(e -> connectClient("Codex"));
+        panel.add(btnConnectCodex, gbc);
+
+        gbc.gridy = 6;
+        gbc.gridx = 0;
+        gbc.gridwidth = 2;
+        panel.add(new JLabel("Claude CLI Path Override (optional):"), gbc);
+
+        gbc.gridy = 7;
+        gbc.gridwidth = 1;
+        gbc.weightx = 1;
+        panel.add(txtClaudeCliPath, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 0;
+        JButton btnBrowseClaude = new JButton("Browse...");
+        btnBrowseClaude.addActionListener(e -> chooseCliPath(txtClaudeCliPath, "Select Claude Code CLI"));
+        panel.add(btnBrowseClaude, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 8;
+        gbc.gridwidth = 2;
+        panel.add(new JLabel("Codex CLI Path Override (optional):"), gbc);
+
+        gbc.gridy = 9;
+        gbc.gridwidth = 1;
+        gbc.weightx = 1;
+        panel.add(txtCodexCliPath, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 0;
+        JButton btnBrowseCodex = new JButton("Browse...");
+        btnBrowseCodex.addActionListener(e -> chooseCliPath(txtCodexCliPath, "Select Codex CLI"));
+        panel.add(btnBrowseCodex, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 10;
+        gbc.gridwidth = 2;
+        panel.add(new JLabel("The buttons will register this local MCP endpoint with the selected client."), gbc);
+
+        gbc.gridy = 11;
+        gbc.weighty = 1;
+        gbc.fill = GridBagConstraints.BOTH;
+        panel.add(new JPanel(), gbc);
+
+        return panel;
+    }
+
+    private void refreshMcpPanelState() {
+        if (lblMcpEndpoint == null) {
+            return;
+        }
+        String endpoint = resolveCurrentEndpoint();
+        lblMcpEndpoint.setText(endpoint == null || endpoint.isBlank() ? "Unavailable" : endpoint);
+    }
+
+    private String resolveCurrentEndpoint() {
+        if (host != null && host.getAutomationHttpServer() != null && host.getAutomationHttpServer().isRunning()) {
+            return host.getAutomationHttpServer().getEndpointUrl();
+        }
+
+        String portText = txtMcpPort != null ? txtMcpPort.getText().trim() : "";
+        if (portText.isEmpty() || portText.equalsIgnoreCase("default")) {
+            String saved = AppDB.getInstance().getParam("mcp_server_port");
+            portText = saved == null ? "" : saved.trim();
+        }
+        if (portText.isEmpty()) {
+            return "http://127.0.0.1:8765/mcp";
+        }
+        return "http://127.0.0.1:" + portText + "/mcp";
+    }
+
+    private void connectClient(String clientName) {
+        try {
+            updateMcpPort();
+        } catch (NumberFormatException ex) {
+            return;
+        }
+
+        if (host != null) {
+            host.restartAutomationServerFromSettings();
+        }
+        refreshMcpPanelState();
+
+        String endpoint = resolveCurrentEndpoint();
+        if (endpoint == null || endpoint.isBlank()) {
+            JOptionPane.showMessageDialog(this,
+                    "SceneMax MCP endpoint is unavailable.",
+                    "MCP Connection",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        setConnectButtonsEnabled(false);
+
+        SwingWorker<CommandResult, Void> worker = new SwingWorker<>() {
+            @Override
+            protected CommandResult doInBackground() throws Exception {
+                if ("Claude Code".equals(clientName)) {
+                    return runClientCommand(resolveClaudeExecutable(), buildClaudeArgs(endpoint));
+                }
+                return runClientCommand(resolveCodexExecutable(), buildCodexArgs(endpoint));
+            }
+
+            @Override
+            protected void done() {
+                setConnectButtonsEnabled(true);
+                try {
+                    CommandResult result = get();
+                    if (result.exitCode == 0 || result.output.toLowerCase(Locale.ROOT).contains("already exists")) {
+                        JOptionPane.showMessageDialog(SettingsDialog.this,
+                                buildSuccessMessage(clientName, endpoint, result.output),
+                                clientName + " Connected",
+                                JOptionPane.INFORMATION_MESSAGE);
+                    } else {
+                        JOptionPane.showMessageDialog(SettingsDialog.this,
+                                clientName + " connection failed.\n\nCommand:\n" + result.commandLine +
+                                        "\n\nOutput:\n" + result.output,
+                                clientName + " Connection Failed",
+                                JOptionPane.ERROR_MESSAGE);
+                    }
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            clientName + " connection failed.\n\n" + ex.getMessage(),
+                            clientName + " Connection Failed",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void setConnectButtonsEnabled(boolean enabled) {
+        if (btnConnectClaude != null) {
+            btnConnectClaude.setEnabled(enabled);
+        }
+        if (btnConnectCodex != null) {
+            btnConnectCodex.setEnabled(enabled);
+        }
+    }
+
+    private List<String> buildClaudeArgs(String endpoint) {
+        List<String> args = new ArrayList<>();
+        args.add("mcp");
+        args.add("add");
+        args.add("--transport");
+        args.add("http");
+        args.add("--scope");
+        args.add("user");
+        args.add("scenemax");
+        args.add(endpoint);
+        return args;
+    }
+
+    private List<String> buildCodexArgs(String endpoint) {
+        List<String> args = new ArrayList<>();
+        args.add("mcp");
+        args.add("add");
+        args.add("scenemax");
+        args.add("--url");
+        args.add(endpoint);
+        return args;
+    }
+
+    private CommandResult runClientCommand(String executable, List<String> args) throws Exception {
+        String commandText = buildPowerShellInvocation(executable, args);
+        ProcessBuilder pb = new ProcessBuilder("powershell", "-NoProfile", "-Command", commandText);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line).append(System.lineSeparator());
+            }
+        }
+        int exitCode = process.waitFor();
+        return new CommandResult(exitCode, output.toString().trim(), commandText);
+    }
+
+    private String resolveClaudeExecutable() throws IOException {
+        String configured = normalizeOptionalPath(txtClaudeCliPath.getText());
+        if (!configured.isBlank() && new File(configured).exists()) {
+            return configured;
+        }
+
+        String discovered = discoverViaWhere("claude");
+        if (discovered != null) {
+            txtClaudeCliPath.setText(discovered);
+            return discovered;
+        }
+
+        String appData = System.getenv("APPDATA");
+        String userProfile = System.getenv("USERPROFILE");
+        String[] candidates = {
+                combine(appData, "npm", "claude.cmd"),
+                combine(appData, "npm", "claude.ps1"),
+                combine(appData, "npm", "claude.exe"),
+                combine(userProfile, "AppData", "Roaming", "npm", "claude.cmd"),
+                combine(userProfile, "AppData", "Roaming", "npm", "claude.ps1"),
+                combine(userProfile, "AppData", "Roaming", "npm", "claude.exe"),
+                combine(userProfile, ".local", "bin", "claude"),
+                combine(userProfile, ".bun", "bin", "claude.exe")
+        };
+        for (String candidate : candidates) {
+            if (candidate != null && new File(candidate).exists()) {
+                txtClaudeCliPath.setText(candidate);
+                return candidate;
+            }
+        }
+
+        throw new IOException("Claude Code CLI was not found automatically. Set the CLI path in the MCP tab and try again.");
+    }
+
+    private String resolveCodexExecutable() throws IOException {
+        String configured = normalizeOptionalPath(txtCodexCliPath.getText());
+        if (!configured.isBlank() && new File(configured).exists()) {
+            return configured;
+        }
+
+        String discovered = discoverViaWhere("codex");
+        if (discovered != null) {
+            txtCodexCliPath.setText(discovered);
+            return discovered;
+        }
+
+        String programFiles = System.getenv("ProgramFiles");
+        if (programFiles != null) {
+            File windowsApps = new File(programFiles, "WindowsApps");
+            File[] matches = windowsApps.listFiles((dir, name) -> name.startsWith("OpenAI.Codex_"));
+            if (matches != null) {
+                for (File match : matches) {
+                    File candidate = new File(match, "app\\resources\\codex.exe");
+                    if (candidate.exists()) {
+                        txtCodexCliPath.setText(candidate.getAbsolutePath());
+                        return candidate.getAbsolutePath();
+                    }
+                }
+            }
+        }
+
+        throw new IOException("Codex CLI was not found automatically. Set the CLI path in the MCP tab and try again.");
+    }
+
+    private String discoverViaWhere(String executable) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder("cmd.exe", "/c", "where", executable);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            List<String> lines = new ArrayList<>();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (!line.isBlank()) {
+                        lines.add(line.trim());
+                    }
+                }
+            }
+            int exitCode = process.waitFor();
+            if (exitCode == 0 && !lines.isEmpty()) {
+                for (String line : lines) {
+                    if (new File(line).exists()) {
+                        return line;
+                    }
+                }
+                return lines.get(0);
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private String combine(String root, String... parts) {
+        if (root == null || root.isBlank()) {
+            return null;
+        }
+        File file = new File(root);
+        for (String part : parts) {
+            file = new File(file, part);
+        }
+        return file.getAbsolutePath();
+    }
+
+    private void chooseCliPath(JTextField target, String title) {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle(title);
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        if (!target.getText().trim().isEmpty()) {
+            chooser.setSelectedFile(new File(target.getText().trim()));
+        }
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            target.setText(chooser.getSelectedFile().getAbsolutePath());
+        }
+    }
+
+    private String buildPowerShellInvocation(String executable, List<String> args) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("& ").append(psQuote(executable));
+        for (String arg : args) {
+            sb.append(' ').append(psQuote(arg));
+        }
+        return sb.toString();
+    }
+
+    private String psQuote(String raw) {
+        return "'" + raw.replace("'", "''") + "'";
+    }
+
+    private String buildSuccessMessage(String clientName, String endpoint, String output) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(clientName).append(" is now configured to use SceneMax MCP.\n\n");
+        sb.append("Endpoint:\n").append(endpoint).append("\n\n");
+        if ("Claude Code".equals(clientName)) {
+            sb.append("How to test:\n");
+            sb.append("1. Open Claude Code.\n");
+            sb.append("2. Run /mcp and verify that 'scenemax' appears.\n");
+            sb.append("3. Ask: Use the SceneMax MCP tools to list available tools.\n");
+            sb.append("4. Then ask: Use SceneMax to search for 'camera' in the project.\n");
+        } else {
+            sb.append("How to test:\n");
+            sb.append("1. Open Codex.\n");
+            sb.append("2. Run: codex mcp list\n");
+            sb.append("3. Verify that 'scenemax' appears.\n");
+            sb.append("4. Then ask: Use the SceneMax MCP server to list tools and search for 'camera'.\n");
+        }
+        if (output != null && !output.isBlank()) {
+            sb.append("\nCLI output:\n").append(output);
+        }
+        return sb.toString();
+    }
+
+    private static class CommandResult {
+        final int exitCode;
+        final String output;
+        final String commandLine;
+
+        CommandResult(int exitCode, String output, String commandLine) {
+            this.exitCode = exitCode;
+            this.output = output;
+            this.commandLine = commandLine;
+        }
     }
 
     private void onCancel() {
