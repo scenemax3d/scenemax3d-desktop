@@ -17,7 +17,8 @@ public class SceneMaxMcpServer {
 
     public JSONObject handleRequest(JSONObject request) {
         String method = request.optString("method", "");
-        Object id = request.has("id") ? request.get("id") : JSONObject.NULL;
+        boolean hasId = request.has("id");
+        Object id = hasId ? request.get("id") : JSONObject.NULL;
 
         switch (method) {
             case "initialize":
@@ -28,11 +29,16 @@ public class SceneMaxMcpServer {
                                 .put("version", "0.1.0"))
                         .put("capabilities", new JSONObject()
                                 .put("tools", new JSONObject().put("listChanged", false))));
+            case "notifications/initialized":
+                return null;
             case "tools/list":
                 return response(id, new JSONObject().put("tools", toolRegistry.describeTools()));
             case "tools/call":
                 return handleToolCall(id, request.optJSONObject("params"));
             default:
+                if (!hasId && method.startsWith("notifications/")) {
+                    return null;
+                }
                 return error(id, -32601, "Method not found: " + method);
         }
     }

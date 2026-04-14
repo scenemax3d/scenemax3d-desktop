@@ -3,12 +3,21 @@ package com.scenemax.desktop;
 import com.intellij.uiDesigner.core.GridConstraints;
 import com.intellij.uiDesigner.core.GridLayoutManager;
 import com.intellij.uiDesigner.core.Spacer;
+import com.scenemax.desktop.ai.gemma.LocalGemmaBridgeConfig;
+import com.scenemax.desktop.ai.gemma.LocalGemmaBridgeStatus;
+import com.scenemax.desktop.ai.gemma.install.GemmaInstallManifest;
+import com.scenemax.desktop.ai.gemma.install.GemmaInstallProgress;
+import com.scenemax.desktop.ai.gemma.install.GemmaInstaller;
+import com.scenemax.desktop.ai.gemma.install.GemmaModelVariant;
+import com.scenemax.desktop.ai.gemma.install.VcRuntimeInstaller;
 import org.apache.commons.io.FileUtils;
+import org.json.JSONObject;
 
 import javax.swing.*;
 import javax.swing.plaf.FontUIResource;
 import javax.swing.text.StyleContext;
 import java.awt.*;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.*;
 import java.io.BufferedReader;
 import java.io.File;
@@ -39,10 +48,20 @@ public class SettingsDialog extends JDialog {
     private JTextField txtScenemaxServer;
     private JTextField txtMcpPort;
     private JLabel lblMcpEndpoint;
-    private JButton btnConnectClaude;
-    private JButton btnConnectCodex;
     private JTextField txtClaudeCliPath;
     private JTextField txtCodexCliPath;
+    private JCheckBox chkGemmaEnabled;
+    private JTextField txtGemmaEndpoint;
+    private JTextField txtGemmaModel;
+    private JTextField txtGemmaApiKey;
+    private JTextField txtGemmaTimeout;
+    private JLabel lblGemmaStatus;
+    private JButton btnTestGemma;
+    private JComboBox<GemmaModelVariant> cboGemmaVariant;
+    private JButton btnDownloadGemma;
+    private JButton btnStartGemma;
+    private JButton btnInstallVcRuntime;
+    private JLabel lblGemmaInstallInfo;
 
     public SettingsDialog() {
         this(null);
@@ -52,6 +71,7 @@ public class SettingsDialog extends JDialog {
         this.host = host;
         setContentPane(contentPane);
         setModal(true);
+        setMinimumSize(new Dimension(1120, 920));
         getRootPane().setDefaultButton(buttonOK);
 
         String jvmArch = AppDB.getInstance().getParam("projector_jvm_arch");
@@ -63,8 +83,18 @@ public class SettingsDialog extends JDialog {
         txtMcpPort.setText(mcpPort == null || mcpPort.trim().isEmpty() ? "8765" : mcpPort.trim());
         txtClaudeCliPath = new JTextField(AppDB.getInstance().getParam("mcp_claude_cli_path"));
         txtCodexCliPath = new JTextField(AppDB.getInstance().getParam("mcp_codex_cli_path"));
+        chkGemmaEnabled = new JCheckBox("Enable local Gemma bridge");
+        chkGemmaEnabled.setSelected(Boolean.parseBoolean(AppDB.getInstance().getParam("local_gemma_enabled")));
+        txtGemmaEndpoint = new JTextField(defaultValue(AppDB.getInstance().getParam("local_gemma_endpoint"), LocalGemmaBridgeConfig.DEFAULT_ENDPOINT));
+        txtGemmaModel = new JTextField(defaultValue(AppDB.getInstance().getParam("local_gemma_model"), LocalGemmaBridgeConfig.DEFAULT_MODEL));
+        txtGemmaApiKey = new JTextField(defaultValue(AppDB.getInstance().getParam("local_gemma_api_key"), ""));
+        txtGemmaTimeout = new JTextField(defaultValue(AppDB.getInstance().getParam("local_gemma_timeout_seconds"), String.valueOf(LocalGemmaBridgeConfig.DEFAULT_TIMEOUT_SECONDS)));
+        cboGemmaVariant = new JComboBox<>(GemmaModelVariant.values());
+        cboGemmaVariant.setSelectedItem(resolveVariant(defaultValue(AppDB.getInstance().getParam("local_gemma_model"), LocalGemmaBridgeConfig.DEFAULT_MODEL)));
         tabbedPane1.addTab("MCP", createMcpPanel());
+        tabbedPane1.addTab("Local Gemma", createGemmaPanel());
         refreshMcpPanelState();
+        refreshGemmaPanelState();
 
         txtGalleryHost.setText(isDefault("gallery_host", Util.GALLERY_HOST) ? "DEFAULT" : "CUSTOM");
         txtConsumerKey.setText(Util.WRITE_CONSUMER_KEY.isEmpty() ? "MISSING" : "CUSTOM");
@@ -169,6 +199,11 @@ public class SettingsDialog extends JDialog {
         }
         AppDB.getInstance().setParam("mcp_claude_cli_path", normalizeOptionalPath(txtClaudeCliPath.getText()));
         AppDB.getInstance().setParam("mcp_codex_cli_path", normalizeOptionalPath(txtCodexCliPath.getText()));
+        try {
+            updateLocalGemmaSettings();
+        } catch (NumberFormatException ex) {
+            return;
+        }
 
         dispose();
     }
@@ -199,6 +234,33 @@ public class SettingsDialog extends JDialog {
         }
     }
 
+    private void updateLocalGemmaSettings() {
+        AppDB.getInstance().setParam("local_gemma_enabled", String.valueOf(chkGemmaEnabled.isSelected()));
+        AppDB.getInstance().setParam("local_gemma_endpoint", normalizeOptionalPath(txtGemmaEndpoint.getText()));
+        AppDB.getInstance().setParam("local_gemma_model", normalizeOptionalPath(txtGemmaModel.getText()));
+        AppDB.getInstance().setParam("local_gemma_api_key", normalizeOptionalPath(txtGemmaApiKey.getText()));
+
+        String timeoutText = txtGemmaTimeout.getText().trim();
+        int timeout;
+        try {
+            timeout = Integer.parseInt(timeoutText);
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Local Gemma timeout must be a number of seconds.",
+                    "Invalid Gemma Timeout",
+                    JOptionPane.ERROR_MESSAGE);
+            throw ex;
+        }
+        if (timeout < 5) {
+            JOptionPane.showMessageDialog(this,
+                    "Local Gemma timeout must be at least 5 seconds.",
+                    "Invalid Gemma Timeout",
+                    JOptionPane.ERROR_MESSAGE);
+            throw new NumberFormatException("Timeout too small");
+        }
+        AppDB.getInstance().setParam("local_gemma_timeout_seconds", String.valueOf(timeout));
+    }
+
     private void updateParam(String key, String val) {
         val = val.toLowerCase();
 
@@ -217,6 +279,10 @@ public class SettingsDialog extends JDialog {
     private static boolean isDefault(String configKey, String currentValue) {
         String configDefault = AppConfig.get(configKey);
         return currentValue.equalsIgnoreCase(configDefault);
+    }
+
+    private String defaultValue(String value, String fallback) {
+        return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
 
     private JPanel createMcpPanel() {
@@ -251,55 +317,163 @@ public class SettingsDialog extends JDialog {
         panel.add(lblMcpEndpoint, gbc);
 
         gbc.gridy = 5;
-        gbc.gridwidth = 1;
-        gbc.weightx = 0;
-        btnConnectClaude = new JButton("Connect Claude Code");
-        btnConnectClaude.addActionListener(e -> connectClient("Claude Code"));
-        panel.add(btnConnectClaude, gbc);
-
-        gbc.gridx = 1;
-        btnConnectCodex = new JButton("Connect Codex");
-        btnConnectCodex.addActionListener(e -> connectClient("Codex"));
-        panel.add(btnConnectCodex, gbc);
-
-        gbc.gridy = 6;
         gbc.gridx = 0;
         gbc.gridwidth = 2;
         panel.add(new JLabel("Claude CLI Path Override (optional):"), gbc);
 
-        gbc.gridy = 7;
+        gbc.gridy = 6;
         gbc.gridwidth = 1;
         gbc.weightx = 1;
         panel.add(txtClaudeCliPath, gbc);
 
         gbc.gridx = 1;
         gbc.weightx = 0;
+        JPanel claudeActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         JButton btnBrowseClaude = new JButton("Browse...");
         btnBrowseClaude.addActionListener(e -> chooseCliPath(txtClaudeCliPath, "Select Claude Code CLI"));
-        panel.add(btnBrowseClaude, gbc);
+        JButton btnInstallClaude = new JButton("Install");
+        btnInstallClaude.addActionListener(e -> installCli("Claude Code", AiCliSupport.CLAUDE_NPM_PACKAGE, txtClaudeCliPath));
+        JButton btnLoginClaude = new JButton("Login");
+        btnLoginClaude.addActionListener(e -> launchCliLogin("Claude Code", txtClaudeCliPath));
+        JButton btnSeeClaudeConfig = new JButton("See config");
+        btnSeeClaudeConfig.addActionListener(e -> showClaudeDesktopConfigDialog());
+        claudeActions.add(btnBrowseClaude);
+        claudeActions.add(btnInstallClaude);
+        claudeActions.add(btnLoginClaude);
+        claudeActions.add(btnSeeClaudeConfig);
+        panel.add(claudeActions, gbc);
 
         gbc.gridx = 0;
-        gbc.gridy = 8;
+        gbc.gridy = 7;
         gbc.gridwidth = 2;
         panel.add(new JLabel("Codex CLI Path Override (optional):"), gbc);
 
-        gbc.gridy = 9;
+        gbc.gridy = 8;
         gbc.gridwidth = 1;
         gbc.weightx = 1;
         panel.add(txtCodexCliPath, gbc);
 
         gbc.gridx = 1;
         gbc.weightx = 0;
+        JPanel codexActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         JButton btnBrowseCodex = new JButton("Browse...");
         btnBrowseCodex.addActionListener(e -> chooseCliPath(txtCodexCliPath, "Select Codex CLI"));
-        panel.add(btnBrowseCodex, gbc);
+        JButton btnInstallCodex = new JButton("Install");
+        btnInstallCodex.addActionListener(e -> installCli("Codex", AiCliSupport.CODEX_NPM_PACKAGE, txtCodexCliPath));
+        codexActions.add(btnBrowseCodex);
+        codexActions.add(btnInstallCodex);
+        panel.add(codexActions, gbc);
 
         gbc.gridx = 0;
-        gbc.gridy = 10;
+        gbc.gridy = 9;
         gbc.gridwidth = 2;
-        panel.add(new JLabel("The buttons will register this local MCP endpoint with the selected client."), gbc);
+        panel.add(new JLabel("Use Browse/Install/Login to prepare the CLI, and See config to add SceneMax to Claude Desktop."), gbc);
 
+        gbc.gridy = 10;
+        gbc.weighty = 1;
+        gbc.fill = GridBagConstraints.BOTH;
+        panel.add(new JPanel(), gbc);
+
+        return panel;
+    }
+
+    private JPanel createGemmaPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(6, 6, 6, 6);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.gridwidth = 2;
+        panel.add(chkGemmaEnabled, gbc);
+
+        gbc.gridy = 1;
+        panel.add(new JLabel("Endpoint URL:"), gbc);
+
+        gbc.gridy = 2;
+        panel.add(txtGemmaEndpoint, gbc);
+
+        gbc.gridy = 3;
+        panel.add(new JLabel("Model Name:"), gbc);
+
+        gbc.gridy = 4;
+        panel.add(txtGemmaModel, gbc);
+
+        gbc.gridy = 5;
+        panel.add(new JLabel("API Key (optional):"), gbc);
+
+        gbc.gridy = 6;
+        panel.add(txtGemmaApiKey, gbc);
+
+        gbc.gridy = 7;
+        panel.add(new JLabel("Timeout Seconds:"), gbc);
+
+        gbc.gridy = 8;
+        panel.add(txtGemmaTimeout, gbc);
+
+        gbc.gridy = 9;
+        panel.add(new JLabel("Download Variant:"), gbc);
+
+        gbc.gridy = 10;
+        gbc.gridwidth = 1;
+        panel.add(cboGemmaVariant, gbc);
+
+        gbc.gridx = 1;
+        btnDownloadGemma = new JButton("Download Gemma");
+        btnDownloadGemma.addActionListener(e -> downloadGemma());
+        panel.add(btnDownloadGemma, gbc);
+
+        gbc.gridx = 0;
         gbc.gridy = 11;
+        gbc.gridwidth = 2;
+        lblGemmaInstallInfo = new JLabel("No local Gemma install detected.");
+        panel.add(lblGemmaInstallInfo, gbc);
+
+        gbc.gridy = 12;
+        lblGemmaStatus = new JLabel("Status unavailable");
+        panel.add(lblGemmaStatus, gbc);
+
+        gbc.gridy = 13;
+        gbc.gridwidth = 2;
+        btnInstallVcRuntime = new JButton("Install VC++ Runtime");
+        btnInstallVcRuntime.addActionListener(e -> installVcRuntime());
+        panel.add(btnInstallVcRuntime, gbc);
+
+        gbc.gridy = 14;
+        panel.add(new JLabel("If Local Gemma reports missing DLLs, install or repair the Microsoft VC++ runtime here."), gbc);
+
+        gbc.gridy = 15;
+        gbc.gridwidth = 1;
+        btnStartGemma = new JButton("Start Local Gemma");
+        btnStartGemma.addActionListener(e -> startLocalGemma());
+        panel.add(btnStartGemma, gbc);
+
+        gbc.gridx = 1;
+        btnTestGemma = new JButton("Test Bridge");
+        btnTestGemma.addActionListener(e -> testLocalGemmaBridge());
+        panel.add(btnTestGemma, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 16;
+        gbc.gridwidth = 2;
+        JButton btnApplyGemma = new JButton("Apply Settings");
+        btnApplyGemma.addActionListener(e -> {
+            try {
+                updateLocalGemmaSettings();
+                if (host != null) {
+                    host.reloadLocalGemmaBridgeFromSettings();
+                }
+                refreshGemmaPanelState();
+            } catch (NumberFormatException ignored) {
+            }
+        });
+        panel.add(btnApplyGemma, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 17;
+        gbc.gridwidth = 2;
         gbc.weighty = 1;
         gbc.fill = GridBagConstraints.BOTH;
         panel.add(new JPanel(), gbc);
@@ -313,6 +487,57 @@ public class SettingsDialog extends JDialog {
         }
         String endpoint = resolveCurrentEndpoint();
         lblMcpEndpoint.setText(endpoint == null || endpoint.isBlank() ? "Unavailable" : endpoint);
+    }
+
+    private void refreshGemmaPanelState() {
+        if (lblGemmaStatus == null) {
+            return;
+        }
+
+        GemmaInstallManifest installed = new GemmaInstaller().loadInstalledManifest();
+        VcRuntimeInstaller vcInstaller = new VcRuntimeInstaller();
+        if (lblGemmaInstallInfo != null) {
+            if (installed == null) {
+                String details = "Install location: " + new File("AI\\models").getAbsolutePath();
+                if (vcInstaller.isDownloaded()) {
+                    details += " | VC++ installer ready";
+                }
+                lblGemmaInstallInfo.setText(details);
+            } else {
+                String details = "Installed: " + installed.getModelDisplayName() + " at " + installed.getModelPath();
+                if (vcInstaller.isDownloaded()) {
+                    details += " | VC++ installer ready";
+                }
+                lblGemmaInstallInfo.setText(details);
+            }
+        }
+
+        LocalGemmaBridgeStatus status = host != null ? host.getLocalGemmaBridgeStatus() : null;
+        if (status == null) {
+            LocalGemmaBridgeConfig config = buildGemmaConfigFromUi();
+            String state = config.isEnabled() ? "Configured: " + config.getEndpointUrl() : "Disabled";
+            if (installed != null) {
+                state += " | Local files ready";
+            }
+            lblGemmaStatus.setText(state);
+            return;
+        }
+
+        String state;
+        if (!status.isEnabled()) {
+            state = "Disabled";
+        } else if (status.isReachable()) {
+            state = "Ready: " + status.getModel() + " @ " + status.getEndpointUrl();
+            if (host != null && host.isLocalGemmaServiceRunning()) {
+                state += " | local runtime started";
+            }
+        } else {
+            state = "Offline: " + status.getMessage();
+            if (installed != null) {
+                state += " | Installed model: " + installed.getModelDisplayName();
+            }
+        }
+        lblGemmaStatus.setText(state);
     }
 
     private String resolveCurrentEndpoint() {
@@ -391,13 +616,296 @@ public class SettingsDialog extends JDialog {
         worker.execute();
     }
 
+    private void testLocalGemmaBridge() {
+        try {
+            updateLocalGemmaSettings();
+        } catch (NumberFormatException ex) {
+            return;
+        }
+
+        btnTestGemma.setEnabled(false);
+        if (host != null) {
+            host.reloadLocalGemmaBridgeFromSettings();
+        }
+        refreshGemmaPanelState();
+
+        SwingWorker<LocalGemmaBridgeStatus, Void> worker = new SwingWorker<>() {
+            @Override
+            protected LocalGemmaBridgeStatus doInBackground() {
+                if (host != null) {
+                    return host.pingLocalGemmaBridge();
+                }
+                return new com.scenemax.desktop.ai.gemma.OpenAiCompatibleGemmaBridge(buildGemmaConfigFromUi()).checkStatus();
+            }
+
+            @Override
+            protected void done() {
+                btnTestGemma.setEnabled(true);
+                try {
+                    LocalGemmaBridgeStatus status = get();
+                    refreshGemmaPanelState();
+                    if (status.isEnabled() && status.isReachable()) {
+                        JOptionPane.showMessageDialog(SettingsDialog.this,
+                                "Local Gemma bridge is reachable.\n\nModel: " + status.getModel()
+                                        + "\nEndpoint: " + status.getEndpointUrl(),
+                                "Gemma Ready",
+                                JOptionPane.INFORMATION_MESSAGE);
+                    } else {
+                        JOptionPane.showMessageDialog(SettingsDialog.this,
+                                "Local Gemma bridge is not ready.\n\n" + status.getMessage(),
+                                "Gemma Offline",
+                                JOptionPane.ERROR_MESSAGE);
+                    }
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            "Local Gemma bridge test failed.\n\n" + ex.getMessage(),
+                            "Gemma Test Failed",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private LocalGemmaBridgeConfig buildGemmaConfigFromUi() {
+        int timeout = LocalGemmaBridgeConfig.DEFAULT_TIMEOUT_SECONDS;
+        try {
+            timeout = Integer.parseInt(txtGemmaTimeout.getText().trim());
+        } catch (NumberFormatException ignored) {
+        }
+        return new LocalGemmaBridgeConfig(
+                chkGemmaEnabled.isSelected(),
+                txtGemmaEndpoint.getText().trim(),
+                txtGemmaModel.getText().trim(),
+                txtGemmaApiKey.getText().trim(),
+                timeout
+        );
+    }
+
+    private GemmaModelVariant resolveVariant(String modelName) {
+        if (modelName != null) {
+            for (GemmaModelVariant variant : GemmaModelVariant.values()) {
+                if (variant.getModelId().equalsIgnoreCase(modelName.trim())) {
+                    return variant;
+                }
+            }
+        }
+        return GemmaModelVariant.E2B;
+    }
+
+    private void downloadGemma() {
+        GemmaModelVariant variant = (GemmaModelVariant) cboGemmaVariant.getSelectedItem();
+        if (variant == null) {
+            variant = GemmaModelVariant.E2B;
+        }
+        final GemmaModelVariant selectedVariant = variant;
+
+        int confirm = JOptionPane.showConfirmDialog(
+                this,
+                "SceneMax will download:\n\n"
+                        + "1. LiteRT-LM Windows runtime\n"
+                        + "2. " + selectedVariant.getDisplayName() + "\n\n"
+                        + "Install folder:\n" + new File("AI").getAbsolutePath() + "\n\n"
+                        + "By continuing you confirm that you reviewed the Gemma terms:\n"
+                        + "https://ai.google.dev/gemma/terms",
+                "Download Gemma",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.INFORMATION_MESSAGE
+        );
+        if (confirm != JOptionPane.OK_OPTION) {
+            return;
+        }
+
+        btnDownloadGemma.setEnabled(false);
+        if (btnTestGemma != null) {
+            btnTestGemma.setEnabled(false);
+        }
+
+        GemmaDownloadDialog progressDialog = new GemmaDownloadDialog(this, selectedVariant);
+        SwingWorker<GemmaInstallManifest, GemmaInstallProgress> worker = new SwingWorker<>() {
+            @Override
+            protected GemmaInstallManifest doInBackground() throws Exception {
+                GemmaInstaller installer = new GemmaInstaller();
+                return installer.install(selectedVariant, this::publish);
+            }
+
+            @Override
+            protected void process(List<GemmaInstallProgress> chunks) {
+                if (!chunks.isEmpty()) {
+                    progressDialog.update(chunks.get(chunks.size() - 1));
+                }
+            }
+
+            @Override
+            protected void done() {
+                btnDownloadGemma.setEnabled(true);
+                if (btnTestGemma != null) {
+                    btnTestGemma.setEnabled(true);
+                }
+                progressDialog.dispose();
+                try {
+                    GemmaInstallManifest manifest = get();
+                    txtGemmaModel.setText(selectedVariant.getModelId());
+                    chkGemmaEnabled.setSelected(true);
+                    refreshGemmaPanelState();
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            "Gemma files downloaded successfully.\n\n"
+                                    + "Model: " + manifest.getModelDisplayName() + "\n"
+                                    + "Model file: " + manifest.getModelPath() + "\n"
+                                    + "Runtime: " + manifest.getRuntimePath() + "\n\n"
+                                    + "Next step:\n"
+                                    + "Use the local Gemma bridge/service configuration to point SceneMax at the installed runtime.",
+                            "Gemma Download Complete",
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            "Gemma download failed.\n\n" + ex.getMessage(),
+                            "Gemma Download Failed",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+        progressDialog.setVisible(true);
+    }
+
+    private void installVcRuntime() {
+        int confirm = JOptionPane.showConfirmDialog(
+                this,
+                "SceneMax will download the Microsoft Visual C++ Redistributable installer to:\n\n"
+                        + new VcRuntimeInstaller().getInstallerPath() + "\n\n"
+                        + "After the download finishes, SceneMax will open the installer for you.\n"
+                        + "Windows may ask for permission to continue.",
+                "Install VC++ Runtime",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.INFORMATION_MESSAGE
+        );
+        if (confirm != JOptionPane.OK_OPTION) {
+            return;
+        }
+
+        if (btnInstallVcRuntime != null) {
+            btnInstallVcRuntime.setEnabled(false);
+        }
+        if (btnStartGemma != null) {
+            btnStartGemma.setEnabled(false);
+        }
+        if (btnTestGemma != null) {
+            btnTestGemma.setEnabled(false);
+        }
+
+        GemmaDownloadDialog progressDialog = new GemmaDownloadDialog(this, "Installing Microsoft VC++ Runtime");
+        SwingWorker<File, GemmaInstallProgress> worker = new SwingWorker<>() {
+            @Override
+            protected File doInBackground() throws Exception {
+                VcRuntimeInstaller installer = new VcRuntimeInstaller();
+                File installerFile = installer.download(this::publish).toFile();
+                installer.launchInstaller(installerFile.toPath());
+                return installerFile;
+            }
+
+            @Override
+            protected void process(List<GemmaInstallProgress> chunks) {
+                if (!chunks.isEmpty()) {
+                    progressDialog.update(chunks.get(chunks.size() - 1));
+                }
+            }
+
+            @Override
+            protected void done() {
+                if (btnInstallVcRuntime != null) {
+                    btnInstallVcRuntime.setEnabled(true);
+                }
+                if (btnStartGemma != null) {
+                    btnStartGemma.setEnabled(true);
+                }
+                if (btnTestGemma != null) {
+                    btnTestGemma.setEnabled(true);
+                }
+                progressDialog.dispose();
+                try {
+                    File installerFile = get();
+                    refreshGemmaPanelState();
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            "The Microsoft VC++ runtime installer was opened.\n\n"
+                                    + "Installer: " + installerFile.getAbsolutePath() + "\n\n"
+                                    + "Next step:\n"
+                                    + "1. Finish the Microsoft installer.\n"
+                                    + "2. If it offers Repair, choose Repair.\n"
+                                    + "3. Return here and click Start Local Gemma.\n"
+                                    + "4. Click Test Bridge after the service starts.",
+                            "VC++ Installer Ready",
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            "Installing the VC++ runtime helper failed.\n\n" + ex.getMessage(),
+                            "VC++ Runtime Install Failed",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+        progressDialog.setVisible(true);
+    }
+
+    private void startLocalGemma() {
+        try {
+            updateLocalGemmaSettings();
+        } catch (NumberFormatException ex) {
+            return;
+        }
+
+        if (host == null) {
+            JOptionPane.showMessageDialog(this,
+                    "Start Local Gemma is available only when opened from the SceneMax IDE.",
+                    "Local Gemma",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        btnStartGemma.setEnabled(false);
+        if (btnTestGemma != null) {
+            btnTestGemma.setEnabled(false);
+        }
+
+        SwingWorker<LocalGemmaBridgeStatus, Void> worker = new SwingWorker<>() {
+            @Override
+            protected LocalGemmaBridgeStatus doInBackground() {
+                return host.startInstalledLocalGemmaService();
+            }
+
+            @Override
+            protected void done() {
+                btnStartGemma.setEnabled(true);
+                if (btnTestGemma != null) {
+                    btnTestGemma.setEnabled(true);
+                }
+                try {
+                    LocalGemmaBridgeStatus status = get();
+                    refreshGemmaPanelState();
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            "Local Gemma started successfully.\n\n"
+                                    + "Model: " + status.getModel() + "\n"
+                                    + "Endpoint: " + status.getEndpointUrl() + "\n\n"
+                                    + "How to test:\n"
+                                    + "1. Click Test Bridge.\n"
+                                    + "2. Ask the future AI console a simple question.\n"
+                                    + "3. Watch the top bar for 'Gemma: ready'.",
+                            "Local Gemma Ready",
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            "Starting Local Gemma failed.\n\n" + ex.getMessage(),
+                            "Local Gemma Failed",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
     private void setConnectButtonsEnabled(boolean enabled) {
-        if (btnConnectClaude != null) {
-            btnConnectClaude.setEnabled(enabled);
-        }
-        if (btnConnectCodex != null) {
-            btnConnectCodex.setEnabled(enabled);
-        }
+        // Legacy connect buttons were removed from the MCP panel.
     }
 
     private List<String> buildClaudeArgs(String endpoint) {
@@ -424,7 +932,8 @@ public class SettingsDialog extends JDialog {
     }
 
     private CommandResult runClientCommand(String executable, List<String> args) throws Exception {
-        String commandText = buildPowerShellInvocation(executable, args);
+        String normalized = normalizeExecutableForClient(executable);
+        String commandText = buildPowerShellInvocation(normalized, args);
         ProcessBuilder pb = new ProcessBuilder("powershell", "-NoProfile", "-Command", commandText);
         pb.redirectErrorStream(true);
         Process process = pb.start();
@@ -440,106 +949,21 @@ public class SettingsDialog extends JDialog {
     }
 
     private String resolveClaudeExecutable() throws IOException {
-        String configured = normalizeOptionalPath(txtClaudeCliPath.getText());
-        if (!configured.isBlank() && new File(configured).exists()) {
-            return configured;
+        syncCliOverridesToAppDb();
+        String resolved = AiCliSupport.resolveClaudeExecutable();
+        if (txtClaudeCliPath != null && !resolved.equals(txtClaudeCliPath.getText().trim())) {
+            txtClaudeCliPath.setText(resolved);
         }
-
-        String discovered = discoverViaWhere("claude");
-        if (discovered != null) {
-            txtClaudeCliPath.setText(discovered);
-            return discovered;
-        }
-
-        String appData = System.getenv("APPDATA");
-        String userProfile = System.getenv("USERPROFILE");
-        String[] candidates = {
-                combine(appData, "npm", "claude.cmd"),
-                combine(appData, "npm", "claude.ps1"),
-                combine(appData, "npm", "claude.exe"),
-                combine(userProfile, "AppData", "Roaming", "npm", "claude.cmd"),
-                combine(userProfile, "AppData", "Roaming", "npm", "claude.ps1"),
-                combine(userProfile, "AppData", "Roaming", "npm", "claude.exe"),
-                combine(userProfile, ".local", "bin", "claude"),
-                combine(userProfile, ".bun", "bin", "claude.exe")
-        };
-        for (String candidate : candidates) {
-            if (candidate != null && new File(candidate).exists()) {
-                txtClaudeCliPath.setText(candidate);
-                return candidate;
-            }
-        }
-
-        throw new IOException("Claude Code CLI was not found automatically. Set the CLI path in the MCP tab and try again.");
+        return resolved;
     }
 
     private String resolveCodexExecutable() throws IOException {
-        String configured = normalizeOptionalPath(txtCodexCliPath.getText());
-        if (!configured.isBlank() && new File(configured).exists()) {
-            return configured;
+        syncCliOverridesToAppDb();
+        String resolved = AiCliSupport.resolveCodexExecutable();
+        if (txtCodexCliPath != null && !resolved.equals(txtCodexCliPath.getText().trim())) {
+            txtCodexCliPath.setText(resolved);
         }
-
-        String discovered = discoverViaWhere("codex");
-        if (discovered != null) {
-            txtCodexCliPath.setText(discovered);
-            return discovered;
-        }
-
-        String programFiles = System.getenv("ProgramFiles");
-        if (programFiles != null) {
-            File windowsApps = new File(programFiles, "WindowsApps");
-            File[] matches = windowsApps.listFiles((dir, name) -> name.startsWith("OpenAI.Codex_"));
-            if (matches != null) {
-                for (File match : matches) {
-                    File candidate = new File(match, "app\\resources\\codex.exe");
-                    if (candidate.exists()) {
-                        txtCodexCliPath.setText(candidate.getAbsolutePath());
-                        return candidate.getAbsolutePath();
-                    }
-                }
-            }
-        }
-
-        throw new IOException("Codex CLI was not found automatically. Set the CLI path in the MCP tab and try again.");
-    }
-
-    private String discoverViaWhere(String executable) {
-        try {
-            ProcessBuilder pb = new ProcessBuilder("cmd.exe", "/c", "where", executable);
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-            List<String> lines = new ArrayList<>();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (!line.isBlank()) {
-                        lines.add(line.trim());
-                    }
-                }
-            }
-            int exitCode = process.waitFor();
-            if (exitCode == 0 && !lines.isEmpty()) {
-                for (String line : lines) {
-                    if (new File(line).exists()) {
-                        return line;
-                    }
-                }
-                return lines.get(0);
-            }
-        } catch (Exception ignored) {
-        }
-        return null;
-    }
-
-    private String combine(String root, String... parts) {
-        if (root == null || root.isBlank()) {
-            return null;
-        }
-        File file = new File(root);
-        for (String part : parts) {
-            file = new File(file, part);
-        }
-        return file.getAbsolutePath();
+        return resolved;
     }
 
     private void chooseCliPath(JTextField target, String title) {
@@ -551,6 +975,308 @@ public class SettingsDialog extends JDialog {
         }
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             target.setText(chooser.getSelectedFile().getAbsolutePath());
+        }
+    }
+
+    private void installCli(String cliName, String packageName, JTextField targetField) {
+        String npmExecutable;
+        try {
+            npmExecutable = AiCliSupport.resolveNpmExecutable();
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this,
+                    ex.getMessage() + "\n\nManual install command:\n" + buildManualInstallCommand(packageName),
+                    cliName + " Install",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        JButton sourceButton = null;
+        setConnectButtonsEnabled(false);
+        JDialog progressDialog = new JDialog(this, "Installing " + cliName, false);
+        JTextArea txtOutput = new JTextArea(16, 70);
+        txtOutput.setEditable(false);
+        txtOutput.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        progressDialog.setContentPane(new JScrollPane(txtOutput));
+        progressDialog.pack();
+        progressDialog.setLocationRelativeTo(this);
+
+        SwingWorker<CommandResult, String> worker = new SwingWorker<>() {
+            @Override
+            protected CommandResult doInBackground() throws Exception {
+                publish("Running:\n" + buildManualInstallCommand(packageName) + "\n\n");
+                ProcessBuilder pb = new ProcessBuilder("cmd.exe", "/c", npmExecutable, "install", "-g", packageName);
+                pb.redirectErrorStream(true);
+                Process process = pb.start();
+                StringBuilder output = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        output.append(line).append(System.lineSeparator());
+                        publish(line + System.lineSeparator());
+                    }
+                }
+                int exitCode = process.waitFor();
+                return new CommandResult(exitCode, output.toString().trim(), buildManualInstallCommand(packageName));
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                for (String chunk : chunks) {
+                    txtOutput.append(chunk);
+                }
+                txtOutput.setCaretPosition(txtOutput.getDocument().getLength());
+            }
+
+            @Override
+            protected void done() {
+                setConnectButtonsEnabled(true);
+                progressDialog.dispose();
+                try {
+                    CommandResult result = get();
+                    if (result.exitCode != 0) {
+                        JOptionPane.showMessageDialog(SettingsDialog.this,
+                                cliName + " installation failed.\n\nOutput:\n" + result.output,
+                                cliName + " Install Failed",
+                                JOptionPane.ERROR_MESSAGE);
+                        return;
+                    }
+
+                    String resolvedPath = "Claude Code".equals(cliName) ? AiCliSupport.resolveClaudeExecutable() : AiCliSupport.resolveCodexExecutable();
+                    targetField.setText(resolvedPath);
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            cliName + " installed successfully.\n\nPath:\n" + resolvedPath,
+                            cliName + " Installed",
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            cliName + " installation finished, but SceneMax could not verify the executable automatically.\n\n"
+                                    + ex.getMessage() + "\n\nManual install command:\n" + buildManualInstallCommand(packageName),
+                            cliName + " Install",
+                            JOptionPane.WARNING_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+        progressDialog.setVisible(true);
+    }
+
+    private void launchCliLogin(String cliName, JTextField targetField) {
+        try {
+            syncCliOverridesToAppDb();
+            String executable = "Claude Code".equals(cliName)
+                    ? AiCliSupport.resolveClaudeExecutable()
+                    : AiCliSupport.resolveCodexExecutable();
+            targetField.setText(executable);
+
+            String normalized = normalizeExecutableForClient(executable);
+            String commandText = buildPowerShellInvocation(normalized, List.of("auth", "login"));
+            ProcessBuilder pb = new ProcessBuilder(
+                    "cmd.exe",
+                    "/c",
+                    "start",
+                    "",
+                    "powershell.exe",
+                    "-NoExit",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    commandText
+                );
+            pb.start();
+
+            JOptionPane.showMessageDialog(this,
+                    cliName + " login was opened in a separate terminal window.\n\n"
+                            + "Complete the login there, then return to the AI Console.",
+                    cliName + " Login",
+                    JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Could not start " + cliName + " login automatically.\n\n"
+                            + ex.getMessage() + "\n\nTry this manually in a terminal:\n"
+                            + ("Claude Code".equals(cliName) ? "claude auth login" : "codex auth login"),
+                    cliName + " Login",
+                    JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private String buildManualInstallCommand(String packageName) {
+        return "npm install -g " + packageName;
+    }
+
+    private void syncCliOverridesToAppDb() {
+        AppDB.getInstance().setParam("mcp_claude_cli_path", normalizeOptionalPath(txtClaudeCliPath.getText()));
+        AppDB.getInstance().setParam("mcp_codex_cli_path", normalizeOptionalPath(txtCodexCliPath.getText()));
+    }
+
+    private String normalizeExecutableForClient(String executable) {
+        String alias = "codex";
+        String normalized = executable == null ? "" : executable.toLowerCase(Locale.ROOT);
+        if (normalized.contains("claude")) {
+            alias = "claude";
+        }
+        return AiCliSupport.normalizeForInvocation(executable, alias);
+    }
+
+    private void showClaudeDesktopConfigDialog() {
+        try {
+            updateMcpPort();
+        } catch (NumberFormatException ex) {
+            return;
+        }
+
+        String endpoint = resolveConfiguredEndpoint();
+        String configSnippet = buildClaudeDesktopConfigSnippet(endpoint);
+        String instructions = buildClaudeDesktopInstructions(endpoint);
+
+        JDialog dialog = new JDialog(this, "Claude Desktop Config", true);
+        JPanel root = new JPanel(new BorderLayout(10, 10));
+        root.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+
+        JTextArea txtInstructions = new JTextArea(instructions);
+        txtInstructions.setEditable(false);
+        txtInstructions.setLineWrap(true);
+        txtInstructions.setWrapStyleWord(true);
+        txtInstructions.setOpaque(false);
+        txtInstructions.setBorder(null);
+
+        JTextArea txtConfig = new JTextArea(configSnippet);
+        txtConfig.setEditable(false);
+        txtConfig.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        txtConfig.setCaretPosition(0);
+
+        JPanel center = new JPanel(new BorderLayout(8, 8));
+        center.add(new JLabel("Config to add under \"mcpServers\":"), BorderLayout.NORTH);
+        center.add(new JScrollPane(txtConfig), BorderLayout.CENTER);
+        root.add(txtInstructions, BorderLayout.NORTH);
+        root.add(center, BorderLayout.CENTER);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton btnCopy = new JButton("Copy config");
+        btnCopy.addActionListener(e -> {
+            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(configSnippet), null);
+            JOptionPane.showMessageDialog(dialog,
+                    "SceneMax MCP config copied to the clipboard.",
+                    "Claude Desktop Config",
+                    JOptionPane.INFORMATION_MESSAGE);
+        });
+        JButton btnClose = new JButton("Close");
+        btnClose.addActionListener(e -> dialog.dispose());
+        buttons.add(btnCopy);
+        buttons.add(btnClose);
+        root.add(buttons, BorderLayout.SOUTH);
+
+        dialog.setContentPane(root);
+        dialog.setSize(760, 520);
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+    }
+
+    private String resolveConfiguredEndpoint() {
+        String portText = txtMcpPort != null ? txtMcpPort.getText().trim() : "";
+        if (!portText.isEmpty() && !portText.equalsIgnoreCase("default")) {
+            return "http://127.0.0.1:" + portText + "/mcp";
+        }
+
+        String runningEndpoint = host != null && host.getAutomationHttpServer() != null
+                ? host.getAutomationHttpServer().getEndpointUrl()
+                : null;
+        if (runningEndpoint != null && !runningEndpoint.isBlank()) {
+            return runningEndpoint;
+        }
+
+        String saved = AppDB.getInstance().getParam("mcp_server_port");
+        if (saved != null && !saved.trim().isEmpty()) {
+            return "http://127.0.0.1:" + saved.trim() + "/mcp";
+        }
+
+        return "http://127.0.0.1:8765/mcp";
+    }
+
+    private String buildClaudeDesktopConfigSnippet(String endpoint) {
+        String command = resolveClaudeDesktopConfigCommand();
+        List<String> args = buildClaudeDesktopConfigArgs(endpoint);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("\"scenemax\": {\n");
+        sb.append("  \"type\": \"stdio\",\n");
+        sb.append("  \"command\": ").append(JSONObject.quote(command)).append(",\n");
+        sb.append("  \"args\": [\n");
+        for (int i = 0; i < args.size(); i++) {
+            sb.append("    ").append(JSONObject.quote(args.get(i)));
+            if (i < args.size() - 1) {
+                sb.append(",");
+            }
+            sb.append("\n");
+        }
+        sb.append("  ],\n");
+        sb.append("  \"env\": {}\n");
+        sb.append("}");
+        return sb.toString();
+    }
+
+    private String buildClaudeDesktopInstructions(String endpoint) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("1. In Claude Desktop, open Settings > Developer > Local MCP servers.\n");
+        sb.append("2. Click Edit config.\n");
+        sb.append("3. Inside the existing \"mcpServers\" object, paste the SceneMax block shown below.\n");
+        sb.append("4. If another MCP server is already listed above it, add a comma after the previous server block.\n");
+        sb.append("5. Save the file.\n");
+        sb.append("6. Keep SceneMax IDE open. Claude Desktop will start the standalone SceneMax MCP proxy jar, and that tiny process will forward requests to ").append(endpoint).append(".\n");
+        sb.append("7. If you changed the Fixed MCP Port here, click OK in SceneMax so the IDE uses the same port.\n");
+        sb.append("8. Reopen Claude Desktop or refresh the connectors list, then verify that \"scenemax\" appears.");
+        return sb.toString();
+    }
+
+    private String resolveClaudeDesktopConfigCommand() {
+        File javaHome = new File(System.getProperty("java.home", ""));
+        File javaExe = new File(new File(javaHome, "bin"), "java.exe");
+        if (javaExe.exists()) {
+            return javaExe.getAbsolutePath();
+        }
+
+        File javaBinary = new File(new File(javaHome, "bin"), "java");
+        if (javaBinary.exists()) {
+            return javaBinary.getAbsolutePath();
+        }
+
+        return "java";
+    }
+
+    private List<String> buildClaudeDesktopConfigArgs(String endpoint) {
+        List<String> args = new ArrayList<>();
+        args.add("-jar");
+        args.add(resolveProxyJarPath().getAbsolutePath());
+        args.add(endpoint);
+        return args;
+    }
+
+    private File resolveProxyJarPath() {
+        File launchArtifact = resolveCurrentLaunchArtifact();
+        if (launchArtifact != null && launchArtifact.isFile() && launchArtifact.getName().toLowerCase(Locale.ROOT).endsWith(".jar")) {
+            File sibling = new File(launchArtifact.getParentFile(), "scenemax_mcp_proxy.jar");
+            if (sibling.exists()) {
+                return sibling;
+            }
+        }
+
+        File buildArtifact = new File("build\\libs\\scenemax_mcp_proxy.jar");
+        if (buildArtifact.exists()) {
+            return buildArtifact.getAbsoluteFile();
+        }
+
+        if (launchArtifact != null && launchArtifact.isFile() && launchArtifact.getParentFile() != null) {
+            return new File(launchArtifact.getParentFile(), "scenemax_mcp_proxy.jar");
+        }
+
+        return buildArtifact.getAbsoluteFile();
+    }
+
+    private File resolveCurrentLaunchArtifact() {
+        try {
+            return new File(MainApp.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        } catch (Exception ex) {
+            return null;
         }
     }
 
@@ -602,6 +1328,38 @@ public class SettingsDialog extends JDialog {
         }
     }
 
+    private static class GemmaDownloadDialog extends JDialog {
+        private final JProgressBar progressBar = new JProgressBar(0, 100);
+        private final JLabel lblMessage = new JLabel("Preparing download...");
+
+        GemmaDownloadDialog(Dialog owner, GemmaModelVariant variant) {
+            super(owner, "Downloading " + variant.getDisplayName(), false);
+            initUi(owner);
+        }
+
+        GemmaDownloadDialog(Dialog owner, String title) {
+            super(owner, title, false);
+            initUi(owner);
+        }
+
+        private void initUi(Dialog owner) {
+            JPanel panel = new JPanel(new BorderLayout(10, 10));
+            panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+            panel.add(lblMessage, BorderLayout.NORTH);
+            panel.add(progressBar, BorderLayout.CENTER);
+            progressBar.setStringPainted(true);
+            setContentPane(panel);
+            setSize(420, 120);
+            setLocationRelativeTo(owner);
+            setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
+        }
+
+        void update(GemmaInstallProgress progress) {
+            progressBar.setValue(progress.getPercent());
+            lblMessage.setText(progress.getMessage());
+        }
+    }
+
     private void onCancel() {
         // add your code here if necessary
         dispose();
@@ -609,7 +1367,7 @@ public class SettingsDialog extends JDialog {
 
     public static void main(String[] args) {
         SettingsDialog dialog = new SettingsDialog();
-        dialog.pack();
+        dialog.setSize(1120, 920);
         dialog.setVisible(true);
         System.exit(0);
     }

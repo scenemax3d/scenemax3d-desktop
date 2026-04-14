@@ -2,6 +2,8 @@ package com.scenemax.desktop;
 import com.intellij.uiDesigner.core.GridConstraints;
 import com.intellij.uiDesigner.core.GridLayoutManager;
 import com.intellij.uiDesigner.core.Spacer;
+import com.scenemax.designer.DesignerEntity;
+import com.scenemax.designer.DesignerEntityType;
 import com.scenemax.designer.DesignerDocument;
 import com.scenemax.designer.DesignerPanel;
 import com.scenemax.designer.Import3DModelPanel;
@@ -23,6 +25,13 @@ import com.scenemax.designer.ui.designer.UIDesignerPanel;
 import com.scenemax.desktop.ai.SceneMaxAutomationBootstrap;
 import com.scenemax.desktop.ai.SceneMaxToolContext;
 import com.scenemax.desktop.ai.SceneMaxToolRegistry;
+import com.scenemax.desktop.ai.gemma.LocalGemmaBridge;
+import com.scenemax.desktop.ai.gemma.LocalGemmaBridgeConfig;
+import com.scenemax.desktop.ai.gemma.LocalGemmaBridgeStatus;
+import com.scenemax.desktop.ai.gemma.OpenAiCompatibleGemmaBridge;
+import com.scenemax.desktop.ai.gemma.install.GemmaInstallManifest;
+import com.scenemax.desktop.ai.gemma.install.GemmaInstaller;
+import com.scenemax.desktop.ai.gemma.service.LocalGemmaHttpService;
 import com.scenemax.desktop.ai.mcp.SceneMaxMcpHttpServer;
 import com.scenemax.desktop.ai.mcp.SceneMaxMcpLogEntry;
 import com.scenemax.desktop.ai.mcp.SceneMaxMcpServer;
@@ -55,6 +64,7 @@ import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.*;
+import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -63,6 +73,8 @@ import java.security.cert.X509Certificate;
 import java.util.*;
 import java.util.List;
 import java.util.Timer;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static javax.swing.JOptionPane.YES_OPTION;
 
@@ -123,8 +135,12 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private SceneMaxToolContext automationToolContext;
     private SceneMaxMcpServer automationMcpServer;
     private SceneMaxMcpHttpServer automationHttpServer;
+    private LocalGemmaBridge localGemmaBridge;
+    private volatile LocalGemmaBridgeStatus localGemmaBridgeStatus;
+    private LocalGemmaHttpService localGemmaHttpService;
     private final java.util.List<SceneMaxMcpLogEntry> mcpLogEntries = Collections.synchronizedList(new ArrayList<>());
     private McpLogDialog mcpLogDialog;
+    private AiConsoleDialog aiConsoleDialog;
     // (Designer panels are managed per-tab inside EditorTabPanel)
 
     public MainApp() {
@@ -323,11 +339,14 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         automationMcpServer = new SceneMaxMcpServer(automationToolRegistry, automationToolContext);
         automationHttpServer = new SceneMaxMcpHttpServer(automationMcpServer, this::recordMcpLogEntry);
         automationHttpServer.start(getConfiguredMcpPort());
+        initLocalGemmaBridge();
         updateMcpStatusLabel();
+        updateGemmaStatusLabel();
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
                 stopAutomationServer();
+                stopLocalGemmaService();
             }
         });
     }
@@ -555,15 +574,18 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     dlg.setLocationRelativeTo(null);
                     dlg.setModal(true);
                     dlg.setVisible(true);
+                } else if (cmd.equals("show_ai_console")) {
+                    showAiConsole();
                 } else if (cmd.equals("settings")) {
                     SettingsDialog dlg = new SettingsDialog(MainApp.this);
-                    dlg.setSize(800, 600);
+                    dlg.setSize(1120, 920);
                     dlg.setLocationRelativeTo(null);
                     dlg.setModal(true);
                     dlg.setVisible(true);
 
                     initUtils();
                     restartAutomationServer();
+                    reloadLocalGemmaBridgeFromSettings();
 
                 // ─── Git commands ───
                 } else if (cmd.startsWith("git_")) {
@@ -905,6 +927,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     private JLabel lblGitBranch;
     private JLabel lblMcpStatus;
+    private JLabel lblGemmaStatus;
 
     private void initGitStatusLabel() {
         if (lblGitBranch == null) {
@@ -937,16 +960,28 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     showMcpMonitor();
                 }
             });
+            lblGemmaStatus = new JLabel();
+            lblGemmaStatus.setFont(lblGitBranch.getFont().deriveFont(Font.PLAIN, 11f));
+            lblGemmaStatus.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            lblGemmaStatus.setToolTipText("Click to show the local Gemma bridge status");
+            lblGemmaStatus.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    showGemmaStatusDialog();
+                }
+            });
             gitStatusPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
             gitStatusPanel.setOpaque(false);
             gitStatusPanel.add(lblGitBranch);
             gitStatusPanel.add(lblMcpStatus);
+            gitStatusPanel.add(lblGemmaStatus);
             topPanel.add(gitStatusPanel, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST,
                     GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW,
                     GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
         }
         updateGitStatusLabel();
         updateMcpStatusLabel();
+        updateGemmaStatusLabel();
     }
 
     private void updateGitStatusLabel() {
@@ -999,12 +1034,86 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         });
     }
 
+    private void initLocalGemmaBridge() {
+        localGemmaBridge = new OpenAiCompatibleGemmaBridge(LocalGemmaBridgeConfig.fromAppSettings());
+        refreshLocalGemmaBridgeStatusAsync();
+        autoStartLocalGemmaServiceIfPossible();
+    }
+
+    private void updateGemmaStatusLabel() {
+        if (lblGemmaStatus == null) {
+            return;
+        }
+
+        SwingUtilities.invokeLater(() -> {
+            LocalGemmaBridgeStatus status = localGemmaBridgeStatus;
+            if (status == null) {
+                lblGemmaStatus.setText("  Gemma: checking");
+                lblGemmaStatus.setForeground(new Color(150, 150, 150));
+                lblGemmaStatus.setToolTipText("Checking local Gemma bridge status...");
+                return;
+            }
+
+            if (!status.isEnabled()) {
+                lblGemmaStatus.setText("  Gemma: disabled");
+                lblGemmaStatus.setForeground(new Color(150, 150, 150));
+                lblGemmaStatus.setToolTipText(status.getMessage());
+            } else if (status.isReachable()) {
+                lblGemmaStatus.setText("  Gemma: ready");
+                lblGemmaStatus.setForeground(new Color(100, 200, 100));
+                lblGemmaStatus.setToolTipText(status.getEndpointUrl() + " [" + status.getModel() + "]");
+            } else {
+                lblGemmaStatus.setText("  Gemma: offline");
+                lblGemmaStatus.setForeground(new Color(220, 120, 120));
+                lblGemmaStatus.setToolTipText(status.getMessage());
+            }
+        });
+    }
+
     private void showMcpMonitor() {
         if (mcpLogDialog == null) {
             mcpLogDialog = new McpLogDialog(this);
         }
         mcpLogDialog.refreshFromHost();
         mcpLogDialog.setVisible(true);
+    }
+
+    private void showAiConsole() {
+        if (aiConsoleDialog == null) {
+            aiConsoleDialog = new AiConsoleDialog(this);
+        }
+        aiConsoleDialog.refreshProviderState();
+        aiConsoleDialog.setLocationRelativeTo(this);
+        aiConsoleDialog.setVisible(true);
+        aiConsoleDialog.toFront();
+    }
+
+    private void showGemmaStatusDialog() {
+        LocalGemmaBridgeStatus status = localGemmaBridgeStatus;
+        if (status == null) {
+            JOptionPane.showMessageDialog(this,
+                    "Local Gemma bridge status is still being checked.",
+                    "Local Gemma",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        StringBuilder msg = new StringBuilder();
+        msg.append("Status: ");
+        if (!status.isEnabled()) {
+            msg.append("disabled");
+        } else if (status.isReachable()) {
+            msg.append("ready");
+        } else {
+            msg.append("offline");
+        }
+        msg.append("\nModel: ").append(status.getModel());
+        msg.append("\nEndpoint: ").append(status.getEndpointUrl());
+        if (status.getMessage() != null && !status.getMessage().isBlank()) {
+            msg.append("\n\n").append(status.getMessage());
+        }
+
+        JOptionPane.showMessageDialog(this, msg.toString(), "Local Gemma", JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void initButtonHandlers() {
@@ -2522,7 +2631,6 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     public static void main(String[] args) {
-
         // Fix HiDPI gap in JME3/LWJGL2 canvas: Java 9+ declares the process
         // as DPI-aware, so the GL framebuffer is at physical pixel resolution
         // but Canvas.getWidth()/getHeight() report logical pixels.  This causes
@@ -3388,6 +3496,255 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         return automationHttpServer;
     }
 
+    public LocalGemmaBridge getLocalGemmaBridge() {
+        return localGemmaBridge;
+    }
+
+    public LocalGemmaBridgeStatus getLocalGemmaBridgeStatus() {
+        return localGemmaBridgeStatus;
+    }
+
+    public JSONObject getAutomationActiveDocumentSnapshot() {
+        AtomicReference<JSONObject> snapshot = new AtomicReference<>(new JSONObject().put("kind", "none"));
+        runOnEdtAndWait(() -> {
+            if (editorTabPanel == null || editorTabPanel.getActiveTab() == null) {
+                snapshot.set(new JSONObject().put("kind", "none"));
+                return;
+            }
+
+            EditorTabPanel.TabData active = editorTabPanel.getActiveTab();
+            JSONObject doc = new JSONObject();
+            doc.put("path", active.filePath);
+            doc.put("kind", editorTabPanel.getActiveTabKind());
+            doc.put("dirty", active.dirty);
+            doc.put("designerTab", active.isDesignerTab);
+            doc.put("uiDesignerTab", active.isUIDesignerTab);
+            doc.put("shaderDesignerTab", active.isShaderDesignerTab);
+            doc.put("environmentShaderDesignerTab", active.isEnvironmentShaderDesignerTab);
+            doc.put("materialDesignerTab", active.isMaterialDesignerTab);
+            snapshot.set(doc);
+        });
+        return snapshot.get();
+    }
+
+    public JSONArray getActiveSceneDesignerEntitiesForAutomation() {
+        AtomicReference<JSONArray> entities = new AtomicReference<>(new JSONArray());
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+        runOnEdtAndWait(() -> {
+            DesignerPanel panel = getActiveDesignerPanel();
+            if (panel == null) {
+                failure.set(new IllegalStateException("Open a scene designer tab first."));
+                return;
+            }
+            try {
+                Object app = invokeNoArg(panel, "getApp");
+                @SuppressWarnings("unchecked")
+                List<DesignerEntity> all = (List<DesignerEntity>) invokeNoArg(app, "getEntities");
+                entities.set(summarizeDesignerEntities(all));
+            } catch (Exception ex) {
+                failure.set(new RuntimeException(ex));
+            }
+        });
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+        return entities.get();
+    }
+
+    public JSONObject addPrimitiveToActiveSceneDesignerForAutomation(String primitive, boolean saveDocument) {
+        AtomicReference<JSONObject> entity = new AtomicReference<>();
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+        runOnEdtAndWait(() -> {
+            DesignerPanel panel = getActiveDesignerPanel();
+            if (panel == null) {
+                failure.set(new IllegalStateException("Open a scene designer tab first."));
+                return;
+            }
+
+            try {
+                Object app = invokeNoArg(panel, "getApp");
+                @SuppressWarnings("unchecked")
+                List<DesignerEntity> beforeList = (List<DesignerEntity>) invokeNoArg(app, "getEntities");
+                int before = beforeList.size();
+                switch (primitive.toLowerCase(Locale.ROOT)) {
+                    case "sphere":
+                        invokeNoArg(app, "addDefaultSphere");
+                        break;
+                    case "box":
+                        invokeNoArg(app, "addDefaultBox");
+                        break;
+                    case "cylinder":
+                        invokeNoArg(app, "addDefaultCylinder");
+                        break;
+                    case "hollow_cylinder":
+                        invokeNoArg(app, "addDefaultHollowCylinder");
+                        break;
+                    case "quad":
+                        invokeNoArg(app, "addDefaultQuad");
+                        break;
+                    default:
+                        failure.set(new IllegalArgumentException("Unsupported primitive: " + primitive));
+                        return;
+                }
+
+                @SuppressWarnings("unchecked")
+                List<DesignerEntity> all = (List<DesignerEntity>) invokeNoArg(app, "getEntities");
+                if (all.size() <= before) {
+                    failure.set(new IllegalStateException("Scene designer did not create a new primitive."));
+                    return;
+                }
+
+                if (saveDocument) {
+                    saveActiveEditorTab();
+                } else if (editorTabPanel != null) {
+                    editorTabPanel.markActiveTabDirty();
+                }
+
+                entity.set(summarizeDesignerEntity(all.get(all.size() - 1)));
+            } catch (Exception ex) {
+                failure.set(new RuntimeException(ex));
+            }
+        });
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+        return entity.get();
+    }
+
+    public JSONObject createCinematicRigInActiveSceneDesignerForAutomation(String preset, String targetEntityId, String targetEntityName, boolean saveDocument) {
+        AtomicReference<JSONObject> rig = new AtomicReference<>();
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+        runOnEdtAndWait(() -> {
+            DesignerPanel panel = getActiveDesignerPanel();
+            if (panel == null) {
+                failure.set(new IllegalStateException("Open a scene designer tab first."));
+                return;
+            }
+
+            try {
+                Object app = invokeNoArg(panel, "getApp");
+                app.getClass()
+                        .getMethod("createCinematicRigWithPreset", String.class, String.class, String.class)
+                        .invoke(app,
+                                preset == null || preset.isBlank() ? "empty" : preset,
+                                targetEntityId,
+                                targetEntityName);
+
+                DesignerEntity entity = (DesignerEntity) invokeNoArg(app, "findCinematicRig");
+                if (entity == null) {
+                    failure.set(new IllegalStateException("Scene designer did not produce a cinematic rig."));
+                    return;
+                }
+
+                if (saveDocument) {
+                    saveActiveEditorTab();
+                } else if (editorTabPanel != null) {
+                    editorTabPanel.markActiveTabDirty();
+                }
+
+                rig.set(summarizeDesignerEntity(entity));
+            } catch (Exception ex) {
+                failure.set(new RuntimeException(ex));
+            }
+        });
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+        return rig.get();
+    }
+
+    public LocalGemmaBridgeStatus pingLocalGemmaBridge() {
+        if (localGemmaBridge == null) {
+            localGemmaBridge = new OpenAiCompatibleGemmaBridge(LocalGemmaBridgeConfig.fromAppSettings());
+        }
+        localGemmaBridgeStatus = localGemmaBridge.checkStatus();
+        updateGemmaStatusLabel();
+        return localGemmaBridgeStatus;
+    }
+
+    public LocalGemmaBridgeStatus startInstalledLocalGemmaService() {
+        GemmaInstaller installer = new GemmaInstaller();
+        GemmaInstallManifest manifest = installer.loadInstalledManifest();
+        if (manifest == null) {
+            throw new IllegalStateException("No Gemma model is installed yet. Download Gemma first.");
+        }
+        try {
+            manifest = installer.ensureSupportedRuntimeInstalled(manifest, null);
+        } catch (IOException ex) {
+            throw new RuntimeException("Failed to prepare the LiteRT-LM runtime: " + ex.getMessage(), ex);
+        }
+
+        LocalGemmaBridgeConfig config = LocalGemmaBridgeConfig.fromAppSettings();
+        URI endpointUri = URI.create(config.getEndpointUrl());
+        if (localGemmaHttpService == null) {
+            localGemmaHttpService = new LocalGemmaHttpService();
+        }
+        localGemmaHttpService.start(endpointUri, manifest);
+        reloadLocalGemmaBridgeFromSettings();
+        return pingLocalGemmaBridge();
+    }
+
+    private void autoStartLocalGemmaServiceIfPossible() {
+        LocalGemmaBridgeConfig config = LocalGemmaBridgeConfig.fromAppSettings();
+        if (!config.isEnabled()) {
+            return;
+        }
+        if (!isLocalGemmaEndpointLocal(config.getEndpointUrl())) {
+            return;
+        }
+        if (isLocalGemmaServiceRunning()) {
+            return;
+        }
+
+        GemmaInstallManifest manifest = new GemmaInstaller().loadInstalledManifest();
+        if (manifest == null) {
+            return;
+        }
+
+        Thread thread = new Thread(() -> {
+            try {
+                startInstalledLocalGemmaService();
+            } catch (Exception ex) {
+                localGemmaBridgeStatus = LocalGemmaBridgeStatus.unreachable(
+                        config,
+                        "Auto-start failed: " + ex.getMessage());
+                updateGemmaStatusLabel();
+            }
+        }, "scenemax-gemma-autostart");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private boolean isLocalGemmaEndpointLocal(String endpointUrl) {
+        if (endpointUrl == null || endpointUrl.isBlank()) {
+            return false;
+        }
+        try {
+            URI uri = URI.create(endpointUrl);
+            String host = uri.getHost();
+            if (host == null || host.isBlank()) {
+                return false;
+            }
+            String normalized = host.trim().toLowerCase(Locale.ROOT);
+            return normalized.equals("127.0.0.1")
+                    || normalized.equals("localhost")
+                    || normalized.equals("0.0.0.0");
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    public void stopLocalGemmaService() {
+        if (localGemmaHttpService != null) {
+            localGemmaHttpService.stop();
+        }
+        refreshLocalGemmaBridgeStatusAsync();
+    }
+
+    public boolean isLocalGemmaServiceRunning() {
+        return localGemmaHttpService != null && localGemmaHttpService.isRunning();
+    }
+
     public java.util.List<String> getMcpLogLinesSnapshot() {
         java.util.List<String> lines = new ArrayList<>();
         synchronized (mcpLogEntries) {
@@ -3409,31 +3766,37 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     public void refreshWorkspaceViews() {
-        loadScriptsFolder();
-        refreshAssetsMenu();
+        runOnEdtAndWait(() -> {
+            loadScriptsFolder();
+            refreshAssetsMenu();
+        });
     }
 
     public void openFileFromAutomation(File file) {
         if (file == null || !file.exists()) {
             return;
         }
-        loadFileToTextEditor(file);
+        runOnEdtAndWait(() -> loadFileToTextEditor(file));
     }
 
     public void openOrRefreshTextFileFromAutomation(File file, String content) {
         if (file == null) {
             return;
         }
-        if (editorTabPanel != null) {
-            editorTabPanel.refreshOrOpenTextTab(file.getAbsolutePath(), content);
-        }
-        openFileFromAutomation(file);
+        runOnEdtAndWait(() -> {
+            if (editorTabPanel != null) {
+                editorTabPanel.refreshOrOpenTextTab(file.getAbsolutePath(), content);
+            }
+            loadFileToTextEditor(file);
+        });
     }
 
     public void saveActiveEditorTab() {
-        if (editorTabPanel != null) {
-            editorTabPanel.saveActiveTab();
-        }
+        runOnEdtAndWait(() -> {
+            if (editorTabPanel != null) {
+                editorTabPanel.saveActiveTab();
+            }
+        });
     }
 
     public void stopAutomationServer() {
@@ -3479,6 +3842,94 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     public void restartAutomationServerFromSettings() {
         restartAutomationServer();
+    }
+
+    public void reloadLocalGemmaBridgeFromSettings() {
+        localGemmaBridge = new OpenAiCompatibleGemmaBridge(LocalGemmaBridgeConfig.fromAppSettings());
+        refreshLocalGemmaBridgeStatusAsync();
+    }
+
+    public boolean runPreviewFromAutomation() {
+        AtomicBoolean result = new AtomicBoolean(false);
+        runOnEdtAndWait(() -> result.set(prepareAndRunLauncher()));
+        return result.get();
+    }
+
+    private void runOnEdtAndWait(Runnable action) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            action.run();
+            return;
+        }
+        try {
+            SwingUtilities.invokeAndWait(action);
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    private void refreshLocalGemmaBridgeStatusAsync() {
+        Thread thread = new Thread(() -> {
+            try {
+                localGemmaBridgeStatus = localGemmaBridge != null
+                        ? localGemmaBridge.checkStatus()
+                        : LocalGemmaBridgeStatus.disabled(LocalGemmaBridgeConfig.fromAppSettings());
+            } catch (Exception ex) {
+                LocalGemmaBridgeConfig config = localGemmaBridge != null
+                        ? localGemmaBridge.getConfig()
+                        : LocalGemmaBridgeConfig.fromAppSettings();
+                localGemmaBridgeStatus = LocalGemmaBridgeStatus.unreachable(config, ex.getMessage());
+            }
+            updateGemmaStatusLabel();
+        }, "scenemax-gemma-status");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private DesignerPanel getActiveDesignerPanel() {
+        if (editorTabPanel == null || editorTabPanel.getActiveTab() == null) {
+            return null;
+        }
+        EditorTabPanel.TabData active = editorTabPanel.getActiveTab();
+        return active.isDesignerTab ? active.designerPanel : null;
+    }
+
+    private JSONArray summarizeDesignerEntities(List<DesignerEntity> entities) {
+        JSONArray array = new JSONArray();
+        if (entities == null) {
+            return array;
+        }
+        for (DesignerEntity entity : entities) {
+            array.put(summarizeDesignerEntity(entity));
+        }
+        return array;
+    }
+
+    private JSONObject summarizeDesignerEntity(DesignerEntity entity) {
+        JSONObject source = entity.toJSON();
+        JSONObject json = new JSONObject();
+        json.put("id", source.optString("id"));
+        json.put("name", source.optString("name"));
+        json.put("type", source.optString("type", "").toLowerCase(Locale.ROOT));
+        json.put("material", source.optString("material"));
+        json.put("shader", source.optString("shader"));
+        json.put("resourcePath", source.optString("resourcePath"));
+        json.put("position", source.optJSONArray("position") != null ? source.getJSONArray("position") : new JSONArray());
+        json.put("rotation", source.optJSONArray("rotation") != null ? source.getJSONArray("rotation") : new JSONArray());
+        json.put("scale", source.optJSONArray("scale") != null ? source.getJSONArray("scale") : new JSONArray());
+        if (entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+            json.put("cinematicRuntimeId", entity.getCinematicRuntimeId());
+            json.put("cinematicTargetEntityId", entity.getCinematicTargetEntityId());
+            json.put("cinematicTargetEntityName", entity.getCinematicTargetEntityName());
+            json.put("cinematicSegmentCount", entity.getCinematicSegments().size());
+        }
+        if (!entity.getChildren().isEmpty()) {
+            json.put("children", summarizeDesignerEntities(entity.getChildren()));
+        }
+        return json;
+    }
+
+    private Object invokeNoArg(Object target, String methodName) throws Exception {
+        return target.getClass().getMethod(methodName).invoke(target);
     }
 
     private void recordMcpLogEntry(SceneMaxMcpLogEntry entry) {

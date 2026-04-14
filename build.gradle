@@ -127,6 +127,7 @@ tasks.register('generateSceneMaxParser', Copy) {
 
 tasks.named('build') {
     dependsOn tasks.named('generateSceneMaxParser')
+    dependsOn tasks.named('mcpProxyJar')
 }
 
 tasks.register('buildWindowsSetup', Exec) {
@@ -217,6 +218,31 @@ sourceSets {
         java {
             srcDirs = ['src/test/java']
         }
+    }
+    mcpProxy {
+        java {
+            srcDirs = ['src/mcpProxy/java']
+        }
+        resources {
+            srcDirs = []
+        }
+    }
+}
+
+tasks.register('mcpProxyJar', Jar) {
+    group = 'build'
+    description = 'Builds the standalone SceneMax MCP stdio proxy jar for Claude Desktop.'
+    archiveFileName = 'scenemax_mcp_proxy.jar'
+    destinationDirectory = file("$buildDir/libs")
+    dependsOn tasks.named('mcpProxyClasses')
+    from sourceSets.mcpProxy.output
+    from {
+        sourceSets.mcpProxy.runtimeClasspath.findAll { it.exists() }.collect {
+            it.isDirectory() ? it : zipTree(it)
+        }
+    }
+    manifest {
+        attributes 'Main-Class': 'com.scenemax.desktop.ai.mcp.SceneMaxMcpProxyMain'
     }
 }
 

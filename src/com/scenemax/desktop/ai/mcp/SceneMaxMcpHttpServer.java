@@ -141,6 +141,15 @@ public class SceneMaxMcpHttpServer {
                 String body = new String(in.readAllBytes(), StandardCharsets.UTF_8);
                 JSONObject request = body == null || body.isBlank() ? new JSONObject() : new JSONObject(body);
                 JSONObject response = mcpServer.handleRequest(request);
+                if (response == null) {
+                    log(exchange, 202,
+                            request.optString("method", ""),
+                            request.optJSONObject("params") != null ? request.optJSONObject("params").optString("name", "") : "",
+                            request.has("id") ? String.valueOf(request.get("id")) : "",
+                            "notification");
+                    exchange.sendResponseHeaders(202, -1);
+                    return;
+                }
                 log(exchange, 200,
                         request.optString("method", ""),
                         request.optJSONObject("params") != null ? request.optJSONObject("params").optString("name", "") : "",

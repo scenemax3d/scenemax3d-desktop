@@ -2,9 +2,14 @@
     "projects": [
         {
             "path": "projects/fighting_game_project",
+            "itchWindowsChannel": "windows",
             "selectedNode": "main",
+            "itchGamePage": "https://adi-barda.itch.io/fighting-game-concept",
             "name": "fighting game project",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game"
+            "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game",
+            "itchMacChannel": "macos",
+            "itchLinuxChannel": "linux"
         },
         {
             "path": "projects/default_project",
