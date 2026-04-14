@@ -34,12 +34,33 @@ public class SceneMaxToolResult {
     public JSONObject toMcpResult() {
         JSONObject result = new JSONObject();
         JSONArray content = new JSONArray();
-        JSONObject text = new JSONObject();
-        text.put("type", "text");
-        text.put("text", summary != null && !summary.isBlank() ? summary : data.toString(2));
-        content.put(text);
+
+        boolean hasSummary = summary != null && !summary.isBlank();
+        boolean hasData = data != null && !data.isEmpty();
+
+        if (hasSummary) {
+            JSONObject summaryBlock = new JSONObject();
+            summaryBlock.put("type", "text");
+            summaryBlock.put("text", summary);
+            content.put(summaryBlock);
+        }
+
+        if (hasData) {
+            JSONObject dataBlock = new JSONObject();
+            dataBlock.put("type", "text");
+            dataBlock.put("text", data.toString(2));
+            content.put(dataBlock);
+        }
+
+        if (!hasSummary && !hasData) {
+            JSONObject empty = new JSONObject();
+            empty.put("type", "text");
+            empty.put("text", "");
+            content.put(empty);
+        }
+
         result.put("content", content);
-        result.put("structuredData", data);
+        result.put("structuredContent", data);
         if (error) {
             result.put("isError", true);
         }

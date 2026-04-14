@@ -2630,7 +2630,6 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     public static void main(String[] args) {
-
         // Fix HiDPI gap in JME3/LWJGL2 canvas: Java 9+ declares the process
         // as DPI-aware, so the GL framebuffer is at physical pixel resolution
         // but Canvas.getWidth()/getHeight() report logical pixels.  This causes

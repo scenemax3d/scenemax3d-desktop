@@ -11,11 +11,13 @@ import com.scenemax.desktop.ai.gemma.install.GemmaInstaller;
 import com.scenemax.desktop.ai.gemma.install.GemmaModelVariant;
 import com.scenemax.desktop.ai.gemma.install.VcRuntimeInstaller;
 import org.apache.commons.io.FileUtils;
+import org.json.JSONObject;
 
 import javax.swing.*;
 import javax.swing.plaf.FontUIResource;
 import javax.swing.text.StyleContext;
 import java.awt.*;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.*;
 import java.io.BufferedReader;
 import java.io.File;
@@ -331,9 +333,16 @@ public class SettingsDialog extends JDialog {
         gbc.gridy = 6;
         gbc.gridx = 0;
         gbc.gridwidth = 2;
-        panel.add(new JLabel("Claude CLI Path Override (optional):"), gbc);
+        JButton btnSeeClaudeConfig = new JButton("See config");
+        btnSeeClaudeConfig.addActionListener(e -> showClaudeDesktopConfigDialog());
+        panel.add(btnSeeClaudeConfig, gbc);
 
         gbc.gridy = 7;
+        gbc.gridx = 0;
+        gbc.gridwidth = 2;
+        panel.add(new JLabel("Claude CLI Path Override (optional):"), gbc);
+
+        gbc.gridy = 8;
         gbc.gridwidth = 1;
         gbc.weightx = 1;
         panel.add(txtClaudeCliPath, gbc);
@@ -345,11 +354,11 @@ public class SettingsDialog extends JDialog {
         panel.add(btnBrowseClaude, gbc);
 
         gbc.gridx = 0;
-        gbc.gridy = 8;
+        gbc.gridy = 9;
         gbc.gridwidth = 2;
         panel.add(new JLabel("Codex CLI Path Override (optional):"), gbc);
 
-        gbc.gridy = 9;
+        gbc.gridy = 10;
         gbc.gridwidth = 1;
         gbc.weightx = 1;
         panel.add(txtCodexCliPath, gbc);
@@ -361,11 +370,11 @@ public class SettingsDialog extends JDialog {
         panel.add(btnBrowseCodex, gbc);
 
         gbc.gridx = 0;
-        gbc.gridy = 10;
-        gbc.gridwidth = 2;
-        panel.add(new JLabel("The buttons will register this local MCP endpoint with the selected client."), gbc);
-
         gbc.gridy = 11;
+        gbc.gridwidth = 2;
+        panel.add(new JLabel("Use 'See config' for Claude Desktop, or the buttons to register the endpoint with CLI clients."), gbc);
+
+        gbc.gridy = 12;
         gbc.weighty = 1;
         gbc.fill = GridBagConstraints.BOTH;
         panel.add(new JPanel(), gbc);
@@ -1060,6 +1069,168 @@ public class SettingsDialog extends JDialog {
         }
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             target.setText(chooser.getSelectedFile().getAbsolutePath());
+        }
+    }
+
+    private void showClaudeDesktopConfigDialog() {
+        try {
+            updateMcpPort();
+        } catch (NumberFormatException ex) {
+            return;
+        }
+
+        String endpoint = resolveConfiguredEndpoint();
+        String configSnippet = buildClaudeDesktopConfigSnippet(endpoint);
+        String instructions = buildClaudeDesktopInstructions(endpoint);
+
+        JDialog dialog = new JDialog(this, "Claude Desktop Config", true);
+        JPanel root = new JPanel(new BorderLayout(10, 10));
+        root.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+
+        JTextArea txtInstructions = new JTextArea(instructions);
+        txtInstructions.setEditable(false);
+        txtInstructions.setLineWrap(true);
+        txtInstructions.setWrapStyleWord(true);
+        txtInstructions.setOpaque(false);
+        txtInstructions.setBorder(null);
+
+        JTextArea txtConfig = new JTextArea(configSnippet);
+        txtConfig.setEditable(false);
+        txtConfig.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        txtConfig.setCaretPosition(0);
+
+        JPanel center = new JPanel(new BorderLayout(8, 8));
+        center.add(new JLabel("Config to add under \"mcpServers\":"), BorderLayout.NORTH);
+        center.add(new JScrollPane(txtConfig), BorderLayout.CENTER);
+        root.add(txtInstructions, BorderLayout.NORTH);
+        root.add(center, BorderLayout.CENTER);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton btnCopy = new JButton("Copy config");
+        btnCopy.addActionListener(e -> {
+            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(configSnippet), null);
+            JOptionPane.showMessageDialog(dialog,
+                    "SceneMax MCP config copied to the clipboard.",
+                    "Claude Desktop Config",
+                    JOptionPane.INFORMATION_MESSAGE);
+        });
+        JButton btnClose = new JButton("Close");
+        btnClose.addActionListener(e -> dialog.dispose());
+        buttons.add(btnCopy);
+        buttons.add(btnClose);
+        root.add(buttons, BorderLayout.SOUTH);
+
+        dialog.setContentPane(root);
+        dialog.setSize(760, 520);
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+    }
+
+    private String resolveConfiguredEndpoint() {
+        String portText = txtMcpPort != null ? txtMcpPort.getText().trim() : "";
+        if (!portText.isEmpty() && !portText.equalsIgnoreCase("default")) {
+            return "http://127.0.0.1:" + portText + "/mcp";
+        }
+
+        String runningEndpoint = host != null && host.getAutomationHttpServer() != null
+                ? host.getAutomationHttpServer().getEndpointUrl()
+                : null;
+        if (runningEndpoint != null && !runningEndpoint.isBlank()) {
+            return runningEndpoint;
+        }
+
+        String saved = AppDB.getInstance().getParam("mcp_server_port");
+        if (saved != null && !saved.trim().isEmpty()) {
+            return "http://127.0.0.1:" + saved.trim() + "/mcp";
+        }
+
+        return "http://127.0.0.1:8765/mcp";
+    }
+
+    private String buildClaudeDesktopConfigSnippet(String endpoint) {
+        String command = resolveClaudeDesktopConfigCommand();
+        List<String> args = buildClaudeDesktopConfigArgs(endpoint);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("\"scenemax\": {\n");
+        sb.append("  \"type\": \"stdio\",\n");
+        sb.append("  \"command\": ").append(JSONObject.quote(command)).append(",\n");
+        sb.append("  \"args\": [\n");
+        for (int i = 0; i < args.size(); i++) {
+            sb.append("    ").append(JSONObject.quote(args.get(i)));
+            if (i < args.size() - 1) {
+                sb.append(",");
+            }
+            sb.append("\n");
+        }
+        sb.append("  ],\n");
+        sb.append("  \"env\": {}\n");
+        sb.append("}");
+        return sb.toString();
+    }
+
+    private String buildClaudeDesktopInstructions(String endpoint) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("1. In Claude Desktop, open Settings > Developer > Local MCP servers.\n");
+        sb.append("2. Click Edit config.\n");
+        sb.append("3. Inside the existing \"mcpServers\" object, paste the SceneMax block shown below.\n");
+        sb.append("4. If another MCP server is already listed above it, add a comma after the previous server block.\n");
+        sb.append("5. Save the file.\n");
+        sb.append("6. Keep SceneMax IDE open. Claude Desktop will start the standalone SceneMax MCP proxy jar, and that tiny process will forward requests to ").append(endpoint).append(".\n");
+        sb.append("7. If you changed the Fixed MCP Port here, click OK in SceneMax so the IDE uses the same port.\n");
+        sb.append("8. Reopen Claude Desktop or refresh the connectors list, then verify that \"scenemax\" appears.");
+        return sb.toString();
+    }
+
+    private String resolveClaudeDesktopConfigCommand() {
+        File javaHome = new File(System.getProperty("java.home", ""));
+        File javaExe = new File(new File(javaHome, "bin"), "java.exe");
+        if (javaExe.exists()) {
+            return javaExe.getAbsolutePath();
+        }
+
+        File javaBinary = new File(new File(javaHome, "bin"), "java");
+        if (javaBinary.exists()) {
+            return javaBinary.getAbsolutePath();
+        }
+
+        return "java";
+    }
+
+    private List<String> buildClaudeDesktopConfigArgs(String endpoint) {
+        List<String> args = new ArrayList<>();
+        args.add("-jar");
+        args.add(resolveProxyJarPath().getAbsolutePath());
+        args.add(endpoint);
+        return args;
+    }
+
+    private File resolveProxyJarPath() {
+        File launchArtifact = resolveCurrentLaunchArtifact();
+        if (launchArtifact != null && launchArtifact.isFile() && launchArtifact.getName().toLowerCase(Locale.ROOT).endsWith(".jar")) {
+            File sibling = new File(launchArtifact.getParentFile(), "scenemax_mcp_proxy.jar");
+            if (sibling.exists()) {
+                return sibling;
+            }
+        }
+
+        File buildArtifact = new File("build\\libs\\scenemax_mcp_proxy.jar");
+        if (buildArtifact.exists()) {
+            return buildArtifact.getAbsoluteFile();
+        }
+
+        if (launchArtifact != null && launchArtifact.isFile() && launchArtifact.getParentFile() != null) {
+            return new File(launchArtifact.getParentFile(), "scenemax_mcp_proxy.jar");
+        }
+
+        return buildArtifact.getAbsoluteFile();
+    }
+
+    private File resolveCurrentLaunchArtifact() {
+        try {
+            return new File(MainApp.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        } catch (Exception ex) {
+            return null;
         }
     }
 
