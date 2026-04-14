@@ -3,6 +3,13 @@ package com.scenemax.desktop;
 import com.intellij.uiDesigner.core.GridConstraints;
 import com.intellij.uiDesigner.core.GridLayoutManager;
 import com.intellij.uiDesigner.core.Spacer;
+import com.scenemax.desktop.ai.gemma.LocalGemmaBridgeConfig;
+import com.scenemax.desktop.ai.gemma.LocalGemmaBridgeStatus;
+import com.scenemax.desktop.ai.gemma.install.GemmaInstallManifest;
+import com.scenemax.desktop.ai.gemma.install.GemmaInstallProgress;
+import com.scenemax.desktop.ai.gemma.install.GemmaInstaller;
+import com.scenemax.desktop.ai.gemma.install.GemmaModelVariant;
+import com.scenemax.desktop.ai.gemma.install.VcRuntimeInstaller;
 import org.apache.commons.io.FileUtils;
 
 import javax.swing.*;
@@ -43,6 +50,18 @@ public class SettingsDialog extends JDialog {
     private JButton btnConnectCodex;
     private JTextField txtClaudeCliPath;
     private JTextField txtCodexCliPath;
+    private JCheckBox chkGemmaEnabled;
+    private JTextField txtGemmaEndpoint;
+    private JTextField txtGemmaModel;
+    private JTextField txtGemmaApiKey;
+    private JTextField txtGemmaTimeout;
+    private JLabel lblGemmaStatus;
+    private JButton btnTestGemma;
+    private JComboBox<GemmaModelVariant> cboGemmaVariant;
+    private JButton btnDownloadGemma;
+    private JButton btnStartGemma;
+    private JButton btnInstallVcRuntime;
+    private JLabel lblGemmaInstallInfo;
 
     public SettingsDialog() {
         this(null);
@@ -52,6 +71,7 @@ public class SettingsDialog extends JDialog {
         this.host = host;
         setContentPane(contentPane);
         setModal(true);
+        setMinimumSize(new Dimension(960, 840));
         getRootPane().setDefaultButton(buttonOK);
 
         String jvmArch = AppDB.getInstance().getParam("projector_jvm_arch");
@@ -63,8 +83,18 @@ public class SettingsDialog extends JDialog {
         txtMcpPort.setText(mcpPort == null || mcpPort.trim().isEmpty() ? "8765" : mcpPort.trim());
         txtClaudeCliPath = new JTextField(AppDB.getInstance().getParam("mcp_claude_cli_path"));
         txtCodexCliPath = new JTextField(AppDB.getInstance().getParam("mcp_codex_cli_path"));
+        chkGemmaEnabled = new JCheckBox("Enable local Gemma bridge");
+        chkGemmaEnabled.setSelected(Boolean.parseBoolean(AppDB.getInstance().getParam("local_gemma_enabled")));
+        txtGemmaEndpoint = new JTextField(defaultValue(AppDB.getInstance().getParam("local_gemma_endpoint"), LocalGemmaBridgeConfig.DEFAULT_ENDPOINT));
+        txtGemmaModel = new JTextField(defaultValue(AppDB.getInstance().getParam("local_gemma_model"), LocalGemmaBridgeConfig.DEFAULT_MODEL));
+        txtGemmaApiKey = new JTextField(defaultValue(AppDB.getInstance().getParam("local_gemma_api_key"), ""));
+        txtGemmaTimeout = new JTextField(defaultValue(AppDB.getInstance().getParam("local_gemma_timeout_seconds"), String.valueOf(LocalGemmaBridgeConfig.DEFAULT_TIMEOUT_SECONDS)));
+        cboGemmaVariant = new JComboBox<>(GemmaModelVariant.values());
+        cboGemmaVariant.setSelectedItem(resolveVariant(defaultValue(AppDB.getInstance().getParam("local_gemma_model"), LocalGemmaBridgeConfig.DEFAULT_MODEL)));
         tabbedPane1.addTab("MCP", createMcpPanel());
+        tabbedPane1.addTab("Local Gemma", createGemmaPanel());
         refreshMcpPanelState();
+        refreshGemmaPanelState();
 
         txtGalleryHost.setText(isDefault("gallery_host", Util.GALLERY_HOST) ? "DEFAULT" : "CUSTOM");
         txtConsumerKey.setText(Util.WRITE_CONSUMER_KEY.isEmpty() ? "MISSING" : "CUSTOM");
@@ -169,6 +199,11 @@ public class SettingsDialog extends JDialog {
         }
         AppDB.getInstance().setParam("mcp_claude_cli_path", normalizeOptionalPath(txtClaudeCliPath.getText()));
         AppDB.getInstance().setParam("mcp_codex_cli_path", normalizeOptionalPath(txtCodexCliPath.getText()));
+        try {
+            updateLocalGemmaSettings();
+        } catch (NumberFormatException ex) {
+            return;
+        }
 
         dispose();
     }
@@ -199,6 +234,33 @@ public class SettingsDialog extends JDialog {
         }
     }
 
+    private void updateLocalGemmaSettings() {
+        AppDB.getInstance().setParam("local_gemma_enabled", String.valueOf(chkGemmaEnabled.isSelected()));
+        AppDB.getInstance().setParam("local_gemma_endpoint", normalizeOptionalPath(txtGemmaEndpoint.getText()));
+        AppDB.getInstance().setParam("local_gemma_model", normalizeOptionalPath(txtGemmaModel.getText()));
+        AppDB.getInstance().setParam("local_gemma_api_key", normalizeOptionalPath(txtGemmaApiKey.getText()));
+
+        String timeoutText = txtGemmaTimeout.getText().trim();
+        int timeout;
+        try {
+            timeout = Integer.parseInt(timeoutText);
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Local Gemma timeout must be a number of seconds.",
+                    "Invalid Gemma Timeout",
+                    JOptionPane.ERROR_MESSAGE);
+            throw ex;
+        }
+        if (timeout < 5) {
+            JOptionPane.showMessageDialog(this,
+                    "Local Gemma timeout must be at least 5 seconds.",
+                    "Invalid Gemma Timeout",
+                    JOptionPane.ERROR_MESSAGE);
+            throw new NumberFormatException("Timeout too small");
+        }
+        AppDB.getInstance().setParam("local_gemma_timeout_seconds", String.valueOf(timeout));
+    }
+
     private void updateParam(String key, String val) {
         val = val.toLowerCase();
 
@@ -217,6 +279,10 @@ public class SettingsDialog extends JDialog {
     private static boolean isDefault(String configKey, String currentValue) {
         String configDefault = AppConfig.get(configKey);
         return currentValue.equalsIgnoreCase(configDefault);
+    }
+
+    private String defaultValue(String value, String fallback) {
+        return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
 
     private JPanel createMcpPanel() {
@@ -307,12 +373,167 @@ public class SettingsDialog extends JDialog {
         return panel;
     }
 
+    private JPanel createGemmaPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(6, 6, 6, 6);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.gridwidth = 2;
+        panel.add(chkGemmaEnabled, gbc);
+
+        gbc.gridy = 1;
+        panel.add(new JLabel("Endpoint URL:"), gbc);
+
+        gbc.gridy = 2;
+        panel.add(txtGemmaEndpoint, gbc);
+
+        gbc.gridy = 3;
+        panel.add(new JLabel("Model Name:"), gbc);
+
+        gbc.gridy = 4;
+        panel.add(txtGemmaModel, gbc);
+
+        gbc.gridy = 5;
+        panel.add(new JLabel("API Key (optional):"), gbc);
+
+        gbc.gridy = 6;
+        panel.add(txtGemmaApiKey, gbc);
+
+        gbc.gridy = 7;
+        panel.add(new JLabel("Timeout Seconds:"), gbc);
+
+        gbc.gridy = 8;
+        panel.add(txtGemmaTimeout, gbc);
+
+        gbc.gridy = 9;
+        panel.add(new JLabel("Download Variant:"), gbc);
+
+        gbc.gridy = 10;
+        gbc.gridwidth = 1;
+        panel.add(cboGemmaVariant, gbc);
+
+        gbc.gridx = 1;
+        btnDownloadGemma = new JButton("Download Gemma");
+        btnDownloadGemma.addActionListener(e -> downloadGemma());
+        panel.add(btnDownloadGemma, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 11;
+        gbc.gridwidth = 2;
+        lblGemmaInstallInfo = new JLabel("No local Gemma install detected.");
+        panel.add(lblGemmaInstallInfo, gbc);
+
+        gbc.gridy = 12;
+        lblGemmaStatus = new JLabel("Status unavailable");
+        panel.add(lblGemmaStatus, gbc);
+
+        gbc.gridy = 13;
+        gbc.gridwidth = 2;
+        btnInstallVcRuntime = new JButton("Install VC++ Runtime");
+        btnInstallVcRuntime.addActionListener(e -> installVcRuntime());
+        panel.add(btnInstallVcRuntime, gbc);
+
+        gbc.gridy = 14;
+        panel.add(new JLabel("If Local Gemma reports missing DLLs, install or repair the Microsoft VC++ runtime here."), gbc);
+
+        gbc.gridy = 15;
+        gbc.gridwidth = 1;
+        btnStartGemma = new JButton("Start Local Gemma");
+        btnStartGemma.addActionListener(e -> startLocalGemma());
+        panel.add(btnStartGemma, gbc);
+
+        gbc.gridx = 1;
+        btnTestGemma = new JButton("Test Bridge");
+        btnTestGemma.addActionListener(e -> testLocalGemmaBridge());
+        panel.add(btnTestGemma, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 16;
+        gbc.gridwidth = 2;
+        JButton btnApplyGemma = new JButton("Apply Settings");
+        btnApplyGemma.addActionListener(e -> {
+            try {
+                updateLocalGemmaSettings();
+                if (host != null) {
+                    host.reloadLocalGemmaBridgeFromSettings();
+                }
+                refreshGemmaPanelState();
+            } catch (NumberFormatException ignored) {
+            }
+        });
+        panel.add(btnApplyGemma, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 17;
+        gbc.gridwidth = 2;
+        gbc.weighty = 1;
+        gbc.fill = GridBagConstraints.BOTH;
+        panel.add(new JPanel(), gbc);
+
+        return panel;
+    }
+
     private void refreshMcpPanelState() {
         if (lblMcpEndpoint == null) {
             return;
         }
         String endpoint = resolveCurrentEndpoint();
         lblMcpEndpoint.setText(endpoint == null || endpoint.isBlank() ? "Unavailable" : endpoint);
+    }
+
+    private void refreshGemmaPanelState() {
+        if (lblGemmaStatus == null) {
+            return;
+        }
+
+        GemmaInstallManifest installed = new GemmaInstaller().loadInstalledManifest();
+        VcRuntimeInstaller vcInstaller = new VcRuntimeInstaller();
+        if (lblGemmaInstallInfo != null) {
+            if (installed == null) {
+                String details = "Install location: " + new File("AI\\models").getAbsolutePath();
+                if (vcInstaller.isDownloaded()) {
+                    details += " | VC++ installer ready";
+                }
+                lblGemmaInstallInfo.setText(details);
+            } else {
+                String details = "Installed: " + installed.getModelDisplayName() + " at " + installed.getModelPath();
+                if (vcInstaller.isDownloaded()) {
+                    details += " | VC++ installer ready";
+                }
+                lblGemmaInstallInfo.setText(details);
+            }
+        }
+
+        LocalGemmaBridgeStatus status = host != null ? host.getLocalGemmaBridgeStatus() : null;
+        if (status == null) {
+            LocalGemmaBridgeConfig config = buildGemmaConfigFromUi();
+            String state = config.isEnabled() ? "Configured: " + config.getEndpointUrl() : "Disabled";
+            if (installed != null) {
+                state += " | Local files ready";
+            }
+            lblGemmaStatus.setText(state);
+            return;
+        }
+
+        String state;
+        if (!status.isEnabled()) {
+            state = "Disabled";
+        } else if (status.isReachable()) {
+            state = "Ready: " + status.getModel() + " @ " + status.getEndpointUrl();
+            if (host != null && host.isLocalGemmaServiceRunning()) {
+                state += " | local runtime started";
+            }
+        } else {
+            state = "Offline: " + status.getMessage();
+            if (installed != null) {
+                state += " | Installed model: " + installed.getModelDisplayName();
+            }
+        }
+        lblGemmaStatus.setText(state);
     }
 
     private String resolveCurrentEndpoint() {
@@ -384,6 +605,294 @@ public class SettingsDialog extends JDialog {
                     JOptionPane.showMessageDialog(SettingsDialog.this,
                             clientName + " connection failed.\n\n" + ex.getMessage(),
                             clientName + " Connection Failed",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void testLocalGemmaBridge() {
+        try {
+            updateLocalGemmaSettings();
+        } catch (NumberFormatException ex) {
+            return;
+        }
+
+        btnTestGemma.setEnabled(false);
+        if (host != null) {
+            host.reloadLocalGemmaBridgeFromSettings();
+        }
+        refreshGemmaPanelState();
+
+        SwingWorker<LocalGemmaBridgeStatus, Void> worker = new SwingWorker<>() {
+            @Override
+            protected LocalGemmaBridgeStatus doInBackground() {
+                if (host != null) {
+                    return host.pingLocalGemmaBridge();
+                }
+                return new com.scenemax.desktop.ai.gemma.OpenAiCompatibleGemmaBridge(buildGemmaConfigFromUi()).checkStatus();
+            }
+
+            @Override
+            protected void done() {
+                btnTestGemma.setEnabled(true);
+                try {
+                    LocalGemmaBridgeStatus status = get();
+                    refreshGemmaPanelState();
+                    if (status.isEnabled() && status.isReachable()) {
+                        JOptionPane.showMessageDialog(SettingsDialog.this,
+                                "Local Gemma bridge is reachable.\n\nModel: " + status.getModel()
+                                        + "\nEndpoint: " + status.getEndpointUrl(),
+                                "Gemma Ready",
+                                JOptionPane.INFORMATION_MESSAGE);
+                    } else {
+                        JOptionPane.showMessageDialog(SettingsDialog.this,
+                                "Local Gemma bridge is not ready.\n\n" + status.getMessage(),
+                                "Gemma Offline",
+                                JOptionPane.ERROR_MESSAGE);
+                    }
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            "Local Gemma bridge test failed.\n\n" + ex.getMessage(),
+                            "Gemma Test Failed",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private LocalGemmaBridgeConfig buildGemmaConfigFromUi() {
+        int timeout = LocalGemmaBridgeConfig.DEFAULT_TIMEOUT_SECONDS;
+        try {
+            timeout = Integer.parseInt(txtGemmaTimeout.getText().trim());
+        } catch (NumberFormatException ignored) {
+        }
+        return new LocalGemmaBridgeConfig(
+                chkGemmaEnabled.isSelected(),
+                txtGemmaEndpoint.getText().trim(),
+                txtGemmaModel.getText().trim(),
+                txtGemmaApiKey.getText().trim(),
+                timeout
+        );
+    }
+
+    private GemmaModelVariant resolveVariant(String modelName) {
+        if (modelName != null) {
+            for (GemmaModelVariant variant : GemmaModelVariant.values()) {
+                if (variant.getModelId().equalsIgnoreCase(modelName.trim())) {
+                    return variant;
+                }
+            }
+        }
+        return GemmaModelVariant.E2B;
+    }
+
+    private void downloadGemma() {
+        GemmaModelVariant variant = (GemmaModelVariant) cboGemmaVariant.getSelectedItem();
+        if (variant == null) {
+            variant = GemmaModelVariant.E2B;
+        }
+        final GemmaModelVariant selectedVariant = variant;
+
+        int confirm = JOptionPane.showConfirmDialog(
+                this,
+                "SceneMax will download:\n\n"
+                        + "1. LiteRT-LM Windows runtime\n"
+                        + "2. " + selectedVariant.getDisplayName() + "\n\n"
+                        + "Install folder:\n" + new File("AI").getAbsolutePath() + "\n\n"
+                        + "By continuing you confirm that you reviewed the Gemma terms:\n"
+                        + "https://ai.google.dev/gemma/terms",
+                "Download Gemma",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.INFORMATION_MESSAGE
+        );
+        if (confirm != JOptionPane.OK_OPTION) {
+            return;
+        }
+
+        btnDownloadGemma.setEnabled(false);
+        if (btnTestGemma != null) {
+            btnTestGemma.setEnabled(false);
+        }
+
+        GemmaDownloadDialog progressDialog = new GemmaDownloadDialog(this, selectedVariant);
+        SwingWorker<GemmaInstallManifest, GemmaInstallProgress> worker = new SwingWorker<>() {
+            @Override
+            protected GemmaInstallManifest doInBackground() throws Exception {
+                GemmaInstaller installer = new GemmaInstaller();
+                return installer.install(selectedVariant, this::publish);
+            }
+
+            @Override
+            protected void process(List<GemmaInstallProgress> chunks) {
+                if (!chunks.isEmpty()) {
+                    progressDialog.update(chunks.get(chunks.size() - 1));
+                }
+            }
+
+            @Override
+            protected void done() {
+                btnDownloadGemma.setEnabled(true);
+                if (btnTestGemma != null) {
+                    btnTestGemma.setEnabled(true);
+                }
+                progressDialog.dispose();
+                try {
+                    GemmaInstallManifest manifest = get();
+                    txtGemmaModel.setText(selectedVariant.getModelId());
+                    chkGemmaEnabled.setSelected(true);
+                    refreshGemmaPanelState();
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            "Gemma files downloaded successfully.\n\n"
+                                    + "Model: " + manifest.getModelDisplayName() + "\n"
+                                    + "Model file: " + manifest.getModelPath() + "\n"
+                                    + "Runtime: " + manifest.getRuntimePath() + "\n\n"
+                                    + "Next step:\n"
+                                    + "Use the local Gemma bridge/service configuration to point SceneMax at the installed runtime.",
+                            "Gemma Download Complete",
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            "Gemma download failed.\n\n" + ex.getMessage(),
+                            "Gemma Download Failed",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+        progressDialog.setVisible(true);
+    }
+
+    private void installVcRuntime() {
+        int confirm = JOptionPane.showConfirmDialog(
+                this,
+                "SceneMax will download the Microsoft Visual C++ Redistributable installer to:\n\n"
+                        + new VcRuntimeInstaller().getInstallerPath() + "\n\n"
+                        + "After the download finishes, SceneMax will open the installer for you.\n"
+                        + "Windows may ask for permission to continue.",
+                "Install VC++ Runtime",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.INFORMATION_MESSAGE
+        );
+        if (confirm != JOptionPane.OK_OPTION) {
+            return;
+        }
+
+        if (btnInstallVcRuntime != null) {
+            btnInstallVcRuntime.setEnabled(false);
+        }
+        if (btnStartGemma != null) {
+            btnStartGemma.setEnabled(false);
+        }
+        if (btnTestGemma != null) {
+            btnTestGemma.setEnabled(false);
+        }
+
+        GemmaDownloadDialog progressDialog = new GemmaDownloadDialog(this, "Installing Microsoft VC++ Runtime");
+        SwingWorker<File, GemmaInstallProgress> worker = new SwingWorker<>() {
+            @Override
+            protected File doInBackground() throws Exception {
+                VcRuntimeInstaller installer = new VcRuntimeInstaller();
+                File installerFile = installer.download(this::publish).toFile();
+                installer.launchInstaller(installerFile.toPath());
+                return installerFile;
+            }
+
+            @Override
+            protected void process(List<GemmaInstallProgress> chunks) {
+                if (!chunks.isEmpty()) {
+                    progressDialog.update(chunks.get(chunks.size() - 1));
+                }
+            }
+
+            @Override
+            protected void done() {
+                if (btnInstallVcRuntime != null) {
+                    btnInstallVcRuntime.setEnabled(true);
+                }
+                if (btnStartGemma != null) {
+                    btnStartGemma.setEnabled(true);
+                }
+                if (btnTestGemma != null) {
+                    btnTestGemma.setEnabled(true);
+                }
+                progressDialog.dispose();
+                try {
+                    File installerFile = get();
+                    refreshGemmaPanelState();
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            "The Microsoft VC++ runtime installer was opened.\n\n"
+                                    + "Installer: " + installerFile.getAbsolutePath() + "\n\n"
+                                    + "Next step:\n"
+                                    + "1. Finish the Microsoft installer.\n"
+                                    + "2. If it offers Repair, choose Repair.\n"
+                                    + "3. Return here and click Start Local Gemma.\n"
+                                    + "4. Click Test Bridge after the service starts.",
+                            "VC++ Installer Ready",
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            "Installing the VC++ runtime helper failed.\n\n" + ex.getMessage(),
+                            "VC++ Runtime Install Failed",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+        progressDialog.setVisible(true);
+    }
+
+    private void startLocalGemma() {
+        try {
+            updateLocalGemmaSettings();
+        } catch (NumberFormatException ex) {
+            return;
+        }
+
+        if (host == null) {
+            JOptionPane.showMessageDialog(this,
+                    "Start Local Gemma is available only when opened from the SceneMax IDE.",
+                    "Local Gemma",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        btnStartGemma.setEnabled(false);
+        if (btnTestGemma != null) {
+            btnTestGemma.setEnabled(false);
+        }
+
+        SwingWorker<LocalGemmaBridgeStatus, Void> worker = new SwingWorker<>() {
+            @Override
+            protected LocalGemmaBridgeStatus doInBackground() {
+                return host.startInstalledLocalGemmaService();
+            }
+
+            @Override
+            protected void done() {
+                btnStartGemma.setEnabled(true);
+                if (btnTestGemma != null) {
+                    btnTestGemma.setEnabled(true);
+                }
+                try {
+                    LocalGemmaBridgeStatus status = get();
+                    refreshGemmaPanelState();
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            "Local Gemma started successfully.\n\n"
+                                    + "Model: " + status.getModel() + "\n"
+                                    + "Endpoint: " + status.getEndpointUrl() + "\n\n"
+                                    + "How to test:\n"
+                                    + "1. Click Test Bridge.\n"
+                                    + "2. Ask the future AI console a simple question.\n"
+                                    + "3. Watch the top bar for 'Gemma: ready'.",
+                            "Local Gemma Ready",
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            "Starting Local Gemma failed.\n\n" + ex.getMessage(),
+                            "Local Gemma Failed",
                             JOptionPane.ERROR_MESSAGE);
                 }
             }
@@ -602,6 +1111,38 @@ public class SettingsDialog extends JDialog {
         }
     }
 
+    private static class GemmaDownloadDialog extends JDialog {
+        private final JProgressBar progressBar = new JProgressBar(0, 100);
+        private final JLabel lblMessage = new JLabel("Preparing download...");
+
+        GemmaDownloadDialog(Dialog owner, GemmaModelVariant variant) {
+            super(owner, "Downloading " + variant.getDisplayName(), false);
+            initUi(owner);
+        }
+
+        GemmaDownloadDialog(Dialog owner, String title) {
+            super(owner, title, false);
+            initUi(owner);
+        }
+
+        private void initUi(Dialog owner) {
+            JPanel panel = new JPanel(new BorderLayout(10, 10));
+            panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+            panel.add(lblMessage, BorderLayout.NORTH);
+            panel.add(progressBar, BorderLayout.CENTER);
+            progressBar.setStringPainted(true);
+            setContentPane(panel);
+            setSize(420, 120);
+            setLocationRelativeTo(owner);
+            setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
+        }
+
+        void update(GemmaInstallProgress progress) {
+            progressBar.setValue(progress.getPercent());
+            lblMessage.setText(progress.getMessage());
+        }
+    }
+
     private void onCancel() {
         // add your code here if necessary
         dispose();
@@ -609,7 +1150,7 @@ public class SettingsDialog extends JDialog {
 
     public static void main(String[] args) {
         SettingsDialog dialog = new SettingsDialog();
-        dialog.pack();
+        dialog.setSize(960, 840);
         dialog.setVisible(true);
         System.exit(0);
     }

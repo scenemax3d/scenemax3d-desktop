@@ -51,6 +51,16 @@ public class SceneMaxToolRegistryTest {
             assertFalse(searchFilesResult.isError());
             assertEquals(1, searchFilesResult.getData().getJSONArray("matches").length());
 
+            SceneMaxToolResult listTreeResult = registry.call("project.list_tree", context, new JSONObject()
+                    .put("base", "workspace")
+                    .put("maxDepth", 3));
+            assertFalse(listTreeResult.isError());
+            assertTrue(listTreeResult.getData().getJSONArray("entries").length() >= 2);
+
+            SceneMaxToolResult contextResult = registry.call("project.get_context", context, new JSONObject());
+            assertFalse(contextResult.isError());
+            assertTrue(contextResult.getData().getString("workspaceRoot").contains("scenemax-tools"));
+
             SceneMaxToolResult searchTextResult = registry.call("project.search_text", context, new JSONObject()
                     .put("query", "hello agent")
                     .put("base", "workspace"));
