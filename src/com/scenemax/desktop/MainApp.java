@@ -1082,6 +1082,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         if (aiConsoleDialog == null) {
             aiConsoleDialog = new AiConsoleDialog(this);
         }
+        aiConsoleDialog.refreshProviderState();
         aiConsoleDialog.setLocationRelativeTo(this);
         aiConsoleDialog.setVisible(true);
         aiConsoleDialog.toFront();

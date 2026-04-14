@@ -349,9 +349,17 @@ public class SettingsDialog extends JDialog {
 
         gbc.gridx = 1;
         gbc.weightx = 0;
+        JPanel claudeActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         JButton btnBrowseClaude = new JButton("Browse...");
         btnBrowseClaude.addActionListener(e -> chooseCliPath(txtClaudeCliPath, "Select Claude Code CLI"));
-        panel.add(btnBrowseClaude, gbc);
+        JButton btnInstallClaude = new JButton("Install");
+        btnInstallClaude.addActionListener(e -> installCli("Claude Code", AiCliSupport.CLAUDE_NPM_PACKAGE, txtClaudeCliPath));
+        JButton btnLoginClaude = new JButton("Login");
+        btnLoginClaude.addActionListener(e -> launchCliLogin("Claude Code", txtClaudeCliPath));
+        claudeActions.add(btnBrowseClaude);
+        claudeActions.add(btnInstallClaude);
+        claudeActions.add(btnLoginClaude);
+        panel.add(claudeActions, gbc);
 
         gbc.gridx = 0;
         gbc.gridy = 9;
@@ -365,9 +373,14 @@ public class SettingsDialog extends JDialog {
 
         gbc.gridx = 1;
         gbc.weightx = 0;
+        JPanel codexActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         JButton btnBrowseCodex = new JButton("Browse...");
         btnBrowseCodex.addActionListener(e -> chooseCliPath(txtCodexCliPath, "Select Codex CLI"));
-        panel.add(btnBrowseCodex, gbc);
+        JButton btnInstallCodex = new JButton("Install");
+        btnInstallCodex.addActionListener(e -> installCli("Codex", AiCliSupport.CODEX_NPM_PACKAGE, txtCodexCliPath));
+        codexActions.add(btnBrowseCodex);
+        codexActions.add(btnInstallCodex);
+        panel.add(codexActions, gbc);
 
         gbc.gridx = 0;
         gbc.gridy = 11;
@@ -942,7 +955,8 @@ public class SettingsDialog extends JDialog {
     }
 
     private CommandResult runClientCommand(String executable, List<String> args) throws Exception {
-        String commandText = buildPowerShellInvocation(executable, args);
+        String normalized = normalizeExecutableForClient(executable);
+        String commandText = buildPowerShellInvocation(normalized, args);
         ProcessBuilder pb = new ProcessBuilder("powershell", "-NoProfile", "-Command", commandText);
         pb.redirectErrorStream(true);
         Process process = pb.start();
@@ -958,106 +972,21 @@ public class SettingsDialog extends JDialog {
     }
 
     private String resolveClaudeExecutable() throws IOException {
-        String configured = normalizeOptionalPath(txtClaudeCliPath.getText());
-        if (!configured.isBlank() && new File(configured).exists()) {
-            return configured;
+        syncCliOverridesToAppDb();
+        String resolved = AiCliSupport.resolveClaudeExecutable();
+        if (txtClaudeCliPath != null && !resolved.equals(txtClaudeCliPath.getText().trim())) {
+            txtClaudeCliPath.setText(resolved);
         }
-
-        String discovered = discoverViaWhere("claude");
-        if (discovered != null) {
-            txtClaudeCliPath.setText(discovered);
-            return discovered;
-        }
-
-        String appData = System.getenv("APPDATA");
-        String userProfile = System.getenv("USERPROFILE");
-        String[] candidates = {
-                combine(appData, "npm", "claude.cmd"),
-                combine(appData, "npm", "claude.ps1"),
-                combine(appData, "npm", "claude.exe"),
-                combine(userProfile, "AppData", "Roaming", "npm", "claude.cmd"),
-                combine(userProfile, "AppData", "Roaming", "npm", "claude.ps1"),
-                combine(userProfile, "AppData", "Roaming", "npm", "claude.exe"),
-                combine(userProfile, ".local", "bin", "claude"),
-                combine(userProfile, ".bun", "bin", "claude.exe")
-        };
-        for (String candidate : candidates) {
-            if (candidate != null && new File(candidate).exists()) {
-                txtClaudeCliPath.setText(candidate);
-                return candidate;
-            }
-        }
-
-        throw new IOException("Claude Code CLI was not found automatically. Set the CLI path in the MCP tab and try again.");
+        return resolved;
     }
 
     private String resolveCodexExecutable() throws IOException {
-        String configured = normalizeOptionalPath(txtCodexCliPath.getText());
-        if (!configured.isBlank() && new File(configured).exists()) {
-            return configured;
+        syncCliOverridesToAppDb();
+        String resolved = AiCliSupport.resolveCodexExecutable();
+        if (txtCodexCliPath != null && !resolved.equals(txtCodexCliPath.getText().trim())) {
+            txtCodexCliPath.setText(resolved);
         }
-
-        String discovered = discoverViaWhere("codex");
-        if (discovered != null) {
-            txtCodexCliPath.setText(discovered);
-            return discovered;
-        }
-
-        String programFiles = System.getenv("ProgramFiles");
-        if (programFiles != null) {
-            File windowsApps = new File(programFiles, "WindowsApps");
-            File[] matches = windowsApps.listFiles((dir, name) -> name.startsWith("OpenAI.Codex_"));
-            if (matches != null) {
-                for (File match : matches) {
-                    File candidate = new File(match, "app\\resources\\codex.exe");
-                    if (candidate.exists()) {
-                        txtCodexCliPath.setText(candidate.getAbsolutePath());
-                        return candidate.getAbsolutePath();
-                    }
-                }
-            }
-        }
-
-        throw new IOException("Codex CLI was not found automatically. Set the CLI path in the MCP tab and try again.");
-    }
-
-    private String discoverViaWhere(String executable) {
-        try {
-            ProcessBuilder pb = new ProcessBuilder("cmd.exe", "/c", "where", executable);
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-            List<String> lines = new ArrayList<>();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (!line.isBlank()) {
-                        lines.add(line.trim());
-                    }
-                }
-            }
-            int exitCode = process.waitFor();
-            if (exitCode == 0 && !lines.isEmpty()) {
-                for (String line : lines) {
-                    if (new File(line).exists()) {
-                        return line;
-                    }
-                }
-                return lines.get(0);
-            }
-        } catch (Exception ignored) {
-        }
-        return null;
-    }
-
-    private String combine(String root, String... parts) {
-        if (root == null || root.isBlank()) {
-            return null;
-        }
-        File file = new File(root);
-        for (String part : parts) {
-            file = new File(file, part);
-        }
-        return file.getAbsolutePath();
+        return resolved;
     }
 
     private void chooseCliPath(JTextField target, String title) {
@@ -1070,6 +999,146 @@ public class SettingsDialog extends JDialog {
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             target.setText(chooser.getSelectedFile().getAbsolutePath());
         }
+    }
+
+    private void installCli(String cliName, String packageName, JTextField targetField) {
+        String npmExecutable;
+        try {
+            npmExecutable = AiCliSupport.resolveNpmExecutable();
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this,
+                    ex.getMessage() + "\n\nManual install command:\n" + buildManualInstallCommand(packageName),
+                    cliName + " Install",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        JButton sourceButton = null;
+        setConnectButtonsEnabled(false);
+        JDialog progressDialog = new JDialog(this, "Installing " + cliName, false);
+        JTextArea txtOutput = new JTextArea(16, 70);
+        txtOutput.setEditable(false);
+        txtOutput.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        progressDialog.setContentPane(new JScrollPane(txtOutput));
+        progressDialog.pack();
+        progressDialog.setLocationRelativeTo(this);
+
+        SwingWorker<CommandResult, String> worker = new SwingWorker<>() {
+            @Override
+            protected CommandResult doInBackground() throws Exception {
+                publish("Running:\n" + buildManualInstallCommand(packageName) + "\n\n");
+                ProcessBuilder pb = new ProcessBuilder("cmd.exe", "/c", npmExecutable, "install", "-g", packageName);
+                pb.redirectErrorStream(true);
+                Process process = pb.start();
+                StringBuilder output = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        output.append(line).append(System.lineSeparator());
+                        publish(line + System.lineSeparator());
+                    }
+                }
+                int exitCode = process.waitFor();
+                return new CommandResult(exitCode, output.toString().trim(), buildManualInstallCommand(packageName));
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                for (String chunk : chunks) {
+                    txtOutput.append(chunk);
+                }
+                txtOutput.setCaretPosition(txtOutput.getDocument().getLength());
+            }
+
+            @Override
+            protected void done() {
+                setConnectButtonsEnabled(true);
+                progressDialog.dispose();
+                try {
+                    CommandResult result = get();
+                    if (result.exitCode != 0) {
+                        JOptionPane.showMessageDialog(SettingsDialog.this,
+                                cliName + " installation failed.\n\nOutput:\n" + result.output,
+                                cliName + " Install Failed",
+                                JOptionPane.ERROR_MESSAGE);
+                        return;
+                    }
+
+                    String resolvedPath = "Claude Code".equals(cliName) ? AiCliSupport.resolveClaudeExecutable() : AiCliSupport.resolveCodexExecutable();
+                    targetField.setText(resolvedPath);
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            cliName + " installed successfully.\n\nPath:\n" + resolvedPath,
+                            cliName + " Installed",
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            cliName + " installation finished, but SceneMax could not verify the executable automatically.\n\n"
+                                    + ex.getMessage() + "\n\nManual install command:\n" + buildManualInstallCommand(packageName),
+                            cliName + " Install",
+                            JOptionPane.WARNING_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+        progressDialog.setVisible(true);
+    }
+
+    private void launchCliLogin(String cliName, JTextField targetField) {
+        try {
+            syncCliOverridesToAppDb();
+            String executable = "Claude Code".equals(cliName)
+                    ? AiCliSupport.resolveClaudeExecutable()
+                    : AiCliSupport.resolveCodexExecutable();
+            targetField.setText(executable);
+
+            String normalized = normalizeExecutableForClient(executable);
+            String commandText = buildPowerShellInvocation(normalized, List.of("auth", "login"));
+            ProcessBuilder pb = new ProcessBuilder(
+                    "cmd.exe",
+                    "/c",
+                    "start",
+                    "",
+                    "powershell.exe",
+                    "-NoExit",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    commandText
+                );
+            pb.start();
+
+            JOptionPane.showMessageDialog(this,
+                    cliName + " login was opened in a separate terminal window.\n\n"
+                            + "Complete the login there, then return to the AI Console.",
+                    cliName + " Login",
+                    JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Could not start " + cliName + " login automatically.\n\n"
+                            + ex.getMessage() + "\n\nTry this manually in a terminal:\n"
+                            + ("Claude Code".equals(cliName) ? "claude auth login" : "codex auth login"),
+                    cliName + " Login",
+                    JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private String buildManualInstallCommand(String packageName) {
+        return "npm install -g " + packageName;
+    }
+
+    private void syncCliOverridesToAppDb() {
+        AppDB.getInstance().setParam("mcp_claude_cli_path", normalizeOptionalPath(txtClaudeCliPath.getText()));
+        AppDB.getInstance().setParam("mcp_codex_cli_path", normalizeOptionalPath(txtCodexCliPath.getText()));
+    }
+
+    private String normalizeExecutableForClient(String executable) {
+        String alias = "codex";
+        String normalized = executable == null ? "" : executable.toLowerCase(Locale.ROOT);
+        if (normalized.contains("claude")) {
+            alias = "claude";
+        }
+        return AiCliSupport.normalizeForInvocation(executable, alias);
     }
 
     private void showClaudeDesktopConfigDialog() {
