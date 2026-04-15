@@ -16,6 +16,8 @@ In Mar-22, 2026 the entire solution was uploaded to GitHub as an open source (MI
 
 SceneMax3D includes project documentation in the [`docs/`](docs/) folder, covering the scripting language, control flow, and other engine concepts.
 
+For AI-assisted workflows, see the built-in MCP and Local Gemma guide in [`docs/built-in-mcp-server.md`](docs/built-in-mcp-server.md), which explains setup for Claude, Codex, Claude Desktop, and local Gemma-powered assistance.
+
 For hands-on examples, see the demo projects guide in [`projects/readme.md`](projects/readme.md), which walks through the sample games and explains how they are structured.
 
 ## Ready-to-Use Binaries
@@ -33,6 +35,7 @@ If you want to try SceneMax3D without building from source, download the Windows
 - **Cinematic Camera System** -- build dynamic camera moves, chase cameras, and dramatic gameplay cutaways
 - **Multi-Project Support** -- manage multiple projects from a single workspace
 - **Plugin System** -- extend functionality via plugins (WebSocket-based communication)
+- **Built-in MCP Server & AI Console** -- connect Claude Code, Codex, Claude Desktop, and Local Gemma to live SceneMax project tools
 - **Classroom Mode** -- collaborative features for educational settings
 - **Export Targets** -- package as desktop builds or generate a Web Start bundle (JNLP + landing page)
 
@@ -143,7 +146,6 @@ The items below are planned for future delivery, but they will not necessarily b
 - **Debugger** -- easier runtime breakpoints and debugging information
 - **Multiplayer Support** -- support for multiplayer game experiences
 - **Web Browser Projector** -- run exported projects directly in the browser
-- **MCP Server**
 - **Java Extensibility**
 - **Scene Sharing**
 

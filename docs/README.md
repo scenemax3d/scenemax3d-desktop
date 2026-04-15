@@ -6,6 +6,7 @@
 
 ## Table of Contents
 
+- [Built-in MCP Server and AI Assistants](built-in-mcp-server.md)
 - [Screen & Canvas](screen-and-canvas.md)
 - [Camera](camera.md)
 - [Camera Systems](camera-systems.md)
