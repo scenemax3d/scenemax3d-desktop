@@ -1,7 +1,7 @@
 package com.scenemax.desktop;
 
-import com.scenemax.desktop.ai.SceneMaxToolRegistry;
 import com.scenemax.desktop.ai.SceneMaxToolResult;
+import com.scenemax.desktop.ai.gemma.GemmaConsoleProtocol;
 import com.scenemax.desktop.ai.gemma.LocalGemmaBridge;
 import com.scenemax.desktop.ai.gemma.LocalGemmaBridgeRequest;
 import com.scenemax.desktop.ai.gemma.LocalGemmaBridgeResponse;
@@ -217,31 +217,33 @@ public class AiConsoleDialog extends JDialog {
                                           java.util.function.Consumer<String> statusSink) throws Exception {
         for (int step = 0; step < 6; step++) {
             statusSink.accept("Sending request to Local Gemma...");
+            JSONArray gemmaTools = host.getAutomationToolRegistry().describeTools();
             LocalGemmaBridgeResponse response = host.getLocalGemmaBridge().generate(new LocalGemmaBridgeRequest(
-                    buildGemmaSystemPrompt(host.getAutomationToolRegistry()),
+                    GemmaConsoleProtocol.buildSystemPrompt(gemmaTools, buildGemmaIdeContext()),
                     toGemmaHistory(),
-                    new JSONArray(),
+                    gemmaTools,
                     0.2
             ));
 
             statusSink.accept("Receiving response from Local Gemma...");
-            ParsedConsoleResponse parsed = parseConsoleResponse(response.getText());
-            if (!parsed.assistantText.isBlank()) {
-                sink.accept("Local Gemma\n" + parsed.assistantText + "\n\n");
+            GemmaConsoleProtocol.ParsedResponse parsed = GemmaConsoleProtocol.parseResponse(response);
+            if (!parsed.getAssistantText().isBlank()) {
+                sink.accept("Local Gemma\n" + parsed.getAssistantText() + "\n\n");
             }
 
-            if (parsed.toolCalls.isEmpty()) {
+            if (parsed.getToolCalls().isEmpty()) {
                 statusSink.accept("Updating conversation...");
-                history.add(new ConsoleMessage("assistant", parsed.assistantText.isBlank() ? response.getText() : parsed.assistantText));
+                history.add(new ConsoleMessage("assistant",
+                        parsed.getAssistantText().isBlank() ? response.getText() : parsed.getAssistantText()));
                 return;
             }
 
-            if (!parsed.assistantText.isBlank()) {
+            if (!parsed.getAssistantText().isBlank()) {
                 statusSink.accept("Updating conversation...");
-                history.add(new ConsoleMessage("assistant", parsed.assistantText));
+                history.add(new ConsoleMessage("assistant", parsed.getAssistantText()));
             }
 
-            for (JSONObject toolCall : parsed.toolCalls) {
+            for (JSONObject toolCall : parsed.getToolCalls()) {
                 String name = toolCall.optString("name", "");
                 JSONObject arguments = toolCall.optJSONObject("arguments");
                 if (arguments == null) {
@@ -629,60 +631,22 @@ public class AiConsoleDialog extends JDialog {
         return sb.length() == 0 ? "Help with the SceneMax IDE task." : sb.toString();
     }
 
-    private String buildGemmaSystemPrompt(SceneMaxToolRegistry registry) {
-        return "You are the SceneMax IDE assistant. "
-                + "You help the user work inside the IDE using the available tools when needed.\n\n"
-                + "When you want to use tools, reply with JSON only in this exact shape:\n"
-                + "{\"assistant\":\"short reason\",\"tool_calls\":[{\"name\":\"tool.name\",\"arguments\":{}}]}\n"
-                + "When no tool is needed, reply with JSON only:\n"
-                + "{\"assistant\":\"your answer\",\"tool_calls\":[]}\n\n"
-                + "Available tools:\n"
-                + registry.describeTools().toString(2);
-    }
-
-    private ParsedConsoleResponse parseConsoleResponse(String text) {
-        if (text == null) {
-            return new ParsedConsoleResponse("", new ArrayList<>());
+    private String buildGemmaIdeContext() {
+        JSONObject activeDocument = host.getAutomationActiveDocumentSnapshot();
+        SceneMaxProject project = Util.getActiveProject();
+        StringBuilder sb = new StringBuilder();
+        if (project != null) {
+            sb.append("Active project:\n");
+            sb.append("- Name: ").append(project.name).append("\n");
+            sb.append("- Path: ").append(project.path).append("\n");
+            sb.append("- Scripts: ").append(project.getScriptsPath()).append("\n\n");
+        } else {
+            sb.append("Active project: none selected.\n\n");
         }
 
-        String trimmed = text.trim();
-        JSONObject json = tryParseJson(trimmed);
-        if (json == null && trimmed.startsWith("```")) {
-            int start = trimmed.indexOf('{');
-            int end = trimmed.lastIndexOf('}');
-            if (start >= 0 && end > start) {
-                json = tryParseJson(trimmed.substring(start, end + 1));
-            }
-        }
-        if (json == null) {
-            int start = trimmed.indexOf('{');
-            int end = trimmed.lastIndexOf('}');
-            if (start >= 0 && end > start) {
-                json = tryParseJson(trimmed.substring(start, end + 1));
-            }
-        }
-        if (json == null) {
-            return new ParsedConsoleResponse(trimmed, new ArrayList<>());
-        }
-
-        List<JSONObject> toolCalls = new ArrayList<>();
-        JSONArray calls = json.optJSONArray("tool_calls");
-        if (calls != null) {
-            for (int i = 0; i < calls.length(); i++) {
-                if (calls.optJSONObject(i) != null) {
-                    toolCalls.add(calls.getJSONObject(i));
-                }
-            }
-        }
-        return new ParsedConsoleResponse(json.optString("assistant", ""), toolCalls);
-    }
-
-    private JSONObject tryParseJson(String text) {
-        try {
-            return new JSONObject(text);
-        } catch (Exception ignored) {
-            return null;
-        }
+        sb.append("Active document snapshot:\n");
+        sb.append(activeDocument.toString(2));
+        return sb.toString();
     }
 
     private void clearConversation() {
@@ -769,16 +733,6 @@ public class AiConsoleDialog extends JDialog {
         ConsoleMessage(String role, String content) {
             this.role = role;
             this.content = content == null ? "" : content;
-        }
-    }
-
-    private static class ParsedConsoleResponse {
-        final String assistantText;
-        final List<JSONObject> toolCalls;
-
-        ParsedConsoleResponse(String assistantText, List<JSONObject> toolCalls) {
-            this.assistantText = assistantText == null ? "" : assistantText;
-            this.toolCalls = toolCalls;
         }
     }
 
