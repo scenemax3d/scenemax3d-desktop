@@ -30,6 +30,35 @@ Create a box with specific dimensions (half-extents for X, Y, Z):
 b => box : material="pond" and size (100,1,100)
 ```
 
+### Wedge
+
+Create a wedge primitive for ramps, roof slopes, and terrain transitions:
+
+```scenemax
+ramp => wedge
+```
+
+Wedge with width, height, and depth:
+
+```scenemax
+ramp => wedge : size (4, 2, 6)
+```
+
+Wedge with material, transform, and shadows:
+
+```scenemax
+ramp => wedge : size (4, 2, 6) and material="concrete" and pos (0, 1, 0) and rotate (0, 45, 0) and scale 1.5 and shadow mode on
+```
+
+Apply a shader to a wedge after creating it:
+
+```scenemax
+ramp => wedge : size (4, 2, 6)
+ramp.shader = "heat_distortion"
+```
+
+The `size` values are `width`, `height`, and `depth`.
+
 ### Cylinder
 
 Create a cylinder:
@@ -51,6 +80,35 @@ c => cylinder : radius (1, 1) and height 2 and material="rock" and pos (0, 1, 0)
 ```
 
 The two radius values define the top and bottom radii respectively. Using different values creates a cone or frustum shape.
+
+### Cone
+
+Create a cone primitive:
+
+```scenemax
+spire => cone
+```
+
+Cone with top radius, bottom radius, and height:
+
+```scenemax
+spire => cone : radius (0, 1.5) and height 5
+```
+
+Cone with material and position:
+
+```scenemax
+tower_cap => cone : radius (0.5, 2) and height 3 and material="roof_tiles" and pos (0, 4, 0)
+```
+
+Apply a shader to a cone:
+
+```scenemax
+tower_cap => cone : radius (0, 1.5) and height 5
+tower_cap.shader = "lava"
+```
+
+The `radius` values are `top radius` and `bottom radius`. Use `radius (0, r)` for a sharp cone, or two non-zero values for a frustum.
 
 ### Hollow Cylinder
 
@@ -94,6 +152,66 @@ Quad with material and position:
 q => quad : size (10, 10) and material="grass" and pos (0, 0, 0)
 ```
 
+### Stairs
+
+Create a stairs primitive:
+
+```scenemax
+stairs_main => stairs
+```
+
+Stairs with width, step height, step depth, and step count:
+
+```scenemax
+stairs_main => stairs : size (3, 0.2, 0.35) and steps 10
+```
+
+Stairs with material, position, and shadow settings:
+
+```scenemax
+stairs_main => stairs : size (3, 0.2, 0.35) and steps 10 and material="stone" and pos (0, 1, 0) and shadow mode receive
+```
+
+Apply a shader to the stairs:
+
+```scenemax
+stairs_main => stairs : size (3, 0.2, 0.35) and steps 10
+stairs_main.shader = "scanlines"
+```
+
+The `size` values are `width`, `step height`, and `step depth`. The total staircase height is `step height * steps`, and the total depth is `step depth * steps`.
+
+### Arch
+
+Create an arch primitive:
+
+```scenemax
+entry_arch => arch
+```
+
+Arch with width, height, depth, thickness, and segment count:
+
+```scenemax
+entry_arch => arch : size (4, 5, 0.8) and thickness 0.5 and segments 14
+```
+
+Arch with material, transform, and scale:
+
+```scenemax
+gate_arch => arch : size (6, 7, 1) and thickness 0.75 and segments 18 and material="brick" and pos (0, 3.5, 0) and scale 1.2
+```
+
+Apply a shader to an arch:
+
+```scenemax
+gate_arch => arch : size (4, 5, 0.8) and thickness 0.5 and segments 14
+gate_arch.shader = "outline"
+```
+
+The `size` values are `width`, `height`, and `depth`. `thickness` controls the thickness of the arch frame, and `segments` controls how smooth the curved top is.
+
+All primitive objects support the same common transform and rendering attributes used by the existing primitives, including `pos (...)`, `rotate (...)`, `scale N`, `shadow mode cast|receive|on`, and `collision shape box|boxes|none`. Use `static` or `collider` as declaration prefixes when needed, for example `ramp => static wedge ...` or `arch_col => collider arch ...`. Materials are set inline with `material="name"`, while shaders are applied after creation with `object.shader = "shader_name"`.
+
 ### Static Objects
 
 Create a static box (can support other objects placed on it):
@@ -107,6 +225,14 @@ Static cylinder and quad:
 ```scenemax
 c => static cylinder : radius (1, 1) and height 2
 q => static quad : size (10, 10)
+```
+
+Static wedge, stairs, and arch:
+
+```scenemax
+ramp => static wedge : size (4, 2, 6)
+stairs_main => static stairs : size (3, 0.2, 0.35) and steps 10
+entry_arch => static arch : size (4, 5, 0.8) and thickness 0.5 and segments 14
 ```
 
 Static race track:
@@ -195,6 +321,14 @@ Create a cylinder collider:
 barrel_col => collider cylinder : radius (0.5, 0.5) and height 2
 ```
 
+Create colliders with the new primitives:
+
+```scenemax
+ramp_col => collider wedge : size (4, 2, 6)
+stairs_col => collider stairs : size (3, 0.2, 0.35) and steps 10
+arch_col => collider arch : size (4, 5, 0.8) and thickness 0.5 and segments 14
+```
+
 Attach a collider to a character's head joint:
 
 ```scenemax
@@ -261,10 +395,14 @@ Receive shadows from other objects:
 b => static box : shadow mode receive
 ```
 
-Shadow modes work on all primitive types (box, sphere, cylinder, quad) and models:
+Shadow modes work on all primitive types (`box`, `sphere`, `wedge`, `cylinder`, `cone`, `hollow cylinder`, `quad`, `stairs`, `arch`) and models:
 
 ```scenemax
-c => cylinder : radius (1, 1) and height 3 and shadow mode both
+c => cylinder : radius (1, 1) and height 3 and shadow mode on
+```
+
+```scenemax
+gate_arch => arch : size (4, 5, 0.8) and thickness 0.5 and segments 14 and shadow mode on
 ```
 
 ## Lights

@@ -31,6 +31,11 @@ public class DesignerEntity {
     private float sizeY = 0.5f;
     private float sizeZ = 0.5f;
 
+    // Wedge-specific
+    private float wedgeWidth = 1.0f;
+    private float wedgeHeight = 1.0f;
+    private float wedgeDepth = 1.0f;
+
     // Cylinder-specific
     private float radiusTop = 1.0f;
     private float radiusBottom = 1.0f;
@@ -43,6 +48,19 @@ public class DesignerEntity {
     // Quad-specific
     private float quadWidth = 1.0f;
     private float quadHeight = 1.0f;
+
+    // Stairs-specific
+    private float stairsWidth = 2.0f;
+    private float stairsStepHeight = 0.25f;
+    private float stairsStepDepth = 0.4f;
+    private int stairsStepCount = 6;
+
+    // Arch-specific
+    private float archWidth = 2.0f;
+    private float archHeight = 2.5f;
+    private float archDepth = 0.5f;
+    private float archThickness = 0.35f;
+    private int archSegments = 12;
 
     // Model-specific
     private String resourcePath;
@@ -123,6 +141,13 @@ public class DesignerEntity {
     public float getSizeZ() { return sizeZ; }
     public void setSizeZ(float sizeZ) { this.sizeZ = sizeZ; }
 
+    public float getWedgeWidth() { return wedgeWidth; }
+    public void setWedgeWidth(float wedgeWidth) { this.wedgeWidth = wedgeWidth; }
+    public float getWedgeHeight() { return wedgeHeight; }
+    public void setWedgeHeight(float wedgeHeight) { this.wedgeHeight = wedgeHeight; }
+    public float getWedgeDepth() { return wedgeDepth; }
+    public void setWedgeDepth(float wedgeDepth) { this.wedgeDepth = wedgeDepth; }
+
     public float getRadiusTop() { return radiusTop; }
     public void setRadiusTop(float radiusTop) { this.radiusTop = radiusTop; }
     public float getRadiusBottom() { return radiusBottom; }
@@ -139,6 +164,26 @@ public class DesignerEntity {
     public void setQuadWidth(float quadWidth) { this.quadWidth = quadWidth; }
     public float getQuadHeight() { return quadHeight; }
     public void setQuadHeight(float quadHeight) { this.quadHeight = quadHeight; }
+
+    public float getStairsWidth() { return stairsWidth; }
+    public void setStairsWidth(float stairsWidth) { this.stairsWidth = stairsWidth; }
+    public float getStairsStepHeight() { return stairsStepHeight; }
+    public void setStairsStepHeight(float stairsStepHeight) { this.stairsStepHeight = stairsStepHeight; }
+    public float getStairsStepDepth() { return stairsStepDepth; }
+    public void setStairsStepDepth(float stairsStepDepth) { this.stairsStepDepth = stairsStepDepth; }
+    public int getStairsStepCount() { return stairsStepCount; }
+    public void setStairsStepCount(int stairsStepCount) { this.stairsStepCount = stairsStepCount; }
+
+    public float getArchWidth() { return archWidth; }
+    public void setArchWidth(float archWidth) { this.archWidth = archWidth; }
+    public float getArchHeight() { return archHeight; }
+    public void setArchHeight(float archHeight) { this.archHeight = archHeight; }
+    public float getArchDepth() { return archDepth; }
+    public void setArchDepth(float archDepth) { this.archDepth = archDepth; }
+    public float getArchThickness() { return archThickness; }
+    public void setArchThickness(float archThickness) { this.archThickness = archThickness; }
+    public int getArchSegments() { return archSegments; }
+    public void setArchSegments(int archSegments) { this.archSegments = archSegments; }
 
     public String getResourcePath() { return resourcePath; }
     public void setResourcePath(String resourcePath) { this.resourcePath = resourcePath; }
@@ -288,7 +333,19 @@ public class DesignerEntity {
                 json.put("hidden", hidden);
                 json.put("shadowMode", shadowMode);
                 break;
+            case WEDGE:
+                json.put("wedgeWidth", wedgeWidth);
+                json.put("wedgeHeight", wedgeHeight);
+                json.put("wedgeDepth", wedgeDepth);
+                json.put("staticEntity", staticEntity);
+                json.put("colliderEntity", colliderEntity);
+                json.put("material", material);
+                json.put("shader", shader);
+                json.put("hidden", hidden);
+                json.put("shadowMode", shadowMode);
+                break;
             case CYLINDER:
+            case CONE:
                 json.put("radiusTop", radiusTop);
                 json.put("radiusBottom", radiusBottom);
                 json.put("height", height);
@@ -315,6 +372,31 @@ public class DesignerEntity {
             case QUAD:
                 json.put("quadWidth", quadWidth);
                 json.put("quadHeight", quadHeight);
+                json.put("staticEntity", staticEntity);
+                json.put("colliderEntity", colliderEntity);
+                json.put("material", material);
+                json.put("shader", shader);
+                json.put("hidden", hidden);
+                json.put("shadowMode", shadowMode);
+                break;
+            case STAIRS:
+                json.put("stairsWidth", stairsWidth);
+                json.put("stairsStepHeight", stairsStepHeight);
+                json.put("stairsStepDepth", stairsStepDepth);
+                json.put("stairsStepCount", stairsStepCount);
+                json.put("staticEntity", staticEntity);
+                json.put("colliderEntity", colliderEntity);
+                json.put("material", material);
+                json.put("shader", shader);
+                json.put("hidden", hidden);
+                json.put("shadowMode", shadowMode);
+                break;
+            case ARCH:
+                json.put("archWidth", archWidth);
+                json.put("archHeight", archHeight);
+                json.put("archDepth", archDepth);
+                json.put("archThickness", archThickness);
+                json.put("archSegments", archSegments);
                 json.put("staticEntity", staticEntity);
                 json.put("colliderEntity", colliderEntity);
                 json.put("material", material);
@@ -382,7 +464,11 @@ public class DesignerEntity {
     public static DesignerEntity fromJSON(JSONObject json) {
         String id = json.getString("id");
         String name = json.getString("name");
-        DesignerEntityType type = DesignerEntityType.valueOf(json.getString("type"));
+        String typeName = json.getString("type");
+        if ("TUBE".equals(typeName)) {
+            typeName = "HOLLOW_CYLINDER";
+        }
+        DesignerEntityType type = DesignerEntityType.valueOf(typeName);
 
         DesignerEntity entity = new DesignerEntity(id, name, type);
 
@@ -407,7 +493,19 @@ public class DesignerEntity {
                 entity.hidden = json.optBoolean("hidden", false);
                 entity.shadowMode = json.optString("shadowMode", "none");
                 break;
+            case WEDGE:
+                entity.wedgeWidth = (float) json.optDouble("wedgeWidth", 1.0);
+                entity.wedgeHeight = (float) json.optDouble("wedgeHeight", 1.0);
+                entity.wedgeDepth = (float) json.optDouble("wedgeDepth", 1.0);
+                entity.staticEntity = json.optBoolean("staticEntity", false);
+                entity.colliderEntity = json.optBoolean("colliderEntity", false);
+                entity.material = json.optString("material", "");
+                entity.shader = json.optString("shader", "");
+                entity.hidden = json.optBoolean("hidden", false);
+                entity.shadowMode = json.optString("shadowMode", "none");
+                break;
             case CYLINDER:
+            case CONE:
                 entity.radiusTop = (float) json.optDouble("radiusTop", 1.0);
                 entity.radiusBottom = (float) json.optDouble("radiusBottom", 1.0);
                 entity.height = (float) json.optDouble("height", 2.0);
@@ -434,6 +532,31 @@ public class DesignerEntity {
             case QUAD:
                 entity.quadWidth = (float) json.optDouble("quadWidth", 1.0);
                 entity.quadHeight = (float) json.optDouble("quadHeight", 1.0);
+                entity.staticEntity = json.optBoolean("staticEntity", false);
+                entity.colliderEntity = json.optBoolean("colliderEntity", false);
+                entity.material = json.optString("material", "");
+                entity.shader = json.optString("shader", "");
+                entity.hidden = json.optBoolean("hidden", false);
+                entity.shadowMode = json.optString("shadowMode", "none");
+                break;
+            case STAIRS:
+                entity.stairsWidth = (float) json.optDouble("stairsWidth", 2.0);
+                entity.stairsStepHeight = (float) json.optDouble("stairsStepHeight", 0.25);
+                entity.stairsStepDepth = (float) json.optDouble("stairsStepDepth", 0.4);
+                entity.stairsStepCount = json.optInt("stairsStepCount", 6);
+                entity.staticEntity = json.optBoolean("staticEntity", false);
+                entity.colliderEntity = json.optBoolean("colliderEntity", false);
+                entity.material = json.optString("material", "");
+                entity.shader = json.optString("shader", "");
+                entity.hidden = json.optBoolean("hidden", false);
+                entity.shadowMode = json.optString("shadowMode", "none");
+                break;
+            case ARCH:
+                entity.archWidth = (float) json.optDouble("archWidth", 2.0);
+                entity.archHeight = (float) json.optDouble("archHeight", 2.5);
+                entity.archDepth = (float) json.optDouble("archDepth", 0.5);
+                entity.archThickness = (float) json.optDouble("archThickness", 0.35);
+                entity.archSegments = json.optInt("archSegments", 12);
                 entity.staticEntity = json.optBoolean("staticEntity", false);
                 entity.colliderEntity = json.optBoolean("colliderEntity", false);
                 entity.material = json.optString("material", "");

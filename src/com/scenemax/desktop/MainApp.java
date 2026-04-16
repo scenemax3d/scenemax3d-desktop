@@ -498,6 +498,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     dlg.setVisible(true);
                 } else if (cmd.equals("new_folder")) {
                     createNewScriptsFolder();
+                } else if (cmd.equals("restart_app")) {
+                    restartApplication();
                 } else if (cmd.equals("exit")) {
                     System.exit(0);
                 } else if (cmd.equals("add_skybox")) {
@@ -719,6 +721,64 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
             }
 
+        }
+    }
+
+    private void saveCurrentProjectOpenTabsState() {
+        SceneMaxProject currentProject = Util.getActiveProject();
+        if (currentProject == null || editorTabPanel == null) {
+            return;
+        }
+
+        List<String> openPaths = editorTabPanel.getOpenFilePaths();
+        String activeFilePath = editorTabPanel.getActiveFilePath();
+
+        JSONArray pathsArray = new JSONArray(openPaths);
+        AppDB.getInstance().setParam("open_tabs~" + currentProject.name, pathsArray.toString());
+        AppDB.getInstance().setParam("active_tab~" + currentProject.name,
+                activeFilePath != null ? activeFilePath : "");
+    }
+
+    private void restartApplication() {
+        try {
+            if (editorTabPanel != null) {
+                editorTabPanel.saveActiveTab();
+            }
+            saveCurrentProjectOpenTabsState();
+
+            String javaHome = System.getProperty("java.home", "");
+            File javaBin = new File(new File(javaHome, "bin"), "java.exe");
+            if (!javaBin.isFile()) {
+                javaBin = new File(new File(javaHome, "bin"), "java");
+            }
+            if (!javaBin.isFile()) {
+                throw new IOException("Could not locate the Java runtime executable.");
+            }
+
+            String classPath = System.getProperty("java.class.path", "");
+            if (classPath == null || classPath.trim().isEmpty()) {
+                throw new IOException("Could not determine the current Java classpath.");
+            }
+
+            List<String> command = new ArrayList<>();
+            command.add(javaBin.getAbsolutePath());
+            command.add("-cp");
+            command.add(classPath);
+            command.add(MainAppLauncher.class.getName());
+
+            ProcessBuilder builder = new ProcessBuilder(command);
+            builder.directory(new File(System.getProperty("user.dir", ".")));
+            builder.start();
+
+            dispatchEvent(new WindowEvent(this, WindowEvent.WINDOW_CLOSING));
+            dispose();
+            System.exit(0);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this,
+                    "Failed to restart SceneMax: " + ex.getMessage(),
+                    "Restart Failed",
+                    JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -1378,6 +1438,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     } else {
                         saveLastEditedScript(filePath);
                     }
+                } else if (cmd.equals("reload_from_disk")) {
+                    reloadFileFromDisk(new File(filePath), true);
                 } else if (cmd.equals("new")) {
                     createNewScript(filePath);
                 } else if (cmd.equals("new_designer")) {
@@ -1638,6 +1700,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             popup.addSeparator();
         }
         addScriptsTreePopupMenuItem("Save", "save", popup, popupActionListener, false, true, file);
+        addScriptsTreePopupMenuItem("Reload from disk", "reload_from_disk", popup, popupActionListener, false, true, file);
         addScriptsTreePopupMenuItem("Copy Absolute Path", "copy_absolute_path", popup, popupActionListener, false, true, file);
         JMenuItem item = addScriptsTreePopupMenuItem("Delete...", "delete", popup, popupActionListener, false, true, file);
         if (item != null) {
@@ -3566,21 +3629,34 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 @SuppressWarnings("unchecked")
                 List<DesignerEntity> beforeList = (List<DesignerEntity>) invokeNoArg(app, "getEntities");
                 int before = beforeList.size();
-                switch (primitive.toLowerCase(Locale.ROOT)) {
+                String normalizedPrimitive = normalizeAutomationPrimitiveName(primitive);
+                switch (normalizedPrimitive) {
                     case "sphere":
                         invokeNoArg(app, "addDefaultSphere");
                         break;
                     case "box":
                         invokeNoArg(app, "addDefaultBox");
                         break;
+                    case "wedge":
+                        invokeNoArg(app, "addDefaultWedge");
+                        break;
                     case "cylinder":
                         invokeNoArg(app, "addDefaultCylinder");
+                        break;
+                    case "cone":
+                        invokeNoArg(app, "addDefaultCone");
                         break;
                     case "hollow_cylinder":
                         invokeNoArg(app, "addDefaultHollowCylinder");
                         break;
                     case "quad":
                         invokeNoArg(app, "addDefaultQuad");
+                        break;
+                    case "stairs":
+                        invokeNoArg(app, "addDefaultStairs");
+                        break;
+                    case "arch":
+                        invokeNoArg(app, "addDefaultArch");
                         break;
                     default:
                         failure.set(new IllegalArgumentException("Unsupported primitive: " + primitive));
@@ -3609,6 +3685,16 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             throw failure.get();
         }
         return entity.get();
+    }
+
+    private static String normalizeAutomationPrimitiveName(String primitive) {
+        if (primitive == null) {
+            return "";
+        }
+        return primitive.trim()
+                .toLowerCase(Locale.ROOT)
+                .replace('-', '_')
+                .replace(' ', '_');
     }
 
     public JSONObject createCinematicRigInActiveSceneDesignerForAutomation(String preset, String targetEntityId, String targetEntityName, boolean saveDocument) {
@@ -3777,6 +3863,122 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             return;
         }
         runOnEdtAndWait(() -> loadFileToTextEditor(file));
+    }
+
+    public boolean registerImportedModelInActiveDesignerForAutomation(String modelName, String modelPath) {
+        AtomicBoolean updated = new AtomicBoolean(false);
+        if (modelName == null || modelName.trim().isEmpty() || modelPath == null || modelPath.trim().isEmpty()) {
+            return false;
+        }
+        runOnEdtAndWait(() -> {
+            DesignerPanel panel = getActiveDesignerPanel();
+            if (panel == null) {
+                return;
+            }
+            try {
+                Object app = invokeNoArg(panel, "getApp");
+                Object assetsMapping = app.getClass().getMethod("getAssetsMapping").invoke(app);
+                if (assetsMapping == null) {
+                    return;
+                }
+                Object indexObj = assetsMapping.getClass().getMethod("get3DModelsIndex").invoke(assetsMapping);
+                if (!(indexObj instanceof Map)) {
+                    return;
+                }
+                @SuppressWarnings("unchecked")
+                Map<String, ResourceSetup> modelsIndex = (Map<String, ResourceSetup>) indexObj;
+                ResourceSetup resSetup = new ResourceSetup(modelName, modelPath,
+                        1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+                resSetup.capsuleRadius = 2.0f;
+                resSetup.capsuleHeight = 2.0f;
+                resSetup.stepHeight = 0.05f;
+                modelsIndex.put(modelName.toLowerCase(Locale.ROOT), resSetup);
+                updated.set(true);
+            } catch (Exception ignored) {
+            }
+        });
+        return updated.get();
+    }
+
+    private boolean reloadFileFromDisk(File file, boolean promptIfDirty) {
+        if (file == null || !file.exists()) {
+            return false;
+        }
+        if (editorTabPanel != null && editorTabPanel.isFileOpen(file.getAbsolutePath())) {
+            return editorTabPanel.reloadTabFromDisk(file.getAbsolutePath(), true, promptIfDirty);
+        }
+        loadFileToTextEditor(file);
+        return true;
+    }
+
+    public boolean reloadFileFromDiskForAutomation(File file) {
+        AtomicBoolean result = new AtomicBoolean(false);
+        runOnEdtAndWait(() -> {
+            File target = file;
+            if (target == null && editorTabPanel != null) {
+                String activePath = editorTabPanel.getActiveFilePath();
+                if (activePath != null && !activePath.isBlank()) {
+                    target = new File(activePath);
+                }
+            }
+            result.set(reloadFileFromDisk(target, false));
+        });
+        return result.get();
+    }
+
+    public JSONObject getRecentAutomationErrors(int limit) {
+        JSONObject result = new JSONObject();
+        JSONArray errors = new JSONArray();
+        synchronized (mcpLogEntries) {
+            int added = 0;
+            for (int i = mcpLogEntries.size() - 1; i >= 0 && added < Math.max(limit, 1); i--) {
+                SceneMaxMcpLogEntry entry = mcpLogEntries.get(i);
+                if (entry.statusCode < 400) {
+                    continue;
+                }
+                JSONObject item = new JSONObject();
+                item.put("time", entry.time.toString());
+                item.put("statusCode", entry.statusCode);
+                item.put("method", entry.method);
+                item.put("path", entry.path);
+                item.put("rpcMethod", entry.rpcMethod);
+                item.put("toolName", entry.toolName);
+                item.put("requestId", entry.requestId);
+                item.put("summary", entry.summary);
+                item.put("remoteAddress", entry.remoteAddress);
+                item.put("line", entry.formatLine());
+                errors.put(item);
+                added++;
+            }
+        }
+        result.put("errors", errors);
+        result.put("serverError", automationHttpServer != null ? automationHttpServer.getLastError() : JSONObject.NULL);
+        return result;
+    }
+
+    public File captureActiveDocumentThumbnailForAutomation(File outputFile, int width, int height) {
+        AtomicReference<File> result = new AtomicReference<>();
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+        runOnEdtAndWait(() -> {
+            try {
+                if (editorTabPanel == null) {
+                    throw new IllegalStateException("The editor tab panel is not available.");
+                }
+                result.set(editorTabPanel.captureActiveTabSnapshot(outputFile, width, height));
+            } catch (Exception ex) {
+                failure.set(new RuntimeException(ex));
+            }
+        });
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+        return result.get();
+    }
+
+    public void restartApplicationFromAutomation() {
+        javax.swing.Timer timer = new javax.swing.Timer(300, e -> restartApplication());
+        timer.setRepeats(false);
+        timer.start();
     }
 
     public void openOrRefreshTextFileFromAutomation(File file, String content) {

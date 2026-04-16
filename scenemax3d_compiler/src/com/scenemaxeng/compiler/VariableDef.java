@@ -26,6 +26,10 @@ public class VariableDef extends StatementDef{
     public static final int VAR_TYPE_CYLINDER = 60;
     public static final int VAR_TYPE_HOLLOW_CYLINDER = 65;
     public static final int VAR_TYPE_QUAD = 70;
+    public static final int VAR_TYPE_WEDGE = 71;
+    public static final int VAR_TYPE_CONE = 72;
+    public static final int VAR_TYPE_STAIRS = 73;
+    public static final int VAR_TYPE_ARCH = 74;
     public static final int VAR_TYPE_EFFEKSEER = 80;
     public static final int VAR_TYPE_CINEMATIC_CAMERA = 90;
     //public int threadId;

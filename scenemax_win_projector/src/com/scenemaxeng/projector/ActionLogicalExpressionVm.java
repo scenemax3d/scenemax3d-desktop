@@ -1115,7 +1115,7 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
             }
             if (left instanceof Boolean || right instanceof Boolean) {
                 if (!(left instanceof Boolean) || !(right instanceof Boolean)) {
-                    throw runtimeTypeError("Cannot compare boolean with non-boolean using '=='", line);
+                    return false;
                 }
                 return ((Boolean) left).booleanValue() == ((Boolean) right).booleanValue();
             }

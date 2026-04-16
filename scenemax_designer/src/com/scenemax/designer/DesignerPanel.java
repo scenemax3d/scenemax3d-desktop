@@ -173,12 +173,18 @@ public class DesignerPanel extends JPanel {
     private double lastScaleX = 1.0, lastScaleY = 1.0, lastScaleZ = 1.0;
     private JSpinner spnSizeX, spnSizeY, spnSizeZ;
     private JPanel sizeFieldsPanel;
+    private JPanel wedgePanel;
+    private JSpinner spnWedgeWidth, spnWedgeHeight, spnWedgeDepth;
     private JSpinner spnRadius;
     private JPanel radiusPanel;
     private JSpinner spnRadiusTop, spnRadiusBottom, spnCylinderHeight;
     private JPanel cylinderPanel;
     private JSpinner spnHcRadiusTop, spnHcRadiusBottom, spnHcInnerRadiusTop, spnHcInnerRadiusBottom, spnHcHeight;
     private JPanel hollowCylinderPanel;
+    private JPanel stairsPanel;
+    private JSpinner spnStairsWidth, spnStairsStepHeight, spnStairsStepDepth, spnStairsStepCount;
+    private JPanel archPanel;
+    private JSpinner spnArchWidth, spnArchHeight, spnArchDepth, spnArchThickness, spnArchSegments;
     private JCheckBox chkStaticEntity, chkColliderEntity;
     private JCheckBox chkHidden;
     private JPanel hiddenPanel;
@@ -270,10 +276,22 @@ public class DesignerPanel extends JPanel {
             if (app != null) app.enqueue(() -> { app.addDefaultBox(); return null; });
         });
 
+        JButton btnAddWedge = new JButton(createDesignerToolbarIcon("wedge"));
+        btnAddWedge.setToolTipText("Add Wedge");
+        btnAddWedge.addActionListener(e -> {
+            if (app != null) app.enqueue(() -> { app.addDefaultWedge(); return null; });
+        });
+
         JButton btnAddCylinder = new JButton(createDesignerToolbarIcon("cylinder"));
         btnAddCylinder.setToolTipText("Add Cylinder");
         btnAddCylinder.addActionListener(e -> {
             if (app != null) app.enqueue(() -> { app.addDefaultCylinder(); return null; });
+        });
+
+        JButton btnAddCone = new JButton(createDesignerToolbarIcon("cone"));
+        btnAddCone.setToolTipText("Add Cone");
+        btnAddCone.addActionListener(e -> {
+            if (app != null) app.enqueue(() -> { app.addDefaultCone(); return null; });
         });
 
         JButton btnAddHollowCylinder = new JButton(createDesignerToolbarIcon("hollowcylinder"));
@@ -286,6 +304,18 @@ public class DesignerPanel extends JPanel {
         btnAddQuad.setToolTipText("Add Quad");
         btnAddQuad.addActionListener(e -> {
             if (app != null) app.enqueue(() -> { app.addDefaultQuad(); return null; });
+        });
+
+        JButton btnAddStairs = new JButton(createDesignerToolbarIcon("stairs"));
+        btnAddStairs.setToolTipText("Add Stairs");
+        btnAddStairs.addActionListener(e -> {
+            if (app != null) app.enqueue(() -> { app.addDefaultStairs(); return null; });
+        });
+
+        JButton btnAddArch = new JButton(createDesignerToolbarIcon("arch"));
+        btnAddArch.setToolTipText("Add Arch");
+        btnAddArch.addActionListener(e -> {
+            if (app != null) app.enqueue(() -> { app.addDefaultArch(); return null; });
         });
 
         JButton btnAddModel = new JButton(createDesignerToolbarIcon("model"));
@@ -324,9 +354,13 @@ public class DesignerPanel extends JPanel {
         toolbar.add(new JLabel("  Add: "));
         toolbar.add(btnAddSphere);
         toolbar.add(btnAddBox);
+        toolbar.add(btnAddWedge);
         toolbar.add(btnAddCylinder);
+        toolbar.add(btnAddCone);
         toolbar.add(btnAddHollowCylinder);
         toolbar.add(btnAddQuad);
+        toolbar.add(btnAddStairs);
+        toolbar.add(btnAddArch);
         toolbar.add(btnAddModel);
         toolbar.add(btnAddPath);
         toolbar.add(btnAddCinematic);
@@ -551,6 +585,41 @@ public class DesignerPanel extends JPanel {
         sizeFieldsPanel.setVisible(false);
         propertiesForm.add(sizeFieldsPanel);
 
+        wedgePanel = new JPanel();
+        wedgePanel.setLayout(new BoxLayout(wedgePanel, BoxLayout.Y_AXIS));
+        wedgePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        wedgePanel.add(Box.createVerticalStrut(8));
+        JLabel lblWedge = new JLabel("Wedge:");
+        lblWedge.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblWedge.setFont(lblWedge.getFont().deriveFont(Font.BOLD));
+        wedgePanel.add(lblWedge);
+
+        spnWedgeWidth = new JSpinner(new SpinnerNumberModel(1.0, 0.01, 9999.0, 0.1));
+        spnWedgeHeight = new JSpinner(new SpinnerNumberModel(1.0, 0.01, 9999.0, 0.1));
+        spnWedgeDepth = new JSpinner(new SpinnerNumberModel(1.0, 0.01, 9999.0, 0.1));
+
+        JPanel wedgeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
+        wedgeRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        wedgeRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        spnWedgeWidth.setPreferredSize(sizeSpinSize);
+        spnWedgeHeight.setPreferredSize(sizeSpinSize);
+        spnWedgeDepth.setPreferredSize(sizeSpinSize);
+        wedgeRow.add(new JLabel("W:"));
+        wedgeRow.add(spnWedgeWidth);
+        wedgeRow.add(new JLabel("H:"));
+        wedgeRow.add(spnWedgeHeight);
+        wedgeRow.add(new JLabel("D:"));
+        wedgeRow.add(spnWedgeDepth);
+        wedgePanel.add(wedgeRow);
+
+        spnWedgeWidth.addChangeListener(e -> applyWedgeChange());
+        spnWedgeHeight.addChangeListener(e -> applyWedgeChange());
+        spnWedgeDepth.addChangeListener(e -> applyWedgeChange());
+
+        wedgePanel.setVisible(false);
+        propertiesForm.add(wedgePanel);
+
         // Radius field (Sphere only - shown/hidden based on selection)
         radiusPanel = new JPanel();
         radiusPanel.setLayout(new BoxLayout(radiusPanel, BoxLayout.Y_AXIS));
@@ -664,6 +733,101 @@ public class DesignerPanel extends JPanel {
 
         hollowCylinderPanel.setVisible(false);
         propertiesForm.add(hollowCylinderPanel);
+
+        stairsPanel = new JPanel();
+        stairsPanel.setLayout(new BoxLayout(stairsPanel, BoxLayout.Y_AXIS));
+        stairsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        stairsPanel.add(Box.createVerticalStrut(8));
+        JLabel lblStairs = new JLabel("Stairs:");
+        lblStairs.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblStairs.setFont(lblStairs.getFont().deriveFont(Font.BOLD));
+        stairsPanel.add(lblStairs);
+
+        spnStairsWidth = new JSpinner(new SpinnerNumberModel(2.0, 0.05, 9999.0, 0.1));
+        spnStairsStepHeight = new JSpinner(new SpinnerNumberModel(0.25, 0.01, 9999.0, 0.05));
+        spnStairsStepDepth = new JSpinner(new SpinnerNumberModel(0.4, 0.01, 9999.0, 0.05));
+        spnStairsStepCount = new JSpinner(new SpinnerNumberModel(6, 1, 200, 1));
+
+        JPanel stairsRow1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
+        stairsRow1.setAlignmentX(Component.LEFT_ALIGNMENT);
+        stairsRow1.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        spnStairsWidth.setPreferredSize(cylSpinSize);
+        spnStairsStepHeight.setPreferredSize(cylSpinSize);
+        spnStairsStepDepth.setPreferredSize(cylSpinSize);
+        stairsRow1.add(new JLabel("W:"));
+        stairsRow1.add(spnStairsWidth);
+        stairsRow1.add(new JLabel("Step H:"));
+        stairsRow1.add(spnStairsStepHeight);
+        stairsRow1.add(new JLabel("Step D:"));
+        stairsRow1.add(spnStairsStepDepth);
+        stairsPanel.add(stairsRow1);
+
+        JPanel stairsRow2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
+        stairsRow2.setAlignmentX(Component.LEFT_ALIGNMENT);
+        stairsRow2.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        spnStairsStepCount.setPreferredSize(new Dimension(70, 24));
+        stairsRow2.add(new JLabel("Steps:"));
+        stairsRow2.add(spnStairsStepCount);
+        stairsPanel.add(stairsRow2);
+
+        spnStairsWidth.addChangeListener(e -> applyStairsChange());
+        spnStairsStepHeight.addChangeListener(e -> applyStairsChange());
+        spnStairsStepDepth.addChangeListener(e -> applyStairsChange());
+        spnStairsStepCount.addChangeListener(e -> applyStairsChange());
+
+        stairsPanel.setVisible(false);
+        propertiesForm.add(stairsPanel);
+
+        archPanel = new JPanel();
+        archPanel.setLayout(new BoxLayout(archPanel, BoxLayout.Y_AXIS));
+        archPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        archPanel.add(Box.createVerticalStrut(8));
+        JLabel lblArch = new JLabel("Arch:");
+        lblArch.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblArch.setFont(lblArch.getFont().deriveFont(Font.BOLD));
+        archPanel.add(lblArch);
+
+        spnArchWidth = new JSpinner(new SpinnerNumberModel(2.0, 0.05, 9999.0, 0.1));
+        spnArchHeight = new JSpinner(new SpinnerNumberModel(2.5, 0.05, 9999.0, 0.1));
+        spnArchDepth = new JSpinner(new SpinnerNumberModel(0.5, 0.01, 9999.0, 0.05));
+        spnArchThickness = new JSpinner(new SpinnerNumberModel(0.35, 0.01, 9999.0, 0.05));
+        spnArchSegments = new JSpinner(new SpinnerNumberModel(12, 4, 128, 1));
+
+        JPanel archRow1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
+        archRow1.setAlignmentX(Component.LEFT_ALIGNMENT);
+        archRow1.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        spnArchWidth.setPreferredSize(cylSpinSize);
+        spnArchHeight.setPreferredSize(cylSpinSize);
+        spnArchDepth.setPreferredSize(cylSpinSize);
+        archRow1.add(new JLabel("W:"));
+        archRow1.add(spnArchWidth);
+        archRow1.add(new JLabel("H:"));
+        archRow1.add(spnArchHeight);
+        archRow1.add(new JLabel("D:"));
+        archRow1.add(spnArchDepth);
+        archPanel.add(archRow1);
+
+        JPanel archRow2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
+        archRow2.setAlignmentX(Component.LEFT_ALIGNMENT);
+        archRow2.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        spnArchThickness.setPreferredSize(cylSpinSize);
+        spnArchSegments.setPreferredSize(new Dimension(70, 24));
+        archRow2.add(new JLabel("Thickness:"));
+        archRow2.add(spnArchThickness);
+        archRow2.add(new JLabel("Segments:"));
+        archRow2.add(spnArchSegments);
+        archPanel.add(archRow2);
+
+        spnArchWidth.addChangeListener(e -> applyArchChange());
+        spnArchHeight.addChangeListener(e -> applyArchChange());
+        spnArchDepth.addChangeListener(e -> applyArchChange());
+        spnArchThickness.addChangeListener(e -> applyArchChange());
+        spnArchSegments.addChangeListener(e -> applyArchChange());
+
+        archPanel.setVisible(false);
+        propertiesForm.add(archPanel);
 
         // Static / Collider checkboxes (BOX and SPHERE only)
         staticColliderPanel = new JPanel();
@@ -1462,6 +1626,27 @@ public class DesignerPanel extends JPanel {
         canvasContainer.repaint();
     }
 
+    public void reloadFromDisk() {
+        if (sharedApp == null) {
+            return;
+        }
+
+        final boolean restoreCamera = hasSavedCameraState;
+        final float dist = savedCamDistance;
+        final float yaw = savedCamYaw;
+        final float pitch = savedCamPitch;
+        final Vector3f target = savedCamTarget != null ? savedCamTarget.clone() : new Vector3f(0, 0, 0);
+
+        sharedApp.enqueue(() -> {
+            sharedApp.switchDocument(designerFile, projectPath);
+            if (restoreCamera) {
+                sharedApp.setOrbitCameraState(dist, yaw, pitch, target);
+            }
+            return null;
+        });
+        SwingUtilities.invokeLater(this::refreshSceneTree);
+    }
+
     /**
      * Deactivates this panel AND clears the shared app's in-memory document
      * and entities.  Called when the designer file is being deleted, so that
@@ -2187,9 +2372,12 @@ public class DesignerPanel extends JPanel {
                 lblType.setText("Type: -");
                 clearSpinners();
                 sizeFieldsPanel.setVisible(false);
+                wedgePanel.setVisible(false);
                 radiusPanel.setVisible(false);
                 cylinderPanel.setVisible(false);
                 hollowCylinderPanel.setVisible(false);
+                stairsPanel.setVisible(false);
+                archPanel.setVisible(false);
                 staticColliderPanel.setVisible(false);
                 materialPanel.setVisible(false);
                 hiddenPanel.setVisible(false);
@@ -2234,6 +2422,15 @@ public class DesignerPanel extends JPanel {
                 sizeFieldsPanel.setVisible(false);
             }
 
+            if (entity.getType() == DesignerEntityType.WEDGE) {
+                spnWedgeWidth.setValue((double) entity.getWedgeWidth());
+                spnWedgeHeight.setValue((double) entity.getWedgeHeight());
+                spnWedgeDepth.setValue((double) entity.getWedgeDepth());
+                wedgePanel.setVisible(true);
+            } else {
+                wedgePanel.setVisible(false);
+            }
+
             if (entity.getType() == DesignerEntityType.SPHERE) {
                 spnRadius.setValue((double) entity.getRadius());
                 radiusPanel.setVisible(true);
@@ -2241,7 +2438,7 @@ public class DesignerPanel extends JPanel {
                 radiusPanel.setVisible(false);
             }
 
-            if (entity.getType() == DesignerEntityType.CYLINDER) {
+            if (entity.getType() == DesignerEntityType.CYLINDER || entity.getType() == DesignerEntityType.CONE) {
                 spnRadiusTop.setValue((double) entity.getRadiusTop());
                 spnRadiusBottom.setValue((double) entity.getRadiusBottom());
                 spnCylinderHeight.setValue((double) entity.getHeight());
@@ -2261,9 +2458,34 @@ public class DesignerPanel extends JPanel {
                 hollowCylinderPanel.setVisible(false);
             }
 
+            if (entity.getType() == DesignerEntityType.STAIRS) {
+                spnStairsWidth.setValue((double) entity.getStairsWidth());
+                spnStairsStepHeight.setValue((double) entity.getStairsStepHeight());
+                spnStairsStepDepth.setValue((double) entity.getStairsStepDepth());
+                spnStairsStepCount.setValue(entity.getStairsStepCount());
+                stairsPanel.setVisible(true);
+            } else {
+                stairsPanel.setVisible(false);
+            }
+
+            if (entity.getType() == DesignerEntityType.ARCH) {
+                spnArchWidth.setValue((double) entity.getArchWidth());
+                spnArchHeight.setValue((double) entity.getArchHeight());
+                spnArchDepth.setValue((double) entity.getArchDepth());
+                spnArchThickness.setValue((double) entity.getArchThickness());
+                spnArchSegments.setValue(entity.getArchSegments());
+                archPanel.setVisible(true);
+            } else {
+                archPanel.setVisible(false);
+            }
+
             if (entity.getType() == DesignerEntityType.BOX || entity.getType() == DesignerEntityType.SPHERE
-                    || entity.getType() == DesignerEntityType.CYLINDER || entity.getType() == DesignerEntityType.HOLLOW_CYLINDER
-                    || entity.getType() == DesignerEntityType.QUAD) {
+                    || entity.getType() == DesignerEntityType.WEDGE
+                    || entity.getType() == DesignerEntityType.CYLINDER || entity.getType() == DesignerEntityType.CONE
+                    || entity.getType() == DesignerEntityType.HOLLOW_CYLINDER
+                    || entity.getType() == DesignerEntityType.QUAD
+                    || entity.getType() == DesignerEntityType.STAIRS
+                    || entity.getType() == DesignerEntityType.ARCH) {
                 chkStaticEntity.setSelected(entity.isStaticEntity());
                 chkColliderEntity.setSelected(entity.isColliderEntity());
                 staticColliderPanel.setVisible(true);
@@ -2276,8 +2498,12 @@ public class DesignerPanel extends JPanel {
             }
 
             if (entity.getType() == DesignerEntityType.BOX || entity.getType() == DesignerEntityType.SPHERE
-                    || entity.getType() == DesignerEntityType.CYLINDER || entity.getType() == DesignerEntityType.HOLLOW_CYLINDER
+                    || entity.getType() == DesignerEntityType.WEDGE
+                    || entity.getType() == DesignerEntityType.CYLINDER || entity.getType() == DesignerEntityType.CONE
+                    || entity.getType() == DesignerEntityType.HOLLOW_CYLINDER
                     || entity.getType() == DesignerEntityType.QUAD
+                    || entity.getType() == DesignerEntityType.STAIRS
+                    || entity.getType() == DesignerEntityType.ARCH
                     || entity.getType() == DesignerEntityType.MODEL) {
                 chkHidden.setSelected(entity.isHidden());
                 hiddenPanel.setVisible(true);
@@ -2401,9 +2627,12 @@ public class DesignerPanel extends JPanel {
             clearSpinners();
 
             sizeFieldsPanel.setVisible(false);
+            wedgePanel.setVisible(false);
             radiusPanel.setVisible(false);
             cylinderPanel.setVisible(false);
             hollowCylinderPanel.setVisible(false);
+            stairsPanel.setVisible(false);
+            archPanel.setVisible(false);
             staticColliderPanel.setVisible(false);
             materialPanel.setVisible(false);
             hiddenPanel.setVisible(false);
@@ -2537,10 +2766,29 @@ public class DesignerPanel extends JPanel {
         });
     }
 
+    private void applyWedgeChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.WEDGE) return;
+
+        float width = ((Number) spnWedgeWidth.getValue()).floatValue();
+        float height = ((Number) spnWedgeHeight.getValue()).floatValue();
+        float depth = ((Number) spnWedgeDepth.getValue()).floatValue();
+
+        app.enqueue(() -> {
+            sel.setWedgeWidth(width);
+            sel.setWedgeHeight(height);
+            sel.setWedgeDepth(depth);
+            app.recreateEntity(sel, sel.isStaticEntity(), sel.isColliderEntity());
+            app.markDocumentDirty();
+            return null;
+        });
+    }
+
     private void applyCylinderChange() {
         if (updatingProperties || app == null) return;
         DesignerEntity sel = app.getSelectionManager().getSelected();
-        if (sel == null || sel.getType() != DesignerEntityType.CYLINDER) return;
+        if (sel == null || (sel.getType() != DesignerEntityType.CYLINDER && sel.getType() != DesignerEntityType.CONE)) return;
 
         float radiusTop = ((Number) spnRadiusTop.getValue()).floatValue();
         float radiusBottom = ((Number) spnRadiusBottom.getValue()).floatValue();
@@ -2550,7 +2798,11 @@ public class DesignerPanel extends JPanel {
             sel.setRadiusTop(radiusTop);
             sel.setRadiusBottom(radiusBottom);
             sel.setHeight(height);
-            app.updateCylinderMesh(sel);
+            if (sel.getType() == DesignerEntityType.CONE) {
+                app.recreateEntity(sel, sel.isStaticEntity(), sel.isColliderEntity());
+            } else {
+                app.updateCylinderMesh(sel);
+            }
             app.markDocumentDirty();
             return null;
         });
@@ -2579,13 +2831,61 @@ public class DesignerPanel extends JPanel {
         });
     }
 
+    private void applyStairsChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.STAIRS) return;
+
+        float width = ((Number) spnStairsWidth.getValue()).floatValue();
+        float stepHeight = ((Number) spnStairsStepHeight.getValue()).floatValue();
+        float stepDepth = ((Number) spnStairsStepDepth.getValue()).floatValue();
+        int stepCount = ((Number) spnStairsStepCount.getValue()).intValue();
+
+        app.enqueue(() -> {
+            sel.setStairsWidth(width);
+            sel.setStairsStepHeight(stepHeight);
+            sel.setStairsStepDepth(stepDepth);
+            sel.setStairsStepCount(stepCount);
+            app.recreateEntity(sel, sel.isStaticEntity(), sel.isColliderEntity());
+            app.markDocumentDirty();
+            return null;
+        });
+    }
+
+    private void applyArchChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.ARCH) return;
+
+        float width = ((Number) spnArchWidth.getValue()).floatValue();
+        float height = ((Number) spnArchHeight.getValue()).floatValue();
+        float depth = ((Number) spnArchDepth.getValue()).floatValue();
+        float thickness = ((Number) spnArchThickness.getValue()).floatValue();
+        int segments = ((Number) spnArchSegments.getValue()).intValue();
+
+        app.enqueue(() -> {
+            sel.setArchWidth(width);
+            sel.setArchHeight(height);
+            sel.setArchDepth(depth);
+            sel.setArchThickness(thickness);
+            sel.setArchSegments(segments);
+            app.recreateEntity(sel, sel.isStaticEntity(), sel.isColliderEntity());
+            app.markDocumentDirty();
+            return null;
+        });
+    }
+
     private void applyStaticColliderChange() {
         if (updatingProperties || app == null) return;
         DesignerEntity sel = app.getSelectionManager().getSelected();
         if (sel == null) return;
         if (sel.getType() != DesignerEntityType.BOX && sel.getType() != DesignerEntityType.SPHERE
-                && sel.getType() != DesignerEntityType.CYLINDER && sel.getType() != DesignerEntityType.HOLLOW_CYLINDER
-                && sel.getType() != DesignerEntityType.QUAD) return;
+                && sel.getType() != DesignerEntityType.WEDGE
+                && sel.getType() != DesignerEntityType.CYLINDER && sel.getType() != DesignerEntityType.CONE
+                && sel.getType() != DesignerEntityType.HOLLOW_CYLINDER
+                && sel.getType() != DesignerEntityType.QUAD
+                && sel.getType() != DesignerEntityType.STAIRS
+                && sel.getType() != DesignerEntityType.ARCH) return;
 
         boolean isStatic = chkStaticEntity.isSelected();
         boolean isCollider = chkColliderEntity.isSelected();
@@ -2613,8 +2913,13 @@ public class DesignerPanel extends JPanel {
         DesignerEntity sel = app.getSelectionManager().getSelected();
         if (sel == null) return;
         if (sel.getType() != DesignerEntityType.BOX && sel.getType() != DesignerEntityType.SPHERE
-                && sel.getType() != DesignerEntityType.CYLINDER && sel.getType() != DesignerEntityType.HOLLOW_CYLINDER
-                && sel.getType() != DesignerEntityType.QUAD && sel.getType() != DesignerEntityType.MODEL) return;
+                && sel.getType() != DesignerEntityType.WEDGE
+                && sel.getType() != DesignerEntityType.CYLINDER && sel.getType() != DesignerEntityType.CONE
+                && sel.getType() != DesignerEntityType.HOLLOW_CYLINDER
+                && sel.getType() != DesignerEntityType.QUAD
+                && sel.getType() != DesignerEntityType.STAIRS
+                && sel.getType() != DesignerEntityType.ARCH
+                && sel.getType() != DesignerEntityType.MODEL) return;
 
         String selected = (String) cboShader.getSelectedItem();
         String shader = (selected == null || "None".equals(selected)) ? "" : selected;
@@ -2655,6 +2960,12 @@ public class DesignerPanel extends JPanel {
         String finalMode = mode;
         app.enqueue(() -> {
             sel.setShadowMode(finalMode);
+            if (sel.getType() == DesignerEntityType.WEDGE
+                    || sel.getType() == DesignerEntityType.CONE
+                    || sel.getType() == DesignerEntityType.STAIRS
+                    || sel.getType() == DesignerEntityType.ARCH) {
+                app.recreateEntity(sel, sel.isStaticEntity(), sel.isColliderEntity());
+            }
             app.markDocumentDirty();
             return null;
         });
@@ -3051,8 +3362,12 @@ public class DesignerPanel extends JPanel {
         DesignerEntity sel = app.getSelectionManager().getSelected();
         if (sel == null) return;
         if (sel.getType() != DesignerEntityType.BOX && sel.getType() != DesignerEntityType.SPHERE
-                && sel.getType() != DesignerEntityType.CYLINDER && sel.getType() != DesignerEntityType.HOLLOW_CYLINDER
-                && sel.getType() != DesignerEntityType.QUAD) return;
+                && sel.getType() != DesignerEntityType.WEDGE
+                && sel.getType() != DesignerEntityType.CYLINDER && sel.getType() != DesignerEntityType.CONE
+                && sel.getType() != DesignerEntityType.HOLLOW_CYLINDER
+                && sel.getType() != DesignerEntityType.QUAD
+                && sel.getType() != DesignerEntityType.STAIRS
+                && sel.getType() != DesignerEntityType.ARCH) return;
 
         String material = (String) cboMaterial.getSelectedItem();
         if (material == null) material = "";
@@ -3397,9 +3712,13 @@ public class DesignerPanel extends JPanel {
         switch (key) {
             case "sphere":    drawToolbarSphere(g);    break;
             case "box":       drawToolbarBox(g);       break;
+            case "wedge":     drawToolbarWedge(g);     break;
             case "cylinder":        drawToolbarCylinder(g);        break;
+            case "cone":            drawToolbarCone(g);            break;
             case "hollowcylinder":  drawToolbarHollowCylinder(g);  break;
             case "quad":            drawToolbarQuad(g);            break;
+            case "stairs":          drawToolbarStairs(g);          break;
+            case "arch":            drawToolbarArch(g);            break;
             case "model":     drawToolbarModel(g);     break;
             case "delete":    drawToolbarDelete(g);    break;
             case "translate": drawToolbarTranslate(g); break;
@@ -3444,6 +3763,20 @@ public class DesignerPanel extends JPanel {
         g.draw(new Line2D.Float(cx, mid, cx, bot));
     }
 
+    private static void drawToolbarWedge(Graphics2D g) {
+        GeneralPath face = new GeneralPath();
+        face.moveTo(4, 15);
+        face.lineTo(15, 15);
+        face.lineTo(15, 5);
+        face.closePath();
+        g.draw(face);
+        g.draw(new Line2D.Float(4, 15, 6, 11));
+        g.draw(new Line2D.Float(15, 15, 17, 11));
+        g.draw(new Line2D.Float(15, 5, 17, 1));
+        g.draw(new Line2D.Float(6, 11, 17, 11));
+        g.draw(new Line2D.Float(17, 11, 17, 1));
+    }
+
     /** Cylinder: two ellipses connected by lines */
     private static void drawToolbarCylinder(Graphics2D g) {
         // top ellipse
@@ -3456,6 +3789,12 @@ public class DesignerPanel extends JPanel {
         g.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND,
                 1.0f, new float[]{2f, 2f}, 0));
         g.draw(new java.awt.geom.Arc2D.Float(3, 13, 14, 5, 0, 180, java.awt.geom.Arc2D.OPEN));
+    }
+
+    private static void drawToolbarCone(Graphics2D g) {
+        g.draw(new Ellipse2D.Float(4, 13, 12, 4));
+        g.draw(new Line2D.Float(10, 3, 4, 15));
+        g.draw(new Line2D.Float(10, 3, 16, 15));
     }
 
     /** Hollow Cylinder: cylinder with inner hole visible on top cap */
@@ -3477,6 +3816,10 @@ public class DesignerPanel extends JPanel {
         g.draw(new Ellipse2D.Float(6, 3, 8, 3));
     }
 
+    private static void drawToolbarTube(Graphics2D g) {
+        drawToolbarHollowCylinder(g);
+    }
+
     /** Quad: flat rectangle with slight perspective */
     private static void drawToolbarQuad(Graphics2D g) {
         GeneralPath p = new GeneralPath();
@@ -3490,6 +3833,23 @@ public class DesignerPanel extends JPanel {
         g.setStroke(new BasicStroke(0.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
         g.setColor(DT_HIGHLIGHT);
         g.draw(new Line2D.Float(4, 5, 18, 15));
+    }
+
+    private static void drawToolbarStairs(Graphics2D g) {
+        g.draw(new Line2D.Float(4, 16, 16, 16));
+        g.draw(new Line2D.Float(16, 16, 16, 4));
+        g.draw(new Line2D.Float(4, 16, 4, 12));
+        g.draw(new Line2D.Float(4, 12, 8, 12));
+        g.draw(new Line2D.Float(8, 12, 8, 8));
+        g.draw(new Line2D.Float(8, 8, 12, 8));
+        g.draw(new Line2D.Float(12, 8, 12, 4));
+        g.draw(new Line2D.Float(12, 4, 16, 4));
+    }
+
+    private static void drawToolbarArch(Graphics2D g) {
+        g.draw(new Line2D.Float(4, 16, 4, 10));
+        g.draw(new Line2D.Float(16, 16, 16, 10));
+        g.draw(new java.awt.geom.Arc2D.Float(4, 4, 12, 12, 0, 180, java.awt.geom.Arc2D.OPEN));
     }
 
     /** 3D Model: diamond/gem shape */
@@ -3664,14 +4024,26 @@ public class DesignerPanel extends JPanel {
                 case BOX:
                     drawBox(g);
                     break;
+                case WEDGE:
+                    drawWedge(g);
+                    break;
                 case CYLINDER:
                     drawCylinder(g);
+                    break;
+                case CONE:
+                    drawCone(g);
                     break;
                 case HOLLOW_CYLINDER:
                     drawHollowCylinder(g);
                     break;
                 case QUAD:
                     drawQuad(g);
+                    break;
+                case STAIRS:
+                    drawStairs(g);
+                    break;
+                case ARCH:
+                    drawArch(g);
                     break;
                 case MODEL:
                     drawModel(g);
@@ -3730,12 +4102,32 @@ public class DesignerPanel extends JPanel {
             g.draw(new Line2D.Float(cx, mid, cx, bot));
         }
 
+        private static void drawWedge(Graphics2D g) {
+            GeneralPath p = new GeneralPath();
+            p.moveTo(3, 13);
+            p.lineTo(12, 13);
+            p.lineTo(12, 5);
+            p.closePath();
+            g.draw(p);
+            g.draw(new Line2D.Float(3, 13, 5, 10));
+            g.draw(new Line2D.Float(12, 13, 14, 10));
+            g.draw(new Line2D.Float(12, 5, 14, 2));
+            g.draw(new Line2D.Float(5, 10, 14, 10));
+            g.draw(new Line2D.Float(14, 10, 14, 2));
+        }
+
         /** Cylinder: two ellipses with side lines */
         private static void drawCylinder(Graphics2D g) {
             g.draw(new Ellipse2D.Float(2, 2, 12, 4));
             g.draw(new Line2D.Float(2, 4, 2, 12));
             g.draw(new Line2D.Float(14, 4, 14, 12));
             g.draw(new java.awt.geom.Arc2D.Float(2, 10, 12, 4, 180, 180, java.awt.geom.Arc2D.OPEN));
+        }
+
+        private static void drawCone(Graphics2D g) {
+            g.draw(new Ellipse2D.Float(3, 11, 10, 3));
+            g.draw(new Line2D.Float(8, 3, 3, 12));
+            g.draw(new Line2D.Float(8, 3, 13, 12));
         }
 
         /** Hollow Cylinder: cylinder with inner hole on top */
@@ -3751,6 +4143,10 @@ public class DesignerPanel extends JPanel {
             g.draw(new Ellipse2D.Float(5, 2.5f, 6, 3));
         }
 
+        private static void drawTube(Graphics2D g) {
+            drawHollowCylinder(g);
+        }
+
         /** Quad: flat rectangle */
         private static void drawQuad(Graphics2D g) {
             GeneralPath p = new GeneralPath();
@@ -3760,6 +4156,23 @@ public class DesignerPanel extends JPanel {
             p.lineTo(4, 14);
             p.closePath();
             g.draw(p);
+        }
+
+        private static void drawStairs(Graphics2D g) {
+            g.draw(new Line2D.Float(3, 13, 13, 13));
+            g.draw(new Line2D.Float(13, 13, 13, 4));
+            g.draw(new Line2D.Float(3, 13, 3, 10));
+            g.draw(new Line2D.Float(3, 10, 6, 10));
+            g.draw(new Line2D.Float(6, 10, 6, 7));
+            g.draw(new Line2D.Float(6, 7, 9, 7));
+            g.draw(new Line2D.Float(9, 7, 9, 4));
+            g.draw(new Line2D.Float(9, 4, 13, 4));
+        }
+
+        private static void drawArch(Graphics2D g) {
+            g.draw(new Line2D.Float(3, 13, 3, 8));
+            g.draw(new Line2D.Float(13, 13, 13, 8));
+            g.draw(new java.awt.geom.Arc2D.Float(3, 3, 10, 10, 0, 180, java.awt.geom.Arc2D.OPEN));
         }
 
         /** Model: 3D diamond / gem shape */

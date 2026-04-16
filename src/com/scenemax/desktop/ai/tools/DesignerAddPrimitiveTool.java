@@ -23,9 +23,20 @@ public class DesignerAddPrimitiveTool extends AbstractSceneMaxTool {
         JSONObject schema = new JSONObject();
         schema.put("type", "object");
         JSONObject properties = new JSONObject();
+        JSONArray primitiveEnum = new JSONArray()
+                .put("sphere")
+                .put("box")
+                .put("wedge")
+                .put("cylinder")
+                .put("cone")
+                .put("hollow_cylinder")
+                .put("quad")
+                .put("stairs")
+                .put("arch");
         properties.put("primitive", new JSONObject()
                 .put("type", "string")
-                .put("description", "sphere, box, cylinder, hollow_cylinder, or quad"));
+                .put("enum", primitiveEnum)
+                .put("description", "Primitive type to create. Supported values: sphere, box, wedge, cylinder, cone, hollow_cylinder, quad, stairs, arch."));
         properties.put("saveDocument", new JSONObject().put("type", "boolean"));
         schema.put("properties", properties);
         schema.put("required", new JSONArray().put("primitive"));

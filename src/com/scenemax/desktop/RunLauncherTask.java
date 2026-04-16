@@ -82,6 +82,7 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
     private void saveScript() {
 
         prg=prg.replaceAll("\r","");
+        prg = "//$[disable_audio]=true;" + prg;
         String projectName = resolveProjectName();
         if(projectName != null && !projectName.isBlank()) {
             prg = "//$[project]=" + projectName + ";" + prg;
@@ -249,6 +250,12 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
         m = p.matcher(prg);
         while(m.find()) {
             prg=prg.replaceFirst("//\\$\\[source_rel\\]=(.+?);","");
+        }
+
+        p = Pattern.compile("//\\$\\[disable_audio\\]=(.+?);", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
+        m = p.matcher(prg);
+        while(m.find()) {
+            prg=prg.replaceFirst("//\\$\\[disable_audio\\]=(.+?);","");
         }
 
         return prg;

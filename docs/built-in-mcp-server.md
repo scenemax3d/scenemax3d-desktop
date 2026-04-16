@@ -16,6 +16,7 @@ Without SceneMax MCP, an AI assistant only sees what you manually paste into cha
 - inspect the active scene designer and list entities
 - add primitives and create cinematic rigs in the designer
 - search Sketchfab assets using SceneMax-compatible filters
+- import Sketchfab models into the active project's `resources/Models` folder
 - launch a SceneMax preview run
 
 In practice, this means less copy-paste, fewer context switches, faster iteration, and much more reliable AI help on real project tasks.
@@ -77,11 +78,15 @@ Here are the main task categories the built-in MCP tools unlock today.
   - material (`.mat`)
 - List entities in the active scene designer tab
 - Add primitives to the active scene
+  - `designer.add_primitive` accepts: `sphere`, `box`, `wedge`, `cylinder`, `cone`, `hollow_cylinder`, `quad`, `stairs`, and `arch`
 - Create a cinematic rig in the active scene
 
 ### Asset and Preview Operations
 
 - Search Sketchfab for downloadable models using SceneMax-oriented filters
+- Import a Sketchfab model into project resources with `asset.import_sketchfab`
+  - requires a Sketchfab API token
+  - registers the imported model in `models-ext.json`
 - Start a preview run from the current SceneMax project
 
 ## Productivity Boosts
@@ -114,6 +119,7 @@ You can ask the assistant to:
 - search for references to a specific object, variable, or command
 - summarize the active project structure
 - find a low-poly Sketchfab asset for a prototype
+- import a chosen Sketchfab model directly into the project resources
 
 ### Less friction inside the IDE
 
@@ -324,7 +330,7 @@ Ask:
 The assistant can:
 
 - create the new SceneMax document
-- add scene primitives
+- add scene primitives such as `wedge`, `cone`, `stairs`, and `arch`
 - create a cinematic rig
 
 ### Example: asset discovery

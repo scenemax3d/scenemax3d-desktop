@@ -135,6 +135,13 @@ public class ShaderDesignerPanel extends JPanel {
         }
     }
 
+    public void reloadFromDisk() {
+        loadDocument();
+        dirty = false;
+        refreshFromDocument();
+        refreshPreview();
+    }
+
     public void clearAndDeactivatePanel() {
         deactivatePanel();
         if (previewApp != null) {

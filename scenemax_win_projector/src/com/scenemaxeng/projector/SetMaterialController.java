@@ -29,6 +29,14 @@ public class SetMaterialController extends SceneMaxBaseController {
             this.app.setHollowCylinderMaterial(this.targetVar, material);
         } else if(this.targetVarDef.varType== VariableDef.VAR_TYPE_QUAD) {
             this.app.setQuadMaterial(this.targetVar, material);
+        } else if(this.targetVarDef.varType== VariableDef.VAR_TYPE_WEDGE) {
+            this.app.setWedgeMaterial(this.targetVar, material);
+        } else if(this.targetVarDef.varType== VariableDef.VAR_TYPE_CONE) {
+            this.app.setConeMaterial(this.targetVar, material);
+        } else if(this.targetVarDef.varType== VariableDef.VAR_TYPE_STAIRS) {
+            this.app.setStairsMaterial(this.targetVar, material);
+        } else if(this.targetVarDef.varType== VariableDef.VAR_TYPE_ARCH) {
+            this.app.setArchMaterial(this.targetVar, material);
         }
 
 

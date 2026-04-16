@@ -19,6 +19,10 @@ statement
    | define_cylinder    # defCylinder
    | define_hollow_cylinder # defHollowCylinder
    | define_quad        # defQuad
+   | define_wedge       # defWedge
+   | define_cone        # defCone
+   | define_stairs      # defStairs
+   | define_arch        # defArch
    | define_group       # defineGroup
    | debug_statement    # debugStatement
    | define_variable	# defVar
@@ -339,7 +343,7 @@ for_statement : For '('? declare_variable ';' stop_condition ';' modify_variable
 stop_condition : logical_expression ;
 
 for_each_statement : For Each entity_type? '(' var_decl ')' for_each_in_target? (for_each_having_expr)? do_block ;
-entity_type : Model | Sprite | Sphere | Box ;
+entity_type : Model | Sprite | Sphere | Box | Cylinder | Hollow Cylinder | Quad | Wedge | Cone | Stairs | Arch ;
 for_each_in_target : In logical_expression ;
 for_each_having_expr : Having for_each_having_attr (and_expr for_each_having_attr)* ;
 for_each_having_attr : for_each_name_attr ;
@@ -366,6 +370,10 @@ define_box: Shared? res_var_decl isa_expr Collider? Static? Box (box_having_expr
 define_cylinder: Shared? res_var_decl isa_expr Collider? Static? Cylinder (cylinder_having_expr)? ;
 define_hollow_cylinder: Shared? res_var_decl isa_expr Collider? Static? Hollow Cylinder (hollow_cylinder_having_expr)? ;
 define_quad: Shared? res_var_decl isa_expr Collider? Static? Quad (quad_having_expr)? ;
+define_wedge: Shared? res_var_decl isa_expr Collider? Static? Wedge (wedge_having_expr)? ;
+define_cone: Shared? res_var_decl isa_expr Collider? Static? Cone (cone_having_expr)? ;
+define_stairs: Shared? res_var_decl isa_expr Collider? Static? Stairs (stairs_having_expr)? ;
+define_arch: Shared? res_var_decl isa_expr Collider? Static? Arch (arch_having_expr)? ;
 define_sprite_implicit : Shared? var_decl isa_expr dynamic_model_type Sprite (sprite_having_expr)? ;
 
 define_variable : Shared? var_decl isa_expr Dynamic? Static? dynamic_model_type Vehicle? (scene_entity_having_expr)? (async_expr)? ;
@@ -808,6 +816,37 @@ quad_size_attr : Size Equals? '(' quad_width ',' quad_height ')' ;
 quad_width : logical_expression ;
 quad_height : logical_expression ;
 
+wedge_having_expr : (Having wedge_attributes) ;
+wedge_attributes : wedge_attr (and_expr wedge_attr)* ;
+wedge_attr : model_attr | wedge_specific_attr ;
+wedge_specific_attr : material_attr | volume_size_attr ;
+
+cone_having_expr : (Having cone_attributes) ;
+cone_attributes : cone_attr (and_expr cone_attr)* ;
+cone_attr : model_attr | cone_specific_attr ;
+cone_specific_attr : material_attr | cylinder_radius_attr | cylinder_height_attr ;
+
+stairs_having_expr : (Having stairs_attributes) ;
+stairs_attributes : stairs_attr (and_expr stairs_attr)* ;
+stairs_attr : model_attr | stairs_specific_attr ;
+stairs_specific_attr : material_attr | stairs_size_attr | stairs_steps_attr ;
+stairs_size_attr : Size Equals? '(' stairs_width ',' stairs_step_height ',' stairs_step_depth ')' ;
+stairs_width : logical_expression ;
+stairs_step_height : logical_expression ;
+stairs_step_depth : logical_expression ;
+stairs_steps_attr : Steps Equals? logical_expression ;
+
+arch_having_expr : (Having arch_attributes) ;
+arch_attributes : arch_attr (and_expr arch_attr)* ;
+arch_attr : model_attr | arch_specific_attr ;
+arch_specific_attr : material_attr | arch_size_attr | arch_thickness_attr | arch_segments_attr ;
+arch_size_attr : Size Equals? '(' arch_width ',' arch_height ',' arch_depth ')' ;
+arch_width : logical_expression ;
+arch_height : logical_expression ;
+arch_depth : logical_expression ;
+arch_thickness_attr : Thickness Equals? logical_expression ;
+arch_segments_attr : Segments Equals? logical_expression ;
+
 sprite_having_expr : (Having sprite_attributes) ; //rows_def And cols_def
 sprite_attributes : sprite_attr (and_expr sprite_attr)* ;
 sprite_attr : rows_def | cols_def | print_pos_attr | init_scale_attr
@@ -844,7 +883,8 @@ number_sign : PLUS | MINUS ;
 number: DecimalDigit ('.' DecimalDigit)? ;
 
 allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | ReplayIndex | AnimPercent |
-    Do | Loop | Material | Radius | Sphere | Box | Cylinder | Quad | Boxes | Collision | Shape | Spark | Flash | Explosion | Debris |
+    Do | Loop | Material | Radius | Sphere | Box | Cylinder | Quad | Wedge | Cone | Stairs | Arch | Thickness | Segments |
+    | Steps | Boxes | Collision | Shape | Spark | Flash | Explosion | Debris |
     Spark | Fire | Flame | Destination | Gradient | Orbital | Start | Gravity | Duration |
     Water | Strength | Depth | Terrain | Camera | Chase | Trailing | Vertical | Horizontal | Rotation | Max | Min | Distance |
     Angle | Parent | Detach | Attach | Draw | Debug | On | Off | Calibrate | Shadow | Cast | Receive | SkyBox | Solar | System |
@@ -904,6 +944,13 @@ Cylinder : 'Cylinder' | 'cylinder' ;
 Hollow : 'Hollow' | 'hollow' ;
 Inner : 'Inner' | 'inner' ;
 Quad : 'Quad' | 'quad' ;
+Wedge : 'Wedge' | 'wedge' ;
+Cone : 'Cone' | 'cone' ;
+Stairs : 'Stairs' | 'stairs' ;
+Arch : 'Arch' | 'arch' ;
+Thickness : 'Thickness' | 'thickness' ;
+Segments : 'Segments' | 'segments' ;
+Steps : 'Steps' | 'steps' ;
 Boxes : 'Boxes' | 'boxes' ;
 None : 'None' | 'none' ;
 Collision : 'Collision' | 'collision' ;

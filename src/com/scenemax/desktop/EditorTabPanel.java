@@ -12,9 +12,11 @@ import com.scenemax.designer.ui.designer.UIDesignerPanel;
 import org.apache.commons.io.FileUtils;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -112,13 +114,36 @@ public class EditorTabPanel extends JPanel {
             addMouseListener(new MouseAdapter() {
                 @Override
                 public void mousePressed(MouseEvent e) {
+                    if (showPopupIfNeeded(e)) {
+                        return;
+                    }
                     if (SwingUtilities.isLeftMouseButton(e)) {
                         switchToTab(tabData);
                     }
                 }
+
+                @Override
+                public void mouseReleased(MouseEvent e) {
+                    showPopupIfNeeded(e);
+                }
             });
 
             setSelected(false);
+        }
+
+        private boolean showPopupIfNeeded(MouseEvent e) {
+            if (!e.isPopupTrigger()) {
+                return false;
+            }
+            JPopupMenu popup = new JPopupMenu();
+            JMenuItem reloadItem = new JMenuItem("Reload from disk");
+            reloadItem.addActionListener(evt -> reloadTabFromDisk(tabData.filePath, true, true));
+            popup.add(reloadItem);
+            JMenuItem closeItem = new JMenuItem("Close");
+            closeItem.addActionListener(evt -> closeTab(tabData));
+            popup.add(closeItem);
+            popup.show(this, e.getX(), e.getY());
+            return true;
         }
 
         void setSelected(boolean selected) {
@@ -847,6 +872,95 @@ public class EditorTabPanel extends JPanel {
         }
     }
 
+    public boolean reloadTabFromDisk(String filePath, boolean activate, boolean promptIfDirty) {
+        TabData tab = findTabByPath(filePath);
+        if (tab == null) {
+            return false;
+        }
+        if (promptIfDirty && tab.dirty) {
+            int choice = JOptionPane.showConfirmDialog(
+                    this,
+                    "Discard unsaved changes and reload from disk?",
+                    "Reload from Disk",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+            if (choice != JOptionPane.YES_OPTION) {
+                return false;
+            }
+        }
+
+        try {
+            if (tab.isDesignerTab) {
+                if (tab.designerPanel == null) {
+                    return false;
+                }
+                switchToTab(tab);
+                tab.designerPanel.reloadFromDisk();
+            } else if (tab.isUIDesignerTab) {
+                if (tab.uiDesignerPanel == null) {
+                    return false;
+                }
+                switchToTab(tab);
+                tab.uiDesignerPanel.reloadFromDisk();
+            } else if (tab.isEffekseerDesignerTab) {
+                if (tab.effekseerDesignerPanel == null) {
+                    return false;
+                }
+                switchToTab(tab);
+                tab.effekseerDesignerPanel.reloadFromDisk();
+            } else if (tab.isShaderDesignerTab) {
+                if (tab.shaderDesignerPanel == null) {
+                    return false;
+                }
+                switchToTab(tab);
+                tab.shaderDesignerPanel.reloadFromDisk();
+            } else if (tab.isEnvironmentShaderDesignerTab) {
+                if (tab.environmentShaderDesignerPanel == null) {
+                    return false;
+                }
+                switchToTab(tab);
+                tab.environmentShaderDesignerPanel.reloadFromDisk();
+            } else if (tab.isMaterialDesignerTab) {
+                if (tab.materialDesignerPanel == null) {
+                    return false;
+                }
+                switchToTab(tab);
+                tab.materialDesignerPanel.reloadFromDisk();
+            } else if (tab.isAnimationImportTab) {
+                return false;
+            } else {
+                File file = new File(tab.filePath);
+                if (!file.isFile()) {
+                    return false;
+                }
+                String content = FileUtils.readFileToString(file, StandardCharsets.UTF_8);
+                tab.content = content;
+                if (activate || tab == activeTab) {
+                    switchToTab(tab);
+                    suppressDocumentEvents = true;
+                    textArea.setText(content);
+                    textAreaRTL.setText(content);
+                    suppressDocumentEvents = false;
+                }
+            }
+
+            tab.dirty = false;
+            TabButton btn = tabButtons.get(tab.filePath);
+            if (btn != null) {
+                btn.updateTitle();
+            }
+            return true;
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Failed to reload from disk: " + ex.getMessage(),
+                    "Reload Error",
+                    JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+    }
+
     private TabData findTabByPath(String filePath) {
         if (filePath == null) {
             return null;
@@ -990,6 +1104,39 @@ public class EditorTabPanel extends JPanel {
             paths.add(td.filePath);
         }
         return paths;
+    }
+
+    public File captureActiveTabSnapshot(File outputFile, int width, int height) throws Exception {
+        if (outputFile == null) {
+            throw new IOException("Output file is required.");
+        }
+        Component target = centerContainer.getComponentCount() > 0 ? centerContainer.getComponent(0) : editorPane;
+        if (target == null || !target.isShowing() || target.getWidth() <= 0 || target.getHeight() <= 0) {
+            throw new IOException("The active tab is not visible, so no snapshot could be captured.");
+        }
+
+        Point topLeft = new Point(0, 0);
+        SwingUtilities.convertPointToScreen(topLeft, target);
+        Rectangle bounds = new Rectangle(topLeft.x, topLeft.y, target.getWidth(), target.getHeight());
+        BufferedImage capture = new Robot().createScreenCapture(bounds);
+
+        BufferedImage finalImage = capture;
+        if (width > 0 && height > 0 && (capture.getWidth() != width || capture.getHeight() != height)) {
+            BufferedImage scaled = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g2 = scaled.createGraphics();
+            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g2.drawImage(capture, 0, 0, width, height, null);
+            g2.dispose();
+            finalImage = scaled;
+        }
+
+        File parent = outputFile.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        ImageIO.write(finalImage, "png", outputFile);
+        return outputFile;
     }
 
     /**

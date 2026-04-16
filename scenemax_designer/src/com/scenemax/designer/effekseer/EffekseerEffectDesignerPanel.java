@@ -99,6 +99,21 @@ public class EffekseerEffectDesignerPanel extends JPanel {
         deactivatePanel();
     }
 
+    public void reloadFromDisk() {
+        loadDocument();
+        dirty = false;
+        loadDocumentIntoUi();
+        refreshToolPath();
+        refreshDiagnostics();
+        refreshEmbeddedPreview();
+        updateModifierAvailability();
+        revalidate();
+        repaint();
+        if (onSavedCallback != null) {
+            onSavedCallback.run();
+        }
+    }
+
     public void saveDocument() {
         try {
             applyUiToDocument();

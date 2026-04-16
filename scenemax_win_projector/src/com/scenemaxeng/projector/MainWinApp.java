@@ -26,6 +26,7 @@ public class MainWinApp implements IAppObserver {
     private int windowPosX = 0;
     private int windowPosY = 0;
     private String projectName = null;
+    private boolean disableAudio = false;
 
     public MainWinApp(File entryScriptFile, String prg, boolean showCodeChangeButton) {
 
@@ -63,6 +64,9 @@ public class MainWinApp implements IAppObserver {
         applyWindowMode(settings, startupProgram);
 
         settings.setTitle("");
+        if (disableAudio) {
+            settings.setAudioRenderer(null);
+        }
 
         sceneMaxApp.setSettings(settings);
         sceneMaxApp.createCanvas(); // create canvas!
@@ -90,6 +94,14 @@ public class MainWinApp implements IAppObserver {
             this.projectName = m.group(1);
             prg=prg.replaceFirst("//\\$\\[project\\]=(.+?);","");
 
+        }
+
+        p = Pattern.compile("//\\$\\[disable_audio\\]=(.+?);", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
+        m = p.matcher(prg);
+
+        while(m.find()) {
+            this.disableAudio = Boolean.parseBoolean(m.group(1).trim());
+            prg=prg.replaceFirst("//\\$\\[disable_audio\\]=(.+?);","");
         }
 
         return prg;
