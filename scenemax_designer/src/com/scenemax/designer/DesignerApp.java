@@ -67,9 +67,14 @@ public class DesignerApp extends SceneMaxApp {
         DesignerEntityType type;
         float radius;
         float sizeX, sizeY, sizeZ;
+        float wedgeWidth, wedgeHeight, wedgeDepth;
         float radiusTop, radiusBottom, cylinderHeight;
         float innerRadiusTop, innerRadiusBottom;
         float quadWidth, quadHeight;
+        float stairsWidth, stairsStepHeight, stairsStepDepth;
+        int stairsStepCount;
+        float archWidth, archHeight, archDepth, archThickness;
+        int archSegments;
         String resourcePath;
         boolean staticModel;
         boolean dynamicModel;
@@ -158,9 +163,13 @@ public class DesignerApp extends SceneMaxApp {
 
     private int sphereCounter = 0;
     private int boxCounter = 0;
+    private int wedgeCounter = 0;
     private int cylinderCounter = 0;
     private int hollowCylinderCounter = 0;
+    private int coneCounter = 0;
     private int quadCounter = 0;
+    private int stairsCounter = 0;
+    private int archCounter = 0;
     private int modelCounter = 0;
 
     private DesignerEntity cinematicAuthoringTarget;
@@ -470,6 +479,17 @@ public class DesignerApp extends SceneMaxApp {
         addEntityViaCode(name, code, DesignerEntityType.BOX, 0, 0.5f, 0.5f, 0.5f, null, false, false, false, false, false, targetList, insertIndex);
     }
 
+    /** Creates a wedge directly in the designer. */
+    public void addDefaultWedge() {
+        addDefaultWedge(null, -1);
+    }
+
+    public void addDefaultWedge(List<DesignerEntity> targetList, int insertIndex) {
+        String name = "wedge_" + (++wedgeCounter);
+        String code = name + " => wedge : size (1,1,1), pos (0,0.5,0)";
+        addEntityViaCode(name, code, DesignerEntityType.WEDGE, 0, 0, 0, 0, null, false, false, false, false, false, targetList, insertIndex);
+    }
+
     /** Creates a cylinder using SceneMax language: name => cylinder : radius (top, bottom), height h, pos (x,y,z) */
     public void addDefaultCylinder() {
         addDefaultCylinder(null, -1);
@@ -480,6 +500,17 @@ public class DesignerApp extends SceneMaxApp {
         String name = "cylinder_" + (++cylinderCounter);
         String code = name + " => cylinder : radius (1,1), height 2, pos (0,1,0)";
         addEntityViaCode(name, code, DesignerEntityType.CYLINDER, 0, 0, 0, 0, null, false, false, false, false, false, targetList, insertIndex);
+    }
+
+    /** Creates a cone/frustum directly in the designer. */
+    public void addDefaultCone() {
+        addDefaultCone(null, -1);
+    }
+
+    public void addDefaultCone(List<DesignerEntity> targetList, int insertIndex) {
+        String name = "cone_" + (++coneCounter);
+        String code = name + " => cone : radius (0,1), height 2, pos (0,1,0)";
+        addEntityViaCode(name, code, DesignerEntityType.CONE, 0, 0, 0, 0, null, false, false, false, false, false, targetList, insertIndex);
     }
 
     /** Creates a hollow cylinder using SceneMax language. */
@@ -504,6 +535,26 @@ public class DesignerApp extends SceneMaxApp {
         String name = "quad_" + (++quadCounter);
         String code = name + " => quad : size (1,1), pos (0,0.5,0)";
         addEntityViaCode(name, code, DesignerEntityType.QUAD, 0, 0, 0, 0, null, false, false, false, false, false, targetList, insertIndex);
+    }
+
+    public void addDefaultStairs() {
+        addDefaultStairs(null, -1);
+    }
+
+    public void addDefaultStairs(List<DesignerEntity> targetList, int insertIndex) {
+        String name = "stairs_" + (++stairsCounter);
+        String code = name + " => stairs : size (2,0.25,0.4), steps 6, pos (0,0.75,0)";
+        addEntityViaCode(name, code, DesignerEntityType.STAIRS, 0, 0, 0, 0, null, false, false, false, false, false, targetList, insertIndex);
+    }
+
+    public void addDefaultArch() {
+        addDefaultArch(null, -1);
+    }
+
+    public void addDefaultArch(List<DesignerEntity> targetList, int insertIndex) {
+        String name = "arch_" + (++archCounter);
+        String code = name + " => arch : size (2,2.5,0.5), thickness 0.35, segments 12, pos (0,1.25,0)";
+        addEntityViaCode(name, code, DesignerEntityType.ARCH, 0, 0, 0, 0, null, false, false, false, false, false, targetList, insertIndex);
     }
 
     /** Creates a 3D model using SceneMax language: name => [static|dynamic] resourceName : pos (x,y,z) */
@@ -533,6 +584,181 @@ public class DesignerApp extends SceneMaxApp {
                 pe.savedScale = new Vector3f(res.scaleX, res.scaleY, res.scaleZ);
             }
         }
+    }
+
+    private void addDesignerNativePrimitive(DesignerEntity entity, Vector3f initialPos,
+                                            List<DesignerEntity> targetList, int insertIndex) {
+        Node node = new Node(entity.getName() + "_designer");
+        entity.setSceneNode(node);
+        node.setLocalTranslation(initialPos != null ? initialPos : Vector3f.ZERO);
+        rebuildDesignerNativePrimitive(entity);
+
+        rootNode.attachChild(node);
+        if (targetList != null) {
+            if (insertIndex >= 0 && insertIndex <= targetList.size()) {
+                targetList.add(insertIndex, entity);
+            } else {
+                targetList.add(entity);
+            }
+        } else {
+            if (insertIndex >= 0 && insertIndex <= entities.size()) {
+                entities.add(insertIndex, entity);
+            } else {
+                entities.add(entity);
+            }
+        }
+
+        markDocumentDirty();
+        selectionManager.select(entity);
+        notifySceneChanged();
+    }
+
+    private void rebuildDesignerNativePrimitive(DesignerEntity entity) {
+        if (entity == null || entity.getSceneNode() == null) return;
+        Node node = entity.getSceneNode();
+        node.detachAllChildren();
+
+        switch (entity.getType()) {
+            case WEDGE:
+                attachPrimitiveGeometry(node, entity,
+                        new com.scenemaxeng.projector.WedgeMesh(entity.getWedgeWidth(), entity.getWedgeHeight(), entity.getWedgeDepth()));
+                break;
+            case CONE:
+                attachPrimitiveGeometry(node, entity,
+                        new com.jme3.scene.shape.Cylinder(16, 32,
+                                Math.max(0.01f, entity.getRadiusTop()),
+                                Math.max(0.01f, entity.getRadiusBottom()),
+                                Math.max(0.01f, entity.getHeight()), true, false));
+                break;
+            case STAIRS:
+                buildStairsNode(node, entity);
+                break;
+            case ARCH:
+                buildArchNode(node, entity);
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void attachPrimitiveGeometry(Node node, DesignerEntity entity, com.jme3.scene.Mesh mesh) {
+        Geometry geo = new Geometry(entity.getName(), mesh);
+        geo.setMaterial(entity.isColliderEntity() ? createColliderPreviewMaterial() : createDesignerPrimitiveMaterial());
+        applyShadowMode(geo, entity.getShadowMode());
+        node.attachChild(geo);
+    }
+
+    private void buildStairsNode(Node node, DesignerEntity entity) {
+        float width = Math.max(0.05f, entity.getStairsWidth());
+        float stepHeight = Math.max(0.01f, entity.getStairsStepHeight());
+        float stepDepth = Math.max(0.01f, entity.getStairsStepDepth());
+        int stepCount = Math.max(1, entity.getStairsStepCount());
+        float totalHeight = stepHeight * stepCount;
+        float totalDepth = stepDepth * stepCount;
+
+        for (int i = 0; i < stepCount; i++) {
+            float boxHeight = stepHeight * (i + 1);
+            Geometry geo = new Geometry(entity.getName() + "_step_" + i,
+                    new Box(width * 0.5f, boxHeight * 0.5f, stepDepth * 0.5f));
+            geo.setLocalTranslation(0f,
+                    -totalHeight * 0.5f + boxHeight * 0.5f,
+                    -totalDepth * 0.5f + stepDepth * (i + 0.5f));
+            geo.setMaterial(entity.isColliderEntity() ? createColliderPreviewMaterial() : createDesignerPrimitiveMaterial());
+            applyShadowMode(geo, entity.getShadowMode());
+            node.attachChild(geo);
+        }
+    }
+
+    private void buildArchNode(Node node, DesignerEntity entity) {
+        float width = Math.max(0.2f, entity.getArchWidth());
+        float height = Math.max(0.2f, entity.getArchHeight());
+        float depth = Math.max(0.05f, entity.getArchDepth());
+        float thickness = Math.min(Math.max(0.05f, entity.getArchThickness()), width * 0.45f);
+        int segments = Math.max(4, entity.getArchSegments());
+
+        float outerRadius = width * 0.5f;
+        float innerRadius = Math.max(0.05f, outerRadius - thickness);
+        float springHeight = Math.max(0f, height - outerRadius);
+        float totalHeight = springHeight + outerRadius;
+        float yOffset = -totalHeight * 0.5f;
+        float legHeight = Math.max(0.05f, springHeight);
+
+        attachArchBox(node, entity, thickness, legHeight, depth,
+                -width * 0.5f + thickness * 0.5f, yOffset + legHeight * 0.5f, 0f, 0f);
+        attachArchBox(node, entity, thickness, legHeight, depth,
+                width * 0.5f - thickness * 0.5f, yOffset + legHeight * 0.5f, 0f, 0f);
+
+        float radiusMid = (outerRadius + innerRadius) * 0.5f;
+        float segmentLength = Math.max(0.05f, radiusMid * FastMath.PI / segments);
+        float segmentThickness = Math.max(0.05f, outerRadius - innerRadius);
+        float centerY = yOffset + legHeight;
+
+        for (int i = 0; i < segments; i++) {
+            float t0 = FastMath.PI - (FastMath.PI * i / segments);
+            float t1 = FastMath.PI - (FastMath.PI * (i + 1) / segments);
+            float angle = (t0 + t1) * 0.5f;
+            float x = FastMath.cos(angle) * radiusMid;
+            float y = centerY + FastMath.sin(angle) * radiusMid;
+            attachArchBox(node, entity, segmentLength, segmentThickness, depth, x, y, 0f,
+                    angle - FastMath.HALF_PI);
+        }
+    }
+
+    private void attachArchBox(Node node, DesignerEntity entity, float width, float height, float depth,
+                               float x, float y, float z, float rotateZ) {
+        Geometry geo = new Geometry(entity.getName() + "_arch_part",
+                new Box(width * 0.5f, height * 0.5f, depth * 0.5f));
+        geo.setLocalTranslation(x, y, z);
+        geo.setLocalRotation(new Quaternion().fromAngles(0f, 0f, rotateZ));
+        geo.setMaterial(entity.isColliderEntity() ? createColliderPreviewMaterial() : createDesignerPrimitiveMaterial());
+        applyShadowMode(geo, entity.getShadowMode());
+        node.attachChild(geo);
+    }
+
+    private Material createDesignerPrimitiveMaterial() {
+        Material mat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
+        mat.setBoolean("UseMaterialColors", true);
+        mat.setColor("Diffuse", new ColorRGBA(0.78f, 0.80f, 0.84f, 1f));
+        mat.setColor("Ambient", new ColorRGBA(0.38f, 0.40f, 0.42f, 1f));
+        mat.setColor("Specular", new ColorRGBA(0.08f, 0.08f, 0.08f, 1f));
+        mat.setFloat("Shininess", 12f);
+        return mat;
+    }
+
+    private Material createColliderPreviewMaterial() {
+        Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+        mat.setColor("Color", new ColorRGBA(0f, 1f, 0.4f, 1f));
+        mat.getAdditionalRenderState().setWireframe(true);
+        mat.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Off);
+        return mat;
+    }
+
+    private void applyShadowMode(Geometry geo, String shadowMode) {
+        if ("both".equalsIgnoreCase(shadowMode)) {
+            geo.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.CastAndReceive);
+        } else if ("cast".equalsIgnoreCase(shadowMode)) {
+            geo.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.Cast);
+        } else if ("receive".equalsIgnoreCase(shadowMode)) {
+            geo.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.Receive);
+        } else {
+            geo.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.Off);
+        }
+    }
+
+    private boolean isRuntimeBackedPrimitive(DesignerEntityType type) {
+        return type == DesignerEntityType.SPHERE
+                || type == DesignerEntityType.BOX
+                || type == DesignerEntityType.WEDGE
+                || type == DesignerEntityType.CYLINDER
+                || type == DesignerEntityType.CONE
+                || type == DesignerEntityType.HOLLOW_CYLINDER
+                || type == DesignerEntityType.QUAD
+                || type == DesignerEntityType.STAIRS
+                || type == DesignerEntityType.ARCH;
+    }
+
+    private boolean isDesignerNativePrimitive(DesignerEntityType type) {
+        return false;
     }
 
     /**
@@ -1502,8 +1728,16 @@ public class DesignerApp extends SceneMaxApp {
         pending.framesWaited = 0;
 
         // Set sensible defaults for type-specific fields so they don't stay at 0
-        if (type == DesignerEntityType.CYLINDER) {
+        if (type == DesignerEntityType.WEDGE) {
+            pending.wedgeWidth = 1.0f;
+            pending.wedgeHeight = 1.0f;
+            pending.wedgeDepth = 1.0f;
+        } else if (type == DesignerEntityType.CYLINDER) {
             pending.radiusTop = 1.0f;
+            pending.radiusBottom = 1.0f;
+            pending.cylinderHeight = 2.0f;
+        } else if (type == DesignerEntityType.CONE) {
+            pending.radiusTop = 0.0f;
             pending.radiusBottom = 1.0f;
             pending.cylinderHeight = 2.0f;
         } else if (type == DesignerEntityType.HOLLOW_CYLINDER) {
@@ -1515,6 +1749,17 @@ public class DesignerApp extends SceneMaxApp {
         } else if (type == DesignerEntityType.QUAD) {
             pending.quadWidth = 1.0f;
             pending.quadHeight = 1.0f;
+        } else if (type == DesignerEntityType.STAIRS) {
+            pending.stairsWidth = 2.0f;
+            pending.stairsStepHeight = 0.25f;
+            pending.stairsStepDepth = 0.4f;
+            pending.stairsStepCount = 6;
+        } else if (type == DesignerEntityType.ARCH) {
+            pending.archWidth = 2.0f;
+            pending.archHeight = 2.5f;
+            pending.archDepth = 0.5f;
+            pending.archThickness = 0.35f;
+            pending.archSegments = 12;
         }
         pending.selectAfterCreation = true;
         pending.targetList = targetList;
@@ -1575,6 +1820,18 @@ public class DesignerApp extends SceneMaxApp {
                 wireGeo = new Geometry(COLLIDER_WIREFRAME_KEY,
                         new com.jme3.scene.shape.Cylinder(16, 16, radius, radius, sizeY * 2, true, false));
                 break;
+            case WEDGE:
+                wireGeo = new Geometry(COLLIDER_WIREFRAME_KEY,
+                        new com.scenemaxeng.projector.WedgeMesh(sizeX, sizeY, sizeZ));
+                break;
+            case CONE:
+                wireGeo = new Geometry(COLLIDER_WIREFRAME_KEY,
+                        new com.jme3.scene.shape.Cylinder(16, 16, Math.max(0.0001f, radius * 0.2f), radius, sizeY * 2, true, false));
+                break;
+            case STAIRS:
+            case ARCH:
+                wireGeo = new Geometry(COLLIDER_WIREFRAME_KEY, new Box(sizeX, sizeY, sizeZ));
+                break;
             default:
                 return;
         }
@@ -1585,6 +1842,46 @@ public class DesignerApp extends SceneMaxApp {
         mat.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Off);
         wireGeo.setMaterial(mat);
         node.attachChild(wireGeo);
+    }
+
+    private void attachPendingColliderWireframe(Node node, PendingEntity pe) {
+        if (node == null || pe == null) return;
+        switch (pe.type) {
+            case BOX:
+                attachColliderWireframe(node, pe.type, pe.sizeX, pe.sizeY, pe.sizeZ, 0f);
+                break;
+            case SPHERE:
+                attachColliderWireframe(node, pe.type, 0f, 0f, 0f, pe.radius);
+                break;
+            case CYLINDER:
+            case HOLLOW_CYLINDER:
+                attachColliderWireframe(node, pe.type, 0f, pe.cylinderHeight * 0.5f, 0f,
+                        Math.max(pe.radiusTop, pe.radiusBottom));
+                break;
+            case WEDGE:
+                attachColliderWireframe(node, pe.type, pe.wedgeWidth, pe.wedgeHeight, pe.wedgeDepth, 0f);
+                break;
+            case CONE:
+                attachColliderWireframe(node, pe.type, 0f, pe.cylinderHeight * 0.5f, 0f,
+                        Math.max(pe.radiusTop, pe.radiusBottom));
+                break;
+            case STAIRS:
+                attachColliderWireframe(node, pe.type,
+                        pe.stairsWidth * 0.5f,
+                        (pe.stairsStepHeight * pe.stairsStepCount) * 0.5f,
+                        (pe.stairsStepDepth * pe.stairsStepCount) * 0.5f,
+                        0f);
+                break;
+            case ARCH:
+                attachColliderWireframe(node, pe.type,
+                        pe.archWidth * 0.5f,
+                        pe.archHeight * 0.5f,
+                        pe.archDepth * 0.5f,
+                        0f);
+                break;
+            default:
+                break;
+        }
     }
 
     /**
@@ -1634,7 +1931,19 @@ public class DesignerApp extends SceneMaxApp {
                         entity.setHidden(pe.hidden);
                         entity.setShadowMode(pe.shadowMode);
                         break;
+                    case WEDGE:
+                        entity.setWedgeWidth(pe.wedgeWidth);
+                        entity.setWedgeHeight(pe.wedgeHeight);
+                        entity.setWedgeDepth(pe.wedgeDepth);
+                        entity.setStaticEntity(pe.staticEntity);
+                        entity.setColliderEntity(pe.colliderEntity);
+                        entity.setMaterial(pe.material != null ? pe.material : "");
+                        entity.setShader(pe.shader != null ? pe.shader : "");
+                        entity.setHidden(pe.hidden);
+                        entity.setShadowMode(pe.shadowMode);
+                        break;
                     case CYLINDER:
+                    case CONE:
                         entity.setRadiusTop(pe.radiusTop);
                         entity.setRadiusBottom(pe.radiusBottom);
                         entity.setHeight(pe.cylinderHeight);
@@ -1668,6 +1977,31 @@ public class DesignerApp extends SceneMaxApp {
                         entity.setHidden(pe.hidden);
                         entity.setShadowMode(pe.shadowMode);
                         break;
+                    case STAIRS:
+                        entity.setStairsWidth(pe.stairsWidth);
+                        entity.setStairsStepHeight(pe.stairsStepHeight);
+                        entity.setStairsStepDepth(pe.stairsStepDepth);
+                        entity.setStairsStepCount(pe.stairsStepCount);
+                        entity.setStaticEntity(pe.staticEntity);
+                        entity.setColliderEntity(pe.colliderEntity);
+                        entity.setMaterial(pe.material != null ? pe.material : "");
+                        entity.setShader(pe.shader != null ? pe.shader : "");
+                        entity.setHidden(pe.hidden);
+                        entity.setShadowMode(pe.shadowMode);
+                        break;
+                    case ARCH:
+                        entity.setArchWidth(pe.archWidth);
+                        entity.setArchHeight(pe.archHeight);
+                        entity.setArchDepth(pe.archDepth);
+                        entity.setArchThickness(pe.archThickness);
+                        entity.setArchSegments(pe.archSegments);
+                        entity.setStaticEntity(pe.staticEntity);
+                        entity.setColliderEntity(pe.colliderEntity);
+                        entity.setMaterial(pe.material != null ? pe.material : "");
+                        entity.setShader(pe.shader != null ? pe.shader : "");
+                        entity.setHidden(pe.hidden);
+                        entity.setShadowMode(pe.shadowMode);
+                        break;
                     case MODEL:
                         entity.setResourcePath(pe.resourcePath);
                         entity.setStaticModel(pe.staticModel);
@@ -1683,7 +2017,7 @@ public class DesignerApp extends SceneMaxApp {
                 // Attach wireframe decorator for collider entities so they
                 // are visible in the designer (colliders have no runtime geometry)
                 if (pe.colliderEntity) {
-                    attachColliderWireframe(node, pe.type, pe.sizeX, pe.sizeY, pe.sizeZ, pe.radius);
+                    attachPendingColliderWireframe(node, pe);
                 }
 
                 // Apply saved transform (for document loading)
@@ -1792,6 +2126,20 @@ public class DesignerApp extends SceneMaxApp {
                     .filter(e -> e.getType() == DesignerEntityType.SPHERE).count();
             boxCounter = (int) entities.stream()
                     .filter(e -> e.getType() == DesignerEntityType.BOX).count();
+            wedgeCounter = (int) entities.stream()
+                    .filter(e -> e.getType() == DesignerEntityType.WEDGE).count();
+            cylinderCounter = (int) entities.stream()
+                    .filter(e -> e.getType() == DesignerEntityType.CYLINDER).count();
+            hollowCylinderCounter = (int) entities.stream()
+                    .filter(e -> e.getType() == DesignerEntityType.HOLLOW_CYLINDER).count();
+            coneCounter = (int) entities.stream()
+                    .filter(e -> e.getType() == DesignerEntityType.CONE).count();
+            quadCounter = (int) entities.stream()
+                    .filter(e -> e.getType() == DesignerEntityType.QUAD).count();
+            stairsCounter = (int) entities.stream()
+                    .filter(e -> e.getType() == DesignerEntityType.STAIRS).count();
+            archCounter = (int) entities.stream()
+                    .filter(e -> e.getType() == DesignerEntityType.ARCH).count();
             modelCounter = (int) entities.stream()
                     .filter(e -> e.getType() == DesignerEntityType.MODEL).count();
             selectionManager.deselect();
@@ -1812,6 +2160,23 @@ public class DesignerApp extends SceneMaxApp {
         for (Spatial child : node.getChildren()) {
             if (child instanceof Geometry) {
                 ((Geometry) child).setMesh(new Box(entity.getSizeX() * 2, entity.getSizeY() * 2, entity.getSizeZ() * 2));
+                break;
+            }
+        }
+    }
+
+    public void updateWedgeMesh(DesignerEntity entity) {
+        if (entity == null || entity.getType() != DesignerEntityType.WEDGE) return;
+        Node node = entity.getSceneNode();
+        if (node == null) return;
+        if (entity.isColliderEntity()) {
+            attachColliderWireframe(node, DesignerEntityType.WEDGE, entity.getWedgeWidth(), entity.getWedgeHeight(), entity.getWedgeDepth(), 0);
+            return;
+        }
+        for (Spatial child : node.getChildren()) {
+            if (child instanceof Geometry) {
+                ((Geometry) child).setMesh(new com.scenemaxeng.projector.WedgeMesh(
+                        entity.getWedgeWidth(), entity.getWedgeHeight(), entity.getWedgeDepth()));
                 break;
             }
         }
@@ -1853,6 +2218,27 @@ public class DesignerApp extends SceneMaxApp {
         }
     }
 
+    public void updateConeMesh(DesignerEntity entity) {
+        if (entity == null || entity.getType() != DesignerEntityType.CONE) return;
+        Node node = entity.getSceneNode();
+        if (node == null) return;
+        if (entity.isColliderEntity()) {
+            attachColliderWireframe(node, DesignerEntityType.CONE,
+                    0, entity.getHeight() * 0.5f, 0, Math.max(entity.getRadiusTop(), entity.getRadiusBottom()));
+            return;
+        }
+        for (Spatial child : node.getChildren()) {
+            if (child instanceof Geometry) {
+                ((Geometry) child).setMesh(new com.jme3.scene.shape.Cylinder(
+                        16, 32,
+                        Math.max(0.0001f, entity.getRadiusTop()),
+                        Math.max(0.0001f, entity.getRadiusBottom()),
+                        Math.max(0.0001f, entity.getHeight()), true, false));
+                break;
+            }
+        }
+    }
+
     /** Updates the visual hollow cylinder mesh to match the entity's current radii and height. */
     public void updateHollowCylinderMesh(DesignerEntity entity) {
         if (entity == null || entity.getType() != DesignerEntityType.HOLLOW_CYLINDER) return;
@@ -1874,11 +2260,21 @@ public class DesignerApp extends SceneMaxApp {
         }
     }
 
+    public void updateStairsMesh(DesignerEntity entity) {
+        if (entity == null || entity.getType() != DesignerEntityType.STAIRS) return;
+        rebuildDesignerNativePrimitive(entity);
+    }
+
+    public void updateArchMesh(DesignerEntity entity) {
+        if (entity == null || entity.getType() != DesignerEntityType.ARCH) return;
+        rebuildDesignerNativePrimitive(entity);
+    }
+
     /** Applies a material to a BOX or SPHERE entity and updates the scene. */
     public void applyMaterial(DesignerEntity entity, String material) {
         if (entity == null) return;
         entity.setMaterial(material);
-        if (material != null && !material.isEmpty()) {
+        if (isRuntimeBackedPrimitive(entity.getType()) && material != null && !material.isEmpty()) {
             runPartialCode(entity.getName() + ".material = \"" + material + "\"", null, false);
         }
         markDocumentDirty();
@@ -1889,7 +2285,9 @@ public class DesignerApp extends SceneMaxApp {
         if (entity == null) return;
         String shaderName = shader != null ? shader : "";
         entity.setShader(shaderName);
-        runPartialCode(entity.getName() + ".shader = \"" + shaderName + "\"", null, false);
+        if (isRuntimeBackedPrimitive(entity.getType()) || entity.getType() == DesignerEntityType.MODEL) {
+            runPartialCode(entity.getName() + ".shader = \"" + shaderName + "\"", null, false);
+        }
         markDocumentDirty();
     }
 
@@ -1992,7 +2390,22 @@ public class DesignerApp extends SceneMaxApp {
         float cylHeight = entity.getHeight();
         float quadWidth = entity.getQuadWidth();
         float quadHeight = entity.getQuadHeight();
+        float wedgeWidth = entity.getWedgeWidth();
+        float wedgeHeight = entity.getWedgeHeight();
+        float wedgeDepth = entity.getWedgeDepth();
+        float stairsWidth = entity.getStairsWidth();
+        float stairsStepHeight = entity.getStairsStepHeight();
+        float stairsStepDepth = entity.getStairsStepDepth();
+        int stairsStepCount = entity.getStairsStepCount();
+        float archWidth = entity.getArchWidth();
+        float archHeight = entity.getArchHeight();
+        float archDepth = entity.getArchDepth();
+        float archThickness = entity.getArchThickness();
+        int archSegments = entity.getArchSegments();
         String material = entity.getMaterial();
+        String shader = entity.getShader();
+        boolean hidden = entity.isHidden();
+        String shadowMode = entity.getShadowMode();
 
         // Find the entity's location (top-level or inside a section)
         List<DesignerEntity> ownerList = null;
@@ -2036,34 +2449,60 @@ public class DesignerApp extends SceneMaxApp {
         // exported .code file by DesignerDocument.generateEntityCode().
         String staticPfx = isStatic ? "static " : "";
         String materialSuffix = (material != null && !material.isEmpty()) ? ", material \"" + material + "\"" : "";
+        String hiddenAttr = hidden ? " hidden," : "";
+        String shadowSuffix = buildShadowModeSuffix(shadowMode);
         String code;
         switch (type) {
             case SPHERE:
-                code = name + " => " + staticPfx + "sphere : pos (" + pos.x + "," + pos.y + "," + pos.z +
-                       "), radius " + radius + materialSuffix;
+                code = name + " => " + staticPfx + "sphere :" + hiddenAttr + " pos (" + pos.x + "," + pos.y + "," + pos.z +
+                       "), radius " + radius + materialSuffix + shadowSuffix;
                 break;
             case BOX:
-                code = name + " => " + staticPfx + "box : size (" +
+                code = name + " => " + staticPfx + "box :" + hiddenAttr + " size (" +
                        (sizeX * 2) + "," + (sizeY * 2) + "," + (sizeZ * 2) +
-                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
+                break;
+            case WEDGE:
+                code = name + " => " + staticPfx + "wedge :" + hiddenAttr + " size (" +
+                       wedgeWidth + "," + wedgeHeight + "," + wedgeDepth +
+                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
                 break;
             case CYLINDER:
-                code = name + " => " + staticPfx + "cylinder : radius (" +
+                code = name + " => " + staticPfx + "cylinder :" + hiddenAttr + " radius (" +
                        radiusTop + "," + radiusBottom +
                        "), height " + cylHeight +
-                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
+                break;
+            case CONE:
+                code = name + " => " + staticPfx + "cone :" + hiddenAttr + " radius (" +
+                       radiusTop + "," + radiusBottom +
+                       "), height " + cylHeight +
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
                 break;
             case HOLLOW_CYLINDER:
-                code = name + " => " + staticPfx + "hollow cylinder : radius (" +
+                code = name + " => " + staticPfx + "hollow cylinder :" + hiddenAttr + " radius (" +
                        radiusTop + "," + radiusBottom +
                        "), inner radius (" + innerRadiusTop + "," + innerRadiusBottom +
                        "), height " + cylHeight +
-                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
                 break;
             case QUAD:
-                code = name + " => " + staticPfx + "quad : size (" +
+                code = name + " => " + staticPfx + "quad :" + hiddenAttr + " size (" +
                        quadWidth + "," + quadHeight +
-                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
+                break;
+            case STAIRS:
+                code = name + " => " + staticPfx + "stairs :" + hiddenAttr + " size (" +
+                       stairsWidth + "," + stairsStepHeight + "," + stairsStepDepth +
+                       "), steps " + stairsStepCount +
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
+                break;
+            case ARCH:
+                code = name + " => " + staticPfx + "arch :" + hiddenAttr + " size (" +
+                       archWidth + "," + archHeight + "," + archDepth +
+                       "), thickness " + archThickness +
+                       ", segments " + archSegments +
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
                 break;
             default:
                 return;
@@ -2071,6 +2510,9 @@ public class DesignerApp extends SceneMaxApp {
 
         // Run the code to recreate entity
         runPartialCode(code, null, false);
+        if (shader != null && !shader.isEmpty()) {
+            runPartialCode(name + ".shader = \"" + shader + "\"", null, false);
+        }
 
         SceneMaxScope scope = getMainScope();
         String nodeName = name + "@" + scope.scopeId;
@@ -2084,6 +2526,9 @@ public class DesignerApp extends SceneMaxApp {
         pending.sizeX = sizeX;
         pending.sizeY = sizeY;
         pending.sizeZ = sizeZ;
+        pending.wedgeWidth = wedgeWidth;
+        pending.wedgeHeight = wedgeHeight;
+        pending.wedgeDepth = wedgeDepth;
         pending.radiusTop = radiusTop;
         pending.radiusBottom = radiusBottom;
         pending.cylinderHeight = cylHeight;
@@ -2091,9 +2536,21 @@ public class DesignerApp extends SceneMaxApp {
         pending.innerRadiusBottom = innerRadiusBottom;
         pending.quadWidth = quadWidth;
         pending.quadHeight = quadHeight;
+        pending.stairsWidth = stairsWidth;
+        pending.stairsStepHeight = stairsStepHeight;
+        pending.stairsStepDepth = stairsStepDepth;
+        pending.stairsStepCount = stairsStepCount;
+        pending.archWidth = archWidth;
+        pending.archHeight = archHeight;
+        pending.archDepth = archDepth;
+        pending.archThickness = archThickness;
+        pending.archSegments = archSegments;
         pending.staticEntity = isStatic;
         pending.colliderEntity = isCollider;
         pending.material = material;
+        pending.shader = shader;
+        pending.hidden = hidden;
+        pending.shadowMode = shadowMode;
         pending.nodeName = nodeName;
         pending.framesWaited = 0;
         pending.selectAfterCreation = true;
@@ -2325,6 +2782,13 @@ public class DesignerApp extends SceneMaxApp {
         // sync them to the highest index found in the document)
         sphereCounter = 0;
         boxCounter = 0;
+        wedgeCounter = 0;
+        cylinderCounter = 0;
+        hollowCylinderCounter = 0;
+        coneCounter = 0;
+        quadCounter = 0;
+        stairsCounter = 0;
+        archCounter = 0;
         modelCounter = 0;
 
         // Recreate all entities from new document
@@ -2478,6 +2942,26 @@ public class DesignerApp extends SceneMaxApp {
                 continue;
             }
 
+            Vector3f pos = DesignerEntity.positionFromJSON(entityDef);
+            Quaternion rot = DesignerEntity.rotationFromJSON(entityDef);
+            Vector3f scale = DesignerEntity.scaleFromJSON(entityDef);
+
+            if (isDesignerNativePrimitive(entityTemplate.getType())) {
+                Node primitiveNode = new Node(entityTemplate.getName() + "_designer");
+                primitiveNode.setLocalTranslation(pos);
+                primitiveNode.setLocalRotation(rot);
+                primitiveNode.setLocalScale(scale);
+                entityTemplate.setSceneNode(primitiveNode);
+                rebuildDesignerNativePrimitive(entityTemplate);
+                if (parentSceneNode != null) {
+                    parentSceneNode.attachChild(primitiveNode);
+                } else {
+                    rootNode.attachChild(primitiveNode);
+                }
+                targetList.add(entityTemplate);
+                continue;
+            }
+
             // Section nodes — add directly and load children recursively
             if (entityTemplate.getType() == DesignerEntityType.SECTION
                     || entityTemplate.getType() == DesignerEntityType.CINEMATIC_RIG) {
@@ -2512,10 +2996,6 @@ public class DesignerApp extends SceneMaxApp {
                 }
                 continue;
             }
-
-            Vector3f pos = DesignerEntity.positionFromJSON(entityDef);
-            Quaternion rot = DesignerEntity.rotationFromJSON(entityDef);
-            Vector3f scale = DesignerEntity.scaleFromJSON(entityDef);
 
             // Always regenerate code from entity properties so it reflects
             // the latest position, size, static/collider flags, etc.
@@ -2564,7 +3044,19 @@ public class DesignerApp extends SceneMaxApp {
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
                     break;
+                case WEDGE:
+                    pending.wedgeWidth = entityTemplate.getWedgeWidth();
+                    pending.wedgeHeight = entityTemplate.getWedgeHeight();
+                    pending.wedgeDepth = entityTemplate.getWedgeDepth();
+                    pending.staticEntity = entityTemplate.isStaticEntity();
+                    pending.colliderEntity = entityTemplate.isColliderEntity();
+                    pending.material = entityTemplate.getMaterial();
+                    pending.shader = entityTemplate.getShader();
+                    pending.hidden = entityTemplate.isHidden();
+                    pending.shadowMode = entityTemplate.getShadowMode();
+                    break;
                 case CYLINDER:
+                case CONE:
                     pending.radiusTop = entityTemplate.getRadiusTop();
                     pending.radiusBottom = entityTemplate.getRadiusBottom();
                     pending.cylinderHeight = entityTemplate.getHeight();
@@ -2591,6 +3083,31 @@ public class DesignerApp extends SceneMaxApp {
                 case QUAD:
                     pending.quadWidth = entityTemplate.getQuadWidth();
                     pending.quadHeight = entityTemplate.getQuadHeight();
+                    pending.staticEntity = entityTemplate.isStaticEntity();
+                    pending.colliderEntity = entityTemplate.isColliderEntity();
+                    pending.material = entityTemplate.getMaterial();
+                    pending.shader = entityTemplate.getShader();
+                    pending.hidden = entityTemplate.isHidden();
+                    pending.shadowMode = entityTemplate.getShadowMode();
+                    break;
+                case STAIRS:
+                    pending.stairsWidth = entityTemplate.getStairsWidth();
+                    pending.stairsStepHeight = entityTemplate.getStairsStepHeight();
+                    pending.stairsStepDepth = entityTemplate.getStairsStepDepth();
+                    pending.stairsStepCount = entityTemplate.getStairsStepCount();
+                    pending.staticEntity = entityTemplate.isStaticEntity();
+                    pending.colliderEntity = entityTemplate.isColliderEntity();
+                    pending.material = entityTemplate.getMaterial();
+                    pending.shader = entityTemplate.getShader();
+                    pending.hidden = entityTemplate.isHidden();
+                    pending.shadowMode = entityTemplate.getShadowMode();
+                    break;
+                case ARCH:
+                    pending.archWidth = entityTemplate.getArchWidth();
+                    pending.archHeight = entityTemplate.getArchHeight();
+                    pending.archDepth = entityTemplate.getArchDepth();
+                    pending.archThickness = entityTemplate.getArchThickness();
+                    pending.archSegments = entityTemplate.getArchSegments();
                     pending.staticEntity = entityTemplate.isStaticEntity();
                     pending.colliderEntity = entityTemplate.isColliderEntity();
                     pending.material = entityTemplate.getMaterial();
@@ -2664,6 +3181,27 @@ public class DesignerApp extends SceneMaxApp {
             } else if (name.startsWith("box_")) {
                 int idx = parseTrailingIndex(name, "box_");
                 if (idx > boxCounter) boxCounter = idx;
+            } else if (name.startsWith("wedge_")) {
+                int idx = parseTrailingIndex(name, "wedge_");
+                if (idx > wedgeCounter) wedgeCounter = idx;
+            } else if (name.startsWith("cylinder_")) {
+                int idx = parseTrailingIndex(name, "cylinder_");
+                if (idx > cylinderCounter) cylinderCounter = idx;
+            } else if (name.startsWith("hcylinder_")) {
+                int idx = parseTrailingIndex(name, "hcylinder_");
+                if (idx > hollowCylinderCounter) hollowCylinderCounter = idx;
+            } else if (name.startsWith("cone_")) {
+                int idx = parseTrailingIndex(name, "cone_");
+                if (idx > coneCounter) coneCounter = idx;
+            } else if (name.startsWith("quad_")) {
+                int idx = parseTrailingIndex(name, "quad_");
+                if (idx > quadCounter) quadCounter = idx;
+            } else if (name.startsWith("stairs_")) {
+                int idx = parseTrailingIndex(name, "stairs_");
+                if (idx > stairsCounter) stairsCounter = idx;
+            } else if (name.startsWith("arch_")) {
+                int idx = parseTrailingIndex(name, "arch_");
+                if (idx > archCounter) archCounter = idx;
             } else if (name.startsWith("model_")) {
                 int idx = parseTrailingIndex(name, "model_");
                 if (idx > modelCounter) modelCounter = idx;
@@ -2705,39 +3243,81 @@ public class DesignerApp extends SceneMaxApp {
         String name = entity.getName();
         String mat = entity.getMaterial();
         String materialSuffix = (mat != null && !mat.isEmpty()) ? ", material \"" + mat + "\"" : "";
+        String hiddenAttr = entity.isHidden() ? " hidden," : "";
+        String shadowSuffix = buildShadowModeSuffix(entity.getShadowMode());
         switch (entity.getType()) {
             case SPHERE:
                 String spherePrefix = entity.isStaticEntity() ? "static " : "";
-                return name + " => " + spherePrefix + "sphere : pos (" + pos.x + "," + pos.y + "," + pos.z +
-                       "), radius " + entity.getRadius() + materialSuffix;
+                return name + " => " + spherePrefix + "sphere :" + hiddenAttr + " pos (" + pos.x + "," + pos.y + "," + pos.z +
+                       "), radius " + entity.getRadius() + materialSuffix + shadowSuffix;
             case BOX:
                 String boxPrefix = entity.isStaticEntity() ? "static " : "";
-                return name + " => " + boxPrefix + "box : size (" +
+                return name + " => " + boxPrefix + "box :" + hiddenAttr + " size (" +
                        (entity.getSizeX() * 2) + "," + (entity.getSizeY() * 2) + "," + (entity.getSizeZ() * 2) +
-                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
+            case WEDGE:
+                String wedgePrefix = entity.isStaticEntity() ? "static " : "";
+                return name + " => " + wedgePrefix + "wedge :" + hiddenAttr + " size (" +
+                       entity.getWedgeWidth() + "," + entity.getWedgeHeight() + "," + entity.getWedgeDepth() +
+                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
             case CYLINDER:
                 String cylPrefix = entity.isStaticEntity() ? "static " : "";
-                return name + " => " + cylPrefix + "cylinder : radius (" +
+                return name + " => " + cylPrefix + "cylinder :" + hiddenAttr + " radius (" +
                        entity.getRadiusTop() + "," + entity.getRadiusBottom() +
                        "), height " + entity.getHeight() +
-                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
+            case CONE:
+                String conePrefix = entity.isStaticEntity() ? "static " : "";
+                return name + " => " + conePrefix + "cone :" + hiddenAttr + " radius (" +
+                       entity.getRadiusTop() + "," + entity.getRadiusBottom() +
+                       "), height " + entity.getHeight() +
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
             case HOLLOW_CYLINDER:
                 String hcPrefix = entity.isStaticEntity() ? "static " : "";
-                return name + " => " + hcPrefix + "hollow cylinder : radius (" +
+                return name + " => " + hcPrefix + "hollow cylinder :" + hiddenAttr + " radius (" +
                        entity.getRadiusTop() + "," + entity.getRadiusBottom() +
                        "), inner radius (" + entity.getInnerRadiusTop() + "," + entity.getInnerRadiusBottom() +
                        "), height " + entity.getHeight() +
-                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
             case QUAD:
                 String quadPrefix = entity.isStaticEntity() ? "static " : "";
-                return name + " => " + quadPrefix + "quad : size (" +
+                return name + " => " + quadPrefix + "quad :" + hiddenAttr + " size (" +
                        entity.getQuadWidth() + "," + entity.getQuadHeight() +
-                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix;
+                       "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
+            case STAIRS:
+                String stairsPrefix = entity.isStaticEntity() ? "static " : "";
+                return name + " => " + stairsPrefix + "stairs :" + hiddenAttr + " size (" +
+                       entity.getStairsWidth() + "," + entity.getStairsStepHeight() + "," + entity.getStairsStepDepth() +
+                       "), steps " + entity.getStairsStepCount() +
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
+            case ARCH:
+                String archPrefix = entity.isStaticEntity() ? "static " : "";
+                return name + " => " + archPrefix + "arch :" + hiddenAttr + " size (" +
+                       entity.getArchWidth() + "," + entity.getArchHeight() + "," + entity.getArchDepth() +
+                       "), thickness " + entity.getArchThickness() +
+                       ", segments " + entity.getArchSegments() +
+                       ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
             case MODEL:
                 String staticPfx = entity.isStaticModel() ? "static " : "";
                 String vehicleSfx = entity.isVehicleModel() ? " vehicle" : "";
                 return name + " => " + staticPfx + entity.getResourcePath() + vehicleSfx +
                        ": pos (" + pos.x + "," + pos.y + "," + pos.z + ") async";
+            default:
+                return "";
+        }
+    }
+
+    private String buildShadowModeSuffix(String shadowMode) {
+        if (shadowMode == null || shadowMode.equals("none")) {
+            return "";
+        }
+        switch (shadowMode) {
+            case "cast":
+                return ", shadow mode cast";
+            case "receive":
+                return ", shadow mode receive";
+            case "both":
+                return ", shadow mode on";
             default:
                 return "";
         }

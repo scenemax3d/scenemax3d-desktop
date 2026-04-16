@@ -157,6 +157,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private static HashMap<String,Node> cylinders = new HashMap<>();
     private static HashMap<String,Node> hollowCylinders = new HashMap<>();
     private static HashMap<String,Node> quads = new HashMap<>();
+    private static HashMap<String,Node> wedges = new HashMap<>();
+    private static HashMap<String,Node> cones = new HashMap<>();
+    private static HashMap<String,Node> stairsMap = new HashMap<>();
+    private static HashMap<String,Node> arches = new HashMap<>();
     private static HashMap<String, EffekseerInst> effekseerEffects = new HashMap<>();
     //private static HashMap<String,SkyBoxMaterial> skyboxMaterials = new HashMap<>();
     private static HashMap<String,ResourceMaterial> materials = new HashMap<>();
@@ -209,6 +213,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private HashMap<String, EntityInstBase> cylinderInstances = new HashMap<>();
     private HashMap<String, EntityInstBase> hollowCylinderInstances = new HashMap<>();
     private HashMap<String, EntityInstBase> quadInstances = new HashMap<>();
+    private HashMap<String, EntityInstBase> wedgeInstances = new HashMap<>();
+    private HashMap<String, EntityInstBase> coneInstances = new HashMap<>();
+    private HashMap<String, EntityInstBase> stairsInstances = new HashMap<>();
+    private HashMap<String, EntityInstBase> archInstances = new HashMap<>();
     private HashMap<String, EntityInstBase> effekseerInstances = new HashMap<>();
     private String projectName = null;
     private DungeonCameraAppState dungeonCameraState = null;
@@ -790,6 +798,48 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
         }
 
+        for (Object key : cylinders.keySet().toArray()) {
+            if (!geoName2EntityInst.get(key).varDef.isShared) {
+                this.killCylinder((String) key);
+            }
+        }
+
+        for (Object key : hollowCylinders.keySet().toArray()) {
+            if (!geoName2EntityInst.get(key).varDef.isShared) {
+                this.killHollowCylinder((String) key);
+            }
+        }
+
+        for (Object key : quads.keySet().toArray()) {
+            if (!geoName2EntityInst.get(key).varDef.isShared) {
+                this.killQuad((String) key);
+            }
+        }
+
+        for (Object key : wedges.keySet().toArray()) {
+            if (!geoName2EntityInst.get(key).varDef.isShared) {
+                this.killWedge((String) key);
+            }
+        }
+
+        for (Object key : cones.keySet().toArray()) {
+            if (!geoName2EntityInst.get(key).varDef.isShared) {
+                this.killCone((String) key);
+            }
+        }
+
+        for (Object key : stairsMap.keySet().toArray()) {
+            if (!geoName2EntityInst.get(key).varDef.isShared) {
+                this.killStairs((String) key);
+            }
+        }
+
+        for (Object key : arches.keySet().toArray()) {
+            if (!geoName2EntityInst.get(key).varDef.isShared) {
+                this.killArch((String) key);
+            }
+        }
+
         for (Object key : effekseerEffects.keySet().toArray()) {
             EffekseerInst inst = effekseerEffects.get(key);
             if (inst != null && !inst.varDef.isShared) {
@@ -824,6 +874,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         spriteInstances = new HashMap<>();
         sphereInstances = new HashMap<>();
         boxInstances = new HashMap<>();
+        cylinderInstances = new HashMap<>();
+        hollowCylinderInstances = new HashMap<>();
+        quadInstances = new HashMap<>();
+        wedgeInstances = new HashMap<>();
+        coneInstances = new HashMap<>();
+        stairsInstances = new HashMap<>();
+        archInstances = new HashMap<>();
         effekseerInstances = new HashMap<>();
         //this.mainScope.clearVars();
     }
@@ -859,6 +916,34 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             this.killSphere((String) key);
         }
 
+        for (Object key : cylinders.keySet().toArray()) {
+            this.killCylinder((String) key);
+        }
+
+        for (Object key : hollowCylinders.keySet().toArray()) {
+            this.killHollowCylinder((String) key);
+        }
+
+        for (Object key : quads.keySet().toArray()) {
+            this.killQuad((String) key);
+        }
+
+        for (Object key : wedges.keySet().toArray()) {
+            this.killWedge((String) key);
+        }
+
+        for (Object key : cones.keySet().toArray()) {
+            this.killCone((String) key);
+        }
+
+        for (Object key : stairsMap.keySet().toArray()) {
+            this.killStairs((String) key);
+        }
+
+        for (Object key : arches.keySet().toArray()) {
+            this.killArch((String) key);
+        }
+
         for (Object key : effekseerEffects.keySet().toArray()) {
             this.killEffekseerEffect((String) key);
         }
@@ -884,6 +969,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         spriteInstances = new HashMap<>();
         sphereInstances = new HashMap<>();
         boxInstances = new HashMap<>();
+        cylinderInstances = new HashMap<>();
+        hollowCylinderInstances = new HashMap<>();
+        quadInstances = new HashMap<>();
+        wedgeInstances = new HashMap<>();
+        coneInstances = new HashMap<>();
+        stairsInstances = new HashMap<>();
+        archInstances = new HashMap<>();
         effekseerInstances = new HashMap<>();
     }
 
@@ -1745,6 +1837,78 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
             scope.entities.put(var.varName,inst);
             loadQuad(inst);
+            return;
+        }
+
+        if(var.resName.equals("wedge")) {
+            WedgeInst inst = new WedgeInst((WedgeVariableDef)var,scope);
+            String key = var.varName+"_"+ ++entityInstCounter;
+            inst.entityKey=key;
+            wedgeInstances.put(key, inst);
+            if(var.entityPos!=null) {
+                inst.entityForPos = findVarRuntime(prg,scope,var.entityPos.entityName);
+            }
+
+            if(var.entityRot!=null) {
+                inst.entityForRot = findVarRuntime(prg,scope,var.entityRot);
+            }
+
+            scope.entities.put(var.varName,inst);
+            loadWedge(inst);
+            return;
+        }
+
+        if(var.resName.equals("cone")) {
+            ConeInst inst = new ConeInst((ConeVariableDef)var,scope);
+            String key = var.varName+"_"+ ++entityInstCounter;
+            inst.entityKey=key;
+            coneInstances.put(key, inst);
+            if(var.entityPos!=null) {
+                inst.entityForPos = findVarRuntime(prg,scope,var.entityPos.entityName);
+            }
+
+            if(var.entityRot!=null) {
+                inst.entityForRot = findVarRuntime(prg,scope,var.entityRot);
+            }
+
+            scope.entities.put(var.varName,inst);
+            loadCone(inst);
+            return;
+        }
+
+        if(var.resName.equals("stairs")) {
+            StairsInst inst = new StairsInst((StairsVariableDef)var,scope);
+            String key = var.varName+"_"+ ++entityInstCounter;
+            inst.entityKey=key;
+            stairsInstances.put(key, inst);
+            if(var.entityPos!=null) {
+                inst.entityForPos = findVarRuntime(prg,scope,var.entityPos.entityName);
+            }
+
+            if(var.entityRot!=null) {
+                inst.entityForRot = findVarRuntime(prg,scope,var.entityRot);
+            }
+
+            scope.entities.put(var.varName,inst);
+            loadStairs(inst);
+            return;
+        }
+
+        if(var.resName.equals("arch")) {
+            ArchInst inst = new ArchInst((ArchVariableDef)var,scope);
+            String key = var.varName+"_"+ ++entityInstCounter;
+            inst.entityKey=key;
+            archInstances.put(key, inst);
+            if(var.entityPos!=null) {
+                inst.entityForPos = findVarRuntime(prg,scope,var.entityPos.entityName);
+            }
+
+            if(var.entityRot!=null) {
+                inst.entityForRot = findVarRuntime(prg,scope,var.entityRot);
+            }
+
+            scope.entities.put(var.varName,inst);
+            loadArch(inst);
         }
 
     }
@@ -2426,6 +2590,418 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         if(inst.varDef.visible) {
             rootNode.attachChild(quadNode);
         }
+    }
+
+    private void loadWedge(WedgeInst inst) {
+
+        RigidBodyControl modelCtl = null;
+        GhostControl ghost = null;
+
+        float width = inst.sizeXExpr == null ? 1f : ((Double) inst.sizeXExpr.evaluate()).floatValue();
+        float height = inst.sizeYExpr == null ? 1f : ((Double) inst.sizeYExpr.evaluate()).floatValue();
+        float depth = inst.sizeZExpr == null ? 1f : ((Double) inst.sizeZExpr.evaluate()).floatValue();
+
+        String wedgeName = inst.varDef.varName + "@" + inst.scope.scopeId;
+        Node wedgeNode = new Node(wedgeName);
+        wedgeNode.setUserData("key", wedgeName);
+        applyPrimitiveNodeTransform(wedgeNode, inst);
+
+        WedgeMesh wedgeMesh = new WedgeMesh(width, height, depth);
+        Geometry wedgeGeo = new Geometry(wedgeName, wedgeMesh);
+        wedgeNode.attachChild(wedgeGeo);
+        TangentBinormalGenerator.generate(wedgeMesh);
+        applyShadowModeToSpatial(wedgeNode, inst.varDef.shadowMode);
+
+        if (inst.materialExpr != null) {
+            String materialName = inst.materialExpr.evaluate().toString();
+            if (!setSpatialMaterial(wedgeNode, materialName)) {
+                handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
+                return;
+            }
+        } else {
+            wedgeGeo.setMaterial(createDefaultPrimitiveMaterial(ColorRGBA.Orange));
+        }
+
+        if (((WedgeVariableDef) inst.varDef).isCollider) {
+            ghost = new GhostControl(CollisionShapeFactory.createDynamicMeshShape(wedgeNode));
+            wedgeNode.detachAllChildren();
+            wedgeNode.addControl(ghost);
+        } else {
+            float mass = 1;
+            boolean isPhysical = inst.massExpr != null || inst.varDef.isStatic;
+            if (isPhysical) {
+                mass = inst.varDef.isStatic ? 0 : Float.parseFloat(inst.massExpr.evaluate().toString());
+            }
+
+            CollisionShape modelShape = inst.varDef.isStatic
+                    ? CollisionShapeFactory.createDynamicMeshShape(wedgeNode)
+                    : CollisionShapeFactory.createDynamicMeshShape(wedgeNode);
+            modelCtl = new RigidBodyControl(modelShape, mass);
+            if (!inst.varDef.isStatic) {
+                modelCtl.setKinematic(!isPhysical);
+            }
+            wedgeNode.addControl(modelCtl);
+        }
+
+        wedges.put(wedgeName, wedgeNode);
+        geoName2ModelName.put(wedgeName, wedgeName);
+        geoName2EntityInst.put(wedgeName, inst);
+
+        List<java.lang.Object> ctls = new ArrayList<>();
+        if (modelCtl != null) {
+            bulletAppState.getPhysicsSpace().add(modelCtl);
+            ctls.add(modelCtl);
+        }
+        if (ghost != null) {
+            bulletAppState.getPhysicsSpace().add(ghost);
+            ctls.add(ghost);
+        }
+        collisionControlsCache.put(wedgeName, ctls);
+
+        if (inst.varDef.visible) {
+            rootNode.attachChild(wedgeNode);
+        }
+    }
+
+    private void loadCone(ConeInst inst) {
+
+        RigidBodyControl modelCtl = null;
+        GhostControl ghost = null;
+
+        float radiusTop = inst.radiusTopExpr == null ? 0f : ((Double) inst.radiusTopExpr.evaluate()).floatValue();
+        float radiusBottom = inst.radiusBottomExpr == null ? 1f : ((Double) inst.radiusBottomExpr.evaluate()).floatValue();
+        float height = inst.heightExpr == null ? 2f : ((Double) inst.heightExpr.evaluate()).floatValue();
+        float safeTop = Math.max(0.0001f, radiusTop);
+        float safeBottom = Math.max(0.0001f, radiusBottom);
+        float safeHeight = Math.max(0.0001f, height);
+
+        String coneName = inst.varDef.varName + "@" + inst.scope.scopeId;
+        Node coneNode = new Node(coneName);
+        coneNode.setUserData("key", coneName);
+        applyPrimitiveNodeTransform(coneNode, inst);
+
+        com.jme3.scene.shape.Cylinder coneMesh =
+                new com.jme3.scene.shape.Cylinder(16, 32, safeTop, safeBottom, safeHeight, true, false);
+        Geometry coneGeo = new Geometry(coneName, coneMesh);
+        coneNode.attachChild(coneGeo);
+        TangentBinormalGenerator.generate(coneMesh);
+        applyShadowModeToSpatial(coneNode, inst.varDef.shadowMode);
+
+        if (inst.materialExpr != null) {
+            String materialName = inst.materialExpr.evaluate().toString();
+            if (!setSpatialMaterial(coneNode, materialName)) {
+                handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
+                return;
+            }
+        } else {
+            coneGeo.setMaterial(createDefaultPrimitiveMaterial(ColorRGBA.Yellow));
+        }
+
+        if (((ConeVariableDef) inst.varDef).isCollider) {
+            ghost = new GhostControl(
+                    new CylinderCollisionShape(new Vector3f(Math.max(safeTop, safeBottom), safeHeight / 2f, Math.max(safeTop, safeBottom)), 1));
+            coneNode.detachAllChildren();
+            coneNode.addControl(ghost);
+        } else {
+            float mass = 1;
+            boolean isPhysical = inst.massExpr != null || inst.varDef.isStatic;
+            if (isPhysical) {
+                mass = inst.varDef.isStatic ? 0 : Float.parseFloat(inst.massExpr.evaluate().toString());
+            }
+
+            CollisionShape modelShape = inst.varDef.isStatic
+                    ? CollisionShapeFactory.createDynamicMeshShape(coneNode)
+                    : CollisionShapeFactory.createDynamicMeshShape(coneNode);
+            modelCtl = new RigidBodyControl(modelShape, mass);
+            if (!inst.varDef.isStatic) {
+                modelCtl.setKinematic(!isPhysical);
+            }
+            coneNode.addControl(modelCtl);
+        }
+
+        cones.put(coneName, coneNode);
+        geoName2ModelName.put(coneName, coneName);
+        geoName2EntityInst.put(coneName, inst);
+
+        List<java.lang.Object> ctls = new ArrayList<>();
+        if (modelCtl != null) {
+            bulletAppState.getPhysicsSpace().add(modelCtl);
+            ctls.add(modelCtl);
+        }
+        if (ghost != null) {
+            bulletAppState.getPhysicsSpace().add(ghost);
+            ctls.add(ghost);
+        }
+        collisionControlsCache.put(coneName, ctls);
+
+        if (inst.varDef.visible) {
+            rootNode.attachChild(coneNode);
+        }
+    }
+
+    private void loadStairs(StairsInst inst) {
+
+        RigidBodyControl modelCtl = null;
+        GhostControl ghost = null;
+
+        float width = inst.widthExpr == null ? 2f : ((Double) inst.widthExpr.evaluate()).floatValue();
+        float stepHeight = inst.stepHeightExpr == null ? 0.25f : ((Double) inst.stepHeightExpr.evaluate()).floatValue();
+        float stepDepth = inst.stepDepthExpr == null ? 0.4f : ((Double) inst.stepDepthExpr.evaluate()).floatValue();
+        int stepCount = inst.stepCountExpr == null ? 6 : Math.max(1, (int) Math.round(((Double) inst.stepCountExpr.evaluate()).doubleValue()));
+
+        String stairsName = inst.varDef.varName + "@" + inst.scope.scopeId;
+        Node stairsNode = createStairsVisualNode(stairsName, width, stepHeight, stepDepth, stepCount, ColorRGBA.Brown);
+        stairsNode.setUserData("key", stairsName);
+        applyPrimitiveNodeTransform(stairsNode, inst);
+        applyShadowModeToSpatial(stairsNode, inst.varDef.shadowMode);
+
+        if (inst.materialExpr != null) {
+            String materialName = inst.materialExpr.evaluate().toString();
+            if (!setSpatialMaterial(stairsNode, materialName)) {
+                handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
+                return;
+            }
+        }
+
+        if (((StairsVariableDef) inst.varDef).isCollider) {
+            ghost = new GhostControl(CollisionShapeFactory.createDynamicMeshShape(stairsNode));
+            stairsNode.detachAllChildren();
+            stairsNode.addControl(ghost);
+        } else {
+            float mass = 1;
+            boolean isPhysical = inst.massExpr != null || inst.varDef.isStatic;
+            if (isPhysical) {
+                mass = inst.varDef.isStatic ? 0 : Float.parseFloat(inst.massExpr.evaluate().toString());
+            }
+
+            CollisionShape modelShape = CollisionShapeFactory.createDynamicMeshShape(stairsNode);
+            modelCtl = new RigidBodyControl(modelShape, mass);
+            if (!inst.varDef.isStatic) {
+                modelCtl.setKinematic(!isPhysical);
+            }
+            stairsNode.addControl(modelCtl);
+        }
+
+        stairsMap.put(stairsName, stairsNode);
+        geoName2ModelName.put(stairsName, stairsName);
+        geoName2EntityInst.put(stairsName, inst);
+
+        List<java.lang.Object> ctls = new ArrayList<>();
+        if (modelCtl != null) {
+            bulletAppState.getPhysicsSpace().add(modelCtl);
+            ctls.add(modelCtl);
+        }
+        if (ghost != null) {
+            bulletAppState.getPhysicsSpace().add(ghost);
+            ctls.add(ghost);
+        }
+        collisionControlsCache.put(stairsName, ctls);
+
+        if (inst.varDef.visible) {
+            rootNode.attachChild(stairsNode);
+        }
+    }
+
+    private void loadArch(ArchInst inst) {
+
+        RigidBodyControl modelCtl = null;
+        GhostControl ghost = null;
+
+        float width = inst.widthExpr == null ? 2f : ((Double) inst.widthExpr.evaluate()).floatValue();
+        float height = inst.heightExpr == null ? 2.5f : ((Double) inst.heightExpr.evaluate()).floatValue();
+        float depth = inst.depthExpr == null ? 0.5f : ((Double) inst.depthExpr.evaluate()).floatValue();
+        float thickness = inst.thicknessExpr == null ? 0.35f : ((Double) inst.thicknessExpr.evaluate()).floatValue();
+        int segments = inst.segmentsExpr == null ? 12 : Math.max(4, (int) Math.round(((Double) inst.segmentsExpr.evaluate()).doubleValue()));
+
+        String archName = inst.varDef.varName + "@" + inst.scope.scopeId;
+        Node archNode = createArchVisualNode(archName, width, height, depth, thickness, segments, ColorRGBA.LightGray);
+        archNode.setUserData("key", archName);
+        applyPrimitiveNodeTransform(archNode, inst);
+        applyShadowModeToSpatial(archNode, inst.varDef.shadowMode);
+
+        if (inst.materialExpr != null) {
+            String materialName = inst.materialExpr.evaluate().toString();
+            if (!setSpatialMaterial(archNode, materialName)) {
+                handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
+                return;
+            }
+        }
+
+        if (((ArchVariableDef) inst.varDef).isCollider) {
+            ghost = new GhostControl(CollisionShapeFactory.createDynamicMeshShape(archNode));
+            archNode.detachAllChildren();
+            archNode.addControl(ghost);
+        } else {
+            float mass = 1;
+            boolean isPhysical = inst.massExpr != null || inst.varDef.isStatic;
+            if (isPhysical) {
+                mass = inst.varDef.isStatic ? 0 : Float.parseFloat(inst.massExpr.evaluate().toString());
+            }
+
+            CollisionShape modelShape = CollisionShapeFactory.createDynamicMeshShape(archNode);
+            modelCtl = new RigidBodyControl(modelShape, mass);
+            if (!inst.varDef.isStatic) {
+                modelCtl.setKinematic(!isPhysical);
+            }
+            archNode.addControl(modelCtl);
+        }
+
+        arches.put(archName, archNode);
+        geoName2ModelName.put(archName, archName);
+        geoName2EntityInst.put(archName, inst);
+
+        List<java.lang.Object> ctls = new ArrayList<>();
+        if (modelCtl != null) {
+            bulletAppState.getPhysicsSpace().add(modelCtl);
+            ctls.add(modelCtl);
+        }
+        if (ghost != null) {
+            bulletAppState.getPhysicsSpace().add(ghost);
+            ctls.add(ghost);
+        }
+        collisionControlsCache.put(archName, ctls);
+
+        if (inst.varDef.visible) {
+            rootNode.attachChild(archNode);
+        }
+    }
+
+    private void applyPrimitiveNodeTransform(Node node, ModelInst inst) {
+        if(inst.rxExpr!=null) {
+            float rotateX = Float.parseFloat(inst.rxExpr.evaluate().toString());
+            float rotateY = Float.parseFloat(inst.ryExpr.evaluate().toString());
+            float rotateZ = Float.parseFloat(inst.rzExpr.evaluate().toString());
+            node.rotate(rotateX* FastMath.DEG_TO_RAD,rotateY* FastMath.DEG_TO_RAD,rotateZ* FastMath.DEG_TO_RAD);
+        } else if(inst.entityForRot!=null) {
+            Spatial sp = getEntitySpatial(inst.entityForRot.varName,inst.entityForRot.varDef.varType);
+            node.setLocalRotation(sp.getLocalRotation());
+        }
+
+        if(inst.xExpr!=null) {
+            float localTranslationX = Float.parseFloat(inst.xExpr.evaluate().toString());
+            float localTranslationY = Float.parseFloat(inst.yExpr.evaluate().toString());
+            float localTranslationZ = Float.parseFloat(inst.zExpr.evaluate().toString());
+            node.setLocalTranslation(localTranslationX, localTranslationY, localTranslationZ);
+        } else if(inst.entityForPos!=null) {
+            if(inst.varDef.entityPos.entityJointName==null) {
+                Spatial sp = getEntitySpatial(inst.entityForPos.varName,inst.entityForPos.varDef.varType);
+                node.setLocalTranslation(sp.getLocalTranslation());
+            } else {
+                AppModel am2 = models.get(inst.entityForPos.varName);
+                if(am2!=null) {
+                    Node n = am2.getJointAttachementNode(inst.varDef.entityPos.entityJointName);
+                    if(n!=null) {
+                        Joint j = (Joint) n.getUserData("AttachedBone");
+                        Vector3f pos = j.getModelTransform().clone().combineWithParent(am2.getSkinningControl().getSpatial().getWorldTransform()).getTranslation();
+                        node.setLocalTranslation(pos);
+                    }
+                }
+            }
+        }
+    }
+
+    private Material createDefaultPrimitiveMaterial(ColorRGBA color) {
+        Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+        mat.setColor("Color", color);
+        return mat;
+    }
+
+    private void applyShadowModeToSpatial(Spatial spatial, int shadowMode) {
+        forEachGeometry(spatial, geometry -> {
+            if (shadowMode == 3) {
+                geometry.setShadowMode(RenderQueue.ShadowMode.CastAndReceive);
+            } else if (shadowMode == 2) {
+                geometry.setShadowMode(RenderQueue.ShadowMode.Receive);
+            } else if (shadowMode == 1) {
+                geometry.setShadowMode(RenderQueue.ShadowMode.Cast);
+            } else {
+                geometry.setShadowMode(RenderQueue.ShadowMode.Off);
+            }
+        });
+    }
+
+    private boolean setSpatialMaterial(Spatial spatial, String materialName) {
+        final boolean[] applied = {false};
+        final boolean[] ok = {true};
+        forEachGeometry(spatial, geometry -> {
+            applied[0] = true;
+            if (!setGeometryMaterial(geometry, materialName)) {
+                ok[0] = false;
+            }
+        });
+        return applied[0] && ok[0];
+    }
+
+    private Node createStairsVisualNode(String name, float width, float stepHeight, float stepDepth, int stepCount, ColorRGBA color) {
+        Node node = new Node(name);
+        float safeWidth = Math.max(0.05f, width);
+        float safeStepHeight = Math.max(0.01f, stepHeight);
+        float safeStepDepth = Math.max(0.01f, stepDepth);
+        int safeStepCount = Math.max(1, stepCount);
+        float totalHeight = safeStepHeight * safeStepCount;
+        float totalDepth = safeStepDepth * safeStepCount;
+
+        for (int i = 0; i < safeStepCount; i++) {
+            float boxHeight = safeStepHeight * (i + 1);
+            Box stepMesh = new Box(safeWidth * 0.5f, boxHeight * 0.5f, safeStepDepth * 0.5f);
+            Geometry geo = new Geometry(name + "_step_" + i, stepMesh);
+            geo.setLocalTranslation(0f,
+                    -totalHeight * 0.5f + boxHeight * 0.5f,
+                    -totalDepth * 0.5f + safeStepDepth * (i + 0.5f));
+            geo.setMaterial(createDefaultPrimitiveMaterial(color));
+            TangentBinormalGenerator.generate(stepMesh);
+            node.attachChild(geo);
+        }
+        return node;
+    }
+
+    private Node createArchVisualNode(String name, float width, float height, float depth, float thickness, int segments, ColorRGBA color) {
+        Node node = new Node(name);
+        float safeWidth = Math.max(0.2f, width);
+        float safeHeight = Math.max(0.2f, height);
+        float safeDepth = Math.max(0.05f, depth);
+        float safeThickness = Math.min(Math.max(0.05f, thickness), safeWidth * 0.45f);
+        int safeSegments = Math.max(4, segments);
+
+        float outerRadius = safeWidth * 0.5f;
+        float innerRadius = Math.max(0.05f, outerRadius - safeThickness);
+        float springHeight = Math.max(0f, safeHeight - outerRadius);
+        float totalHeight = springHeight + outerRadius;
+        float yOffset = -totalHeight * 0.5f;
+        float legHeight = Math.max(0.05f, springHeight);
+
+        attachArchPart(node, name, safeThickness, legHeight, safeDepth,
+                -safeWidth * 0.5f + safeThickness * 0.5f, yOffset + legHeight * 0.5f, 0f, 0f, color);
+        attachArchPart(node, name, safeThickness, legHeight, safeDepth,
+                safeWidth * 0.5f - safeThickness * 0.5f, yOffset + legHeight * 0.5f, 0f, 0f, color);
+
+        float radiusMid = (outerRadius + innerRadius) * 0.5f;
+        float segmentLength = Math.max(0.05f, radiusMid * FastMath.PI / safeSegments);
+        float segmentThickness = Math.max(0.05f, outerRadius - innerRadius);
+        float centerY = yOffset + legHeight;
+
+        for (int i = 0; i < safeSegments; i++) {
+            float t0 = FastMath.PI - (FastMath.PI * i / safeSegments);
+            float t1 = FastMath.PI - (FastMath.PI * (i + 1) / safeSegments);
+            float angle = (t0 + t1) * 0.5f;
+            float x = FastMath.cos(angle) * radiusMid;
+            float y = centerY + FastMath.sin(angle) * radiusMid;
+            attachArchPart(node, name, segmentLength, segmentThickness, safeDepth, x, y, 0f,
+                    angle - FastMath.HALF_PI, color);
+        }
+
+        return node;
+    }
+
+    private void attachArchPart(Node node, String name, float width, float height, float depth,
+                                float x, float y, float z, float rotateZ, ColorRGBA color) {
+        Box partMesh = new Box(width * 0.5f, height * 0.5f, depth * 0.5f);
+        Geometry geo = new Geometry(name + "_part_" + node.getChildren().size(), partMesh);
+        geo.setLocalTranslation(x, y, z);
+        geo.setLocalRotation(new Quaternion().fromAngles(0f, 0f, rotateZ));
+        geo.setMaterial(createDefaultPrimitiveMaterial(color));
+        TangentBinormalGenerator.generate(partMesh);
+        node.attachChild(geo);
     }
 
     private boolean setGeometryMaterial(Geometry geo, String materialName) {
@@ -5332,6 +5908,14 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             m=hollowCylinders.get(targetVar);
         } else if(varType==VariableDef.VAR_TYPE_QUAD) {
             m=quads.get(targetVar);
+        } else if(varType==VariableDef.VAR_TYPE_WEDGE) {
+            m=wedges.get(targetVar);
+        } else if(varType==VariableDef.VAR_TYPE_CONE) {
+            m=cones.get(targetVar);
+        } else if(varType==VariableDef.VAR_TYPE_STAIRS) {
+            m=stairsMap.get(targetVar);
+        } else if(varType==VariableDef.VAR_TYPE_ARCH) {
+            m=arches.get(targetVar);
         } else if(varType==VariableDef.VAR_TYPE_EFFEKSEER) {
             EffekseerInst inst = effekseerEffects.get(targetVar);
             m = inst != null ? inst.node : null;
@@ -5850,6 +6434,14 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             child = hollowCylinders.get(targetVar);
         } else if(varType==VariableDef.VAR_TYPE_QUAD) {
             child = quads.get(targetVar);
+        } else if(varType==VariableDef.VAR_TYPE_WEDGE) {
+            child = wedges.get(targetVar);
+        } else if(varType==VariableDef.VAR_TYPE_CONE) {
+            child = cones.get(targetVar);
+        } else if(varType==VariableDef.VAR_TYPE_STAIRS) {
+            child = stairsMap.get(targetVar);
+        } else if(varType==VariableDef.VAR_TYPE_ARCH) {
+            child = arches.get(targetVar);
         }
 
         if(child!=null) {
@@ -7590,6 +8182,34 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         setGeometryMaterial((Geometry)g.getChild(0),material);
     }
 
+    public void setWedgeMaterial(String wedgeName, String material) {
+        Node g = wedges.get(wedgeName);
+        if (g != null) {
+            setSpatialMaterial(g, material);
+        }
+    }
+
+    public void setConeMaterial(String coneName, String material) {
+        Node g = cones.get(coneName);
+        if (g != null) {
+            setSpatialMaterial(g, material);
+        }
+    }
+
+    public void setStairsMaterial(String stairsName, String material) {
+        Node g = stairsMap.get(stairsName);
+        if (g != null) {
+            setSpatialMaterial(g, material);
+        }
+    }
+
+    public void setArchMaterial(String archName, String material) {
+        Node g = arches.get(archName);
+        if (g != null) {
+            setSpatialMaterial(g, material);
+        }
+    }
+
     public void setEntityShader(String targetVar, int varType, String shaderName) {
         Spatial target = getEntitySpatial(targetVar, varType);
         if (target == null) {
@@ -7697,6 +8317,14 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             getAllHollowCylinderEntities(name,retval);
         } else if(entityType== VariableDef.VAR_TYPE_QUAD) {
             getAllQuadEntities(name,retval);
+        } else if(entityType== VariableDef.VAR_TYPE_WEDGE) {
+            getAllWedgeEntities(name,retval);
+        } else if(entityType== VariableDef.VAR_TYPE_CONE) {
+            getAllConeEntities(name,retval);
+        } else if(entityType== VariableDef.VAR_TYPE_STAIRS) {
+            getAllStairsEntities(name,retval);
+        } else if(entityType== VariableDef.VAR_TYPE_ARCH) {
+            getAllArchEntities(name,retval);
         } else {
             getAllModelEntities(name,retval);
             getAllSpriteEntities(name,retval);
@@ -7705,6 +8333,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             getAllCylinderEntities(name,retval);
             getAllHollowCylinderEntities(name,retval);
             getAllQuadEntities(name,retval);
+            getAllWedgeEntities(name,retval);
+            getAllConeEntities(name,retval);
+            getAllStairsEntities(name,retval);
+            getAllArchEntities(name,retval);
         }
 
         return retval;
@@ -7815,6 +8447,66 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     }
 
+    private void getAllWedgeEntities(String name,List<EntityInstBase> retval) {
+
+        if(name==null) {
+            retval.addAll(this.wedgeInstances.values());
+            return;
+        }
+
+        this.wedgeInstances.forEach((k, v) -> {
+            if(k.contains(name)) {
+                retval.add(v);
+            }
+        });
+
+    }
+
+    private void getAllConeEntities(String name,List<EntityInstBase> retval) {
+
+        if(name==null) {
+            retval.addAll(this.coneInstances.values());
+            return;
+        }
+
+        this.coneInstances.forEach((k, v) -> {
+            if(k.contains(name)) {
+                retval.add(v);
+            }
+        });
+
+    }
+
+    private void getAllStairsEntities(String name,List<EntityInstBase> retval) {
+
+        if(name==null) {
+            retval.addAll(this.stairsInstances.values());
+            return;
+        }
+
+        this.stairsInstances.forEach((k, v) -> {
+            if(k.contains(name)) {
+                retval.add(v);
+            }
+        });
+
+    }
+
+    private void getAllArchEntities(String name,List<EntityInstBase> retval) {
+
+        if(name==null) {
+            retval.addAll(this.archInstances.values());
+            return;
+        }
+
+        this.archInstances.forEach((k, v) -> {
+            if(k.contains(name)) {
+                retval.add(v);
+            }
+        });
+
+    }
+
     private void clearSpatialGeometries(String varName, Spatial root) {
         SceneGraphVisitor visitorRemoveGeo = spatial -> {
             if (spatial instanceof Geometry) {
@@ -7889,6 +8581,118 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             collisionControlsCache.remove(varName);
             clearSpatialGeometries(varName, g);
 
+        }
+    }
+
+    public void killCylinder(String varName) {
+
+        Node g = cylinders.get(varName);
+        if(g!=null) {
+            g.removeFromParent();
+            cylinders.remove(varName);
+            EntityInstBase inst = geoName2EntityInst.get(varName);
+            if (inst != null) {
+                cylinderInstances.remove(inst.entityKey);
+            }
+            removeCollisionControlsFromPhysics(varName);
+            collisionControlsCache.remove(varName);
+            clearSpatialGeometries(varName, g);
+        }
+    }
+
+    public void killHollowCylinder(String varName) {
+
+        Node g = hollowCylinders.get(varName);
+        if(g!=null) {
+            g.removeFromParent();
+            hollowCylinders.remove(varName);
+            EntityInstBase inst = geoName2EntityInst.get(varName);
+            if (inst != null) {
+                hollowCylinderInstances.remove(inst.entityKey);
+            }
+            removeCollisionControlsFromPhysics(varName);
+            collisionControlsCache.remove(varName);
+            clearSpatialGeometries(varName, g);
+        }
+    }
+
+    public void killQuad(String varName) {
+
+        Node g = quads.get(varName);
+        if(g!=null) {
+            g.removeFromParent();
+            quads.remove(varName);
+            EntityInstBase inst = geoName2EntityInst.get(varName);
+            if (inst != null) {
+                quadInstances.remove(inst.entityKey);
+            }
+            removeCollisionControlsFromPhysics(varName);
+            collisionControlsCache.remove(varName);
+            clearSpatialGeometries(varName, g);
+        }
+    }
+
+    public void killWedge(String varName) {
+
+        Node g = wedges.get(varName);
+        if(g!=null) {
+            g.removeFromParent();
+            wedges.remove(varName);
+            EntityInstBase inst = geoName2EntityInst.get(varName);
+            if (inst != null) {
+                wedgeInstances.remove(inst.entityKey);
+            }
+            removeCollisionControlsFromPhysics(varName);
+            collisionControlsCache.remove(varName);
+            clearSpatialGeometries(varName, g);
+        }
+    }
+
+    public void killCone(String varName) {
+
+        Node g = cones.get(varName);
+        if(g!=null) {
+            g.removeFromParent();
+            cones.remove(varName);
+            EntityInstBase inst = geoName2EntityInst.get(varName);
+            if (inst != null) {
+                coneInstances.remove(inst.entityKey);
+            }
+            removeCollisionControlsFromPhysics(varName);
+            collisionControlsCache.remove(varName);
+            clearSpatialGeometries(varName, g);
+        }
+    }
+
+    public void killStairs(String varName) {
+
+        Node g = stairsMap.get(varName);
+        if(g!=null) {
+            g.removeFromParent();
+            stairsMap.remove(varName);
+            EntityInstBase inst = geoName2EntityInst.get(varName);
+            if (inst != null) {
+                stairsInstances.remove(inst.entityKey);
+            }
+            removeCollisionControlsFromPhysics(varName);
+            collisionControlsCache.remove(varName);
+            clearSpatialGeometries(varName, g);
+        }
+    }
+
+    public void killArch(String varName) {
+
+        Node g = arches.get(varName);
+        if(g!=null) {
+            g.removeFromParent();
+            arches.remove(varName);
+            EntityInstBase inst = geoName2EntityInst.get(varName);
+            if (inst != null) {
+                archInstances.remove(inst.entityKey);
+            }
+            removeCollisionControlsFromPhysics(varName);
+            collisionControlsCache.remove(varName);
+            clearSpatialGeometries(varName, g);
         }
     }
 

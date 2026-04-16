@@ -105,6 +105,11 @@ public class SketchfabService {
         return new JSONObject(httpsGet(url, apiToken));
     }
 
+    public static JSONObject getModel(String uid) throws IOException {
+        String url = BASE_URL + "/models/" + uid;
+        return new JSONObject(httpsGet(url, null));
+    }
+
     public static JSONObject getPreferredDownloadFormat(JSONObject downloadInfo) {
         if (downloadInfo == null) return null;
         if (downloadInfo.has("glb")) {

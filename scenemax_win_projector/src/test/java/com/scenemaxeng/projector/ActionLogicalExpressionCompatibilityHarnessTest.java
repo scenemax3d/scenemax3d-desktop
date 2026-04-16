@@ -75,7 +75,8 @@ public class ActionLogicalExpressionCompatibilityHarnessTest {
         assertVmTypeError("0 && 2", scope, "Logical operators require boolean operands");
         assertVmTypeError("1 + (1 == 1)", scope, "Boolean values cannot participate in arithmetic addition");
         assertVmTypeError("group.hit || 0", scope, "Logical operators require boolean operands");
-        assertVmTypeError("(1 == 1) == 1", scope, "Cannot compare boolean with non-boolean using '=='");
+        assertVmValue("(1 == 1) == 1", scope, "false");
+        assertVmValue("(1 == 1) != 1", scope, "true");
         assertVmTypeError("\"x\" == 1", scope, "Cannot compare string with non-string using '=='");
         assertVmTypeError("1 == \"x\"", scope, "Cannot compare string with non-string using '=='");
         assertVmTypeError("group.hit && (1 == 1)", scope, "Logical operators require boolean operands");

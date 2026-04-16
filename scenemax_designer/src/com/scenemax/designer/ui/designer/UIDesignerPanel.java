@@ -141,6 +141,21 @@ public class UIDesignerPanel extends JPanel {
         }
     }
 
+    public void reloadFromDisk() {
+        loadDocument();
+        dirty = false;
+        refreshLayerCombo();
+        if (canvas != null) {
+            canvas.setDocument(document);
+        }
+        refreshWidgetTree();
+        revalidate();
+        repaint();
+        if (onSavedCallback != null) {
+            onSavedCallback.run();
+        }
+    }
+
     public boolean isDirty() { return dirty; }
     public File getUiFile() { return uiFile; }
     public UIDocument getDocument() { return document; }

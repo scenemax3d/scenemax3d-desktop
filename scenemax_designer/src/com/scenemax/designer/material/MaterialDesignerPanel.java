@@ -137,6 +137,16 @@ public class MaterialDesignerPanel extends JPanel {
         }
     }
 
+    public void reloadFromDisk() {
+        loadDocument();
+        dirty = false;
+        refreshFromDocument();
+        refreshPreview();
+        if (onSavedCallback != null) {
+            onSavedCallback.run();
+        }
+    }
+
     public void clearAndDeactivatePanel() {
         deactivatePanel();
         if (previewApp != null) {

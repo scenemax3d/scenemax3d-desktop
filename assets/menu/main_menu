@@ -15,6 +15,7 @@
 
       {"name": "Code Snippets...", "command":"macro_builder"},
       {"name": "Settings...", "command":"settings"},
+      {"name": "Restart","command": "restart_app"},
       {"name": "Open Installation Folder","command": "open_install_folder"},
       {"name": "Exit","command": "exit"}
 
