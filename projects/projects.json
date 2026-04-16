@@ -148,7 +148,13 @@
             "selectedNode": "level1.smdesign",
             "name": "test designer",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_designer\\scripts\\test designer\\level1"
+        },
+        {
+            "path": "projects/AI_tests",
+            "selectedNode": "main",
+            "name": "AI_tests",
+            "selectedParent": "AI_tests"
         }
     ],
-    "selectedProject": "fighting game project"
+    "selectedProject": "AI_tests"
 }
