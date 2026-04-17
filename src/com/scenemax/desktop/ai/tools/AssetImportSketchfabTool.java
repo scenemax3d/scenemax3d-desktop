@@ -1,5 +1,6 @@
 package com.scenemax.desktop.ai.tools;
 
+import com.scenemax.designer.ModelAutoFitAdvisor;
 import com.scenemax.desktop.AppConfig;
 import com.scenemax.desktop.AppDB;
 import com.scenemax.desktop.MainApp;
@@ -8,6 +9,7 @@ import com.scenemax.desktop.ai.SceneMaxToolResult;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.File;
 import java.nio.file.Path;
 
 public class AssetImportSketchfabTool extends AbstractSceneMaxTool {
@@ -66,8 +68,26 @@ public class AssetImportSketchfabTool extends AbstractSceneMaxTool {
 
         MainApp host = context.getHost();
         if (host != null) {
+            ModelAutoFitAdvisor.Recommendation recommendation = host.recommendImportedModelScaleForAutomation(
+                    new File(result.absoluteModelFile),
+                    result.modelName,
+                    result.title
+            );
+            if (recommendation != null && recommendation.success) {
+                result.scaleX = recommendation.scaleX;
+                result.scaleY = recommendation.scaleY;
+                result.scaleZ = recommendation.scaleZ;
+                SketchfabImportSupport.updateImportedModelScale(resourcesRoot, result.modelName,
+                        result.scaleX, result.scaleY, result.scaleZ);
+            }
             host.refreshWorkspaceViews();
-            host.registerImportedModelInActiveDesignerForAutomation(result.modelName, result.modelPath);
+            host.registerImportedModelInActiveDesignerForAutomation(
+                    result.modelName,
+                    result.modelPath,
+                    result.scaleX,
+                    result.scaleY,
+                    result.scaleZ
+            );
         }
 
         JSONObject data = new JSONObject();
@@ -81,6 +101,9 @@ public class AssetImportSketchfabTool extends AbstractSceneMaxTool {
         data.put("author", result.author);
         data.put("license", result.license);
         data.put("thumbnailUrl", result.thumbnailUrl);
+        data.put("scaleX", result.scaleX);
+        data.put("scaleY", result.scaleY);
+        data.put("scaleZ", result.scaleZ);
         return SceneMaxToolResult.success("Imported Sketchfab model as '" + result.modelName + "'.", data);
     }
 

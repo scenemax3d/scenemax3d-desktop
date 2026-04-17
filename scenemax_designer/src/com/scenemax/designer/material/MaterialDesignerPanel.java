@@ -28,6 +28,7 @@ public class MaterialDesignerPanel extends JPanel {
 
     private MaterialDocument document;
     private boolean dirty = false;
+    private boolean discardEditorStateOnDeactivate = false;
     private boolean updatingUi = false;
     private Runnable onDirtyCallback;
     private Runnable onSavedCallback;
@@ -91,6 +92,7 @@ public class MaterialDesignerPanel extends JPanel {
             document.save(materialFile);
             document.exportRuntimeAssets(materialFile, resourcesFolder);
             dirty = false;
+            discardEditorStateOnDeactivate = false;
             if (onSavedCallback != null) {
                 onSavedCallback.run();
             }
@@ -114,6 +116,11 @@ public class MaterialDesignerPanel extends JPanel {
         return dirty;
     }
 
+    public void discardEditorState() {
+        dirty = false;
+        discardEditorStateOnDeactivate = true;
+    }
+
     public void setOnDirtyCallback(Runnable onDirtyCallback) {
         this.onDirtyCallback = onDirtyCallback;
     }
@@ -132,7 +139,9 @@ public class MaterialDesignerPanel extends JPanel {
     }
 
     public void deactivatePanel() {
-        if (dirty) {
+        if (discardEditorStateOnDeactivate) {
+            discardEditorStateOnDeactivate = false;
+        } else if (dirty) {
             saveDocument();
         }
     }
@@ -140,6 +149,7 @@ public class MaterialDesignerPanel extends JPanel {
     public void reloadFromDisk() {
         loadDocument();
         dirty = false;
+        discardEditorStateOnDeactivate = false;
         refreshFromDocument();
         refreshPreview();
         if (onSavedCallback != null) {

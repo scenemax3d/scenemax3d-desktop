@@ -1663,6 +1663,20 @@ public class DesignerPanel extends JPanel {
         activeDesignerPanel = null;
     }
 
+    /**
+     * Clears the shared designer app's in-memory scene/document state without
+     * disposing this panel, so a subsequent reload-from-disk starts clean.
+     */
+    public void discardEditorState() {
+        if (sharedApp == null) {
+            return;
+        }
+        sharedApp.enqueue(() -> {
+            sharedApp.clearDocument();
+            return null;
+        });
+    }
+
     // --- Scene tree ---
 
     public void refreshSceneTree() {

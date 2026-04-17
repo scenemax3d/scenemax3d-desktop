@@ -1,5 +1,4 @@
 package com.scenemax.desktop.ai.tools;
-
 import com.scenemax.designer.SketchfabService;
 import org.apache.commons.io.FileUtils;
 import org.json.JSONArray;
@@ -96,13 +95,15 @@ final class SketchfabImportSupport {
             }
 
             String modelPath = "Models/" + resolvedName + "/" + srcFile.getName();
-            updateModelsExt(resourcesRoot.resolve("Models").resolve("models-ext.json"), resolvedName, modelPath);
+            updateModelsExt(resourcesRoot.resolve("Models").resolve("models-ext.json"), resolvedName, modelPath,
+                    1.0f, 1.0f, 1.0f);
 
             ImportResult result = new ImportResult();
             result.uid = uid;
             result.modelName = resolvedName;
             result.modelPath = modelPath;
             result.modelDirectory = destDir.toAbsolutePath().toString();
+            result.absoluteModelFile = destDir.resolve(srcFile.getName()).toAbsolutePath().toString();
             result.format = srcFile.getName().toLowerCase(Locale.ROOT).endsWith(".glb") ? "glb" : "gltf";
             result.viewerUrl = modelInfo != null ? modelInfo.optString("viewerUrl", "") : "";
             result.title = modelInfo != null ? modelInfo.optString("name", resolvedName) : resolvedName;
@@ -113,6 +114,9 @@ final class SketchfabImportSupport {
                     ? modelInfo.getJSONObject("license").optString("label", "")
                     : "";
             result.thumbnailUrl = modelInfo != null ? SketchfabService.getThumbnailUrl(modelInfo, 256) : "";
+            result.scaleX = 1.0f;
+            result.scaleY = 1.0f;
+            result.scaleZ = 1.0f;
             return result;
         } finally {
             FileUtils.deleteQuietly(tempRoot.toFile());
@@ -124,12 +128,16 @@ final class SketchfabImportSupport {
         String modelName;
         String modelPath;
         String modelDirectory;
+        String absoluteModelFile;
         String format;
         String viewerUrl;
         String title;
         String author;
         String license;
         String thumbnailUrl;
+        float scaleX;
+        float scaleY;
+        float scaleZ;
     }
 
     private static JSONObject fetchModelInfo(String uid) {
@@ -211,7 +219,27 @@ final class SketchfabImportSupport {
         return false;
     }
 
-    private static void updateModelsExt(Path modelsExtPath, String name, String modelPath) throws IOException {
+    static void updateImportedModelScale(Path resourcesRoot, String name, float scaleX, float scaleY, float scaleZ) throws IOException {
+        Path modelsExtPath = resourcesRoot.resolve("Models").resolve("models-ext.json");
+        JSONObject res = readJsonObject(modelsExtPath, "{\"models\":[]}");
+        JSONArray models = res.optJSONArray("models");
+        if (models == null) {
+            return;
+        }
+        for (int i = 0; i < models.length(); i++) {
+            JSONObject model = models.getJSONObject(i);
+            if (name.equalsIgnoreCase(model.optString("name"))) {
+                model.put("scaleX", scaleX);
+                model.put("scaleY", scaleY);
+                model.put("scaleZ", scaleZ);
+                writeJsonObject(modelsExtPath, res);
+                return;
+            }
+        }
+    }
+
+    private static void updateModelsExt(Path modelsExtPath, String name, String modelPath,
+                                        float scaleX, float scaleY, float scaleZ) throws IOException {
         JSONObject res = readJsonObject(modelsExtPath, "{\"models\":[]}");
         JSONArray models = res.optJSONArray("models");
         if (models == null) {
@@ -222,9 +250,9 @@ final class SketchfabImportSupport {
         JSONObject model = new JSONObject("{\"physics\":{\"character\":{}}}");
         model.put("name", name);
         model.put("path", modelPath);
-        model.put("scaleX", 1.0f);
-        model.put("scaleY", 1.0f);
-        model.put("scaleZ", 1.0f);
+        model.put("scaleX", scaleX);
+        model.put("scaleY", scaleY);
+        model.put("scaleZ", scaleZ);
         model.put("transX", 0.0f);
         model.put("transY", 0.0f);
         model.put("transZ", 0.0f);

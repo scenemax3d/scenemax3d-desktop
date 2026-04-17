@@ -29,6 +29,7 @@ public class DesignerSetDocumentJsonTool extends AbstractSceneMaxTool {
                         .put("document", new JSONObject().put("type", "object"))
                         .put("json", new JSONObject().put("type", "string"))
                         .put("reload", new JSONObject().put("type", "boolean"))
+                        .put("discard_editor_state", new JSONObject().put("type", "boolean"))
                         .put("force", new JSONObject().put("type", "boolean")));
     }
 
@@ -57,7 +58,8 @@ public class DesignerSetDocumentJsonTool extends AbstractSceneMaxTool {
         if (optionalBoolean(arguments, "reload", true)) {
             MainApp host = context.getHost();
             if (host != null) {
-                reloaded = host.reloadFileFromDiskForAutomation(path.toFile());
+                boolean discardEditorState = optionalBoolean(arguments, "discard_editor_state", true);
+                reloaded = host.reloadFileFromDiskForAutomation(path.toFile(), discardEditorState);
             }
         }
 

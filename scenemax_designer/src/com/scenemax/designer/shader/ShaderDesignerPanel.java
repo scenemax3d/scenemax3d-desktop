@@ -32,6 +32,7 @@ public class ShaderDesignerPanel extends JPanel {
 
     private ShaderDocument document;
     private boolean dirty = false;
+    private boolean discardEditorStateOnDeactivate = false;
     private boolean updatingUi = false;
     private Runnable onDirtyCallback;
 
@@ -96,6 +97,7 @@ public class ShaderDesignerPanel extends JPanel {
             document.save(shaderFile);
             document.exportRuntimeAssets(shaderFile, resourcesFolder);
             dirty = false;
+            discardEditorStateOnDeactivate = false;
             if (showSuccessMessage) {
                 String exportTarget = resourcesFolder != null
                         ? new File(resourcesFolder, "shaders/" + ShaderDocument.getRuntimeName(shaderFile)).getPath()
@@ -116,6 +118,11 @@ public class ShaderDesignerPanel extends JPanel {
         return dirty;
     }
 
+    public void discardEditorState() {
+        dirty = false;
+        discardEditorStateOnDeactivate = true;
+    }
+
     public void setOnDirtyCallback(Runnable onDirtyCallback) {
         this.onDirtyCallback = onDirtyCallback;
     }
@@ -130,6 +137,10 @@ public class ShaderDesignerPanel extends JPanel {
     }
 
     public void deactivatePanel() {
+        if (discardEditorStateOnDeactivate) {
+            discardEditorStateOnDeactivate = false;
+            return;
+        }
         if (dirty) {
             saveDocument();
         }
@@ -138,6 +149,7 @@ public class ShaderDesignerPanel extends JPanel {
     public void reloadFromDisk() {
         loadDocument();
         dirty = false;
+        discardEditorStateOnDeactivate = false;
         refreshFromDocument();
         refreshPreview();
     }
