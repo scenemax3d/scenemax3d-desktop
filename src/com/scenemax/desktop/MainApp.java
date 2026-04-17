@@ -5,6 +5,7 @@ import com.intellij.uiDesigner.core.Spacer;
 import com.scenemax.designer.DesignerEntity;
 import com.scenemax.designer.DesignerEntityType;
 import com.scenemax.designer.DesignerDocument;
+import com.scenemax.designer.ModelAutoFitAdvisor;
 import com.scenemax.designer.DesignerPanel;
 import com.scenemax.designer.Import3DModelPanel;
 import com.scenemax.designer.animation.ImportAnimationPanel;
@@ -74,6 +75,7 @@ import java.util.*;
 import java.util.List;
 import java.util.Timer;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static javax.swing.JOptionPane.YES_OPTION;
@@ -3615,20 +3617,23 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     public JSONObject addPrimitiveToActiveSceneDesignerForAutomation(String primitive, boolean saveDocument) {
-        AtomicReference<JSONObject> entity = new AtomicReference<>();
+        AtomicReference<Object> appRef = new AtomicReference<>();
+        AtomicInteger before = new AtomicInteger();
         AtomicReference<RuntimeException> failure = new AtomicReference<>();
+
+        // Phase 1: dispatch on EDT — queues a PendingEntity on the JME render thread.
         runOnEdtAndWait(() -> {
             DesignerPanel panel = getActiveDesignerPanel();
             if (panel == null) {
                 failure.set(new IllegalStateException("Open a scene designer tab first."));
                 return;
             }
-
             try {
                 Object app = invokeNoArg(panel, "getApp");
+                appRef.set(app);
                 @SuppressWarnings("unchecked")
                 List<DesignerEntity> beforeList = (List<DesignerEntity>) invokeNoArg(app, "getEntities");
-                int before = beforeList.size();
+                before.set(beforeList.size());
                 String normalizedPrimitive = normalizeAutomationPrimitiveName(primitive);
                 switch (normalizedPrimitive) {
                     case "sphere":
@@ -3660,31 +3665,54 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         break;
                     default:
                         failure.set(new IllegalArgumentException("Unsupported primitive: " + primitive));
-                        return;
                 }
-
-                @SuppressWarnings("unchecked")
-                List<DesignerEntity> all = (List<DesignerEntity>) invokeNoArg(app, "getEntities");
-                if (all.size() <= before) {
-                    failure.set(new IllegalStateException("Scene designer did not create a new primitive."));
-                    return;
-                }
-
-                if (saveDocument) {
-                    saveActiveEditorTab();
-                } else if (editorTabPanel != null) {
-                    editorTabPanel.markActiveTabDirty();
-                }
-
-                entity.set(summarizeDesignerEntity(all.get(all.size() - 1)));
             } catch (Exception ex) {
                 failure.set(new RuntimeException(ex));
             }
         });
+
         if (failure.get() != null) {
             throw failure.get();
         }
-        return entity.get();
+
+        // Phase 2: poll off the EDT until the JME render thread commits the pending
+        // entity to the entities list (typically happens within one render frame, ~16ms).
+        Object app = appRef.get();
+        List<DesignerEntity> all = null;
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            AtomicReference<List<DesignerEntity>> snap = new AtomicReference<>();
+            runOnEdtAndWait(() -> {
+                try {
+                    @SuppressWarnings("unchecked")
+                    List<DesignerEntity> live = (List<DesignerEntity>) invokeNoArg(app, "getEntities");
+                    snap.set(new ArrayList<>(live));
+                } catch (Exception ignored) {
+                }
+            });
+            all = snap.get();
+            if (all != null && all.size() > before.get()) {
+                break;
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+
+        if (all == null || all.size() <= before.get()) {
+            throw new IllegalStateException("Scene designer did not create a new primitive (timed out).");
+        }
+
+        if (saveDocument) {
+            runOnEdtAndWait(this::saveActiveEditorTab);
+        } else if (editorTabPanel != null) {
+            runOnEdtAndWait(() -> editorTabPanel.markActiveTabDirty());
+        }
+
+        return summarizeDesignerEntity(all.get(all.size() - 1));
     }
 
     private static String normalizeAutomationPrimitiveName(String primitive) {
@@ -3865,7 +3893,14 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         runOnEdtAndWait(() -> loadFileToTextEditor(file));
     }
 
-    public boolean registerImportedModelInActiveDesignerForAutomation(String modelName, String modelPath) {
+    public ModelAutoFitAdvisor.Recommendation recommendImportedModelScaleForAutomation(File modelFile,
+                                                                                        String modelName,
+                                                                                        String title) {
+        return ModelAutoFitAdvisor.recommend(modelFile, modelName, title);
+    }
+
+    public boolean registerImportedModelInActiveDesignerForAutomation(String modelName, String modelPath,
+                                                                      float scaleX, float scaleY, float scaleZ) {
         AtomicBoolean updated = new AtomicBoolean(false);
         if (modelName == null || modelName.trim().isEmpty() || modelPath == null || modelPath.trim().isEmpty()) {
             return false;
@@ -3888,7 +3923,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 @SuppressWarnings("unchecked")
                 Map<String, ResourceSetup> modelsIndex = (Map<String, ResourceSetup>) indexObj;
                 ResourceSetup resSetup = new ResourceSetup(modelName, modelPath,
-                        1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+                        scaleX, scaleY, scaleZ, 0.0f, 0.0f, 0.0f, 0.0f);
                 resSetup.capsuleRadius = 2.0f;
                 resSetup.capsuleHeight = 2.0f;
                 resSetup.stepHeight = 0.05f;
@@ -3901,17 +3936,25 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     private boolean reloadFileFromDisk(File file, boolean promptIfDirty) {
+        return reloadFileFromDisk(file, promptIfDirty, true);
+    }
+
+    private boolean reloadFileFromDisk(File file, boolean promptIfDirty, boolean discardEditorState) {
         if (file == null || !file.exists()) {
             return false;
         }
         if (editorTabPanel != null && editorTabPanel.isFileOpen(file.getAbsolutePath())) {
-            return editorTabPanel.reloadTabFromDisk(file.getAbsolutePath(), true, promptIfDirty);
+            return editorTabPanel.reloadTabFromDisk(file.getAbsolutePath(), true, promptIfDirty, discardEditorState);
         }
         loadFileToTextEditor(file);
         return true;
     }
 
     public boolean reloadFileFromDiskForAutomation(File file) {
+        return reloadFileFromDiskForAutomation(file, true);
+    }
+
+    public boolean reloadFileFromDiskForAutomation(File file, boolean discardEditorState) {
         AtomicBoolean result = new AtomicBoolean(false);
         runOnEdtAndWait(() -> {
             File target = file;
@@ -3921,7 +3964,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     target = new File(activePath);
                 }
             }
-            result.set(reloadFileFromDisk(target, false));
+            result.set(reloadFileFromDisk(target, false, discardEditorState));
         });
         return result.get();
     }

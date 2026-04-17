@@ -23,6 +23,7 @@ public class EffekseerEffectDesignerPanel extends JPanel {
 
     private EffekseerEffectDocument document;
     private boolean dirty = false;
+    private boolean discardEditorStateOnDeactivate = false;
     private Runnable onDirtyCallback;
     private Runnable onSavedCallback;
     private EffekseerPreviewApp previewApp;
@@ -89,7 +90,9 @@ public class EffekseerEffectDesignerPanel extends JPanel {
     }
 
     public void deactivatePanel() {
-        if (dirty) {
+        if (discardEditorStateOnDeactivate) {
+            discardEditorStateOnDeactivate = false;
+        } else if (dirty) {
             saveDocument();
         }
         disposePreview();
@@ -102,6 +105,7 @@ public class EffekseerEffectDesignerPanel extends JPanel {
     public void reloadFromDisk() {
         loadDocument();
         dirty = false;
+        discardEditorStateOnDeactivate = false;
         loadDocumentIntoUi();
         refreshToolPath();
         refreshDiagnostics();
@@ -120,6 +124,7 @@ public class EffekseerEffectDesignerPanel extends JPanel {
             EffekseerImporter.ensureAssetForDocument(document, documentFile, resourcesFolder);
             document.save(documentFile);
             dirty = false;
+            discardEditorStateOnDeactivate = false;
             txtAssetId.setText(document.getAssetId());
             txtImportedEffect.setText(document.getImportedEffectFile());
             refreshDiagnostics();
@@ -134,6 +139,11 @@ public class EffekseerEffectDesignerPanel extends JPanel {
                     "Save Error",
                     JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    public void discardEditorState() {
+        dirty = false;
+        discardEditorStateOnDeactivate = true;
     }
 
     private void loadDocument() {

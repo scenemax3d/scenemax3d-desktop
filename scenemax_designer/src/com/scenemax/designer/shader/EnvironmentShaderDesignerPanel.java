@@ -24,6 +24,7 @@ public class EnvironmentShaderDesignerPanel extends JPanel {
 
     private EnvironmentShaderDocument document;
     private boolean dirty = false;
+    private boolean discardEditorStateOnDeactivate = false;
     private boolean updatingUi = false;
     private Runnable onDirtyCallback;
     private EnvironmentShaderPreviewApp previewApp;
@@ -96,6 +97,7 @@ public class EnvironmentShaderDesignerPanel extends JPanel {
             document.save(documentFile);
             document.exportRuntimeAssets(documentFile, resourcesFolder);
             dirty = false;
+            discardEditorStateOnDeactivate = false;
         } catch (IOException ex) {
             ex.printStackTrace();
             JOptionPane.showMessageDialog(this,
@@ -112,6 +114,11 @@ public class EnvironmentShaderDesignerPanel extends JPanel {
         return dirty;
     }
 
+    public void discardEditorState() {
+        dirty = false;
+        discardEditorStateOnDeactivate = true;
+    }
+
     public void activatePanel() {
         if (previewCanvas != null && previewCanvas.getParent() != previewContainer) {
             previewContainer.add(previewCanvas, BorderLayout.CENTER);
@@ -122,6 +129,10 @@ public class EnvironmentShaderDesignerPanel extends JPanel {
     }
 
     public void deactivatePanel() {
+        if (discardEditorStateOnDeactivate) {
+            discardEditorStateOnDeactivate = false;
+            return;
+        }
         if (dirty) {
             saveDocument();
         }
@@ -130,6 +141,7 @@ public class EnvironmentShaderDesignerPanel extends JPanel {
     public void reloadFromDisk() {
         loadDocument();
         dirty = false;
+        discardEditorStateOnDeactivate = false;
         refreshFromDocument();
         refreshPreview();
     }

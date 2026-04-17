@@ -43,6 +43,7 @@ public class UIDesignerPanel extends JPanel {
     private File uiFile;
     private UIDocument document;
     private boolean dirty = false;
+    private boolean discardEditorStateOnDeactivate = false;
 
     // Left panel: widget hierarchy tree
     private JTree widgetTree;
@@ -132,6 +133,7 @@ public class UIDesignerPanel extends JPanel {
             document.save(uiFile);
             document.saveCodeFile(uiFile);
             dirty = false;
+            discardEditorStateOnDeactivate = false;
             if (onSavedCallback != null) onSavedCallback.run();
         } catch (IOException e) {
             e.printStackTrace();
@@ -144,6 +146,7 @@ public class UIDesignerPanel extends JPanel {
     public void reloadFromDisk() {
         loadDocument();
         dirty = false;
+        discardEditorStateOnDeactivate = false;
         refreshLayerCombo();
         if (canvas != null) {
             canvas.setDocument(document);
@@ -159,6 +162,11 @@ public class UIDesignerPanel extends JPanel {
     public boolean isDirty() { return dirty; }
     public File getUiFile() { return uiFile; }
     public UIDocument getDocument() { return document; }
+
+    public void discardEditorState() {
+        dirty = false;
+        discardEditorStateOnDeactivate = true;
+    }
 
     public void setOnDirtyCallback(Runnable callback) {
         this.onDirtyCallback = callback;
@@ -1418,6 +1426,10 @@ public class UIDesignerPanel extends JPanel {
      * Called when switching away from this tab.
      */
     public void deactivatePanel() {
+        if (discardEditorStateOnDeactivate) {
+            discardEditorStateOnDeactivate = false;
+            return;
+        }
         if (dirty) {
             saveDocument();
         }

@@ -873,6 +873,10 @@ public class EditorTabPanel extends JPanel {
     }
 
     public boolean reloadTabFromDisk(String filePath, boolean activate, boolean promptIfDirty) {
+        return reloadTabFromDisk(filePath, activate, promptIfDirty, true);
+    }
+
+    public boolean reloadTabFromDisk(String filePath, boolean activate, boolean promptIfDirty, boolean discardEditorState) {
         TabData tab = findTabByPath(filePath);
         if (tab == null) {
             return false;
@@ -890,6 +894,9 @@ public class EditorTabPanel extends JPanel {
         }
 
         try {
+            if (discardEditorState) {
+                discardTabEditorState(tab);
+            }
             if (tab.isDesignerTab) {
                 if (tab.designerPanel == null) {
                     return false;
@@ -958,6 +965,26 @@ public class EditorTabPanel extends JPanel {
                     "Reload Error",
                     JOptionPane.ERROR_MESSAGE);
             return false;
+        }
+    }
+
+    private void discardTabEditorState(TabData tab) {
+        if (tab == null) {
+            return;
+        }
+        tab.dirty = false;
+        if (tab.isDesignerTab && tab.designerPanel != null) {
+            tab.designerPanel.discardEditorState();
+        } else if (tab.isUIDesignerTab && tab.uiDesignerPanel != null) {
+            tab.uiDesignerPanel.discardEditorState();
+        } else if (tab.isEffekseerDesignerTab && tab.effekseerDesignerPanel != null) {
+            tab.effekseerDesignerPanel.discardEditorState();
+        } else if (tab.isShaderDesignerTab && tab.shaderDesignerPanel != null) {
+            tab.shaderDesignerPanel.discardEditorState();
+        } else if (tab.isEnvironmentShaderDesignerTab && tab.environmentShaderDesignerPanel != null) {
+            tab.environmentShaderDesignerPanel.discardEditorState();
+        } else if (tab.isMaterialDesignerTab && tab.materialDesignerPanel != null) {
+            tab.materialDesignerPanel.discardEditorState();
         }
     }
 
@@ -1115,10 +1142,13 @@ public class EditorTabPanel extends JPanel {
             throw new IOException("The active tab is not visible, so no snapshot could be captured.");
         }
 
-        Point topLeft = new Point(0, 0);
-        SwingUtilities.convertPointToScreen(topLeft, target);
-        Rectangle bounds = new Rectangle(topLeft.x, topLeft.y, target.getWidth(), target.getHeight());
-        BufferedImage capture = new Robot().createScreenCapture(bounds);
+        BufferedImage capture = new BufferedImage(target.getWidth(), target.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        Graphics2D captureGraphics = capture.createGraphics();
+        captureGraphics.setColor(target.getBackground() != null ? target.getBackground() : UIManager.getColor("Panel.background"));
+        captureGraphics.fillRect(0, 0, capture.getWidth(), capture.getHeight());
+        // Paint the active SceneMax tab directly so other OS windows cannot contaminate the capture.
+        target.printAll(captureGraphics);
+        captureGraphics.dispose();
 
         BufferedImage finalImage = capture;
         if (width > 0 && height > 0 && (capture.getWidth() != width || capture.getHeight() != height)) {

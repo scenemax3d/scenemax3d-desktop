@@ -27,6 +27,7 @@ public class EditorReloadFromDiskTool extends AbstractSceneMaxTool {
                 .put("properties", new JSONObject()
                         .put("path", new JSONObject().put("type", "string"))
                         .put("base", new JSONObject().put("type", "string"))
+                        .put("discard_editor_state", new JSONObject().put("type", "boolean"))
                         .put("force", new JSONObject().put("type", "boolean")));
     }
 
@@ -45,7 +46,8 @@ public class EditorReloadFromDiskTool extends AbstractSceneMaxTool {
             throw new IllegalStateException("The open IDE tab has unsaved changes. Save it first or pass force=true.");
         }
 
-        boolean reloaded = host.reloadFileFromDiskForAutomation(path.toFile());
+        boolean discardEditorState = optionalBoolean(arguments, "discard_editor_state", true);
+        boolean reloaded = host.reloadFileFromDiskForAutomation(path.toFile(), discardEditorState);
         JSONObject data = new JSONObject();
         data.put("path", path.toString());
         data.put("reloaded", reloaded);
