@@ -1,11 +1,19 @@
 package com.scenemax.designer;
 
+import com.jme3.bounding.BoundingBox;
+import com.jme3.bounding.BoundingSphere;
+import com.jme3.bounding.BoundingVolume;
 import com.jme3.asset.ModelKey;
 import com.jme3.input.KeyInput;
 import com.jme3.input.MouseInput;
 import com.jme3.input.controls.*;
 import com.jme3.math.*;
+import com.jme3.post.SceneProcessor;
+import com.jme3.profile.AppProfiler;
 import com.jme3.renderer.Camera;
+import com.jme3.renderer.RenderManager;
+import com.jme3.renderer.ViewPort;
+import com.jme3.renderer.queue.RenderQueue;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
@@ -13,6 +21,9 @@ import com.jme3.material.Material;
 import com.jme3.material.RenderState;
 import com.jme3.scene.shape.Box;
 import com.jme3.scene.shape.Sphere;
+import com.jme3.texture.FrameBuffer;
+import com.jme3.util.BufferUtils;
+import com.jme3.util.Screenshots;
 import com.scenemax.designer.cinematic.CinematicSegment;
 import com.scenemax.designer.cinematic.CinematicTrackData;
 import com.scenemax.designer.cinematic.CinematicTrackVisual;
@@ -28,15 +39,22 @@ import com.scenemaxeng.projector.SceneMaxScope;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.TreeSet;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 /**
@@ -229,6 +247,174 @@ public class DesignerApp extends SceneMaxApp {
     public float getCameraYaw() { return cameraYaw; }
     public float getCameraPitch() { return cameraPitch; }
     public Vector3f getCameraTarget() { return cameraTarget.clone(); }
+    public CameraMode getCameraMode() { return cameraMode; }
+
+    public BufferedImage captureCurrentViewSnapshot(int width, int height) throws IOException {
+        return captureCurrentViewSnapshot(width, height, false);
+    }
+
+    public BufferedImage captureCurrentViewSnapshot(int width, int height, boolean clean) throws IOException {
+        int captureWidth = Math.max(1, width > 0 ? width : cam.getWidth());
+        int captureHeight = Math.max(1, height > 0 ? height : cam.getHeight());
+        CompletableFuture<BufferedImage> future = new CompletableFuture<>();
+
+        enqueue(() -> {
+            CaptureState captureState = clean ? beginCleanCapture() : null;
+            try {
+                Camera snapshotCamera = createSnapshotCamera(captureWidth, captureHeight);
+
+                FrameBuffer frameBuffer = new FrameBuffer(captureWidth, captureHeight, 1);
+                frameBuffer.setDepthBuffer(com.jme3.texture.Image.Format.Depth);
+                frameBuffer.setColorBuffer(com.jme3.texture.Image.Format.RGBA8);
+
+                ViewPort snapshotViewPort = renderManager.createPreView(
+                        "DesignerAutomationCapture_" + System.nanoTime(),
+                        snapshotCamera);
+                snapshotViewPort.setClearFlags(true, true, true);
+                snapshotViewPort.setBackgroundColor(viewPort.getBackgroundColor());
+                snapshotViewPort.setOutputFrameBuffer(frameBuffer);
+                snapshotViewPort.attachScene(rootNode);
+                snapshotViewPort.addProcessor(new OneShotOffscreenCaptureProcessor(
+                        captureWidth,
+                        captureHeight,
+                        future,
+                        snapshotViewPort,
+                        frameBuffer,
+                        captureState));
+            } catch (Exception ex) {
+                if (captureState != null) {
+                    restoreCleanCapture(captureState);
+                }
+                future.completeExceptionally(ex);
+            }
+            return null;
+        });
+
+        try {
+            return future.get(5, TimeUnit.SECONDS);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while waiting for the designer viewport snapshot.", ex);
+        } catch (ExecutionException ex) {
+            Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+            throw new IOException("Failed to capture the designer viewport snapshot.", cause);
+        } catch (TimeoutException ex) {
+            throw new IOException("Timed out while waiting for the designer viewport snapshot.", ex);
+        }
+    }
+
+    private Camera createSnapshotCamera(int width, int height) {
+        Camera snapshotCamera = new Camera(width, height);
+        snapshotCamera.setLocation(cam.getLocation().clone());
+        snapshotCamera.setRotation(cam.getRotation().clone());
+        snapshotCamera.setParallelProjection(cam.isParallelProjection());
+        snapshotCamera.setViewPort(0f, 1f, 0f, 1f);
+
+        if (cam.isParallelProjection()) {
+            snapshotCamera.setFrustum(
+                    cam.getFrustumNear(),
+                    cam.getFrustumFar(),
+                    cam.getFrustumLeft(),
+                    cam.getFrustumRight(),
+                    cam.getFrustumTop(),
+                    cam.getFrustumBottom());
+        } else {
+            float near = cam.getFrustumNear();
+            float far = cam.getFrustumFar();
+            float fovY = 2f * FastMath.atan(Math.abs(cam.getFrustumTop()) / Math.max(near, 1e-4f)) * FastMath.RAD_TO_DEG;
+            float aspect = (float) width / Math.max(1, height);
+            snapshotCamera.setFrustumPerspective(fovY, aspect, near, far);
+        }
+
+        snapshotCamera.update();
+        return snapshotCamera;
+    }
+
+    private CaptureState beginCleanCapture() {
+        CaptureState state = new CaptureState();
+
+        if (gridPlane != null) {
+            state.gridCullHint = gridPlane.getCullHint();
+            gridPlane.setCullHint(Node.CullHint.Always);
+        }
+        if (translateGizmo != null) {
+            state.translateCullHint = translateGizmo.getCullHint();
+            translateGizmo.setCullHint(Node.CullHint.Always);
+        }
+        if (rotateGizmo != null) {
+            state.rotateCullHint = rotateGizmo.getCullHint();
+            rotateGizmo.setCullHint(Node.CullHint.Always);
+        }
+
+        state.selectedEntity = selectionManager != null ? selectionManager.getSelected() : null;
+        if (outlineEffect != null) {
+            outlineEffect.removeOutline();
+        }
+        collectEditorOnlySceneMarkers(entities, state.hiddenSpatials);
+        return state;
+    }
+
+    private void restoreCleanCapture(CaptureState state) {
+        if (state == null) {
+            return;
+        }
+        if (gridPlane != null && state.gridCullHint != null) {
+            gridPlane.setCullHint(state.gridCullHint);
+        }
+        if (translateGizmo != null && state.translateCullHint != null) {
+            translateGizmo.setCullHint(state.translateCullHint);
+        }
+        if (rotateGizmo != null && state.rotateCullHint != null) {
+            rotateGizmo.setCullHint(state.rotateCullHint);
+        }
+        for (HiddenSpatialState hiddenSpatial : state.hiddenSpatials) {
+            if (hiddenSpatial != null && hiddenSpatial.spatial != null && hiddenSpatial.cullHint != null) {
+                hiddenSpatial.spatial.setCullHint(hiddenSpatial.cullHint);
+            }
+        }
+        if (outlineEffect != null && state.selectedEntity != null && state.selectedEntity.getSceneNode() != null) {
+            outlineEffect.applyOutline(state.selectedEntity.getSceneNode());
+        }
+    }
+
+    private void collectEditorOnlySceneMarkers(List<DesignerEntity> source, List<HiddenSpatialState> hiddenSpatials) {
+        if (source == null || hiddenSpatials == null) {
+            return;
+        }
+        for (DesignerEntity entity : source) {
+            if (entity == null) {
+                continue;
+            }
+
+            if (entity.getType() == DesignerEntityType.CAMERA && entity.getSceneNode() != null) {
+                Spatial spatial = entity.getSceneNode();
+                hiddenSpatials.add(new HiddenSpatialState(spatial, spatial.getCullHint()));
+                spatial.setCullHint(Spatial.CullHint.Always);
+            }
+
+            if (!entity.getChildren().isEmpty()) {
+                collectEditorOnlySceneMarkers(entity.getChildren(), hiddenSpatials);
+            }
+        }
+    }
+
+    private static final class CaptureState {
+        private Node.CullHint gridCullHint;
+        private Node.CullHint translateCullHint;
+        private Node.CullHint rotateCullHint;
+        private DesignerEntity selectedEntity;
+        private final List<HiddenSpatialState> hiddenSpatials = new ArrayList<>();
+    }
+
+    private static final class HiddenSpatialState {
+        private final Spatial spatial;
+        private final Spatial.CullHint cullHint;
+
+        private HiddenSpatialState(Spatial spatial, Spatial.CullHint cullHint) {
+            this.spatial = spatial;
+            this.cullHint = cullHint;
+        }
+    }
 
     public void setOrbitCameraState(float distance, float yaw, float pitch, Vector3f target) {
         this.cameraDistance = distance;
@@ -236,6 +422,175 @@ public class DesignerApp extends SceneMaxApp {
         this.cameraPitch = pitch;
         this.cameraTarget.set(target);
         updateOrbitCamera();
+    }
+
+    public void orbitCameraByDegrees(float yawDegrees, float pitchDegrees) {
+        animatingCamera = false;
+        animatingCameraTarget = false;
+        cameraYaw += yawDegrees * FastMath.DEG_TO_RAD;
+        cameraPitch += pitchDegrees * FastMath.DEG_TO_RAD;
+        cameraPitch = FastMath.clamp(cameraPitch,
+                (float) Math.toRadians(-89), (float) Math.toRadians(89));
+        updateOrbitCamera();
+    }
+
+    public void panCameraBy(float right, float up, float forward) {
+        animatingCamera = false;
+        animatingCameraTarget = false;
+
+        if (Math.abs(right) > 1e-6f) {
+            cameraTarget.addLocal(cam.getLeft().negate().mult(right));
+        }
+        if (Math.abs(up) > 1e-6f) {
+            cameraTarget.addLocal(cam.getUp().mult(up));
+        }
+        if (Math.abs(forward) > 1e-6f) {
+            Vector3f lookDir = cam.getDirection().clone();
+            lookDir.y = 0f;
+            if (lookDir.lengthSquared() > 1e-6f) {
+                lookDir.normalizeLocal();
+                cameraTarget.addLocal(lookDir.mult(forward));
+            }
+        }
+
+        updateOrbitCamera();
+    }
+
+    public void zoomCameraBy(float distanceDelta) {
+        animatingCamera = false;
+        animatingCameraTarget = false;
+        cameraDistance = FastMath.clamp(cameraDistance + distanceDelta, 1f, 500f);
+        updateOrbitCamera();
+    }
+
+    public void frameSelection(float paddingScale) {
+        DesignerEntity selected = selectionManager != null ? selectionManager.getSelected() : null;
+        if (selected != null) {
+            frameEntities(Collections.singletonList(selected), paddingScale);
+        }
+    }
+
+    public void frameScene(float paddingScale) {
+        frameEntities(entities, paddingScale);
+    }
+
+    private void frameEntities(List<DesignerEntity> roots, float paddingScale) {
+        BoundingVolume bounds = computeBoundsRecursive(roots, null);
+        if (bounds == null) {
+            return;
+        }
+
+        animatingCamera = false;
+        animatingCameraTarget = false;
+        cameraTarget = bounds.getCenter().clone();
+
+        float radius = estimateBoundsRadius(bounds);
+        float effectivePadding = paddingScale > 0f ? paddingScale : 3f;
+        cameraDistance = FastMath.clamp(radius * effectivePadding, 3f, 500f);
+        updateOrbitCamera();
+    }
+
+    private BoundingVolume computeBoundsRecursive(List<DesignerEntity> source, BoundingVolume current) {
+        if (source == null) {
+            return current;
+        }
+
+        BoundingVolume merged = current;
+        for (DesignerEntity entity : source) {
+            if (entity == null) {
+                continue;
+            }
+
+            if (isFramableEntity(entity)
+                    && !entity.isHidden()
+                    && entity.getSceneNode() != null
+                    && entity.getSceneNode().getWorldBound() != null) {
+                BoundingVolume worldBound = entity.getSceneNode().getWorldBound();
+                merged = merged == null ? worldBound.clone(null) : merged.mergeLocal(worldBound);
+            }
+
+            if (!entity.getChildren().isEmpty()) {
+                merged = computeBoundsRecursive(entity.getChildren(), merged);
+            }
+        }
+        return merged;
+    }
+
+    private float estimateBoundsRadius(BoundingVolume bounds) {
+        if (bounds == null) {
+            return 5f;
+        }
+        if (bounds instanceof BoundingSphere) {
+            return Math.max(1f, ((BoundingSphere) bounds).getRadius());
+        }
+        if (bounds instanceof BoundingBox) {
+            BoundingBox box = (BoundingBox) bounds;
+            return Math.max(1f, new Vector3f(box.getXExtent(), box.getYExtent(), box.getZExtent()).length());
+        }
+        float approximate = (float) Math.cbrt(Math.max(1e-4, bounds.getVolume()));
+        return Math.max(1f, approximate);
+    }
+
+    private boolean isFramableEntity(DesignerEntity entity) {
+        if (entity == null) {
+            return false;
+        }
+        DesignerEntityType type = entity.getType();
+        return type != DesignerEntityType.CAMERA
+                && type != DesignerEntityType.CODE
+                && type != DesignerEntityType.CINEMATIC_TRACK;
+    }
+
+    public void applyViewPreset(String presetId, boolean animated) {
+        float[] preset = resolveViewPreset(presetId);
+        if (preset == null) {
+            throw new IllegalArgumentException("Unknown view preset: " + presetId);
+        }
+
+        if (animated) {
+            startCameraAnimation(preset[0], preset[1]);
+            return;
+        }
+
+        float targetYaw = Float.isNaN(preset[0]) ? cameraYaw : preset[0];
+        animatingCamera = false;
+        animatingCameraTarget = false;
+        setOrbitCameraState(cameraDistance, targetYaw, preset[1], cameraTarget.clone());
+    }
+
+    private float[] resolveViewPreset(String presetId) {
+        if (presetId == null) {
+            return null;
+        }
+        String normalized = presetId.trim().toLowerCase(java.util.Locale.ROOT);
+        switch (normalized) {
+            case "front":
+            case "+z":
+                return new float[]{0f, 0f};
+            case "back":
+            case "-z":
+                return new float[]{(float) Math.PI, 0f};
+            case "right":
+            case "+x":
+                return new float[]{(float) (Math.PI / 2f), 0f};
+            case "left":
+            case "-x":
+                return new float[]{(float) (-Math.PI / 2f), 0f};
+            case "top":
+            case "+y":
+                return new float[]{Float.NaN, (float) Math.toRadians(89)};
+            case "bottom":
+            case "-y":
+                return new float[]{Float.NaN, (float) Math.toRadians(-89)};
+            case "default":
+            case "center":
+            case "home":
+            case "perspective":
+            case "isometric":
+                return new float[]{(float) Math.toRadians(45), (float) Math.toRadians(30)};
+            default:
+                return null;
+        }
     }
 
     public void setDesignerPanelCallback(DesignerPanelCallback callback) {
@@ -4259,6 +4614,89 @@ public class DesignerApp extends SceneMaxApp {
             // _appObserver) that are not initialized in designer mode.
             // The JME3 base class cleanup (super.super.destroy()) has already
             // executed successfully by the time these NPEs are thrown.
+        }
+    }
+
+    private final class OneShotOffscreenCaptureProcessor implements SceneProcessor {
+        private final int captureWidth;
+        private final int captureHeight;
+        private final CompletableFuture<BufferedImage> future;
+        private final ViewPort snapshotViewPort;
+        private final FrameBuffer frameBuffer;
+        private final CaptureState captureState;
+        private final ByteBuffer buffer;
+        private int framesToSkip = 1;
+
+        private OneShotOffscreenCaptureProcessor(int captureWidth,
+                                                 int captureHeight,
+                                                 CompletableFuture<BufferedImage> future,
+                                                 ViewPort snapshotViewPort,
+                                                 FrameBuffer frameBuffer,
+                                                 CaptureState captureState) {
+            this.captureWidth = captureWidth;
+            this.captureHeight = captureHeight;
+            this.future = future;
+            this.snapshotViewPort = snapshotViewPort;
+            this.frameBuffer = frameBuffer;
+            this.captureState = captureState;
+            this.buffer = BufferUtils.createByteBuffer(captureWidth * captureHeight * 4);
+        }
+
+        @Override
+        public void initialize(RenderManager renderManager, ViewPort viewPort) {
+            // No-op.
+        }
+
+        @Override
+        public void reshape(ViewPort viewPort, int width, int height) {
+            // No-op.
+        }
+
+        @Override
+        public boolean isInitialized() {
+            return true;
+        }
+
+        @Override
+        public void preFrame(float tpf) {
+            // No-op.
+        }
+
+        @Override
+        public void postQueue(RenderQueue renderQueue) {
+            // No-op.
+        }
+
+        @Override
+        public void postFrame(FrameBuffer out) {
+            if (framesToSkip > 0) {
+                framesToSkip--;
+                return;
+            }
+            try {
+                buffer.clear();
+                renderer.readFrameBuffer(frameBuffer, buffer);
+                BufferedImage image = new BufferedImage(captureWidth, captureHeight, BufferedImage.TYPE_4BYTE_ABGR);
+                Screenshots.convertScreenShot(buffer, image);
+                future.complete(image);
+            } catch (Exception ex) {
+                future.completeExceptionally(ex);
+            } finally {
+                cleanup();
+            }
+        }
+
+        @Override
+        public void cleanup() {
+            snapshotViewPort.clearScenes();
+            renderManager.removePreView(snapshotViewPort);
+            frameBuffer.dispose();
+            restoreCleanCapture(captureState);
+        }
+
+        @Override
+        public void setProfiler(AppProfiler profiler) {
+            // No-op.
         }
     }
 }

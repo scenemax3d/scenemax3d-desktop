@@ -1,4 +1,5 @@
 package com.scenemax.desktop;
+import javax.imageio.ImageIO;
 import com.intellij.uiDesigner.core.GridConstraints;
 import com.intellij.uiDesigner.core.GridLayoutManager;
 import com.intellij.uiDesigner.core.Spacer;
@@ -37,8 +38,11 @@ import com.scenemax.desktop.ai.mcp.SceneMaxMcpHttpServer;
 import com.scenemax.desktop.ai.mcp.SceneMaxMcpLogEntry;
 import com.scenemax.desktop.ai.mcp.SceneMaxMcpServer;
 import com.scenemaxeng.common.ui.model.UIDocument;
+import com.scenemaxeng.common.ui.model.UIWidgetDef;
 import com.scenemaxeng.compiler.ApplyMacroResults;
 import com.scenemaxeng.compiler.MacroFilter;
+import com.scenemaxeng.compiler.ProgramDef;
+import com.scenemaxeng.compiler.SceneMaxLanguageParser;
 import com.scenemaxeng.common.types.*;
 import com.scenemaxeng.compiler.Utils;
 import org.apache.commons.io.FileUtils;
@@ -144,6 +148,15 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private McpLogDialog mcpLogDialog;
     private AiConsoleDialog aiConsoleDialog;
     // (Designer panels are managed per-tab inside EditorTabPanel)
+
+    private static final class AutomationRunSource {
+        private String activePath;
+        private String activeKind;
+        private File runFile;
+        private String programText;
+        private boolean generatedFromDesigner;
+        private String generatedFromPath;
+    }
 
     public MainApp() {
 
@@ -3349,6 +3362,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         }
 
         if (errors != null && errors.size() > 0) {
+            SceneMaxProject activeProject = Util.getActiveProject();
+            File projectRoot = activeProject == null ? null : new File(activeProject.path);
+            RuntimeIssueLog.appendIssues(projectRoot, "syntax", "run", "MainApp", errors, null);
+
             String msg = "";
             for (String s : errors) {
                 msg += s + "\r\n";
@@ -3590,6 +3607,222 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             snapshot.set(doc);
         });
         return snapshot.get();
+    }
+
+    public JSONObject getActiveDesignerViewStateForAutomation() {
+        AtomicReference<JSONObject> result = new AtomicReference<>();
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+
+        runOnEdtAndWait(() -> {
+            try {
+                if (editorTabPanel == null || editorTabPanel.getActiveTab() == null) {
+                    throw new IllegalStateException("Open a designer tab first.");
+                }
+
+                EditorTabPanel.TabData active = editorTabPanel.getActiveTab();
+                if (active.isDesignerTab && active.designerPanel != null) {
+                    Object app = invokeNoArg(active.designerPanel, "getApp");
+                    if (app == null) {
+                        throw new IllegalStateException("The scene designer viewport is not ready yet.");
+                    }
+                    result.set(buildSceneDesignerViewState(active, active.designerPanel, app));
+                    return;
+                }
+
+                if (active.isUIDesignerTab && active.uiDesignerPanel != null) {
+                    result.set(buildUiDesignerViewState(active, active.uiDesignerPanel));
+                    return;
+                }
+
+                throw new IllegalStateException("The active tab is not a scene or UI designer.");
+            } catch (Exception ex) {
+                failure.set(ex instanceof RuntimeException ? (RuntimeException) ex : new RuntimeException(ex));
+            }
+        });
+
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+        return result.get();
+    }
+
+    public JSONObject adjustActiveDesignerViewForAutomation(JSONObject arguments) {
+        String action = arguments == null ? "" : arguments.optString("action", "").trim().toLowerCase(Locale.ROOT);
+        if (action.isEmpty()) {
+            throw new IllegalArgumentException("Missing required argument: action");
+        }
+
+        AtomicReference<JSONObject> result = new AtomicReference<>();
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+
+        runOnEdtAndWait(() -> {
+            try {
+                if (editorTabPanel == null || editorTabPanel.getActiveTab() == null) {
+                    throw new IllegalStateException("Open a designer tab first.");
+                }
+
+                EditorTabPanel.TabData active = editorTabPanel.getActiveTab();
+                if (active.isDesignerTab && active.designerPanel != null) {
+                    Object app = invokeNoArg(active.designerPanel, "getApp");
+                    if (app == null) {
+                        throw new IllegalStateException("The scene designer viewport is not ready yet.");
+                    }
+
+                    switch (action) {
+                        case "orbit": {
+                            float yawDegrees = (float) arguments.optDouble("yaw_degrees", 0d);
+                            float pitchDegrees = (float) arguments.optDouble("pitch_degrees", 0d);
+                            enqueueDesignerAppCallable(app, () -> {
+                                app.getClass().getMethod("orbitCameraByDegrees", float.class, float.class)
+                                        .invoke(app, yawDegrees, pitchDegrees);
+                                return null;
+                            });
+                            break;
+                        }
+                        case "pan": {
+                            float right = (float) arguments.optDouble("right", 0d);
+                            float up = (float) arguments.optDouble("up", 0d);
+                            float forward = (float) arguments.optDouble("forward", 0d);
+                            enqueueDesignerAppCallable(app, () -> {
+                                app.getClass().getMethod("panCameraBy", float.class, float.class, float.class)
+                                        .invoke(app, right, up, forward);
+                                return null;
+                            });
+                            break;
+                        }
+                        case "zoom": {
+                            float distanceDelta = (float) arguments.optDouble("distance_delta", 0d);
+                            enqueueDesignerAppCallable(app, () -> {
+                                app.getClass().getMethod("zoomCameraBy", float.class)
+                                        .invoke(app, distanceDelta);
+                                return null;
+                            });
+                            break;
+                        }
+                        case "frame_selection": {
+                            float paddingScale = (float) arguments.optDouble("padding_scale", 3d);
+                            enqueueDesignerAppCallable(app, () -> {
+                                app.getClass().getMethod("frameSelection", float.class)
+                                        .invoke(app, paddingScale);
+                                return null;
+                            });
+                            break;
+                        }
+                        case "frame_all": {
+                            float paddingScale = (float) arguments.optDouble("padding_scale", 3d);
+                            enqueueDesignerAppCallable(app, () -> {
+                                app.getClass().getMethod("frameScene", float.class)
+                                        .invoke(app, paddingScale);
+                                return null;
+                            });
+                            break;
+                        }
+                        case "camera_mode": {
+                            String mode = arguments.optString("camera_mode", "").trim().toLowerCase(Locale.ROOT);
+                            String normalizedMode;
+                            if ("orbit".equals(mode) || "pan".equals(mode)) {
+                                normalizedMode = mode.toUpperCase(Locale.ROOT);
+                            } else {
+                                throw new IllegalArgumentException("camera_mode must be 'orbit' or 'pan'.");
+                            }
+
+                            enqueueDesignerAppCallable(app, () -> {
+                                Class<?> modeClass = Class.forName("com.scenemax.designer.DesignerApp$CameraMode");
+                                Object cameraMode = java.lang.Enum.valueOf((Class<java.lang.Enum>) modeClass.asSubclass(java.lang.Enum.class),
+                                        normalizedMode);
+                                app.getClass().getMethod("setCameraMode", modeClass).invoke(app, cameraMode);
+                                return null;
+                            });
+                            break;
+                        }
+                        default:
+                            throw new IllegalArgumentException("Unsupported scene designer action: " + action);
+                    }
+
+                    result.set(buildSceneDesignerViewState(active, active.designerPanel, app));
+                    return;
+                }
+
+                if (active.isUIDesignerTab && active.uiDesignerPanel != null) {
+                    UIDesignerPanel panel = active.uiDesignerPanel;
+                    switch (action) {
+                        case "pan":
+                            panel.getCanvas().panBy(
+                                    (float) arguments.optDouble("delta_x", 0d),
+                                    (float) arguments.optDouble("delta_y", 0d));
+                            break;
+                        case "zoom": {
+                            float zoomFactor = (float) arguments.optDouble("zoom_factor", 1d);
+                            float anchorX = arguments.has("anchor_x")
+                                    ? (float) arguments.optDouble("anchor_x", panel.getCanvas().getWidth() / 2d)
+                                    : panel.getCanvas().getWidth() / 2f;
+                            float anchorY = arguments.has("anchor_y")
+                                    ? (float) arguments.optDouble("anchor_y", panel.getCanvas().getHeight() / 2d)
+                                    : panel.getCanvas().getHeight() / 2f;
+                            panel.getCanvas().zoomBy(zoomFactor, anchorX, anchorY);
+                            break;
+                        }
+                        case "fit":
+                            panel.getCanvas().fitDocumentToViewport(arguments.has("padding")
+                                    ? arguments.optInt("padding", 20)
+                                    : 20);
+                            break;
+                        default:
+                            throw new IllegalArgumentException("Unsupported UI designer action: " + action);
+                    }
+
+                    result.set(buildUiDesignerViewState(active, panel));
+                    return;
+                }
+
+                throw new IllegalStateException("The active tab is not a scene or UI designer.");
+            } catch (Exception ex) {
+                failure.set(ex instanceof RuntimeException ? (RuntimeException) ex : new RuntimeException(ex));
+            }
+        });
+
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+        return result.get();
+    }
+
+    public JSONObject applyViewGizmoPresetForAutomation(String presetId, boolean animated) {
+        AtomicReference<JSONObject> result = new AtomicReference<>();
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+
+        runOnEdtAndWait(() -> {
+            try {
+                if (editorTabPanel == null || editorTabPanel.getActiveTab() == null) {
+                    throw new IllegalStateException("Open a scene designer tab first.");
+                }
+
+                EditorTabPanel.TabData active = editorTabPanel.getActiveTab();
+                if (!active.isDesignerTab || active.designerPanel == null) {
+                    throw new IllegalStateException("The active tab is not a scene designer.");
+                }
+
+                Object app = invokeNoArg(active.designerPanel, "getApp");
+                if (app == null) {
+                    throw new IllegalStateException("The scene designer viewport is not ready yet.");
+                }
+
+                enqueueDesignerAppCallable(app, () -> {
+                    app.getClass().getMethod("applyViewPreset", String.class, boolean.class)
+                            .invoke(app, presetId, animated);
+                    return null;
+                });
+
+                result.set(buildSceneDesignerViewState(active, active.designerPanel, app));
+            } catch (Exception ex) {
+                failure.set(ex instanceof RuntimeException ? (RuntimeException) ex : new RuntimeException(ex));
+            }
+        });
+
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+        return result.get();
     }
 
     public JSONArray getActiveSceneDesignerEntitiesForAutomation() {
@@ -4018,6 +4251,150 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         return result.get();
     }
 
+    public File captureActiveDesignerCanvasForAutomation(File outputFile, int width, int height) {
+        return captureActiveDesignerCanvasForAutomation(outputFile, width, height, false);
+    }
+
+    public File captureActiveDesignerCanvasForAutomation(File outputFile, int width, int height, boolean clean) {
+        AtomicReference<File> result = new AtomicReference<>();
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+
+        runOnEdtAndWait(() -> {
+            try {
+                if (editorTabPanel == null || editorTabPanel.getActiveTab() == null) {
+                    throw new IllegalStateException("Open a designer tab first.");
+                }
+
+                EditorTabPanel.TabData active = editorTabPanel.getActiveTab();
+                if (active.isDesignerTab && active.designerPanel != null) {
+                    result.set(active.designerPanel.captureCanvasSnapshot(outputFile, width, height, clean));
+                    return;
+                }
+                if (active.isUIDesignerTab && active.uiDesignerPanel != null) {
+                    result.set(active.uiDesignerPanel.captureCanvasSnapshot(outputFile, width, height));
+                    return;
+                }
+
+                throw new IllegalStateException("The active tab is not a scene or UI designer.");
+            } catch (Exception ex) {
+                failure.set(ex instanceof RuntimeException ? (RuntimeException) ex : new RuntimeException(ex));
+            }
+        });
+
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+        return result.get();
+    }
+
+    public JSONObject captureActiveDesignerCanvasForAutomationReliable(File outputFile, int width, int height) {
+        return captureActiveDesignerCanvasForAutomationReliable(outputFile, width, height, true);
+    }
+
+    public JSONObject captureActiveDesignerCanvasForAutomationReliable(File outputFile, int width, int height, boolean clean) {
+        if (outputFile == null) {
+            throw new IllegalArgumentException("outputFile is required.");
+        }
+
+        AtomicReference<File> result = new AtomicReference<>();
+        AtomicReference<String> kind = new AtomicReference<>("unknown");
+        AtomicReference<String> captureMode = new AtomicReference<>("unknown");
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+
+        runOnEdtAndWait(() -> {
+            try {
+                if (editorTabPanel == null || editorTabPanel.getActiveTab() == null) {
+                    throw new IllegalStateException("Open a designer tab first.");
+                }
+
+                EditorTabPanel.TabData active = editorTabPanel.getActiveTab();
+                if (active.isDesignerTab && active.designerPanel != null) {
+                    kind.set("scene_designer");
+                    captureMode.set("scene_view_renderer");
+                    result.set(active.designerPanel.captureCanvasSnapshot(outputFile, width, height, clean));
+                } else if (active.isUIDesignerTab && active.uiDesignerPanel != null) {
+                    kind.set("ui_designer");
+                    captureMode.set("ui_snapshot");
+                    result.set(active.uiDesignerPanel.captureCanvasSnapshot(outputFile, width, height));
+                } else {
+                    throw new IllegalStateException("The active tab is not a scene or UI designer.");
+                }
+            } catch (Exception ex) {
+                failure.set(ex instanceof RuntimeException ? (RuntimeException) ex : new RuntimeException(ex));
+            }
+        });
+
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+
+        File captureFile = result.get();
+        if (captureFile == null || !captureFile.isFile()) {
+            throw new IllegalStateException("The reliable designer snapshot did not produce an output file.");
+        }
+
+        BufferedImage finalImage;
+        try {
+            finalImage = ImageIO.read(captureFile);
+        } catch (IOException ex) {
+            throw new RuntimeException("Unable to read the generated designer snapshot.", ex);
+        }
+        if (finalImage == null) {
+            throw new IllegalStateException("The reliable designer snapshot file could not be decoded.");
+        }
+
+        JSONObject data = new JSONObject();
+        data.put("path", captureFile.getAbsolutePath());
+        data.put("kind", kind.get());
+        data.put("width", finalImage.getWidth());
+        data.put("height", finalImage.getHeight());
+        data.put("captureMode", captureMode.get());
+        return data;
+    }
+
+    public JSONObject generateDesignerCodeForAutomation(File designerFile) {
+        if (designerFile == null) {
+            throw new IllegalArgumentException("designerFile is required.");
+        }
+
+        File absoluteFile = designerFile.getAbsoluteFile();
+        String lowerName = absoluteFile.getName().toLowerCase(Locale.ROOT);
+        File generatedCodeFile;
+
+        if (lowerName.endsWith(".smdesign")) {
+            ensureDesignerCodeUpToDate(absoluteFile);
+            generatedCodeFile = DesignerDocument.getCodeFile(absoluteFile);
+        } else if (lowerName.endsWith(".smui")) {
+            ensureUiDesignerCodeUpToDate(absoluteFile);
+            generatedCodeFile = UIDocument.getCodeFile(absoluteFile);
+        } else {
+            throw new IllegalArgumentException("Only .smdesign and .smui files support code generation.");
+        }
+
+        if (!generatedCodeFile.isFile()) {
+            throw new IllegalStateException("Code generation did not produce a .code file for " + absoluteFile.getName());
+        }
+
+        String generatedCode;
+        try {
+            generatedCode = Files.readString(generatedCodeFile.toPath(), StandardCharsets.UTF_8);
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
+
+        JSONObject validation = validateProgramSyntaxForAutomation(generatedCodeFile, generatedCode);
+        JSONObject data = new JSONObject();
+        data.put("path", absoluteFile.getAbsolutePath());
+        data.put("kind", lowerName.endsWith(".smdesign") ? "scene_designer" : "ui_designer");
+        data.put("generatedCodePath", generatedCodeFile.getAbsolutePath());
+        data.put("syntaxValid", validation.optBoolean("valid", false));
+        data.put("syntaxErrors", validation.optJSONArray("errors") != null
+                ? validation.getJSONArray("errors")
+                : new JSONArray());
+        data.put("lineCount", generatedCode.split("\\R", -1).length);
+        return data;
+    }
+
     public void restartApplicationFromAutomation() {
         javax.swing.Timer timer = new javax.swing.Timer(300, e -> restartApplication());
         timer.setRepeats(false);
@@ -4042,6 +4419,67 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 editorTabPanel.saveActiveTab();
             }
         });
+    }
+
+    public JSONObject refreshProjectFilesTreeForAutomation(boolean restoreSelection, boolean reopenSelection) {
+        AtomicReference<JSONObject> result = new AtomicReference<>(new JSONObject());
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+        runOnEdtAndWait(() -> {
+            try {
+                if (tree1 == null) {
+                    throw new IllegalStateException("The project files tree is not available.");
+                }
+
+                File previouslySelectedFile = null;
+                if (restoreSelection) {
+                    Object selected = tree1.getLastSelectedPathComponent();
+                    if (selected instanceof DefaultMutableTreeNode) {
+                        Object userObject = ((DefaultMutableTreeNode) selected).getUserObject();
+                        if (userObject instanceof ScriptPathNode) {
+                            previouslySelectedFile = new File(((ScriptPathNode) userObject).getPath());
+                        }
+                    }
+                }
+
+                loadScriptsFolder();
+                if (restoreSelection) {
+                    if (reopenSelection) {
+                        openLastTreeNode();
+                    } else if (previouslySelectedFile != null) {
+                        openTreeNodeByFile(previouslySelectedFile);
+                    }
+                }
+
+                JSONObject data = new JSONObject();
+                data.put("refreshed", true);
+                data.put("scriptsRoot", Util.getScriptsFolder());
+                data.put("restoreSelection", restoreSelection);
+                data.put("reopenSelection", reopenSelection);
+
+                Object selected = tree1.getLastSelectedPathComponent();
+                if (selected instanceof DefaultMutableTreeNode) {
+                    Object userObject = ((DefaultMutableTreeNode) selected).getUserObject();
+                    if (userObject instanceof ScriptPathNode) {
+                        ScriptPathNode scriptNode = (ScriptPathNode) userObject;
+                        data.put("selectedPath", scriptNode.getPath());
+                        data.put("selectedName", scriptNode.toString());
+                    } else {
+                        data.put("selectedPath", JSONObject.NULL);
+                        data.put("selectedName", JSONObject.NULL);
+                    }
+                } else {
+                    data.put("selectedPath", JSONObject.NULL);
+                    data.put("selectedName", JSONObject.NULL);
+                }
+                result.set(data);
+            } catch (Exception ex) {
+                failure.set(ex instanceof RuntimeException ? (RuntimeException) ex : new RuntimeException(ex));
+            }
+        });
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+        return result.get();
     }
 
     public void stopAutomationServer() {
@@ -4094,10 +4532,43 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         refreshLocalGemmaBridgeStatusAsync();
     }
 
+    public JSONObject runPreviewFromAutomationDetailed() {
+        AutomationRunSource runSource = collectActiveRunSourceForAutomation();
+        JSONObject validation = validateProgramSyntaxForAutomation(runSource.runFile, runSource.programText);
+
+        JSONObject data = new JSONObject();
+        data.put("activePath", runSource.activePath);
+        data.put("activeKind", runSource.activeKind);
+        data.put("runFilePath", runSource.runFile != null ? runSource.runFile.getAbsolutePath() : JSONObject.NULL);
+        data.put("generatedFromDesigner", runSource.generatedFromDesigner);
+        data.put("generatedFromPath", runSource.generatedFromPath != null ? runSource.generatedFromPath : JSONObject.NULL);
+        data.put("syntaxValid", validation.optBoolean("valid", false));
+        data.put("syntaxErrors", validation.optJSONArray("errors") != null
+                ? validation.getJSONArray("errors")
+                : new JSONArray());
+
+        if (!validation.optBoolean("valid", false)) {
+            data.put("launched", false);
+            return data;
+        }
+
+        runOnEdtAndWait(() -> {
+            btnRunScript.setEnabled(false);
+            btnRecordScene.setEnabled(false);
+            new RunLauncherTask(runSource.runFile.getAbsolutePath(), runSource.programText, new Runnable() {
+                @Override
+                public void run() {
+                    btnRunScript.setEnabled(true);
+                }
+            }).execute();
+        });
+
+        data.put("launched", true);
+        return data;
+    }
+
     public boolean runPreviewFromAutomation() {
-        AtomicBoolean result = new AtomicBoolean(false);
-        runOnEdtAndWait(() -> result.set(prepareAndRunLauncher()));
-        return result.get();
+        return runPreviewFromAutomationDetailed().optBoolean("launched", false);
     }
 
     private void runOnEdtAndWait(Runnable action) {
@@ -4138,6 +4609,239 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         return active.isDesignerTab ? active.designerPanel : null;
     }
 
+    private JSONObject buildSceneDesignerViewState(EditorTabPanel.TabData active, DesignerPanel panel, Object app) throws Exception {
+        JSONObject data = new JSONObject();
+        data.put("path", active.filePath);
+        data.put("kind", "scene_designer");
+        Object cameraMode = invokeNoArg(app, "getCameraMode");
+        data.put("cameraMode", cameraMode != null
+                ? cameraMode.toString().toLowerCase(Locale.ROOT)
+                : JSONObject.NULL);
+        data.put("cameraDistance", ((Number) invokeNoArg(app, "getCameraDistance")).doubleValue());
+        data.put("cameraYawDegrees", Math.toDegrees(((Number) invokeNoArg(app, "getCameraYaw")).doubleValue()));
+        data.put("cameraPitchDegrees", Math.toDegrees(((Number) invokeNoArg(app, "getCameraPitch")).doubleValue()));
+        data.put("cameraTarget", toJsonArray(invokeNoArg(app, "getCameraTarget")));
+
+        Dimension canvasSize = panel.getCanvasSizeForAutomation();
+        data.put("viewportWidth", canvasSize.width);
+        data.put("viewportHeight", canvasSize.height);
+
+        Object selectionManager = invokeNoArg(app, "getSelectionManager");
+        DesignerEntity selected = selectionManager != null
+                ? (DesignerEntity) invokeNoArg(selectionManager, "getSelected")
+                : null;
+        data.put("selectedEntityId", selected != null ? selected.getId() : JSONObject.NULL);
+        data.put("selectedEntityName", selected != null ? selected.getName() : JSONObject.NULL);
+        data.put("selectedEntityType", selected != null ? selected.getType().name().toLowerCase(Locale.ROOT) : JSONObject.NULL);
+        return data;
+    }
+
+    private JSONObject buildUiDesignerViewState(EditorTabPanel.TabData active, UIDesignerPanel panel) {
+        JSONObject data = new JSONObject();
+        data.put("path", active.filePath);
+        data.put("kind", "ui_designer");
+        data.put("zoom", panel.getCanvas().getZoomLevel());
+        data.put("panX", panel.getCanvas().getPanX());
+        data.put("panY", panel.getCanvas().getPanY());
+        data.put("activeLayer", panel.getActiveLayerName() != null ? panel.getActiveLayerName() : JSONObject.NULL);
+        data.put("viewportWidth", panel.getCanvas().getWidth());
+        data.put("viewportHeight", panel.getCanvas().getHeight());
+
+        UIDocument document = panel.getDocument();
+        data.put("documentCanvasWidth", document != null ? document.getCanvasWidth() : JSONObject.NULL);
+        data.put("documentCanvasHeight", document != null ? document.getCanvasHeight() : JSONObject.NULL);
+
+        UIWidgetDef selectedWidget = panel.getCanvas().getSelectedWidget();
+        data.put("selectedWidgetName", selectedWidget != null ? selectedWidget.getName() : JSONObject.NULL);
+        data.put("selectedWidgetType", selectedWidget != null
+                ? selectedWidget.getType().name().toLowerCase(Locale.ROOT)
+                : JSONObject.NULL);
+        return data;
+    }
+
+    private JSONArray toJsonArray(Object vector) {
+        JSONArray array = new JSONArray();
+        if (vector == null) {
+            return array;
+        }
+        try {
+            Class<?> vectorClass = vector.getClass();
+            array.put(vectorClass.getField("x").get(vector));
+            array.put(vectorClass.getField("y").get(vector));
+            array.put(vectorClass.getField("z").get(vector));
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+        return array;
+    }
+
+    private void ensureDesignerCodeUpToDate(File designerFile) {
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+        runOnEdtAndWait(() -> {
+            try {
+                EditorTabPanel.TabData active = editorTabPanel != null ? editorTabPanel.getActiveTab() : null;
+                if (active != null
+                        && active.isDesignerTab
+                        && active.designerPanel != null
+                        && designerFile.getAbsolutePath().equals(new File(active.filePath).getAbsolutePath())) {
+                    Object app = invokeNoArg(active.designerPanel, "getApp");
+                    if (app == null) {
+                        throw new IllegalStateException("The scene designer viewport is not ready yet.");
+                    }
+                    enqueueDesignerAppCallable(app, () -> {
+                        app.getClass().getMethod("markDocumentDirty").invoke(app);
+                        return null;
+                    });
+                    return;
+                }
+
+                if (editorTabPanel != null && editorTabPanel.isTabDirty(designerFile.getAbsolutePath())) {
+                    throw new IllegalStateException("The open IDE tab has unsaved changes. Save it first, then try again.");
+                }
+
+                DesignerDocument.regenerateCodeFileFromDisk(designerFile);
+            } catch (Exception ex) {
+                failure.set(ex instanceof RuntimeException ? (RuntimeException) ex : new RuntimeException(ex));
+            }
+        });
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+    }
+
+    private void ensureUiDesignerCodeUpToDate(File uiFile) {
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+        runOnEdtAndWait(() -> {
+            try {
+                EditorTabPanel.TabData active = editorTabPanel != null ? editorTabPanel.getActiveTab() : null;
+                if (active != null
+                        && active.isUIDesignerTab
+                        && active.uiDesignerPanel != null
+                        && uiFile.getAbsolutePath().equals(new File(active.filePath).getAbsolutePath())) {
+                    active.uiDesignerPanel.saveDocument();
+                    return;
+                }
+
+                if (editorTabPanel != null && editorTabPanel.isTabDirty(uiFile.getAbsolutePath())) {
+                    throw new IllegalStateException("The open IDE tab has unsaved changes. Save it first, then try again.");
+                }
+
+                UIDocument.load(uiFile).saveCodeFile(uiFile);
+            } catch (Exception ex) {
+                failure.set(ex instanceof RuntimeException ? (RuntimeException) ex : new RuntimeException(ex));
+            }
+        });
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+    }
+
+    private AutomationRunSource collectActiveRunSourceForAutomation() {
+        AutomationRunSource source = new AutomationRunSource();
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+
+        runOnEdtAndWait(() -> {
+            try {
+                if (editorTabPanel == null || editorTabPanel.getActiveTab() == null) {
+                    throw new IllegalStateException("Open a code, scene designer, or UI designer tab first.");
+                }
+
+                EditorTabPanel.TabData active = editorTabPanel.getActiveTab();
+                source.activePath = active.filePath;
+                source.activeKind = editorTabPanel.getActiveTabKind();
+
+                if (active.isDesignerTab && active.designerPanel != null) {
+                    Object app = invokeNoArg(active.designerPanel, "getApp");
+                    if (app == null) {
+                        throw new IllegalStateException("The scene designer viewport is not ready yet.");
+                    }
+                    enqueueDesignerAppCallable(app, () -> {
+                        app.getClass().getMethod("markDocumentDirty").invoke(app);
+                        return null;
+                    });
+
+                    File generated = DesignerDocument.getCodeFile(new File(active.filePath));
+                    source.runFile = generated;
+                    source.programText = Files.readString(generated.toPath(), StandardCharsets.UTF_8);
+                    source.generatedFromDesigner = true;
+                    source.generatedFromPath = active.filePath;
+                    return;
+                }
+
+                if (active.isUIDesignerTab && active.uiDesignerPanel != null) {
+                    active.uiDesignerPanel.saveDocument();
+                    File generated = UIDocument.getCodeFile(new File(active.filePath));
+                    source.runFile = generated;
+                    source.programText = Files.readString(generated.toPath(), StandardCharsets.UTF_8);
+                    source.generatedFromDesigner = true;
+                    source.generatedFromPath = active.filePath;
+                    return;
+                }
+
+                if ("text".equals(source.activeKind)) {
+                    source.runFile = new File(active.filePath);
+                    source.programText = editorTabPanel.getCurrentEditorText();
+                    source.generatedFromDesigner = false;
+                    source.generatedFromPath = null;
+                    return;
+                }
+
+                throw new IllegalStateException("The active tab cannot be preview-run by automation.");
+            } catch (Exception ex) {
+                failure.set(ex instanceof RuntimeException ? (RuntimeException) ex : new RuntimeException(ex));
+            }
+        });
+
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+
+        if (source.runFile == null || source.programText == null) {
+            throw new IllegalStateException("Could not prepare a runnable source from the active tab.");
+        }
+        return source;
+    }
+
+    private JSONObject validateProgramSyntaxForAutomation(File sourceFile, String programText) {
+        JSONArray errors = new JSONArray();
+        if (sourceFile == null) {
+            errors.put("No source file was provided for syntax validation.");
+        } else {
+            try {
+                MacroFilter macroFilter = new MacroFilter();
+                macroFilter.loadMacroRulesFromMacroFolder(new File("macro"));
+
+                SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, sourceFile.getAbsolutePath());
+                SceneMaxLanguageParser.setMacroFilter(macroFilter);
+                ProgramDef program = parser.parse(stripAutomationHeaderDirectives(programText == null ? "" : programText));
+
+                if (program != null && program.syntaxErrors != null) {
+                    for (String error : program.syntaxErrors) {
+                        errors.put(error);
+                    }
+                }
+            } catch (Exception ex) {
+                String message = ex.getMessage();
+                errors.put(message == null || message.isBlank() ? ex.getClass().getSimpleName() : message);
+            }
+        }
+
+        JSONObject data = new JSONObject();
+        data.put("path", sourceFile != null ? sourceFile.getAbsolutePath() : JSONObject.NULL);
+        data.put("valid", errors.length() == 0);
+        data.put("errors", errors);
+        return data;
+    }
+
+    private String stripAutomationHeaderDirectives(String programText) {
+        String clean = programText == null ? "" : programText;
+        clean = clean.replaceAll("(?m)//\\$\\[project\\]=.+?;", "");
+        clean = clean.replaceAll("(?m)//\\$\\[source\\]=.+?;", "");
+        clean = clean.replaceAll("(?m)//\\$\\[source_rel\\]=.+?;", "");
+        clean = clean.replaceAll("(?m)//\\$\\[disable_audio\\]=.+?;", "");
+        return clean;
+    }
+
     private JSONArray summarizeDesignerEntities(List<DesignerEntity> entities) {
         JSONArray array = new JSONArray();
         if (entities == null) {
@@ -4173,8 +4877,99 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         return json;
     }
 
+    public JSONObject selectEntityInActiveSceneDesignerForAutomation(String entityId, String entityName) {
+        AtomicReference<JSONObject> result = new AtomicReference<>();
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+
+        runOnEdtAndWait(() -> {
+            try {
+                DesignerPanel panel = getActiveDesignerPanel();
+                if (panel == null) {
+                    throw new IllegalStateException("Open a scene designer tab first.");
+                }
+                Object app = invokeNoArg(panel, "getApp");
+                @SuppressWarnings("unchecked")
+                List<DesignerEntity> entities = (List<DesignerEntity>) invokeNoArg(app, "getEntities");
+                DesignerEntity target = findDesignerEntityRecursive(entities, entityId, entityName);
+                if (target == null) {
+                    throw new IllegalArgumentException("Could not find an entity matching the provided id/name.");
+                }
+                panel.selectEntityForAutomation(target);
+                result.set(summarizeDesignerEntity(target));
+            } catch (Exception ex) {
+                failure.set(ex instanceof RuntimeException ? (RuntimeException) ex : new RuntimeException(ex));
+            }
+        });
+
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+        return result.get();
+    }
+
+    public JSONObject showReferenceOverlayInActiveSceneDesignerForAutomation(File imageFile, float opacity, double scale,
+                                                                             String fitMode, int offsetX, int offsetY,
+                                                                             boolean visible) {
+        AtomicReference<JSONObject> result = new AtomicReference<>();
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+
+        runOnEdtAndWait(() -> {
+            try {
+                DesignerPanel panel = getActiveDesignerPanel();
+                if (panel == null) {
+                    throw new IllegalStateException("Open a scene designer tab first.");
+                }
+                if (!visible) {
+                    result.set(panel.clearReferenceOverlayForAutomation());
+                    return;
+                }
+                result.set(panel.showReferenceOverlayForAutomation(imageFile, opacity, scale, fitMode, offsetX, offsetY));
+            } catch (Exception ex) {
+                failure.set(ex instanceof RuntimeException ? (RuntimeException) ex : new RuntimeException(ex));
+            }
+        });
+
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+        return result.get();
+    }
+
+    private DesignerEntity findDesignerEntityRecursive(List<DesignerEntity> entities, String entityId, String entityName) {
+        if (entities == null) {
+            return null;
+        }
+        String normalizedId = entityId == null ? "" : entityId.trim();
+        String normalizedName = entityName == null ? "" : entityName.trim();
+        for (DesignerEntity entity : entities) {
+            if (entity == null) {
+                continue;
+            }
+            if (!normalizedId.isEmpty() && normalizedId.equals(entity.getId())) {
+                return entity;
+            }
+            if (!normalizedName.isEmpty() && normalizedName.equals(entity.getName())) {
+                return entity;
+            }
+            DesignerEntity nested = findDesignerEntityRecursive(entity.getChildren(), normalizedId, normalizedName);
+            if (nested != null) {
+                return nested;
+            }
+        }
+        return null;
+    }
+
     private Object invokeNoArg(Object target, String methodName) throws Exception {
         return target.getClass().getMethod(methodName).invoke(target);
+    }
+
+    private void enqueueDesignerAppCallable(Object app, java.util.concurrent.Callable<?> callable) throws Exception {
+        Object future = app.getClass()
+                .getMethod("enqueue", java.util.concurrent.Callable.class)
+                .invoke(app, callable);
+        if (future instanceof java.util.concurrent.Future) {
+            ((java.util.concurrent.Future<?>) future).get();
+        }
     }
 
     private void recordMcpLogEntry(SceneMaxMcpLogEntry entry) {

@@ -15,7 +15,7 @@ public class RunPreviewSceneTool extends AbstractSceneMaxTool {
 
     @Override
     public String getDescription() {
-        return "Saves the active editor tab if needed and launches a SceneMax preview run.";
+        return "Generates companion code when needed, validates syntax, and launches a SceneMax preview run.";
     }
 
     @Override
@@ -33,9 +33,8 @@ public class RunPreviewSceneTool extends AbstractSceneMaxTool {
             throw new IllegalStateException("Preview execution requires a running SceneMax IDE host.");
         }
 
-        boolean launched = host.runPreviewFromAutomation();
-        JSONObject data = new JSONObject();
-        data.put("launched", launched);
+        JSONObject data = host.runPreviewFromAutomationDetailed();
+        boolean launched = data.optBoolean("launched", false);
         if (!launched) {
             return SceneMaxToolResult.error("Scene preview could not be launched.", data);
         }

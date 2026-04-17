@@ -10,7 +10,10 @@ import com.scenemax.designer.gizmo.GizmoMode;
 import com.scenemax.designer.path.BezierPath;
 import com.scenemax.designer.path.PathSample;
 import com.scenemax.designer.selection.SelectionManager;
+import org.apache.commons.io.FileUtils;
+import org.json.JSONObject;
 
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.tree.DefaultMutableTreeNode;
@@ -32,6 +35,7 @@ import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -230,6 +234,7 @@ public class DesignerPanel extends JPanel {
     private JPanel codeEditorOverlay;
     private JTextArea codeEditorArea;
     private DesignerEntity editingCodeEntity;
+    private ReferenceImageOverlay referenceImageOverlay;
 
     // Toolbar buttons
     private JToggleButton btnTranslate, btnRotate;
@@ -2357,6 +2362,18 @@ public class DesignerPanel extends JPanel {
         codeEditorOverlay.setBounds(ox, oy, ow, oh);
     }
 
+    private void repositionReferenceOverlay(JLayeredPane layered) {
+        if (referenceImageOverlay == null) {
+            return;
+        }
+        Point canvasLoc = SwingUtilities.convertPoint(canvasContainer, 0, 0, layered);
+        referenceImageOverlay.setBounds(
+                canvasLoc.x,
+                canvasLoc.y,
+                Math.max(0, canvasContainer.getWidth()),
+                Math.max(0, canvasContainer.getHeight()));
+    }
+
     private void hideCodeEditor() {
         if (codeEditorOverlay != null) {
             codeEditorOverlay.setVisible(false);
@@ -3518,6 +3535,217 @@ public class DesignerPanel extends JPanel {
 
     public DesignerApp getApp() {
         return app;
+    }
+
+    public Dimension getCanvasSizeForAutomation() {
+        Component target = canvas != null ? canvas : canvasContainer;
+        if (target == null) {
+            return new Dimension(0, 0);
+        }
+        return new Dimension(target.getWidth(), target.getHeight());
+    }
+
+    public Component getCanvasComponentForAutomation() {
+        return canvas != null ? canvas : canvasContainer;
+    }
+
+    public void selectEntityForAutomation(DesignerEntity entity) {
+        if (entity == null) {
+            SwingUtilities.invokeLater(() -> selectEntityInTree(null));
+            if (app != null) {
+                app.enqueue(() -> {
+                    app.getSelectionManager().deselect();
+                    app.setCinematicAuthoringTarget(null);
+                    return null;
+                });
+            }
+            return;
+        }
+
+        SwingUtilities.invokeLater(() -> selectEntityInTree(entity));
+        if (app != null) {
+            app.enqueue(() -> {
+                app.getSelectionManager().select(entity);
+                app.setCinematicAuthoringTarget(
+                        (entity.getType() == DesignerEntityType.CINEMATIC_TRACK
+                                || entity.getType() == DesignerEntityType.CINEMATIC_RIG) ? entity : null);
+                return null;
+            });
+        }
+    }
+
+    public JSONObject showReferenceOverlayForAutomation(File imageFile, float opacity, double scale,
+                                                        String fitMode, int offsetX, int offsetY) throws IOException {
+        if (imageFile == null || !imageFile.isFile()) {
+            throw new IOException("Reference image file does not exist: " + imageFile);
+        }
+        BufferedImage image = ImageIO.read(imageFile);
+        if (image == null) {
+            throw new IOException("Unable to read reference image: " + imageFile.getName());
+        }
+
+        if (referenceImageOverlay == null) {
+            referenceImageOverlay = new ReferenceImageOverlay();
+        }
+
+        JLayeredPane layered = getLayeredPaneForCanvas();
+        if (layered == null) {
+            throw new IOException("The designer canvas layered pane is not available.");
+        }
+        if (referenceImageOverlay.getParent() == null) {
+            layered.add(referenceImageOverlay, JLayeredPane.DRAG_LAYER);
+        }
+
+        referenceImageOverlay.configure(image, opacity, scale, fitMode, offsetX, offsetY);
+        repositionReferenceOverlay(layered);
+        referenceImageOverlay.setVisible(true);
+        layered.revalidate();
+        layered.repaint();
+
+        return new JSONObject()
+                .put("visible", true)
+                .put("imagePath", imageFile.getAbsolutePath())
+                .put("opacity", opacity)
+                .put("scale", scale)
+                .put("fitMode", fitMode == null || fitMode.isBlank() ? "contain" : fitMode.trim().toLowerCase())
+                .put("offsetX", offsetX)
+                .put("offsetY", offsetY);
+    }
+
+    public JSONObject clearReferenceOverlayForAutomation() {
+        if (referenceImageOverlay != null) {
+            referenceImageOverlay.setVisible(false);
+            if (referenceImageOverlay.getParent() != null) {
+                referenceImageOverlay.getParent().repaint();
+            }
+        }
+        return new JSONObject().put("visible", false);
+    }
+
+    public File captureCanvasSnapshot(File outputFile, int width, int height) throws IOException {
+        return captureCanvasSnapshot(outputFile, width, height, false);
+    }
+
+    public File captureCanvasSnapshot(File outputFile, int width, int height, boolean clean) throws IOException {
+        if (outputFile == null) {
+            throw new IOException("Output file is required.");
+        }
+
+        Component target = canvas != null ? canvas : canvasContainer;
+        if (target == null || !target.isShowing() || target.getWidth() <= 0 || target.getHeight() <= 0) {
+            throw new IOException("The designer canvas is not visible, so no snapshot could be captured.");
+        }
+
+        BufferedImage finalImage;
+        if (app != null) {
+            finalImage = app.captureCurrentViewSnapshot(width, height, clean);
+        } else {
+            BufferedImage capture = new BufferedImage(target.getWidth(), target.getHeight(), BufferedImage.TYPE_INT_ARGB);
+            Graphics2D captureGraphics = capture.createGraphics();
+            captureGraphics.setColor(target.getBackground() != null ? target.getBackground() : Color.BLACK);
+            captureGraphics.fillRect(0, 0, capture.getWidth(), capture.getHeight());
+            target.printAll(captureGraphics);
+            captureGraphics.dispose();
+
+            finalImage = capture;
+            if (width > 0 && height > 0 && (capture.getWidth() != width || capture.getHeight() != height)) {
+                BufferedImage scaled = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+                Graphics2D g2 = scaled.createGraphics();
+                g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+                g2.drawImage(capture, 0, 0, width, height, null);
+                g2.dispose();
+                finalImage = scaled;
+            }
+        }
+
+        File parent = outputFile.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        ImageIO.write(finalImage, "png", outputFile);
+        return outputFile;
+    }
+
+    private static final class ReferenceImageOverlay extends JComponent {
+        private BufferedImage image;
+        private float opacity = 0.35f;
+        private double scale = 1.0;
+        private String fitMode = "contain";
+        private int offsetX;
+        private int offsetY;
+
+        ReferenceImageOverlay() {
+            setOpaque(false);
+            setVisible(false);
+            setEnabled(false);
+        }
+
+        void configure(BufferedImage image, float opacity, double scale, String fitMode, int offsetX, int offsetY) {
+            this.image = image;
+            this.opacity = Math.max(0f, Math.min(1f, opacity));
+            this.scale = Math.max(0.05, scale);
+            this.fitMode = fitMode == null || fitMode.isBlank() ? "contain" : fitMode.trim().toLowerCase();
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            if (image == null || opacity <= 0f || getWidth() <= 0 || getHeight() <= 0) {
+                return;
+            }
+
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, opacity));
+
+            double baseScaleX = getWidth() / (double) image.getWidth();
+            double baseScaleY = getHeight() / (double) image.getHeight();
+            double fitScale;
+            switch (fitMode) {
+                case "cover":
+                    fitScale = Math.max(baseScaleX, baseScaleY);
+                    break;
+                case "stretch":
+                    fitScale = Double.NaN;
+                    break;
+                case "original":
+                    fitScale = 1.0;
+                    break;
+                case "contain":
+                default:
+                    fitScale = Math.min(baseScaleX, baseScaleY);
+                    break;
+            }
+
+            int drawWidth;
+            int drawHeight;
+            if (Double.isNaN(fitScale)) {
+                drawWidth = Math.max(1, (int) Math.round(getWidth() * scale));
+                drawHeight = Math.max(1, (int) Math.round(getHeight() * scale));
+            } else {
+                drawWidth = Math.max(1, (int) Math.round(image.getWidth() * fitScale * scale));
+                drawHeight = Math.max(1, (int) Math.round(image.getHeight() * fitScale * scale));
+            }
+
+            int x = ((getWidth() - drawWidth) / 2) + offsetX;
+            int y = ((getHeight() - drawHeight) / 2) + offsetY;
+            g2.drawImage(image, x, y, drawWidth, drawHeight, null);
+            g2.dispose();
+        }
+    }
+
+    public File getDesignerFile() {
+        return designerFile;
+    }
+
+    public String readGeneratedCode() throws IOException {
+        File codeFile = DesignerDocument.getCodeFile(designerFile);
+        return FileUtils.readFileToString(codeFile, StandardCharsets.UTF_8);
     }
 
     /**

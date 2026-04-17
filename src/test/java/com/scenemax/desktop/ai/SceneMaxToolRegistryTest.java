@@ -8,6 +8,7 @@ import java.nio.file.Path;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class SceneMaxToolRegistryTest {
@@ -69,6 +70,31 @@ public class SceneMaxToolRegistryTest {
         } finally {
             deleteRecursively(workspace);
         }
+    }
+
+    @Test
+    public void registryIncludesDesignerViewAndCodegenTools() {
+        SceneMaxToolRegistry registry = SceneMaxAutomationBootstrap.createDefaultRegistry();
+        assertNotNull(registry.get("designer.capture_canvas"));
+        assertNotNull(registry.get("designer.capture_canvas_reliable"));
+        assertNotNull(registry.get("designer.compare_to_reference"));
+        assertNotNull(registry.get("designer.get_view_state"));
+        assertNotNull(registry.get("designer.adjust_view"));
+        assertNotNull(registry.get("designer.use_view_gizmo"));
+        assertNotNull(registry.get("designer.get_entity"));
+        assertNotNull(registry.get("designer.update_entity"));
+        assertNotNull(registry.get("designer.delete_entity"));
+        assertNotNull(registry.get("designer.duplicate_entity"));
+        assertNotNull(registry.get("designer.mirror_entities"));
+        assertNotNull(registry.get("designer.array_entities"));
+        assertNotNull(registry.get("designer.group_entities"));
+        assertNotNull(registry.get("designer.validate_resources"));
+        assertNotNull(registry.get("designer.add_primitive_advanced"));
+        assertNotNull(registry.get("designer.select_entity"));
+        assertNotNull(registry.get("designer.overlay_reference_image"));
+        assertNotNull(registry.get("designer.refresh_project_tree"));
+        assertNotNull(registry.get("designer.generate_code"));
+        assertNotNull(registry.get("run.preview_scene"));
     }
 
     private void deleteRecursively(Path path) throws Exception {

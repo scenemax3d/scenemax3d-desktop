@@ -996,6 +996,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         mainScope = mainScope == null ? new SceneMaxScope() : mainScope;
         mainScope.mainController.adhereToPauseStatus=false; // main scope never pauses
 
+        clearRuntimeIssueLog();
         hasRunTimeError=false;
         appRect = new CanvasRect();
         appRect.x = Display.getX();
@@ -1016,6 +1017,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             onEndCode();
             return;
         } else if(prg.syntaxErrors.size()>0) {
+            recordSyntaxIssues(prg.syntaxErrors, "run");
             onEndCode(prg.syntaxErrors);
             showFloatingMessage(prg.syntaxErrors,"Close Application",0);
             return;
@@ -1059,6 +1061,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             onEndCode();
             return;
         } else if(prg.syntaxErrors.size()>0) {
+            recordSyntaxIssues(prg.syntaxErrors, "partial_run");
             if(closeOnError) {
                 onEndCode(prg.syntaxErrors);
                 showFloatingMessage(prg.syntaxErrors, "Close Application", 0);
@@ -1164,6 +1167,30 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         String msg = prepareFloatingMessage(rows);
         showFloatingMessage(msg,actionButtonText,onClickAction);
+    }
+
+    private void clearRuntimeIssueLog() {
+        RuntimeIssueLog.clear(resolveRuntimeProjectRoot());
+    }
+
+    private void recordSyntaxIssues(List<String> errors, String phase) {
+        RuntimeIssueLog.appendIssues(
+                resolveRuntimeProjectRoot(),
+                "syntax",
+                phase,
+                "SceneMaxApp",
+                errors,
+                resolveCurrentScriptContextPath());
+    }
+
+    private void recordRuntimeIssue(String message, String phase) {
+        RuntimeIssueLog.appendIssue(
+                resolveRuntimeProjectRoot(),
+                "runtime",
+                phase,
+                "SceneMaxApp",
+                message,
+                resolveCurrentScriptContextPath());
     }
 
     public void loadResource(StatementDef st) {
@@ -3580,7 +3607,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                     ctls.add(modelCtl);// cache control
 
                 } catch (IllegalArgumentException e) {
-                    showFloatingMessage("Problem adding Dynamic Animation Control To Model: " + name + "\r\n" + e.getMessage());
+                    String message = "Problem adding Dynamic Animation Control To Model: " + name + "\r\n" + e.getMessage();
+                    recordRuntimeIssue(message, "run");
+                    showFloatingMessage(message);
                     return null;
                 }
 
@@ -4851,6 +4880,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         if (this.hasRunTimeError && this.runTimeError != null && !this.runTimeError.isBlank()) {
             return;
         }
+        recordRuntimeIssue(err, "run");
         this.hasRunTimeError=true;
         this.runTimeError=err;
     }
@@ -5168,7 +5198,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         SpriteEmitter se = sprites.get(targetVar);
         if (se==null) {
-            this.showFloatingMessage("[posSprite] Run-time error: Sprite '"+targetVar+"' not found");
+            String message = "[posSprite] Run-time error: Sprite '"+targetVar+"' not found";
+            recordRuntimeIssue(message, "run");
+            this.showFloatingMessage(message);
             return;
         }
         Spatial m = se.getSpatial();

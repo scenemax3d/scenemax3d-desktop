@@ -209,6 +209,83 @@ public class UIDesignerCanvas extends JPanel {
         repaint();
     }
 
+    public float getZoomLevel() {
+        return zoom;
+    }
+
+    public float getPanX() {
+        return panX;
+    }
+
+    public float getPanY() {
+        return panY;
+    }
+
+    public UILayerDef getActiveLayer() {
+        return activeLayer;
+    }
+
+    public void panBy(float dx, float dy) {
+        panX += dx;
+        panY += dy;
+        repaint();
+    }
+
+    public void zoomBy(float factor) {
+        zoomBy(factor, getWidth() / 2f, getHeight() / 2f);
+    }
+
+    public void zoomBy(float factor, float anchorX, float anchorY) {
+        if (factor <= 0f) {
+            throw new IllegalArgumentException("zoom factor must be greater than zero");
+        }
+        float oldZoom = zoom;
+        zoom = Math.max(0.05f, Math.min(5.0f, zoom * factor));
+        panX = anchorX - (anchorX - panX) * (zoom / oldZoom);
+        panY = anchorY - (anchorY - panY) * (zoom / oldZoom);
+        repaint();
+    }
+
+    public void fitDocumentToViewport(int padding) {
+        if (document == null) {
+            return;
+        }
+
+        float availableWidth = Math.max(1f, getWidth() - padding * 2f);
+        float availableHeight = Math.max(1f, getHeight() - padding * 2f);
+        float docWidth = Math.max(1f, document.getCanvasWidth());
+        float docHeight = Math.max(1f, document.getCanvasHeight());
+
+        zoom = Math.max(0.05f, Math.min(5.0f, Math.min(availableWidth / docWidth, availableHeight / docHeight)));
+        panX = (getWidth() - docWidth * zoom) / 2f;
+        panY = (getHeight() - docHeight * zoom) / 2f;
+        repaint();
+    }
+
+    public BufferedImage createSnapshot(int width, int height) {
+        int captureWidth = getWidth() > 0 ? getWidth() : (width > 0 ? width : 1280);
+        int captureHeight = getHeight() > 0 ? getHeight() : (height > 0 ? height : 720);
+
+        BufferedImage capture = new BufferedImage(captureWidth, captureHeight, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = capture.createGraphics();
+        graphics.setColor(getBackground());
+        graphics.fillRect(0, 0, captureWidth, captureHeight);
+        paint(graphics);
+        graphics.dispose();
+
+        if (width > 0 && height > 0 && (captureWidth != width || captureHeight != height)) {
+            BufferedImage scaled = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g2 = scaled.createGraphics();
+            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g2.drawImage(capture, 0, 0, width, height, null);
+            g2.dispose();
+            return scaled;
+        }
+
+        return capture;
+    }
+
     // --- Layout ---
 
     private void runLayout() {
