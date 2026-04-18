@@ -82,7 +82,6 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
     private void saveScript() {
 
         prg=prg.replaceAll("\r","");
-        prg = "//$[disable_audio]=true;" + prg;
         String projectName = resolveProjectName();
         if(projectName != null && !projectName.isBlank()) {
             prg = "//$[project]=" + projectName + ";" + prg;

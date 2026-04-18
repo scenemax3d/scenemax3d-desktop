@@ -27,6 +27,7 @@ import com.jme3.asset.AssetInfo;
 import com.jme3.asset.AssetKey;
 import com.jme3.asset.AssetManager;
 import com.jme3.asset.plugins.FileLocator;
+import com.jme3.audio.AudioContext;
 import com.jme3.audio.AudioNode;
 
 import com.jme3.bullet.BulletAppState;
@@ -410,6 +411,15 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     @Override
     public void simpleInitApp() {
+
+        logger.log(Level.INFO,
+            "[AUDIO DIAG] settings.getAudioRenderer()={0}, audioRenderer field={1}, AudioContext.getAudioRenderer()={2}, contextType={3}",
+            new Object[]{
+                settings != null ? settings.getAudioRenderer() : "null settings",
+                audioRenderer == null ? "null" : audioRenderer.getClass().getName(),
+                AudioContext.getAudioRenderer() == null ? "null" : AudioContext.getAudioRenderer().getClass().getName(),
+                getContext() == null ? "null" : getContext().getType()
+            });
 
         assetsMapping = null;
 
@@ -4550,7 +4560,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
             try {
                 node.stop();
-            } catch (NullPointerException ex) {
+            } catch (NullPointerException | IllegalStateException ex) {
                 logger.log(Level.FINE, "Ignoring audio shutdown race while stopping audio node", ex);
             }
         }
@@ -5268,7 +5278,12 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     public void stopSound(String sound) {
         AudioNode node = _audioNodes.get(sound);
         if(node!=null) {
-            node.stop();
+            if (!ensureAudioContextOnThisThread()) return;
+            try {
+                node.stop();
+            } catch (IllegalStateException ex) {
+                logAudioUnavailableOnce(ex);
+            }
         }
     }
 
@@ -5283,13 +5298,37 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         if(node!=null) {
-            if(cmd.loop) {
-                node.setLooping(cmd.loop);
-                node.play();
-            } else {
-                node.playInstance();
+            if (!ensureAudioContextOnThisThread()) return;
+            try {
+                if(cmd.loop) {
+                    node.setLooping(cmd.loop);
+                    node.play();
+                } else {
+                    node.playInstance();
+                }
+            } catch (IllegalStateException ex) {
+                logAudioUnavailableOnce(ex);
             }
         }
+    }
+
+    private boolean ensureAudioContextOnThisThread() {
+        if (AudioContext.getAudioRenderer() != null) return true;
+        if (audioRenderer != null) {
+            AudioContext.setAudioRenderer(audioRenderer);
+            return true;
+        }
+        return false;
+    }
+
+    private static volatile boolean _audioUnavailableLogged = false;
+    private void logAudioUnavailableOnce(IllegalStateException ex) {
+        if (_audioUnavailableLogged) return;
+        _audioUnavailableLogged = true;
+        logger.log(Level.WARNING,
+            "Audio playback unavailable: {0}. audioRenderer field on Application is {1}. " +
+            "This usually means the OpenAL renderer failed to initialize (missing natives, driver issue, or disableAudio=true).",
+            new Object[]{ex.getMessage(), (audioRenderer == null ? "null" : audioRenderer.getClass().getName())});
     }
 
 
