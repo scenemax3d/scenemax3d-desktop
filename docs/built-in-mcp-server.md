@@ -52,6 +52,21 @@ SceneMax supports AI integration in four related ways:
 | Claude Desktop | Through the bundled `scenemax_mcp_proxy.jar` stdio proxy | Desktop Claude users who want SceneMax tools as an MCP connector |
 | Local Gemma | Uses the same SceneMax tool registry inside the AI Console | Local/offline-friendly workflow inside SceneMax |
 
+## Tool Schemas And Reference
+
+The built-in MCP server exposes SceneMax tools through standard MCP `tools/list`.
+
+Each tool entry includes:
+
+- `name`
+- `description`
+- `inputSchema`
+- `outputSchema`
+
+That means an MCP client or agent can discover the live tool contract directly from the running IDE instead of relying on hard-coded assumptions.
+
+For a human-readable reference covering the current tool set, their purpose, common inputs, outputs, and recommended usage patterns, see [SceneMax MCP Tool Reference](mcp-tools-reference.md).
+
 ## What You Can Actually Do With It
 
 Here are the main task categories the built-in MCP tools unlock today.

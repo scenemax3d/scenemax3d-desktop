@@ -18,6 +18,8 @@ SceneMax3D includes project documentation in the [`docs/`](docs/) folder, coveri
 
 For AI-assisted workflows, see the built-in MCP and Local Gemma guide in [`docs/built-in-mcp-server.md`](docs/built-in-mcp-server.md), which explains setup for Claude, Codex, Claude Desktop, and local Gemma-powered assistance.
 
+For a tool-by-tool reference covering purpose, common inputs, outputs, and agent-facing usage patterns, see [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md).
+
 For hands-on examples, see the demo projects guide in [`projects/readme.md`](projects/readme.md), which walks through the sample games and explains how they are structured.
 
 ## Ready-to-Use Binaries

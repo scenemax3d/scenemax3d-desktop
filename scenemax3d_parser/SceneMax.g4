@@ -884,7 +884,7 @@ number: DecimalDigit ('.' DecimalDigit)? ;
 
 allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | ReplayIndex | AnimPercent |
     Do | Loop | Material | Radius | Sphere | Box | Cylinder | Quad | Wedge | Cone | Stairs | Arch | Thickness | Segments |
-    | Steps | Boxes | Collision | Shape | Spark | Flash | Explosion | Debris |
+    Steps | Boxes | Collision | Shape | Spark | Flash | Explosion | Debris |
     Spark | Fire | Flame | Destination | Gradient | Orbital | Start | Gravity | Duration |
     Water | Strength | Depth | Terrain | Camera | Chase | Trailing | Vertical | Horizontal | Rotation | Max | Min | Distance |
     Angle | Parent | Detach | Attach | Draw | Debug | On | Off | Calibrate | Shadow | Cast | Receive | SkyBox | Solar | System |

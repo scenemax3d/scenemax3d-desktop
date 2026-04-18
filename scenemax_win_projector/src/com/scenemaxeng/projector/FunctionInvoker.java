@@ -49,9 +49,21 @@ class FunctionInvoker {
         return false;
     }
 
+    private boolean hasArgument() {
+        if (ctx.logical_expression().isEmpty()) {
+            return false;
+        }
+        SceneMaxParser.Logical_expressionContext arg = ctx.logical_expression(0);
+        return arg != null && !arg.getText().trim().isEmpty();
+    }
+
+    private Object evaluateFirstArgument() {
+        return new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+    }
+
     private boolean invokeCos() {
-        if(ctx.logical_expression().size()>0) {
-            Object val = new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+        if (hasArgument()) {
+            Object val = evaluateFirstArgument();
             retval = Math.cos(ActionLogicalExpressionVm.toDouble(val));
             return true;
         } else {
@@ -61,8 +73,8 @@ class FunctionInvoker {
     }
 
     private boolean invokeSin() {
-        if(ctx.logical_expression().size()>0) {
-            Object val = new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+        if (hasArgument()) {
+            Object val = evaluateFirstArgument();
             retval = Math.sin(ActionLogicalExpressionVm.toDouble(val));
             return true;
         } else {
@@ -72,8 +84,8 @@ class FunctionInvoker {
     }
 
     private boolean invokeRound() {
-        if(ctx.logical_expression().size()>0) {
-            Object val = new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+        if (hasArgument()) {
+            Object val = evaluateFirstArgument();
             retval = Math.round(ActionLogicalExpressionVm.toDouble(val));
             return true;
         } else {
@@ -83,8 +95,8 @@ class FunctionInvoker {
     }
 
     private boolean invokeAbs() {
-        if(ctx.logical_expression().size()>0) {
-            Object val = new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+        if (hasArgument()) {
+            Object val = evaluateFirstArgument();
             retval = Math.abs(ActionLogicalExpressionVm.toDouble(val));
             return true;
         } else {
@@ -94,8 +106,8 @@ class FunctionInvoker {
     }
 
     private boolean invokeCeiling() {
-        if(ctx.logical_expression().size()>0) {
-            Object val = new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+        if (hasArgument()) {
+            Object val = evaluateFirstArgument();
             retval = Math.ceil(ActionLogicalExpressionVm.toDouble(val));
             return true;
         } else {
@@ -105,8 +117,8 @@ class FunctionInvoker {
     }
 
     private boolean invokeFloor() {
-        if(ctx.logical_expression().size()>0) {
-            Object val = new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+        if (hasArgument()) {
+            Object val = evaluateFirstArgument();
             retval = Math.floor(ActionLogicalExpressionVm.toDouble(val));
             return true;
         } else {
@@ -117,8 +129,8 @@ class FunctionInvoker {
 
 
     private boolean invokeRnd() {
-        if(ctx.logical_expression().size()>0) {
-            Object val = new ActionLogicalExpressionVm(ctx.logical_expression(0), scope).evaluate();
+        if (hasArgument()) {
+            Object val = evaluateFirstArgument();
             Double d = (Math.random() * ActionLogicalExpressionVm.toDouble(val));
             retval = Math.floor(d);
             return true;

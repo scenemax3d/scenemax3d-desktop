@@ -5,6 +5,7 @@ import com.scenemaxeng.common.types.ResourceFont;
 import com.scenemaxeng.common.types.ResourceSetup2D;
 import com.scenemaxeng.common.ui.model.*;
 
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.tree.*;
@@ -162,6 +163,12 @@ public class UIDesignerPanel extends JPanel {
     public boolean isDirty() { return dirty; }
     public File getUiFile() { return uiFile; }
     public UIDocument getDocument() { return document; }
+    public UIDesignerCanvas getCanvas() { return canvas; }
+
+    public String getActiveLayerName() {
+        Object selected = cboLayer != null ? cboLayer.getSelectedItem() : null;
+        return selected == null ? null : selected.toString();
+    }
 
     public void discardEditorState() {
         dirty = false;
@@ -1441,6 +1448,23 @@ public class UIDesignerPanel extends JPanel {
     public void clearAndDeactivatePanel() {
         deactivatePanel();
         document = null;
+    }
+
+    public File captureCanvasSnapshot(File outputFile, int width, int height) throws IOException {
+        if (outputFile == null) {
+            throw new IOException("Output file is required.");
+        }
+        if (canvas == null || !canvas.isShowing()) {
+            throw new IOException("The UI designer canvas is not visible, so no snapshot could be captured.");
+        }
+
+        BufferedImage image = canvas.createSnapshot(width, height);
+        File parent = outputFile.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        ImageIO.write(image, "png", outputFile);
+        return outputFile;
     }
 
     // ========================================================================

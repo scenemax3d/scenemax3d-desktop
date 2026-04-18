@@ -30,6 +30,7 @@ public class SceneMaxToolRegistry {
             item.put("name", tool.getName());
             item.put("description", tool.getDescription());
             item.put("inputSchema", tool.getInputSchema());
+            item.put("outputSchema", tool.getOutputSchema());
             result.put(item);
         }
         return result;
