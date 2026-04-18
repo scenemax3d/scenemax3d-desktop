@@ -1,7 +1,7 @@
 /////////////  SHARED VARIABLES /////////
 shared var timer=0 [0..],
     life1=INITIAL_PLAYER_STRENGTH [0..INITIAL_PLAYER_STRENGTH]
-
+shared var score = 0 [0..]
 /////////////////////////////////////////
 
 var life2=INITIAL_PLAYER_STRENGTH [0..INITIAL_PLAYER_STRENGTH]

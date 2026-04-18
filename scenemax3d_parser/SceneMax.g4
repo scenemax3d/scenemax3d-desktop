@@ -67,12 +67,14 @@ statement
    ;
 
 // UI system commands
-ui_statement : ui_load | ui_show_hide | ui_set_property | ui_set_default_property | ui_message ;
+ui_statement : ui_load | ui_show_hide | ui_set_property | ui_set_default_property | ui_message | ui_ease ;
 ui_load : UI '.' Load QUOTED_STRING ;
 ui_show_hide : UI '.' ui_dot_path '.' (Show | Hide) ;
 ui_set_property : UI '.' ui_dot_path '.' ui_property_name Equals logical_expression ;
 ui_set_default_property : UI '.' ui_dot_path Equals logical_expression ;
 ui_message : UI '.' ui_dot_path '.' Message '(' logical_expression ',' ui_text_effect ',' logical_expression ')' (async_expr)? ;
+ui_ease : UI '.' ui_dot_path '.' Ease '(' logical_expression ',' ui_ease_direction ',' logical_expression ')' ;
+ui_ease_direction : Left | Right | Up | Down ;
 ui_text_effect : ui_text_effect_flag ('|' ui_text_effect_flag)* ;
 ui_text_effect_flag : TextEffect '.' var_decl ;
 ui_dot_path : var_decl ('.' var_decl)* ;
@@ -898,7 +900,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
     Screen | Scene | Environment | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
-    Effekseer | Attr | Cinematic | Target | Message | TextEffect;
+    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
@@ -1161,6 +1163,7 @@ UI : 'UI' | 'ui' | 'Ui' ;
 Load : 'Load' | 'load' ;
 Message : 'Message' | 'message' ;
 TextEffect : 'TextEffect' | 'texteffect' | 'textEffect' ;
+Ease : 'Ease' | 'ease' ;
 Default : 'Default' | 'default' ;
 Modifiers : 'Modifiers' | 'modifiers' ;
 Apply : 'Apply' | 'apply' ;

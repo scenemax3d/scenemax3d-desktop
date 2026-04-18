@@ -15,7 +15,6 @@ player1_slow_motion (tm, frame_count) = {
 	player1.animation speed 0.01	for tm seconds when frames > frame_count // 10 times slower
 	wait tm second
 	slow_motion=0
-	
 									
 }
 
