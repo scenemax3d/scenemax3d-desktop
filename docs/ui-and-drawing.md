@@ -51,6 +51,49 @@ Notes:
 - This version animates whole-text reveal/scale/fade effects that work with the current `BitmapText` pipeline.
 - Per-glyph wave, wobble, bounce, and inline rich-text effects are not implemented yet.
 
+## UI Ease Animations
+
+Slide a UI layer or widget in and out of view with built-in easing:
+
+```scenemax
+UI.layer1.my_panel.ease("EaseInQuad", Up, 0.5)
+UI.layer1.my_panel.ease("EaseOutBounce", Left, 1)
+UI.hud.layer1.ease("EaseOutElastic", Down, 1)
+```
+
+`EaseIn...` functions end with the target shown on screen.
+
+`EaseOut...` functions end with the target hidden.
+
+Supported ease names:
+
+- `EaseInQuad`
+- `EaseInCubic`
+- `EaseInQuart`
+- `EaseInQuint`
+- `EaseInSine`
+- `EaseInCirc`
+- `EaseInExpo`
+- `EaseInBack`
+- `EaseInElastic`
+- `EaseInBounce`
+- `EaseInPower`
+- `EaseInBezier`
+- `EaseInCustom`
+- `EaseOutQuad`
+- `EaseOutCubic`
+- `EaseOutQuart`
+- `EaseOutQuint`
+- `EaseOutSine`
+- `EaseOutCirc`
+- `EaseOutExpo`
+- `EaseOutBack`
+- `EaseOutElastic`
+- `EaseOutBounce`
+- `EaseOutPower`
+- `EaseOutBezier`
+- `EaseOutCustom`
+
 ## Drawing Sprites on Screen
 
 Draw a 2D sprite on the screen at a screen position (for UI elements):

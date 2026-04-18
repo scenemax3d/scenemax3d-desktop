@@ -48,7 +48,10 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
                 f=f.getParentFile();
             }
 
-            this.scriptFolder = f;
+            // If the launched file lives in a sub-folder, walk up to the
+            // project's scripts root so all sibling files (e.g. .smui docs)
+            // get staged into the running/ folder alongside the entry script.
+            this.scriptFolder = resolveProjectScriptsRoot(f);
             this.runningFolder = new File("running");
             try {
                 if (this.runningFolder.exists()) {
@@ -200,6 +203,21 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    private File resolveProjectScriptsRoot(File startDir) {
+        if (startDir == null) {
+            return null;
+        }
+        File current = startDir;
+        while (current != null) {
+            File parent = current.getParentFile();
+            if (parent != null && "scripts".equalsIgnoreCase(parent.getName())) {
+                return current;
+            }
+            current = parent;
+        }
+        return startDir;
     }
 
     private String getScriptRelativePath(File file) {

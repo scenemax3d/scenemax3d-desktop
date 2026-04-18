@@ -2,7 +2,8 @@ canvas.size 1600,900
 screen.mode borderless 
 
 add "/variables/constants", 
-    "/variables/global_variables" code
+    "/variables/global_variables", 
+    "/utils/messages" code
 add "/game_init/game_init.code",
     "/game_input/input",
     "/game_input/input_x",

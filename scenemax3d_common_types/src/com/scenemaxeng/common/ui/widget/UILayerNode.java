@@ -1,6 +1,7 @@
 package com.scenemaxeng.common.ui.widget;
 
 import com.jme3.asset.AssetManager;
+import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
 import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.ui.layout.ConstraintLayoutEngine;
@@ -34,6 +35,8 @@ public class UILayerNode extends Node {
     private Map<String, UIWidgetNode> widgetNodesByPath = new LinkedHashMap<>();
 
     private ConstraintLayoutEngine layoutEngine = new ConstraintLayoutEngine();
+    private final Vector3f baseLocalTranslation = new Vector3f();
+    private final Vector3f animationOffset = new Vector3f();
 
     public UILayerNode(UILayerDef layerDef, AssetManager assetManager,
                        float designCanvasWidth, float designCanvasHeight,
@@ -134,6 +137,27 @@ public class UILayerNode extends Node {
         setCullHint(visible ? CullHint.Inherit : CullHint.Always);
     }
 
+    public void setAnimationOffset(float x, float y, float z) {
+        animationOffset.set(x, y, z);
+        applyAnimatedTranslation();
+    }
+
+    public void clearAnimationOffset() {
+        setAnimationOffset(0f, 0f, 0f);
+    }
+
+    public Vector3f getBaseLocalTranslation() {
+        return baseLocalTranslation.clone();
+    }
+
+    public float getRuntimeWidth() {
+        return runtimeCanvasWidth;
+    }
+
+    public float getRuntimeHeight() {
+        return runtimeCanvasHeight;
+    }
+
     public UIWidgetNode findWidget(String name) {
         UIWidgetNode widget = widgetNodesByPath.get(name);
         if (widget != null) {
@@ -148,5 +172,13 @@ public class UILayerNode extends Node {
 
     public boolean isScreenSpace() {
         return layerDef.getRenderMode() == UIRenderMode.SCREEN_SPACE;
+    }
+
+    private void applyAnimatedTranslation() {
+        super.setLocalTranslation(
+                baseLocalTranslation.x + animationOffset.x,
+                baseLocalTranslation.y + animationOffset.y,
+                baseLocalTranslation.z + animationOffset.z
+        );
     }
 }

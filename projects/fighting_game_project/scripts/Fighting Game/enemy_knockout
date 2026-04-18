@@ -1,5 +1,7 @@
 
+
 enemy_knockout = {
+	
 	enemy_ko=1
 	op_hit = 2
   do async
@@ -18,6 +20,7 @@ enemy_knockout = {
 	end do
 		
 	do async
+	  
 	  audio.stop "fight_music1"
 	  audio.play "level_win1"
 	  wait 7 seconds
@@ -25,8 +28,10 @@ enemy_knockout = {
 	end do
 
 	do async
+	 player2.shader = "dramatic_hit_red"
 	  player2.Knockout
 	  wait 2 seconds
+	  player2.shader = ""
     player2.data.knockout=0
     player2.Backflip 
 		player2.Idle loop

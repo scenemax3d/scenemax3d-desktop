@@ -8,6 +8,7 @@ import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
 import com.jme3.scene.shape.Quad;
+import com.jme3.math.Vector3f;
 import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.ui.layout.LayoutRect;
 import com.scenemaxeng.common.ui.model.UIWidgetDef;
@@ -40,6 +41,8 @@ public abstract class UIWidgetNode extends Node {
     protected float runtimeCanvasHeight;
 
     protected Geometry backgroundGeom;
+    private final Vector3f baseLocalTranslation = new Vector3f();
+    private final Vector3f animationOffset = new Vector3f();
 
     public UIWidgetNode(String name, UIWidgetDef widgetDef, AssetManager assetManager,
                         float designCanvasWidth, float designCanvasHeight,
@@ -91,7 +94,7 @@ public abstract class UIWidgetNode extends Node {
         LOGGER.log(Level.INFO, "Applying UI widget ''{0}'' type={1} rect={2} jmeTranslation=({3}, {4}, 0)",
                 new Object[]{getName(), widgetDef.getType(), rect, jmeX, jmeY});
 
-        setLocalTranslation(jmeX, jmeY, 0);
+        setBaseLocalTranslation(jmeX, jmeY, 0);
 
         if (backgroundGeom != null) {
             backgroundGeom.setMesh(new Quad(scaledWidth, scaledHeight));
@@ -105,6 +108,27 @@ public abstract class UIWidgetNode extends Node {
 
     public void setWidgetVisible(boolean visible) {
         setCullHint(visible ? CullHint.Inherit : CullHint.Always);
+    }
+
+    public void setAnimationOffset(float x, float y, float z) {
+        animationOffset.set(x, y, z);
+        applyAnimatedTranslation();
+    }
+
+    public void clearAnimationOffset() {
+        setAnimationOffset(0f, 0f, 0f);
+    }
+
+    public Vector3f getBaseLocalTranslation() {
+        return baseLocalTranslation.clone();
+    }
+
+    public float getRuntimeWidth() {
+        return layoutRect == null ? 0f : layoutRect.width * getScaleXFactor();
+    }
+
+    public float getRuntimeHeight() {
+        return layoutRect == null ? 0f : layoutRect.height * getScaleYFactor();
     }
 
     public UIWidgetDef getWidgetDef() {
@@ -135,6 +159,27 @@ public abstract class UIWidgetNode extends Node {
         mat.setTexture("ColorMap", assetManager.loadTexture(texturePath));
         mat.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
         return mat;
+    }
+
+    protected float getScaleXFactor() {
+        return designCanvasWidth != 0 ? runtimeCanvasWidth / designCanvasWidth : 1f;
+    }
+
+    protected float getScaleYFactor() {
+        return designCanvasHeight != 0 ? runtimeCanvasHeight / designCanvasHeight : 1f;
+    }
+
+    private void setBaseLocalTranslation(float x, float y, float z) {
+        baseLocalTranslation.set(x, y, z);
+        applyAnimatedTranslation();
+    }
+
+    private void applyAnimatedTranslation() {
+        super.setLocalTranslation(
+                baseLocalTranslation.x + animationOffset.x,
+                baseLocalTranslation.y + animationOffset.y,
+                baseLocalTranslation.z + animationOffset.z
+        );
     }
 
     protected static ColorRGBA parseColor(String hex) {

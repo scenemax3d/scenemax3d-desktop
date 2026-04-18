@@ -1,6 +1,7 @@
 var player1_head_hit = 0
 [player1_head_hit == 0] 
-player1_head_hit = {
+player1_head_hit = { 
+  
 	player1_head_hit = 1
 	life1 = life1 - 1
 	do async

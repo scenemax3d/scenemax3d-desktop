@@ -14,11 +14,9 @@ print_status = {
   timer=timer-1
   var frame1=round(life1*16/INITIAL_PLAYER_STRENGTH), 
       frame2=round(life2*16/INITIAL_PLAYER_STRENGTH)
-  
-  //life1.draw health_bar1 : pos (100,10) and size(450,50) and frame frame1
-	//life2.draw health_bar1 : pos (950,10) and size(450,50) and frame frame2
-	//timer.print round(timer) : pos (650,10,0) and font "xeno" and size 3.5 and color cyan
-	UI.layer1.panel2.score.text = timer	
+
+  UI.layer1.score.text = "Score: " + score	
+	UI.layer1.panel2.timer.text = timer	
 	UI.layer1.playerHealthBar.frame = frame1
 	UI.layer1.opponentHealthBar.frame = frame2
 }

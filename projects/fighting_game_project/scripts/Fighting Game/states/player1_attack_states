@@ -1,14 +1,19 @@
 var player2_head_hit_cnt = 0
 
 player2_head_hit = {
+  
+  score = score + 10;
+  run popup_msg ("+10") async
 	life2 = life2 - 1
 	player2_head_hit_cnt = player2_head_hit_cnt + 1
 	if (player2_head_hit_cnt % 3 == 0) {
 		do async
+		  player2.shader = "dramatic_hit_red"
 			player2_hit1.pos(player2."mixamorig:Head") 
 			player2_hit1.show
 			player2_hit1.play (frame 0 to 15) 
 			player2_hit1.hide
+			player2.shader = ""
 		end do
 		audio.play "hurt1"
 	}

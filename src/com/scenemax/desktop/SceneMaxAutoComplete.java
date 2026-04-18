@@ -121,6 +121,7 @@ public class SceneMaxAutoComplete {
         "File", "Name", "Contains",
         "Each", "Where",
         "Http", "Get", "Post", "Put",
+        "UI", "Load", "Message", "TextEffect", "Ease",
         "Plugins",
         "Animation",
         "Rows", "Cols",

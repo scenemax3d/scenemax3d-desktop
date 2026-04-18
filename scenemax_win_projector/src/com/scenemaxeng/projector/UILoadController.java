@@ -32,6 +32,15 @@ public class UILoadController extends SceneMaxBaseController {
         try {
             if (loadCmd.filePath != null && !loadCmd.filePath.isEmpty()) {
                 File uiFile = new File(loadCmd.filePath);
+                if (!uiFile.exists()) {
+                    // The script may live in a sub-folder while the .smui doc
+                    // sits higher up in the project tree. Walk up parent dirs
+                    // to locate it before falling back to packaged resources.
+                    File found = findUiFileInParents(uiFile.getParentFile(), loadCmd.uiName);
+                    if (found != null) {
+                        uiFile = found;
+                    }
+                }
                 if (uiFile.exists()) {
                     app.loadUIDocument(uiFile);
                 } else if (app.loadPackagedUiDocument(loadCmd.uiName)) {
@@ -47,5 +56,22 @@ public class UILoadController extends SceneMaxBaseController {
         }
 
         return true; // one-shot controller
+    }
+
+    private File findUiFileInParents(File startDir, String uiName) {
+        if (startDir == null || uiName == null || uiName.isEmpty()) {
+            return null;
+        }
+        File dir = startDir.getParentFile();
+        int levels = 0;
+        while (dir != null && levels < 10) {
+            File candidate = new File(dir, uiName + ".smui");
+            if (candidate.exists()) {
+                return candidate;
+            }
+            dir = dir.getParentFile();
+            levels++;
+        }
+        return null;
     }
 }
