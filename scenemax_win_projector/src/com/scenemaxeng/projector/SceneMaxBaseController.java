@@ -89,7 +89,11 @@ public class SceneMaxBaseController implements ISceneMaxController {
             EntityInstBase obj = (EntityInstBase) scope.getFuncScopeParam(vardef.varName);
 
             if (obj == null) {
-                app.handleRuntimeError("Function argument '" + vardef.varName + "' is undefined");
+                app.handleRuntimeError(app.formatUndefinedVariableError(
+                        vardef.varLineNum,
+                        vardef.varName,
+                        vardef,
+                        getClass().getSimpleName()));
                 return null;
             }
 
@@ -124,7 +128,11 @@ public class SceneMaxBaseController implements ISceneMaxController {
             EntityInstBase obj = (EntityInstBase) scope.getFuncScopeParam(varDef.varName);
 
             if (obj == null) {
-                app.handleRuntimeError("Function argument '" + cmd.varDef.varName + "' is undefined");
+                app.handleRuntimeError(app.formatUndefinedVariableError(
+                        cmd.varLineNum,
+                        cmd.varDef != null ? cmd.varDef.varName : cmd.targetVar,
+                        cmd.varDef,
+                        getClass().getSimpleName()));
                 return 1;
             }
 
@@ -146,6 +154,15 @@ public class SceneMaxBaseController implements ISceneMaxController {
                     this.targetVar = cmd.varDef.varName + "@" + scopeId;
                 }
             }
+        }
+
+        if (this.targetVar == null && cmd != null && cmd.varDef != null && cmd.varDef.varType != VariableDef.VAR_TYPE_CAMERA) {
+            app.handleRuntimeError(app.formatUndefinedVariableError(
+                    cmd.varLineNum,
+                    cmd.targetVar,
+                    cmd.varDef,
+                    getClass().getSimpleName()));
+            return 1;
         }
 
         return 0; // 0 = OK

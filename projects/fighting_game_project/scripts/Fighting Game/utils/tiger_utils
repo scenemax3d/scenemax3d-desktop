@@ -1,9 +1,0 @@
-
-
-tiger_roar(tm) = {
-	audio.play "monster_roar"
-  tg.Howl async
-  camera.attach to tg : pos (0,1,-12)
-	wait tm seconds
-	run set_camera_on_player
-}

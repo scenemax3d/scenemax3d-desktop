@@ -494,16 +494,10 @@ public class EditorTabPanel extends JPanel {
     public void switchToTab(TabData newTab) {
         if (newTab == activeTab) return;
 
-        // Save current state from editor into old tab (only for non-designer tabs)
-        if (activeTab != null && !activeTab.isDesignerTab && !activeTab.isUIDesignerTab
-                && !activeTab.isEffekseerDesignerTab
-                && !activeTab.isShaderDesignerTab && !activeTab.isEnvironmentShaderDesignerTab
-                && !activeTab.isMaterialDesignerTab
-                && !activeTab.isAnimationImportTab) {
-            activeTab.content = getCurrentEditorText();
-            activeTab.caretPosition = getCurrentCaretPosition();
-            activeTab.isRtlMode = textAreaRtlSP.isVisible();
+        if (activeTab != null) {
+            deactivateTabForSwitch(activeTab, newTab);
         }
+        ensureSceneDesignerCanvasDetached(newTab);
 
         activeTab = newTab;
 
@@ -592,6 +586,75 @@ public class EditorTabPanel extends JPanel {
         if (onTabChangedCallback != null) {
             onTabChangedCallback.run();
         }
+    }
+
+    private void deactivateTabForSwitch(TabData currentTab, TabData nextTab) {
+        if (currentTab == null) {
+            return;
+        }
+
+        // The scene designer already deactivates the previous scene panel as part
+        // of activating the next one, so avoid doing that work twice.
+        if (currentTab.isDesignerTab && nextTab != null && nextTab.isDesignerTab) {
+            return;
+        }
+
+        if (currentTab.isDesignerTab) {
+            if (currentTab.designerPanel != null) {
+                currentTab.designerPanel.deactivatePanel();
+            }
+            return;
+        }
+
+        if (currentTab.isUIDesignerTab) {
+            if (currentTab.uiDesignerPanel != null) {
+                currentTab.uiDesignerPanel.deactivatePanel();
+            }
+            return;
+        }
+
+        if (currentTab.isEffekseerDesignerTab) {
+            if (currentTab.effekseerDesignerPanel != null) {
+                currentTab.effekseerDesignerPanel.deactivatePanel();
+            }
+            return;
+        }
+
+        if (currentTab.isShaderDesignerTab) {
+            if (currentTab.shaderDesignerPanel != null) {
+                currentTab.shaderDesignerPanel.deactivatePanel();
+            }
+            return;
+        }
+
+        if (currentTab.isEnvironmentShaderDesignerTab) {
+            if (currentTab.environmentShaderDesignerPanel != null) {
+                currentTab.environmentShaderDesignerPanel.deactivatePanel();
+            }
+            return;
+        }
+
+        if (currentTab.isMaterialDesignerTab) {
+            if (currentTab.materialDesignerPanel != null) {
+                currentTab.materialDesignerPanel.deactivatePanel();
+            }
+            return;
+        }
+
+        if (currentTab.isAnimationImportTab) {
+            return;
+        }
+
+        currentTab.content = getCurrentEditorText();
+        currentTab.caretPosition = getCurrentCaretPosition();
+        currentTab.isRtlMode = textAreaRtlSP.isVisible();
+    }
+
+    private void ensureSceneDesignerCanvasDetached(TabData nextTab) {
+        if (nextTab != null && nextTab.isDesignerTab) {
+            return;
+        }
+        DesignerPanel.deactivateActiveDesignerPanel();
     }
 
     public void closeTab(TabData tabData) {
@@ -1058,6 +1121,30 @@ public class EditorTabPanel extends JPanel {
         btn.tabData.filePath = normalizedNew;
         tabButtons.put(normalizedNew, btn);
         btn.updateTitle();
+    }
+
+    public void updateTabsUnderFolderMove(String oldFolderPath, String newFolderPath) {
+        String normalizedOldFolder = new File(oldFolderPath).getAbsolutePath();
+        String normalizedNewFolder = new File(newFolderPath).getAbsolutePath();
+        String oldPrefix = normalizedOldFolder + File.separator;
+        String newPrefix = normalizedNewFolder + File.separator;
+
+        Map<String, TabButton> updatedButtons = new LinkedHashMap<>();
+        for (TabData td : tabs) {
+            TabButton btn = tabButtons.get(td.filePath);
+            if (td.filePath.startsWith(oldPrefix)) {
+                td.filePath = newPrefix + td.filePath.substring(oldPrefix.length());
+                if (btn != null) {
+                    btn.updateTitle();
+                }
+            }
+            if (btn != null) {
+                updatedButtons.put(td.filePath, btn);
+            }
+        }
+
+        tabButtons.clear();
+        tabButtons.putAll(updatedButtons);
     }
 
     public void closeTabByPath(String path) {

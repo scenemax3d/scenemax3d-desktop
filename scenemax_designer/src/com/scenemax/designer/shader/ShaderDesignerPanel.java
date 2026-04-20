@@ -884,8 +884,13 @@ public class ShaderDesignerPanel extends JPanel {
         if (projectPath != null && !projectPath.isBlank()) {
             return new File(projectPath, "resources").getPath();
         }
-        if (shaderFile != null && shaderFile.getParentFile() != null && shaderFile.getParentFile().getParentFile() != null) {
-            return new File(shaderFile.getParentFile().getParentFile(), "resources").getPath();
+        File parent = shaderFile != null ? shaderFile.getParentFile() : null;
+        while (parent != null) {
+            File resources = new File(parent, "resources");
+            if (resources.isDirectory()) {
+                return resources.getAbsolutePath();
+            }
+            parent = parent.getParentFile();
         }
         return null;
     }

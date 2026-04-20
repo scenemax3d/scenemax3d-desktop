@@ -963,6 +963,13 @@ public class Import3DModelPanel extends DesignerPanel {
                 FileUtils.copyDirectory(srcDir, destDir);
             }
 
+            File importedModelFile = new File(destDir, srcFile.getName());
+            try {
+                ImportedModelNormalizer.normalize(importedModelFile.toPath());
+            } catch (IOException normalizeError) {
+                System.err.println("[Import3DModelPanel] Imported model normalization skipped: " + normalizeError.getMessage());
+            }
+
             // Register in models-ext.json with default values
             JSONObject res = getResourcesFolderIndex(resourcesFolder + "/Models/models-ext.json");
             JSONArray models = res.getJSONArray("models");

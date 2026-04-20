@@ -1,4 +1,5 @@
 package com.scenemax.desktop.ai.tools;
+import com.scenemax.designer.ImportedModelNormalizer;
 import com.scenemax.designer.SketchfabService;
 import org.apache.commons.io.FileUtils;
 import org.json.JSONArray;
@@ -92,6 +93,12 @@ final class SketchfabImportSupport {
                 FileUtils.copyFileToDirectory(srcFile, destDir.toFile());
             } else {
                 FileUtils.copyDirectory(srcDir, destDir.toFile());
+            }
+
+            try {
+                ImportedModelNormalizer.normalize(destDir.resolve(srcFile.getName()));
+            } catch (IOException normalizeError) {
+                System.err.println("[SketchfabImportSupport] Imported model normalization skipped: " + normalizeError.getMessage());
             }
 
             String modelPath = "Models/" + resolvedName + "/" + srcFile.getName();

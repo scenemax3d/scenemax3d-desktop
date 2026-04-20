@@ -126,11 +126,14 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiProxy, IApplicationChannel {
 
     private static final float HP_TO_WATT = 746;
+    private static final Pattern RUNTIME_LINE_NUMBER_PATTERN = Pattern.compile("(?i)^\\s*line\\s*[:]?\\s*(\\d+)\\s*[\\.,:]?\\s*");
     public ISceneMaxPlugin pluginsCommunicationChannel;
     private Logger debugLogger=null;
 
@@ -3119,7 +3122,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return false;
         }
 
-        ResourceShader shader = assetsMapping.getShadersIndex().get(shaderName.toLowerCase(Locale.ROOT));
+        ResourceShader shader = resolveShaderResource(shaderName, false);
         if (shader == null) {
             return false;
         }
@@ -3442,64 +3445,12 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         models.put(modelName, am);
         parentNode.setName(modelName);
 
-        final Vector3f scale;
-        if (modelInst.scaleExpr != null) {
-            float sc = Float.parseFloat(modelInst.scaleExpr.evaluate().toString());
-            parentNode.scale(sc, sc, sc);
-            scale = new Vector3f(sc, sc, sc);
+        final Vector3f scale = resolveInitialModelScale(modelInst, resource);
+        parentNode.setLocalScale(scale);
 
-        } else {
-            parentNode.scale(resource.scaleX, resource.scaleY, resource.scaleZ);
-            scale = new Vector3f(resource.scaleX, resource.scaleY, resource.scaleZ);
-        }
-
-        if (modelInst.varDef.useVerbalTurn) {
-
-            float rotateX = 0;
-            float rotateY = 0;
-            float rotateZ = 0;
-
-            if (modelInst.rxExpr != null) {
-                rotateX = Float.parseFloat(modelInst.rxExpr.evaluate().toString()) * modelInst.varDef.rotDir;
-            } else if (modelInst.ryExpr != null) {
-                rotateY = Float.parseFloat(modelInst.ryExpr.evaluate().toString()) * modelInst.varDef.rotDir;
-            } else if (modelInst.rzExpr != null) {
-                rotateZ = Float.parseFloat(modelInst.rzExpr.evaluate().toString()) * modelInst.varDef.rotDir;
-            }
-
-
-            if (!modelInst.varDef.isVehicle) {
-                parentNode.rotate(rotateX * FastMath.DEG_TO_RAD, rotateY * FastMath.DEG_TO_RAD, rotateZ * FastMath.DEG_TO_RAD);
-            }
-
-
-        } else if (modelInst.rxExpr != null) {
-
-            float rotateX = Float.parseFloat(modelInst.rxExpr.evaluate().toString());
-            float rotateY = Float.parseFloat(modelInst.ryExpr.evaluate().toString());
-            float rotateZ = Float.parseFloat(modelInst.rzExpr.evaluate().toString());
-
-            if (!modelInst.varDef.isVehicle) {
-                parentNode.rotate(rotateX * FastMath.DEG_TO_RAD, rotateY * FastMath.DEG_TO_RAD, rotateZ * FastMath.DEG_TO_RAD);
-            } else {
-                // vehicle model will be rotated later
-                //entityLocalRotation = new Quaternion().fromAngles(rotateX * FastMath.DEG_TO_RAD, rotateY * FastMath.DEG_TO_RAD, rotateZ * FastMath.DEG_TO_RAD);
-            }
-
-        } else if (modelInst.entityForRot != null) {
-            Spatial sp = getEntitySpatial(modelInst.entityForRot.varName, modelInst.entityForRot.varDef.varType);
-            // non vehicle models can be rotated immediatley
-            if (!modelInst.varDef.isVehicle) {
-                parentNode.setLocalRotation(sp.getLocalRotation());
-            } else {
-                // vehicle model will be rotated later
-                //entityLocalRotation = sp.getLocalRotation();
-            }
-
-        } else if (resource.rotateY != 0f && !modelInst.varDef.isVehicle) {
-            Quaternion roll = new Quaternion();
-            roll.fromAngleAxis(FastMath.PI * resource.rotateY / 180, new Vector3f(0, 1, 0));
-            parentNode.setLocalRotation(roll);
+        Quaternion initialRotation = resolveInitialModelRotation(modelInst, resource);
+        if (initialRotation != null && !modelInst.varDef.isVehicle) {
+            parentNode.setLocalRotation(initialRotation);
         }
 
 
@@ -3679,6 +3630,56 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         geoName2EntityInst.put(geoKey, modelInst);
 
         return parentNode;
+    }
+
+    private Vector3f resolveInitialModelScale(ModelInst modelInst, ResourceSetup resource) {
+        if (modelInst.scaleExpr != null) {
+            float sc = Float.parseFloat(modelInst.scaleExpr.evaluate().toString());
+            return new Vector3f(sc, sc, sc);
+        }
+        return new Vector3f(resource.scaleX, resource.scaleY, resource.scaleZ);
+    }
+
+    private Quaternion resolveInitialModelRotation(ModelInst modelInst, ResourceSetup resource) {
+        if (modelInst.varDef.useVerbalTurn) {
+            float rotateX = 0f;
+            float rotateY = 0f;
+            float rotateZ = 0f;
+            if (modelInst.rxExpr != null) {
+                rotateX = Float.parseFloat(modelInst.rxExpr.evaluate().toString()) * modelInst.varDef.rotDir;
+            } else if (modelInst.ryExpr != null) {
+                rotateY = Float.parseFloat(modelInst.ryExpr.evaluate().toString()) * modelInst.varDef.rotDir;
+            } else if (modelInst.rzExpr != null) {
+                rotateZ = Float.parseFloat(modelInst.rzExpr.evaluate().toString()) * modelInst.varDef.rotDir;
+            }
+            return new Quaternion().fromAngles(
+                    rotateX * FastMath.DEG_TO_RAD,
+                    rotateY * FastMath.DEG_TO_RAD,
+                    rotateZ * FastMath.DEG_TO_RAD);
+        }
+
+        if (modelInst.rxExpr != null) {
+            float rotateX = Float.parseFloat(modelInst.rxExpr.evaluate().toString());
+            float rotateY = Float.parseFloat(modelInst.ryExpr.evaluate().toString());
+            float rotateZ = Float.parseFloat(modelInst.rzExpr.evaluate().toString());
+            return new Quaternion().fromAngles(
+                    rotateX * FastMath.DEG_TO_RAD,
+                    rotateY * FastMath.DEG_TO_RAD,
+                    rotateZ * FastMath.DEG_TO_RAD);
+        }
+
+        if (modelInst.entityForRot != null) {
+            Spatial sp = getEntitySpatial(modelInst.entityForRot.varName, modelInst.entityForRot.varDef.varType);
+            return sp != null ? sp.getLocalRotation().clone() : null;
+        }
+
+        if (resource.rotateY != 0f) {
+            Quaternion roll = new Quaternion();
+            roll.fromAngleAxis(FastMath.PI * resource.rotateY / 180, new Vector3f(0, 1, 0));
+            return roll;
+        }
+
+        return null;
     }
 
     public int attachModelSpatial(Spatial model, final ModelInst inst) {
@@ -4890,12 +4891,15 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     @Override
     public void handleRuntimeError(String err) {
+        String enrichedError = enrichRuntimeError(err);
+        recordRuntimeIssue(enrichedError, "run");
+        logger.log(Level.SEVERE, enrichedError);
+
         if (this.hasRunTimeError && this.runTimeError != null && !this.runTimeError.isBlank()) {
             return;
         }
-        recordRuntimeIssue(err, "run");
         this.hasRunTimeError=true;
-        this.runTimeError=err;
+        this.runTimeError=enrichedError;
     }
 
     public String formatRuntimeLocation(int lineNumber) {
@@ -4905,6 +4909,151 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return "File '" + scriptLabel + "', line " + lineNumber + ": ";
         }
         return "File '" + scriptLabel + "': ";
+    }
+
+    public String formatUndefinedVariableError(int lineNumber, String requestedVarName, VariableDef requestedVarDef, String sourceContext) {
+        String requestedName = firstNonBlank(
+                requestedVarName,
+                requestedVarDef != null ? requestedVarDef.varName : null,
+                "<unknown>");
+        String declaredName = requestedVarDef != null && requestedVarDef.varName != null && !requestedVarDef.varName.isBlank()
+                ? requestedVarDef.varName
+                : "<unresolved>";
+        StringBuilder message = new StringBuilder();
+        if (lineNumber > 0) {
+            message.append("Line: ").append(lineNumber).append(". ");
+        }
+        message.append("Variable lookup failed");
+        if (sourceContext != null && !sourceContext.isBlank()) {
+            message.append(" in ").append(sourceContext);
+        }
+        message.append(". Requested variable: '").append(requestedName).append("'.");
+        message.append(" Declared variable: '").append(declaredName).append("'.");
+        message.append(" Declared type: ").append(describeVariableType(requestedVarDef)).append('.');
+        if (requestedVarName == null || requestedVarName.isBlank()) {
+            message.append(" The command resolved to a null target variable before execution.");
+        }
+        message.append(" This usually means the referenced entity or function argument is not available in the current scope");
+        if (currentLevel != null && !currentLevel.isBlank()) {
+            message.append(" after switching into '").append(currentLevel).append('\'');
+        }
+        message.append('.');
+        return message.toString();
+    }
+
+    private String enrichRuntimeError(String err) {
+        String rawMessage = err == null || err.isBlank() ? "Unknown runtime error." : err.trim();
+        File textLogFile = RuntimeIssueLog.resolveTextLogFile(resolveRuntimeProjectRoot());
+
+        if (rawMessage.startsWith("File '")) {
+            return appendRuntimeHints(rawMessage, rawMessage, textLogFile);
+        }
+
+        int lineNumber = extractRuntimeLineNumber(rawMessage);
+        String normalizedMessage = stripLegacyRuntimeLinePrefix(rawMessage);
+        StringBuilder enriched = new StringBuilder(formatRuntimeLocation(lineNumber));
+        enriched.append(normalizedMessage);
+        return appendRuntimeHints(enriched.toString(), rawMessage, textLogFile);
+    }
+
+    private String appendRuntimeHints(String baseMessage, String rawMessage, File textLogFile) {
+        StringBuilder enriched = new StringBuilder(baseMessage);
+        if (extractRuntimeLineNumber(rawMessage) <= 0) {
+            enriched.append(System.lineSeparator())
+                    .append("Hint: the command did not provide a source line number, so the exact line could not be reported.");
+        }
+        if (rawMessage != null && rawMessage.contains("variable 'null' is undefined")) {
+            enriched.append(System.lineSeparator())
+                    .append("Hint: the command resolved to a null target variable. This usually means an entity or function argument was missing in the current scope, often after a level switch or inside imported code.");
+        }
+        if (textLogFile != null) {
+            enriched.append(System.lineSeparator())
+                    .append("Runtime log: ")
+                    .append(textLogFile.getAbsolutePath());
+        }
+        return enriched.toString();
+    }
+
+    private int extractRuntimeLineNumber(String message) {
+        if (message == null || message.isBlank()) {
+            return -1;
+        }
+        Matcher matcher = RUNTIME_LINE_NUMBER_PATTERN.matcher(message);
+        if (!matcher.find()) {
+            return -1;
+        }
+        try {
+            return Integer.parseInt(matcher.group(1));
+        } catch (NumberFormatException ex) {
+            return -1;
+        }
+    }
+
+    private String stripLegacyRuntimeLinePrefix(String message) {
+        if (message == null || message.isBlank()) {
+            return "Unknown runtime error.";
+        }
+        return RUNTIME_LINE_NUMBER_PATTERN.matcher(message).replaceFirst("").trim();
+    }
+
+    private String describeVariableType(VariableDef variableDef) {
+        if (variableDef == null) {
+            return "<unresolved>";
+        }
+        switch (variableDef.varType) {
+            case VariableDef.VAR_TYPE_3D:
+                return "3D entity";
+            case VariableDef.VAR_TYPE_2D:
+                return "2D entity";
+            case VariableDef.VAR_TYPE_STRING:
+                return "string";
+            case VariableDef.VAR_TYPE_NUMBER:
+                return "number";
+            case VariableDef.VAR_TYPE_ARRAY:
+                return "array";
+            case VariableDef.VAR_TYPE_CAMERA:
+                return "camera";
+            case VariableDef.VAR_TYPE_SPHERE:
+                return "sphere";
+            case VariableDef.VAR_TYPE_OBJECT:
+                return "object/function argument";
+            case VariableDef.VAR_TYPE_BOX:
+                return "box";
+            case VariableDef.VAR_TYPE_EXPR_POINTER:
+                return "expression pointer";
+            case VariableDef.VAR_TYPE_CYLINDER:
+                return "cylinder";
+            case VariableDef.VAR_TYPE_HOLLOW_CYLINDER:
+                return "hollow cylinder";
+            case VariableDef.VAR_TYPE_QUAD:
+                return "quad";
+            case VariableDef.VAR_TYPE_WEDGE:
+                return "wedge";
+            case VariableDef.VAR_TYPE_CONE:
+                return "cone";
+            case VariableDef.VAR_TYPE_STAIRS:
+                return "stairs";
+            case VariableDef.VAR_TYPE_ARCH:
+                return "arch";
+            case VariableDef.VAR_TYPE_EFFEKSEER:
+                return "effekseer effect";
+            case VariableDef.VAR_TYPE_CINEMATIC_CAMERA:
+                return "cinematic camera";
+            default:
+                return "type " + variableDef.varType;
+        }
+    }
+
+    private String firstNonBlank(String... candidates) {
+        if (candidates == null) {
+            return "<unknown>";
+        }
+        for (String candidate : candidates) {
+            if (candidate != null && !candidate.isBlank()) {
+                return candidate;
+            }
+        }
+        return "<unknown>";
     }
 
 
@@ -6807,22 +6956,32 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     private String resolveCurrentScriptContextPath() {
         if (currentLevel != null && !currentLevel.isBlank()) {
-            File levelFile = new File(currentLevel);
-            if (!levelFile.isAbsolute()) {
-                levelFile = new File(workingFolder, currentLevel);
-            }
-            return levelFile.getAbsolutePath();
+            return resolveScriptContextPath(currentLevel);
         }
 
         if (entryScriptFileName != null && !entryScriptFileName.isBlank()) {
-            File entryFile = new File(entryScriptFileName);
-            if (!entryFile.isAbsolute()) {
-                entryFile = new File(workingFolder, entryScriptFileName);
-            }
-            return entryFile.getAbsolutePath();
+            return resolveScriptContextPath(entryScriptFileName);
         }
 
         return workingFolder;
+    }
+
+    private String resolveScriptContextPath(String rawPath) {
+        if (rawPath == null || rawPath.isBlank()) {
+            return workingFolder;
+        }
+
+        File scriptFile = new File(rawPath);
+        if (!scriptFile.isAbsolute()) {
+            scriptFile = new File(workingFolder, rawPath);
+        }
+        if (scriptFile.isDirectory()) {
+            File mainFile = new File(scriptFile, "main");
+            if (mainFile.isFile()) {
+                scriptFile = mainFile;
+            }
+        }
+        return scriptFile.getAbsolutePath();
     }
 
     private RuntimeCinematicRig parseCinematicRig(JSONObject json, String sourcePath, String sourceDocumentBuffer) {
@@ -8326,7 +8485,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return;
         }
 
-        ResourceShader shader = assetsMapping.getShadersIndex().get(shaderName.toLowerCase(Locale.ROOT));
+        ResourceShader shader = resolveShaderResource(shaderName, true);
         if (shader == null) {
             handleRuntimeError("Cannot find shader resource named: '" + shaderName + "'");
             return;
@@ -8341,6 +8500,61 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         Picture overlay = ensureEnvironmentShaderOverlay();
         overlay.setMaterial(shaderMaterial);
         updateEnvironmentShaderOverlaySize();
+    }
+
+    private ResourceShader resolveShaderResource(String shaderName, boolean preferEnvironmentShader) {
+        if (shaderName == null || shaderName.trim().isEmpty() || assetManager == null) {
+            return null;
+        }
+
+        String trimmedName = shaderName.trim();
+        if (assetsMapping != null) {
+            ResourceShader indexed = assetsMapping.getShadersIndex().get(trimmedName.toLowerCase(Locale.ROOT));
+            if (indexed != null) {
+                return indexed;
+            }
+        }
+
+        String[] candidateFolders = preferEnvironmentShader
+                ? new String[]{"environment_shaders", "shaders"}
+                : new String[]{"shaders", "environment_shaders"};
+
+        for (String folder : candidateFolders) {
+            ResourceShader discovered = discoverShaderResource(trimmedName, folder);
+            if (discovered != null) {
+                return discovered;
+            }
+        }
+
+        return null;
+    }
+
+    private ResourceShader discoverShaderResource(String shaderName, String shaderFolder) {
+        String sanitized = shaderName.replaceAll("[^A-Za-z0-9_\\-]", "_");
+        LinkedHashSet<String> baseNames = new LinkedHashSet<>();
+        baseNames.add(shaderName);
+        baseNames.add(sanitized);
+
+        for (String baseName : baseNames) {
+            if (baseName == null || baseName.isBlank()) {
+                continue;
+            }
+            String normalizedBase = baseName.trim();
+            String materialDefPath = shaderFolder + "/" + normalizedBase + "/" + normalizedBase + ".j3md";
+            if (assetExists(materialDefPath)) {
+                return new ResourceShader(shaderName, materialDefPath);
+            }
+        }
+
+        return null;
+    }
+
+    private boolean assetExists(String assetPath) {
+        try {
+            return assetManager.locateAsset(new AssetKey<>(assetPath)) != null;
+        } catch (Exception ex) {
+            return false;
+        }
     }
 
     private Picture ensureEnvironmentShaderOverlay() {

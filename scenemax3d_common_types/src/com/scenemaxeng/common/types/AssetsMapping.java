@@ -8,8 +8,11 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 
 public class AssetsMapping {
 
@@ -66,6 +69,8 @@ public class AssetsMapping {
 
         res = getResourcesFolderIndex(extPath+"/environment_shaders/environment-shaders-ext.json");
         loadShadersFromJson(res);
+        loadShadersRecursively(extPath, "shaders");
+        loadShadersRecursively(extPath, "environment_shaders");
 
         res = getResourcesFolderIndex(extPath+"/material/materials-ext.json");
         loadMaterialsFromJson(res);
@@ -339,6 +344,65 @@ public class AssetsMapping {
             String path = shader.getString("path");
             _shaders.put(name.toLowerCase(), new ResourceShader(name, path));
         }
+    }
+
+    private void loadShadersRecursively(String extPath, String folderName) {
+        if (extPath == null || extPath.isBlank()) {
+            return;
+        }
+
+        File resourcesRoot = new File(extPath);
+        File shaderRoot = new File(resourcesRoot, folderName);
+        if (!shaderRoot.isDirectory()) {
+            return;
+        }
+
+        Collection<File> shaderFiles = org.apache.commons.io.FileUtils.listFiles(shaderRoot, new String[]{"j3md"}, true);
+        if (shaderFiles.isEmpty()) {
+            return;
+        }
+
+        List<File> sortedShaderFiles = new ArrayList<>(shaderFiles);
+        sortedShaderFiles.sort(Comparator.comparing(File::getAbsolutePath, String.CASE_INSENSITIVE_ORDER));
+
+        for (File shaderFile : sortedShaderFiles) {
+            registerDiscoveredShader(resourcesRoot, shaderFile);
+        }
+    }
+
+    private void registerDiscoveredShader(File resourcesRoot, File shaderFile) {
+        if (resourcesRoot == null || shaderFile == null) {
+            return;
+        }
+
+        String fileName = shaderFile.getName();
+        int dotIndex = fileName.lastIndexOf('.');
+        if (dotIndex <= 0) {
+            return;
+        }
+
+        String shaderName = fileName.substring(0, dotIndex).trim();
+        if (shaderName.isEmpty()) {
+            return;
+        }
+
+        String relativePath = resourcesRoot.getAbsoluteFile().toURI()
+                .relativize(shaderFile.getAbsoluteFile().toURI())
+                .getPath();
+        if (relativePath == null || relativePath.isBlank()) {
+            return;
+        }
+
+        String shaderKey = shaderName.toLowerCase();
+        ResourceShader existingShader = _shaders.get(shaderKey);
+        if (existingShader != null) {
+            String existingPath = existingShader.path != null ? existingShader.path.replace('/', File.separatorChar) : "";
+            if (!existingPath.isBlank() && new File(resourcesRoot, existingPath).isFile()) {
+                return;
+            }
+        }
+
+        _shaders.put(shaderKey, new ResourceShader(shaderName, relativePath.replace('\\', '/')));
     }
 
     private void loadMaterialsFromJson(JSONObject res) {

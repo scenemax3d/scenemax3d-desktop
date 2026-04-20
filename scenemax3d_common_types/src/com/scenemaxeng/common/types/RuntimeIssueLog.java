@@ -22,6 +22,7 @@ public final class RuntimeIssueLog {
 
     private static final Object LOCK = new Object();
     private static final String RELATIVE_LOG_PATH = ".scenemax/runtime-issues.jsonl";
+    private static final String RELATIVE_TEXT_LOG_PATH = ".scenemax/runtime-errors.log";
     private static final Pattern LINE_NUMBER_PATTERN = Pattern.compile("(?i)\\bline\\s*[:]?\\s*(\\d+)\\b");
 
     private RuntimeIssueLog() {
@@ -34,18 +35,17 @@ public final class RuntimeIssueLog {
         return new File(new File(System.getProperty("java.io.tmpdir"), "scenemax"), "runtime-issues.jsonl");
     }
 
+    public static File resolveTextLogFile(File projectRoot) {
+        if (projectRoot != null) {
+            return new File(projectRoot, RELATIVE_TEXT_LOG_PATH);
+        }
+        return new File(new File(System.getProperty("java.io.tmpdir"), "scenemax"), "runtime-errors.log");
+    }
+
     public static void clear(File projectRoot) {
-        File logFile = resolveLogFile(projectRoot);
         synchronized (LOCK) {
-            try {
-                Path path = logFile.toPath();
-                Path parent = path.getParent();
-                if (parent != null) {
-                    Files.createDirectories(parent);
-                }
-                Files.write(path, new byte[0], StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-            } catch (IOException ignored) {
-            }
+            truncateFile(resolveLogFile(projectRoot));
+            truncateFile(resolveTextLogFile(projectRoot));
         }
     }
 
@@ -147,7 +147,70 @@ public final class RuntimeIssueLog {
                         StandardOpenOption.APPEND);
             } catch (IOException ignored) {
             }
+
+            try {
+                File textLogFile = resolveSiblingTextLogFile(logFile);
+                Path textPath = textLogFile.toPath();
+                Path textParent = textPath.getParent();
+                if (textParent != null) {
+                    Files.createDirectories(textParent);
+                }
+                Files.writeString(textPath,
+                        formatTextEntry(entry),
+                        StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.APPEND);
+            } catch (IOException ignored) {
+            }
         }
+    }
+
+    private static void truncateFile(File file) {
+        try {
+            Path path = file.toPath();
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.write(path, new byte[0], StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException ignored) {
+        }
+    }
+
+    private static File resolveSiblingTextLogFile(File jsonLogFile) {
+        File parent = jsonLogFile == null ? null : jsonLogFile.getParentFile();
+        if (parent != null) {
+            return new File(parent, "runtime-errors.log");
+        }
+        return resolveTextLogFile(null);
+    }
+
+    private static String formatTextEntry(JSONObject entry) {
+        String timestamp = entry.optString("timestamp", Instant.now().toString());
+        String issueType = entry.optString("issueType", "runtime").toUpperCase(Locale.ROOT);
+        String phase = entry.optString("phase", "");
+        String source = entry.optString("source", "");
+        String scriptPath = entry.optString("scriptPath", "");
+        int lineNumber = entry.optInt("lineNumber", -1);
+        String message = entry.optString("message", "");
+
+        StringBuilder formatted = new StringBuilder();
+        formatted.append('[').append(timestamp).append("] ").append(issueType);
+        if (!phase.isBlank()) {
+            formatted.append(" [").append(phase).append(']');
+        }
+        if (!source.isBlank()) {
+            formatted.append(" ").append(source);
+        }
+        formatted.append(System.lineSeparator());
+        if (!scriptPath.isBlank()) {
+            formatted.append("Script: ").append(scriptPath).append(System.lineSeparator());
+        }
+        if (lineNumber > 0) {
+            formatted.append("Line: ").append(lineNumber).append(System.lineSeparator());
+        }
+        formatted.append("Message: ").append(message).append(System.lineSeparator()).append(System.lineSeparator());
+        return formatted.toString();
     }
 
     private static List<JSONObject> readEntries(File logFile) {

@@ -208,6 +208,13 @@ public class DesignerApp extends SceneMaxApp {
     private boolean loadingDocument = false;
     private int loadingTotalEntities = 0;
     private List<String> loadingEntityOrder;  // entity IDs in document order
+    private int loadingExpectedEntityCount = 0;
+    private int loadingFailedEntityCount = 0;
+    private boolean documentLoadIncomplete = false;
+    private boolean persistenceBlockedWarningLogged = false;
+    private boolean documentPersistPending = false;
+    private long documentPersistDeadlineNanos = 0L;
+    private static final long DOCUMENT_PERSIST_DEBOUNCE_NANOS = TimeUnit.MILLISECONDS.toNanos(500);
 
     // Input action names
     private static final String ACTION_LEFT_CLICK = "DesignerLeftClick";
@@ -1844,7 +1851,14 @@ public class DesignerApp extends SceneMaxApp {
             return designerProjectPath + "/resources";
         }
         if (designerFile != null) {
-            return designerFile.getParentFile().getParent() + "/resources";
+            File parent = designerFile.getParentFile();
+            while (parent != null) {
+                File resources = new File(parent, "resources");
+                if (resources.isDirectory()) {
+                    return resources.getAbsolutePath();
+                }
+                parent = parent.getParentFile();
+            }
         }
         return null;
     }
@@ -2254,6 +2268,7 @@ public class DesignerApp extends SceneMaxApp {
 
             Node node = (Node) rootNode.getChild(pe.nodeName);
             if (node != null) {
+                removeDuplicateRootChildren(node);
                 // Entity node was created - register it
                 DesignerEntity entity;
                 if (pe.entityId != null) {
@@ -2440,6 +2455,9 @@ public class DesignerApp extends SceneMaxApp {
                     System.err.println("Failed to create entity via code (timed out after "
                             + maxFrames + " frames): " + pe.code);
                     System.err.println("Expected node name: " + pe.nodeName);
+                    if (loadingDocument) {
+                        loadingFailedEntityCount++;
+                    }
                     if (pe.loadingGizmo != null) {
                         pe.loadingGizmo.removeFromParent();
                         pe.loadingGizmo = null;
@@ -2476,6 +2494,16 @@ public class DesignerApp extends SceneMaxApp {
                 System.out.println("[JME]   " + e.getName() + " type=" + e.getType() + " collider=" + e.isColliderEntity());
             }
             notifySceneChanged();
+
+            int actualEntityCount = countDesignerEntities(entities);
+            documentLoadIncomplete = loadingFailedEntityCount > 0 || actualEntityCount < loadingExpectedEntityCount;
+            persistenceBlockedWarningLogged = false;
+            if (documentLoadIncomplete) {
+                System.err.println("[Designer] Document load incomplete; blocking auto-save to protect the file on disk."
+                        + " expectedEntities=" + loadingExpectedEntityCount
+                        + " actualEntities=" + actualEntityCount
+                        + " failedPending=" + loadingFailedEntityCount);
+            }
 
             sphereCounter = (int) entities.stream()
                     .filter(e -> e.getType() == DesignerEntityType.SPHERE).count();
@@ -2720,6 +2748,18 @@ public class DesignerApp extends SceneMaxApp {
         assetManager.deleteFromCache(new ModelKey(assetPath));
     }
 
+    public void evictModelResourceFromCache(String resourceName) {
+        if (resourceName == null || resourceName.isBlank() || getAssetsMapping() == null
+                || getAssetsMapping().get3DModelsIndex() == null) {
+            return;
+        }
+        ResourceSetup res = getAssetsMapping().get3DModelsIndex().get(resourceName.toLowerCase());
+        if (res == null || res.path == null || res.path.isBlank()) {
+            return;
+        }
+        assetManager.deleteFromCache(new ModelKey(res.path));
+    }
+
     /**
      * Recreates an entity with updated static/collider flags.
      * Preserves position, rotation, scale, and all other properties.
@@ -2937,7 +2977,7 @@ public class DesignerApp extends SceneMaxApp {
      * after its tab was closed.
      */
     public void reloadDocument() {
-        // Save camera position – clearScene() resets it
+        // Save camera position – scene clearing resets it
         Vector3f savedCamPos = cam.getLocation().clone();
         Quaternion savedCamRot = cam.getRotation().clone();
 
@@ -2949,11 +2989,7 @@ public class DesignerApp extends SceneMaxApp {
             outlineEffect.removeOutline();
         }
 
-        // Clean up path visuals and editing state
-        if (pathEditGizmo != null) pathEditGizmo.detach();
-        if (pathDrawingMode != null && pathDrawingMode.isActive()) pathDrawingMode.cancel();
-        for (PathVisual pv : pathVisuals.values()) pv.removeFromParent();
-        pathVisuals.clear();
+        clearDesignerVisualState();
 
         // Clear designer entity tracking
         entities.clear();
@@ -2964,9 +3000,11 @@ public class DesignerApp extends SceneMaxApp {
         }
         pendingEntities.clear();
 
-        // Clear the SceneMax scene (removes all models, boxes, spheres,
-        // controllers, audio, etc.)
-        clearScene();
+        // Use the full clear path here as well. A regular clear can leave
+        // shared/static runtime nodes behind, which then makes a reopened
+        // designer tab show stale visuals that no longer match the reloaded
+        // DesignerEntity wrappers/properties.
+        clearSceneAll();
 
         // Re-initialize the SceneMax runtime (clearScene shuts down the
         // executor service and clears all controllers including the main
@@ -3041,11 +3079,7 @@ public class DesignerApp extends SceneMaxApp {
         if (outlineEffect != null) {
             outlineEffect.removeOutline();
         }
-        // Clean up path state
-        if (pathEditGizmo != null) pathEditGizmo.detach();
-        if (pathDrawingMode != null && pathDrawingMode.isActive()) pathDrawingMode.cancel();
-        for (PathVisual pv : pathVisuals.values()) pv.removeFromParent();
-        pathVisuals.clear();
+        clearDesignerVisualState();
 
         entities.clear();
         for (PendingEntity pe : pendingEntities) {
@@ -3057,6 +3091,13 @@ public class DesignerApp extends SceneMaxApp {
         clearSceneAll();
         document = null;
         designerFile = null;
+        loadingDocument = false;
+        loadingExpectedEntityCount = 0;
+        loadingFailedEntityCount = 0;
+        documentLoadIncomplete = false;
+        persistenceBlockedWarningLogged = false;
+        documentPersistPending = false;
+        documentPersistDeadlineNanos = 0L;
     }
 
     /**
@@ -3082,11 +3123,7 @@ public class DesignerApp extends SceneMaxApp {
             outlineEffect.removeOutline();
         }
 
-        // Clean up path state
-        if (pathEditGizmo != null) pathEditGizmo.detach();
-        if (pathDrawingMode != null && pathDrawingMode.isActive()) pathDrawingMode.cancel();
-        for (PathVisual pv : pathVisuals.values()) pv.removeFromParent();
-        pathVisuals.clear();
+        clearDesignerVisualState();
 
         // Clear designer entity tracking
         entities.clear();
@@ -3169,6 +3206,12 @@ public class DesignerApp extends SceneMaxApp {
 
     private void loadDocumentEntities() {
         loadingDocument = true;
+        loadingFailedEntityCount = 0;
+        documentLoadIncomplete = false;
+        persistenceBlockedWarningLogged = false;
+        documentPersistPending = false;
+        documentPersistDeadlineNanos = 0L;
+        loadingExpectedEntityCount = countJsonEntities(document.getEntityDefs());
         loadingTotalEntities = document.getEntityDefs().size();
         notifyLoadingProgress(0, loadingTotalEntities);
         applyDocumentSceneEnvironmentShader();
@@ -3180,6 +3223,50 @@ public class DesignerApp extends SceneMaxApp {
         loadEntityDefs(document.getEntityDefs(), entities, null);
     }
 
+    private void clearDesignerVisualState() {
+        if (pathEditGizmo != null) {
+            pathEditGizmo.detach();
+        }
+        if (pathDrawingMode != null && pathDrawingMode.isActive()) {
+            pathDrawingMode.cancel();
+        }
+        for (PathVisual pv : pathVisuals.values()) {
+            pv.removeFromParent();
+        }
+        pathVisuals.clear();
+        for (CinematicTrackVisual visual : cinematicTrackVisuals.values()) {
+            if (visual != null) {
+                visual.removeFromParent();
+            }
+        }
+        cinematicTrackVisuals.clear();
+        setCinematicAuthoringTarget(null);
+    }
+
+    private void detachRootChildrenByName(String nodeName) {
+        if (nodeName == null || nodeName.isEmpty()) {
+            return;
+        }
+        List<Spatial> snapshot = new ArrayList<>(rootNode.getChildren());
+        for (Spatial child : snapshot) {
+            if (child != null && nodeName.equals(child.getName())) {
+                child.removeFromParent();
+            }
+        }
+    }
+
+    private void removeDuplicateRootChildren(Spatial keep) {
+        if (keep == null || keep.getName() == null || keep.getName().isEmpty()) {
+            return;
+        }
+        List<Spatial> snapshot = new ArrayList<>(rootNode.getChildren());
+        for (Spatial child : snapshot) {
+            if (child != null && child != keep && keep.getName().equals(child.getName())) {
+                child.removeFromParent();
+            }
+        }
+    }
+
     private void applyDocumentSceneEnvironmentShader() {
         if (document == null) {
             return;
@@ -3189,6 +3276,52 @@ public class DesignerApp extends SceneMaxApp {
         if (shaderName != null && !shaderName.trim().isEmpty()) {
             runPartialCode("Scene.environment.shader = \"" + shaderName.trim() + "\"", null, false);
         }
+    }
+
+    private int countJsonEntities(List<JSONObject> defs) {
+        int total = 0;
+        if (defs == null) {
+            return 0;
+        }
+        for (JSONObject def : defs) {
+            if (def == null) {
+                continue;
+            }
+            total++;
+            total += countJsonEntities(def.optJSONArray("children"));
+        }
+        return total;
+    }
+
+    private int countJsonEntities(JSONArray defs) {
+        int total = 0;
+        if (defs == null) {
+            return 0;
+        }
+        for (int i = 0; i < defs.length(); i++) {
+            JSONObject def = defs.optJSONObject(i);
+            if (def == null) {
+                continue;
+            }
+            total++;
+            total += countJsonEntities(def.optJSONArray("children"));
+        }
+        return total;
+    }
+
+    private int countDesignerEntities(List<DesignerEntity> list) {
+        int total = 0;
+        if (list == null) {
+            return 0;
+        }
+        for (DesignerEntity entity : list) {
+            if (entity == null) {
+                continue;
+            }
+            total++;
+            total += countDesignerEntities(entity.getChildren());
+        }
+        return total;
     }
 
     /**
@@ -3356,14 +3489,18 @@ public class DesignerApp extends SceneMaxApp {
             // the latest position, size, static/collider flags, etc.
             // (The saved sceneMaxCode can become stale after transform or
             // property changes that don't update it.)
-            String code = generateCodeFromEntity(entityTemplate, pos);
-
-            // Run the code to create the entity - will be processed by controllers
-            runPartialCode(code, null, false);
+            if (entityTemplate.getType() == DesignerEntityType.MODEL) {
+                evictModelResourceFromCache(entityTemplate.getResourcePath());
+            }
+            String code = generateCodeFromEntity(entityTemplate, pos, rot, scale);
 
             // Build the expected node name and queue for deferred lookup
             SceneMaxScope scope = getMainScope();
             String nodeName = entityTemplate.getName() + "@" + scope.scopeId;
+            detachRootChildrenByName(nodeName);
+
+            // Run the code to create the entity - will be processed by controllers
+            runPartialCode(code, null, false);
 
             PendingEntity pending = new PendingEntity();
             pending.entityId = entityTemplate.getId();
@@ -3594,12 +3731,14 @@ public class DesignerApp extends SceneMaxApp {
      * keyword is only emitted in DesignerDocument.generateEntityCode() for
      * the exported .code file.
      */
-    private String generateCodeFromEntity(DesignerEntity entity, Vector3f pos) {
+    private String generateCodeFromEntity(DesignerEntity entity, Vector3f pos, Quaternion rotation, Vector3f scale) {
         String name = entity.getName();
         String mat = entity.getMaterial();
         String materialSuffix = (mat != null && !mat.isEmpty()) ? ", material \"" + mat + "\"" : "";
         String hiddenAttr = entity.isHidden() ? " hidden," : "";
         String shadowSuffix = buildShadowModeSuffix(entity.getShadowMode());
+        String rotateSuffix = buildDesignRotateSuffix(rotation);
+        String scaleSuffix = buildDesignScaleSuffix(scale);
         switch (entity.getType()) {
             case SPHERE:
                 String spherePrefix = entity.isStaticEntity() ? "static " : "";
@@ -3656,10 +3795,37 @@ public class DesignerApp extends SceneMaxApp {
                 String staticPfx = entity.isStaticModel() ? "static " : "";
                 String vehicleSfx = entity.isVehicleModel() ? " vehicle" : "";
                 return name + " => " + staticPfx + entity.getResourcePath() + vehicleSfx +
-                       ": pos (" + pos.x + "," + pos.y + "," + pos.z + ") async";
+                       ":" + hiddenAttr + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" +
+                       scaleSuffix + rotateSuffix + shadowSuffix + " async";
             default:
                 return "";
         }
+    }
+
+    private String buildDesignScaleSuffix(Vector3f scale) {
+        if (scale == null) {
+            return "";
+        }
+        float s = scale.x;
+        if (Math.abs(s - 1.0f) < 0.001f) {
+            return "";
+        }
+        return ", scale " + s;
+    }
+
+    private String buildDesignRotateSuffix(Quaternion rotation) {
+        if (rotation == null) {
+            return "";
+        }
+        float[] angles = new float[3];
+        rotation.toAngles(angles);
+        float degX = (float) Math.toDegrees(angles[0]);
+        float degY = (float) Math.toDegrees(angles[1]);
+        float degZ = (float) Math.toDegrees(angles[2]);
+        if (Math.abs(degX) < 0.01f && Math.abs(degY) < 0.01f && Math.abs(degZ) < 0.01f) {
+            return "";
+        }
+        return ", rotate(" + degX + "," + degY + "," + degZ + ")";
     }
 
     private String buildShadowModeSuffix(String shadowMode) {
@@ -3679,11 +3845,36 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     /**
-     * Auto-saves both the .smdesign JSON and the companion .code file
-     * immediately so the on-disk files always reflect the current scene state.
+     * Marks the .smdesign document dirty and schedules a debounced persist.
      */
     public void markDocumentDirty() {
-        // Auto-save the .smdesign JSON
+        // Never persist while the document is still being reconstructed from disk.
+        // This keeps loaded entities from triggering writes as they appear.
+        if (!canPersistDocumentState()) {
+            return;
+        }
+
+        documentPersistPending = true;
+        documentPersistDeadlineNanos = System.nanoTime() + DOCUMENT_PERSIST_DEBOUNCE_NANOS;
+    }
+
+    private void flushPendingDocumentPersist() {
+        if (!documentPersistPending) {
+            return;
+        }
+        if (!canPersistDocumentState()) {
+            return;
+        }
+        documentPersistPending = false;
+        documentPersistDeadlineNanos = 0L;
+        persistDocumentStateNow();
+    }
+
+    public void flushPendingDocumentPersistNow() {
+        flushPendingDocumentPersist();
+    }
+
+    private void persistDocumentStateNow() {
         if (document != null && designerFile != null && designerFile.exists()) {
             try {
                 List<DesignerEntity> sceneEntities = entities.stream()
@@ -3698,7 +3889,6 @@ public class DesignerApp extends SceneMaxApp {
                 e.printStackTrace();
             }
         }
-        // Auto-save the .code companion and notify UI
         persistCodeFile();
     }
 
@@ -3709,6 +3899,7 @@ public class DesignerApp extends SceneMaxApp {
     private void persistCodeFile() {
         if (designerFile == null) return;
         if (!designerFile.exists()) return; // file was deleted, don't recreate it
+        if (!canPersistDocumentState()) return;
         try {
             List<DesignerEntity> sceneEntities = entities.stream()
                     .filter(e -> e.getType() != DesignerEntityType.CAMERA)
@@ -3738,18 +3929,31 @@ public class DesignerApp extends SceneMaxApp {
     private void saveCameraState() {
         if (document == null || designerFile == null) return;
         if (!designerFile.exists()) return; // file was deleted, don't recreate it
-        try {
-            List<DesignerEntity> sceneEntities = entities.stream()
-                    .filter(e -> e.getType() != DesignerEntityType.CAMERA)
-                    .collect(Collectors.toList());
-            Vector3f gameCamPos = getPersistedGameCameraPos();
-            Quaternion gameCamRot = getPersistedGameCameraRot();
-            document.save(new File(document.getFilePath()), sceneEntities,
-                    cam.getLocation(), cam.getRotation(), gameCamPos, gameCamRot);
-        } catch (IOException e) {
-            System.err.println("Failed to save camera state");
-            e.printStackTrace();
+        if (!canPersistDocumentState()) return;
+        if (documentPersistPending) {
+            flushPendingDocumentPersist();
+        } else {
+            persistDocumentStateNow();
         }
+    }
+
+    private boolean canPersistDocumentState() {
+        if (loadingDocument) {
+            if (!persistenceBlockedWarningLogged) {
+                System.err.println("[Designer] Skipping document save while entities are still loading.");
+                persistenceBlockedWarningLogged = true;
+            }
+            return false;
+        }
+        if (documentLoadIncomplete) {
+            if (!persistenceBlockedWarningLogged) {
+                System.err.println("[Designer] Last load was marked incomplete, but allowing save because the scene is now editable.");
+            }
+            persistenceBlockedWarningLogged = true;
+            return true;
+        }
+        persistenceBlockedWarningLogged = false;
+        return true;
     }
 
     private Vector3f getPersistedGameCameraPos() {
@@ -3757,6 +3961,38 @@ public class DesignerApp extends SceneMaxApp {
             return savedCameraPreviewPos.clone();
         }
         return cameraEntity != null ? cameraEntity.getPosition() : new Vector3f(0, 2, 5);
+    }
+
+    public void applyEntityTransform(DesignerEntity entity, Vector3f position, Quaternion rotation, Vector3f scale) {
+        if (entity == null) {
+            return;
+        }
+        if (position != null) {
+            entity.setPosition(position);
+        }
+        if (rotation != null) {
+            entity.setRotation(rotation);
+        }
+        if (scale != null) {
+            entity.setScale(scale);
+        }
+        syncRuntimeRotationForEntity(entity);
+    }
+
+    private void syncRuntimeRotationForEntity(DesignerEntity entity) {
+        if (entity == null || entity.getType() != DesignerEntityType.MODEL || entity.getSceneNode() == null) {
+            return;
+        }
+        String runtimeName = entity.getSceneNode().getName();
+        if (runtimeName == null || runtimeName.isBlank()) {
+            return;
+        }
+        float[] angles = new float[3];
+        entity.getRotation().toAngles(angles);
+        rotateResetModel(runtimeName,
+                angles[0] * FastMath.RAD_TO_DEG,
+                angles[1] * FastMath.RAD_TO_DEG,
+                angles[2] * FastMath.RAD_TO_DEG);
     }
 
     private Quaternion getPersistedGameCameraRot() {
@@ -4492,6 +4728,10 @@ public class DesignerApp extends SceneMaxApp {
 
         // Check if any pending entity nodes have been created by the controllers
         processPendingEntities();
+
+        if (documentPersistPending && System.nanoTime() >= documentPersistDeadlineNanos) {
+            flushPendingDocumentPersist();
+        }
 
         // Animate camera toward a preset view (smooth transition)
         if (animatingCamera) {

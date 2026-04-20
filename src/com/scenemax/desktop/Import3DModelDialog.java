@@ -1,5 +1,7 @@
 package com.scenemax.desktop;
 
+import com.scenemax.designer.ImportedModelNormalizer;
+
 import com.intellij.uiDesigner.core.GridConstraints;
 import com.intellij.uiDesigner.core.GridLayoutManager;
 import com.intellij.uiDesigner.core.Spacer;
@@ -253,6 +255,13 @@ public class Import3DModelDialog extends JDialog {
                 FileUtils.copyFileToDirectory(srcFile, destDir);
             } else {
                 FileUtils.copyDirectory(srcDir, destDir);
+            }
+
+            File importedModelFile = new File(destDir, srcFile.getName());
+            try {
+                ImportedModelNormalizer.normalize(importedModelFile.toPath());
+            } catch (IOException normalizeError) {
+                System.err.println("[Import3DModelDialog] Imported model normalization skipped: " + normalizeError.getMessage());
             }
             JSONObject res = getResourcesFolderIndex((Util.getResourcesFolder() + "/Models/models-ext.json"));
             JSONArray models = res.getJSONArray("models");

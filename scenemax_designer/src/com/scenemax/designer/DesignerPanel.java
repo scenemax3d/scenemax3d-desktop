@@ -1618,6 +1618,15 @@ public class DesignerPanel extends JPanel {
     public void deactivatePanel() {
         if (sharedApp == null) return;
 
+        try {
+            sharedApp.enqueue(() -> {
+                sharedApp.flushPendingDocumentPersistNow();
+                return null;
+            }).get();
+        } catch (Exception ignored) {
+            // Best-effort flush only; don't block tab switching on transient render-thread issues.
+        }
+
         // Save orbit camera state for later restore
         savedCamDistance = sharedApp.getCameraDistance();
         savedCamYaw = sharedApp.getCameraYaw();
@@ -1629,6 +1638,16 @@ public class DesignerPanel extends JPanel {
         canvasContainer.removeAll();
         canvasContainer.revalidate();
         canvasContainer.repaint();
+
+        if (activeDesignerPanel == this) {
+            activeDesignerPanel = null;
+        }
+    }
+
+    public static void deactivateActiveDesignerPanel() {
+        if (activeDesignerPanel != null) {
+            activeDesignerPanel.deactivatePanel();
+        }
     }
 
     public void reloadFromDisk() {
@@ -1685,6 +1704,12 @@ public class DesignerPanel extends JPanel {
     // --- Scene tree ---
 
     public void refreshSceneTree() {
+        String selectedEntityId = null;
+        DefaultMutableTreeNode selectedNode = (DefaultMutableTreeNode) sceneTree.getLastSelectedPathComponent();
+        if (selectedNode != null && selectedNode.getUserObject() instanceof EntityTreeNode) {
+            selectedEntityId = ((EntityTreeNode) selectedNode.getUserObject()).entity.getId();
+        }
+
         // Remember expanded section paths so we can restore them after reload
         java.util.Set<String> expandedIds = new java.util.HashSet<>();
         for (int i = 0; i < sceneTree.getRowCount(); i++) {
@@ -1715,6 +1740,21 @@ public class DesignerPanel extends JPanel {
         sceneTree.expandRow(0);
         // Restore expanded sections
         restoreExpandedSections(sceneTreeRoot, expandedIds);
+
+        if (selectedEntityId != null) {
+            DefaultMutableTreeNode restored = findTreeNodeById(sceneTreeRoot, selectedEntityId);
+            if (restored != null) {
+                TreePath restoredPath = new TreePath(restored.getPath());
+                sceneTree.setSelectionPath(restoredPath);
+                sceneTree.scrollPathToVisible(restoredPath);
+            } else {
+                sceneTree.clearSelection();
+                updatePropertiesPanel(null);
+            }
+        } else {
+            sceneTree.clearSelection();
+            updatePropertiesPanel(null);
+        }
     }
 
     private void buildTreeNodes(DefaultMutableTreeNode parent, List<DesignerEntity> entities) {
@@ -1834,6 +1874,25 @@ public class DesignerPanel extends JPanel {
                 if (etn.entity.getType() == DesignerEntityType.SECTION || etn.entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
                     DefaultMutableTreeNode found = findTreeNode(child, entity);
                     if (found != null) return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private DefaultMutableTreeNode findTreeNodeById(DefaultMutableTreeNode parent, String entityId) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            DefaultMutableTreeNode child = (DefaultMutableTreeNode) parent.getChildAt(i);
+            if (child.getUserObject() instanceof EntityTreeNode) {
+                EntityTreeNode etn = (EntityTreeNode) child.getUserObject();
+                if (etn.entity != null && entityId.equals(etn.entity.getId())) {
+                    return child;
+                }
+                if (etn.entity.getType() == DesignerEntityType.SECTION || etn.entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                    DefaultMutableTreeNode found = findTreeNodeById(child, entityId);
+                    if (found != null) {
+                        return found;
+                    }
                 }
             }
         }
@@ -2753,11 +2812,9 @@ public class DesignerPanel extends JPanel {
         float sz = ((Number) spnScaleZ.getValue()).floatValue();
 
         app.enqueue(() -> {
-            sel.setPosition(new Vector3f(px, py, pz));
             Quaternion q = new Quaternion();
             q.fromAngles(rx, ry, rz);
-            sel.setRotation(q);
-            sel.setScale(new Vector3f(sx, sy, sz));
+            app.applyEntityTransform(sel, new Vector3f(px, py, pz), q, new Vector3f(sx, sy, sz));
             app.markDocumentDirty();
             return null;
         });
