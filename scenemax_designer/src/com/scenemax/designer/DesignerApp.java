@@ -34,6 +34,7 @@ import com.scenemax.designer.selection.OutlineEffect;
 import com.scenemax.designer.selection.SelectionManager;
 import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.types.ResourceSetup;
+import com.scenemaxeng.projector.AppModel;
 import com.scenemaxeng.projector.SceneMaxApp;
 import com.scenemaxeng.projector.SceneMaxScope;
 import org.json.JSONArray;
@@ -2211,6 +2212,36 @@ public class DesignerApp extends SceneMaxApp {
         mat.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Off);
         wireGeo.setMaterial(mat);
         node.attachChild(wireGeo);
+        setDesignerColliderSolidGeometryVisible(node, false);
+    }
+
+    private void setDesignerColliderSolidGeometryVisible(Spatial spatial, boolean visible) {
+        if (spatial == null) {
+            return;
+        }
+        if (COLLIDER_WIREFRAME_KEY.equals(spatial.getName())) {
+            spatial.setCullHint(visible ? Spatial.CullHint.Inherit : Spatial.CullHint.Never);
+            return;
+        }
+        if (spatial instanceof Node) {
+            for (Spatial child : ((Node) spatial).getChildren()) {
+                setDesignerColliderSolidGeometryVisible(child, visible);
+            }
+            return;
+        }
+        spatial.setCullHint(visible ? Spatial.CullHint.Inherit : Spatial.CullHint.Always);
+    }
+
+    private void ensureDesignerPreviewVisibility(PendingEntity pe, Node node) {
+        if (pe == null || node == null) {
+            return;
+        }
+        if (pe.type == DesignerEntityType.MODEL && pe.hidden && node.getParent() == null) {
+            rootNode.attachChild(node);
+        }
+        if (pe.colliderEntity) {
+            setDesignerColliderSolidGeometryVisible(node, false);
+        }
     }
 
     private void attachPendingColliderWireframe(Node node, PendingEntity pe) {
@@ -2267,8 +2298,17 @@ public class DesignerApp extends SceneMaxApp {
             pe.framesWaited++;
 
             Node node = (Node) rootNode.getChild(pe.nodeName);
+            if (node == null && pe.type == DesignerEntityType.MODEL) {
+                AppModel appModel = getAppModel(pe.nodeName);
+                if (appModel != null && appModel.model != null) {
+                    node = appModel.model;
+                }
+            }
             if (node != null) {
-                removeDuplicateRootChildren(node);
+                ensureDesignerPreviewVisibility(pe, node);
+                if (node.getParent() == rootNode) {
+                    removeDuplicateRootChildren(node);
+                }
                 // Entity node was created - register it
                 DesignerEntity entity;
                 if (pe.entityId != null) {
@@ -3947,10 +3987,10 @@ public class DesignerApp extends SceneMaxApp {
         }
         if (documentLoadIncomplete) {
             if (!persistenceBlockedWarningLogged) {
-                System.err.println("[Designer] Last load was marked incomplete, but allowing save because the scene is now editable.");
+                System.err.println("[Designer] Last load was marked incomplete; blocking save to avoid overwriting the scene with missing entities.");
             }
             persistenceBlockedWarningLogged = true;
-            return true;
+            return false;
         }
         persistenceBlockedWarningLogged = false;
         return true;

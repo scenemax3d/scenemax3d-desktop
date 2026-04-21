@@ -780,6 +780,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
 
     public void clearScene() {
+        resetTransientCameraRuntimeState();
         this.clearThreads();
         groups.clear();
         _controllers.clear();
@@ -904,6 +905,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
      * entities must be removed regardless of their shared flag.
      */
     public void clearSceneAll() {
+        resetTransientCameraRuntimeState();
         this.clearThreads();
         groups.clear();
         _controllers.clear();
@@ -3630,6 +3632,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         geoName2EntityInst.put(geoKey, modelInst);
 
         return parentNode;
+    }
+
+    private void resetTransientCameraRuntimeState() {
+        turnOffCameraStates();
+        activeCinematicCameraCount = 0;
     }
 
     private Vector3f resolveInitialModelScale(ModelInst modelInst, ResourceSetup resource) {
