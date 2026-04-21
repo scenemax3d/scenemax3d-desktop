@@ -87,6 +87,8 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
         SceneMaxLanguageParser.setMacroFilter(macroFilter);
 
         ProgramDef program = new SceneMaxLanguageParser(null,scriptFolder.getAbsolutePath()).parse(this.prg);
+        ScriptTreeResourceCollector.collectResources(this.scriptFolder, macroFilter);
+        DesignerDocumentResourceCollector.collectResources(getPackagedProjectRoot(), macroFilter);
         AssetsMapping assetsMapping = new AssetsMapping(Util.getResourcesFolder());
 
         JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], animations:[] }");

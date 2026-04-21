@@ -56,11 +56,14 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     private final Set<String> uiReferencedSpriteNames = new LinkedHashSet<>();
     private final Set<String> uiReferencedFontNames = new LinkedHashSet<>();
     private final Set<String> uiReferencedImagePaths = new LinkedHashSet<>();
+    private final List<String> scannedScriptFiles = new ArrayList<>();
+    private final List<String> scannedDesignerFiles = new ArrayList<>();
     private final PackageOptions options;
     private File outputFolder;
     private final StringBuilder completionNotes = new StringBuilder();
     private volatile String statusNote = "";
     private volatile String failureMessage = "";
+    private String packagingInventoryJson = "";
 
     public enum PackageTarget {
         WINDOWS,
@@ -157,12 +160,17 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         uiReferencedSpriteNames.clear();
         uiReferencedFontNames.clear();
         uiReferencedImagePaths.clear();
+        scannedScriptFiles.clear();
+        scannedDesignerFiles.clear();
+        packagingInventoryJson = "";
         SceneMaxLanguageParser.parseUsingResource = true; // look for manual resource declarations
         SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, this.scriptFolder.getAbsolutePath());
         MacroFilter macroFilter = new MacroFilter();
         macroFilter.loadMacroRulesFromMacroFolder(new File("macro"));
         parser.setMacroFilter(macroFilter);
         ProgramDef program = parser.parse(this.prg);
+        scannedScriptFiles.addAll(ScriptTreeResourceCollector.collectResources(this.scriptFolder, macroFilter));
+        scannedDesignerFiles.addAll(DesignerDocumentResourceCollector.collectResources(getPackagedProjectRoot(), macroFilter));
         AssetsMapping assetsMapping = new AssetsMapping(Util.getResourcesFolder());
 
         JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], shaders:[], environmentShaders:[], materials:[], cinematics:[], animations:[] }");
@@ -456,6 +464,9 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             jarOutputStream.closeEntry();
         }
 
+        packagingInventoryJson = buildPackagingInventory(resources, assetsMapping).toString(2);
+        FileUtils.writeStringToFile(new File(deployFolder, "packaging-inventory.json"), packagingInventoryJson, StandardCharsets.UTF_8);
+
         File scriptFolderCopy = copyAndApplyMacro(scriptFolder);
         FileUtils.moveDirectory(scriptFolderCopy, new File(deployFolder, "running")); // rename
         scriptFolderCopy = new File(deployFolder, "running");
@@ -529,6 +540,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 producedArtifacts.add(webFolder);
             }
         }
+
+        writePackagingInventoryArtifact();
     }
 
     private void uploadToItchIfRequested() throws IOException {
@@ -683,6 +696,18 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         copyPlatformIcon(options.windowsIcon, windowsFolder, "icon");
         return exePath;
+    }
+
+    private void writePackagingInventoryArtifact() {
+        if (outputFolder == null || packagingInventoryJson == null || packagingInventoryJson.isBlank()) {
+            return;
+        }
+
+        try {
+            FileUtils.writeStringToFile(new File(outputFolder, "packaging-inventory.json"), packagingInventoryJson, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private File prepareScriptPackage(String gameName, String platformFolderName, String launcherFileName, boolean macLauncher) throws IOException {
@@ -1269,6 +1294,157 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         }
     }
 
+    private JSONObject buildPackagingInventory(JSONObject packagedResources, AssetsMapping assetsMapping) {
+        JSONObject inventory = new JSONObject();
+        inventory.put("scriptRoot", scriptFolder == null ? JSONObject.NULL : scriptFolder.getAbsolutePath());
+        File projectRoot = getPackagedProjectRoot();
+        inventory.put("projectRoot", projectRoot == null ? JSONObject.NULL : projectRoot.getAbsolutePath());
+        File projectResources = getPackagedProjectResourcesFolder();
+        inventory.put("resourcesRoot", projectResources == null ? JSONObject.NULL : projectResources.getAbsolutePath());
+        inventory.put("scannedScriptFiles", toRelativeJsonArray(scannedScriptFiles, scriptFolder));
+        inventory.put("scannedDesignerFiles", toRelativeJsonArray(scannedDesignerFiles, projectRoot));
+        inventory.put("uiImagePaths", toSortedJsonArray(uiReferencedImagePaths));
+
+        JSONObject referenced = new JSONObject();
+        referenced.put("models", toSortedJsonArray(SceneMaxLanguageParser.modelsUsed));
+        referenced.put("sprites", toSortedJsonArray(SceneMaxLanguageParser.spriteSheetUsed));
+        referenced.put("effects", toSortedJsonArray(SceneMaxLanguageParser.effekseerUsed));
+        referenced.put("audio", toSortedJsonArray(SceneMaxLanguageParser.audioUsed));
+        referenced.put("fonts", toSortedJsonArray(SceneMaxLanguageParser.fontsUsed));
+        referenced.put("skyboxes", toSortedJsonArray(SceneMaxLanguageParser.skyboxUsed));
+        referenced.put("terrains", toSortedJsonArray(SceneMaxLanguageParser.terrainsUsed));
+        inventory.put("referencedResources", referenced);
+
+        JSONObject missing = new JSONObject();
+        missing.put("models", findMissingIndexedResources(SceneMaxLanguageParser.modelsUsed, assetsMapping.get3DModelsIndex()));
+        missing.put("sprites", findMissingIndexedResources(SceneMaxLanguageParser.spriteSheetUsed, assetsMapping.getSpriteSheetsIndex()));
+        missing.put("audio", findMissingIndexedResources(SceneMaxLanguageParser.audioUsed, assetsMapping.getAudioIndex()));
+        missing.put("fonts", findMissingIndexedResources(SceneMaxLanguageParser.fontsUsed, assetsMapping.getFontsIndex()));
+        missing.put("skyboxes", findMissingIndexedResources(SceneMaxLanguageParser.skyboxUsed, assetsMapping.getSkyboxesIndex()));
+        missing.put("terrains", findMissingIndexedResources(SceneMaxLanguageParser.terrainsUsed, assetsMapping.getTerrainsIndex()));
+        missing.put("effects", findMissingEffects(SceneMaxLanguageParser.effekseerUsed));
+        missing.put("uiImages", findMissingUiImages(uiReferencedImagePaths));
+        inventory.put("missingResources", missing);
+
+        inventory.put("packagedResources", new JSONObject(packagedResources.toString()));
+        return inventory;
+    }
+
+    private JSONArray toRelativeJsonArray(List<String> absolutePaths, File root) {
+        List<String> values = new ArrayList<>();
+        for (String absolutePath : absolutePaths) {
+            values.add(toRelativePath(absolutePath, root));
+        }
+        Collections.sort(values);
+        JSONArray array = new JSONArray();
+        for (String value : values) {
+            array.put(value);
+        }
+        return array;
+    }
+
+    private String toRelativePath(String absolutePath, File root) {
+        if (absolutePath == null || absolutePath.isBlank()) {
+            return "";
+        }
+        if (root == null) {
+            return absolutePath;
+        }
+
+        try {
+            String rootPath = root.getCanonicalFile().toURI().toString();
+            String targetPath = new File(absolutePath).getCanonicalFile().toURI().toString();
+            if (targetPath.startsWith(rootPath)) {
+                return root.toURI().relativize(new File(absolutePath).toURI()).getPath();
+            }
+        } catch (IOException ignored) {
+        }
+
+        return absolutePath;
+    }
+
+    private JSONArray toSortedJsonArray(Collection<String> values) {
+        List<String> sorted = new ArrayList<>();
+        for (String value : values) {
+            if (value == null) {
+                continue;
+            }
+            String trimmed = value.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (!sorted.contains(trimmed)) {
+                sorted.add(trimmed);
+            }
+        }
+        Collections.sort(sorted);
+        JSONArray array = new JSONArray();
+        for (String value : sorted) {
+            array.put(value);
+        }
+        return array;
+    }
+
+    private JSONArray findMissingIndexedResources(Collection<String> names, Map<String, ?> index) {
+        List<String> missing = new ArrayList<>();
+        for (String name : names) {
+            if (name == null || name.isBlank()) {
+                continue;
+            }
+            if (index == null || !index.containsKey(name.toLowerCase(Locale.ROOT))) {
+                if (!missing.contains(name)) {
+                    missing.add(name);
+                }
+            }
+        }
+        Collections.sort(missing);
+        JSONArray array = new JSONArray();
+        for (String name : missing) {
+            array.put(name);
+        }
+        return array;
+    }
+
+    private JSONArray findMissingEffects(Collection<String> effectNames) {
+        List<String> missing = new ArrayList<>();
+        for (String effectName : effectNames) {
+            if (effectName == null || effectName.isBlank()) {
+                continue;
+            }
+            String assetId = effectName;
+            String prefix = "effects.effekseer.";
+            if (assetId.toLowerCase(Locale.ROOT).startsWith(prefix)) {
+                assetId = assetId.substring(prefix.length());
+            }
+            File sourceDir = resolveEffekseerEffectSource(assetId);
+            if (!sourceDir.isDirectory() && !missing.contains(effectName)) {
+                missing.add(effectName);
+            }
+        }
+        Collections.sort(missing);
+        JSONArray array = new JSONArray();
+        for (String name : missing) {
+            array.put(name);
+        }
+        return array;
+    }
+
+    private JSONArray findMissingUiImages(Collection<String> imagePaths) {
+        List<String> missing = new ArrayList<>();
+        for (String imagePath : imagePaths) {
+            File resolved = resolveUiImageFile(imagePath);
+            if ((resolved == null || !resolved.isFile()) && !missing.contains(imagePath)) {
+                missing.add(imagePath);
+            }
+        }
+        Collections.sort(missing);
+        JSONArray array = new JSONArray();
+        for (String name : missing) {
+            array.put(name);
+        }
+        return array;
+    }
+
     private void appendCinematicResourcesRecursive(File projectRoot, File designerFile, JSONArray entities, String documentBuffer, JSONArray targetArray) {
         if (entities == null) {
             return;
@@ -1429,20 +1605,12 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     }
 
     private void copyUiImageResource(String imagePath) {
+        File directFile = resolveUiImageFile(imagePath);
+        if (directFile == null || !directFile.exists() || !directFile.isFile()) {
+            return;
+        }
+
         String normalized = imagePath.replace("\\", "/").trim();
-        if (normalized.length() == 0) {
-            return;
-        }
-
-        File directFile = new File(normalized);
-        if (!directFile.exists()) {
-            directFile = new File(Util.getResourcePath(normalized));
-        }
-
-        if (!directFile.exists() || !directFile.isFile()) {
-            return;
-        }
-
         String deployRelativePath = inferDeployRelativePath(normalized, directFile);
         File targetFile = new File("./deploy", deployRelativePath);
         File parent = targetFile.getParentFile();
@@ -1455,6 +1623,24 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private File resolveUiImageFile(String imagePath) {
+        if (imagePath == null) {
+            return null;
+        }
+
+        String normalized = imagePath.replace("\\", "/").trim();
+        if (normalized.length() == 0) {
+            return null;
+        }
+
+        File directFile = new File(normalized);
+        if (!directFile.exists()) {
+            directFile = new File(Util.getResourcePath(normalized));
+        }
+
+        return directFile;
     }
 
     private String inferDeployRelativePath(String originalPath, File resolvedFile) {
