@@ -1,0 +1,4 @@
+// Auto-generated UI code from: game_intro_ui.smui
+// Do not edit manually - changes will be overwritten on save.
+
+UI.load "game_intro_ui"
