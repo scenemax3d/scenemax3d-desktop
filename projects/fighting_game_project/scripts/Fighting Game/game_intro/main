@@ -1,14 +1,14 @@
 intro.draw intro_page
 audio.play "drums_music1" loop
-add "game_intro.code" code
+add "game_intro.code", "game_intro_ui_fx.code" code
 intro.draw Clear
-camera.move (z+10) in 10 seconds
+camera.move (z+5) in 5 seconds
 //wait 5 seconds
 intro_camera=>cinematic.camera.cinematic_rig_1
 intro_camera.play : target (model_1 up 30), duration 10 Async	
-intro2.draw press_space_to_start : pos (544,450)
+run show_game_intro_ui async
 wait for key space to be pressed
-intro2.draw clear
+run hide_game_intro_ui
 
 
 switch to "game_level1"

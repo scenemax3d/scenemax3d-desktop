@@ -15,6 +15,7 @@ Without SceneMax MCP, an AI assistant only sees what you manually paste into cha
 - create new SceneMax scene, UI, shader, environment-shader, and material files
 - inspect the active scene designer and list entities
 - add primitives and create cinematic rigs in the designer
+- author `.smui` UI documents end-to-end: discover the widget schema, enumerate available sprites and fonts, add layers and widgets, and validate the result before saving
 - search Sketchfab assets using SceneMax-compatible filters
 - import Sketchfab models into the active project's `resources/Models` folder
 - launch a SceneMax preview run
@@ -95,6 +96,17 @@ Here are the main task categories the built-in MCP tools unlock today.
 - Add primitives to the active scene
   - `designer.add_primitive` accepts: `sphere`, `box`, `wedge`, `cylinder`, `cone`, `hollow_cylinder`, `quad`, `stairs`, and `arch`
 - Create a cinematic rig in the active scene
+
+### UI Designer Authoring
+
+The `ui.*` tool family lets an AI assistant precisely author `.smui` UI documents (layers, widgets, constraints) without guessing property names or resource identifiers:
+
+- Discover the schema with `ui.get_schema` (widget types, enums, common and type-specific properties)
+- Enumerate available resources with `ui.list_sprites` and `ui.list_fonts` (merges global and project-scoped catalogs)
+- Inspect a document with `ui.list_layers`, `ui.list_widgets`, and `ui.get_widget`
+- Mutate layers with `ui.add_layer`, `ui.update_layer`, `ui.delete_layer`
+- Mutate widgets with `ui.add_widget`, `ui.update_widget`, `ui.delete_widget` (renames propagate to constraint targets)
+- Gate changes with `ui.validate_document` before handing a UI over for review (unique names, resolved constraint targets, `MATCH_CONSTRAINT` and `aspectRatio` rules, sprite/font references)
 
 ### Asset and Preview Operations
 

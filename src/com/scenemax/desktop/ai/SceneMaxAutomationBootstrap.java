@@ -49,6 +49,19 @@ import com.scenemax.desktop.ai.tools.ProjectSearchFilesTool;
 import com.scenemax.desktop.ai.tools.ProjectSearchTextTool;
 import com.scenemax.desktop.ai.tools.RuntimeGetIssueLogTool;
 import com.scenemax.desktop.ai.tools.RunPreviewSceneTool;
+import com.scenemax.desktop.ai.tools.UiAddLayerTool;
+import com.scenemax.desktop.ai.tools.UiAddWidgetTool;
+import com.scenemax.desktop.ai.tools.UiDeleteLayerTool;
+import com.scenemax.desktop.ai.tools.UiDeleteWidgetTool;
+import com.scenemax.desktop.ai.tools.UiGetSchemaTool;
+import com.scenemax.desktop.ai.tools.UiGetWidgetTool;
+import com.scenemax.desktop.ai.tools.UiListFontsTool;
+import com.scenemax.desktop.ai.tools.UiListLayersTool;
+import com.scenemax.desktop.ai.tools.UiListSpritesTool;
+import com.scenemax.desktop.ai.tools.UiListWidgetsTool;
+import com.scenemax.desktop.ai.tools.UiUpdateLayerTool;
+import com.scenemax.desktop.ai.tools.UiUpdateWidgetTool;
+import com.scenemax.desktop.ai.tools.UiValidateDocumentTool;
 
 public final class SceneMaxAutomationBootstrap {
 
@@ -106,6 +119,19 @@ public final class SceneMaxAutomationBootstrap {
         registry.register(new AssetSearchSketchfabTool());
         registry.register(new AssetImportSketchfabTool());
         registry.register(new RunPreviewSceneTool());
+        registry.register(new UiGetSchemaTool());
+        registry.register(new UiListSpritesTool());
+        registry.register(new UiListFontsTool());
+        registry.register(new UiListLayersTool());
+        registry.register(new UiListWidgetsTool());
+        registry.register(new UiGetWidgetTool());
+        registry.register(new UiAddLayerTool());
+        registry.register(new UiUpdateLayerTool());
+        registry.register(new UiDeleteLayerTool());
+        registry.register(new UiAddWidgetTool());
+        registry.register(new UiUpdateWidgetTool());
+        registry.register(new UiDeleteWidgetTool());
+        registry.register(new UiValidateDocumentTool());
         return registry;
     }
 }
