@@ -1,0 +1,171 @@
+
+[@allow_move]
+when key W is pressed once do 
+  
+    laser_effect => effects.effekseer.Homing_Laser01_3//Laser02_3
+    laser_effect.play pos (player1)
+    
+  audio.play "jump1"
+  player1.data.is_jumping = 1
+  do async
+    camera_mode = CAMERA_MODE_CHASE_PLAYER1
+    camera.chase player1
+		wait 1 seconds
+		camera.chase stop
+		camera_mode = CAMERA_MODE_DEFAULT
+		run set_camera_on_player
+  end do
+  
+  do async
+		player1.big_jump : protected
+		player1.idle2 loop
+		player1.look at (player2)
+		player1.data.is_jumping = 0
+  end do
+
+  do async
+	  wait 1 seconds
+	  audio.play "crash1"
+		wait 0.1 second
+		run shake_the_world2
+		//
+	end do
+	
+  player1.move forward 0.5 for 0.5 seconds async
+  player1.character.jump at speed of 35
+  
+end do
+
+
+[@allow_move]
+when key left is pressed  do
+  player1.turn left 3 in 0.1 seconds async
+end do
+
+[@allow_move]
+when key right is pressed  do
+  player1.turn right 3 in 0.1 seconds async
+end do
+
+var up_anim=0, move_forward=0
+
+
+[@allow_move && move_forward==0]
+when key up is pressed once do 
+  move_forward=1
+end do
+
+when key up is released do
+	move_forward=0
+	player1.idle2 loop
+end do
+
+// ninja: punch1, jumping, victory, backflip, idle2, fast_run, idle3, hit_on_legs, run, idle1, hit1, 
+// walk1, fly_kick, walk2, idle4, head_hit, hit_backwards, round_kick, hurricane_kick, run_flip, 
+
+[@allow_move]
+when key down is pressed do
+  player1.move backward 0.3 for 0.2 seconds async
+end do
+
+[@allow_move && player1_ko==0]
+when key space is pressed once do
+  
+	action=PLAYER_ACTION_SPACE
+
+	do async
+		wait 0.3 seconds
+		run ambient_camera
+	end do
+	
+	do async
+		player1.jump_up loop
+		wait 0.5 seconds
+		player1.jump_down loop
+		wait 0.5 seconds
+		player1.idle2 loop
+	end do
+	
+	player1.character.jump at speed of 25
+	action=PLAYER_ACTION_IDLE
+
+end do
+
+[@asd_go_condition]
+when key A is pressed once do async
+	action=PLAYER_ACTION_A
+	player1.look at (player2)
+	audio.play "kick3"
+	[player1.data.celebrating!=1 && game_status!=GAME_STATE_OVER && player1.data.is_jumping==0]
+	do
+	  player1.mma_kick1 at speed of 2.5 async
+	  wait 0.5 seconds
+	  player1.move forward 0.3 for 0.2 seconds async
+	  [player1.data.is_jumping==0]
+	  do
+	    player1.flying_kick at speed of 2
+	  end do
+	end do
+	action=PLAYER_ACTION_IDLE		
+  
+end do
+
+[@asd_go_condition]
+when key S is pressed once do async
+  
+	action=PLAYER_ACTION_S
+ 		    
+	player1.look at (player2)
+	audio.play "kick3"
+
+	#[player1.data.celebrating!=1 && game_status!=GAME_STATE_OVER && player1.data.is_jumping==0]
+	do
+	  player1.move forward 0.5 for 0.2 seconds async
+	  player1.hurricane_kick at speed of 2
+	  player1.idle2 loop
+	  action=PLAYER_ACTION_IDLE
+	  
+  end do
+
+end do
+
+[@asd_go_condition]
+when key D is pressed once do async
+	action=PLAYER_ACTION_D
+	player1.look at (player2)
+	player1.move forward 0.3 for 0.2 seconds async
+	
+	do async
+	  #[player1.data.is_jumping==0]
+	  do 6 times async
+	    audio.play "kick1"
+	    wait 0.1 seconds
+	  end do
+	  wait 0.4 seconds
+	  audio.play "scream1"
+	end do
+
+	[player1.data.celebrating!=1 && game_status!=GAME_STATE_OVER && player1.data.is_jumping==0]
+	do
+    player1.quad_punch1 at speed of 2.5 async// then cross_punch at speed of 2.5 
+    wait 0.5 seconds
+    player1.move forward 0.3 for 0.2 seconds async
+    [player1.data.is_jumping==0]
+    do
+      player1.flying_kick at speed of 2
+    end do
+    action=PLAYER_ACTION_IDLE
+	end do
+  
+end do
+
+[@asd_go_condition]
+when key Z is pressed once do async
+	action = PLAYER_ACTION_Z
+	player1.look at (player2)
+	player1.duck_right1 async
+	wait 1 second
+	action=PLAYER_ACTION_IDLE
+end do
+
+

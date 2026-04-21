@@ -1,0 +1,27 @@
+{
+  "preview": {
+    "playbackSpeed": 1,
+    "showGround": true,
+    "backgroundMode": "dark",
+    "motion": {
+      "orbitStrength": 0,
+      "forceScale": 1,
+      "damping": 0
+    },
+    "loop": true,
+    "camera": {
+      "pitchDeg": -15,
+      "distance": 12,
+      "yawDeg": 35
+    }
+  },
+  "assetId": "Simple_Distortion_2",
+  "name": "Simple_Distortion",
+  "source": {
+    "importedAt": "2026-04-04T22:35:07.239830600Z",
+    "originalImportPath": "C:\\Users\\adikt\\Downloads\\Effekseer01\\Effekseer01\\Simple_Distortion.efkproj",
+    "originalFormat": "efkproj",
+    "importedEffectFile": "effects/Simple_Distortion_2/Simple_Distortion.efkproj"
+  },
+  "version": 1
+}

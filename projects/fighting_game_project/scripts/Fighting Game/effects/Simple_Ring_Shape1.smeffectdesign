@@ -1,0 +1,27 @@
+{
+  "preview": {
+    "playbackSpeed": 1,
+    "showGround": true,
+    "backgroundMode": "dark",
+    "motion": {
+      "orbitStrength": 0,
+      "forceScale": 2.7,
+      "damping": 0.5
+    },
+    "loop": true,
+    "camera": {
+      "pitchDeg": -19,
+      "distance": 12,
+      "yawDeg": 35
+    }
+  },
+  "assetId": "Simple_Ring_Shape1",
+  "name": "Simple_Ring_Shape1",
+  "source": {
+    "importedAt": "2026-04-06T06:32:06.035137900Z",
+    "originalImportPath": "C:\\Users\\adikt\\Downloads\\Effekseer01\\Effekseer01\\Simple_Ring_Shape1.efkproj",
+    "originalFormat": "efkproj",
+    "importedEffectFile": "effects/Simple_Ring_Shape1/Simple_Ring_Shape1.efkproj"
+  },
+  "version": 1
+}

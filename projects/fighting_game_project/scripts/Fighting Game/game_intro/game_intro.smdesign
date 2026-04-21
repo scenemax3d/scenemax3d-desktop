@@ -1,0 +1,182 @@
+{
+  "sceneEnvironmentShader": "ambient1",
+  "entities": [
+    {
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "name": "cache_objects",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "codeText": "// cache_objects\ntg => tiger3: hidden, pos (13.0,-14.0,43.0), scale 0.04, rotate(0.0,-179.99998,0.0), shadow mode on async\nboss => dynamic boss : hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast async\nplayer1 => dynamic fighter1 : hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast\n, joints (\"mixamorig:Head\",\"mixamorig:LeftShoulder\",\"mixamorig:LeftArm\",\"mixamorig:LeftForeArm\",\"mixamorig:LeftHand\",\"mixamorig:RightShoulder\",\"mixamorig:RightArm\",\"mixamorig:RightForeArm\",\"mixamorig:RightHand\",\"mixamorig:LeftUpLeg\",\"mixamorig:LeftLeg\",\"mixamorig:LeftFoot\",\"mixamorig:RightUpLeg\",\"mixamorig:RightLeg\",\"mixamorig:RightFoot\") async\nplayer2 => dynamic old_fighter2 : hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on\n, joints (\"mixamorig:Head\",\"mixamorig:LeftShoulder\",\"mixamorig:LeftArm\",\"mixamorig:LeftForeArm\",\"mixamorig:LeftHand\",\"mixamorig:RightShoulder\",\"mixamorig:RightArm\",\"mixamorig:RightForeArm\",\"mixamorig:RightHand\",\"mixamorig:LeftUpLeg\",\"mixamorig:LeftLeg\",\"mixamorig:LeftFoot\",\"mixamorig:RightUpLeg\",\"mixamorig:RightLeg\",\"mixamorig:RightFoot\") async\n",
+      "id": "35a4eaf0-af72-4b42-ae59-912064803ec5",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "type": "CODE"
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        -0.70710677,
+        0,
+        0.70710677
+      ],
+      "resourcePath": "mountain_low_poly",
+      "jointMapping": "",
+      "scale": [
+        0.1,
+        0.1,
+        0.1
+      ],
+      "type": "MODEL",
+      "sceneMaxCode": "model_1 => static mountain_low_poly: pos (0.0,-9.6,-50.0), scale 0.1, rotate(0.0,-90.0,0.0) async",
+      "staticModel": true,
+      "name": "model_1",
+      "vehicleModel": false,
+      "id": "969df9ce-fd0c-49bf-92e6-b99e8a69c4f9",
+      "position": [
+        0,
+        -9.6,
+        -50
+      ]
+    },
+    {
+      "cinematicTargetEntityId": "969df9ce-fd0c-49bf-92e6-b99e8a69c4f9",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "cinematicTargetOffset": [
+        0,
+        29.2,
+        0
+      ],
+      "cinematicEaseIn": "linear",
+      "type": "CINEMATIC_RIG",
+      "cinematicTargetEntityName": "model_1",
+      "children": [{
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "name": "cinematic_track_1",
+        "scale": [
+          3.5,
+          3.5,
+          3.5
+        ],
+        "id": "f2b9280a-aa7f-4fec-b5cb-c73bc488c557",
+        "position": [
+          0,
+          30.222626,
+          -36.82337
+        ],
+        "type": "CINEMATIC_TRACK",
+        "cinematicTrackData": {
+          "anchorCount": 360,
+          "previewSpeed": 30,
+          "selectedStartAnchor": 222,
+          "radiusZ": 20,
+          "radiusX": 30,
+          "selectedEndAnchor": -1
+        }
+      }],
+      "cinematicEaseOut": "linear",
+      "name": "Cinematic Rig",
+      "cinematicSegments": [{
+        "startAnchor": 268,
+        "trackId": "f2b9280a-aa7f-4fec-b5cb-c73bc488c557",
+        "endAnchor": 266,
+        "trackName": "cinematic_track_1",
+        "speed": 30
+      }],
+      "cinematicPreviewDuration": 10,
+      "id": "ae7c177b-7795-4651-9d0c-47849213edca",
+      "position": [
+        0,
+        48.920464,
+        0
+      ],
+      "cinematicRuntimeId": "cinematic_rig_1"
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "none",
+      "quadWidth": 1,
+      "rotation": [
+        -0.70710677,
+        0,
+        0,
+        0.70710677
+      ],
+      "scale": [
+        200,
+        200,
+        200
+      ],
+      "colliderEntity": false,
+      "type": "QUAD",
+      "sceneMaxCode": "quad_1 => quad : size (1.0,1.0), pos (-102.46659,-9.527,31.365463), material \"wall\"",
+      "material": "wall",
+      "name": "quad_1",
+      "staticEntity": false,
+      "id": "34854158-b4ce-499b-be16-ad916f122d13",
+      "position": [
+        -102.46659,
+        -9.527,
+        31.365463
+      ],
+      "quadHeight": 1
+    }
+  ],
+  "gameCamera": {
+    "rotation": [
+      0,
+      1,
+      0,
+      0
+    ],
+    "position": [
+      0,
+      2,
+      10
+    ]
+  },
+  "camera": {
+    "rotation": [
+      -6.131143E-4,
+      0.9396549,
+      -0.34211913,
+      -0.0016839624
+    ],
+    "position": [
+      9.870921,
+      129.38441,
+      107.66387
+    ]
+  },
+  "version": 1
+}

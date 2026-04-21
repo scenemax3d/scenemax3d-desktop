@@ -1,0 +1,24 @@
+{
+  "template": "WATER_LITE",
+  "edgeWidth": 0.08,
+  "texture": "",
+  "blocks": [
+    "TINT",
+    "GLOW",
+    "HOLOGRAM_LINES"
+  ],
+  "scrollSpeed": 0.95,
+  "version": 1,
+  "previewTarget": "MODEL",
+  "glowStrength": 0.45,
+  "previewModelName": "crime_city1",
+  "useOriginalTexture": true,
+  "mainColor": [
+    0.22,
+    0.62,
+    1,
+    0.92
+  ],
+  "transparency": 0.18,
+  "pulseSpeed": 0.35
+}

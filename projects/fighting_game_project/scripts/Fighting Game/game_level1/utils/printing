@@ -1,0 +1,24 @@
+
+
+when life1==0 && game_status==GAME_STATE_START do
+	run game_over
+end do
+
+when timer==0 && game_status==GAME_STATE_START do
+	run time_out
+end do
+
+[game_status==GAME_STATE_START && player1_ko==0]
+print_status = {
+
+  timer=timer-1
+  var frame1=round(life1*16/INITIAL_PLAYER_STRENGTH), 
+      frame2=round(life2*16/INITIAL_PLAYER_STRENGTH)
+
+  UI.layer1.score.text = "Score: " + score	
+	UI.layer1.panel2.timer.text = timer	
+	UI.layer1.playerHealthBar.frame = frame1
+	UI.layer1.opponentHealthBar.frame = frame2
+}
+run print_status every 1 second
+

@@ -1,0 +1,26 @@
+add "/variables/constants", 
+    "/variables/global_variables", 
+    "/utils/messages" code
+add "game_init.code",
+    "/game_input/input",
+    "/game_input/input_x",
+    "/game_input/input_c", 
+    "/utils/camera_strategy" code
+add "/game_states/game_start", 
+    "/game_states/game_over", 
+    "/game_states/game_time_out", 
+    "/utils/printing" code
+add "enemy_ai", 
+    "collision_new", 
+    "/states/player1_attack_states", 
+    "/states/player2_attack_states", 
+    "/states/player1_general_states", 
+    "/states/player2_general_states",
+    "enemy_knockout" , 
+    "/utils/tiger_utils" code
+
+player1.idle2 loop
+player2.Idle loop
+
+UI.load "test_ui"
+run game_start

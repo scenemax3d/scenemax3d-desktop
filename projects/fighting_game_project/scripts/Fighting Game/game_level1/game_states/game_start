@@ -1,0 +1,42 @@
+
+game_start = {
+	
+  camera.system = default
+  
+  score=0
+  life1=INITIAL_PLAYER_STRENGTH
+  life2=INITIAL_PLAYER_STRENGTH
+
+  timer=60
+  op_hit=0
+  car_action=0
+
+  boss.show
+  boss.Idle loop
+ 
+  wait 1 seconds
+  camera.attach to boss : pos (0,2.4,6)	
+		
+	do async
+		sys.draw fight_text1 : pos (500,400)
+    do async
+      wait 0.1 seconds
+			audio.play "fight1"
+			wait 0.5 seconds
+			sys.draw clear
+    end do	
+
+		audio.stop "drums_music1"
+	  audio.play "fight_music1" loop
+		//loading2.draw clear
+    loading3.draw clear
+  end do
+
+	boss.Go at speed of 2
+	boss.Idle loop
+	
+	run set_camera_on_player
+	game_status=GAME_STATE_START  
+	//
+}
+

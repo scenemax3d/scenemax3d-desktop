@@ -1,0 +1,66 @@
+{
+  "template": "FOG_AND_RAIN",
+  "snowIntensity": 0.45,
+  "rainIntensity": 0.05,
+  "fogDensity": 1.21,
+  "fogFarDistance": 80,
+  "lightIntensity": 1.1,
+  "windGustiness": 0.35,
+  "ambientColor": [
+    0.4,
+    0.4,
+    0.4,
+    1
+  ],
+  "ambientIntensity": 0.85,
+  "layers": [
+    "FOG",
+    "RAIN",
+    "WIND",
+    "AMBIENT_COLOR",
+    "LIGHTING"
+  ],
+  "fogNearDistance": 12,
+  "lightYaw": -32,
+  "windDirection": 24,
+  "overlayOpacity": 0.32,
+  "windStrength": 0.65,
+  "rainSpeed": 1.2,
+  "snowColor": [
+    0.95,
+    0.97,
+    1,
+    1
+  ],
+  "skyTint": [
+    0.58,
+    0.74,
+    0.96,
+    1
+  ],
+  "rainAngle": -18,
+  "lightColor": [
+    1,
+    0.96,
+    0.88,
+    1
+  ],
+  "version": 1,
+  "snowSpeed": 0.65,
+  "snowFlakeSize": 0.05,
+  "skyHorizonBlend": 0.45,
+  "lightPitch": -38,
+  "fogColor": [
+    0.72,
+    0.8,
+    0.9,
+    1
+  ],
+  "skyBrightness": 1,
+  "rainColor": [
+    0.82,
+    0.9,
+    1,
+    1
+  ]
+}

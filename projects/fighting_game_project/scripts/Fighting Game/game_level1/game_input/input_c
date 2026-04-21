@@ -1,0 +1,31 @@
+
+[@asd_go_condition || player2.data.is_down==1]
+when key C is pressed do async
+  do async
+	  
+	  if (player2.data.is_down==1) {
+	  	do async
+		  	player1.look at (player2)
+	      player1.move forward 0.3 for 0.5 seconds async
+		  	run shake_the_world async
+		  	hit1 is a hit4 sprite: scale 4, billboard true,
+		  		pos(player2."mixamorig:Head"), collision shape none 
+		  	hit1.play (frame 0 to 15)
+		  	hit1.delete
+	  	end do
+
+      [player1.data.takedown_punches==0]
+	  	do
+		  	player1.data.takedown_punches=1
+				player1.takedown_punches at speed of 3
+		  	player1.data.takedown_punches=0
+	  	end do
+
+	  	return
+	  }
+
+	  player1.data.attack_legs = 1 // state trigger
+	  
+  end do
+  
+end do

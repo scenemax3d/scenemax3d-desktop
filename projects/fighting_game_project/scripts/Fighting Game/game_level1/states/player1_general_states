@@ -1,0 +1,58 @@
+
+player1_slow_motion (tm, frame_count) = {
+
+	slow_motion=1
+	do async
+		player2_hit2.show
+	  player2_hit2.pos (player2."mixamorig:Head")
+	  player2_hit2.play(frame 0 to 15)
+		player2_hit2.hide
+	end do
+		
+	effects.flash.show : pos (player2."mixamorig:LeftFoot") and duration=0.5 async
+	effects.TimeOrbit.show : pos (player1) and end size = 4 and duration = 0.5 async
+	player2.animation speed 0.01	for tm seconds // 10 times slower
+	player1.animation speed 0.01	for tm seconds when frames > frame_count // 10 times slower
+	wait tm second
+	slow_motion=0
+									
+}
+
+when player1_ko == 1 do
+    
+  do async
+		wait 0.5 seconds
+		audio.play "crash1"
+  end do
+  
+  do async
+    player1.shader = "dramatic_hit";
+	  wait 1 second
+	  player1.shader = "";
+	end do
+		
+	if(rnd(2)==0) {
+		player1.back_death1 at speed of 1.2 : protected
+	} else {
+		player1.right_death1 at speed of 1.2: protected
+	}
+
+	wait 1 seconds
+	
+	player1.standing_up at speed of 1.2 : protected
+	player1.idle2 loop
+	
+	player1_ko=0
+	
+end do
+	
+when player1.data.takedown_punches==1 do
+	audio.play "kick1"
+	wait 0.1 seconds
+end do
+
+when move_forward == 1 do
+  player1."run_sword" loop
+  player1.move forward 0.2 for 0.5 seconds //loop while move_forward==1
+end do
+   

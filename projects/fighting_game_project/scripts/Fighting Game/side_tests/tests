@@ -1,0 +1,27 @@
+UI.load "test_ui"
+var arr = ["EaseInQuad", "EaseInCubic", "EaseInQuart", "EaseInQuint",
+"EaseInSine", "EaseInCirc", "EaseInExpo", "EaseInBack", "EaseInElastic", "EaseInBounce",
+"EaseInPower", "EaseInBezier", "EaseInCustom"]
+var index=0
+
+popup_msg (msg) = {
+	ui.layer1.panelRightBottom.text1.text = msg 
+	ui.layer1.panelRightBottom.Ease("EaseInBounce", Up, 0.2)
+	wait 3 Seconds
+	ui.layer1.panelRightBottom.Ease("EaseOutQuad", Down, 0.5)
+}
+
+
+when key space is pressed once do
+	
+end do
+
+
+s=>sinbad
+xxx= {
+	run popup_msg ("10+")
+	s.move left 3 in 10 seconds 
+}
+
+run xxx
+

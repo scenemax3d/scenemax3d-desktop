@@ -151,10 +151,15 @@
         },
         {
             "path": "projects/AI_tests",
+            "itchWindowsChannel": "",
             "selectedNode": "main",
+            "itchGamePage": "",
             "name": "AI_tests",
-            "selectedParent": "AI_tests"
+            "itchButlerPath": "",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game",
+            "itchMacChannel": "",
+            "itchLinuxChannel": ""
         }
     ],
-    "selectedProject": "AI_tests"
+    "selectedProject": "fighting game project"
 }

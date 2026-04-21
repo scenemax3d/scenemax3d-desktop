@@ -1,0 +1,4 @@
+// Auto-generated UI code from: test_ui.smui
+// Do not edit manually - changes will be overwritten on save.
+
+UI.load "test_ui"

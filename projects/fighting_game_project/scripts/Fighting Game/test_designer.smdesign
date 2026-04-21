@@ -1,0 +1,531 @@
+{
+  "sceneEnvironmentShader": "",
+  "entities": [
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        -0.12880838,
+        0,
+        0.9916695
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "CYLINDER",
+      "radiusTop": 1,
+      "radiusBottom": 3.6,
+      "sceneMaxCode": "cylinder_1 => cylinder : radius (1.0,3.6), height 5.9, pos (3.5767188,-1.3764544,1.0893788), material \"grass\"",
+      "material": "grass",
+      "name": "cylinder_1",
+      "staticEntity": false,
+      "id": "e8d8d41f-6868-4d84-b487-e0753c791d04",
+      "position": [
+        3.5767188,
+        -1.3764544,
+        1.0893788
+      ],
+      "height": 5.9
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "none",
+      "quadWidth": 1,
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        3.5,
+        3.5,
+        3.5
+      ],
+      "colliderEntity": false,
+      "type": "QUAD",
+      "sceneMaxCode": "quad_1 => quad : size (1.0,1.0), pos (0.3902862,1.4687266,-3.543879), material \"alpha\"",
+      "material": "alpha",
+      "name": "quad_1",
+      "staticEntity": false,
+      "id": "eb22b478-34d8-4f8a-95d5-d5d2d14ca901",
+      "position": [
+        0.3902862,
+        1.4687266,
+        -3.543879
+      ],
+      "quadHeight": 1
+    },
+    {
+      "innerRadiusBottom": 0.5,
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "none",
+      "innerRadiusTop": 1.1,
+      "rotation": [
+        0.19905834,
+        -0.6111205,
+        -0.5471243,
+        0.5362486
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "HOLLOW_CYLINDER",
+      "radiusTop": 1.5,
+      "radiusBottom": 2.7,
+      "sceneMaxCode": "hcylinder_1 => hollow cylinder : radius (1.5,2.7), inner radius (1.1,0.5), height 2.8, pos (-4.3693914,1.0,0.0), material \"road\"",
+      "material": "road",
+      "name": "hcylinder_1",
+      "staticEntity": false,
+      "id": "35bbb0de-6057-4b9b-ab1f-c0c39d7b3ddb",
+      "position": [
+        -4.3693914,
+        1,
+        0
+      ],
+      "height": 2.8
+    },
+    {
+      "pathData": {
+        "closed": true,
+        "controlPoints": [
+          {
+            "tangentBroken": false,
+            "position": [
+              -14.932802,
+              0,
+              -3.8985376
+            ],
+            "tangentOut": [
+              -0.70198464,
+              0,
+              -1.3328325
+            ],
+            "tangentIn": [
+              0.70198464,
+              -0,
+              1.3328325
+            ]
+          },
+          {
+            "tangentBroken": false,
+            "position": [
+              -16.83355,
+              0,
+              -6.783658
+            ],
+            "tangentOut": [
+              0.057250217,
+              0,
+              -1.3576316
+            ],
+            "tangentIn": [
+              -0.057250217,
+              -0,
+              1.3576316
+            ]
+          },
+          {
+            "tangentBroken": false,
+            "position": [
+              -14.741968,
+              0,
+              -8.423976
+            ],
+            "tangentOut": [
+              -2.855607,
+              -1.4305115E-7,
+              -4.4384913
+            ],
+            "tangentIn": [
+              2.855607,
+              1.4305115E-7,
+              4.4384913
+            ]
+          },
+          {
+            "tangentBroken": false,
+            "position": [
+              -26.35224,
+              -4.7683716E-7,
+              -21.578629
+            ],
+            "tangentOut": [
+              0.017758656,
+              0,
+              -2.0614476
+            ],
+            "tangentIn": [
+              -0.017758656,
+              -0,
+              2.0614476
+            ]
+          },
+          {
+            "tangentBroken": false,
+            "position": [
+              -14.682773,
+              0,
+              -15.295467
+            ],
+            "tangentOut": [
+              4.8556976,
+              1.4305115E-7,
+              2.7066402
+            ],
+            "tangentIn": [
+              -4.8556976,
+              -1.4305115E-7,
+              -2.7066402
+            ]
+          },
+          {
+            "tangentBroken": false,
+            "position": [
+              -10.166582,
+              0,
+              -12.556495
+            ],
+            "tangentOut": [
+              3.4266996,
+              1.4305115E-7,
+              2.7714944
+            ],
+            "tangentIn": [
+              -3.4266996,
+              -1.4305115E-7,
+              -2.7714944
+            ]
+          },
+          {
+            "tangentBroken": false,
+            "position": [
+              -3.2604408,
+              4.7683716E-7,
+              -6.0571527
+            ],
+            "tangentOut": [
+              3.1082687,
+              0,
+              3.2773874
+            ],
+            "tangentIn": [
+              -3.1082687,
+              -0,
+              -3.2773874
+            ]
+          },
+          {
+            "tangentBroken": false,
+            "position": [
+              0.19431305,
+              0,
+              -1.6318703
+            ],
+            "tangentOut": [
+              1.4473581,
+              -1.4305115E-7,
+              2.0218222
+            ],
+            "tangentIn": [
+              -1.4473581,
+              1.4305115E-7,
+              -2.0218222
+            ]
+          },
+          {
+            "tangentBroken": false,
+            "position": [
+              1.564086,
+              0,
+              0.6822543
+            ],
+            "tangentOut": [
+              0.09363091,
+              0.21231402,
+              1.6315737
+            ],
+            "tangentIn": [
+              -0.09363091,
+              -0.21231402,
+              -1.6315737
+            ]
+          },
+          {
+            "tangentBroken": false,
+            "position": [
+              0.5064161,
+              0.70771337,
+              3.8067083
+            ],
+            "tangentOut": [
+              -0.7667292,
+              0.26922128,
+              1.3715883
+            ],
+            "tangentIn": [
+              0.7667292,
+              -0.26922128,
+              -1.3715883
+            ]
+          },
+          {
+            "tangentBroken": false,
+            "position": [
+              -0.99167776,
+              0.8974042,
+              5.2542152
+            ],
+            "tangentOut": [
+              -1.43151,
+              -0.21231388,
+              0.19748269
+            ],
+            "tangentIn": [
+              1.43151,
+              0.21231388,
+              -0.19748269
+            ]
+          },
+          {
+            "tangentBroken": false,
+            "position": [
+              -4.2652836,
+              4.7683716E-7,
+              4.464984
+            ],
+            "tangentOut": [
+              -1.1651165,
+              0.062441114,
+              -0.47929817
+            ],
+            "tangentIn": [
+              1.1651165,
+              -0.062441114,
+              0.47929817
+            ]
+          },
+          {
+            "tangentBroken": false,
+            "position": [
+              -4.8753996,
+              1.1055412,
+              3.6565547
+            ],
+            "tangentOut": [
+              -1.555669,
+              -1.4305115E-7,
+              -0.80851513
+            ],
+            "tangentIn": [
+              1.555669,
+              1.4305115E-7,
+              0.80851513
+            ]
+          },
+          {
+            "tangentBroken": false,
+            "position": [
+              -9.450847,
+              0,
+              1.7699337
+            ],
+            "tangentOut": [
+              -2.8854604,
+              -0.3316624,
+              -1.7992314
+            ],
+            "tangentIn": [
+              2.8854604,
+              0.3316624,
+              1.7992314
+            ]
+          },
+          {
+            "tangentBroken": false,
+            "position": [
+              -14.493601,
+              0,
+              -2.3408833
+            ],
+            "tangentOut": [
+              -1.6445867,
+              0,
+              -1.7005415
+            ],
+            "tangentIn": [
+              1.6445867,
+              -0,
+              1.7005415
+            ]
+          }
+        ],
+        "subdivisions": 20
+      },
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "name": "path_1",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "id": "9a66077f-d83b-4f5a-9a60-e04a72872f78",
+      "position": [
+        -14.932802,
+        0,
+        -3.8985376
+      ],
+      "type": "PATH"
+    },
+    {
+      "cinematicTargetEntityId": "",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "cinematicTargetOffset": [
+        0,
+        1.5,
+        0
+      ],
+      "cinematicEaseIn": "linear",
+      "type": "CINEMATIC_RIG",
+      "cinematicTargetEntityName": "",
+      "children": [
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "cinematic_track_1",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "id": "5b8ba232-d532-4a70-af72-aadc73dc9cf6",
+          "position": [
+            0,
+            10,
+            0
+          ],
+          "type": "CINEMATIC_TRACK",
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 30,
+            "selectedStartAnchor": -1,
+            "radiusZ": 11,
+            "radiusX": 14,
+            "selectedEndAnchor": -1
+          }
+        },
+        {
+          "rotation": [
+            0,
+            -0.08715574,
+            0,
+            0.9961947
+          ],
+          "name": "cinematic_track_2",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "id": "77d70dd3-0c7e-4f14-a75e-929b77e1fc51",
+          "position": [
+            0,
+            4,
+            1.5
+          ],
+          "type": "CINEMATIC_TRACK",
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 30,
+            "selectedStartAnchor": -1,
+            "radiusZ": 5,
+            "radiusX": 7,
+            "selectedEndAnchor": -1
+          }
+        }
+      ],
+      "cinematicEaseOut": "linear",
+      "name": "Cinematic Rig",
+      "cinematicSegments": [
+        {
+          "startAnchor": 260,
+          "trackId": "5b8ba232-d532-4a70-af72-aadc73dc9cf6",
+          "endAnchor": 340,
+          "trackName": "cinematic_track_1",
+          "speed": 28
+        },
+        {
+          "startAnchor": 240,
+          "trackId": "77d70dd3-0c7e-4f14-a75e-929b77e1fc51",
+          "endAnchor": 320,
+          "trackName": "cinematic_track_2",
+          "speed": 22
+        }
+      ],
+      "cinematicPreviewDuration": 10,
+      "id": "b6da8ce4-7c8e-40d9-b55c-3b844fbc8ae0",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "cinematicRuntimeId": "cinematic_rig_1"
+    }
+  ],
+  "gameCamera": {
+    "rotation": [
+      0,
+      1,
+      0,
+      0
+    ],
+    "position": [
+      0,
+      2,
+      10
+    ]
+  },
+  "camera": {
+    "rotation": [
+      -0.099045776,
+      0.8923991,
+      -0.23911764,
+      -0.36964378
+    ],
+    "position": [
+      16.738297,
+      18.234356,
+      21.107687
+    ]
+  },
+  "version": 1
+}

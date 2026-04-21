@@ -1,0 +1,27 @@
+{
+  "preview": {
+    "playbackSpeed": 1,
+    "showGround": true,
+    "backgroundMode": "dark",
+    "motion": {
+      "orbitStrength": -3.6,
+      "forceScale": 3.4000000000000004,
+      "damping": 0.15000000000000002
+    },
+    "loop": true,
+    "camera": {
+      "pitchDeg": 25,
+      "distance": 96,
+      "yawDeg": -84
+    }
+  },
+  "assetId": "Laser02_3",
+  "name": "Laser02",
+  "source": {
+    "importedAt": "2026-04-04T22:31:49.409403900Z",
+    "originalImportPath": "C:\\Users\\adikt\\Downloads\\Effekseer01\\Effekseer01\\Laser02.efkproj",
+    "originalFormat": "efkproj",
+    "importedEffectFile": "effects/Laser02_3/Laser02.efkproj"
+  },
+  "version": 1
+}

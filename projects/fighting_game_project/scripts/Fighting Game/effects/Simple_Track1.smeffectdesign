@@ -1,0 +1,27 @@
+{
+  "preview": {
+    "playbackSpeed": 1,
+    "showGround": true,
+    "backgroundMode": "dark",
+    "motion": {
+      "orbitStrength": 0,
+      "forceScale": 2.5500000000000003,
+      "damping": 1.5
+    },
+    "loop": true,
+    "camera": {
+      "pitchDeg": -52,
+      "distance": 52,
+      "yawDeg": 35
+    }
+  },
+  "assetId": "Simple_Track1",
+  "name": "Simple_Track1",
+  "source": {
+    "importedAt": "2026-04-06T06:30:04.754783Z",
+    "originalImportPath": "C:\\Users\\adikt\\Downloads\\Effekseer01\\Effekseer01\\Simple_Track1.efkproj",
+    "originalFormat": "efkproj",
+    "importedEffectFile": "effects/Simple_Track1/Simple_Track1.efkproj"
+  },
+  "version": 1
+}
