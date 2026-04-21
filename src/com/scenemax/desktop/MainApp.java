@@ -3844,7 +3844,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 msg += s + "\r\n";
             }
 
-            JOptionPane.showMessageDialog(null, msg, "Program Errors", JOptionPane.INFORMATION_MESSAGE);
+            Util.showScrollableMessageDialog(null, msg, "Program Errors", JOptionPane.INFORMATION_MESSAGE);
         }
     }
 

@@ -408,7 +408,11 @@ public class SceneMaxLanguageParser implements IParser {
                             prg.vars_index.put(var.varName, var);
                             prg.actions.add(cmd);
                         } else if (var.varType == VariableDef.VAR_TYPE_CINEMATIC_CAMERA) {
-                            if (!var.validate(prg)) {
+                            if (isChildParser) {
+                                prg.vars.add(var);
+                                prg.vars_index.put(var.varName, var);
+                                prg.actions.add(cmd);
+                            } else if (!var.validate(prg)) {
                                 CinematicCameraVariableDef cinematicVar = (CinematicCameraVariableDef) var;
                                 prg.syntaxErrors.add("Cinematic rig '" + cinematicVar.cinematicCameraId
                                         + "' was not found in any designer scene under the project");
@@ -2307,7 +2311,11 @@ public class SceneMaxLanguageParser implements IParser {
                     CinematicCameraVariableDef cinematicVar = (CinematicCameraVariableDef) varDef;
                     cinematicVar.cinematicCameraId =
                             ctx.dynamic_model_type().cinematic_resource_decl().res_var_decl().getText();
-                    cinematicVar.cinematicSourceFile = findCinematicRigSourceFile(this.codePath, cinematicVar.cinematicCameraId);
+                    // Autocomplete reparses the live editor text on every keystroke, so skip
+                    // the recursive rig lookup there and keep that work for full parses.
+                    if (!isChildParser) {
+                        cinematicVar.cinematicSourceFile = findCinematicRigSourceFile(this.codePath, cinematicVar.cinematicCameraId);
+                    }
                 }
 
                 if(ctx.scene_entity_having_expr()!=null) {

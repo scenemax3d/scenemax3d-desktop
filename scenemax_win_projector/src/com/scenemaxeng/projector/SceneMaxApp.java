@@ -1779,7 +1779,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         if (var.varType == VariableDef.VAR_TYPE_CINEMATIC_CAMERA) {
             CinematicCameraVariableDef cinematicVar = (CinematicCameraVariableDef) var;
-            RuntimeCinematicRig rig = resolveCinematicRig(cinematicVar.cinematicCameraId);
+            RuntimeCinematicRig rig = resolveCinematicRig(cinematicVar);
             if (rig == null) {
                 handleRuntimeError(formatRuntimeLocation(var.varLineNum)
                         + "Failed to create cinematic camera '" + var.varName + "': cinematic rig runtime ID '"
@@ -6920,7 +6920,23 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         cinematicRigCache.clear();
     }
 
-    private RuntimeCinematicRig resolveCinematicRig(String rigId) {
+    RuntimeCinematicRig resolveCinematicRig(CinematicCameraVariableDef cinematicVar) {
+        if (cinematicVar == null) {
+            return null;
+        }
+
+        RuntimeCinematicRig sourced = resolveCinematicRigFromSourceFile(
+                cinematicVar.cinematicSourceFile,
+                cinematicVar.cinematicCameraId
+        );
+        if (sourced != null) {
+            return sourced;
+        }
+
+        return resolveCinematicRigById(cinematicVar.cinematicCameraId);
+    }
+
+    private RuntimeCinematicRig resolveCinematicRigById(String rigId) {
         if (rigId == null || rigId.isBlank()) {
             return null;
         }
@@ -6950,6 +6966,57 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return resolved;
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to parse cinematic rig resource '" + rigId + "'", e);
+            return null;
+        }
+    }
+
+    private RuntimeCinematicRig resolveCinematicRigFromSourceFile(String sourceFilePath, String rigId) {
+        if (sourceFilePath == null || sourceFilePath.isBlank() || rigId == null || rigId.isBlank()) {
+            return null;
+        }
+
+        File sourceFile = new File(sourceFilePath);
+        if (!sourceFile.isAbsolute()) {
+            File projectRoot = resolveRuntimeProjectRoot();
+            if (projectRoot != null) {
+                sourceFile = new File(projectRoot, sourceFilePath);
+            }
+        }
+        if (!sourceFile.isFile()) {
+            return null;
+        }
+
+        String sourceKey;
+        try {
+            sourceKey = sourceFile.getCanonicalPath();
+        } catch (IOException e) {
+            sourceKey = sourceFile.getAbsolutePath();
+        }
+        String cacheKey = rigId.toLowerCase(Locale.ROOT) + "|" + sourceKey.toLowerCase(Locale.ROOT);
+        RuntimeCinematicRig cached = cinematicRigCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+
+        try {
+            String fileText = java.nio.file.Files.readString(sourceFile.toPath());
+            if (fileText == null || fileText.isBlank()) {
+                return null;
+            }
+
+            JSONObject root = new JSONObject(fileText);
+            JSONObject rigJson = findCinematicRigJson(root.optJSONArray("entities"), rigId);
+            if (rigJson == null) {
+                return null;
+            }
+
+            RuntimeCinematicRig resolved = parseCinematicRig(rigJson, sourceFile.getAbsolutePath(), fileText);
+            if (resolved != null) {
+                cinematicRigCache.put(cacheKey, resolved);
+            }
+            return resolved;
+        } catch (Exception e) {
+            logger.log(Level.WARNING, "Failed to parse cinematic rig '" + rigId + "' from " + sourceFilePath, e);
             return null;
         }
     }
@@ -7088,6 +7155,29 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 if (nested != null) {
                     return nested;
                 }
+            }
+        }
+        return null;
+    }
+
+    private JSONObject findCinematicRigJson(JSONArray entities, String runtimeId) {
+        if (entities == null || runtimeId == null || runtimeId.isBlank()) {
+            return null;
+        }
+        for (int i = 0; i < entities.length(); i++) {
+            JSONObject entity = entities.optJSONObject(i);
+            if (entity == null) {
+                continue;
+            }
+            if ("CINEMATIC_RIG".equals(entity.optString("type", ""))) {
+                String candidate = entity.optString("cinematicRuntimeId", entity.optString("id", ""));
+                if (runtimeId.equalsIgnoreCase(candidate)) {
+                    return entity;
+                }
+            }
+            JSONObject nested = findCinematicRigJson(entity.optJSONArray("children"), runtimeId);
+            if (nested != null) {
+                return nested;
             }
         }
         return null;
