@@ -50,11 +50,17 @@ public class ModelAnimateController extends SceneMaxBaseController {
             speed=speedExpr==null?"1":speedExpr.evaluate().toString();
 
             if(cmd.varDef==null) {
-                app.handleRuntimeError("Line: "+cmd.varLineNum+".  variable '"+cmd.targetVar+"' is undefined");
+                app.handleRuntimeError(app.formatUndefinedVariableError(
+                        cmd.varLineNum,
+                        cmd.targetVar,
+                        null,
+                        getClass().getSimpleName()));
                 return true;
             }
 
-            findTargetVar();
+            if (findTargetVar() != 0) {
+                return true;
+            }
 
             app.animateModel(this.targetVar, ((ActionCommandAnimate)this.cmd).animationName, speed, controller);
 

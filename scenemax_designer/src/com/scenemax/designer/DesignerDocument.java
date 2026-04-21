@@ -87,6 +87,9 @@ public class DesignerDocument {
 
     public static DesignerDocument load(File file) throws IOException {
         String content = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+        if (!content.isEmpty() && content.charAt(0) == '\uFEFF') {
+            content = content.substring(1);
+        }
         JSONObject root = new JSONObject(content);
 
         DesignerDocument doc = new DesignerDocument(file.getAbsolutePath());

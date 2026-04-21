@@ -351,6 +351,9 @@ public class SceneMaxAutoComplete {
             code = code.replaceAll("//\\$\\[project\\]=(.+?);", "");
 
             SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, scriptFolder.getAbsolutePath());
+            // Autocomplete only needs symbols, so keep this parse lightweight and
+            // avoid expensive project-wide cinematic rig resolution on the EDT.
+            parser.enableChildParserMode(true);
             cachedProgram = parser.parse(code);
             lastParseTime = now;
         } catch (Exception e) {

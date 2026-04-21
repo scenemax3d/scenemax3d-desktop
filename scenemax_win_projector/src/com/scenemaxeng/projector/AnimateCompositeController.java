@@ -24,15 +24,25 @@ public class AnimateCompositeController extends CompositeController{
 
         if(!this.started) {
             if(cmd.varDef==null) {
-                app.handleRuntimeError("Line: "+cmd.varLineNum+".  variable '"+cmd.targetVar+"' is undefined");
+                app.handleRuntimeError(app.formatUndefinedVariableError(
+                        cmd.varLineNum,
+                        cmd.targetVar,
+                        null,
+                        getClass().getSimpleName()));
                 this.stopAnimationSequence();
                 return true;
             }
 
-            findTargetVar();
+            if (findTargetVar() != 0) {
+                this.stopAnimationSequence();
+                return true;
+            }
             AppModel m = app.getAppModel(this.targetVar);
             if(m==null) {
-                app.handleRuntimeError("Line: "+cmd.varLineNum+".  run-time instance '"+cmd.targetVar+"' not found");
+                app.handleRuntimeError(app.formatRuntimeLocation(cmd.varLineNum)
+                        + "Animation target '" + cmd.targetVar + "' resolved to runtime key '"
+                        + this.targetVar + "', but no runtime instance was found. "
+                        + "The entity may not have been created yet in this level.");
                 this.stopAnimationSequence();
                 return true;
             }

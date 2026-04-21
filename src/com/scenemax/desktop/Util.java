@@ -19,6 +19,9 @@ import org.json.JSONObject;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.swing.*;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Font;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -32,6 +35,9 @@ import static java.lang.System.getProperty;
 public class Util {
 
     private static final String APPLICATION_VERSION = "2.0";
+    private static final int DIALOG_TEXT_MAX_CHARS = 32000;
+    private static final int DIALOG_TEXT_AREA_WIDTH = 900;
+    private static final int DIALOG_TEXT_AREA_HEIGHT = 520;
 
     /**
      * Applies the Monokai dark theme to an RSyntaxTextArea so it matches FlatDarkLaf.
@@ -75,6 +81,32 @@ public class Util {
             URL url = Util.class.getResource(resourcePath);
             return url != null ? new ImageIcon(url) : null;
         }
+    }
+
+    public static void showScrollableMessageDialog(Component parent, String message, String title, int messageType) {
+        JTextArea textArea = new JTextArea(limitDialogText(message));
+        textArea.setEditable(false);
+        textArea.setLineWrap(false);
+        textArea.setWrapStyleWord(false);
+        textArea.setCaretPosition(0);
+        textArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        scrollPane.setPreferredSize(new Dimension(DIALOG_TEXT_AREA_WIDTH, DIALOG_TEXT_AREA_HEIGHT));
+
+        JOptionPane.showMessageDialog(parent, scrollPane, title, messageType);
+    }
+
+    private static String limitDialogText(String message) {
+        String text = message == null || message.isBlank() ? "<no details available>" : message;
+        if (text.length() <= DIALOG_TEXT_MAX_CHARS) {
+            return text;
+        }
+
+        return text.substring(0, DIALOG_TEXT_MAX_CHARS)
+                + System.lineSeparator()
+                + System.lineSeparator()
+                + "[Output truncated. See the full log for complete details.]";
     }
 
     public static final int MAX_UPLOAD_GAME_SIZE = 200;

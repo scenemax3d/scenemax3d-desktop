@@ -62,7 +62,10 @@ import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 import java.awt.*;
+import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
+import java.awt.datatransfer.Transferable;
+import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.*;
 import java.awt.geom.*;
 import java.awt.image.BufferedImage;
@@ -1922,15 +1925,329 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         dlg.pack();
         dlg.setLocationRelativeTo(null);
         File selectedFolder = dlg.showDialog();
-        try {
-            FileUtils.moveFileToDirectory(selectedFile, selectedFolder, false);
-            saveSelectedTreeNodePosition(selectedFolder.getPath(), selectedFile.getName());
-            loadScriptsFolder();
-            openLastTreeNode();
-        } catch (IOException e) {
-            JOptionPane.showMessageDialog(null,
-                    "Cannot move selected file", "Move File Error",
+        if (selectedFolder == null) {
+            return;
+        }
+        moveProjectTreeEntry(selectedFile, selectedFolder);
+    }
+
+    private boolean moveProjectTreeEntry(File source, File targetFolder) {
+        File normalizedSource = source != null ? source.getAbsoluteFile() : null;
+        File normalizedTargetFolder = targetFolder != null ? targetFolder.getAbsoluteFile() : null;
+        if (normalizedSource == null || normalizedTargetFolder == null) {
+            return false;
+        }
+        if (!normalizedSource.exists()) {
+            JOptionPane.showMessageDialog(this,
+                    "The selected item no longer exists.",
+                    "Move Error",
                     JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+        if (!normalizedTargetFolder.exists() || !normalizedTargetFolder.isDirectory()) {
+            JOptionPane.showMessageDialog(this,
+                    "Please choose a valid destination folder.",
+                    "Move Error",
+                    JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+        if (isMainEntryFile(normalizedSource)) {
+            JOptionPane.showMessageDialog(this,
+                    "The 'main' entry file cannot be moved.",
+                    "Move Not Allowed",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return false;
+        }
+
+        File currentParent = normalizedSource.getParentFile();
+        if (currentParent != null && currentParent.getAbsoluteFile().equals(normalizedTargetFolder)) {
+            return false;
+        }
+        if (normalizedSource.isDirectory() && isSameOrDescendantPath(normalizedSource, normalizedTargetFolder)) {
+            JOptionPane.showMessageDialog(this,
+                    "A folder cannot be moved into itself or one of its subfolders.",
+                    "Move Not Allowed",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return false;
+        }
+
+        try {
+            if (normalizedSource.isDirectory()) {
+                return moveProjectFolder(normalizedSource, normalizedTargetFolder);
+            }
+            return moveProjectFile(normalizedSource, normalizedTargetFolder);
+        } catch (IOException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this,
+                    "Cannot move the selected item.\n" + ex.getMessage(),
+                    "Move Error",
+                    JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+    }
+
+    private boolean moveProjectFolder(File sourceFolder, File targetFolder) throws IOException {
+        File destinationFolder = new File(targetFolder, sourceFolder.getName()).getAbsoluteFile();
+        if (destinationFolder.exists()) {
+            JOptionPane.showMessageDialog(this,
+                    "A folder named '" + destinationFolder.getName() + "' already exists in the target location.",
+                    "Move Not Allowed",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return false;
+        }
+
+        String oldFolderPath = sourceFolder.getAbsolutePath();
+        String newFolderPath = destinationFolder.getAbsolutePath();
+        List<String> affectedOpenPaths = collectAffectedOpenPathsForFolderMove(oldFolderPath);
+        List<String> tabsToClose = collectDesignerTabsToClose(affectedOpenPaths);
+        List<String> tabsToReopen = remapMovedFolderPaths(tabsToClose, oldFolderPath, newFolderPath);
+
+        closeTabsForMove(tabsToClose);
+        Files.move(sourceFolder.toPath(), destinationFolder.toPath());
+
+        if (editorTabPanel != null) {
+            editorTabPanel.updateTabsUnderFolderMove(oldFolderPath, newFolderPath);
+        }
+
+        updateLastSelectedFilePathForPrefixMove(oldFolderPath, newFolderPath);
+        saveSelectedTreeNodePosition(targetFolder.getPath(), sourceFolder.getName());
+        loadScriptsFolder();
+        openLastTreeNode();
+        reopenTabsAfterMove(tabsToReopen);
+        saveCurrentProjectOpenTabsState();
+        return true;
+    }
+
+    private boolean moveProjectFile(File sourceFile, File targetFolder) throws IOException {
+        LinkedHashMap<File, File> movePlan = buildFileMovePlan(sourceFile, targetFolder);
+        for (File destinationFile : movePlan.values()) {
+            if (destinationFile.exists()) {
+                JOptionPane.showMessageDialog(this,
+                        "A file named '" + destinationFile.getName() + "' already exists in the target location.",
+                        "Move Not Allowed",
+                        JOptionPane.INFORMATION_MESSAGE);
+                return false;
+            }
+        }
+
+        List<String> tabsToClose = collectDesignerTabsToClose(movePlan);
+        List<String> tabsToReopen = remapMovedFilePaths(tabsToClose, movePlan);
+        closeTabsForMove(tabsToClose);
+
+        for (Map.Entry<File, File> entry : movePlan.entrySet()) {
+            Files.move(entry.getKey().toPath(), entry.getValue().toPath());
+        }
+
+        Map.Entry<File, File> primaryMove = movePlan.entrySet().iterator().next();
+        applyPostMoveFileAdjustments(primaryMove.getKey(), primaryMove.getValue());
+
+        if (editorTabPanel != null) {
+            for (Map.Entry<File, File> entry : movePlan.entrySet()) {
+                editorTabPanel.updateTabForRename(entry.getKey().getAbsolutePath(), entry.getValue().getAbsolutePath());
+            }
+        }
+
+        updateLastSelectedFilePathForExactMoves(movePlan);
+        saveSelectedTreeNodePosition(targetFolder.getPath(), sourceFile.getName());
+        loadScriptsFolder();
+        openLastTreeNode();
+        reopenTabsAfterMove(tabsToReopen);
+        if (isAssetSensitiveDocument(sourceFile)) {
+            refreshAssetsMenu();
+        }
+        saveCurrentProjectOpenTabsState();
+        return true;
+    }
+
+    private LinkedHashMap<File, File> buildFileMovePlan(File sourceFile, File targetFolder) {
+        LinkedHashMap<File, File> movePlan = new LinkedHashMap<>();
+        movePlan.put(sourceFile.getAbsoluteFile(), new File(targetFolder, sourceFile.getName()).getAbsoluteFile());
+
+        String lowerName = sourceFile.getName().toLowerCase(Locale.ROOT);
+        if (lowerName.endsWith(".smdesign")) {
+            String baseName = sourceFile.getName().substring(0, sourceFile.getName().length() - ".smdesign".length());
+            addCompanionMove(movePlan, new File(sourceFile.getParentFile(), baseName + ".code"), targetFolder);
+            addCompanionMove(movePlan, new File(sourceFile.getParentFile(), baseName + "_init.code"), targetFolder);
+            addCompanionMove(movePlan, new File(sourceFile.getParentFile(), baseName + "_end.code"), targetFolder);
+        } else if (lowerName.endsWith(".smui")) {
+            String baseName = sourceFile.getName().substring(0, sourceFile.getName().length() - ".smui".length());
+            addCompanionMove(movePlan, new File(sourceFile.getParentFile(), baseName + "_ui.code"), targetFolder);
+        }
+
+        return movePlan;
+    }
+
+    private void addCompanionMove(Map<File, File> movePlan, File companionFile, File targetFolder) {
+        if (companionFile.exists() && companionFile.isFile()) {
+            movePlan.put(companionFile.getAbsoluteFile(), new File(targetFolder, companionFile.getName()).getAbsoluteFile());
+        }
+    }
+
+    private void applyPostMoveFileAdjustments(File oldFile, File newFile) {
+        String lowerOldPath = oldFile.getAbsolutePath().toLowerCase(Locale.ROOT);
+        try {
+            if (lowerOldPath.endsWith(".smshader")) {
+                File oldOutput = ShaderDocument.getRuntimeFolder(oldFile, Util.getResourcesFolder());
+                File newOutput = ShaderDocument.getRuntimeFolder(newFile, Util.getResourcesFolder());
+                if (oldOutput.exists() && !newOutput.exists()) {
+                    FileUtils.moveDirectory(oldOutput, newOutput);
+                }
+            } else if (lowerOldPath.endsWith(".smenvshader")) {
+                File oldOutput = EnvironmentShaderDocument.getRuntimeFolder(oldFile, Util.getResourcesFolder());
+                File newOutput = EnvironmentShaderDocument.getRuntimeFolder(newFile, Util.getResourcesFolder());
+                if (oldOutput.exists() && !newOutput.exists()) {
+                    FileUtils.moveDirectory(oldOutput, newOutput);
+                }
+            } else if (lowerOldPath.endsWith(".mat")) {
+                MaterialDocument.removeRuntimeAssets(oldFile, Util.getResourcesFolder());
+                MaterialDocument.load(newFile).exportRuntimeAssets(newFile, Util.getResourcesFolder());
+            }
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private List<String> collectAffectedOpenPathsForFolderMove(String oldFolderPath) {
+        if (editorTabPanel == null) {
+            return Collections.emptyList();
+        }
+        String oldPrefix = oldFolderPath + File.separator;
+        List<String> affected = new ArrayList<>();
+        for (String path : editorTabPanel.getOpenFilePaths()) {
+            if (path.startsWith(oldPrefix)) {
+                affected.add(path);
+            }
+        }
+        return affected;
+    }
+
+    private List<String> collectDesignerTabsToClose(Map<File, File> movePlan) {
+        if (editorTabPanel == null) {
+            return Collections.emptyList();
+        }
+        List<String> tabsToClose = new ArrayList<>();
+        for (String path : editorTabPanel.getOpenFilePaths()) {
+            if (!requiresTabReopenAfterMove(path)) {
+                continue;
+            }
+            for (File sourceFile : movePlan.keySet()) {
+                if (sourceFile.getAbsolutePath().equals(path)) {
+                    tabsToClose.add(path);
+                    break;
+                }
+            }
+        }
+        return tabsToClose;
+    }
+
+    private List<String> collectDesignerTabsToClose(List<String> affectedOpenPaths) {
+        if (affectedOpenPaths.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> tabsToClose = new ArrayList<>();
+        for (String path : affectedOpenPaths) {
+            if (requiresTabReopenAfterMove(path)) {
+                tabsToClose.add(path);
+            }
+        }
+        return tabsToClose;
+    }
+
+    private List<String> remapMovedFolderPaths(List<String> originalPaths, String oldFolderPath, String newFolderPath) {
+        if (originalPaths.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> remapped = new ArrayList<>(originalPaths.size());
+        for (String path : originalPaths) {
+            remapped.add(newFolderPath + path.substring(oldFolderPath.length()));
+        }
+        return remapped;
+    }
+
+    private List<String> remapMovedFilePaths(List<String> originalPaths, Map<File, File> movePlan) {
+        if (originalPaths.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> remapped = new ArrayList<>(originalPaths.size());
+        for (String path : originalPaths) {
+            String newPath = path;
+            for (Map.Entry<File, File> entry : movePlan.entrySet()) {
+                if (entry.getKey().getAbsolutePath().equals(path)) {
+                    newPath = entry.getValue().getAbsolutePath();
+                    break;
+                }
+            }
+            remapped.add(newPath);
+        }
+        return remapped;
+    }
+
+    private void closeTabsForMove(List<String> tabsToClose) {
+        if (editorTabPanel == null) {
+            return;
+        }
+        for (String path : tabsToClose) {
+            editorTabPanel.closeTabByPath(path);
+        }
+    }
+
+    private void reopenTabsAfterMove(List<String> tabsToReopen) {
+        for (String path : tabsToReopen) {
+            File movedFile = new File(path);
+            if (movedFile.isFile()) {
+                loadFileToTextEditor(movedFile);
+            }
+        }
+    }
+
+    private boolean requiresTabReopenAfterMove(String path) {
+        String lowerPath = path.toLowerCase(Locale.ROOT);
+        return lowerPath.endsWith(".smdesign")
+                || lowerPath.endsWith(".smui")
+                || lowerPath.endsWith(".smeffectdesign")
+                || lowerPath.endsWith(".smshader")
+                || lowerPath.endsWith(".smenvshader")
+                || lowerPath.endsWith(".mat");
+    }
+
+    private boolean isAssetSensitiveDocument(File file) {
+        String lowerName = file.getName().toLowerCase(Locale.ROOT);
+        return lowerName.endsWith(".smeffectdesign") || lowerName.endsWith(".mat");
+    }
+
+    private boolean isMainEntryFile(File file) {
+        return file != null && file.isFile() && "main".equals(file.getName());
+    }
+
+    private boolean isSameOrDescendantPath(File parentFolder, File candidate) {
+        Path parentPath = parentFolder.toPath().toAbsolutePath().normalize();
+        Path candidatePath = candidate.toPath().toAbsolutePath().normalize();
+        return candidatePath.startsWith(parentPath);
+    }
+
+    private void updateLastSelectedFilePathForExactMoves(Map<File, File> movePlan) {
+        if (lastSelectedFilePath == null || lastSelectedFilePath.isBlank()) {
+            return;
+        }
+        for (Map.Entry<File, File> entry : movePlan.entrySet()) {
+            if (entry.getKey().getAbsolutePath().equals(lastSelectedFilePath)) {
+                lastSelectedFilePath = entry.getValue().getAbsolutePath();
+                return;
+            }
+        }
+    }
+
+    private void updateLastSelectedFilePathForPrefixMove(String oldFolderPath, String newFolderPath) {
+        if (lastSelectedFilePath == null || lastSelectedFilePath.isBlank()) {
+            return;
+        }
+        if (lastSelectedFilePath.equals(oldFolderPath)) {
+            lastSelectedFilePath = newFolderPath;
+            return;
+        }
+        String oldPrefix = oldFolderPath + File.separator;
+        if (lastSelectedFilePath.startsWith(oldPrefix)) {
+            lastSelectedFilePath = newFolderPath + lastSelectedFilePath.substring(oldFolderPath.length());
         }
     }
 
@@ -2849,6 +3166,9 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     private void setFileTreeListener() {
+        tree1.setDragEnabled(true);
+        tree1.setDropMode(DropMode.ON);
+        tree1.setTransferHandler(new ProjectTreeTransferHandler());
 
         tree1.addMouseListener(new MouseAdapter() {
             @Override
@@ -2883,6 +3203,159 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             }
         });
 
+    }
+
+    private class ProjectTreeTransferHandler extends TransferHandler {
+        private final DataFlavor scriptPathFlavor;
+
+        ProjectTreeTransferHandler() {
+            DataFlavor flavor;
+            try {
+                flavor = new DataFlavor(DataFlavor.javaJVMLocalObjectMimeType
+                        + ";class=" + ScriptPathNode.class.getName());
+            } catch (ClassNotFoundException e) {
+                flavor = DataFlavor.stringFlavor;
+            }
+            this.scriptPathFlavor = flavor;
+        }
+
+        @Override
+        public int getSourceActions(JComponent c) {
+            return MOVE;
+        }
+
+        @Override
+        protected Transferable createTransferable(JComponent c) {
+            if (!(c instanceof JTree)) {
+                return null;
+            }
+
+            JTree tree = (JTree) c;
+            Object selected = tree.getLastSelectedPathComponent();
+            if (!(selected instanceof DefaultMutableTreeNode)) {
+                return null;
+            }
+
+            DefaultMutableTreeNode node = (DefaultMutableTreeNode) selected;
+            if (node == tree.getModel().getRoot()) {
+                return null;
+            }
+
+            Object userObject = node.getUserObject();
+            if (!(userObject instanceof ScriptPathNode)) {
+                return null;
+            }
+
+            ScriptPathNode draggedNode = (ScriptPathNode) userObject;
+            if (isMainEntryFile(new File(draggedNode.getPath()))) {
+                return null;
+            }
+
+            return new Transferable() {
+                @Override
+                public DataFlavor[] getTransferDataFlavors() {
+                    return new DataFlavor[]{scriptPathFlavor};
+                }
+
+                @Override
+                public boolean isDataFlavorSupported(DataFlavor flavor) {
+                    return scriptPathFlavor.equals(flavor);
+                }
+
+                @Override
+                public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
+                    if (!isDataFlavorSupported(flavor)) {
+                        throw new UnsupportedFlavorException(flavor);
+                    }
+                    return draggedNode;
+                }
+            };
+        }
+
+        @Override
+        public boolean canImport(TransferSupport support) {
+            if (!support.isDrop() || !support.isDataFlavorSupported(scriptPathFlavor)) {
+                return false;
+            }
+
+            support.setShowDropLocation(true);
+            JTree.DropLocation dropLocation = (JTree.DropLocation) support.getDropLocation();
+            TreePath destinationPath = dropLocation.getPath();
+            if (destinationPath == null) {
+                return false;
+            }
+
+            File destinationFolder = resolveDropTargetFolder(destinationPath);
+            if (destinationFolder == null || !destinationFolder.isDirectory()) {
+                return false;
+            }
+
+            try {
+                ScriptPathNode draggedNode = (ScriptPathNode) support.getTransferable().getTransferData(scriptPathFlavor);
+                File source = new File(draggedNode.getPath()).getAbsoluteFile();
+                if (!source.exists() || isMainEntryFile(source)) {
+                    return false;
+                }
+
+                if (source.isDirectory() && isSameOrDescendantPath(source, destinationFolder)) {
+                    return false;
+                }
+
+                File currentParent = source.getParentFile();
+                if (currentParent != null && currentParent.getAbsoluteFile().equals(destinationFolder)) {
+                    return false;
+                }
+
+                if (source.isDirectory()) {
+                    return !new File(destinationFolder, source.getName()).exists();
+                }
+
+                for (File target : buildFileMovePlan(source, destinationFolder).values()) {
+                    if (target.exists()) {
+                        return false;
+                    }
+                }
+                return true;
+            } catch (Exception ex) {
+                return false;
+            }
+        }
+
+        @Override
+        public boolean importData(TransferSupport support) {
+            if (!canImport(support)) {
+                return false;
+            }
+
+            try {
+                ScriptPathNode draggedNode = (ScriptPathNode) support.getTransferable().getTransferData(scriptPathFlavor);
+                JTree.DropLocation dropLocation = (JTree.DropLocation) support.getDropLocation();
+                File destinationFolder = resolveDropTargetFolder(dropLocation.getPath());
+                return destinationFolder != null && moveProjectTreeEntry(new File(draggedNode.getPath()), destinationFolder);
+            } catch (Exception ex) {
+                return false;
+            }
+        }
+
+        private File resolveDropTargetFolder(TreePath destinationPath) {
+            Object last = destinationPath.getLastPathComponent();
+            if (!(last instanceof DefaultMutableTreeNode)) {
+                return null;
+            }
+
+            DefaultMutableTreeNode destinationNode = (DefaultMutableTreeNode) last;
+            if (destinationNode == tree1.getModel().getRoot()) {
+                return new File(Util.getScriptsFolder()).getAbsoluteFile();
+            }
+
+            Object userObject = destinationNode.getUserObject();
+            if (!(userObject instanceof ScriptPathNode)) {
+                return null;
+            }
+
+            File destination = new File(((ScriptPathNode) userObject).getPath()).getAbsoluteFile();
+            return destination.isDirectory() ? destination : null;
+        }
     }
 
     private void openFileInTab(File f) {
@@ -3371,7 +3844,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 msg += s + "\r\n";
             }
 
-            JOptionPane.showMessageDialog(null, msg, "Program Errors", JOptionPane.INFORMATION_MESSAGE);
+            Util.showScrollableMessageDialog(null, msg, "Program Errors", JOptionPane.INFORMATION_MESSAGE);
         }
     }
 

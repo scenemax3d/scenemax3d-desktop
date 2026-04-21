@@ -104,4 +104,29 @@ public class CinematicCameraParsingTest {
         assertEquals("player1", play.lookAtPosStatement.startEntity);
         assertNull(play.lookAtTargetVar);
     }
+
+    @Test
+    public void childParserSkipsCinematicRigLookupForLiveAutocompleteParses() throws Exception {
+        File tempDir = Files.createTempDirectory("cinematic-child-parse-test").toFile();
+        tempDir.deleteOnExit();
+        File designerFile = new File(tempDir, "stadium.smdesign");
+        designerFile.deleteOnExit();
+        String smdesign = "{ \"entities\": [ { \"id\": \"internal-rig-id\", \"name\": \"Cinematic Rig\", \"type\": \"CINEMATIC_RIG\", "
+                + "\"position\": [0,0,0], \"rotation\": [0,0,0,1], \"scale\": [1,1,1], "
+                + "\"cinematicRuntimeId\": \"hero_intro\", \"children\": [], \"cinematicSegments\": [] } ] }";
+        Files.writeString(designerFile.toPath(), smdesign, StandardCharsets.UTF_8);
+
+        String code = "intro_=>cinematic.camera.hero_intro\n";
+
+        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, tempDir.getAbsolutePath());
+        parser.enableChildParserMode(true);
+        ProgramDef prg = parser.parse(code);
+
+        assertTrue(prg.syntaxErrors.isEmpty());
+        assertNotNull(prg.getVar("intro_"));
+        assertTrue(prg.getVar("intro_") instanceof CinematicCameraVariableDef);
+        CinematicCameraVariableDef varDef = (CinematicCameraVariableDef) prg.getVar("intro_");
+        assertEquals("hero_intro", varDef.cinematicCameraId);
+        assertNull(varDef.cinematicSourceFile);
+    }
 }

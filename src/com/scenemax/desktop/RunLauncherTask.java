@@ -72,7 +72,7 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
                 String msg = "";
                 try {
                     msg = FileUtils.readFileToString(new File("log"), StandardCharsets.UTF_8);
-                    JOptionPane.showMessageDialog(null,msg);
+                    Util.showScrollableMessageDialog(null, msg, "Run Error", JOptionPane.ERROR_MESSAGE);
                 } catch (IOException e) {
                     e.printStackTrace();
                 };

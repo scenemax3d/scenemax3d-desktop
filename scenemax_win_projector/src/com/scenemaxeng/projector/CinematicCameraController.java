@@ -4,7 +4,6 @@ import com.jme3.math.FastMath;
 import com.jme3.math.Quaternion;
 import com.jme3.math.Transform;
 import com.jme3.math.Vector3f;
-import com.jme3.bounding.BoundingVolume;
 import com.jme3.scene.Spatial;
 import com.scenemaxeng.compiler.CinematicCameraPlayCommand;
 import com.scenemaxeng.compiler.CinematicCameraVariableDef;
@@ -178,41 +177,61 @@ class CinematicCameraController extends SceneMaxBaseController {
     }
 
     private Vector3f resolveLookAtPoint(RuntimePlaybackSegment active, Vector3f cameraPos, float lookAheadCursor) {
+        Vector3f explicitStatementPoint = resolveRuntimePoint(cmd.lookAtPosStatement, null);
+        Vector3f explicitTargetPoint = null;
         if (explicitTarget == null && cmd.lookAtTargetVar != null && !cmd.lookAtTargetVar.isBlank()) {
             explicitTarget = app.findVarRuntime(prg, scope, cmd.lookAtTargetVar);
         }
         if (explicitTarget != null) {
             Spatial targetSpatial = app.getEntitySpatial(explicitTarget.varName, explicitTarget.varDef.varType);
             if (targetSpatial != null) {
-                return resolveTargetPoint(targetSpatial, active.rig.targetOffset);
+                explicitTargetPoint = resolveTargetPoint(targetSpatial, active.rig.targetOffset);
             }
         }
+        Vector3f rigTargetPoint = null;
         if (rigTarget == null && active.rig.targetEntityName != null && !active.rig.targetEntityName.isBlank()) {
             rigTarget = app.findVarRuntime(prg, scope, active.rig.targetEntityName);
         }
         if (rigTarget != null) {
             Spatial targetSpatial = app.getEntitySpatial(rigTarget.varName, rigTarget.varDef.varType);
             if (targetSpatial != null) {
-                return resolveTargetPoint(targetSpatial, active.rig.targetOffset);
+                rigTargetPoint = resolveTargetPoint(targetSpatial, active.rig.targetOffset);
             }
         }
-        Vector3f explicitTargetPoint = resolveRuntimePoint(cmd.lookAtPosStatement, null);
-        if (explicitTargetPoint != null) {
-            return explicitTargetPoint;
-        }
-        return computeTrackWorldPosition(active.track, lookAheadCursor);
+        return selectLookAtPoint(
+                explicitStatementPoint,
+                explicitTargetPoint,
+                rigTargetPoint,
+                computeTrackWorldPosition(active.track, lookAheadCursor)
+        );
     }
 
     private Vector3f resolveTargetPoint(Spatial targetSpatial, Vector3f offset) {
+        return spatialWorldTranslationWithOffset(targetSpatial, offset);
+    }
+
+    static Vector3f spatialWorldTranslationWithOffset(Spatial targetSpatial, Vector3f offset) {
         Vector3f base = targetSpatial.getWorldTranslation().clone();
-        BoundingVolume worldBound = targetSpatial.getWorldBound();
-        if (worldBound != null && worldBound.getCenter() != null) {
-            base = worldBound.getCenter().clone();
-        }
         if (offset != null) {
             base.addLocal(offset);
         }
         return base;
+    }
+
+    static Vector3f selectLookAtPoint(Vector3f explicitStatementPoint,
+                                      Vector3f explicitTargetPoint,
+                                      Vector3f rigTargetPoint,
+                                      Vector3f fallbackPoint) {
+        if (explicitStatementPoint != null) {
+            return explicitStatementPoint;
+        }
+        if (explicitTargetPoint != null) {
+            return explicitTargetPoint;
+        }
+        if (rigTargetPoint != null) {
+            return rigTargetPoint;
+        }
+        return fallbackPoint;
     }
 
     private void updateRuntimeRigTransform(RuntimeCinematicRig rig) {
