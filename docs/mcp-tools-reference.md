@@ -198,6 +198,26 @@ The current default SceneMax MCP registry includes the following tools.
 | --- | --- |
 | `designer.create_cinematic_rig` | Create a cinematic rig in the active scene designer |
 
+### UI designer authoring tools
+
+The `ui.*` family targets `.smui` UI documents directly by file path so changes are deterministic and parallel-safe. Mutations that find the file open with unsaved changes in the IDE fail unless `force: true` is passed, and on success they trigger a reload of the matching designer tab (unless `reload: false`).
+
+| Tool | Purpose |
+| --- | --- |
+| `ui.get_schema` | Return the authoritative widget schema (widget types, enums, common and type-specific properties) |
+| `ui.list_sprites` | List sprites from the global and project-scoped sprite catalogs |
+| `ui.list_fonts` | List fonts from the global and project-scoped font catalogs |
+| `ui.list_layers` | List the layers in a `.smui` document (id, name, visibility, z-order, render mode, widget count) |
+| `ui.list_widgets` | List all widgets in a `.smui` document as a flat array with dot-paths |
+| `ui.get_widget` | Return one widget's full JSON by dot-path or widget id |
+| `ui.add_layer` | Add a new empty layer |
+| `ui.update_layer` | Update a layer's name, visibility, z-order, or render mode |
+| `ui.delete_layer` | Remove a layer and all its widgets |
+| `ui.add_widget` | Add a widget (PANEL/BUTTON/TEXT_VIEW/IMAGE/GUIDELINE) to a layer or into a PANEL |
+| `ui.update_widget` | Update a widget's properties; rename propagates to constraint targets |
+| `ui.delete_widget` | Remove a widget (and its children); warns if other widgets constrain to it |
+| `ui.validate_document` | Structural + resource validation gate with `{valid, errors, warnings}` |
+
 ### Runtime, app, and diagnostics tools
 
 | Tool | Purpose |
@@ -446,6 +466,128 @@ Typical output:
 
 - generated code path
 - syntax validation result
+
+## UI Designer Authoring Workflow
+
+The `ui.*` tools let an AI assistant author `.smui` UI documents precisely, without guessing property names, enum values, or resource identifiers. Unlike the `designer.*` tools that operate on the active tab, the `ui.*` tools are file-based — every call takes a `path` (and optional `base`) so calls are deterministic and safe to run in sequence.
+
+Recommended authoring loop:
+
+1. `ui.get_schema` — load the widget schema into context.
+2. `ui.list_sprites` / `ui.list_fonts` — see what's available before referencing sprite/font names.
+3. `designer.create_document` with `kind: "ui"` — create the `.smui`.
+4. `ui.add_layer` → `ui.add_widget` (repeat as needed).
+5. `ui.update_widget` — adjust constraints, sizes, colors, text.
+6. `ui.validate_document` — confirm the document is structurally sound before review.
+
+### `ui.get_schema`
+
+Purpose:
+
+- Return the source-of-truth schema for `.smui` content so the agent never has to guess property names.
+
+Input:
+
+- no arguments
+
+Output includes:
+
+- `widgetTypes`: `["PANEL", "BUTTON", "TEXT_VIEW", "IMAGE", "GUIDELINE"]`
+- `enums`: side, size mode, render mode, chain style, image scale mode, text alignment
+- `commonProperties`: property → type/default hints that apply to every widget (size, constraints, bias, padding/margin, visibility, chain, z-order, children)
+- `typeProperties`: per-type property sets (panel background, button colors, text styling, image/sprite, guideline)
+- `constraint`: field explanations + a worked example
+- `layer` and `document` shape
+- `notes`: non-obvious rules (unique names across document, dots disallowed in names, RGBA hex, `spriteName` precedence over `imagePath`, `MATCH_CONSTRAINT` requirements, `aspectRatio` rules)
+
+### `ui.list_sprites` and `ui.list_fonts`
+
+Purpose:
+
+- Enumerate what's available before you reference a sprite or font by name. The resulting names are exactly what you pass to `spriteName` and `fontName` on `IMAGE` and `TEXT_VIEW` widgets.
+
+Catalogs are merged from two scopes:
+
+- **global** — `<workspace>/resources/sprites/sprites.json`, `<workspace>/resources/fonts/fonts.json`
+- **project** — `<active_project>/resources/sprites/sprites-ext.json`, `<active_project>/resources/fonts/fonts-ext.json`
+
+Project entries override global entries of the same name. Each entry reports its `scope` so an agent can choose carefully. Missing catalog files are treated as empty, not as errors.
+
+### `ui.add_widget`
+
+Purpose:
+
+- Create a new widget under a layer or nested inside a PANEL.
+
+Important inputs:
+
+- `path`, optional `base` — the target `.smui`
+- `parent` — layer name (top-level) or dot-path to an existing PANEL widget (`hud.statusPanel`)
+- `type` — one of `PANEL`, `BUTTON`, `TEXT_VIEW`, `IMAGE`, `GUIDELINE`
+- `name` — optional; if omitted a unique name like `button3` is generated
+- `properties` — flat object with any of the keys from `ui.get_schema`
+- `constraints` — array of `{side, targetName, targetSide, margin}` (use `"parent"` for the enclosing layer or PANEL)
+
+Validation:
+
+- type is a valid `UIWidgetType`
+- name is unique across the entire document
+- name does not contain `.`
+- constraint targets must equal `"parent"` or resolve to an existing sibling/ancestor name
+- unknown `spriteName` / `fontName` values are reported as **warnings** (not errors) so the document can still be authored while resources are being added
+
+### `ui.update_widget`
+
+Purpose:
+
+- Change an existing widget in place without rewriting the whole document.
+
+Important inputs:
+
+- `widgetPath` (dot-path) or `widgetId` — target lookup
+- `updates` — flat object merged onto the widget (same keys as `ui.get_schema`). `null` removes an optional key.
+- `constraints` — if present, the widget's constraints array is **replaced wholesale** (merging constraint arrays is ambiguous). Omit this key to leave constraints untouched.
+
+Rename behavior:
+
+- If `updates.name` is set to a new value, the rename propagates across the document: every constraint on any other widget whose `targetName` referenced the old name is rewritten. The response includes `renamedConstraintReferences` with the count.
+
+### `ui.delete_widget`
+
+Purpose:
+
+- Remove a widget and its subtree.
+
+Safety:
+
+- If other widgets have constraints whose `targetName` matched the deleted widget, the response includes a `warnings` entry listing their paths — those constraints will fail to resolve at runtime.
+
+### `ui.validate_document`
+
+Purpose:
+
+- Structural and resource validation gate. Call this before handing a UI over for human review.
+
+Checks:
+
+- unique names across every layer and widget
+- each name has no `.`
+- valid `renderMode` per layer
+- valid `widthMode` / `heightMode` per widget
+- every constraint resolves (`"parent"` or an existing layer/widget name), self-references flagged
+- `MATCH_CONSTRAINT` on an axis requires both opposing constraints or the matching `centerHorizontal` / `centerVertical` flag
+- `aspectRatio > 0` requires exactly one of width/height to be `MATCH_CONSTRAINT`
+- `textAlignment` is `left` / `center` / `right`
+- `imageScaleMode` is `fit` / `fill` / `stretch`
+- `spriteName` / `fontName` are found in the catalogs (warnings, not errors)
+- bias values stay in `0..1` (warning)
+
+Output:
+
+- `valid`: boolean (true when `errors` is empty)
+- `errors`: array of strings
+- `warnings`: array of strings
+- `errorCount`, `warningCount`
 
 ## View, Capture, Overlay, And Comparison
 
