@@ -49,6 +49,7 @@ import com.scenemax.desktop.ai.tools.ProjectSearchFilesTool;
 import com.scenemax.desktop.ai.tools.ProjectSearchTextTool;
 import com.scenemax.desktop.ai.tools.RuntimeGetIssueLogTool;
 import com.scenemax.desktop.ai.tools.RunPreviewSceneTool;
+import com.scenemax.desktop.ai.tools.SceneCreateTool;
 import com.scenemax.desktop.ai.tools.UiAddLayerTool;
 import com.scenemax.desktop.ai.tools.UiAddWidgetTool;
 import com.scenemax.desktop.ai.tools.UiDeleteLayerTool;
@@ -83,6 +84,7 @@ public final class SceneMaxAutomationBootstrap {
         registry.register(new EditorReloadFromDiskTool());
         registry.register(new EditorSaveActiveTool());
         registry.register(new DesignerCreateDocumentTool());
+        registry.register(new SceneCreateTool());
         registry.register(new DesignerGetDocumentJsonTool());
         registry.register(new DesignerGetEntityTool());
         registry.register(new DesignerSetDocumentJsonTool());

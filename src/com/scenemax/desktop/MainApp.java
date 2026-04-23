@@ -288,7 +288,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         || active.isAnimationImportTab;
                 textArea.setEnabled(!visualDesignerTab);
                 textAreaRTL.setEnabled(!visualDesignerTab);
-                btnRunScript.setEnabled(!visualDesignerTab && !active.filePath.endsWith(".cs"));
+                // Run always launches the project root 'main', so don't gate on the active tab.
+                btnRunScript.setEnabled(true);
 
                 // Select and focus the corresponding tree node
                 openTreeNodeByFile(new File(active.filePath));
@@ -1444,7 +1445,16 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 }
 
                 String filePath = ((ScriptPathNode) obj.getUserObject()).getPath();
-                if (cmd.equals("add_scene")) {
+                if (cmd.equals("run_file")) {
+                    File target = new File(filePath);
+                    if (editorTabPanel != null && editorTabPanel.isFileOpen(filePath)
+                            && editorTabPanel.getActiveTab() != null
+                            && filePath.equals(editorTabPanel.getActiveTab().filePath)
+                            && editorTabPanel.getActiveTab().dirty) {
+                        editorTabPanel.saveActiveTab();
+                    }
+                    runScriptFile(target);
+                } else if (cmd.equals("add_scene")) {
                     addScene(filePath);
                 } else if (cmd.equals("create_sub_folder")) {
                     createSubFolder(filePath);
@@ -1713,6 +1723,13 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         File file = new File(filePath);
         JPopupMenu popup = new JPopupMenu();
 
+        if (isRunnableCodeFile(file)) {
+            JMenuItem runItem = new JMenuItem("Run");
+            runItem.setActionCommand("run_file");
+            runItem.addActionListener(popupActionListener);
+            popup.add(runItem);
+            popup.addSeparator();
+        }
         addScriptsTreePopupMenuItem("Add Scene...", "add_scene", popup, popupActionListener, true, false, file);
         if (file.isDirectory()) {
             popup.addSeparator();
@@ -3375,7 +3392,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         lastSelectedFilePath = f.getAbsolutePath();
         isDocumentChanged = false;
         lastSelectedNodeIsFile = true;
-        btnRunScript.setEnabled(!f.getName().endsWith(".cs"));
+        btnRunScript.setEnabled(true);
     }
 
     protected void loadFileToTextEditor(File f) {
@@ -3964,34 +3981,111 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         btnRunScript.setEnabled(false);
         btnRecordScene.setEnabled(false);
 
-        File scriptFile = prepareCurrScriptFile();
-        if (scriptFile == null) {
+        // Sync the active tab to disk before we read the project root from files.
+        if (editorTabPanel != null && editorTabPanel.getActiveTab() != null
+                && editorTabPanel.getActiveTab().dirty) {
+            editorTabPanel.saveActiveTab();
+        }
+
+        File rootMain = findProjectRootMainFile();
+        if (rootMain == null) {
             btnRunScript.setEnabled(true);
+            JOptionPane.showMessageDialog(null,
+                    "Could not find a 'main' file under the project's scripts folder.",
+                    "Run Error", JOptionPane.ERROR_MESSAGE);
             return false;
         }
 
-        String prg = textAreaSP.isVisible() ? textArea.getText() : textAreaRTL.getText();
-        //ApplyMacroResults mr = applyMacro(prg);
+        return runScriptFile(rootMain);
+    }
+
+    private boolean runScriptFile(File scriptFile) {
+
+        btnRunScript.setEnabled(false);
+        btnRecordScene.setEnabled(false);
+
+        String prg;
+        EditorTabPanel.TabData active = editorTabPanel != null ? editorTabPanel.getActiveTab() : null;
+        if (active != null && active.filePath != null
+                && new File(active.filePath).equals(scriptFile)) {
+            // The file is the one currently in the editor; use the live text to
+            // avoid a round-trip through disk and pick up any unsaved edits.
+            prg = textAreaSP.isVisible() ? textArea.getText() : textAreaRTL.getText();
+        } else {
+            try {
+                prg = Files.readString(scriptFile.toPath(), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                e.printStackTrace();
+                btnRunScript.setEnabled(true);
+                JOptionPane.showMessageDialog(null,
+                        "Error reading script file '" + scriptFile.getName() + "': " + e.getMessage(),
+                        "Run Error", JOptionPane.ERROR_MESSAGE);
+                return false;
+            }
+        }
+
         new RunLauncherTask(scriptFile.getAbsolutePath(), prg, new Runnable() {
             @Override
             public void run() {
                 btnRunScript.setEnabled(true);
-                //btnRecordScene.setEnabled(true);
             }
         }).execute();
 
         return true;
     }
 
-    private File prepareCurrScriptFile() {
-        if (editorTabPanel != null && editorTabPanel.getActiveTab() != null) {
-            EditorTabPanel.TabData active = editorTabPanel.getActiveTab();
-            if (active.dirty) {
-                editorTabPanel.saveActiveTab();
+    /**
+     * Walk the project scripts folder breadth-first to locate the shallowest
+     * 'main' file. That file is treated as the project's root entry point.
+     */
+    private File findProjectRootMainFile() {
+        String scriptsFolderPath = Util.getScriptsFolder();
+        if (scriptsFolderPath == null) {
+            return null;
+        }
+        File scriptsRoot = new File(scriptsFolderPath);
+        if (!scriptsRoot.isDirectory()) {
+            return null;
+        }
+
+        Queue<File> queue = new LinkedList<>();
+        queue.add(scriptsRoot);
+        while (!queue.isEmpty()) {
+            File dir = queue.poll();
+            File candidate = new File(dir, "main");
+            if (candidate.isFile()) {
+                return candidate;
             }
-            return new File(active.filePath);
+            File[] children = dir.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    if (child.isDirectory()) {
+                        queue.add(child);
+                    }
+                }
+            }
         }
         return null;
+    }
+
+    /**
+     * A file that can be run as a SceneMax script from the scripts tree
+     * context menu. Excludes designer documents, shaders, materials, json
+     * asset descriptors and C# interop files.
+     */
+    private boolean isRunnableCodeFile(File f) {
+        if (f == null || !f.isFile()) {
+            return false;
+        }
+        String name = f.getName().toLowerCase();
+        return !(name.endsWith(".smdesign")
+                || name.endsWith(".smui")
+                || name.endsWith(".smeffectdesign")
+                || name.endsWith(".smshader")
+                || name.endsWith(".smenvshader")
+                || name.endsWith(".mat")
+                || name.endsWith(".json")
+                || name.endsWith(".cs"));
     }
 
     private void deleteCurrentScriptFile() {

@@ -3408,6 +3408,9 @@ public class DesignerPanel extends JPanel {
     }
 
     private DesignerEntity getSelectedTreeEntity() {
+        if (sceneTree == null) {
+            return null;
+        }
         DefaultMutableTreeNode selected = (DefaultMutableTreeNode) sceneTree.getLastSelectedPathComponent();
         if (selected != null && selected.getUserObject() instanceof EntityTreeNode) {
             return ((EntityTreeNode) selected.getUserObject()).entity;
