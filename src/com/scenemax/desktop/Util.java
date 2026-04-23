@@ -34,7 +34,7 @@ import static java.lang.System.getProperty;
 
 public class Util {
 
-    private static final String APPLICATION_VERSION = "2.0";
+    private static final String APPLICATION_VERSION = "2.0.1";
     private static final int DIALOG_TEXT_MAX_CHARS = 32000;
     private static final int DIALOG_TEXT_AREA_WIDTH = 900;
     private static final int DIALOG_TEXT_AREA_HEIGHT = 520;

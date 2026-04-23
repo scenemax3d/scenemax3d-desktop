@@ -228,9 +228,15 @@ public class Import3DModelDialog extends JDialog {
 
     private boolean importModel() {
 
-        if (modelNameExists(txtName.getText(), "./resources", "models.json") ||
-                modelNameExists(txtName.getText(), Util.getResourcesFolder(), "models-ext.json")) {
-            JOptionPane.showMessageDialog(null, "Model name: " + txtName.getText() + " already exits", "Error Message", JOptionPane.INFORMATION_MESSAGE);
+        String modelName = txtName.getText() == null ? "" : txtName.getText().trim();
+        if (modelName.isEmpty()) {
+            JOptionPane.showMessageDialog(null, "Please enter a model name", "Error Message", JOptionPane.INFORMATION_MESSAGE);
+            return false;
+        }
+
+        if (modelNameExists(modelName, "./resources", "models.json") ||
+                modelNameExists(modelName, Util.getResourcesFolder(), "models-ext.json")) {
+            JOptionPane.showMessageDialog(null, "Model name: " + modelName + " already exits", "Error Message", JOptionPane.INFORMATION_MESSAGE);
             return false;
         }
 
@@ -240,7 +246,7 @@ public class Import3DModelDialog extends JDialog {
 
         File srcFile = new File(selectedFile);
         File srcDir = srcFile.getParentFile();
-        selectedFileDestDir = Util.getResourcesFolder() + "/Models/" + (isGlb ? srcFile.getName().replace(".glb", "") : srcDir.getName());
+        selectedFileDestDir = Util.getResourcesFolder() + "/Models/" + modelName;
         File destDir = new File(selectedFileDestDir);
         if (destDir.exists()) {
             JOptionPane.showMessageDialog(null, "Directory: " + destDir.getAbsolutePath() + " already exits", "Error Message", JOptionPane.INFORMATION_MESSAGE);
@@ -267,10 +273,9 @@ public class Import3DModelDialog extends JDialog {
             JSONArray models = res.getJSONArray("models");
 
             JSONObject model = new JSONObject("{\"physics\":{ \"character\":{} } }");
-            model.put("name", txtName.getText());
+            model.put("name", modelName);
 
-            String sourceDirName = isGlb ? destDir.getName() : srcDir.getName();
-            model.put("path", "Models/" + sourceDirName + "/" + srcFile.getName());
+            model.put("path", "Models/" + modelName + "/" + srcFile.getName());
             model.put("scaleX", getFloatValue(txtScaleX.getText(), 1.0f));
             model.put("scaleY", getFloatValue(txtScaleY.getText(), 1.0f));
             model.put("scaleZ", getFloatValue(txtScaleZ.getText(), 1.0f));

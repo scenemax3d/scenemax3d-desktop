@@ -139,7 +139,7 @@ tasks.register('buildWindowsSetup', Exec) {
     inputs.file(windowsInstallerScript)
     inputs.file(file('INNO-SETUP/scenemax-setup-project.iss'))
     inputs.file(file('src/com/scenemax/desktop/Util.java'))
-    def installerVersion = (project.findProperty('installerAppVersion') ?: '1.9.2').toString()
+    def installerVersion = (project.findProperty('installerAppVersion') ?: '2.0.1').toString()
     outputs.file(file("INNO-SETUP/Output/scenemax3d-${installerVersion}-setup.exe"))
 
     doFirst {

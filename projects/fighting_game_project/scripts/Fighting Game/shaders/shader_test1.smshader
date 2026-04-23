@@ -5,13 +5,15 @@
   "blocks": [
     "TINT",
     "GLOW",
-    "HOLOGRAM_LINES"
+    "PULSE",
+    "RIM_LIGHT"
   ],
   "scrollSpeed": 0.95,
   "version": 1,
   "previewTarget": "MODEL",
   "glowStrength": 0.45,
   "previewModelName": "crime_city1",
+  "previewScale": 1,
   "useOriginalTexture": true,
   "mainColor": [
     0.22,
@@ -20,5 +22,5 @@
     0.92
   ],
   "transparency": 0.18,
-  "pulseSpeed": 0.35
+  "pulseSpeed": 0.5
 }
