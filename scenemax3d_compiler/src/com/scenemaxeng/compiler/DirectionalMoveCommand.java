@@ -2,7 +2,7 @@ package com.scenemaxeng.compiler;
 
 import com.abware.scenemaxlang.parser.SceneMaxParser;
 
-public class DirectionalMoveCommand extends VariableActionStatement{
+public class DirectionalMoveCommand extends TimedVariableMotionCommand{
 
     public static final int FORWARD = 10;
     public static final int BACKWARD = 20;

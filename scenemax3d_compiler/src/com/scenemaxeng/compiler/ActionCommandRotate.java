@@ -3,7 +3,7 @@ package com.scenemaxeng.compiler;
 import com.abware.scenemaxlang.parser.SceneMaxParser;
 import org.antlr.v4.runtime.ParserRuleContext;
 
-public class ActionCommandRotate extends VariableActionStatement {
+public class ActionCommandRotate extends TimedVariableMotionCommand {
     //public String targetVar;
     public String axis;
     public String numSign;

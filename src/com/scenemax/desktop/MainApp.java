@@ -2866,6 +2866,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             }
         });
 
+        // Keep scene designer tabs in sync with the editor dirty/save state.
+        newPanel.setOnDirtyCallback(() -> editorTabPanel.markActiveTabDirty());
+        newPanel.setOnSavedCallback(() -> editorTabPanel.markTabClean(f.getAbsolutePath()));
+
         // Open designer tab with the embedded panel
         editorTabPanel.openDesignerFile(f.getAbsolutePath(), newPanel);
 

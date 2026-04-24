@@ -86,14 +86,25 @@ public class MoveController extends SceneMaxBaseController{
             return true;
         }
 
-        boolean finished = false;
-        passedTime+=tpf;
-        if(passedTime>=targetTime) {
-            tpf-=(passedTime-targetTime);
-            finished=true;
+        float previousProgress;
+        float currentProgress;
+        boolean finished = targetTime <= 0f;
+        if (!finished) {
+            float previousTime = passedTime;
+            passedTime += tpf;
+            if (passedTime >= targetTime) {
+                passedTime = targetTime;
+                finished = true;
+            }
+            previousProgress = calcProgress(previousTime, targetTime);
+            currentProgress = calcProgress(passedTime, targetTime);
+        } else {
+            previousProgress = 0f;
+            currentProgress = 1f;
         }
 
-        float val = tpf*targetVal/targetTime;
+        float progressDelta = MotionEase.delta(cmd.motionEaseType, previousProgress, currentProgress);
+        float val = targetVal * progressDelta;
 
         if(cmd.verbalCommand>0) {
             if(targetVarDef.varType== ProgramDef.VAR_TYPE_3D){
@@ -136,5 +147,12 @@ public class MoveController extends SceneMaxBaseController{
         }
 
         return finished;
+    }
+
+    private float calcProgress(float time, float duration) {
+        if(duration<=0f) {
+            return 1f;
+        }
+        return time/duration;
     }
 }

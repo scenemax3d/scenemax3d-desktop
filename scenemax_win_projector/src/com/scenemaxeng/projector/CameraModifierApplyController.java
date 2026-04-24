@@ -19,11 +19,6 @@ public class CameraModifierApplyController extends SceneMaxBaseController {
         }
 
         CameraModifierApplyCommand cmd = (CameraModifierApplyCommand) this.cmd;
-        if (app.isCinematicCameraPlaying()) {
-            app.handleRuntimeError("Camera modifiers cannot be applied while a cinematic camera is playing");
-            return true;
-        }
-
         VarInst systemVar = scope.getVar(cmd.targetVar);
         if (systemVar == null || !(systemVar.value instanceof RuntimeCameraSystemValue)) {
             app.handleRuntimeError("Camera system '" + cmd.targetVar + "' is not available for modifiers");

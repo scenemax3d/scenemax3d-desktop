@@ -19,11 +19,11 @@ public class MoveToController extends SceneMaxBaseController {
     float timePassed=0;
     float targetTime;
     float totalDist;
-    private Vector3f lastTimePos;
     private boolean isCamera;
     private Vector3f lookingAt;
     private Spatial lookingAtEntity;
     private PositionStatement lookingAtPosStatement;
+    private final Vector3f frameOffset = new Vector3f();
 
     //private static HashMap<String,MoveToController> activeMoveControllers = new HashMap<>();
 
@@ -115,16 +115,23 @@ public class MoveToController extends SceneMaxBaseController {
 
         }
 
-        timePassed+=tpf;
-        if(timePassed>targetTime) {
-            timePassed=targetTime;
+        float previousProgress;
+        float currentProgress;
+        if (targetTime <= 0f) {
+            previousProgress = 0f;
+            currentProgress = 1f;
+        } else {
+            float previousTime = timePassed;
+            timePassed += tpf;
+            if(timePassed>targetTime) {
+                timePassed=targetTime;
+            }
+            previousProgress = previousTime / targetTime;
+            currentProgress = timePassed / targetTime;
         }
 
-
-        Vector3f step = dir.mult(timePassed/targetTime*totalDist);
-        Vector3f timePos = startPos.add(step);
-        Vector3f offset=lastTimePos==null?step:timePos.subtract(lastTimePos);
-        lastTimePos=timePos;
+        float deltaProgress = MotionEase.delta(((MoveToCommand)this.cmd).motionEaseType, previousProgress, currentProgress);
+        frameOffset.set(dir).multLocal(totalDist * deltaProgress);
 
         Vector3f currPos = null;
         if(isCamera) {
@@ -132,7 +139,7 @@ public class MoveToController extends SceneMaxBaseController {
                 return true;
             }
 
-            currPos = app.getCamera().getLocation().addLocal(offset);
+            currPos = app.getCamera().getLocation().addLocal(frameOffset);
             app.getCamera().setLocation(currPos);
             if(this.lookingAtEntity!=null) {
                 this.lookingAt = this.lookingAtEntity.getWorldTranslation().clone();
@@ -142,7 +149,7 @@ public class MoveToController extends SceneMaxBaseController {
             }
 
         } else {
-            targetSpatial.move(offset);
+            targetSpatial.move(frameOffset);
             currPos = targetSpatial.getWorldTranslation();
         }
 

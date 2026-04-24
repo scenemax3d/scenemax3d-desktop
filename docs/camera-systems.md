@@ -49,11 +49,11 @@ They are designed to add short-lived procedural motion and noise on top of a run
 
 ### Core Behavior
 
-- modifiers can be applied only to a running system camera
+- modifiers can be applied to the active system camera, and can also layer on top of cinematic playback
 - modifiers automatically remove themselves when their duration ends
 - multiple modifiers can be active at the same time
 - modifiers are additive, so combining them is supported
-- cinematic cameras still have priority and block system-camera modifiers while they are playing
+- cinematic cameras still take over the base shot, but active modifiers can now layer on top of that cinematic playback
 
 ### Declaration
 
