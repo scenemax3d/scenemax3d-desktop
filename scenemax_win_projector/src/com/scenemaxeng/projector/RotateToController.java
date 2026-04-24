@@ -79,14 +79,24 @@ public class RotateToController extends SceneMaxBaseController {
             return true;
         }
 
-        boolean finished = false;
-        passedTime+=tpf;
-        if(passedTime>=targetTime) {
-            tpf-=(passedTime-targetTime);
-            finished=true;
+        float previousProgress;
+        float currentProgress;
+        boolean finished = targetTime <= 0f;
+        if (!finished) {
+            float previousTime = passedTime;
+            passedTime += tpf;
+            if (passedTime >= targetTime) {
+                passedTime = targetTime;
+                finished = true;
+            }
+            previousProgress = previousTime / targetTime;
+            currentProgress = passedTime / targetTime;
+        } else {
+            previousProgress = 0f;
+            currentProgress = 1f;
         }
 
-        float rotateVal = tpf*targetVal/targetTime;
+        float rotateVal = targetVal * MotionEase.delta(this.cmd.motionEaseType, previousProgress, currentProgress);
 
         if (targetVarDef.varType == VariableDef.VAR_TYPE_CAMERA) {
             this.app.rotateCamera(axisNum, direction, rotateVal);

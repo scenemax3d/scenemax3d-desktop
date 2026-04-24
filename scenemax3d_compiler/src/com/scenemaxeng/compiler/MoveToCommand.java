@@ -2,7 +2,7 @@ package com.scenemaxeng.compiler;
 
 import com.abware.scenemaxlang.parser.SceneMaxParser;
 
-public class MoveToCommand extends ActionStatementBase {
+public class MoveToCommand extends TimedMotionCommand {
 
     public String moveToTarget;
     public SceneMaxParser.Logical_expressionContext extraDistanceExpr;

@@ -11,6 +11,7 @@ public class DirectionalMoveController extends SceneMaxBaseController{
     private boolean paused = false;
     private Double dist;
     private DirectionalMoveCommand cmd;
+    private ActionLogicalExpressionVm loopExprCached;
 
     public DirectionalMoveController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope, DirectionalMoveCommand cmd) {
         super(app, prg, scope, cmd);
@@ -27,8 +28,6 @@ public class DirectionalMoveController extends SceneMaxBaseController{
 
         if (this.paused && !app.scenePaused) {
             this.paused = false;
-            this.app.moveDirectional(this.targetVar, DirectionalMoveCommand.FORWARD, dist);
-            return false;
         }
 
         if (!targetCalculated) {
@@ -39,23 +38,36 @@ public class DirectionalMoveController extends SceneMaxBaseController{
             if (cmd.distanceExpr != null) {
                 dist = (Double) new ActionLogicalExpressionVm(cmd.distanceExpr, this.scope).evaluate();
             }
-            this.app.moveDirectional(this.targetVar, cmd.direction, dist);
 
             if (cmd.timeExpr != null) {
                 this.targetTime = ((Double) new ActionLogicalExpressionVm(cmd.timeExpr, this.scope).evaluate()).floatValue();
                 this.originalTargetTime = this.targetTime;
-                return false;
             } else {
+                this.app.moveDirectional(this.targetVar, cmd.direction, dist);
                 return true;
             }
 
         }
 
-        this.targetTime -= tpf;
+        float previousTime = Math.max(0f, originalTargetTime - targetTime);
+        if (targetTime > 0f) {
+            this.targetTime -= tpf;
+            if (this.targetTime < 0f) {
+                this.targetTime = 0f;
+            }
+        } else {
+            this.targetTime = 0f;
+        }
+        float currentTime = Math.max(0f, originalTargetTime - targetTime);
         boolean stop = (this.targetTime <= 0);
 
+        this.app.moveDirectional(this.targetVar, cmd.direction, calculateDirectionalSpeed(previousTime, currentTime, tpf));
+
         if(stop && this.cmd.loopExpr!=null) {
-            Object cond = new ActionLogicalExpressionVm(this.cmd.loopExpr,this.scope).evaluate();
+            if(loopExprCached == null) {
+                loopExprCached = new ActionLogicalExpressionVm(this.cmd.loopExpr,this.scope);
+            }
+            Object cond = loopExprCached.evaluate();
             if(cond instanceof Boolean && ((Boolean)cond)) {
                 stop=false;
                 this.targetTime=this.originalTargetTime;
@@ -68,5 +80,19 @@ public class DirectionalMoveController extends SceneMaxBaseController{
 
         return stop;
 
+    }
+
+    private double calculateDirectionalSpeed(float previousTime, float currentTime, float tpf) {
+        if (dist == null) {
+            return 0.0;
+        }
+        if (originalTargetTime <= 0f || tpf <= 0f) {
+            return dist;
+        }
+
+        float previousProgress = previousTime / originalTargetTime;
+        float currentProgress = currentTime / originalTargetTime;
+        float progressDelta = MotionEase.delta(cmd.motionEaseType, previousProgress, currentProgress);
+        return dist * originalTargetTime * progressDelta / tpf;
     }
 }

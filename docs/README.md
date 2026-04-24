@@ -54,4 +54,4 @@ end do
 
 ## Language Basics
 
-SceneMax3D uses a simple, English-like syntax. Objects are created with `is a` or `=>` shorthand, properties are set with `=`, and commands use natural language patterns like `move left 3 in 2 seconds`.
+SceneMax3D uses a simple, English-like syntax. Objects are created with `is a` or `=>` shorthand, properties are set with `=`, and commands use natural language patterns like `move left 3 in 2 seconds ease in out`.

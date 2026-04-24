@@ -607,8 +607,8 @@ collision_entity : var_decl collision_joint_1? ;
 collision_joint_1 : ('.' QUOTED_STRING) ;
 //collision_joint_2 : ('.' QUOTED_STRING) ;
 stop : var_decl '.' Stop ;
-rotate : var_decl '.' Rotate '(' (axis_expr (',' axis_expr)*) ')' In speed_expr loop_expr? ;
-rotate_to :  var_decl '.' Rotate To '(' axis_name logical_expression ')' In speed_expr ;
+rotate : var_decl '.' Rotate '(' (axis_expr (',' axis_expr)*) ')' In speed_expr motion_ease_attr? loop_expr? ;
+rotate_to :  var_decl '.' Rotate To '(' axis_name logical_expression ')' In speed_expr motion_ease_attr? ;
 axis_name : X | Y | Z ;
 all_axes_names : axis_name | RX | RY | RZ ;
 
@@ -619,13 +619,13 @@ record_commands : Commands ;
 record_stop : Stop ;
 record_save : Save QUOTED_STRING ;
 
-turn_verbal : var_decl '.' Turn turn_dir? turn_degrees In speed_expr loop_expr? ;
+turn_verbal : var_decl '.' Turn turn_dir? turn_degrees In speed_expr motion_ease_attr? loop_expr? ;
 turn_dir : Left | Right | Forward | Backward ;
 turn_degrees : logical_expression ;
 loop_expr : Loop While logical_expression ;
 while_expr : While logical_expression ;
 
-roll_verbal :  var_decl '.' Roll turn_dir turn_degrees In speed_expr loop_expr? ;
+roll_verbal :  var_decl '.' Roll turn_dir turn_degrees In speed_expr motion_ease_attr? loop_expr? ;
 
 turn_verbal_to : var_decl '.' Look At move_to_target (In speed_expr)? ;
 
@@ -669,18 +669,19 @@ specific_suspension_opt_length : Length Equals logical_expression ;
 
 
 
-move : var_decl '.' Move '(' (axis_expr (',' axis_expr)*) ')' In speed_expr ;
-move_to : var_decl '.' Move To move_to_target ('+' logical_expression)? In speed_expr looking_at_expr? ;
+move : var_decl '.' Move '(' (axis_expr (',' axis_expr)*) ')' In speed_expr motion_ease_attr? ;
+move_to : var_decl '.' Move To move_to_target ('+' logical_expression)? In speed_expr motion_ease_attr? looking_at_expr? ;
 move_to_target : ('(' ID ')') | ('(' pos_axes ')') | position_statement ;
 position_statement : '(' var_decl dir_statement* ')' ;
 dir_statement : dir_verb logical_expression ;
 dir_verb : Forward | Backward | Left | Right | Up | Down;
 looking_at_expr : Looking At position_statement ;
 
-move_verbal : var_decl '.' Move move_direction logical_expression In speed_expr loop_expr?;
+move_verbal : var_decl '.' Move move_direction logical_expression In speed_expr motion_ease_attr? loop_expr?;
 
-directional_move : var_decl '.' Move move_direction logical_expression (For logical_expression Seconds)? loop_expr?;
+directional_move : var_decl '.' Move move_direction logical_expression (For logical_expression Seconds motion_ease_attr?)? loop_expr?;
 move_direction : Forward | Backward | Left | Right | Up | Down ;
+motion_ease_attr : Ease In Out? | Ease Out ;
 
 scale : var_decl '.' Scale Equals? logical_expression ;
 pos : var_decl '.' Pos '(' (pos_axes | pos_entity | position_statement) ')' ;
@@ -891,7 +892,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Water | Strength | Depth | Terrain | Camera | Chase | Trailing | Vertical | Horizontal | Rotation | Max | Min | Distance |
     Angle | Parent | Detach | Attach | Draw | Debug | On | Off | Calibrate | Shadow | Cast | Receive | SkyBox | Solar | System |
     Cloud | Billboard | Model | Sprite | From | Having | For | Contains | Each | Name | Joints | Dynamic | Static | Collider |
-    Hidden | Where | And | In | Then | Rows | Cols | To | Be | Frames | Seconds | Wait | Using | At | Speed | Of | Rotate | Scale |
+    Hidden | Where | And | In | Out | Then | Rows | Cols | To | Be | Frames | Seconds | Wait | Using | At | Speed | Of | Rotate | Scale |
     Mass | Velocity | Angular | Restitution | Data | Move | Belongs | The | Group | Look | Looking | Roll | Turn | Forward |
     Backward | Left | Right | Up | Down | Code | Light | Lights | Add | Probe | Minimap | Play | Sound | Audio | Hide | Show |
     Hour | Wireframe | Info | Speedo | Tacho | Outline | Delete | Accelerate | Steer | Brake | Turbo | Reset | Front | Rear |
@@ -1039,6 +1040,7 @@ Hidden : 'Hidden' | 'hidden' ;
 Where : 'where' | 'Where' ;
 And : 'and' | 'And';
 In : 'in' | 'In' ;
+Out : 'out' | 'Out' ;
 Then : 'then' | 'Then' ;
 Rows : 'rows' | 'Rows' ;
 Cols : 'cols' | 'Cols' ;

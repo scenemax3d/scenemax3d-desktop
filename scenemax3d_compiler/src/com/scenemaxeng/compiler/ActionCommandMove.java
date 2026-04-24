@@ -3,7 +3,7 @@ package com.scenemaxeng.compiler;
 import com.abware.scenemaxlang.parser.SceneMaxParser;
 import org.antlr.v4.runtime.ParserRuleContext;
 
-public class ActionCommandMove extends VariableActionStatement {
+public class ActionCommandMove extends TimedVariableMotionCommand {
 
     public static final int VERBAL_MOVE_LEFT = 10;
     public static final int VERBAL_MOVE_RIGHT = 20;
