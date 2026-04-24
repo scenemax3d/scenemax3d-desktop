@@ -243,6 +243,8 @@ public class DesignerPanel extends JPanel {
     private boolean updatingTreeSelection = false;
     private Runnable scriptsTreeRefreshCallback;
     private java.util.function.Consumer<String> codeFileUpdatedCallback;
+    private Runnable onDirtyCallback;
+    private Runnable onSavedCallback;
 
     public DesignerPanel(String projectPath, File designerFile) {
         this(projectPath, designerFile, true);
@@ -1543,6 +1545,20 @@ public class DesignerPanel extends JPanel {
                         txtCinematicRuntimePosHint.setText(hintText != null ? hintText : "");
                     }
                 });
+            }
+
+            @Override
+            public void onDocumentDirty() {
+                if (onDirtyCallback != null) {
+                    SwingUtilities.invokeLater(onDirtyCallback);
+                }
+            }
+
+            @Override
+            public void onDocumentSaved() {
+                if (onSavedCallback != null) {
+                    SwingUtilities.invokeLater(onSavedCallback);
+                }
             }
         });
     }
@@ -3828,6 +3844,14 @@ public class DesignerPanel extends JPanel {
         if (app != null) {
             app.setCodeFileUpdatedCallback(callback);
         }
+    }
+
+    public void setOnDirtyCallback(Runnable callback) {
+        this.onDirtyCallback = callback;
+    }
+
+    public void setOnSavedCallback(Runnable callback) {
+        this.onSavedCallback = callback;
     }
 
     /**

@@ -31,6 +31,7 @@ class CinematicCameraController extends SceneMaxBaseController {
     private RunTimeVarDef explicitTarget;
     private RunTimeVarDef rigTarget;
     private boolean playbackRegistered;
+    private float playbackFovDegrees = 50f;
 
     private static class RuntimeTargetReference {
         Vector3f point;
@@ -108,10 +109,11 @@ class CinematicCameraController extends SceneMaxBaseController {
         }
 
         app.turnOffCameraStates();
+        playbackFovDegrees = app.currentCameraFovDegrees(50f);
         app.onCinematicCameraStarted();
         playbackRegistered = true;
         logPlaybackSummary();
-        applyCameraAtElapsed(0f);
+        applyCameraAtElapsed(0f, 0f);
         targetCalculated = true;
     }
 
@@ -134,7 +136,7 @@ class CinematicCameraController extends SceneMaxBaseController {
         }
 
         elapsed = Math.min(totalDuration, elapsed + tpf);
-        applyCameraAtElapsed(elapsed);
+        applyCameraAtElapsed(elapsed, tpf);
         boolean finished = elapsed >= totalDuration - 1e-6f;
         if (finished) {
             finishPlayback();
@@ -149,7 +151,7 @@ class CinematicCameraController extends SceneMaxBaseController {
         }
     }
 
-    private void applyCameraAtElapsed(float timeSeconds) {
+    private void applyCameraAtElapsed(float timeSeconds, float tpf) {
         RuntimePlaybackSegment active = null;
         float remaining = timeSeconds;
         for (RuntimePlaybackSegment segment : playbackSegments) {
@@ -170,10 +172,8 @@ class CinematicCameraController extends SceneMaxBaseController {
         float easedProgress = applyRigEasing(active.rig, segmentProgress, active.firstSegment, active.lastSegment);
         float anchorCursor = advanceAnchorCursor(active.startAnchor, active.anchorDistance, easedProgress, active.track.anchorCount);
         Vector3f cameraPos = computeTrackWorldPosition(active.track, anchorCursor);
-        app.getCamera().setLocation(cameraPos);
-
         Vector3f lookAt = resolveLookAtPoint(active, cameraPos, anchorCursor + 1f);
-        app.getCamera().lookAt(lookAt, Vector3f.UNIT_Y);
+        app.applyCameraFrame(cameraPos, lookAt, playbackFovDegrees, tpf);
     }
 
     private Vector3f resolveLookAtPoint(RuntimePlaybackSegment active, Vector3f cameraPos, float lookAheadCursor) {

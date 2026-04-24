@@ -73,6 +73,8 @@ public class DesignerApp extends SceneMaxApp {
         void onSceneChanged();
         void onLoadingProgress(int loaded, int total);
         void onCinematicRuntimeHintChanged(String hintText);
+        void onDocumentDirty();
+        void onDocumentSaved();
     }
 
     /**
@@ -3890,12 +3892,23 @@ public class DesignerApp extends SceneMaxApp {
     public void markDocumentDirty() {
         // Never persist while the document is still being reconstructed from disk.
         // This keeps loaded entities from triggering writes as they appear.
-        if (!canPersistDocumentState()) {
+        if (loadingDocument) {
             return;
+        }
+
+        // If the document originally loaded incompletely, let an explicit user
+        // edit re-enable persistence so the scene can be repaired and saved.
+        if (documentLoadIncomplete) {
+            documentLoadIncomplete = false;
+            persistenceBlockedWarningLogged = false;
+            System.out.println("[Designer] Resuming document persistence after explicit user edit.");
         }
 
         documentPersistPending = true;
         documentPersistDeadlineNanos = System.nanoTime() + DOCUMENT_PERSIST_DEBOUNCE_NANOS;
+        if (panelCallback != null) {
+            panelCallback.onDocumentDirty();
+        }
     }
 
     private void flushPendingDocumentPersist() {
@@ -3930,6 +3943,9 @@ public class DesignerApp extends SceneMaxApp {
             }
         }
         persistCodeFile();
+        if (panelCallback != null) {
+            panelCallback.onDocumentSaved();
+        }
     }
 
     /**

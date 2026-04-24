@@ -7313,10 +7313,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                                     Map<String, Float> overrides,
                                     String targetVarName,
                                     int targetVarLine) {
-        if (activeCameraSystemValue == null) {
+        if (targetSystem == null) {
             return;
         }
-        if (activeCameraSystemValue != targetSystem) {
+        if (!isCinematicCameraPlaying() && activeCameraSystemValue == null) {
+            return;
+        }
+        if (!isCinematicCameraPlaying() && activeCameraSystemValue != targetSystem) {
             return;
         }
 
@@ -7326,6 +7329,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     public void applySystemCameraFrame(Vector3f basePos, Vector3f baseLookAt, float baseFov, float tpf) {
+        applyCameraFrame(basePos, baseLookAt, baseFov, tpf);
+    }
+
+    public void applyCameraFrame(Vector3f basePos, Vector3f baseLookAt, float baseFov, float tpf) {
         Vector3f finalPos = basePos.clone();
         Vector3f finalLookAt = baseLookAt.clone();
         float finalFov = baseFov;
@@ -7355,6 +7362,17 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         float aspect = getCamera().getHeight() == 0 ? 1f : (float) getCamera().getWidth() / (float) getCamera().getHeight();
         getCamera().setFrustumPerspective(finalFov, aspect, getCamera().getFrustumNear(), getCamera().getFrustumFar());
+    }
+
+    public float currentCameraFovDegrees(float fallbackFov) {
+        if (getCamera() == null) {
+            return fallbackFov;
+        }
+        float near = getCamera().getFrustumNear();
+        if (near == 0f) {
+            return fallbackFov;
+        }
+        return 2f * FastMath.atan(getCamera().getFrustumTop() / near) * FastMath.RAD_TO_DEG;
     }
 
     private void applyCameraModifierOverrides(RuntimeCameraModifierValue value, Map<String, Float> overrides) {
