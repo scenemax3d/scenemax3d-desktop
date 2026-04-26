@@ -1,4 +1,4 @@
-# SceneMax3D Developer Studio
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/0e76fb3a-f8e8-49f3-b9b6-513d2a02800b" /># SceneMax3D Developer Studio
 
 A desktop 3D scene editor and game development environment built with Java, [JMonkeyEngine 3](https://jmonkeyengine.org/), and Swing.
 
@@ -129,17 +129,17 @@ A product roadmap is a high-level view of the capabilities and improvements plan
 
 The items below are planned for future delivery, but they will not necessarily be implemented in the order they are listed:
 
-- **Messaging System** -- display in-game and runtime messages
+- **Messaging System** -- display in-game and runtime messages - **done**
 - **Health Bar System** -- built-in support for health bar setup and management
 - **Weapons/Inventory System** -- easy picking up and using weapons at runtime
 - **Climbing System** -- easy definition of climbable objects and a climbing game state machine
 - **Leaderboard System** -- support for game leaderboards
-- **UI Frames** -- show messages inside frames
+- **UI Frames** -- show messages inside frames - **done**
 - **MiniMap System** - Customized minimap system
-- **Itch.io Integration** -- upload and maintain your game on Itch.io
+- **Itch.io Integration** -- upload and maintain your game on Itch.io - **done**
 - **Gallery** -- a shared place for presenting SceneMax3D projects
 - **Terrain Builder** -- tools for creating and editing terrain
-- **Material Builder** -- tools for defining and tuning materials
+- **Material Builder** -- tools for defining and tuning materials - **done**
 - **Lighting System** -- improved lighting authoring and control
 - **Physics System** -- manipulate object rigs and test physical effects
 - **Audio System** -- built-in audio workflow and tooling
