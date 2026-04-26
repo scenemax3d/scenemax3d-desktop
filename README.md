@@ -1,4 +1,4 @@
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/0e76fb3a-f8e8-49f3-b9b6-513d2a02800b" /># SceneMax3D Developer Studio
+# SceneMax3D Developer Studio
 
 A desktop 3D scene editor and game development environment built with Java, [JMonkeyEngine 3](https://jmonkeyengine.org/), and Swing.
 
