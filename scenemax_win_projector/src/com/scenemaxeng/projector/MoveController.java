@@ -117,6 +117,8 @@ public class MoveController extends SceneMaxBaseController{
                 app.moveSphereToDirection(targetVar,cmd.verbalCommand,val);
             } else if(targetVarDef.varType== VariableDef.VAR_TYPE_BOX){
                 app.moveBoxToDirection(targetVar,cmd.verbalCommand,val);
+            } else if(targetVarDef.varType== VariableDef.VAR_TYPE_LIGHT){
+                app.moveLightToDirection(targetVar,cmd.verbalCommand,val);
             }
 
         } else {
@@ -131,6 +133,8 @@ public class MoveController extends SceneMaxBaseController{
                 app.moveSphere(targetVar, axisNum, direction, val);
             } else if (targetVarDef.varType == VariableDef.VAR_TYPE_BOX) {
                 app.moveBox(targetVar, axisNum, direction, val);
+            } else if (targetVarDef.varType == VariableDef.VAR_TYPE_LIGHT) {
+                app.moveLight(targetVar, axisNum, direction, val);
             }
 
         }

@@ -189,6 +189,12 @@ public class DesignerPanel extends JPanel {
     private JSpinner spnStairsWidth, spnStairsStepHeight, spnStairsStepDepth, spnStairsStepCount;
     private JPanel archPanel;
     private JSpinner spnArchWidth, spnArchHeight, spnArchDepth, spnArchThickness, spnArchSegments;
+    private JPanel lightPanel;
+    private JComboBox<String> cboLightType, cboLightShadowMode, cboLightUnit;
+    private JComboBox<String> cboLightColor, cboLightLookAt, cboLightPreset;
+    private JTextField txtLightAmbient;
+    private JSpinner spnLightIntensity, spnLightRange, spnLightAngle, spnLightExposure;
+    private JSpinner spnLightDirX, spnLightDirY, spnLightDirZ;
     private JCheckBox chkStaticEntity, chkColliderEntity;
     private JCheckBox chkHidden;
     private JPanel hiddenPanel;
@@ -329,6 +335,12 @@ public class DesignerPanel extends JPanel {
         btnAddModel.setToolTipText("Add 3D Model");
         btnAddModel.addActionListener(e -> showModelPickerDialog());
 
+        JButton btnAddLight = new JButton(createDesignerToolbarIcon("light"));
+        btnAddLight.setToolTipText("Add Point Light");
+        btnAddLight.addActionListener(e -> {
+            if (app != null) app.enqueue(() -> { app.addDefaultPointLight(); return null; });
+        });
+
         JButton btnAddPath = new JButton(createDesignerToolbarIcon("path"));
         btnAddPath.setToolTipText("Draw Path (click to place points, double-click to finish, ESC to cancel)");
         btnAddPath.addActionListener(e -> {
@@ -369,6 +381,7 @@ public class DesignerPanel extends JPanel {
         toolbar.add(btnAddStairs);
         toolbar.add(btnAddArch);
         toolbar.add(btnAddModel);
+        toolbar.add(btnAddLight);
         toolbar.add(btnAddPath);
         toolbar.add(btnAddCinematic);
         toolbar.addSeparator();
@@ -835,6 +848,122 @@ public class DesignerPanel extends JPanel {
 
         archPanel.setVisible(false);
         propertiesForm.add(archPanel);
+
+        lightPanel = new JPanel();
+        lightPanel.setLayout(new BoxLayout(lightPanel, BoxLayout.Y_AXIS));
+        lightPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lightPanel.add(Box.createVerticalStrut(8));
+        JLabel lblLight = new JLabel("Light:");
+        lblLight.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblLight.setFont(lblLight.getFont().deriveFont(Font.BOLD));
+        lightPanel.add(lblLight);
+
+        JPanel lightTypeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        lightTypeRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lightTypeRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        lightTypeRow.add(new JLabel("Type:"));
+        cboLightType = new JComboBox<>(new String[]{"point", "directional", "spot", "sky", "ambient", "probe"});
+        cboLightType.setPreferredSize(new Dimension(110, 24));
+        cboLightType.addActionListener(e -> applyLightChange());
+        lightTypeRow.add(cboLightType);
+        lightTypeRow.add(new JLabel("Shadow:"));
+        cboLightShadowMode = new JComboBox<>(new String[]{"off", "on", "low", "medium", "high"});
+        cboLightShadowMode.setPreferredSize(new Dimension(90, 24));
+        cboLightShadowMode.addActionListener(e -> applyLightChange());
+        lightTypeRow.add(cboLightShadowMode);
+        lightPanel.add(lightTypeRow);
+
+        JPanel lightColorRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        lightColorRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lightColorRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        lightColorRow.add(new JLabel("Color:"));
+        cboLightColor = new JComboBox<>(new String[]{
+                "warm", "cool", "white", "red", "green", "blue", "yellow",
+                "orange", "pink", "cyan", "magenta", "gray", "black"
+        });
+        cboLightColor.setPreferredSize(new Dimension(95, 24));
+        cboLightColor.addActionListener(e -> applyLightChange());
+        lightColorRow.add(cboLightColor);
+        lightColorRow.add(new JLabel("Intensity:"));
+        spnLightIntensity = new JSpinner(new SpinnerNumberModel(900.0, 0.0, 1000000.0, 10.0));
+        spnLightIntensity.setPreferredSize(new Dimension(85, 24));
+        spnLightIntensity.addChangeListener(e -> applyLightChange());
+        lightColorRow.add(spnLightIntensity);
+        cboLightUnit = new JComboBox<>(new String[]{"", "lumens"});
+        cboLightUnit.setPreferredSize(new Dimension(82, 24));
+        cboLightUnit.addActionListener(e -> applyLightChange());
+        lightColorRow.add(cboLightUnit);
+        lightPanel.add(lightColorRow);
+
+        JPanel lightRangeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        lightRangeRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lightRangeRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        lightRangeRow.add(new JLabel("Range:"));
+        spnLightRange = new JSpinner(new SpinnerNumberModel(12.0, 0.0, 100000.0, 0.5));
+        spnLightRange.setPreferredSize(new Dimension(80, 24));
+        spnLightRange.addChangeListener(e -> applyLightChange());
+        lightRangeRow.add(spnLightRange);
+        lightRangeRow.add(new JLabel("Angle:"));
+        spnLightAngle = new JSpinner(new SpinnerNumberModel(35.0, 0.1, 179.0, 1.0));
+        spnLightAngle.setPreferredSize(new Dimension(70, 24));
+        spnLightAngle.addChangeListener(e -> applyLightChange());
+        lightRangeRow.add(spnLightAngle);
+        lightPanel.add(lightRangeRow);
+
+        JPanel lightDirectionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
+        lightDirectionRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lightDirectionRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        lightDirectionRow.add(new JLabel("Direction:"));
+        spnLightDirX = new JSpinner(new SpinnerNumberModel(-0.3, -1.0, 1.0, 0.05));
+        spnLightDirY = new JSpinner(new SpinnerNumberModel(-0.8, -1.0, 1.0, 0.05));
+        spnLightDirZ = new JSpinner(new SpinnerNumberModel(-0.4, -1.0, 1.0, 0.05));
+        spnLightDirX.setPreferredSize(new Dimension(60, 24));
+        spnLightDirY.setPreferredSize(new Dimension(60, 24));
+        spnLightDirZ.setPreferredSize(new Dimension(60, 24));
+        spnLightDirX.addChangeListener(e -> applyLightChange());
+        spnLightDirY.addChangeListener(e -> applyLightChange());
+        spnLightDirZ.addChangeListener(e -> applyLightChange());
+        lightDirectionRow.add(spnLightDirX);
+        lightDirectionRow.add(spnLightDirY);
+        lightDirectionRow.add(spnLightDirZ);
+        lightPanel.add(lightDirectionRow);
+
+        JPanel lightLookAtRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        lightLookAtRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lightLookAtRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        lightLookAtRow.add(new JLabel("Look At:"));
+        cboLightLookAt = new JComboBox<>();
+        cboLightLookAt.setPreferredSize(new Dimension(180, 24));
+        cboLightLookAt.addActionListener(e -> applyLightChange());
+        lightLookAtRow.add(cboLightLookAt);
+        lightPanel.add(lightLookAtRow);
+
+        JPanel lightSkyRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        lightSkyRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lightSkyRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        lightSkyRow.add(new JLabel("Sky Preset:"));
+        cboLightPreset = new JComboBox<>(new String[]{"", "Night Neon", "Sunny Day", "Overcast"});
+        cboLightPreset.setPreferredSize(new Dimension(120, 24));
+        cboLightPreset.addActionListener(e -> applyLightChange());
+        lightSkyRow.add(cboLightPreset);
+        lightSkyRow.add(new JLabel("Exposure:"));
+        spnLightExposure = new JSpinner(new SpinnerNumberModel(0.2, 0.0, 100.0, 0.05));
+        spnLightExposure.setPreferredSize(new Dimension(70, 24));
+        spnLightExposure.addChangeListener(e -> applyLightChange());
+        lightSkyRow.add(spnLightExposure);
+        lightPanel.add(lightSkyRow);
+
+        JPanel lightAmbientRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        lightAmbientRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lightAmbientRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        lightAmbientRow.add(new JLabel("Ambient:"));
+        txtLightAmbient = new JTextField(10);
+        txtLightAmbient.addActionListener(e -> applyLightChange());
+        lightAmbientRow.add(txtLightAmbient);
+        lightPanel.add(lightAmbientRow);
+
+        lightPanel.setVisible(false);
+        propertiesForm.add(lightPanel);
 
         // Static / Collider checkboxes (BOX and SPHERE only)
         staticColliderPanel = new JPanel();
@@ -2484,6 +2613,7 @@ public class DesignerPanel extends JPanel {
                 hollowCylinderPanel.setVisible(false);
                 stairsPanel.setVisible(false);
                 archPanel.setVisible(false);
+                lightPanel.setVisible(false);
                 staticColliderPanel.setVisible(false);
                 materialPanel.setVisible(false);
                 hiddenPanel.setVisible(false);
@@ -2583,6 +2713,30 @@ public class DesignerPanel extends JPanel {
                 archPanel.setVisible(true);
             } else {
                 archPanel.setVisible(false);
+            }
+
+            if (entity.getType() == DesignerEntityType.LIGHT) {
+                refreshLightColorChoices(entity.getLightColor());
+                refreshLightLookAtChoices(entity);
+                refreshLightPresetChoices(entity.getLightPreset());
+                cboLightType.setSelectedItem(entity.getLightType());
+                cboLightColor.setSelectedItem(entity.getLightColor());
+                spnLightIntensity.setValue((double) entity.getLightIntensity());
+                cboLightUnit.setSelectedItem(entity.getLightIntensityUnit());
+                Vector3f dir = entity.getLightDirection();
+                spnLightDirX.setValue((double) dir.x);
+                spnLightDirY.setValue((double) dir.y);
+                spnLightDirZ.setValue((double) dir.z);
+                cboLightShadowMode.setSelectedItem(entity.getLightShadowMode());
+                spnLightRange.setValue((double) entity.getLightRange());
+                cboLightLookAt.setSelectedItem(entity.getLightLookAtTarget());
+                spnLightAngle.setValue((double) entity.getLightAngle());
+                cboLightPreset.setSelectedItem(entity.getLightPreset());
+                spnLightExposure.setValue((double) entity.getLightExposure());
+                txtLightAmbient.setText(entity.getLightAmbientColor());
+                lightPanel.setVisible(true);
+            } else {
+                lightPanel.setVisible(false);
             }
 
             if (entity.getType() == DesignerEntityType.BOX || entity.getType() == DesignerEntityType.SPHERE
@@ -2739,6 +2893,7 @@ public class DesignerPanel extends JPanel {
             hollowCylinderPanel.setVisible(false);
             stairsPanel.setVisible(false);
             archPanel.setVisible(false);
+            lightPanel.setVisible(false);
             staticColliderPanel.setVisible(false);
             materialPanel.setVisible(false);
             hiddenPanel.setVisible(false);
@@ -2974,6 +3129,46 @@ public class DesignerPanel extends JPanel {
             sel.setArchThickness(thickness);
             sel.setArchSegments(segments);
             app.recreateEntity(sel, sel.isStaticEntity(), sel.isColliderEntity());
+            app.markDocumentDirty();
+            return null;
+        });
+    }
+
+    private void applyLightChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.LIGHT) return;
+
+        String type = (String) cboLightType.getSelectedItem();
+        String color = selectedComboValue(cboLightColor);
+        float intensity = ((Number) spnLightIntensity.getValue()).floatValue();
+        String unit = (String) cboLightUnit.getSelectedItem();
+        Vector3f direction = new Vector3f(
+                ((Number) spnLightDirX.getValue()).floatValue(),
+                ((Number) spnLightDirY.getValue()).floatValue(),
+                ((Number) spnLightDirZ.getValue()).floatValue());
+        String shadow = (String) cboLightShadowMode.getSelectedItem();
+        float range = ((Number) spnLightRange.getValue()).floatValue();
+        String lookAt = selectedComboValue(cboLightLookAt);
+        float angle = ((Number) spnLightAngle.getValue()).floatValue();
+        String preset = selectedComboValue(cboLightPreset);
+        float exposure = ((Number) spnLightExposure.getValue()).floatValue();
+        String ambient = txtLightAmbient.getText();
+
+        app.enqueue(() -> {
+            sel.setLightType(type);
+            sel.setLightColor(color);
+            sel.setLightIntensity(intensity);
+            sel.setLightIntensityUnit(unit);
+            sel.setLightDirection(direction);
+            sel.setLightShadowMode(shadow);
+            sel.setLightRange(range);
+            sel.setLightLookAtTarget(lookAt);
+            sel.setLightAngle(angle);
+            sel.setLightPreset(preset);
+            sel.setLightExposure(exposure);
+            sel.setLightAmbientColor(ambient);
+            app.updateLightVisual(sel);
             app.markDocumentDirty();
             return null;
         });
@@ -3567,6 +3762,90 @@ public class DesignerPanel extends JPanel {
         cboSceneShader.setSelectedItem(selectedShader != null && !selectedShader.isBlank() ? selectedShader : "None");
     }
 
+    private void refreshLightColorChoices(String selectedColor) {
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[]{
+                "warm", "cool", "white", "red", "green", "blue", "yellow",
+                "orange", "pink", "cyan", "magenta", "gray", "black"
+        });
+        addComboValueIfMissing(model, selectedColor);
+        cboLightColor.setModel(model);
+        cboLightColor.setSelectedItem(selectedColor != null && !selectedColor.isBlank() ? selectedColor : "warm");
+    }
+
+    private void refreshLightPresetChoices(String selectedPreset) {
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[]{
+                "", "Night Neon", "Sunny Day", "Overcast"
+        });
+        addComboValueIfMissing(model, selectedPreset);
+        cboLightPreset.setModel(model);
+        cboLightPreset.setSelectedItem(selectedPreset != null ? selectedPreset : "");
+    }
+
+    private void refreshLightLookAtChoices(DesignerEntity selectedLight) {
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+        model.addElement("");
+        if (app != null) {
+            addLightLookAtChoices(model, app.getEntities(), selectedLight);
+        }
+        addComboValueIfMissing(model, selectedLight != null ? selectedLight.getLightLookAtTarget() : "");
+        cboLightLookAt.setModel(model);
+        cboLightLookAt.setSelectedItem(selectedLight != null ? selectedLight.getLightLookAtTarget() : "");
+    }
+
+    private void addLightLookAtChoices(DefaultComboBoxModel<String> model, List<DesignerEntity> source,
+                                       DesignerEntity selectedLight) {
+        if (source == null) {
+            return;
+        }
+        for (DesignerEntity entity : source) {
+            if (entity == null) {
+                continue;
+            }
+            if (isLightLookAtTarget(entity, selectedLight)) {
+                addComboValueIfMissing(model, entity.getName());
+            }
+            addLightLookAtChoices(model, entity.getChildren(), selectedLight);
+        }
+    }
+
+    private boolean isLightLookAtTarget(DesignerEntity entity, DesignerEntity selectedLight) {
+        if (entity == selectedLight || entity.getName() == null || entity.getName().isBlank()) {
+            return false;
+        }
+        switch (entity.getType()) {
+            case BOX:
+            case SPHERE:
+            case WEDGE:
+            case CYLINDER:
+            case HOLLOW_CYLINDER:
+            case QUAD:
+            case CONE:
+            case STAIRS:
+            case ARCH:
+            case MODEL:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void addComboValueIfMissing(DefaultComboBoxModel<String> model, String value) {
+        if (model == null || value == null || value.isBlank()) {
+            return;
+        }
+        for (int i = 0; i < model.getSize(); i++) {
+            if (value.equals(model.getElementAt(i))) {
+                return;
+            }
+        }
+        model.addElement(value);
+    }
+
+    private String selectedComboValue(JComboBox<String> combo) {
+        Object selected = combo != null ? combo.getSelectedItem() : null;
+        return selected != null ? selected.toString() : "";
+    }
+
     // --- Lifecycle ---
 
     /**
@@ -4045,6 +4324,7 @@ public class DesignerPanel extends JPanel {
             case "quad":            drawToolbarQuad(g);            break;
             case "stairs":          drawToolbarStairs(g);          break;
             case "arch":            drawToolbarArch(g);            break;
+            case "light":           drawToolbarLight(g);           break;
             case "model":     drawToolbarModel(g);     break;
             case "delete":    drawToolbarDelete(g);    break;
             case "translate": drawToolbarTranslate(g); break;
@@ -4176,6 +4456,19 @@ public class DesignerPanel extends JPanel {
         g.draw(new Line2D.Float(4, 16, 4, 10));
         g.draw(new Line2D.Float(16, 16, 16, 10));
         g.draw(new java.awt.geom.Arc2D.Float(4, 4, 12, 12, 0, 180, java.awt.geom.Arc2D.OPEN));
+    }
+
+    private static void drawToolbarLight(Graphics2D g) {
+        g.draw(new Ellipse2D.Float(7, 5, 6, 6));
+        g.draw(new Line2D.Float(8, 12, 12, 12));
+        g.draw(new Line2D.Float(8.5f, 15, 11.5f, 15));
+        g.draw(new Line2D.Float(9, 12, 9, 15));
+        g.draw(new Line2D.Float(11, 12, 11, 15));
+        g.draw(new Line2D.Float(10, 1.5f, 10, 3.5f));
+        g.draw(new Line2D.Float(4, 4, 5.5f, 5.5f));
+        g.draw(new Line2D.Float(16, 4, 14.5f, 5.5f));
+        g.draw(new Line2D.Float(2, 9, 4, 9));
+        g.draw(new Line2D.Float(16, 9, 18, 9));
     }
 
     /** 3D Model: diamond/gem shape */
@@ -4371,6 +4664,9 @@ public class DesignerPanel extends JPanel {
                 case ARCH:
                     drawArch(g);
                     break;
+                case LIGHT:
+                    drawLight(g);
+                    break;
                 case MODEL:
                     drawModel(g);
                     break;
@@ -4499,6 +4795,17 @@ public class DesignerPanel extends JPanel {
             g.draw(new Line2D.Float(3, 13, 3, 8));
             g.draw(new Line2D.Float(13, 13, 13, 8));
             g.draw(new java.awt.geom.Arc2D.Float(3, 3, 10, 10, 0, 180, java.awt.geom.Arc2D.OPEN));
+        }
+
+        private static void drawLight(Graphics2D g) {
+            g.draw(new Ellipse2D.Float(5, 4, 6, 6));
+            g.draw(new Line2D.Float(6, 11, 10, 11));
+            g.draw(new Line2D.Float(6.5f, 13, 9.5f, 13));
+            g.draw(new Line2D.Float(8, 1, 8, 3));
+            g.draw(new Line2D.Float(2, 8, 4, 8));
+            g.draw(new Line2D.Float(12, 8, 14, 8));
+            g.draw(new Line2D.Float(3.5f, 3.5f, 5, 5));
+            g.draw(new Line2D.Float(12.5f, 3.5f, 11, 5));
         }
 
         /** Model: 3D diamond / gem shape */

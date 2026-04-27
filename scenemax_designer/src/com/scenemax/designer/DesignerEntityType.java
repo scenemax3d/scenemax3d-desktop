@@ -10,6 +10,7 @@ public enum DesignerEntityType {
     QUAD,
     STAIRS,
     ARCH,
+    LIGHT,
     MODEL,
     CAMERA,
     CODE,

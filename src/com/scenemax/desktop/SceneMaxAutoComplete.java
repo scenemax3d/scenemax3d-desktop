@@ -95,7 +95,9 @@ public class SceneMaxAutoComplete {
         "Cloud", "Flattening", "Cloudiness", "Hour",
         "Depth", "Strength",
         "Audio", "Sound", "Volume",
-        "Lights", "Light", "Probe",
+        "Lights", "Light", "Probe", "directional", "point", "spot", "sky", "ambient",
+        "Direction", "Intensity", "Lumens", "Range", "Preset", "Exposure",
+        "Low", "Medium", "High", "Warm", "Cool",
         "Screen", "Scene", "Pause", "Resume",
         "Full", "Window",
         "Effects",
@@ -142,6 +144,7 @@ public class SceneMaxAutoComplete {
     private static final String[] COLORS = {
         "Red", "Green", "Blue", "White", "Black", "Brown", "Cyan",
         "Gray", "DarkGray", "LightGray", "Magenta", "Orange", "Pink", "Yellow",
+        "Warm", "Cool",
     };
 
     private static final String[] EFFECTS = {

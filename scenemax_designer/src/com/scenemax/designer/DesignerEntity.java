@@ -62,6 +62,20 @@ public class DesignerEntity {
     private float archThickness = 0.35f;
     private int archSegments = 12;
 
+    // Light-specific
+    private String lightType = "point";
+    private String lightColor = "warm";
+    private float lightIntensity = 900f;
+    private String lightIntensityUnit = "lumens";
+    private Vector3f lightDirection = new Vector3f(-0.3f, -0.8f, -0.4f);
+    private String lightShadowMode = "medium";
+    private float lightRange = 12f;
+    private String lightLookAtTarget = "";
+    private float lightAngle = 35f;
+    private String lightPreset = "";
+    private float lightExposure = 0.2f;
+    private String lightAmbientColor = "#223344";
+
     // Model-specific
     private String resourcePath;
     private boolean staticModel;
@@ -184,6 +198,31 @@ public class DesignerEntity {
     public void setArchThickness(float archThickness) { this.archThickness = archThickness; }
     public int getArchSegments() { return archSegments; }
     public void setArchSegments(int archSegments) { this.archSegments = archSegments; }
+
+    public String getLightType() { return lightType != null ? lightType : "point"; }
+    public void setLightType(String lightType) { this.lightType = lightType != null ? lightType : "point"; }
+    public String getLightColor() { return lightColor != null ? lightColor : "warm"; }
+    public void setLightColor(String lightColor) { this.lightColor = lightColor != null ? lightColor : "warm"; }
+    public float getLightIntensity() { return lightIntensity; }
+    public void setLightIntensity(float lightIntensity) { this.lightIntensity = lightIntensity; }
+    public String getLightIntensityUnit() { return lightIntensityUnit != null ? lightIntensityUnit : ""; }
+    public void setLightIntensityUnit(String lightIntensityUnit) { this.lightIntensityUnit = lightIntensityUnit != null ? lightIntensityUnit : ""; }
+    public Vector3f getLightDirection() { return lightDirection != null ? lightDirection : new Vector3f(-0.3f, -0.8f, -0.4f); }
+    public void setLightDirection(Vector3f lightDirection) { this.lightDirection = lightDirection != null ? lightDirection : new Vector3f(-0.3f, -0.8f, -0.4f); }
+    public String getLightShadowMode() { return lightShadowMode != null ? lightShadowMode : "off"; }
+    public void setLightShadowMode(String lightShadowMode) { this.lightShadowMode = lightShadowMode != null ? lightShadowMode : "off"; }
+    public float getLightRange() { return lightRange; }
+    public void setLightRange(float lightRange) { this.lightRange = lightRange; }
+    public String getLightLookAtTarget() { return lightLookAtTarget != null ? lightLookAtTarget : ""; }
+    public void setLightLookAtTarget(String lightLookAtTarget) { this.lightLookAtTarget = lightLookAtTarget != null ? lightLookAtTarget : ""; }
+    public float getLightAngle() { return lightAngle; }
+    public void setLightAngle(float lightAngle) { this.lightAngle = lightAngle; }
+    public String getLightPreset() { return lightPreset != null ? lightPreset : ""; }
+    public void setLightPreset(String lightPreset) { this.lightPreset = lightPreset != null ? lightPreset : ""; }
+    public float getLightExposure() { return lightExposure; }
+    public void setLightExposure(float lightExposure) { this.lightExposure = lightExposure; }
+    public String getLightAmbientColor() { return lightAmbientColor != null ? lightAmbientColor : "#223344"; }
+    public void setLightAmbientColor(String lightAmbientColor) { this.lightAmbientColor = lightAmbientColor != null ? lightAmbientColor : "#223344"; }
 
     public String getResourcePath() { return resourcePath; }
     public void setResourcePath(String resourcePath) { this.resourcePath = resourcePath; }
@@ -404,6 +443,21 @@ public class DesignerEntity {
                 json.put("hidden", hidden);
                 json.put("shadowMode", shadowMode);
                 break;
+            case LIGHT:
+                json.put("lightType", getLightType());
+                json.put("lightColor", getLightColor());
+                json.put("lightIntensity", lightIntensity);
+                json.put("lightIntensityUnit", getLightIntensityUnit());
+                Vector3f dir = getLightDirection();
+                json.put("lightDirection", new float[]{dir.x, dir.y, dir.z});
+                json.put("lightShadowMode", getLightShadowMode());
+                json.put("lightRange", lightRange);
+                json.put("lightLookAtTarget", getLightLookAtTarget());
+                json.put("lightAngle", lightAngle);
+                json.put("lightPreset", getLightPreset());
+                json.put("lightExposure", lightExposure);
+                json.put("lightAmbientColor", getLightAmbientColor());
+                break;
             case MODEL:
                 json.put("resourcePath", resourcePath != null ? resourcePath : "");
                 json.put("staticModel", staticModel);
@@ -563,6 +617,26 @@ public class DesignerEntity {
                 entity.shader = json.optString("shader", "");
                 entity.hidden = json.optBoolean("hidden", false);
                 entity.shadowMode = json.optString("shadowMode", "none");
+                break;
+            case LIGHT:
+                entity.lightType = json.optString("lightType", "point");
+                entity.lightColor = json.optString("lightColor", "warm");
+                entity.lightIntensity = (float) json.optDouble("lightIntensity", 900.0);
+                entity.lightIntensityUnit = json.optString("lightIntensityUnit", "lumens");
+                if (json.has("lightDirection")) {
+                    JSONArray arr = json.getJSONArray("lightDirection");
+                    entity.lightDirection = new Vector3f(
+                            (float) arr.optDouble(0, -0.3),
+                            (float) arr.optDouble(1, -0.8),
+                            (float) arr.optDouble(2, -0.4));
+                }
+                entity.lightShadowMode = json.optString("lightShadowMode", "medium");
+                entity.lightRange = (float) json.optDouble("lightRange", 12.0);
+                entity.lightLookAtTarget = json.optString("lightLookAtTarget", "");
+                entity.lightAngle = (float) json.optDouble("lightAngle", 35.0);
+                entity.lightPreset = json.optString("lightPreset", "");
+                entity.lightExposure = (float) json.optDouble("lightExposure", 0.2);
+                entity.lightAmbientColor = json.optString("lightAmbientColor", "#223344");
                 break;
             case MODEL:
                 entity.resourcePath = json.optString("resourcePath", "");

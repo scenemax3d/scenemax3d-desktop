@@ -30,6 +30,18 @@ public class SceneMaxTokenManager extends AbstractTokenMaker {
         tokenMap.put("do",   Token.RESERVED_WORD);
         tokenMap.put("end",    Token.RESERVED_WORD);
         tokenMap.put("skybox", Token.RESERVED_WORD);
+        tokenMap.put("lights", Token.RESERVED_WORD);
+        tokenMap.put("directional", Token.RESERVED_WORD);
+        tokenMap.put("point", Token.RESERVED_WORD);
+        tokenMap.put("spot", Token.RESERVED_WORD);
+        tokenMap.put("sky", Token.RESERVED_WORD);
+        tokenMap.put("ambient", Token.RESERVED_WORD);
+        tokenMap.put("intensity", Token.RESERVED_WORD);
+        tokenMap.put("lumens", Token.RESERVED_WORD);
+        tokenMap.put("direction", Token.RESERVED_WORD);
+        tokenMap.put("range", Token.RESERVED_WORD);
+        tokenMap.put("preset", Token.RESERVED_WORD);
+        tokenMap.put("exposure", Token.RESERVED_WORD);
         tokenMap.put("terrain", Token.RESERVED_WORD);
         tokenMap.put("water", Token.RESERVED_WORD);
         tokenMap.put("function", Token.RESERVED_WORD);

@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Handles loading and saving of .smdesign files (JSON format).
@@ -353,6 +354,8 @@ public class DesignerDocument {
                        "), thickness " + entity.getArchThickness() +
                        ", segments " + entity.getArchSegments() +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + scaleSuffix + rotateSuffix + shadowSuffix + shaderAssignment;
+            case LIGHT:
+                return buildLightCode(entity, pos);
             case MODEL:
                 String modelPrefix = entity.isStaticModel() ? "static " : entity.isDynamicModel() ? "dynamic " : "";
                 String vehicleSuffix = entity.isVehicleModel() ? " vehicle" : "";
@@ -363,6 +366,107 @@ public class DesignerDocument {
             default:
                 return "";
         }
+    }
+
+    private static String buildLightCode(DesignerEntity entity, Vector3f pos) {
+        String type = normalizeLightType(entity.getLightType());
+        StringBuilder sb = new StringBuilder();
+        sb.append(entity.getName()).append(" => Lights.").append(type).append(" : ");
+        List<String> attrs = new ArrayList<>();
+
+        if ("sky".equals(type)) {
+            String preset = entity.getLightPreset();
+            if (preset != null && !preset.trim().isEmpty()) {
+                attrs.add("preset \"" + preset.trim() + "\"");
+            }
+            attrs.add("exposure " + entity.getLightExposure());
+            attrs.add("ambient " + formatLightColor(entity.getLightAmbientColor()));
+        } else if ("ambient".equals(type)) {
+            attrs.add("color " + formatLightColor(entity.getLightColor()));
+            attrs.add("intensity " + entity.getLightIntensity() + formatLightIntensityUnit(entity.getLightIntensityUnit()));
+        } else {
+            if ("point".equals(type) || "spot".equals(type) || "probe".equals(type)) {
+                attrs.add("pos " + formatVector3(pos));
+            }
+            attrs.add("color " + formatLightColor(entity.getLightColor()));
+            attrs.add("intensity " + entity.getLightIntensity() + formatLightIntensityUnit(entity.getLightIntensityUnit()));
+            if ("directional".equals(type)) {
+                attrs.add("direction " + formatVector3(resolveExportLightDirection(entity)));
+            }
+            if ("point".equals(type) || "spot".equals(type) || "probe".equals(type)) {
+                attrs.add("range " + entity.getLightRange());
+            }
+            if ("spot".equals(type)) {
+                String target = entity.getLightLookAtTarget();
+                if (target != null && !target.trim().isEmpty()) {
+                    attrs.add("look at " + target.trim());
+                } else {
+                    attrs.add("direction " + formatVector3(resolveExportLightDirection(entity)));
+                }
+                attrs.add("angle " + entity.getLightAngle());
+            }
+            String shadow = normalizeLightShadow(entity.getLightShadowMode());
+            if (!"off".equals(shadow)) {
+                attrs.add("shadow " + shadow);
+            }
+        }
+
+        for (int i = 0; i < attrs.size(); i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(attrs.get(i));
+        }
+        return sb.toString();
+    }
+
+    private static Vector3f resolveExportLightDirection(DesignerEntity entity) {
+        Vector3f direction = entity.getLightDirection().clone();
+        if (direction.lengthSquared() < 0.0001f) {
+            direction = new Vector3f(0f, -1f, 0f);
+        }
+        return entity.getRotation().mult(direction).normalizeLocal();
+    }
+
+    private static String normalizeLightType(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "point";
+        }
+        return value.trim().toLowerCase(Locale.ROOT).replace(' ', '_');
+    }
+
+    private static String normalizeLightShadow(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "off";
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        if ("none".equals(normalized)) {
+            return "off";
+        }
+        return normalized;
+    }
+
+    private static String formatLightColor(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "warm";
+        }
+        String color = value.trim();
+        if (color.startsWith("#") || color.indexOf(' ') >= 0) {
+            return "\"" + color + "\"";
+        }
+        return color;
+    }
+
+    private static String formatLightIntensityUnit(String unit) {
+        if (unit == null || unit.trim().isEmpty()) {
+            return "";
+        }
+        return " " + unit.trim();
+    }
+
+    private static String formatVector3(Vector3f value) {
+        Vector3f v = value != null ? value : Vector3f.ZERO;
+        return "(" + v.x + "," + v.y + "," + v.z + ")";
     }
 
     /**

@@ -104,6 +104,8 @@ public class RotateToController extends SceneMaxBaseController {
             this.app.rotateSphere(targetVar, axisNum, direction, rotateVal);
         } else if (targetVarDef.varType == VariableDef.VAR_TYPE_BOX) {
             this.app.rotateBox(targetVar, axisNum, direction, rotateVal);
+        } else if (targetVarDef.varType == VariableDef.VAR_TYPE_LIGHT) {
+            this.app.rotateLight(targetVar, axisNum, direction, rotateVal);
         } else {
             this.app.rotateModel(targetVar, axisNum, direction, rotateVal);
         }
