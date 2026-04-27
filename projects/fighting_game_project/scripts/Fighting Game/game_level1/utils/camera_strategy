@@ -1,7 +1,7 @@
 hit_fx = camera.system.modifiers.hit_modifier
 bump_fx = camera.system.modifiers.bump_modifier
 
-fight_cam = camera.system.fighting(player1, player2, depth 18, height 5, side 1.5, min distance 12, max distance 28, damping 8)
+fight_cam = camera.system.fighting(player1, player2, depth 18, height 3, side 1.5, min distance 10, max distance 28, damping 8)
 // follow_cam = camera.system.third_person(player1, distance 9, height 3, side 8, look ahead 2, damping 7, fov 55, max fov 62)
 
 set_camera_on_player = {
