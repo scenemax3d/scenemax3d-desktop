@@ -7,6 +7,11 @@ import com.jme3.asset.ModelKey;
 import com.jme3.input.KeyInput;
 import com.jme3.input.MouseInput;
 import com.jme3.input.controls.*;
+import com.jme3.light.AmbientLight;
+import com.jme3.light.DirectionalLight;
+import com.jme3.light.Light;
+import com.jme3.light.PointLight;
+import com.jme3.light.SpotLight;
 import com.jme3.math.*;
 import com.jme3.post.SceneProcessor;
 import com.jme3.profile.AppProfiler;
@@ -148,6 +153,9 @@ public class DesignerApp extends SceneMaxApp {
     private int pathCounter = 0;
     // Map from PATH entity ID to its PathVisual node
     private final java.util.Map<String, PathVisual> pathVisuals = new java.util.HashMap<>();
+    private final java.util.Map<String, Light> designerPreviewLights = new java.util.HashMap<>();
+    private final List<Light> designerFallbackLights = new ArrayList<>();
+    private boolean designerFallbackLightingEnabled = true;
     private int cinematicTrackCounter = 0;
     private int cinematicRigCounter = 0;
     private final java.util.Map<String, CinematicTrackVisual> cinematicTrackVisuals = new java.util.HashMap<>();
@@ -191,6 +199,7 @@ public class DesignerApp extends SceneMaxApp {
     private int quadCounter = 0;
     private int stairsCounter = 0;
     private int archCounter = 0;
+    private int lightCounter = 0;
     private int modelCounter = 0;
 
     private DesignerEntity cinematicAuthoringTarget;
@@ -685,6 +694,7 @@ public class DesignerApp extends SceneMaxApp {
 
         // Call SceneMaxApp's init - sets up asset management, lighting, physics, etc.
         super.simpleInitApp();
+        captureDesignerFallbackLighting();
 
         // Reload AssetsMapping with the project's resources folder so that
         // ext models (models-ext.json) are included, same as MainApp does.
@@ -714,6 +724,7 @@ public class DesignerApp extends SceneMaxApp {
                 ? designerFile.getParentFile().getAbsolutePath()
                 : designerProjectPath;
         initDesignerRuntime(runtimePath);
+        captureDesignerFallbackLighting();
 
         // --- Designer extras ---
 
@@ -922,6 +933,22 @@ public class DesignerApp extends SceneMaxApp {
         addEntityViaCode(name, code, DesignerEntityType.ARCH, 0, 0, 0, 0, null, false, false, false, false, false, targetList, insertIndex);
     }
 
+    public void addDefaultPointLight() {
+        addDefaultPointLight(null, -1);
+    }
+
+    public void addDefaultPointLight(List<DesignerEntity> targetList, int insertIndex) {
+        String name = "light_" + (++lightCounter);
+        DesignerEntity light = new DesignerEntity(name, DesignerEntityType.LIGHT);
+        light.setLightType("point");
+        light.setLightColor("warm");
+        light.setLightIntensity(900f);
+        light.setLightIntensityUnit("lumens");
+        light.setLightRange(12f);
+        light.setLightShadowMode("medium");
+        addDesignerNativePrimitive(light, new Vector3f(0f, 3f, 0f), targetList, insertIndex);
+    }
+
     /** Creates a 3D model using SceneMax language: name => [static|dynamic] resourceName : pos (x,y,z) */
     public void addModel(String resourceName, boolean isStatic) {
         addModel(resourceName, isStatic, false, false);
@@ -1001,6 +1028,10 @@ public class DesignerApp extends SceneMaxApp {
             case ARCH:
                 buildArchNode(node, entity);
                 break;
+            case LIGHT:
+                buildLightNode(node, entity);
+                syncDesignerPreviewLight(entity);
+                break;
             default:
                 break;
         }
@@ -1011,6 +1042,427 @@ public class DesignerApp extends SceneMaxApp {
         geo.setMaterial(entity.isColliderEntity() ? createColliderPreviewMaterial() : createDesignerPrimitiveMaterial());
         applyShadowMode(geo, entity.getShadowMode());
         node.attachChild(geo);
+    }
+
+    private void buildLightNode(Node node, DesignerEntity entity) {
+        ColorRGBA color = parseDesignerLightColor(entity.getLightColor());
+        String type = entity.getLightType().toLowerCase(Locale.ROOT);
+        switch (type) {
+            case "directional":
+                attachDirectionalLightGizmo(node, entity, color);
+                break;
+            case "spot":
+                attachSpotLightGizmo(node, entity, color);
+                break;
+            case "sky":
+                attachSkyLightGizmo(node, entity, color);
+                break;
+            case "ambient":
+                attachAmbientLightGizmo(node, entity, color);
+                break;
+            case "probe":
+                attachProbeLightGizmo(node, entity, color);
+                break;
+            default:
+                attachPointLightGizmo(node, entity, color);
+                break;
+        }
+    }
+
+    private void attachDirectionalLightGizmo(Node node, DesignerEntity entity, ColorRGBA color) {
+        attachGizmoSphere(node, entity.getName() + "_sun_core", 0.18f, color);
+        ColorRGBA rayColor = withAlpha(color, 0.9f);
+        for (int i = 0; i < 8; i++) {
+            float angle = FastMath.TWO_PI * i / 8f;
+            Vector3f rayDir = new Vector3f(FastMath.cos(angle), 0f, FastMath.sin(angle));
+            attachGizmoBoxBetween(node, entity.getName() + "_sun_ray_" + i,
+                    rayDir.mult(0.32f), rayDir.mult(0.62f), 0.025f, rayColor);
+        }
+        attachLightDirectionMarker(node, entity, color, 1.8f, 0.055f, true);
+    }
+
+    private void attachPointLightGizmo(Node node, DesignerEntity entity, ColorRGBA color) {
+        attachGizmoSphere(node, entity.getName() + "_point_core", 0.18f, color);
+        attachRangeSphere(node, entity.getName() + "_point_range", Math.max(0.2f, entity.getLightRange()), color, 0.22f);
+        attachGizmoBoxBetween(node, entity.getName() + "_point_x", new Vector3f(-0.42f, 0f, 0f), new Vector3f(0.42f, 0f, 0f), 0.025f, color);
+        attachGizmoBoxBetween(node, entity.getName() + "_point_y", new Vector3f(0f, -0.42f, 0f), new Vector3f(0f, 0.42f, 0f), 0.025f, color);
+        attachGizmoBoxBetween(node, entity.getName() + "_point_z", new Vector3f(0f, 0f, -0.42f), new Vector3f(0f, 0f, 0.42f), 0.025f, color);
+    }
+
+    private void attachSpotLightGizmo(Node node, DesignerEntity entity, ColorRGBA color) {
+        attachGizmoSphere(node, entity.getName() + "_spot_core", 0.16f, color);
+        float range = Math.max(0.2f, entity.getLightRange());
+        float angle = Math.max(0.1f, entity.getLightAngle()) * FastMath.DEG_TO_RAD;
+        float radius = Math.max(0.05f, FastMath.tan(angle) * range);
+        Vector3f dir = normalizedDesignerLightDirection(entity);
+        attachWireCone(node, entity.getName() + "_spot_cone", dir, range, radius, color);
+        attachLightDirectionMarker(node, entity, color, Math.max(1f, range * 0.35f), 0.04f, false);
+    }
+
+    private void attachSkyLightGizmo(Node node, DesignerEntity entity, ColorRGBA color) {
+        ColorRGBA skyColor = parseDesignerLightColor(entity.getLightAmbientColor(),
+                designerSkyPresetColor(entity.getLightPreset(), color));
+        attachGizmoSphere(node, entity.getName() + "_sky_core", 0.15f, skyColor);
+        attachRangeSphere(node, entity.getName() + "_sky_dome_outer", 0.75f, skyColor, 0.28f);
+        attachRangeSphere(node, entity.getName() + "_sky_dome_inner", 0.48f, skyColor, 0.2f);
+        attachGizmoBoxBetween(node, entity.getName() + "_sky_horizon",
+                new Vector3f(-0.72f, 0f, 0f), new Vector3f(0.72f, 0f, 0f), 0.018f, withAlpha(skyColor, 0.85f));
+        attachGizmoBoxBetween(node, entity.getName() + "_sky_zenith",
+                new Vector3f(0f, 0.22f, 0f), new Vector3f(0f, 0.72f, 0f), 0.018f, withAlpha(skyColor, 0.85f));
+    }
+
+    private void attachAmbientLightGizmo(Node node, DesignerEntity entity, ColorRGBA color) {
+        attachGizmoSphere(node, entity.getName() + "_ambient_core", 0.16f, color);
+        attachRangeSphere(node, entity.getName() + "_ambient_glow_a", 0.42f, color, 0.18f);
+        attachRangeSphere(node, entity.getName() + "_ambient_glow_b", 0.64f, color, 0.12f);
+        attachGizmoBoxBetween(node, entity.getName() + "_ambient_cross_x",
+                new Vector3f(-0.55f, 0f, 0f), new Vector3f(0.55f, 0f, 0f), 0.018f, color);
+        attachGizmoBoxBetween(node, entity.getName() + "_ambient_cross_z",
+                new Vector3f(0f, 0f, -0.55f), new Vector3f(0f, 0f, 0.55f), 0.018f, color);
+    }
+
+    private void attachProbeLightGizmo(Node node, DesignerEntity entity, ColorRGBA color) {
+        attachGizmoSphere(node, entity.getName() + "_probe_core", 0.14f, color);
+        float range = Math.max(0.2f, entity.getLightRange());
+        attachRangeSphere(node, entity.getName() + "_probe_capture", range, color, 0.16f);
+        attachWireBox(node, entity.getName() + "_probe_box", Math.min(range, 1.0f), color);
+    }
+
+    private void attachGizmoSphere(Node node, String name, float radius, ColorRGBA color) {
+        Geometry geometry = new Geometry(name, new Sphere(16, 16, radius));
+        geometry.setMaterial(createLightGizmoMaterial(color, false, Math.min(1f, color.a)));
+        node.attachChild(geometry);
+    }
+
+    private void attachRangeSphere(Node node, String name, float radius, ColorRGBA color, float alpha) {
+        Geometry geometry = new Geometry(name, new Sphere(32, 32, radius));
+        geometry.setMaterial(createLightGizmoMaterial(color, true, alpha));
+        geometry.setQueueBucket(RenderQueue.Bucket.Transparent);
+        node.attachChild(geometry);
+    }
+
+    private void attachWireCone(Node node, String name, Vector3f direction, float range, float radius, ColorRGBA color) {
+        Geometry cone = new Geometry(name, new com.jme3.scene.shape.Cylinder(32, 32, 0.02f, radius, range, true, false));
+        cone.setMaterial(createLightGizmoMaterial(color, true, 0.28f));
+        cone.setQueueBucket(RenderQueue.Bucket.Transparent);
+        cone.setLocalTranslation(direction.mult(range * 0.5f));
+        cone.lookAt(direction.mult(range), Vector3f.UNIT_Y);
+        node.attachChild(cone);
+    }
+
+    private void attachWireBox(Node node, String name, float halfExtent, ColorRGBA color) {
+        float s = Math.max(0.1f, halfExtent);
+        Vector3f[] corners = new Vector3f[] {
+                new Vector3f(-s, -s, -s), new Vector3f(s, -s, -s), new Vector3f(s, -s, s), new Vector3f(-s, -s, s),
+                new Vector3f(-s, s, -s), new Vector3f(s, s, -s), new Vector3f(s, s, s), new Vector3f(-s, s, s)
+        };
+        int[][] edges = new int[][] {
+                {0, 1}, {1, 2}, {2, 3}, {3, 0},
+                {4, 5}, {5, 6}, {6, 7}, {7, 4},
+                {0, 4}, {1, 5}, {2, 6}, {3, 7}
+        };
+        for (int i = 0; i < edges.length; i++) {
+            attachGizmoBoxBetween(node, name + "_" + i, corners[edges[i][0]], corners[edges[i][1]], 0.018f, withAlpha(color, 0.75f));
+        }
+    }
+
+    private void attachLightDirectionMarker(Node node, DesignerEntity entity, ColorRGBA color, float length, float thickness, boolean arrowHead) {
+        Vector3f dir = normalizedDesignerLightDirection(entity);
+        attachGizmoBoxBetween(node, entity.getName() + "_light_direction",
+                Vector3f.ZERO, dir.mult(length), thickness, color);
+        if (arrowHead) {
+            Vector3f tip = dir.mult(length);
+            attachGizmoSphere(node, entity.getName() + "_direction_tip", Math.max(0.08f, thickness * 2.2f), color);
+            node.getChild(entity.getName() + "_direction_tip").setLocalTranslation(tip);
+        }
+    }
+
+    private Vector3f normalizedDesignerLightDirection(DesignerEntity entity) {
+        Vector3f dir = entity.getLightDirection().clone();
+        if (dir.lengthSquared() < 0.0001f) {
+            dir = new Vector3f(0f, -1f, 0f);
+        }
+        return dir.normalizeLocal();
+    }
+
+    private void attachGizmoBoxBetween(Node node, String name, Vector3f start, Vector3f end, float thickness, ColorRGBA color) {
+        Vector3f delta = end.subtract(start);
+        float length = delta.length();
+        if (length < 0.0001f) {
+            return;
+        }
+        Vector3f dir = delta.normalize();
+        Vector3f mid = start.add(end).multLocal(0.5f);
+        Geometry ray = new Geometry(name, new Box(thickness, length * 0.5f, thickness));
+        ray.setLocalTranslation(mid);
+        Quaternion rotation = new Quaternion();
+        rotation.lookAt(dir, Vector3f.UNIT_Y);
+        rotation.multLocal(new Quaternion().fromAngleAxis(FastMath.HALF_PI, Vector3f.UNIT_X));
+        ray.setLocalRotation(rotation);
+        ray.setMaterial(createLightGizmoMaterial(color, false, Math.min(1f, color.a)));
+        node.attachChild(ray);
+    }
+
+    private Material createLightGizmoMaterial(ColorRGBA color, boolean wireframe, float alpha) {
+        Material material = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+        material.setColor("Color", withAlpha(color, alpha));
+        material.getAdditionalRenderState().setWireframe(wireframe);
+        material.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Off);
+        if (alpha < 1f) {
+            material.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
+        }
+        return material;
+    }
+
+    private ColorRGBA withAlpha(ColorRGBA color, float alpha) {
+        return new ColorRGBA(color.r, color.g, color.b, alpha);
+    }
+
+    private ColorRGBA parseDesignerLightColor(String value) {
+        return parseDesignerLightColor(value, ColorRGBA.White);
+    }
+
+    private ColorRGBA parseDesignerLightColor(String value, ColorRGBA fallback) {
+        if (value == null || value.trim().isEmpty()) {
+            return fallback.clone();
+        }
+        String color = value.trim();
+        if (color.startsWith("#")) {
+            try {
+                int rgb = Integer.parseInt(color.substring(1), 16);
+                if (color.length() == 7) {
+                    return new ColorRGBA(
+                            ((rgb >> 16) & 0xff) / 255f,
+                            ((rgb >> 8) & 0xff) / 255f,
+                            (rgb & 0xff) / 255f,
+                            1f);
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        if ("warm".equalsIgnoreCase(color)) return new ColorRGBA(1f, 0.82f, 0.58f, 1f);
+        if ("cool".equalsIgnoreCase(color)) return new ColorRGBA(0.62f, 0.78f, 1f, 1f);
+        if ("red".equalsIgnoreCase(color)) return ColorRGBA.Red.clone();
+        if ("green".equalsIgnoreCase(color)) return ColorRGBA.Green.clone();
+        if ("blue".equalsIgnoreCase(color)) return ColorRGBA.Blue.clone();
+        if ("white".equalsIgnoreCase(color)) return ColorRGBA.White.clone();
+        if ("black".equalsIgnoreCase(color)) return ColorRGBA.Black.clone();
+        if ("yellow".equalsIgnoreCase(color)) return ColorRGBA.Yellow.clone();
+        if ("orange".equalsIgnoreCase(color)) return ColorRGBA.Orange.clone();
+        if ("pink".equalsIgnoreCase(color)) return ColorRGBA.Pink.clone();
+        if ("cyan".equalsIgnoreCase(color)) return ColorRGBA.Cyan.clone();
+        if ("magenta".equalsIgnoreCase(color)) return ColorRGBA.Magenta.clone();
+        if ("gray".equalsIgnoreCase(color) || "grey".equalsIgnoreCase(color)) return ColorRGBA.Gray.clone();
+        return fallback.clone();
+    }
+
+    private ColorRGBA designerSkyPresetColor(String preset, ColorRGBA fallback) {
+        if (preset == null) {
+            return fallback.clone();
+        }
+        if ("night neon".equalsIgnoreCase(preset)) {
+            return new ColorRGBA(0.12f, 0.18f, 0.32f, 1f);
+        }
+        if ("sunny day".equalsIgnoreCase(preset)) {
+            return new ColorRGBA(0.78f, 0.86f, 1f, 1f);
+        }
+        if ("overcast".equalsIgnoreCase(preset)) {
+            return new ColorRGBA(0.55f, 0.58f, 0.62f, 1f);
+        }
+        return fallback.clone();
+    }
+
+    private void syncDesignerPreviewLight(DesignerEntity entity) {
+        removeDesignerPreviewLight(entity);
+        if (entity == null || entity.getType() != DesignerEntityType.LIGHT || entity.getSceneNode() == null) {
+            return;
+        }
+        disableDesignerFallbackLightingForCustomScene();
+
+        String type = entity.getLightType().toLowerCase(Locale.ROOT);
+        ColorRGBA color = parseDesignerLightColor(entity.getLightColor());
+        float intensity = normalizeDesignerLightIntensity(entity);
+        ColorRGBA finalColor = color.mult(intensity);
+        Vector3f position = entity.getSceneNode().getWorldTranslation().clone();
+        Light light;
+
+        if ("directional".equals(type)) {
+            DirectionalLight dl = new DirectionalLight();
+            dl.setDirection(resolveDesignerLightWorldDirection(entity));
+            dl.setColor(finalColor);
+            light = dl;
+        } else if ("spot".equals(type)) {
+            SpotLight sl = new SpotLight();
+            sl.setPosition(position);
+            sl.setDirection(resolveDesignerLightWorldDirection(entity));
+            sl.setSpotRange(Math.max(0.1f, entity.getLightRange()));
+            float angle = Math.max(0.1f, entity.getLightAngle()) * FastMath.DEG_TO_RAD;
+            sl.setSpotInnerAngle(angle * 0.7f);
+            sl.setSpotOuterAngle(angle);
+            sl.setColor(finalColor);
+            light = sl;
+        } else if ("ambient".equals(type) || "sky".equals(type)) {
+            AmbientLight al = new AmbientLight();
+            ColorRGBA ambientFallback = "sky".equals(type)
+                    ? designerSkyPresetColor(entity.getLightPreset(), color)
+                    : color;
+            ColorRGBA ambient = parseDesignerLightColor(
+                    "sky".equals(type) ? entity.getLightAmbientColor() : entity.getLightColor(),
+                    ambientFallback);
+            al.setColor(ambient.mult(intensity));
+            light = al;
+        } else {
+            PointLight pl = new PointLight();
+            pl.setPosition(position);
+            pl.setRadius(Math.max(0.1f, entity.getLightRange()));
+            pl.setColor(finalColor);
+            light = pl;
+        }
+
+        rootNode.addLight(light);
+        designerPreviewLights.put(entity.getId(), light);
+    }
+
+    private void removeDesignerPreviewLight(DesignerEntity entity) {
+        if (entity == null) {
+            return;
+        }
+        Light light = designerPreviewLights.remove(entity.getId());
+        if (light != null) {
+            rootNode.removeLight(light);
+        }
+    }
+
+    private void removeAllDesignerPreviewLights() {
+        for (Light light : new ArrayList<>(designerPreviewLights.values())) {
+            rootNode.removeLight(light);
+        }
+        designerPreviewLights.clear();
+    }
+
+    private void captureDesignerFallbackLighting() {
+        designerFallbackLights.clear();
+        for (Light light : rootNode.getLocalLightList()) {
+            designerFallbackLights.add(light);
+        }
+        designerFallbackLightingEnabled = !designerFallbackLights.isEmpty();
+    }
+
+    private void disableDesignerFallbackLightingForCustomScene() {
+        if (!designerFallbackLightingEnabled) {
+            return;
+        }
+        for (Light light : new ArrayList<>(designerFallbackLights)) {
+            rootNode.removeLight(light);
+        }
+        designerFallbackLightingEnabled = false;
+    }
+
+    private void refreshDesignerFallbackLighting() {
+        if (hasLightEntities(entities)) {
+            disableDesignerFallbackLightingForCustomScene();
+            return;
+        }
+        restoreDesignerFallbackLighting();
+    }
+
+    private void restoreDesignerFallbackLighting() {
+        if (designerFallbackLightingEnabled) {
+            return;
+        }
+        for (Light light : designerFallbackLights) {
+            if (!isLocalLightAttached(light)) {
+                rootNode.addLight(light);
+            }
+        }
+        designerFallbackLightingEnabled = !designerFallbackLights.isEmpty();
+    }
+
+    private boolean isLocalLightAttached(Light light) {
+        if (light == null) {
+            return false;
+        }
+        for (Light localLight : rootNode.getLocalLightList()) {
+            if (localLight == light) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasLightEntities(List<DesignerEntity> list) {
+        if (list == null) {
+            return false;
+        }
+        for (DesignerEntity entity : list) {
+            if (entity == null) {
+                continue;
+            }
+            if (entity.getType() == DesignerEntityType.LIGHT) {
+                return true;
+            }
+            if (hasLightEntities(entity.getChildren())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private float normalizeDesignerLightIntensity(DesignerEntity entity) {
+        float intensity = Math.max(0f, entity.getLightIntensity());
+        if (entity.getLightIntensityUnit().toLowerCase(Locale.ROOT).startsWith("lumen")) {
+            return intensity / 800f;
+        }
+        return intensity;
+    }
+
+    private Vector3f resolveDesignerLightWorldDirection(DesignerEntity entity) {
+        Vector3f direction = resolveDesignerLightDirection(entity);
+        if (entity.getSceneNode() != null) {
+            direction = entity.getSceneNode().getWorldRotation().mult(direction);
+        }
+        if (direction.lengthSquared() < 0.0001f) {
+            return new Vector3f(0f, -1f, 0f);
+        }
+        return direction.normalizeLocal();
+    }
+
+    private Vector3f resolveDesignerLightDirection(DesignerEntity entity) {
+        String target = entity.getLightLookAtTarget();
+        if (target != null && !target.trim().isEmpty() && entity.getSceneNode() != null) {
+            DesignerEntity targetEntity = findEntityByName(target.trim(), entities);
+            if (targetEntity != null && targetEntity.getSceneNode() != null) {
+                Vector3f toTarget = targetEntity.getSceneNode().getWorldTranslation()
+                        .subtract(entity.getSceneNode().getWorldTranslation());
+                if (toTarget.lengthSquared() >= 0.0001f) {
+                    return toTarget;
+                }
+            }
+        }
+        Vector3f direction = entity.getLightDirection().clone();
+        if (direction.lengthSquared() < 0.0001f) {
+            return new Vector3f(0f, -1f, 0f);
+        }
+        return direction;
+    }
+
+    private DesignerEntity findEntityByName(String name, List<DesignerEntity> list) {
+        if (name == null || list == null) {
+            return null;
+        }
+        for (DesignerEntity entity : list) {
+            if (entity == null) {
+                continue;
+            }
+            if (name.equals(entity.getName())) {
+                return entity;
+            }
+            DesignerEntity child = findEntityByName(name, entity.getChildren());
+            if (child != null) {
+                return child;
+            }
+        }
+        return null;
     }
 
     private void buildStairsNode(Node node, DesignerEntity entity) {
@@ -1123,7 +1575,7 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     private boolean isDesignerNativePrimitive(DesignerEntityType type) {
-        return false;
+        return type == DesignerEntityType.LIGHT;
     }
 
     /**
@@ -1809,6 +2261,9 @@ public class DesignerApp extends SceneMaxApp {
             }
             if (child.getType() == DesignerEntityType.CINEMATIC_TRACK) {
                 cinematicTrackVisuals.remove(child.getId());
+            }
+            if (child.getType() == DesignerEntityType.LIGHT) {
+                removeDesignerPreviewLight(child);
             }
             if (child.getSceneNode() != null) {
                 child.getSceneNode().removeFromParent();
@@ -2565,6 +3020,8 @@ public class DesignerApp extends SceneMaxApp {
                     .filter(e -> e.getType() == DesignerEntityType.STAIRS).count();
             archCounter = (int) entities.stream()
                     .filter(e -> e.getType() == DesignerEntityType.ARCH).count();
+            lightCounter = (int) entities.stream()
+                    .filter(e -> e.getType() == DesignerEntityType.LIGHT).count();
             modelCounter = (int) entities.stream()
                     .filter(e -> e.getType() == DesignerEntityType.MODEL).count();
             selectionManager.deselect();
@@ -2695,6 +3152,11 @@ public class DesignerApp extends SceneMaxApp {
         rebuildDesignerNativePrimitive(entity);
     }
 
+    public void updateLightVisual(DesignerEntity entity) {
+        if (entity == null || entity.getType() != DesignerEntityType.LIGHT) return;
+        rebuildDesignerNativePrimitive(entity);
+    }
+
     /** Applies a material to a BOX or SPHERE entity and updates the scene. */
     public void applyMaterial(DesignerEntity entity, String material) {
         if (entity == null) return;
@@ -2747,6 +3209,9 @@ public class DesignerApp extends SceneMaxApp {
         if (entity.getType() == DesignerEntityType.CINEMATIC_TRACK) {
             cinematicTrackVisuals.remove(entity.getId());
         }
+        if (entity.getType() == DesignerEntityType.LIGHT) {
+            removeDesignerPreviewLight(entity);
+        }
 
         // For SECTION nodes, recursively remove 3D scene nodes of children
         if (entity.getType() == DesignerEntityType.SECTION || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
@@ -2760,6 +3225,7 @@ public class DesignerApp extends SceneMaxApp {
         entities.remove(entity);
         // Also remove from any parent section
         removeEntityFromAllSections(entity, entities);
+        refreshDesignerFallbackLighting();
         markDocumentDirty();
         notifySceneChanged();
     }
@@ -3131,6 +3597,7 @@ public class DesignerApp extends SceneMaxApp {
         }
         pendingEntities.clear();
         clearSceneAll();
+        captureDesignerFallbackLighting();
         document = null;
         designerFile = null;
         loadingDocument = false;
@@ -3185,6 +3652,7 @@ public class DesignerApp extends SceneMaxApp {
                 ? designerFile.getParentFile().getAbsolutePath()
                 : designerProjectPath;
         initDesignerRuntime(runtimePath);
+        captureDesignerFallbackLighting();
 
         // Re-attach grid and gizmos if they were detached
         if (gridPlane != null && gridPlane.getParent() == null) {
@@ -3223,6 +3691,7 @@ public class DesignerApp extends SceneMaxApp {
         quadCounter = 0;
         stairsCounter = 0;
         archCounter = 0;
+        lightCounter = 0;
         modelCounter = 0;
 
         // Recreate all entities from new document
@@ -3276,6 +3745,7 @@ public class DesignerApp extends SceneMaxApp {
             pv.removeFromParent();
         }
         pathVisuals.clear();
+        removeAllDesignerPreviewLights();
         for (CinematicTrackVisual visual : cinematicTrackVisuals.values()) {
             if (visual != null) {
                 visual.removeFromParent();
@@ -3736,6 +4206,9 @@ public class DesignerApp extends SceneMaxApp {
             } else if (name.startsWith("arch_")) {
                 int idx = parseTrailingIndex(name, "arch_");
                 if (idx > archCounter) archCounter = idx;
+            } else if (name.startsWith("light_")) {
+                int idx = parseTrailingIndex(name, "light_");
+                if (idx > lightCounter) lightCounter = idx;
             } else if (name.startsWith("model_")) {
                 int idx = parseTrailingIndex(name, "model_");
                 if (idx > modelCounter) modelCounter = idx;
@@ -3833,6 +4306,8 @@ public class DesignerApp extends SceneMaxApp {
                        "), thickness " + entity.getArchThickness() +
                        ", segments " + entity.getArchSegments() +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
+            case LIGHT:
+                return buildLightCode(entity, pos);
             case MODEL:
                 String staticPfx = entity.isStaticModel() ? "static " : "";
                 String vehicleSfx = entity.isVehicleModel() ? " vehicle" : "";
@@ -3842,6 +4317,81 @@ public class DesignerApp extends SceneMaxApp {
             default:
                 return "";
         }
+    }
+
+    private String buildLightCode(DesignerEntity entity, Vector3f pos) {
+        String type = entity.getLightType().trim().toLowerCase(Locale.ROOT);
+        StringBuilder sb = new StringBuilder();
+        sb.append(entity.getName()).append(" => Lights.").append(type).append(" : ");
+        List<String> attrs = new ArrayList<>();
+
+        if ("sky".equals(type)) {
+            if (!entity.getLightPreset().trim().isEmpty()) {
+                attrs.add("preset \"" + entity.getLightPreset().trim() + "\"");
+            }
+            attrs.add("exposure " + entity.getLightExposure());
+            attrs.add("ambient " + formatLightColor(entity.getLightAmbientColor()));
+        } else {
+            if ("point".equals(type) || "spot".equals(type) || "probe".equals(type)) {
+                attrs.add("pos (" + pos.x + "," + pos.y + "," + pos.z + ")");
+            }
+            attrs.add("color " + formatLightColor(entity.getLightColor()));
+            attrs.add("intensity " + entity.getLightIntensity() + formatLightIntensityUnit(entity.getLightIntensityUnit()));
+            if ("directional".equals(type)) {
+                Vector3f dir = resolveExportLightDirection(entity);
+                attrs.add("direction (" + dir.x + "," + dir.y + "," + dir.z + ")");
+            }
+            if ("point".equals(type) || "spot".equals(type) || "probe".equals(type)) {
+                attrs.add("range " + entity.getLightRange());
+            }
+            if ("spot".equals(type)) {
+                if (!entity.getLightLookAtTarget().trim().isEmpty()) {
+                    attrs.add("look at " + entity.getLightLookAtTarget().trim());
+                } else {
+                    Vector3f dir = resolveExportLightDirection(entity);
+                    attrs.add("direction (" + dir.x + "," + dir.y + "," + dir.z + ")");
+                }
+                attrs.add("angle " + entity.getLightAngle());
+            }
+            String shadow = entity.getLightShadowMode().trim().toLowerCase(Locale.ROOT);
+            if (!shadow.isEmpty() && !"off".equals(shadow) && !"none".equals(shadow)) {
+                attrs.add("shadow " + shadow);
+            }
+        }
+
+        for (int i = 0; i < attrs.size(); i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(attrs.get(i));
+        }
+        return sb.toString();
+    }
+
+    private Vector3f resolveExportLightDirection(DesignerEntity entity) {
+        Vector3f direction = entity.getLightDirection().clone();
+        if (direction.lengthSquared() < 0.0001f) {
+            direction = new Vector3f(0f, -1f, 0f);
+        }
+        return entity.getRotation().mult(direction).normalizeLocal();
+    }
+
+    private String formatLightColor(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "warm";
+        }
+        String color = value.trim();
+        if (color.startsWith("#") || color.indexOf(' ') >= 0) {
+            return "\"" + color + "\"";
+        }
+        return color;
+    }
+
+    private String formatLightIntensityUnit(String unit) {
+        if (unit == null || unit.trim().isEmpty()) {
+            return "";
+        }
+        return " " + unit.trim();
     }
 
     private String buildDesignScaleSuffix(Vector3f scale) {
@@ -4031,6 +4581,9 @@ public class DesignerApp extends SceneMaxApp {
         }
         if (scale != null) {
             entity.setScale(scale);
+        }
+        if (entity.getType() == DesignerEntityType.LIGHT) {
+            syncDesignerPreviewLight(entity);
         }
         syncRuntimeRotationForEntity(entity);
     }

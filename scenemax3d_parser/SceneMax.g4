@@ -23,6 +23,7 @@ statement
    | define_cone        # defCone
    | define_stairs      # defStairs
    | define_arch        # defArch
+   | define_light       # defLight
    | define_group       # defineGroup
    | debug_statement    # debugStatement
    | define_variable	# defVar
@@ -127,6 +128,27 @@ follow_entity : Follow var_decl ;
 light_actions : Lights '.' Add light_options ;
 light_options : light_probe ;
 light_probe : Probe QUOTED_STRING (Having print_pos_attr)? ;
+
+define_light : Shared? res_var_decl isa_expr Lights '.' light_type (light_having_expr)? ;
+light_type : Directional | Point | Spot | Sky | Ambient | Probe ;
+light_having_expr : Having light_attributes ;
+light_attributes : light_attr (and_expr light_attr)* ;
+light_attr : light_color_attr | light_intensity_attr | light_direction_attr | print_pos_attr |
+             light_shadow_attr | light_range_attr | light_look_at_attr | light_angle_attr |
+             light_preset_attr | light_exposure_attr | light_ambient_attr ;
+light_color_attr : Color Equals? light_color_value ;
+light_color_value : QUOTED_STRING | SystemColor | res_var_decl ;
+light_intensity_attr : Intensity Equals? logical_expression light_intensity_unit? ;
+light_intensity_unit : Lumens ;
+light_direction_attr : Direction Equals? '(' vector_x ',' vector_y ',' vector_z ')' ;
+light_shadow_attr : Shadow Mode? light_shadow_option ;
+light_shadow_option : On | Off | Low | Medium | High ;
+light_range_attr : Range Equals? logical_expression ;
+light_look_at_attr : Look At res_var_decl ;
+light_angle_attr : Angle Equals? logical_expression ;
+light_preset_attr : Preset Equals? QUOTED_STRING ;
+light_exposure_attr : Exposure Equals? logical_expression ;
+light_ambient_attr : Ambient Equals? light_color_value ;
 
 input : go_condition? When input_source input_action on_entity? do_block ;
 input_source : KeyA | KeyB | KeyC | KeyD | KeyE | KeyF | KeyG | KeyH | KeyI | KeyJ | KeyK | KeyL | KeyM | KeyN | KeyO |
@@ -895,6 +917,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Hidden | Where | And | In | Out | Then | Rows | Cols | To | Be | Frames | Seconds | Wait | Using | At | Speed | Of | Rotate | Scale |
     Mass | Velocity | Angular | Restitution | Data | Move | Belongs | The | Group | Look | Looking | Roll | Turn | Forward |
     Backward | Left | Right | Up | Down | Code | Light | Lights | Add | Probe | Minimap | Play | Sound | Audio | Hide | Show |
+    Directional | Point | Spot | Sky | Ambient | Direction | Intensity | Lumens | Range | Preset | Exposure | Low | Medium | High | Warm | Cool |
     Hour | Wireframe | Info | Speedo | Tacho | Outline | Delete | Accelerate | Steer | Brake | Turbo | Reset | Front | Rear |
     Input | Reverse | Break | HandBrake | Horn | Engine | Power | Breaking | Friction | Suspension | Compression | Damping |
     Stiffness | Length | Stop | Return | Animate | Animation | Print | Append | Color | Font | SystemColor | Ray | Check | Pos |
@@ -1083,6 +1106,22 @@ Light : 'Light' | 'light' ;
 Lights : 'Lights' | 'lights' ;
 Add : 'Add' | 'add' ;
 Probe : 'Probe' | 'probe' ;
+Directional : 'Directional' | 'directional' ;
+Point : 'Point' | 'point' ;
+Spot : 'Spot' | 'spot' ;
+Sky : 'Sky' | 'sky' ;
+Ambient : 'Ambient' | 'ambient' ;
+Direction : 'Direction' | 'direction' ;
+Intensity : 'Intensity' | 'intensity' ;
+Lumens : 'Lumens' | 'lumens' | 'Lumen' | 'lumen' ;
+Range : 'Range' | 'range' ;
+Preset : 'Preset' | 'preset' ;
+Exposure : 'Exposure' | 'exposure' ;
+Low : 'Low' | 'low' ;
+Medium : 'Medium' | 'medium' ;
+High : 'High' | 'high' ;
+Warm : 'Warm' | 'warm' ;
+Cool : 'Cool' | 'cool' ;
 
 Minimap : 'Minimap' | 'minimap' ;
 Push : 'Push' | 'push' ;

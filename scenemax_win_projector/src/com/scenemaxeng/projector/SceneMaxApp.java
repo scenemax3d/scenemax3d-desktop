@@ -52,8 +52,12 @@ import com.jme3.input.controls.ActionListener;
 import com.jme3.input.controls.AnalogListener;
 import com.jme3.input.controls.KeyTrigger;
 import com.jme3.input.controls.MouseButtonTrigger;
+import com.jme3.light.AmbientLight;
 import com.jme3.light.DirectionalLight;
+import com.jme3.light.Light;
 import com.jme3.light.LightProbe;
+import com.jme3.light.PointLight;
+import com.jme3.light.SpotLight;
 import com.jme3.material.Material;
 import com.jme3.material.MatParamTexture;
 import com.jme3.material.MaterialDef;
@@ -63,6 +67,7 @@ import com.jme3.shader.VarType;
 import com.jme3.math.*;
 import com.jme3.niftygui.NiftyJmeDisplay;
 import com.jme3.post.FilterPostProcessor;
+import com.jme3.post.Filter;
 import com.jme3.post.filters.DepthOfFieldFilter;
 import com.jme3.post.filters.FXAAFilter;
 import com.jme3.post.ssao.SSAOFilter;
@@ -80,6 +85,8 @@ import com.jme3.scene.debug.Arrow;
 import com.jme3.scene.shape.Box;
 import com.jme3.scene.shape.Sphere;
 import com.jme3.shadow.DirectionalLightShadowFilter;
+import com.jme3.shadow.PointLightShadowFilter;
+import com.jme3.shadow.SpotLightShadowFilter;
 import com.jme3.system.JmeContext;
 import com.jme3.texture.Texture;
 import com.jme3.texture.Texture2D;
@@ -104,6 +111,7 @@ import jme3utilities.sky.StarsOption;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.apache.commons.io.FileUtils;
+import org.antlr.v4.runtime.ParserRuleContext;
 import org.lwjgl.opengl.Display;
 
 
@@ -165,6 +173,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private static HashMap<String,Node> cones = new HashMap<>();
     private static HashMap<String,Node> stairsMap = new HashMap<>();
     private static HashMap<String,Node> arches = new HashMap<>();
+    private static HashMap<String, LightInst> lights = new HashMap<>();
+    private FilterPostProcessor lightingPostProcessor;
+    private final List<Light> fallbackLights = new ArrayList<>();
+    private final List<Filter> fallbackLightingFilters = new ArrayList<>();
+    private final List<Filter> runtimeLightShadowFilters = new ArrayList<>();
     private static HashMap<String, EffekseerInst> effekseerEffects = new HashMap<>();
     //private static HashMap<String,SkyBoxMaterial> skyboxMaterials = new HashMap<>();
     private static HashMap<String,ResourceMaterial> materials = new HashMap<>();
@@ -638,14 +651,31 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     private void addLighting() {
+        ensureLightingPostProcessor();
+        installFallbackLighting();
 
+        SSAOFilter ssaoFilter = new SSAOFilter();
+        lightingPostProcessor.addFilter(ssaoFilter);
+    }
+
+    private FilterPostProcessor ensureLightingPostProcessor() {
+        if (lightingPostProcessor == null) {
+            lightingPostProcessor = new FilterPostProcessor(assetManager);
+            viewPort.addProcessor(lightingPostProcessor);
+        }
+        return lightingPostProcessor;
+    }
+
+    private void installFallbackLighting() {
+        if (!fallbackLights.isEmpty()) {
+            return;
+        }
         DirectionalLight sun = new DirectionalLight(
                 new Vector3f(-0.1f, -.7f, -1f).normalizeLocal(),//new Vector3f(1, -.45f, 0.5f).normalizeLocal(),
                 ColorRGBA.White.clone()
         );
         rootNode.addLight(sun);
-
-        FilterPostProcessor fpp = new FilterPostProcessor(assetManager);
+        fallbackLights.add(sun);
 
         DirectionalLightShadowFilter shadowFilter = new DirectionalLightShadowFilter(assetManager, 4096, 4);
         shadowFilter.setLight(sun);
@@ -653,12 +683,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         shadowFilter.setShadowZExtend(256);
         shadowFilter.setShadowZFadeLength(128);
         // shadowFilter.setEdgeFilteringMode(EdgeFilteringMode.PCFPOISSON);
-        fpp.addFilter(shadowFilter);
-
-        SSAOFilter ssaoFilter = new SSAOFilter();
-        fpp.addFilter(ssaoFilter);
-
-        viewPort.addProcessor(fpp);
+        ensureLightingPostProcessor().addFilter(shadowFilter);
+        fallbackLightingFilters.add(shadowFilter);
 
 //        AmbientLight al = new AmbientLight();
 //        al.setColor(ColorRGBA.White.mult(0.8f));
@@ -667,6 +693,19 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
 
 
+    }
+
+    private void disableFallbackLightingForCustomScene() {
+        for (Light light : new ArrayList<>(fallbackLights)) {
+            rootNode.removeLight(light);
+        }
+        fallbackLights.clear();
+        for (Filter filter : new ArrayList<>(fallbackLightingFilters)) {
+            if (lightingPostProcessor != null) {
+                lightingPostProcessor.removeFilter(filter);
+            }
+        }
+        fallbackLightingFilters.clear();
     }
 
     public CanvasRect getCanvasRect() {
@@ -854,6 +893,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
         }
 
+        for (Object key : lights.keySet().toArray()) {
+            LightInst inst = lights.get(key);
+            if (inst != null && !inst.varDef.isShared) {
+                this.killLight((String) key);
+            }
+        }
+
         for (Object key : effekseerEffects.keySet().toArray()) {
             EffekseerInst inst = effekseerEffects.get(key);
             if (inst != null && !inst.varDef.isShared) {
@@ -896,6 +942,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         stairsInstances = new HashMap<>();
         archInstances = new HashMap<>();
         effekseerInstances = new HashMap<>();
+        if (lights.isEmpty()) {
+            installFallbackLighting();
+        }
         //this.mainScope.clearVars();
     }
 
@@ -959,6 +1008,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             this.killArch((String) key);
         }
 
+        for (Object key : lights.keySet().toArray()) {
+            this.killLight((String) key);
+        }
+
         for (Object key : effekseerEffects.keySet().toArray()) {
             this.killEffekseerEffect((String) key);
         }
@@ -992,6 +1045,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         stairsInstances = new HashMap<>();
         archInstances = new HashMap<>();
         effekseerInstances = new HashMap<>();
+        if (lights.isEmpty()) {
+            installFallbackLighting();
+        }
     }
 
     private void clearNode(Node n) {
@@ -1795,6 +1851,19 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return;
         }
 
+        if (var.varType == VariableDef.VAR_TYPE_LIGHT) {
+            LightInst inst = createLightInst(prg, (LightVariableDef) var, scope);
+            if (inst != null) {
+                String key = var.varName + "_" + ++entityInstCounter;
+                String runtimeName = var.varName + "@" + scope.scopeId;
+                inst.entityKey = key;
+                inst.node.setName(runtimeName);
+                scope.entities.put(var.varName, inst);
+                lights.put(runtimeName, inst);
+            }
+            return;
+        }
+
         if(var.resName.equals("sphere")) {
             SphereInst inst = new SphereInst((SphereVariableDef)var,scope);
             String key = var.varName+"_"+ ++entityInstCounter;
@@ -1956,6 +2025,235 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             loadArch(inst);
         }
 
+    }
+
+    private LightInst createLightInst(ProgramDef prg, LightVariableDef varDef, SceneMaxScope scope) {
+        disableFallbackLightingForCustomScene();
+        LightInst inst = new LightInst(varDef, scope);
+        Vector3f position = resolveLightPosition(varDef, scope);
+        inst.node.setLocalTranslation(position);
+        rootNode.attachChild(inst.node);
+
+        ColorRGBA color = parseLightColor(varDef.color, ColorRGBA.White);
+        float intensity = resolveLightIntensity(varDef, scope, 1f);
+        ColorRGBA finalColor = color.mult(intensity);
+        String type = varDef.lightType != null ? varDef.lightType.toLowerCase() : LightVariableDef.TYPE_POINT;
+        Vector3f baseDirection = new Vector3f(0f, -1f, 0f);
+
+        if (LightVariableDef.TYPE_DIRECTIONAL.equals(type)) {
+            DirectionalLight light = new DirectionalLight();
+            baseDirection = resolveLightDirection(prg, varDef, scope, position, new Vector3f(-0.1f, -0.7f, -1f));
+            light.setDirection(baseDirection);
+            light.setColor(finalColor);
+            rootNode.addLight(light);
+            inst.light = light;
+            addDirectionalShadowIfRequested(light, varDef, inst);
+        } else if (LightVariableDef.TYPE_POINT.equals(type)) {
+            PointLight light = new PointLight();
+            light.setPosition(position);
+            light.setRadius(resolveFloat(varDef.rangeExpr, scope, 10f));
+            light.setColor(finalColor);
+            rootNode.addLight(light);
+            inst.light = light;
+            addPointShadowIfRequested(light, varDef, inst);
+        } else if (LightVariableDef.TYPE_SPOT.equals(type)) {
+            SpotLight light = new SpotLight();
+            float range = resolveFloat(varDef.rangeExpr, scope, 20f);
+            float angle = resolveFloat(varDef.angleExpr, scope, 35f) * FastMath.DEG_TO_RAD;
+            light.setPosition(position);
+            baseDirection = resolveLightDirection(prg, varDef, scope, position, new Vector3f(0f, -1f, 0f));
+            light.setDirection(baseDirection);
+            light.setSpotRange(range);
+            light.setSpotInnerAngle(angle * 0.7f);
+            light.setSpotOuterAngle(angle);
+            light.setColor(finalColor);
+            rootNode.addLight(light);
+            inst.light = light;
+            addSpotShadowIfRequested(light, varDef, inst);
+        } else if (LightVariableDef.TYPE_SKY.equals(type) || LightVariableDef.TYPE_AMBIENT.equals(type)) {
+            ColorRGBA ambient = parseLightColor(varDef.ambientColor, skyPresetColor(varDef.preset, color));
+            AmbientLight light = new AmbientLight();
+            light.setColor(ambient.mult(intensity));
+            rootNode.addLight(light);
+            inst.light = light;
+        } else if (LightVariableDef.TYPE_PROBE.equals(type)) {
+            inst.light = addLightProbe(varDef.preset != null ? varDef.preset : "1", position.x, position.y, position.z);
+        }
+
+        if (inst.light != null) {
+            inst.node.addControl(new LightTransformControl(inst.light, baseDirection));
+        }
+
+        return inst;
+    }
+
+    private Vector3f resolveLightPosition(LightVariableDef varDef, SceneMaxScope scope) {
+        if (varDef.entityPos != null) {
+            RunTimeVarDef rt = findVarRuntime(null, scope, varDef.entityPos.entityName);
+            if (rt != null) {
+                Spatial spatial = getEntitySpatial(rt.varName, rt.varDef.varType);
+                if (spatial != null) {
+                    return spatial.getWorldTranslation().clone();
+                }
+            }
+        }
+        if (varDef.xExpr != null) {
+            return new Vector3f(
+                    resolveFloat(varDef.xExpr, scope, 0f),
+                    resolveFloat(varDef.yExpr, scope, 0f),
+                    resolveFloat(varDef.zExpr, scope, 0f));
+        }
+        return Vector3f.ZERO.clone();
+    }
+
+    private Vector3f resolveLightDirection(ProgramDef prg, LightVariableDef varDef, SceneMaxScope scope, Vector3f position, Vector3f fallback) {
+        if (varDef.lookAtTarget != null) {
+            RunTimeVarDef target = findVarRuntime(prg, scope, varDef.lookAtTarget);
+            if (target != null) {
+                Spatial targetSpatial = getEntitySpatial(target.varName, target.varDef.varType);
+                if (targetSpatial != null) {
+                    Vector3f toTarget = targetSpatial.getWorldTranslation().subtract(position);
+                    if (toTarget.lengthSquared() >= 0.0001f) {
+                        return toTarget.normalizeLocal();
+                    }
+                }
+            }
+        }
+        if (varDef.directionXExpr != null) {
+            return new Vector3f(
+                    resolveFloat(varDef.directionXExpr, scope, fallback.x),
+                    resolveFloat(varDef.directionYExpr, scope, fallback.y),
+                    resolveFloat(varDef.directionZExpr, scope, fallback.z)).normalizeLocal();
+        }
+        return fallback.clone().normalizeLocal();
+    }
+
+    private float resolveLightIntensity(LightVariableDef varDef, SceneMaxScope scope, float fallback) {
+        float intensity = resolveFloat(varDef.intensityExpr, scope, fallback);
+        if (varDef.intensityUnit != null && varDef.intensityUnit.startsWith("lumen")) {
+            return intensity / 800f;
+        }
+        return intensity;
+    }
+
+    private float resolveFloat(ParserRuleContext expr, SceneMaxScope scope, float fallback) {
+        if (expr == null) {
+            return fallback;
+        }
+        Object value = new ActionLogicalExpressionVm(expr, scope).evaluate();
+        if (value instanceof Number) {
+            return ((Number) value).floatValue();
+        }
+        try {
+            return Float.parseFloat(String.valueOf(value));
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private ColorRGBA parseLightColor(String value, ColorRGBA fallback) {
+        if (value == null || value.trim().isEmpty()) {
+            return fallback.clone();
+        }
+        String color = value.trim();
+        if (color.startsWith("#")) {
+            try {
+                int rgb = Integer.parseInt(color.substring(1), 16);
+                if (color.length() == 7) {
+                    return new ColorRGBA(
+                            ((rgb >> 16) & 0xff) / 255f,
+                            ((rgb >> 8) & 0xff) / 255f,
+                            (rgb & 0xff) / 255f,
+                            1f);
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        if ("warm".equalsIgnoreCase(color)) return new ColorRGBA(1f, 0.82f, 0.58f, 1f);
+        if ("cool".equalsIgnoreCase(color)) return new ColorRGBA(0.62f, 0.78f, 1f, 1f);
+        if ("red".equalsIgnoreCase(color)) return ColorRGBA.Red.clone();
+        if ("green".equalsIgnoreCase(color)) return ColorRGBA.Green.clone();
+        if ("blue".equalsIgnoreCase(color)) return ColorRGBA.Blue.clone();
+        if ("white".equalsIgnoreCase(color)) return ColorRGBA.White.clone();
+        if ("black".equalsIgnoreCase(color)) return ColorRGBA.Black.clone();
+        if ("yellow".equalsIgnoreCase(color)) return ColorRGBA.Yellow.clone();
+        if ("orange".equalsIgnoreCase(color)) return ColorRGBA.Orange.clone();
+        if ("pink".equalsIgnoreCase(color)) return ColorRGBA.Pink.clone();
+        if ("cyan".equalsIgnoreCase(color)) return ColorRGBA.Cyan.clone();
+        if ("magenta".equalsIgnoreCase(color)) return ColorRGBA.Magenta.clone();
+        if ("gray".equalsIgnoreCase(color) || "grey".equalsIgnoreCase(color)) return ColorRGBA.Gray.clone();
+        return fallback.clone();
+    }
+
+    private ColorRGBA skyPresetColor(String preset, ColorRGBA fallback) {
+        if (preset == null) {
+            return fallback;
+        }
+        if ("night neon".equalsIgnoreCase(preset)) {
+            return new ColorRGBA(0.12f, 0.18f, 0.32f, 1f);
+        }
+        if ("sunny day".equalsIgnoreCase(preset)) {
+            return new ColorRGBA(0.78f, 0.86f, 1f, 1f);
+        }
+        if ("overcast".equalsIgnoreCase(preset)) {
+            return new ColorRGBA(0.55f, 0.58f, 0.62f, 1f);
+        }
+        return fallback;
+    }
+
+    private boolean isLightShadowRequested(LightVariableDef varDef) {
+        return varDef.shadowMode != null
+                && !"off".equalsIgnoreCase(varDef.shadowMode)
+                && !"none".equalsIgnoreCase(varDef.shadowMode);
+    }
+
+    private int resolveShadowMapSize(LightVariableDef varDef) {
+        if ("high".equalsIgnoreCase(varDef.shadowMode)) {
+            return 4096;
+        }
+        if ("medium".equalsIgnoreCase(varDef.shadowMode) || "on".equalsIgnoreCase(varDef.shadowMode)) {
+            return 2048;
+        }
+        return 1024;
+    }
+
+    private void registerLightShadowFilter(Filter filter, LightInst inst) {
+        ensureLightingPostProcessor().addFilter(filter);
+        runtimeLightShadowFilters.add(filter);
+        inst.shadowFilters.add(filter);
+    }
+
+    private void addDirectionalShadowIfRequested(DirectionalLight light, LightVariableDef varDef, LightInst inst) {
+        if (!isLightShadowRequested(varDef)) {
+            return;
+        }
+        int size = resolveShadowMapSize(varDef);
+        DirectionalLightShadowFilter shadowFilter = new DirectionalLightShadowFilter(assetManager, size, 4);
+        shadowFilter.setLight(light);
+        shadowFilter.setShadowIntensity(0.35f);
+        shadowFilter.setShadowZExtend(256);
+        shadowFilter.setShadowZFadeLength(128);
+        registerLightShadowFilter(shadowFilter, inst);
+    }
+
+    private void addPointShadowIfRequested(PointLight light, LightVariableDef varDef, LightInst inst) {
+        if (!isLightShadowRequested(varDef)) {
+            return;
+        }
+        PointLightShadowFilter shadowFilter = new PointLightShadowFilter(assetManager, resolveShadowMapSize(varDef));
+        shadowFilter.setLight(light);
+        shadowFilter.setShadowIntensity(0.35f);
+        registerLightShadowFilter(shadowFilter, inst);
+    }
+
+    private void addSpotShadowIfRequested(SpotLight light, LightVariableDef varDef, LightInst inst) {
+        if (!isLightShadowRequested(varDef)) {
+            return;
+        }
+        SpotLightShadowFilter shadowFilter = new SpotLightShadowFilter(assetManager, resolveShadowMapSize(varDef));
+        shadowFilter.setLight(light);
+        shadowFilter.setShadowIntensity(0.35f);
+        registerLightShadowFilter(shadowFilter, inst);
     }
 
     private void loadBox(BoxInst inst) {
@@ -4334,6 +4632,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     }
 
+    public void moveLight(String targetVar, int axisNum, float direction, float moveVal) {
+        LightInst inst = resolveLightInst(targetVar);
+        if (inst != null) {
+            moveGeoNode(inst.node, axisNum, direction, moveVal);
+        }
+    }
+
     private void rotateGeoNode(Node g,String targetVar,int axisNum,float direction,float rotateVal) {
 
         if(g==null) {
@@ -4380,6 +4685,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         Node g = spheres.get(targetVar);
         rotateGeoNode(g,targetVar,axisNum,direction,rotateVal);
 
+    }
+
+    public void rotateLight(String targetVar, int axisNum, float direction, float rotateVal) {
+        LightInst inst = resolveLightInst(targetVar);
+        if (inst != null) {
+            rotateGeoNode(inst.node, targetVar, axisNum, direction, rotateVal);
+        }
     }
 
     @Override
@@ -4824,6 +5136,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         EffekseerInst effect = effekseerEffects.get(varName);
         if (effect != null) {
             return getGeometryNodeFieldValue(effect.node, fieldName);
+        }
+
+        LightInst light = resolveLightInst(varName);
+        if (light != null) {
+            return getGeometryNodeFieldValue(light.node, fieldName);
         }
 
         if(fieldName.equalsIgnoreCase("hit")) {
@@ -6103,6 +6420,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return effekseerEffects.get(varName).node;
         }
 
+        LightInst light = resolveLightInst(varName);
+        if(light != null) {
+            return light.node;
+        }
+
         return null;
 
     }
@@ -6148,6 +6470,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             m=arches.get(targetVar);
         } else if(varType==VariableDef.VAR_TYPE_EFFEKSEER) {
             EffekseerInst inst = effekseerEffects.get(targetVar);
+            m = inst != null ? inst.node : null;
+        } else if(varType==VariableDef.VAR_TYPE_LIGHT) {
+            LightInst inst = resolveLightInst(targetVar);
             m = inst != null ? inst.node : null;
         }
 
@@ -7737,6 +8062,39 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
     }
 
+    public void moveLightToDirection(String targetVar, int verbalCommand, float val) {
+        LightInst inst = resolveLightInst(targetVar);
+        if (inst == null) {
+            return;
+        }
+        moveSpatialToDirection(inst.node, verbalCommand, val);
+    }
+
+    private void moveSpatialToDirection(Spatial sp, int verbalCommand, float val) {
+        if (sp == null) {
+            return;
+        }
+        if(verbalCommand== ActionCommandMove.VERBAL_MOVE_FORWARD) {
+            Vector3f forward = sp.getLocalRotation().mult(Vector3f.UNIT_Z);
+            sp.move(forward.mult(val));
+        } else if(verbalCommand==ActionCommandMove.VERBAL_MOVE_BACKWARD) {
+            Vector3f forward = sp.getLocalRotation().mult(Vector3f.UNIT_Z);
+            sp.move(forward.mult(val).negate());
+        } else if(verbalCommand==ActionCommandMove.VERBAL_MOVE_LEFT) {
+            Vector3f left = sp.getLocalRotation().mult(Vector3f.UNIT_X);
+            sp.move(left.mult(val));
+        } else if(verbalCommand==ActionCommandMove.VERBAL_MOVE_RIGHT) {
+            Vector3f left = sp.getLocalRotation().mult(Vector3f.UNIT_X);
+            sp.move(left.mult(val).negate());
+        } else if(verbalCommand==ActionCommandMove.VERBAL_MOVE_UP) {
+            Vector3f up = sp.getLocalRotation().mult(Vector3f.UNIT_Y);
+            sp.move(up.mult(val));
+        } else if(verbalCommand==ActionCommandMove.VERBAL_MOVE_DOWN) {
+            Vector3f up = sp.getLocalRotation().mult(Vector3f.UNIT_Y);
+            sp.move(up.mult(val).negate());
+        }
+    }
+
     public void carAccelerate(RunTimeVarDef entity, Double accelerate) {
 
         AppModel am = models.get(entity.varName);
@@ -8171,7 +8529,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     }
 
-    public void addLightProbe(String name, float x, float y, float z) {
+    public LightProbe addLightProbe(String name, float x, float y, float z) {
 
         HashMap<String,String> probes = new HashMap<>();
         probes.put("1","1.j3o");
@@ -8191,8 +8549,27 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             probe.getArea().setRadius(800f);
 
             rootNode.addLight(probe);
+            return probe;
 
         }
+        return null;
+    }
+
+    private LightInst resolveLightInst(String varName) {
+        LightInst exact = lights.get(varName);
+        if (exact != null) {
+            return exact;
+        }
+        if (varName == null || varName.indexOf('@') >= 0) {
+            return null;
+        }
+        String prefix = varName + "@";
+        for (Map.Entry<String, LightInst> entry : lights.entrySet()) {
+            if (entry.getKey().startsWith(prefix)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     public void lookAt(RunTimeVarDef lookingObject, RunTimeVarDef lookAtTarget) {
@@ -9097,6 +9474,25 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             collisionControlsCache.remove(varName);
             clearSpatialGeometries(varName, g);
         }
+    }
+
+    public void killLight(String varName) {
+        LightInst inst = resolveLightInst(varName);
+        if (inst == null) {
+            return;
+        }
+        if (inst.light != null) {
+            rootNode.removeLight(inst.light);
+        }
+        for (Filter filter : new ArrayList<>(inst.shadowFilters)) {
+            if (lightingPostProcessor != null) {
+                lightingPostProcessor.removeFilter(filter);
+            }
+            runtimeLightShadowFilters.remove(filter);
+        }
+        inst.shadowFilters.clear();
+        inst.node.removeFromParent();
+        lights.values().remove(inst);
     }
 
     public void applyModelVelocity(String name, Double velocity) {

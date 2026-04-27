@@ -1716,6 +1716,57 @@ public class SceneMaxLanguageParser implements IParser {
                 return null;
             }
 
+            public StatementDef visitDefLight(SceneMaxParser.DefLightContext ctx) {
+                LightVariableDef varDef = new LightVariableDef();
+                SceneMaxParser.Define_lightContext lightCtx = ctx.define_light();
+                varDef.isShared = lightCtx.Shared() != null;
+                varDef.varName = lightCtx.res_var_decl().getText();
+                varDef.varLineNum = ctx.start.getLine();
+                varDef.lightType = lightCtx.light_type().getText().toLowerCase();
+
+                if (lightCtx.light_having_expr() != null) {
+                    for (SceneMaxParser.Light_attrContext attr : lightCtx.light_having_expr().light_attributes().light_attr()) {
+                        if (attr.light_color_attr() != null) {
+                            varDef.color = readLightColor(attr.light_color_attr().light_color_value());
+                        } else if (attr.light_intensity_attr() != null) {
+                            varDef.intensityExpr = attr.light_intensity_attr().logical_expression();
+                            if (attr.light_intensity_attr().light_intensity_unit() != null) {
+                                varDef.intensityUnit = attr.light_intensity_attr().light_intensity_unit().getText().toLowerCase();
+                            }
+                        } else if (attr.light_direction_attr() != null) {
+                            varDef.directionXExpr = attr.light_direction_attr().vector_x().logical_expression();
+                            varDef.directionYExpr = attr.light_direction_attr().vector_y().logical_expression();
+                            varDef.directionZExpr = attr.light_direction_attr().vector_z().logical_expression();
+                        } else if (attr.print_pos_attr() != null) {
+                            if (attr.print_pos_attr().pos_axes() != null) {
+                                varDef.xExpr = attr.print_pos_attr().pos_axes().print_pos_x().logical_expression();
+                                varDef.yExpr = attr.print_pos_attr().pos_axes().print_pos_y().logical_expression();
+                                varDef.zExpr = attr.print_pos_attr().pos_axes().print_pos_z().logical_expression();
+                            } else {
+                                varDef.entityPos = new EntityPos();
+                                setEntityPos(varDef.entityPos, attr.print_pos_attr().pos_entity());
+                            }
+                        } else if (attr.light_shadow_attr() != null) {
+                            varDef.shadowMode = attr.light_shadow_attr().light_shadow_option().getText().toLowerCase();
+                        } else if (attr.light_range_attr() != null) {
+                            varDef.rangeExpr = attr.light_range_attr().logical_expression();
+                        } else if (attr.light_look_at_attr() != null) {
+                            varDef.lookAtTarget = attr.light_look_at_attr().res_var_decl().getText();
+                        } else if (attr.light_angle_attr() != null) {
+                            varDef.angleExpr = attr.light_angle_attr().logical_expression();
+                        } else if (attr.light_preset_attr() != null) {
+                            varDef.preset = stripQutes(attr.light_preset_attr().QUOTED_STRING().getText());
+                        } else if (attr.light_exposure_attr() != null) {
+                            varDef.exposureExpr = attr.light_exposure_attr().logical_expression();
+                        } else if (attr.light_ambient_attr() != null) {
+                            varDef.ambientColor = readLightColor(attr.light_ambient_attr().light_color_value());
+                        }
+                    }
+                }
+
+                return varDef;
+            }
+
             public StatementDef visitLightActions(SceneMaxParser.LightActionsContext ctx) {
 
                 LighsActionCommand cmd = new LighsActionCommand();
@@ -3908,6 +3959,17 @@ public class SceneMaxLanguageParser implements IParser {
         } else {
             return "";
         }
+    }
+
+    private String readLightColor(SceneMaxParser.Light_color_valueContext colorValue) {
+        if (colorValue == null) {
+            return null;
+        }
+        String text = colorValue.getText();
+        if (text != null && text.startsWith("\"")) {
+            return stripQutes(text);
+        }
+        return text;
     }
 
     private VariableDef createImplicitVariableDef(ProgramDef program, String varName) {
