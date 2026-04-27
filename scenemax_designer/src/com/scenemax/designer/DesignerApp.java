@@ -1046,47 +1046,176 @@ public class DesignerApp extends SceneMaxApp {
 
     private void buildLightNode(Node node, DesignerEntity entity) {
         ColorRGBA color = parseDesignerLightColor(entity.getLightColor());
-        Geometry bulb = new Geometry(entity.getName() + "_light_marker", new Sphere(16, 16, 0.18f));
-        Material bulbMaterial = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-        bulbMaterial.setColor("Color", color);
-        bulb.setMaterial(bulbMaterial);
-        node.attachChild(bulb);
-
         String type = entity.getLightType().toLowerCase(Locale.ROOT);
-        if ("point".equals(type) || "spot".equals(type) || "probe".equals(type)) {
-            float range = Math.max(0.2f, entity.getLightRange());
-            Geometry rangeWire = new Geometry(entity.getName() + "_light_range", new Sphere(24, 24, range));
-            Material rangeMaterial = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-            rangeMaterial.setColor("Color", new ColorRGBA(color.r, color.g, color.b, 0.25f));
-            rangeMaterial.getAdditionalRenderState().setWireframe(true);
-            rangeMaterial.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Off);
-            rangeMaterial.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
-            rangeWire.setQueueBucket(RenderQueue.Bucket.Transparent);
-            rangeWire.setMaterial(rangeMaterial);
-            node.attachChild(rangeWire);
-        }
-
-        if ("directional".equals(type) || "spot".equals(type)) {
-            attachLightDirectionMarker(node, entity, color);
+        switch (type) {
+            case "directional":
+                attachDirectionalLightGizmo(node, entity, color);
+                break;
+            case "spot":
+                attachSpotLightGizmo(node, entity, color);
+                break;
+            case "sky":
+                attachSkyLightGizmo(node, entity, color);
+                break;
+            case "ambient":
+                attachAmbientLightGizmo(node, entity, color);
+                break;
+            case "probe":
+                attachProbeLightGizmo(node, entity, color);
+                break;
+            default:
+                attachPointLightGizmo(node, entity, color);
+                break;
         }
     }
 
-    private void attachLightDirectionMarker(Node node, DesignerEntity entity, ColorRGBA color) {
-        Vector3f dir = entity.getLightDirection().normalize();
+    private void attachDirectionalLightGizmo(Node node, DesignerEntity entity, ColorRGBA color) {
+        attachGizmoSphere(node, entity.getName() + "_sun_core", 0.18f, color);
+        ColorRGBA rayColor = withAlpha(color, 0.9f);
+        for (int i = 0; i < 8; i++) {
+            float angle = FastMath.TWO_PI * i / 8f;
+            Vector3f rayDir = new Vector3f(FastMath.cos(angle), 0f, FastMath.sin(angle));
+            attachGizmoBoxBetween(node, entity.getName() + "_sun_ray_" + i,
+                    rayDir.mult(0.32f), rayDir.mult(0.62f), 0.025f, rayColor);
+        }
+        attachLightDirectionMarker(node, entity, color, 1.8f, 0.055f, true);
+    }
+
+    private void attachPointLightGizmo(Node node, DesignerEntity entity, ColorRGBA color) {
+        attachGizmoSphere(node, entity.getName() + "_point_core", 0.18f, color);
+        attachRangeSphere(node, entity.getName() + "_point_range", Math.max(0.2f, entity.getLightRange()), color, 0.22f);
+        attachGizmoBoxBetween(node, entity.getName() + "_point_x", new Vector3f(-0.42f, 0f, 0f), new Vector3f(0.42f, 0f, 0f), 0.025f, color);
+        attachGizmoBoxBetween(node, entity.getName() + "_point_y", new Vector3f(0f, -0.42f, 0f), new Vector3f(0f, 0.42f, 0f), 0.025f, color);
+        attachGizmoBoxBetween(node, entity.getName() + "_point_z", new Vector3f(0f, 0f, -0.42f), new Vector3f(0f, 0f, 0.42f), 0.025f, color);
+    }
+
+    private void attachSpotLightGizmo(Node node, DesignerEntity entity, ColorRGBA color) {
+        attachGizmoSphere(node, entity.getName() + "_spot_core", 0.16f, color);
+        float range = Math.max(0.2f, entity.getLightRange());
+        float angle = Math.max(0.1f, entity.getLightAngle()) * FastMath.DEG_TO_RAD;
+        float radius = Math.max(0.05f, FastMath.tan(angle) * range);
+        Vector3f dir = normalizedDesignerLightDirection(entity);
+        attachWireCone(node, entity.getName() + "_spot_cone", dir, range, radius, color);
+        attachLightDirectionMarker(node, entity, color, Math.max(1f, range * 0.35f), 0.04f, false);
+    }
+
+    private void attachSkyLightGizmo(Node node, DesignerEntity entity, ColorRGBA color) {
+        ColorRGBA skyColor = parseDesignerLightColor(entity.getLightAmbientColor(),
+                designerSkyPresetColor(entity.getLightPreset(), color));
+        attachGizmoSphere(node, entity.getName() + "_sky_core", 0.15f, skyColor);
+        attachRangeSphere(node, entity.getName() + "_sky_dome_outer", 0.75f, skyColor, 0.28f);
+        attachRangeSphere(node, entity.getName() + "_sky_dome_inner", 0.48f, skyColor, 0.2f);
+        attachGizmoBoxBetween(node, entity.getName() + "_sky_horizon",
+                new Vector3f(-0.72f, 0f, 0f), new Vector3f(0.72f, 0f, 0f), 0.018f, withAlpha(skyColor, 0.85f));
+        attachGizmoBoxBetween(node, entity.getName() + "_sky_zenith",
+                new Vector3f(0f, 0.22f, 0f), new Vector3f(0f, 0.72f, 0f), 0.018f, withAlpha(skyColor, 0.85f));
+    }
+
+    private void attachAmbientLightGizmo(Node node, DesignerEntity entity, ColorRGBA color) {
+        attachGizmoSphere(node, entity.getName() + "_ambient_core", 0.16f, color);
+        attachRangeSphere(node, entity.getName() + "_ambient_glow_a", 0.42f, color, 0.18f);
+        attachRangeSphere(node, entity.getName() + "_ambient_glow_b", 0.64f, color, 0.12f);
+        attachGizmoBoxBetween(node, entity.getName() + "_ambient_cross_x",
+                new Vector3f(-0.55f, 0f, 0f), new Vector3f(0.55f, 0f, 0f), 0.018f, color);
+        attachGizmoBoxBetween(node, entity.getName() + "_ambient_cross_z",
+                new Vector3f(0f, 0f, -0.55f), new Vector3f(0f, 0f, 0.55f), 0.018f, color);
+    }
+
+    private void attachProbeLightGizmo(Node node, DesignerEntity entity, ColorRGBA color) {
+        attachGizmoSphere(node, entity.getName() + "_probe_core", 0.14f, color);
+        float range = Math.max(0.2f, entity.getLightRange());
+        attachRangeSphere(node, entity.getName() + "_probe_capture", range, color, 0.16f);
+        attachWireBox(node, entity.getName() + "_probe_box", Math.min(range, 1.0f), color);
+    }
+
+    private void attachGizmoSphere(Node node, String name, float radius, ColorRGBA color) {
+        Geometry geometry = new Geometry(name, new Sphere(16, 16, radius));
+        geometry.setMaterial(createLightGizmoMaterial(color, false, Math.min(1f, color.a)));
+        node.attachChild(geometry);
+    }
+
+    private void attachRangeSphere(Node node, String name, float radius, ColorRGBA color, float alpha) {
+        Geometry geometry = new Geometry(name, new Sphere(32, 32, radius));
+        geometry.setMaterial(createLightGizmoMaterial(color, true, alpha));
+        geometry.setQueueBucket(RenderQueue.Bucket.Transparent);
+        node.attachChild(geometry);
+    }
+
+    private void attachWireCone(Node node, String name, Vector3f direction, float range, float radius, ColorRGBA color) {
+        Geometry cone = new Geometry(name, new com.jme3.scene.shape.Cylinder(32, 32, 0.02f, radius, range, true, false));
+        cone.setMaterial(createLightGizmoMaterial(color, true, 0.28f));
+        cone.setQueueBucket(RenderQueue.Bucket.Transparent);
+        cone.setLocalTranslation(direction.mult(range * 0.5f));
+        cone.lookAt(direction.mult(range), Vector3f.UNIT_Y);
+        node.attachChild(cone);
+    }
+
+    private void attachWireBox(Node node, String name, float halfExtent, ColorRGBA color) {
+        float s = Math.max(0.1f, halfExtent);
+        Vector3f[] corners = new Vector3f[] {
+                new Vector3f(-s, -s, -s), new Vector3f(s, -s, -s), new Vector3f(s, -s, s), new Vector3f(-s, -s, s),
+                new Vector3f(-s, s, -s), new Vector3f(s, s, -s), new Vector3f(s, s, s), new Vector3f(-s, s, s)
+        };
+        int[][] edges = new int[][] {
+                {0, 1}, {1, 2}, {2, 3}, {3, 0},
+                {4, 5}, {5, 6}, {6, 7}, {7, 4},
+                {0, 4}, {1, 5}, {2, 6}, {3, 7}
+        };
+        for (int i = 0; i < edges.length; i++) {
+            attachGizmoBoxBetween(node, name + "_" + i, corners[edges[i][0]], corners[edges[i][1]], 0.018f, withAlpha(color, 0.75f));
+        }
+    }
+
+    private void attachLightDirectionMarker(Node node, DesignerEntity entity, ColorRGBA color, float length, float thickness, boolean arrowHead) {
+        Vector3f dir = normalizedDesignerLightDirection(entity);
+        attachGizmoBoxBetween(node, entity.getName() + "_light_direction",
+                Vector3f.ZERO, dir.mult(length), thickness, color);
+        if (arrowHead) {
+            Vector3f tip = dir.mult(length);
+            attachGizmoSphere(node, entity.getName() + "_direction_tip", Math.max(0.08f, thickness * 2.2f), color);
+            node.getChild(entity.getName() + "_direction_tip").setLocalTranslation(tip);
+        }
+    }
+
+    private Vector3f normalizedDesignerLightDirection(DesignerEntity entity) {
+        Vector3f dir = entity.getLightDirection().clone();
         if (dir.lengthSquared() < 0.0001f) {
             dir = new Vector3f(0f, -1f, 0f);
         }
-        float length = "spot".equalsIgnoreCase(entity.getLightType())
-                ? Math.max(1f, entity.getLightRange() * 0.35f)
-                : 1.5f;
-        Vector3f mid = dir.mult(length * 0.5f);
-        Geometry ray = new Geometry(entity.getName() + "_light_direction", new Box(0.035f, length * 0.5f, 0.035f));
+        return dir.normalizeLocal();
+    }
+
+    private void attachGizmoBoxBetween(Node node, String name, Vector3f start, Vector3f end, float thickness, ColorRGBA color) {
+        Vector3f delta = end.subtract(start);
+        float length = delta.length();
+        if (length < 0.0001f) {
+            return;
+        }
+        Vector3f dir = delta.normalize();
+        Vector3f mid = start.add(end).multLocal(0.5f);
+        Geometry ray = new Geometry(name, new Box(thickness, length * 0.5f, thickness));
         ray.setLocalTranslation(mid);
-        ray.lookAt(dir.mult(length), Vector3f.UNIT_Y);
-        Material rayMaterial = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-        rayMaterial.setColor("Color", color);
-        ray.setMaterial(rayMaterial);
+        Quaternion rotation = new Quaternion();
+        rotation.lookAt(dir, Vector3f.UNIT_Y);
+        rotation.multLocal(new Quaternion().fromAngleAxis(FastMath.HALF_PI, Vector3f.UNIT_X));
+        ray.setLocalRotation(rotation);
+        ray.setMaterial(createLightGizmoMaterial(color, false, Math.min(1f, color.a)));
         node.attachChild(ray);
+    }
+
+    private Material createLightGizmoMaterial(ColorRGBA color, boolean wireframe, float alpha) {
+        Material material = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+        material.setColor("Color", withAlpha(color, alpha));
+        material.getAdditionalRenderState().setWireframe(wireframe);
+        material.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Off);
+        if (alpha < 1f) {
+            material.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
+        }
+        return material;
+    }
+
+    private ColorRGBA withAlpha(ColorRGBA color, float alpha) {
+        return new ColorRGBA(color.r, color.g, color.b, alpha);
     }
 
     private ColorRGBA parseDesignerLightColor(String value) {
