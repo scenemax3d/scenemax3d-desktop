@@ -12,13 +12,20 @@ end do
 print_status = {
 
   timer=timer-1
-  var frame1=round(life1*16/INITIAL_PLAYER_STRENGTH), 
-      frame2=round(life2*16/INITIAL_PLAYER_STRENGTH)
+  var frame1=round(life1*16/INITIAL_PLAYER_STRENGTH),
+      frame2=round(life2*16/INITIAL_PLAYER_STRENGTH),
+      player_percent=round(life1*100/INITIAL_PLAYER_STRENGTH),
+      opponent_percent=round(life2*100/INITIAL_PLAYER_STRENGTH)
 
-  UI.layer1.score.text = "Score: " + score	
-	UI.layer1.panel2.timer.text = timer	
-	UI.layer1.playerHealthBar.frame = frame1
-	UI.layer1.opponentHealthBar.frame = frame2
+  UI.layer1.playerHud.score.text = "Score: " + score
+  if(timer < 10) {
+    UI.layer1.panel2.timer.text = "0" + timer
+  } else {
+    UI.layer1.panel2.timer.text = timer
+  }
+  UI.layer1.playerHud.playerHealthBar.playerHealthFill.frame = frame1
+  UI.layer1.opponentHud.opponentHealthBar.opponentHealthFill.frame = frame2
+  UI.layer1.playerHud.playerHealthValue.text = player_percent + "%"
+  UI.layer1.opponentHud.opponentHealthValue.text = opponent_percent + "%"
 }
 run print_status every 1 second
-

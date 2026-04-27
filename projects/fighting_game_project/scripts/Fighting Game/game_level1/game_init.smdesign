@@ -163,7 +163,7 @@
         3
       ],
       "type": "MODEL",
-      "sceneMaxCode": "boss => boss: pos (9.0,0.0,35.0) async",
+      "sceneMaxCode": "boss => boss: hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast async",
       "staticModel": false,
       "name": "boss",
       "vehicleModel": false,
@@ -239,7 +239,7 @@
             3
           ],
           "type": "MODEL",
-          "sceneMaxCode": "player1 => fighter1: pos (40.0,-89.249504,30.0) async",
+          "sceneMaxCode": "player1 => fighter1: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast async",
           "staticModel": false,
           "name": "player1",
           "vehicleModel": false,
@@ -600,7 +600,7 @@
             3
           ],
           "type": "MODEL",
-          "sceneMaxCode": "player2 => old_fighter2: pos (40.0,-88.03695,16.5) async",
+          "sceneMaxCode": "player2 => old_fighter2: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on async",
           "staticModel": false,
           "name": "player2",
           "vehicleModel": false,
@@ -1166,15 +1166,15 @@
   },
   "camera": {
     "rotation": [
-      -0.09904575,
-      0.8923991,
-      -0.2391176,
-      -0.36964384
+      -0.09143161,
+      0.8484876,
+      -0.15597656,
+      -0.49737337
     ],
     "position": [
-      9.185587,
-      7.5,
-      9.185586
+      91.78476,
+      -66.66638,
+      58.99296
     ]
   },
   "version": 1

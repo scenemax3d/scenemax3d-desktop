@@ -27,7 +27,7 @@ game_start = {
     end do	
 
 		audio.stop "drums_music1"
-	  audio.play "fight_music1" loop
+	  audio.play "neon_dojo1" loop //"fight_music1" loop
 		//loading2.draw clear
     loading3.draw clear
   end do

@@ -11,4 +11,4 @@ wait for key space to be pressed
 run hide_game_intro_ui
 
 
-switch to "game_level1"
+switch to "game_level_train" //"game_level1"

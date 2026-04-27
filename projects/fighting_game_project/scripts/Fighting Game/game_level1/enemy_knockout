@@ -21,10 +21,10 @@ enemy_knockout = {
 		
 	do async
 	  
-	  audio.stop "fight_music1"
+	  audio.stop "neon_dojo1" //"fight_music1"
 	  audio.play "level_win1"
 	  wait 7 seconds
-	  audio.play "fight_music1" loop
+	  audio.play "neon_dojo1" loop
 	end do
 
 	do async
