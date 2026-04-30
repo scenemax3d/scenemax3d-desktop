@@ -15,6 +15,7 @@
 
       {"name": "Code Snippets...", "command":"macro_builder"},
       {"name": "Settings...", "command":"settings"},
+      {"name": "Refresh Project Files","command": "refresh_project_tree"},
       {"name": "Restart","command": "restart_app"},
       {"name": "Open Installation Folder","command": "open_install_folder"},
       {"name": "Exit","command": "exit"}

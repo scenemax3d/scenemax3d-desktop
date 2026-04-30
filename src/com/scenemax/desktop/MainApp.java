@@ -517,6 +517,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     dlg.setVisible(true);
                 } else if (cmd.equals("new_folder")) {
                     createNewScriptsFolder();
+                } else if (cmd.equals("refresh_project_tree")) {
+                    refreshProjectFilesTreeForAutomation(true, false);
                 } else if (cmd.equals("restart_app")) {
                     restartApplication();
                 } else if (cmd.equals("exit")) {
@@ -1468,6 +1470,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     }
                 } else if (cmd.equals("reload_from_disk")) {
                     reloadFileFromDisk(new File(filePath), true);
+                } else if (cmd.equals("refresh_project_tree")) {
+                    refreshProjectFilesTreeForAutomation(true, false);
                 } else if (cmd.equals("new")) {
                     createNewScript(filePath);
                 } else if (cmd.equals("new_designer")) {
@@ -1736,6 +1740,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         }
         addScriptsTreePopupMenuItem("Save", "save", popup, popupActionListener, false, true, file);
         addScriptsTreePopupMenuItem("Reload from disk", "reload_from_disk", popup, popupActionListener, false, true, file);
+        addScriptsTreePopupMenuItem("Refresh Project Files", "refresh_project_tree", popup, popupActionListener, true, true, file);
         addScriptsTreePopupMenuItem("Copy Absolute Path", "copy_absolute_path", popup, popupActionListener, false, true, file);
         JMenuItem item = addScriptsTreePopupMenuItem("Delete...", "delete", popup, popupActionListener, false, true, file);
         if (item != null) {
