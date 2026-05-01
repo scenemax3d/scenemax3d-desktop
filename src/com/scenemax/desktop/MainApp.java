@@ -139,6 +139,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private boolean saveLastSelectedFileEnabled = true;
     private JMenu projectsSubMenu;
     private JMenu assetsMenu;
+    private ProjectInventoryDialog projectInventoryDialog;
     private EditorTabPanel editorTabPanel;
     private SceneMaxAutoComplete autoComplete;
     private SceneMaxToolRegistry automationToolRegistry;
@@ -568,6 +569,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     openImportAnimationDocument();
                 } else if (cmd.equals("import_effekseer")) {
                     importEffekseerEffect();
+                } else if (cmd.equals("project_inventory")) {
+                    openProjectInventory();
                 } else if (cmd.equals("create_material_document")) {
                     createNewMaterialDocument(getSelectedScriptsFolder().getAbsolutePath());
                 } else if (cmd.equals("font_generator")) {
@@ -725,6 +728,20 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
         this.assetsMenu.updateUI();
 
+    }
+
+    private void openProjectInventory() {
+        if (projectInventoryDialog != null && projectInventoryDialog.isDisplayable()) {
+            projectInventoryDialog.refreshInventory();
+            projectInventoryDialog.setVisible(true);
+            projectInventoryDialog.toFront();
+            projectInventoryDialog.requestFocus();
+            return;
+        }
+
+        projectInventoryDialog = new ProjectInventoryDialog(this);
+        projectInventoryDialog.setLocationRelativeTo(this);
+        projectInventoryDialog.setVisible(true);
     }
 
 
