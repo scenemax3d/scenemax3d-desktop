@@ -2,6 +2,8 @@ package com.scenemax.designer;
 
 import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
+import com.scenemax.designer.animation.AnimationImportProcessRunner;
+import com.scenemax.designer.animation.AnimationImportResult;
 import com.scenemaxeng.common.types.ResourceSetup;
 import com.scenemax.designer.gizmo.GizmoMode;
 import org.apache.commons.io.FileUtils;
@@ -20,6 +22,7 @@ import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -67,6 +70,8 @@ public class Import3DModelPanel extends DesignerPanel {
     private JTextField txtCapsuleRadius, txtCapsuleHeight;
     private JTextField txtStepHeight;
     private JCheckBox chkStatic;
+    private JComboBox<String> cmbBundledAnimations;
+    private JLabel lblBundledAnimationStatus;
 
     // Transform properties (live 3D manipulation)
     private JSpinner spnPosX, spnPosY, spnPosZ;
@@ -102,12 +107,16 @@ public class Import3DModelPanel extends DesignerPanel {
 
     private String selectedFile;
     private String selectedFileDestDir;
+    private String importedModelFilePath;
     private String previewModelAssetPath;
+    private String previewEntityName;
     private String resourcesFolder;
     private final String initialSketchfabToken;
     private final Consumer<String> onSketchfabTokenChanged;
     private boolean modelImported = false;
     private boolean modelPreviewLoaded = false;
+    private boolean updatingBundledAnimationCombo = false;
+    private String animationInspectionPath;
 
     private Consumer<Boolean> onCloseCallback; // true = imported, false = cancelled
 
@@ -318,6 +327,10 @@ public class Import3DModelPanel extends DesignerPanel {
 
         // ========== Transform properties (live 3D) ==========
         form.add(createBoldLabel("Transform (3D Preview):"));
+        form.add(Box.createVerticalStrut(4));
+        form.add(createBundledAnimationRow());
+        lblBundledAnimationStatus = createSmallLabel("Select a model to inspect bundled animations.");
+        form.add(lblBundledAnimationStatus);
         form.add(Box.createVerticalStrut(4));
 
         form.add(createSmallLabel("Position:"));
@@ -568,6 +581,19 @@ public class Import3DModelPanel extends DesignerPanel {
         sep.setAlignmentX(Component.LEFT_ALIGNMENT);
         sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 2));
         return sep;
+    }
+
+    private JPanel createBundledAnimationRow() {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
+        row.add(new JLabel("Animation:"));
+        cmbBundledAnimations = new JComboBox<>();
+        cmbBundledAnimations.setPreferredSize(new Dimension(250, 24));
+        cmbBundledAnimations.setEnabled(false);
+        cmbBundledAnimations.addActionListener(e -> applySelectedBundledAnimation());
+        row.add(cmbBundledAnimations);
+        return row;
     }
 
     private JSpinner createSpinner(double value, double min, double max, double step) {
@@ -840,10 +866,25 @@ public class Import3DModelPanel extends DesignerPanel {
         return Files.createTempDirectory(baseDir.toPath(), sanitizeForFileName(modelName) + "-").toFile();
     }
 
+    public boolean loadExternalModelSource(File sourceFile, String displayLabel, String defaultName, File tempRootToDelete) {
+        return loadExternalModelSource(sourceFile, displayLabel, defaultName, tempRootToDelete, false);
+    }
+
+    public boolean loadExternalModelSource(File sourceFile, String displayLabel, String defaultName,
+                                           File tempRootToDelete, boolean staticModel) {
+        if (modelPreviewLoaded) {
+            rollbackImport();
+        }
+        chkStatic.setSelected(staticModel);
+        return loadSelectedModelSource(sourceFile, displayLabel, defaultName, tempRootToDelete);
+    }
+
     private boolean loadSelectedModelSource(File sourceFile, String displayLabel, String defaultName, File tempRootToDelete) {
+        resetBundledAnimations("Inspecting bundled animations after import preview loads...");
         selectedFile = sourceFile.getAbsolutePath();
         txtFileName.setText(displayLabel == null ? selectedFile : displayLabel);
-        txtName.setText(defaultName == null ? stripModelExtension(sourceFile.getName()) : defaultName);
+        String requestedName = defaultName == null ? stripModelExtension(sourceFile.getName()) : defaultName;
+        txtName.setText(uniqueImportModelName(requestedName));
 
         if (selectedFile.toLowerCase().endsWith(".zip")) {
             String extractedFolder = extractModelZip(selectedFile);
@@ -862,6 +903,7 @@ public class Import3DModelPanel extends DesignerPanel {
         boolean imported = temporaryImport();
         if (imported) {
             loadModelPreview();
+            inspectBundledAnimations();
         }
         if (tempRootToDelete != null) {
             FileUtils.deleteQuietly(tempRootToDelete);
@@ -880,6 +922,38 @@ public class Import3DModelPanel extends DesignerPanel {
     private static String sanitizeForFileName(String text) {
         if (text == null || text.trim().isEmpty()) return "sketchfab-model";
         return text.trim().replaceAll("[^a-zA-Z0-9._-]+", "_");
+    }
+
+    private String uniqueImportModelName(String requestedName) {
+        String base = sanitizeSceneMaxIdentifier(requestedName);
+        if (base.isEmpty()) {
+            base = "model";
+        }
+        String candidate = base;
+        int index = 1;
+        while (modelNameExists(candidate, "./resources", "models.json")
+                || modelNameExists(candidate, resourcesFolder, "models-ext.json")
+                || new File(resourcesFolder + "/Models/" + candidate).exists()) {
+            candidate = base + "_" + index++;
+        }
+        return candidate;
+    }
+
+    private static String sanitizeSceneMaxIdentifier(String value) {
+        if (value == null) {
+            return "";
+        }
+        String sanitized = value.trim().toLowerCase()
+                .replaceAll("[^a-z0-9_]+", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_+|_+$", "");
+        if (!sanitized.isEmpty() && !sanitized.matches("[a-z_].*")) {
+            sanitized = "model_" + sanitized;
+        }
+        if (sanitized.length() > 48) {
+            sanitized = sanitized.substring(0, 48).replaceAll("_+$", "");
+        }
+        return sanitized;
     }
 
     private String rootMessage(Throwable throwable) {
@@ -925,7 +999,11 @@ public class Import3DModelPanel extends DesignerPanel {
     // =====================================================================
 
     private boolean temporaryImport() {
-        String name = txtName.getText().trim();
+        importedModelFilePath = null;
+        previewEntityName = null;
+        String requestedName = txtName.getText().trim();
+        String name = uniqueImportModelName(requestedName);
+        txtName.setText(name);
         if (name.isEmpty()) {
             JOptionPane.showMessageDialog(this, "Please enter a model name", "Error", JOptionPane.ERROR_MESSAGE);
             return false;
@@ -940,7 +1018,7 @@ public class Import3DModelPanel extends DesignerPanel {
         boolean isGlb = selectedFile.toLowerCase().endsWith(".glb");
         File srcFile = new File(selectedFile);
         File srcDir = srcFile.getParentFile();
-        selectedFileDestDir = resourcesFolder + "/Models/" + (isGlb ? srcFile.getName().replace(".glb", "") : srcDir.getName());
+        selectedFileDestDir = resourcesFolder + "/Models/" + name;
         File destDir = new File(selectedFileDestDir);
 
         boolean nameExistsInExt = modelNameExists(name, resourcesFolder, "models-ext.json");
@@ -957,13 +1035,16 @@ public class Import3DModelPanel extends DesignerPanel {
         destDir.mkdirs();
 
         try {
+            File importedModelFile;
             if (isGlb) {
-                FileUtils.copyFileToDirectory(srcFile, destDir);
+                importedModelFile = new File(destDir, name + ".glb");
+                FileUtils.copyFile(srcFile, importedModelFile);
             } else {
                 FileUtils.copyDirectory(srcDir, destDir);
+                importedModelFile = new File(destDir, srcFile.getName());
             }
 
-            File importedModelFile = new File(destDir, srcFile.getName());
+            importedModelFilePath = importedModelFile.getAbsolutePath();
             try {
                 ImportedModelNormalizer.normalize(importedModelFile.toPath());
             } catch (IOException normalizeError) {
@@ -977,8 +1058,8 @@ public class Import3DModelPanel extends DesignerPanel {
             JSONObject model = new JSONObject("{\"physics\":{ \"character\":{} } }");
             model.put("name", name);
 
-            String sourceDirName = isGlb ? destDir.getName() : srcDir.getName();
-            String modelPath = "Models/" + sourceDirName + "/" + srcFile.getName();
+            String sourceDirName = destDir.getName();
+            String modelPath = "Models/" + sourceDirName + "/" + importedModelFile.getName();
             model.put("path", modelPath);
             model.put("scaleX", 1.0f);
             model.put("scaleY", 1.0f);
@@ -987,7 +1068,8 @@ public class Import3DModelPanel extends DesignerPanel {
             model.put("transY", 0.0f);
             model.put("transZ", 0.0f);
             model.put("rotateY", 0.0f);
-            model.put("isStatic", false);
+            boolean isStatic = chkStatic.isSelected();
+            model.put("isStatic", isStatic);
 
             JSONObject character = model.getJSONObject("physics").getJSONObject("character");
             character.put("calibrateX", 0.0f);
@@ -1008,6 +1090,7 @@ public class Import3DModelPanel extends DesignerPanel {
                 resSetup.capsuleRadius = 2.0f;
                 resSetup.capsuleHeight = 2.0f;
                 resSetup.stepHeight = 0.05f;
+                resSetup.isStatic = isStatic;
                 app.getAssetsMapping().get3DModelsIndex().put(name.toLowerCase(), resSetup);
             }
 
@@ -1030,10 +1113,123 @@ public class Import3DModelPanel extends DesignerPanel {
         String name = txtName.getText().trim();
         if (app != null && name.length() > 0) {
             app.enqueue(() -> {
-                app.addModel(name, false, false, false);
+                previewEntityName = app.addModel(name, chkStatic.isSelected(), false, false);
                 return null;
             });
         }
+    }
+
+    private void resetBundledAnimations(String status) {
+        updatingBundledAnimationCombo = true;
+        try {
+            if (cmbBundledAnimations != null) {
+                cmbBundledAnimations.removeAllItems();
+                cmbBundledAnimations.setEnabled(false);
+            }
+            if (lblBundledAnimationStatus != null) {
+                lblBundledAnimationStatus.setText(status == null ? "" : status);
+            }
+        } finally {
+            updatingBundledAnimationCombo = false;
+        }
+    }
+
+    private void inspectBundledAnimations() {
+        File importedModelFile = importedModelFilePath == null ? null : new File(importedModelFilePath);
+        if (importedModelFile == null || !importedModelFile.isFile()) {
+            resetBundledAnimations("No imported model file is available for animation inspection.");
+            return;
+        }
+
+        animationInspectionPath = importedModelFile.getAbsolutePath();
+        resetBundledAnimations("Inspecting bundled animations...");
+        SwingWorker<AnimationImportResult, Void> worker = new SwingWorker<AnimationImportResult, Void>() {
+            @Override
+            protected AnimationImportResult doInBackground() throws Exception {
+                return AnimationImportProcessRunner.inspect(importedModelFile);
+            }
+
+            @Override
+            protected void done() {
+                if (!importedModelFile.getAbsolutePath().equals(animationInspectionPath)) {
+                    return;
+                }
+                try {
+                    populateBundledAnimations(get().getClipNames());
+                } catch (Exception e) {
+                    resetBundledAnimations("Could not inspect bundled animations: " + rootMessage(e));
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void populateBundledAnimations(List<String> clipNames) {
+        updatingBundledAnimationCombo = true;
+        try {
+            cmbBundledAnimations.removeAllItems();
+            if (clipNames != null) {
+                for (String clipName : clipNames) {
+                    if (clipName != null && !clipName.trim().isEmpty()) {
+                        cmbBundledAnimations.addItem(clipName.trim());
+                    }
+                }
+            }
+            boolean hasAnimations = cmbBundledAnimations.getItemCount() > 0;
+            cmbBundledAnimations.setEnabled(hasAnimations);
+            lblBundledAnimationStatus.setText(hasAnimations
+                    ? "Found " + cmbBundledAnimations.getItemCount() + " bundled animation(s)."
+                    : "No bundled animations were found in this model.");
+        } finally {
+            updatingBundledAnimationCombo = false;
+        }
+        if (cmbBundledAnimations.getItemCount() > 0) {
+            cmbBundledAnimations.setSelectedIndex(0);
+            Timer timer = new Timer(350, e -> applySelectedBundledAnimation(0));
+            timer.setRepeats(false);
+            timer.start();
+        }
+    }
+
+    private void applySelectedBundledAnimation() {
+        applySelectedBundledAnimation(0);
+    }
+
+    private void applySelectedBundledAnimation(int retryCount) {
+        if (updatingBundledAnimationCombo || app == null || !modelPreviewLoaded) {
+            return;
+        }
+        Object selected = cmbBundledAnimations == null ? null : cmbBundledAnimations.getSelectedItem();
+        String clipName = selected == null ? "" : selected.toString().trim();
+        if (clipName.isEmpty()) {
+            return;
+        }
+
+        String entityName = previewEntityName;
+        if ((entityName == null || entityName.trim().isEmpty()) && app.getSelectionManager() != null
+                && app.getSelectionManager().getSelected() != null) {
+            entityName = app.getSelectionManager().getSelected().getName();
+        }
+        if (entityName == null || entityName.trim().isEmpty()) {
+            lblBundledAnimationStatus.setText("Preview model is still loading; select the animation again in a moment.");
+            if (retryCount < 5) {
+                Timer timer = new Timer(350, e -> applySelectedBundledAnimation(retryCount + 1));
+                timer.setRepeats(false);
+                timer.start();
+            }
+            return;
+        }
+
+        String command = entityName + ".\"" + escapeSceneMaxString(clipName) + "\"";
+        app.enqueue(() -> {
+            app.runPartialCode(command, null, false);
+            return null;
+        });
+        lblBundledAnimationStatus.setText("Previewing bundled animation: " + clipName);
+    }
+
+    private String escapeSceneMaxString(String value) {
+        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     // =====================================================================
@@ -1133,6 +1329,7 @@ public class Import3DModelPanel extends DesignerPanel {
                 resSetup.capsuleRadius = capsuleRadius;
                 resSetup.capsuleHeight = capsuleHeight;
                 resSetup.stepHeight = stepHeight;
+                resSetup.isStatic = isStatic;
             }
         }
     }
@@ -1169,16 +1366,16 @@ public class Import3DModelPanel extends DesignerPanel {
         if (selectedFileDestDir != null) {
             File modelDir = new File(selectedFileDestDir);
             if (modelDir.exists()) {
-                try {
-                    FileUtils.deleteDirectory(modelDir);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+                deleteDirectoryAfterPreviewRelease(modelDir);
             }
         }
 
         deletePendingMarker();
         modelPreviewLoaded = false;
+        previewEntityName = null;
+        importedModelFilePath = null;
+        animationInspectionPath = null;
+        resetBundledAnimations("Select a model to inspect bundled animations.");
     }
 
     /**
@@ -1217,12 +1414,77 @@ public class Import3DModelPanel extends DesignerPanel {
         }
 
         if (destDir.exists()) {
+            deleteDirectoryAfterPreviewRelease(destDir);
+        }
+    }
+
+    private void deleteDirectoryAfterPreviewRelease(File dir) {
+        if (dir == null || !dir.exists()) {
+            return;
+        }
+
+        IOException lastError = null;
+        for (int attempt = 1; attempt <= 5; attempt++) {
             try {
-                FileUtils.deleteDirectory(destDir);
+                FileUtils.deleteDirectory(dir);
+                return;
             } catch (IOException e) {
-                e.printStackTrace();
+                lastError = e;
+                System.gc();
+                sleepQuietly(150L * attempt);
             }
         }
+
+        final IOException finalError = lastError;
+        SwingWorker<Void, Void> deleteWorker = new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() {
+                for (int attempt = 1; attempt <= 20; attempt++) {
+                    if (!dir.exists()) {
+                        return null;
+                    }
+                    try {
+                        FileUtils.deleteDirectory(dir);
+                        return null;
+                    } catch (IOException ignored) {
+                        System.gc();
+                        sleepQuietly(250L);
+                    }
+                }
+                markDirectoryDeleteOnExit(dir);
+                System.err.println("[Import3DModelPanel] Could not delete preview model directory yet: "
+                        + dir.getAbsolutePath()
+                        + (finalError == null ? "" : " (" + finalError.getMessage() + ")")
+                        + ". It was marked for deletion on JVM exit.");
+                return null;
+            }
+        };
+        deleteWorker.execute();
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static void markDirectoryDeleteOnExit(File dir) {
+        if (dir == null || !dir.exists()) {
+            return;
+        }
+        File[] children = dir.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                if (child.isDirectory()) {
+                    markDirectoryDeleteOnExit(child);
+                } else {
+                    child.deleteOnExit();
+                }
+            }
+        }
+        dir.deleteOnExit();
     }
 
     /**

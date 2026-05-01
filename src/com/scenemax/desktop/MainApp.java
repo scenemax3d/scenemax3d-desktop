@@ -37,6 +37,7 @@ import com.scenemax.desktop.ai.gemma.service.LocalGemmaHttpService;
 import com.scenemax.desktop.ai.mcp.SceneMaxMcpHttpServer;
 import com.scenemax.desktop.ai.mcp.SceneMaxMcpLogEntry;
 import com.scenemax.desktop.ai.mcp.SceneMaxMcpServer;
+import com.scenemax.desktop.plugins.IdePluginHostContext;
 import com.scenemaxeng.common.ui.model.UIDocument;
 import com.scenemaxeng.common.ui.model.UIWidgetDef;
 import com.scenemaxeng.compiler.ApplyMacroResults;
@@ -150,6 +151,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private final java.util.List<SceneMaxMcpLogEntry> mcpLogEntries = Collections.synchronizedList(new ArrayList<>());
     private McpLogDialog mcpLogDialog;
     private AiConsoleDialog aiConsoleDialog;
+    private IdePluginHostContext pluginHostContext;
+    private final java.util.List<ISceneMaxPlugin> enhancedPlugins = new ArrayList<>();
     // (Designer panels are managed per-tab inside EditorTabPanel)
 
     private static final class AutomationRunSource {
@@ -374,6 +377,21 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         ISceneMaxPlugin plugin = PluginsManager.loadPlugin("gemini_integration", new GeminiAiIntegrationObserver(this), true);
         if (plugin != null) {
             plugin.start();
+        }
+
+        pluginHostContext = new IdePluginHostContext(this);
+        for (JSONObject pluginMd : PluginsManager.getActiveEnhancedPlugins()) {
+            String name = pluginMd.optString("name", "");
+            if (name.isEmpty()) {
+                continue;
+            }
+            ISceneMaxPlugin enhancedPlugin = PluginsManager.loadPlugin(name, new PluginBase(), false);
+            if (enhancedPlugin == null) {
+                continue;
+            }
+            enhancedPlugin.initialize(pluginHostContext);
+            enhancedPlugin.start();
+            enhancedPlugins.add(enhancedPlugin);
         }
     }
 
@@ -2935,6 +2953,65 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         btnRunScript.setEnabled(false);
     }
 
+    public void openImport3DModelPreview(File sourceFile, String displayLabel, String defaultName,
+                                         File tempRootToDelete, java.util.function.Consumer<Boolean> onClose) {
+        openImport3DModelPreview(sourceFile, displayLabel, defaultName, tempRootToDelete, false, onClose);
+    }
+
+    public void openImport3DModelPreview(File sourceFile, String displayLabel, String defaultName,
+                                         File tempRootToDelete, boolean staticModel,
+                                         java.util.function.Consumer<Boolean> onClose) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> openImport3DModelPreview(
+                    sourceFile,
+                    displayLabel,
+                    defaultName,
+                    tempRootToDelete,
+                    staticModel,
+                    onClose
+            ));
+            return;
+        }
+
+        String projectPath = null;
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject != null) {
+            projectPath = activeProject.path;
+        }
+
+        String resourcesFolder = Util.getResourcesFolder();
+        String scriptsFolder = Util.getScriptsFolder();
+        File tmpDir = new File(scriptsFolder + "/tmp");
+        if (!tmpDir.exists()) {
+            tmpDir.mkdirs();
+        }
+        File tmpDesignerFile = new File(tmpDir, "_plugin_model_preview_" + System.currentTimeMillis() + ".smdesign");
+        String tabPath = tmpDesignerFile.getAbsolutePath();
+
+        String initialSketchfabToken = getParam("sketchfab_api_token", AppConfig.get("sketchfab_api_token"));
+        Import3DModelPanel importPanel = new Import3DModelPanel(
+                projectPath,
+                tmpDesignerFile,
+                resourcesFolder,
+                initialSketchfabToken,
+                token -> AppDB.getInstance().setParam("sketchfab_api_token", token)
+        );
+
+        importPanel.setOnCloseCallback(imported -> {
+            editorTabPanel.closeTabByPath(tabPath);
+            if (imported) {
+                refreshAssetsMenu();
+            }
+            if (onClose != null) {
+                onClose.accept(imported);
+            }
+        });
+
+        editorTabPanel.openDesignerFile(tabPath, importPanel);
+        importPanel.loadExternalModelSource(sourceFile, displayLabel, defaultName, tempRootToDelete, staticModel);
+        btnRunScript.setEnabled(false);
+    }
+
     private void openImportAnimationDocument() {
         SceneMaxProject activeProject = Util.getActiveProject();
         if (activeProject == null) {
@@ -3678,6 +3755,106 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
         mainToolbar.add(button);
         return button;
+    }
+
+    public void addPluginToolbarAction(SceneMaxPluginAction action, SceneMaxPluginContext context) {
+        SwingUtilities.invokeLater(() -> {
+            JButton button = new JButton();
+            button.setActionCommand(action.getId());
+            button.setToolTipText(action.getTooltip());
+            URL imageURL = null;
+            String iconPath = action.getIconResourcePath();
+            if (iconPath != null && !iconPath.trim().isEmpty()) {
+                imageURL = action.getClass().getResource(iconPath);
+            }
+            if (imageURL != null) {
+                button.setIcon(new ImageIcon(imageURL));
+            } else {
+                String label = action.getLabel();
+                button.setText(label == null || label.isEmpty() ? "Plugin" : label);
+            }
+            button.addActionListener(e -> action.perform(context));
+            button.setOpaque(false);
+            button.setContentAreaFilled(false);
+            button.setBorderPainted(false);
+            mainToolbar.add(button);
+            mainToolbar.revalidate();
+            mainToolbar.repaint();
+        });
+    }
+
+    public void addPluginMenuAction(String menuPath, SceneMaxPluginAction action, SceneMaxPluginContext context) {
+        SwingUtilities.invokeLater(() -> {
+            JMenu menu = findOrCreatePluginMenu(menuPath);
+            JMenuItem item = new JMenuItem(action.getLabel());
+            item.setToolTipText(action.getTooltip());
+            item.addActionListener(e -> action.perform(context));
+            menu.add(item);
+            menu.revalidate();
+            menu.repaint();
+        });
+    }
+
+    public void openPluginView(String tabId, String title, JComponent component) {
+        if (editorTabPanel == null || component == null) {
+            return;
+        }
+        SwingUtilities.invokeLater(() -> editorTabPanel.openPluginView(tabId, title, component));
+    }
+
+    private JMenu findOrCreatePluginMenu(String menuPath) {
+        String[] parts = menuPath == null || menuPath.trim().isEmpty()
+                ? new String[]{"Tools"}
+                : menuPath.split("/");
+        JMenuBar bar = getJMenuBar();
+        JMenu current = null;
+        for (int i = 0; i < parts.length; i++) {
+            String name = parts[i].trim();
+            if (name.isEmpty()) {
+                continue;
+            }
+            if (i == 0) {
+                current = findTopLevelMenu(bar, name);
+                if (current == null) {
+                    current = new JMenu(name);
+                    bar.add(current);
+                }
+            } else {
+                current = findChildMenu(current, name);
+            }
+        }
+        if (current == null) {
+            current = findTopLevelMenu(bar, "Tools");
+            if (current == null) {
+                current = new JMenu("Tools");
+                bar.add(current);
+            }
+        }
+        bar.revalidate();
+        bar.repaint();
+        return current;
+    }
+
+    private JMenu findTopLevelMenu(JMenuBar bar, String name) {
+        for (int i = 0; i < bar.getMenuCount(); i++) {
+            JMenu menu = bar.getMenu(i);
+            if (menu != null && name.equalsIgnoreCase(menu.getText())) {
+                return menu;
+            }
+        }
+        return null;
+    }
+
+    private JMenu findChildMenu(JMenu parent, String name) {
+        for (int i = 0; i < parent.getItemCount(); i++) {
+            JMenuItem item = parent.getItem(i);
+            if (item instanceof JMenu && name.equalsIgnoreCase(item.getText())) {
+                return (JMenu) item;
+            }
+        }
+        JMenu child = new JMenu(name);
+        parent.add(child);
+        return child;
     }
 
     private JButton addToolbarButton(String img, String actionCommand, String toolTipText) {
