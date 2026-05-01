@@ -28,6 +28,39 @@ public class PluginsManager {
         }
     }
 
+    public static synchronized boolean setPluginActive(String pluginName, boolean active) {
+        if (pluginName == null || pluginName.trim().isEmpty()) {
+            return false;
+        }
+
+        File pluginsDir = new File("plugins");
+        File index = new File(pluginsDir, "index.json");
+        JSONArray pluginsIndex = getPluginsIndex();
+        boolean changed = false;
+        for (Object it : pluginsIndex) {
+            JSONObject item = (JSONObject) it;
+            if (pluginName.equals(item.optString("name", ""))) {
+                if (item.optBoolean("active", true) != active) {
+                    item.put("active", active);
+                    changed = true;
+                }
+                break;
+            }
+        }
+
+        if (!changed) {
+            return false;
+        }
+
+        try {
+            FileUtils.writeStringToFile(index, pluginsIndex.toString(2), StandardCharsets.UTF_8);
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
     public static List<JSONObject> getActiveEnhancedPlugins() {
         List<JSONObject> plugins = new ArrayList<>();
         JSONArray pluginsIndex = getPluginsIndex();
@@ -57,6 +90,9 @@ public class PluginsManager {
 
         JSONObject pluginMd = PluginsManager.getSceneMax3dPlugin(pluginName);
         if (pluginMd == null) {
+            return null;
+        }
+        if (!pluginMd.optBoolean("active", true)) {
             return null;
         }
 

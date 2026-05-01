@@ -1,26 +1,24 @@
 [
   {
-    "name":  "ws",
     "fileName": "scenemax3d-internal-plugins.jar",
-    "className":  "com.scenemaxeng.plugins.InProcWebServerPlugin",
+    "name": "ws",
     "active": true,
+    "className": "com.scenemaxeng.plugins.InProcWebServerPlugin",
     "desc": "Enables REST API based communication to the engine in run-time"
   },
-
   {
-    "name":  "gemini_integration",
     "fileName": "scenemax3d-internal-plugins-ide.jar",
-    "className":  "com.scenemaxeng.plugins.ide.GeminiSceneMax3DIntegration",
-    "active": true,
+    "name": "gemini_integration",
+    "active": false,
+    "className": "com.scenemaxeng.plugins.ide.GeminiSceneMax3DIntegration",
     "desc": "Enables Google Gemini AI integration"
   },
-
   {
-    "name": "meshy_ai",
-    "fileName": "scenemax3d-internal-plugins-ide.jar",
-    "className": "com.scenemaxeng.plugins.ide.meshy.MeshySceneMax3DPlugin",
-    "active": true,
     "enhanced": true,
+    "fileName": "scenemax3d-internal-plugins-ide.jar",
+    "name": "meshy_ai",
+    "active": true,
+    "className": "com.scenemaxeng.plugins.ide.meshy.MeshySceneMax3DPlugin",
     "desc": "Adds Meshy AI model generation, task search, download and SceneMax asset import"
   }
 ]

@@ -617,6 +617,9 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     dlg.setVisible(true);
                 } else if (cmd.equals("show_ai_console")) {
                     showAiConsole();
+                } else if (cmd.equals("plugins")) {
+                    PluginsDialog dlg = new PluginsDialog(MainApp.this);
+                    dlg.setVisible(true);
                 } else if (cmd.equals("settings")) {
                     SettingsDialog dlg = new SettingsDialog(MainApp.this);
                     dlg.setSize(1120, 920);
@@ -5149,6 +5152,12 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     public void restartApplicationFromAutomation() {
+        javax.swing.Timer timer = new javax.swing.Timer(300, e -> restartApplication());
+        timer.setRepeats(false);
+        timer.start();
+    }
+
+    public void restartApplicationFromPluginManager() {
         javax.swing.Timer timer = new javax.swing.Timer(300, e -> restartApplication());
         timer.setRepeats(false);
         timer.start();
