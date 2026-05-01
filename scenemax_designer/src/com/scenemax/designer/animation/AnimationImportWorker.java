@@ -11,12 +11,12 @@ public class AnimationImportWorker {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
-            throw new IllegalArgumentException("Usage: inspect <source> <outputJson> OR import <source> <resources> <name> <outputJson>");
+            throw new IllegalArgumentException("Usage: inspect <source> <outputJson> OR import <source> <resources> <name> <outputJson> OR convert-model <source> <outputJ3o> OR convert-runtime-model <source> <outputDir> <name> <outputJson>");
         }
 
         String command = args[0];
-        AnimationImportResult result;
-        File outputFile;
+        AnimationImportResult result = null;
+        File outputFile = null;
         if ("inspect".equals(command)) {
             result = AnimationImporter.inspect(new File(args[1]));
             outputFile = new File(args[2]);
@@ -26,12 +26,24 @@ public class AnimationImportWorker {
             }
             result = AnimationImporter.importAnimation(new File(args[1]), new File(args[2]), args[3]);
             outputFile = new File(args[4]);
+        } else if ("convert-model".equals(command)) {
+            AnimationImporter.convertModelToJ3o(new File(args[1]), new File(args[2]));
+        } else if ("convert-runtime-model".equals(command)) {
+            if (args.length < 5) {
+                throw new IllegalArgumentException("Usage: convert-runtime-model <source> <outputDir> <name> <outputJson>");
+            }
+            File modelFile = AnimationImporter.convertModelForRuntime(new File(args[1]), new File(args[2]), args[3]);
+            JSONObject json = new JSONObject();
+            json.put("modelFile", modelFile.getAbsolutePath());
+            Files.write(new File(args[4]).toPath(), json.toString(2).getBytes(StandardCharsets.UTF_8));
         } else {
             throw new IllegalArgumentException("Unknown animation import command: " + command);
         }
 
-        JSONObject json = toJson(result);
-        Files.write(outputFile.toPath(), json.toString(2).getBytes(StandardCharsets.UTF_8));
+        if (outputFile != null) {
+            JSONObject json = toJson(result);
+            Files.write(outputFile.toPath(), json.toString(2).getBytes(StandardCharsets.UTF_8));
+        }
     }
 
     private static JSONObject toJson(AnimationImportResult result) {

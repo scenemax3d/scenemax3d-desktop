@@ -17,15 +17,16 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * Normalizes imported glTF/GLB assets by collapsing a single transformed
- * scene-root wrapper into its children. This strips common importer-added
- * axis-conversion wrappers before the asset is registered in the project.
+ * Normalizes imported glTF/GLB assets by collapsing static scene-root wrappers
+ * and by applying importer-specific runtime corrections where needed.
  */
 public final class ImportedModelNormalizer {
 
     private static final int GLB_MAGIC = 0x46546C67;
     private static final int GLB_JSON_CHUNK = 0x4E4F534A;
     private static final double IDENTITY_EPSILON = 1e-6;
+    private static final String FBX2GLTF_AXIS_CORRECTION_NODE_NAME = "SceneMax_FBX2glTF_AxisCorrection";
+    private static final double HALF_SQRT_TWO = 0.7071067811865476;
 
     private ImportedModelNormalizer() {
     }
@@ -45,6 +46,28 @@ public final class ImportedModelNormalizer {
         return Result.skipped("unsupported-extension");
     }
 
+    public static Result applyFbx2GltfAxisCorrection(Path modelPath) throws IOException {
+        if (modelPath == null || !Files.isRegularFile(modelPath)) {
+            return Result.skipped("missing-file");
+        }
+
+        String fileName = modelPath.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (fileName.endsWith(".glb")) {
+            return rewriteGlb(modelPath, "fbx2gltf-axis-correction",
+                    ImportedModelNormalizer::applyFbx2GltfAxisCorrection);
+        }
+        if (fileName.endsWith(".gltf")) {
+            String content = Files.readString(modelPath, StandardCharsets.UTF_8);
+            JSONObject gltf = new JSONObject(content);
+            if (!applyFbx2GltfAxisCorrection(gltf)) {
+                return Result.skipped("axis-correction-already-present");
+            }
+            Files.writeString(modelPath, gltf.toString(2), StandardCharsets.UTF_8);
+            return Result.normalized("fbx2gltf-axis-correction");
+        }
+        return Result.skipped("unsupported-extension");
+    }
+
     private static Result normalizeGltf(Path modelPath) throws IOException {
         String content = Files.readString(modelPath, StandardCharsets.UTF_8);
         JSONObject gltf = new JSONObject(content);
@@ -56,6 +79,10 @@ public final class ImportedModelNormalizer {
     }
 
     private static Result normalizeGlb(Path modelPath) throws IOException {
+        return rewriteGlb(modelPath, "glb-root-wrapper", ImportedModelNormalizer::normalizeRootWrappers);
+    }
+
+    private static Result rewriteGlb(Path modelPath, String normalizedReason, GltfMutation mutation) throws IOException {
         byte[] bytes = Files.readAllBytes(modelPath);
         if (bytes.length < 20) {
             return Result.skipped("glb-too-small");
@@ -91,7 +118,7 @@ public final class ImportedModelNormalizer {
 
         String jsonText = new String(trimJsonPadding(jsonData), StandardCharsets.UTF_8);
         JSONObject gltf = new JSONObject(jsonText);
-        if (!normalizeRootWrappers(gltf)) {
+        if (!mutation.mutate(gltf)) {
             return Result.skipped("no-wrapper-transform");
         }
 
@@ -113,10 +140,66 @@ public final class ImportedModelNormalizer {
             out.put(chunkData);
         }
         Files.write(modelPath, out.array());
-        return Result.normalized("glb-root-wrapper");
+        return Result.normalized(normalizedReason);
+    }
+
+    private static boolean applyFbx2GltfAxisCorrection(JSONObject gltf) {
+        JSONArray scenes = gltf.optJSONArray("scenes");
+        JSONArray nodes = gltf.optJSONArray("nodes");
+        if (scenes == null || nodes == null) {
+            return false;
+        }
+
+        boolean changed = false;
+        for (int i = 0; i < scenes.length(); i++) {
+            JSONObject scene = scenes.optJSONObject(i);
+            JSONArray sceneNodes = scene != null ? scene.optJSONArray("nodes") : null;
+            if (sceneNodes == null || sceneNodes.length() == 0) {
+                continue;
+            }
+
+            if (sceneNodes.length() == 1) {
+                JSONObject root = nodes.optJSONObject(sceneNodes.optInt(0, -1));
+                if (isFbx2GltfAxisCorrectionNode(root)) {
+                    continue;
+                }
+            }
+
+            JSONArray children = new JSONArray();
+            for (int j = 0; j < sceneNodes.length(); j++) {
+                int nodeIndex = sceneNodes.optInt(j, -1);
+                if (nodeIndex < 0 || nodeIndex >= nodes.length()) {
+                    return changed;
+                }
+                children.put(nodeIndex);
+            }
+
+            JSONObject wrapper = new JSONObject();
+            wrapper.put("name", FBX2GLTF_AXIS_CORRECTION_NODE_NAME);
+            wrapper.put("rotation", new JSONArray()
+                    .put(HALF_SQRT_TWO)
+                    .put(0.0)
+                    .put(0.0)
+                    .put(HALF_SQRT_TWO));
+            wrapper.put("children", children);
+
+            int wrapperIndex = nodes.length();
+            nodes.put(wrapper);
+            scene.put("nodes", new JSONArray().put(wrapperIndex));
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static boolean isFbx2GltfAxisCorrectionNode(JSONObject node) {
+        return node != null && FBX2GLTF_AXIS_CORRECTION_NODE_NAME.equals(node.optString("name", ""));
     }
 
     private static boolean normalizeRootWrappers(JSONObject gltf) {
+        if (hasEntries(gltf, "skins") || hasEntries(gltf, "animations")) {
+            return false;
+        }
+
         JSONArray scenes = gltf.optJSONArray("scenes");
         JSONArray nodes = gltf.optJSONArray("nodes");
         if (scenes == null || nodes == null || nodes.length() == 0) {
@@ -138,6 +221,11 @@ public final class ImportedModelNormalizer {
         } while (passChanged);
 
         return changed;
+    }
+
+    private static boolean hasEntries(JSONObject gltf, String key) {
+        JSONArray array = gltf.optJSONArray(key);
+        return array != null && array.length() > 0;
     }
 
     private static boolean normalizeSceneRootWrapper(JSONObject gltf, JSONArray nodes, JSONObject scene,
@@ -446,6 +534,10 @@ public final class ImportedModelNormalizer {
             this.type = type;
             this.data = data;
         }
+    }
+
+    private interface GltfMutation {
+        boolean mutate(JSONObject gltf);
     }
 
     public static final class Result {

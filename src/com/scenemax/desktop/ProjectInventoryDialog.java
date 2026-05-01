@@ -18,6 +18,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -94,6 +95,8 @@ class ProjectInventoryPanel extends JPanel {
     private final JLabel audioLabel = new JLabel("", SwingConstants.CENTER);
     private final JButton playAudioButton = new JButton("Play");
     private final JButton stopAudioButton = new JButton("Stop");
+    private final JButton openFolderButton = new JButton("Open Folder");
+    private final JButton deleteAssetButton = new JButton("Delete");
 
     private InventoryModelPreview previewApp;
     private Canvas previewCanvas;
@@ -201,7 +204,17 @@ class ProjectInventoryPanel extends JPanel {
 
         JLabel previewTitle = new JLabel("Preview");
         previewTitle.setFont(previewTitle.getFont().deriveFont(Font.BOLD, 14f));
-        details.add(previewTitle, BorderLayout.NORTH);
+        JPanel header = new JPanel(new BorderLayout(8, 0));
+        header.add(previewTitle, BorderLayout.WEST);
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        openFolderButton.setEnabled(false);
+        openFolderButton.addActionListener(e -> openSelectedAssetFolder());
+        deleteAssetButton.setEnabled(false);
+        deleteAssetButton.addActionListener(e -> deleteSelectedAsset());
+        actions.add(openFolderButton);
+        actions.add(deleteAssetButton);
+        header.add(actions, BorderLayout.EAST);
+        details.add(header, BorderLayout.NORTH);
 
         previewPanel.setPreferredSize(new Dimension(320, 240));
         previewPanel.setBorder(BorderFactory.createLineBorder(UIManager.getColor("Separator.foreground")));
@@ -293,10 +306,14 @@ class ProjectInventoryPanel extends JPanel {
         stopAudio();
         propertiesTableModel.setAsset(asset);
         if (asset == null) {
+            openFolderButton.setEnabled(false);
+            deleteAssetButton.setEnabled(false);
             textPreview.setText("No asset selected.");
             previewCards.show(previewPanel, "text");
             return;
         }
+        openFolderButton.setEnabled(resolveAssetFolder(asset) != null);
+        deleteAssetButton.setEnabled(canDelete(asset));
 
         if (CATEGORY_MODELS.equals(asset.category)) {
             showModelPreview(asset);
@@ -358,6 +375,179 @@ class ProjectInventoryPanel extends JPanel {
         textPreview.setText(sb.toString());
         textPreview.setCaretPosition(0);
         previewCards.show(previewPanel, "text");
+    }
+
+    private void openSelectedAssetFolder() {
+        File folder = resolveAssetFolder(selectedAsset);
+        if (folder == null || !folder.isDirectory()) {
+            JOptionPane.showMessageDialog(this, "The selected asset folder could not be found.",
+                    "Open Folder", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        try {
+            Desktop.getDesktop().open(folder);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Could not open folder:\n" + folder.getAbsolutePath()
+                            + "\n\n" + ex.getMessage(),
+                    "Open Folder", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private File resolveAssetFolder(InventoryAsset asset) {
+        if (asset == null || asset.file == null) {
+            return null;
+        }
+        if (asset.file.isDirectory()) {
+            return asset.file;
+        }
+        File parent = asset.file.getParentFile();
+        return parent != null && parent.isDirectory() ? parent : null;
+    }
+
+    private void deleteSelectedAsset() {
+        InventoryAsset asset = selectedAsset;
+        if (!canDelete(asset)) {
+            JOptionPane.showMessageDialog(this, "Only project assets can be deleted from the inventory.",
+                    "Delete Asset", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        File deleteTarget = deleteTargetFor(asset);
+        String targetText = deleteTarget == null ? asset.name : deleteTarget.getAbsolutePath();
+        int choice = JOptionPane.showConfirmDialog(this,
+                "Delete asset \"" + asset.name + "\"?\n\n" + targetText,
+                "Delete Asset", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (choice != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        try {
+            stopAudio();
+            if (previewApp != null) {
+                previewApp.clearPreview();
+            }
+            removeIndexedAsset(asset);
+            deleteAssetFiles(deleteTarget);
+            File thumbnail = getCachedThumbnailFile(asset);
+            if (thumbnail.isFile()) {
+                Files.deleteIfExists(thumbnail.toPath());
+            }
+            refreshInventory();
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Could not delete asset:\n" + ex.getMessage(),
+                    "Delete Asset", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private boolean canDelete(InventoryAsset asset) {
+        if (asset == null || asset.file == null) {
+            return false;
+        }
+        if (!"Project".equals(asset.source) && !"Designer".equals(asset.source)) {
+            return false;
+        }
+        return isInsideActiveProject(asset.file);
+    }
+
+    private boolean isInsideActiveProject(File file) {
+        SceneMaxProject project = Util.getActiveProject();
+        if (project == null || project.path == null || file == null) {
+            return false;
+        }
+        try {
+            Path projectRoot = new File(project.path).getCanonicalFile().toPath();
+            Path candidate = file.getCanonicalFile().toPath();
+            return candidate.startsWith(projectRoot);
+        } catch (IOException ex) {
+            return false;
+        }
+    }
+
+    private File deleteTargetFor(InventoryAsset asset) {
+        if (asset == null || asset.file == null) {
+            return null;
+        }
+        if (asset.file.isDirectory()) {
+            return asset.file;
+        }
+        if (asset.resourceRoot != null && asset.path != null) {
+            File parent = asset.file.getParentFile();
+            File root = asset.resourceRoot;
+            if (parent != null && parent.getParentFile() != null
+                    && parent.getParentFile().equals(new File(root, topLevelFolder(asset.category)))) {
+                return parent;
+            }
+        }
+        return asset.file;
+    }
+
+    private String topLevelFolder(String category) {
+        if (CATEGORY_MODELS.equals(category)) return "Models";
+        if (CATEGORY_ANIMATIONS.equals(category)) return "animations";
+        if (CATEGORY_AUDIO.equals(category)) return "audio";
+        if (CATEGORY_SPRITES.equals(category)) return "sprites";
+        if (CATEGORY_FONTS.equals(category)) return "fonts";
+        if (CATEGORY_SHADERS.equals(category)) return "shaders";
+        if (CATEGORY_MATERIALS.equals(category)) return "material";
+        if (CATEGORY_EFFECTS.equals(category)) return "effects";
+        if (CATEGORY_SKYBOXES.equals(category)) return "skyboxes";
+        if (CATEGORY_TERRAIN.equals(category)) return "terrain";
+        return "";
+    }
+
+    private void removeIndexedAsset(InventoryAsset asset) throws IOException {
+        if (asset == null || asset.indexFile == null || asset.arrayKey == null || !asset.indexFile.isFile()) {
+            return;
+        }
+        JSONObject json = new JSONObject(Util.readFile(asset.indexFile));
+        JSONArray array = json.optJSONArray(asset.arrayKey);
+        if (array == null) {
+            return;
+        }
+        for (int i = array.length() - 1; i >= 0; i--) {
+            JSONObject obj = array.optJSONObject(i);
+            if (obj != null && matchesIndexedAsset(asset, obj)) {
+                array.remove(i);
+            }
+        }
+        Files.writeString(asset.indexFile.toPath(), json.toString(2));
+    }
+
+    private boolean matchesIndexedAsset(InventoryAsset asset, JSONObject obj) {
+        String name = obj.optString("name", "");
+        String path = primaryIndexedPath(obj, asset.category);
+        return (!name.isBlank() && name.equalsIgnoreCase(asset.name))
+                || (!path.isBlank() && path.replace('\\', '/').equalsIgnoreCase(asset.path));
+    }
+
+    private String primaryIndexedPath(JSONObject obj, String category) {
+        if (obj.has("path")) {
+            return obj.optString("path", "");
+        }
+        if (CATEGORY_SKYBOXES.equals(category)) {
+            return obj.optString("back", obj.optString("front", ""));
+        }
+        if (CATEGORY_TERRAIN.equals(category)) {
+            return obj.optString("HeightMap", obj.optString("Alpha", ""));
+        }
+        return "";
+    }
+
+    private void deleteAssetFiles(File target) throws IOException {
+        if (target == null || !target.exists()) {
+            return;
+        }
+        if (target.isDirectory()) {
+            try (java.util.stream.Stream<Path> stream = Files.walk(target.toPath())) {
+                List<Path> paths = stream.sorted(Comparator.reverseOrder())
+                        .collect(java.util.stream.Collectors.toList());
+                for (Path path : paths) {
+                    Files.deleteIfExists(path);
+                }
+            }
+        } else {
+            Files.deleteIfExists(target.toPath());
+        }
     }
 
     private void ensurePreviewApp() {
@@ -659,6 +849,8 @@ class ProjectInventoryPanel extends JPanel {
         final String path;
         final File file;
         final File resourceRoot;
+        File indexFile;
+        String arrayKey;
         final Map<String, String> properties = new LinkedHashMap<>();
 
         InventoryAsset(String category, String name, String source, String path, File file, File resourceRoot) {
@@ -776,6 +968,8 @@ class ProjectInventoryPanel extends JPanel {
                     String path = primaryPath(obj, category);
                     File file = path == null || path.isBlank() ? null : new File(root, path.replace('/', File.separatorChar));
                     InventoryAsset asset = new InventoryAsset(category, name, source, path, file, root);
+                    asset.indexFile = index;
+                    asset.arrayKey = arrayKey;
                     copyJsonProperties(asset, obj);
                     add(asset);
                 }

@@ -44,22 +44,11 @@ public class AppModelAnimationController implements AnimEventListener {
             this.animationName = animationName;
             this.appModel = m;
 
-            if(m.resource.isJ3O()) {
-                AnimControl control = m.getAnimControl();
-                control.addListener(this);
-                AnimChannel channel = m.getChannel();
-                channel.reset(false);
-                channel.setAnim(animationName);
-                channel.setLoopMode(LoopMode.DontLoop);
-                Float animSpeed = Float.parseFloat(speed);
-                channel.setSpeed(animSpeed);
-
-            } else {
-                AnimComposer composer = m.getAnimComposer();
-                if (composer == null) {
-                    return;
-                }
-
+            AnimComposer composer = m.getAnimComposer();
+            if (composer == null && m.resource != null && m.resource.isJ3O()) {
+                composer = m.getOrCreateAnimComposerForSkinningControl();
+            }
+            if (composer != null) {
                 boolean attachedExternal = m.attachExternalAnimation(hostController.app.getAssetManager(), hostController.app.getAssetsMapping(), animationName);
                 Action ac = composer.getAction(animationName);
                 if (ac == null && !attachedExternal && !composer.hasAnimClip(animationName)) {
@@ -93,6 +82,34 @@ public class AppModelAnimationController implements AnimEventListener {
                     }
 
                 }
+
+            } else if(m.resource.isJ3O()) {
+                AnimControl control = m.getAnimControl();
+                if (control == null) {
+                    if (m.getSkinningControl() == null) {
+                        System.out.println("Animation target has no AnimComposer, SkinningControl, or AnimControl: "
+                                + animationName + ". Imported animations require a rigged/skinned model.");
+                    } else {
+                        System.out.println("Animation control not found for J3O model: " + animationName);
+                    }
+                    animationFinished = true;
+                    return;
+                }
+                control.addListener(this);
+                AnimChannel channel = m.getChannel();
+                if (channel == null) {
+                    System.out.println("Animation channel could not be created for J3O model: " + animationName);
+                    animationFinished = true;
+                    return;
+                }
+                channel.reset(false);
+                channel.setAnim(animationName);
+                channel.setLoopMode(LoopMode.DontLoop);
+                Float animSpeed = Float.parseFloat(speed);
+                channel.setSpeed(animSpeed);
+
+            } else {
+                animationFinished = true;
             }
 
         } catch(Exception e) {

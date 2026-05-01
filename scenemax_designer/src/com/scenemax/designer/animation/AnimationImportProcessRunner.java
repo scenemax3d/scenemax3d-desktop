@@ -35,6 +35,28 @@ public class AnimationImportProcessRunner {
         }
     }
 
+    public static void convertModelToJ3o(File sourceFile, File outputFile) throws IOException {
+        runWorker("convert-model", sourceFile.getAbsolutePath(), outputFile.getAbsolutePath());
+        if (!outputFile.isFile()) {
+            throw new IOException("Model import worker did not create output file: " + outputFile.getAbsolutePath());
+        }
+    }
+
+    public static File convertModelForRuntime(File sourceFile, File outputDir, String modelName) throws IOException {
+        File outputFile = File.createTempFile("scenemax-model-import-", ".json");
+        try {
+            runWorker("convert-runtime-model", sourceFile.getAbsolutePath(), outputDir.getAbsolutePath(), modelName, outputFile.getAbsolutePath());
+            JSONObject json = new JSONObject(FileUtils.readFileToString(outputFile, StandardCharsets.UTF_8));
+            File modelFile = new File(json.getString("modelFile"));
+            if (!modelFile.isFile()) {
+                throw new IOException("Model import worker did not create output file: " + modelFile.getAbsolutePath());
+            }
+            return modelFile;
+        } finally {
+            FileUtils.deleteQuietly(outputFile);
+        }
+    }
+
     private static void runWorker(String... args) throws IOException {
         List<String> command = new ArrayList<>();
         command.add(javaExecutable());

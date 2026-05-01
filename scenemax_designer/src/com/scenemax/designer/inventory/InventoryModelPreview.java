@@ -95,6 +95,10 @@ public class InventoryModelPreview {
         app.previewModel(path, properties);
     }
 
+    public void clearPreview() {
+        app.clearPreview();
+    }
+
     private static class PreviewApp extends SceneMaxApp {
         private static final String ACTION_ORBIT = "InventoryPreviewOrbit";
         private static final String ACTION_SCROLL_UP = "InventoryPreviewScrollUp";
@@ -135,6 +139,7 @@ public class InventoryModelPreview {
 
             viewPort.setBackgroundColor(new ColorRGBA(0.05f, 0.065f, 0.08f, 1f));
             flyCam.setEnabled(false);
+            inputManager.setCursorVisible(true);
             setDisplayFps(false);
             setDisplayStatView(false);
 
@@ -196,6 +201,13 @@ public class InventoryModelPreview {
             });
         }
 
+        void clearPreview() {
+            enqueue(() -> {
+                showFallbackBox();
+                return null;
+            });
+        }
+
         private void loadModel(String path, Map<String, String> properties) {
             previewRoot.detachAllChildren();
             previewRoot.setLocalRotation(Quaternion.IDENTITY);
@@ -223,7 +235,11 @@ public class InventoryModelPreview {
 
         private void showFallbackBox() {
             previewRoot.detachAllChildren();
-            previewSpatial = new Geometry("InventoryPreviewFallback", new Box(1f, 1f, 1f));
+            Geometry fallback = new Geometry("InventoryPreviewFallback", new Box(1f, 1f, 1f));
+            Material material = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+            material.setColor("Color", new ColorRGBA(0.35f, 0.48f, 0.68f, 1f));
+            fallback.setMaterial(material);
+            previewSpatial = fallback;
             previewRoot.attachChild(previewSpatial);
             fitCamera();
         }
