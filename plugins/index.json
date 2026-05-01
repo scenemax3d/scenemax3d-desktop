@@ -13,5 +13,14 @@
     "className":  "com.scenemaxeng.plugins.ide.GeminiSceneMax3DIntegration",
     "active": true,
     "desc": "Enables Google Gemini AI integration"
+  },
+
+  {
+    "name": "meshy_ai",
+    "fileName": "scenemax3d-internal-plugins-ide.jar",
+    "className": "com.scenemaxeng.plugins.ide.meshy.MeshySceneMax3DPlugin",
+    "active": true,
+    "enhanced": true,
+    "desc": "Adds Meshy AI model generation, task search, download and SceneMax asset import"
   }
 ]

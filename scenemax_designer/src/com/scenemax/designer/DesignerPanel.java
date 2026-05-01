@@ -1693,6 +1693,9 @@ public class DesignerPanel extends JPanel {
     }
 
     private void updateLoadingProgress(int loaded, int total) {
+        if (loadingOverlay == null || loadingProgressBar == null || loadingLabel == null) {
+            return;
+        }
         if (total <= 0) {
             // No entities to load — hide immediately
             loadingOverlay.setVisible(false);

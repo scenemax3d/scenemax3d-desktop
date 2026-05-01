@@ -950,16 +950,16 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     /** Creates a 3D model using SceneMax language: name => [static|dynamic] resourceName : pos (x,y,z) */
-    public void addModel(String resourceName, boolean isStatic) {
-        addModel(resourceName, isStatic, false, false);
+    public String addModel(String resourceName, boolean isStatic) {
+        return addModel(resourceName, isStatic, false, false);
     }
 
-    public void addModel(String resourceName, boolean isStatic, boolean isDynamic, boolean isVehicle) {
-        addModel(resourceName, isStatic, isDynamic, isVehicle, null, -1);
+    public String addModel(String resourceName, boolean isStatic, boolean isDynamic, boolean isVehicle) {
+        return addModel(resourceName, isStatic, isDynamic, isVehicle, null, -1);
     }
 
     /** Creates a 3D model at a specific position in a target list. */
-    public void addModel(String resourceName, boolean isStatic, boolean isDynamic, boolean isVehicle,
+    public String addModel(String resourceName, boolean isStatic, boolean isDynamic, boolean isVehicle,
                          List<DesignerEntity> targetList, int insertIndex) {
         String name = "model_" + (++modelCounter);
         String prefix = isStatic ? "static " : isDynamic ? "dynamic " : "";
@@ -976,6 +976,7 @@ public class DesignerApp extends SceneMaxApp {
                 pe.savedScale = new Vector3f(res.scaleX, res.scaleY, res.scaleZ);
             }
         }
+        return name;
     }
 
     private void addDesignerNativePrimitive(DesignerEntity entity, Vector3f initialPos,
@@ -3239,7 +3240,21 @@ public class DesignerApp extends SceneMaxApp {
      */
     public void removePreviewEntities(String resourceName, String assetPath) {
         // Cancel any still-pending load for this resource
-        pendingEntities.removeIf(pe -> resourceName.equalsIgnoreCase(pe.resourcePath));
+        Iterator<PendingEntity> pendingIterator = pendingEntities.iterator();
+        while (pendingIterator.hasNext()) {
+            PendingEntity pe = pendingIterator.next();
+            if (resourceName.equalsIgnoreCase(pe.resourcePath)) {
+                if (pe.loadingGizmo != null) {
+                    pe.loadingGizmo.removeFromParent();
+                    pe.loadingGizmo = null;
+                }
+                Spatial pendingNode = rootNode.getChild(pe.nodeName);
+                if (pendingNode != null) {
+                    pendingNode.removeFromParent();
+                }
+                pendingIterator.remove();
+            }
+        }
 
         // Remove any already-loaded scene entities for this resource
         for (DesignerEntity entity : new ArrayList<>(entities)) {

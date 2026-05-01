@@ -47,6 +47,9 @@ public class EditorTabPanel extends JPanel {
         MaterialDesignerPanel materialDesignerPanel;
         boolean isAnimationImportTab;
         ImportAnimationPanel animationImportPanel;
+        boolean isPluginViewTab;
+        JComponent pluginViewComponent;
+        String displayTitle;
 
         public TabData(String filePath, String content) {
             this.filePath = filePath;
@@ -68,9 +71,15 @@ public class EditorTabPanel extends JPanel {
             this.materialDesignerPanel = null;
             this.isAnimationImportTab = false;
             this.animationImportPanel = null;
+            this.isPluginViewTab = false;
+            this.pluginViewComponent = null;
+            this.displayTitle = null;
         }
 
         public String getFileName() {
+            if (displayTitle != null && !displayTitle.isEmpty()) {
+                return displayTitle;
+            }
             return new File(filePath).getName();
         }
     }
@@ -176,6 +185,8 @@ public class EditorTabPanel extends JPanel {
                 name = "\u25C8 " + name;
             } else if (tabData.isAnimationImportTab) {
                 name = "\u25B6 " + name;
+            } else if (tabData.isPluginViewTab) {
+                name = "\u25A3 " + name;
             }
             titleLabel.setText(name);
         }
@@ -491,6 +502,39 @@ public class EditorTabPanel extends JPanel {
         switchToTab(tabData);
     }
 
+    public void openPluginView(String tabId, String title, JComponent component) {
+        String normalizedPath = new File(tabId).getAbsolutePath();
+
+        if (tabButtons.containsKey(normalizedPath)) {
+            TabData existing = null;
+            for (TabData td : tabs) {
+                if (td.filePath.equals(normalizedPath)) {
+                    existing = td;
+                    break;
+                }
+            }
+            if (existing != null) {
+                switchToTab(existing);
+                return;
+            }
+        }
+
+        TabData tabData = new TabData(normalizedPath, "");
+        tabData.isPluginViewTab = true;
+        tabData.pluginViewComponent = component;
+        tabData.displayTitle = title;
+        tabs.add(tabData);
+
+        TabButton btn = new TabButton(tabData);
+        btn.updateTitle();
+        tabButtons.put(normalizedPath, btn);
+        tabBar.add(btn);
+        tabBar.revalidate();
+        tabBar.repaint();
+
+        switchToTab(tabData);
+    }
+
     public void switchToTab(TabData newTab) {
         if (newTab == activeTab) return;
 
@@ -541,6 +585,10 @@ public class EditorTabPanel extends JPanel {
         } else if (newTab.isAnimationImportTab) {
             if (newTab.animationImportPanel != null) {
                 centerContainer.add(newTab.animationImportPanel, BorderLayout.CENTER);
+            }
+        } else if (newTab.isPluginViewTab) {
+            if (newTab.pluginViewComponent != null) {
+                centerContainer.add(newTab.pluginViewComponent, BorderLayout.CENTER);
             }
         } else {
             // Show the code editor
@@ -695,6 +743,8 @@ public class EditorTabPanel extends JPanel {
             }
         } else if (tabData.isAnimationImportTab) {
             // No shared JME context to deactivate.
+        } else if (tabData.isPluginViewTab) {
+            // Plugin view tabs own their component lifecycle.
         } else {
             // Auto-save if dirty
             if (tabData.dirty) {
