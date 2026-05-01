@@ -14,10 +14,15 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
+import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.table.AbstractTableModel;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.BorderLayout;
 import java.awt.Canvas;
@@ -25,6 +30,8 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
@@ -43,6 +50,9 @@ public class ImportAnimationPanel extends JPanel {
     private JTextArea txtPreview;
     private JButton btnInspect;
     private JButton btnImport;
+    private JButton btnRemove;
+    private JTable tblFiles;
+    private AnimationFilesTableModel filesTableModel;
     private JPanel previewCanvasContainer;
     private AnimationPreviewApp previewApp;
     private Canvas previewCanvas;
@@ -52,8 +62,10 @@ public class ImportAnimationPanel extends JPanel {
     private File selectedFile;
     private AnimationImportResult inspectedResult;
     private Consumer<Boolean> onCloseCallback;
+    private boolean updatingNameField;
     private final List<String> availableModelNames = new ArrayList<>();
     private final Map<String, ResourceSetup> modelResources = new HashMap<>();
+    private final List<BatchAnimationItem> animationItems = new ArrayList<>();
 
     public ImportAnimationPanel(File resourcesFolder) {
         super(new BorderLayout(8, 8));
@@ -70,27 +82,75 @@ public class ImportAnimationPanel extends JPanel {
         JPanel form = new JPanel();
         form.setLayout(new javax.swing.BoxLayout(form, javax.swing.BoxLayout.Y_AXIS));
         form.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        form.setPreferredSize(new Dimension(360, 0));
+        form.setPreferredSize(new Dimension(430, 0));
 
-        form.add(new JLabel("Animation file:"));
+        form.add(new JLabel("Animation files:"));
         txtFile = new JTextField();
         txtFile.setEditable(false);
         txtFile.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
         form.add(txtFile);
 
         JPanel fileButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 4));
-        JButton btnSelect = new JButton("Select File...");
+        JButton btnSelect = new JButton("Select Files...");
         btnSelect.addActionListener(e -> selectFile());
         btnInspect = new JButton("Preview");
         btnInspect.setEnabled(false);
         btnInspect.addActionListener(e -> inspectSelectedFile());
+        btnRemove = new JButton("Remove");
+        btnRemove.setEnabled(false);
+        btnRemove.addActionListener(e -> removeSelectedFile());
         fileButtons.add(btnSelect);
         fileButtons.add(btnInspect);
+        fileButtons.add(btnRemove);
         form.add(fileButtons);
+
+        filesTableModel = new AnimationFilesTableModel();
+        tblFiles = new JTable(filesTableModel);
+        tblFiles.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        tblFiles.setRowHeight(24);
+        tblFiles.getColumnModel().getColumn(0).setPreferredWidth(58);
+        tblFiles.getColumnModel().getColumn(1).setPreferredWidth(130);
+        tblFiles.getColumnModel().getColumn(2).setPreferredWidth(130);
+        tblFiles.getColumnModel().getColumn(3).setPreferredWidth(95);
+        tblFiles.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                selectCurrentTableRow();
+            }
+        });
+        JScrollPane filesScroll = new JScrollPane(tblFiles);
+        filesScroll.setPreferredSize(new Dimension(400, 190));
+        filesScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 220));
+        form.add(filesScroll);
 
         form.add(new JLabel("Runtime animation name:"));
         txtName = new JTextField();
         txtName.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+        txtName.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                updateSelectedItemName();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                updateSelectedItemName();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                updateSelectedItemName();
+            }
+        });
+        txtName.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent e) {
+                BatchAnimationItem item = selectedItem();
+                if (item != null && item.animationName.trim().isEmpty()) {
+                    item.animationName = uniqueAnimationName(sanitizeAssetId(stripExtension(item.sourceFile.getName())), item);
+                    refreshSelectedItem();
+                }
+            }
+        });
         form.add(txtName);
 
         JPanel importButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 8));
@@ -127,7 +187,7 @@ public class ImportAnimationPanel extends JPanel {
         txtPreview.setEditable(false);
         txtPreview.setLineWrap(true);
         txtPreview.setWrapStyleWord(true);
-        txtPreview.setText("Choose an FBX, DAE, BVH, GLB, GLTF, or another MonkeyWrench-supported file to inspect its animation clips.");
+        txtPreview.setText("Choose one or more FBX, DAE, BVH, GLB, GLTF, or another MonkeyWrench-supported files to inspect their animation clips.");
         JScrollPane previewScroll = new JScrollPane(txtPreview);
         previewScroll.setBorder(BorderFactory.createTitledBorder("Import Diagnostics"));
         previewScroll.setPreferredSize(new Dimension(640, 180));
@@ -144,8 +204,9 @@ public class ImportAnimationPanel extends JPanel {
     private void selectFile() {
         JFileChooser chooser = new JFileChooser();
         chooser.setCurrentDirectory(downloadsFolder());
-        chooser.setDialogTitle("Import Animation");
+        chooser.setDialogTitle("Import Animations");
         chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        chooser.setMultiSelectionEnabled(true);
         chooser.setFileFilter(new FileNameExtensionFilter(
                 "Animation/model files (*.fbx, *.dae, *.bvh, *.glb, *.gltf, *.blend, *.3ds)",
                 "fbx", "dae", "bvh", "glb", "gltf", "blend", "3ds", "3mf", "lwo", "obj", "ply", "stl"));
@@ -154,35 +215,62 @@ public class ImportAnimationPanel extends JPanel {
             return;
         }
 
-        selectedFile = chooser.getSelectedFile();
-        inspectedResult = null;
-        txtFile.setText(selectedFile.getAbsolutePath());
-        txtName.setText(sanitizeAssetId(stripExtension(selectedFile.getName())));
-        btnInspect.setEnabled(true);
-        btnImport.setEnabled(true);
+        File[] selectedFiles = chooser.getSelectedFiles();
+        if (selectedFiles == null || selectedFiles.length == 0) {
+            selectedFiles = new File[]{chooser.getSelectedFile()};
+        }
+
+        int firstNewRow = animationItems.size();
+        for (File file : selectedFiles) {
+            if (file == null) {
+                continue;
+            }
+            BatchAnimationItem existing = findItem(file);
+            if (existing != null) {
+                existing.importEnabled = true;
+                continue;
+            }
+            String baseName = sanitizeAssetId(stripExtension(file.getName()));
+            animationItems.add(new BatchAnimationItem(file, uniqueAnimationName(baseName, null)));
+        }
+        filesTableModel.fireTableDataChanged();
+        if (!animationItems.isEmpty()) {
+            tblFiles.setRowSelectionInterval(Math.min(firstNewRow, animationItems.size() - 1),
+                    Math.min(firstNewRow, animationItems.size() - 1));
+        }
+        updateBatchControls();
         inspectSelectedFile();
     }
 
     private void inspectSelectedFile() {
-        if (selectedFile == null) {
+        BatchAnimationItem item = selectedItem();
+        if (item == null) {
             return;
         }
+        stopTableEditing();
+        persistSelectedName();
 
+        selectedFile = item.sourceFile;
         setBusy(true, "Import preview is reading " + selectedFile.getName() + "...");
         new SwingWorker<AnimationImportResult, Void>() {
             @Override
             protected AnimationImportResult doInBackground() throws Exception {
-                return AnimationImportProcessRunner.inspect(selectedFile);
+                return AnimationImportProcessRunner.inspect(item.sourceFile);
             }
 
             @Override
             protected void done() {
                 try {
                     AnimationImportResult result = get();
+                    item.inspectedResult = result;
+                    item.status = "Previewed";
                     inspectedResult = result;
                     txtPreview.setText(formatPreview(result, false));
+                    refreshSelectedItem();
                     playAnimationPreview();
                 } catch (Exception ex) {
+                    item.status = "Preview failed";
+                    refreshSelectedItem();
                     txtPreview.setText("Preview failed:\n" + rootMessage(ex));
                 } finally {
                     setBusy(false, null);
@@ -194,6 +282,12 @@ public class ImportAnimationPanel extends JPanel {
     private void playAnimationPreview() {
         if (previewApp == null) {
             initPreview();
+        }
+        BatchAnimationItem item = selectedItem();
+        if (item != null) {
+            selectedFile = item.sourceFile;
+            inspectedResult = item.inspectedResult;
+            persistSelectedName();
         }
         ResourceSetup model = selectedPreviewModel();
         if (model == null) {
@@ -217,29 +311,61 @@ public class ImportAnimationPanel extends JPanel {
     }
 
     private void importSelectedFile() {
-        if (selectedFile == null) {
-            JOptionPane.showMessageDialog(this, "Please select an animation file first.", "Animation Import", JOptionPane.WARNING_MESSAGE);
+        stopTableEditing();
+        persistSelectedName();
+        List<BatchAnimationItem> itemsToImport = checkedItems();
+        if (itemsToImport.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please check at least one animation file to import.", "Animation Import", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
-        String name = txtName.getText().trim();
-        setBusy(true, "Importing " + selectedFile.getName() + "...");
-        new SwingWorker<AnimationImportResult, Void>() {
+        setBusy(true, "Importing " + itemsToImport.size() + " animation file(s)...");
+        new SwingWorker<List<BatchImportReport>, String>() {
             @Override
-            protected AnimationImportResult doInBackground() throws Exception {
-                return AnimationImportProcessRunner.importAnimation(selectedFile, resourcesFolder, name);
+            protected List<BatchImportReport> doInBackground() {
+                List<BatchImportReport> reports = new ArrayList<>();
+                for (BatchAnimationItem item : itemsToImport) {
+                    try {
+                        item.status = "Importing";
+                        publish(item.sourceFile.getName());
+                        AnimationImportResult result = AnimationImportProcessRunner.importAnimation(
+                                item.sourceFile, resourcesFolder, item.animationName.trim());
+                        item.inspectedResult = result;
+                        item.status = "Imported";
+                        reports.add(BatchImportReport.success(item, result));
+                    } catch (Exception ex) {
+                        item.status = "Failed";
+                        reports.add(BatchImportReport.failure(item, rootMessage(ex)));
+                    }
+                }
+                return reports;
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                if (!chunks.isEmpty()) {
+                    txtPreview.setText("Importing " + chunks.get(chunks.size() - 1) + "...");
+                }
+                filesTableModel.fireTableDataChanged();
             }
 
             @Override
             protected void done() {
                 try {
-                    AnimationImportResult result = get();
-                    txtPreview.setText(formatPreview(result, true)
-                            + "\nSaved: " + result.getAnimationFile().getAbsolutePath());
+                    List<BatchImportReport> reports = get();
+                    filesTableModel.fireTableDataChanged();
+                    String report = formatImportReport(reports);
+                    txtPreview.setText(report);
+                    JTextArea reportArea = new JTextArea(report, 18, 72);
+                    reportArea.setEditable(false);
+                    reportArea.setLineWrap(true);
+                    reportArea.setWrapStyleWord(true);
                     JOptionPane.showMessageDialog(ImportAnimationPanel.this,
-                            "Animation " + name + " imported successfully.",
-                            "Animation Import", JOptionPane.INFORMATION_MESSAGE);
-                    close(true);
+                            new JScrollPane(reportArea),
+                            "Animation Import Report", JOptionPane.INFORMATION_MESSAGE);
+                    if (reports.stream().anyMatch(r -> r.success)) {
+                        close(true);
+                    }
                 } catch (Exception ex) {
                     txtPreview.setText("Import failed:\n" + rootMessage(ex));
                     JOptionPane.showMessageDialog(ImportAnimationPanel.this,
@@ -278,8 +404,11 @@ public class ImportAnimationPanel extends JPanel {
     }
 
     private void setBusy(boolean busy, String message) {
-        btnInspect.setEnabled(!busy && selectedFile != null);
-        btnImport.setEnabled(!busy && selectedFile != null);
+        btnInspect.setEnabled(!busy && selectedItem() != null);
+        btnImport.setEnabled(!busy && !checkedItems().isEmpty());
+        btnRemove.setEnabled(!busy && selectedItem() != null);
+        tblFiles.setEnabled(!busy);
+        txtName.setEnabled(!busy && selectedItem() != null);
         if (message != null) {
             txtPreview.setText(message);
         }
@@ -422,6 +551,193 @@ public class ImportAnimationPanel extends JPanel {
         }
     }
 
+    private void selectCurrentTableRow() {
+        BatchAnimationItem item = selectedItem();
+        updatingNameField = true;
+        try {
+            if (item == null) {
+                selectedFile = null;
+                inspectedResult = null;
+                txtFile.setText(animationItems.isEmpty() ? "" : animationItems.size() + " file(s) selected");
+                txtName.setText("");
+            } else {
+                selectedFile = item.sourceFile;
+                inspectedResult = item.inspectedResult;
+                txtFile.setText(item.sourceFile.getAbsolutePath());
+                txtName.setText(item.animationName);
+                if (item.inspectedResult != null) {
+                    txtPreview.setText(formatPreview(item.inspectedResult, "Imported".equals(item.status)));
+                    playAnimationPreview();
+                }
+            }
+        } finally {
+            updatingNameField = false;
+        }
+        updateBatchControls();
+    }
+
+    private void removeSelectedFile() {
+        stopTableEditing();
+        int row = tblFiles == null ? -1 : tblFiles.getSelectedRow();
+        if (row < 0 || row >= animationItems.size()) {
+            return;
+        }
+        animationItems.remove(row);
+        filesTableModel.fireTableDataChanged();
+        if (!animationItems.isEmpty()) {
+            int next = Math.min(row, animationItems.size() - 1);
+            tblFiles.setRowSelectionInterval(next, next);
+        } else {
+            selectCurrentTableRow();
+        }
+        updateBatchControls();
+    }
+
+    private void updateSelectedItemName() {
+        if (updatingNameField) {
+            return;
+        }
+        BatchAnimationItem item = selectedItem();
+        if (item == null) {
+            return;
+        }
+        item.animationName = txtName.getText().trim();
+        int row = animationItems.indexOf(item);
+        if (row >= 0) {
+            filesTableModel.fireTableRowsUpdated(row, row);
+        }
+    }
+
+    private void persistSelectedName() {
+        BatchAnimationItem item = selectedItem();
+        if (item != null) {
+            item.animationName = txtName.getText().trim();
+            if (item.animationName.isEmpty()) {
+                item.animationName = uniqueAnimationName(sanitizeAssetId(stripExtension(item.sourceFile.getName())), item);
+                refreshSelectedItem();
+            }
+        }
+    }
+
+    private void stopTableEditing() {
+        if (tblFiles != null && tblFiles.isEditing() && tblFiles.getCellEditor() != null) {
+            tblFiles.getCellEditor().stopCellEditing();
+        }
+    }
+
+    private void refreshSelectedItem() {
+        BatchAnimationItem item = selectedItem();
+        if (item == null) {
+            return;
+        }
+        int row = animationItems.indexOf(item);
+        if (row >= 0) {
+            filesTableModel.fireTableRowsUpdated(row, row);
+        }
+        updatingNameField = true;
+        try {
+            txtName.setText(item.animationName);
+        } finally {
+            updatingNameField = false;
+        }
+        updateBatchControls();
+    }
+
+    private void updateBatchControls() {
+        BatchAnimationItem item = selectedItem();
+        boolean hasSelection = item != null;
+        btnInspect.setEnabled(hasSelection);
+        btnImport.setEnabled(!checkedItems().isEmpty());
+        btnRemove.setEnabled(hasSelection);
+        txtName.setEnabled(hasSelection);
+        if (!hasSelection && !animationItems.isEmpty()) {
+            txtFile.setText(animationItems.size() + " file(s) selected");
+        }
+    }
+
+    private BatchAnimationItem selectedItem() {
+        if (tblFiles == null) {
+            return null;
+        }
+        int row = tblFiles.getSelectedRow();
+        if (row < 0 || row >= animationItems.size()) {
+            return null;
+        }
+        return animationItems.get(row);
+    }
+
+    private BatchAnimationItem findItem(File file) {
+        String path = absolutePath(file);
+        for (BatchAnimationItem item : animationItems) {
+            if (absolutePath(item.sourceFile).equalsIgnoreCase(path)) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    private List<BatchAnimationItem> checkedItems() {
+        List<BatchAnimationItem> result = new ArrayList<>();
+        for (BatchAnimationItem item : animationItems) {
+            if (item.importEnabled) {
+                result.add(item);
+            }
+        }
+        return result;
+    }
+
+    private String uniqueAnimationName(String baseName, BatchAnimationItem owner) {
+        String base = baseName == null || baseName.isBlank() ? "animation" : baseName;
+        String candidate = base;
+        int index = 2;
+        while (animationNameInUse(candidate, owner)) {
+            candidate = base + "_" + index++;
+        }
+        return candidate;
+    }
+
+    private boolean animationNameInUse(String name, BatchAnimationItem owner) {
+        for (BatchAnimationItem item : animationItems) {
+            if (item != owner && item.animationName.equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String absolutePath(File file) {
+        return file == null ? "" : file.getAbsolutePath();
+    }
+
+    private String formatImportReport(List<BatchImportReport> reports) {
+        int succeeded = 0;
+        int failed = 0;
+        StringBuilder sb = new StringBuilder();
+        sb.append("Animation import result report\n\n");
+        for (BatchImportReport report : reports) {
+            if (report.success) {
+                succeeded++;
+            } else {
+                failed++;
+            }
+        }
+        sb.append("Imported: ").append(succeeded).append("\n");
+        sb.append("Failed: ").append(failed).append("\n\n");
+        for (BatchImportReport report : reports) {
+            sb.append(report.success ? "[OK] " : "[FAILED] ");
+            sb.append(report.item.animationName).append(" <- ").append(report.item.sourceFile.getName()).append("\n");
+            if (report.success) {
+                sb.append("  Saved: ").append(report.savedFile.getAbsolutePath()).append("\n");
+                if (report.clipName != null && !report.clipName.isBlank()) {
+                    sb.append("  Clip: ").append(report.clipName).append("\n");
+                }
+            } else {
+                sb.append("  Error: ").append(report.message).append("\n");
+            }
+        }
+        return sb.toString();
+    }
+
     private void loadAvailableModels() {
         availableModelNames.clear();
         modelResources.clear();
@@ -446,5 +762,106 @@ public class ImportAnimationPanel extends JPanel {
             return null;
         }
         return modelResources.get(cboPreviewModel.getSelectedItem().toString());
+    }
+
+    private static class BatchAnimationItem {
+        private boolean importEnabled = true;
+        private final File sourceFile;
+        private String animationName;
+        private String status = "Ready";
+        private AnimationImportResult inspectedResult;
+
+        private BatchAnimationItem(File sourceFile, String animationName) {
+            this.sourceFile = sourceFile;
+            this.animationName = animationName;
+        }
+    }
+
+    private static class BatchImportReport {
+        private final BatchAnimationItem item;
+        private final boolean success;
+        private final File savedFile;
+        private final String clipName;
+        private final String message;
+
+        private BatchImportReport(BatchAnimationItem item, boolean success, File savedFile, String clipName, String message) {
+            this.item = item;
+            this.success = success;
+            this.savedFile = savedFile;
+            this.clipName = clipName;
+            this.message = message;
+        }
+
+        private static BatchImportReport success(BatchAnimationItem item, AnimationImportResult result) {
+            return new BatchImportReport(item, true, result.getAnimationFile(), result.getSelectedClipName(), null);
+        }
+
+        private static BatchImportReport failure(BatchAnimationItem item, String message) {
+            return new BatchImportReport(item, false, null, null, message);
+        }
+    }
+
+    private class AnimationFilesTableModel extends AbstractTableModel {
+        private final String[] columns = {"Import", "File", "Runtime name", "Status"};
+
+        @Override
+        public int getRowCount() {
+            return animationItems.size();
+        }
+
+        @Override
+        public int getColumnCount() {
+            return columns.length;
+        }
+
+        @Override
+        public String getColumnName(int column) {
+            return columns[column];
+        }
+
+        @Override
+        public Class<?> getColumnClass(int columnIndex) {
+            return columnIndex == 0 ? Boolean.class : String.class;
+        }
+
+        @Override
+        public boolean isCellEditable(int rowIndex, int columnIndex) {
+            return columnIndex == 0 || columnIndex == 2;
+        }
+
+        @Override
+        public Object getValueAt(int rowIndex, int columnIndex) {
+            BatchAnimationItem item = animationItems.get(rowIndex);
+            if (columnIndex == 0) {
+                return item.importEnabled;
+            }
+            if (columnIndex == 1) {
+                return item.sourceFile.getName();
+            }
+            if (columnIndex == 2) {
+                return item.animationName;
+            }
+            return item.status;
+        }
+
+        @Override
+        public void setValueAt(Object aValue, int rowIndex, int columnIndex) {
+            BatchAnimationItem item = animationItems.get(rowIndex);
+            if (columnIndex == 0) {
+                item.importEnabled = Boolean.TRUE.equals(aValue);
+                updateBatchControls();
+            } else if (columnIndex == 2) {
+                item.animationName = sanitizeAssetId(aValue == null ? "" : aValue.toString());
+                if (tblFiles.getSelectedRow() == rowIndex) {
+                    updatingNameField = true;
+                    try {
+                        txtName.setText(item.animationName);
+                    } finally {
+                        updatingNameField = false;
+                    }
+                }
+            }
+            fireTableRowsUpdated(rowIndex, rowIndex);
+        }
     }
 }

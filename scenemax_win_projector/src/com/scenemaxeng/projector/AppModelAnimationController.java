@@ -43,6 +43,7 @@ public class AppModelAnimationController implements AnimEventListener {
         try {
             this.animationName = animationName;
             this.appModel = m;
+            this.animationFinished = false;
 
             AnimComposer composer = m.getAnimComposer();
             if (composer == null && m.resource != null && m.resource.isJ3O()) {
@@ -63,9 +64,11 @@ public class AppModelAnimationController implements AnimEventListener {
                     composer.addAction(animationName, ac);
 
                 } else {
-                    this.animationFinished = false;
-                    ((CharacterAction) ac).finishAnimation(); // free current controller's animation
-                    ((CharacterAction) ac).setController(this); // set new controller
+                    CharacterAction characterAction = (CharacterAction) ac;
+                    if (characterAction.controller != this) {
+                        characterAction.finishAnimation(); // free previous controller's animation
+                    }
+                    characterAction.setController(this); // set new controller
                 }
 
                 Double animSpeed = Double.parseDouble(speed);
@@ -76,12 +79,17 @@ public class AppModelAnimationController implements AnimEventListener {
                     composer.setCurrentAction(animationName);
                 } else {
                     if(ac!=m.currentAction) {
-                        m.currentAction.finishAnimation();
+                        if (m.currentAction.controller != this) {
+                            m.currentAction.finishAnimation();
+                        }
                         m.currentAction = (CharacterAction)ac;
+                        composer.setCurrentAction(animationName);
+                    } else {
                         composer.setCurrentAction(animationName);
                     }
 
                 }
+                this.animationFinished = false;
 
             } else if(m.resource.isJ3O()) {
                 AnimControl control = m.getAnimControl();

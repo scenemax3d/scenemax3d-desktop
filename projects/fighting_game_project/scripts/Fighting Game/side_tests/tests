@@ -1,4 +1,6 @@
 
 
-m => meshy_azure3:scale 0.02
-m.headspin_start
+m => meshy_azure3: scale 0.02
+
+wait 10 Seconds
+m.walking1 then headspin_start then zombie_punch1 then mutant_punch1 
