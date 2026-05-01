@@ -10,8 +10,10 @@ public class VariableDef extends StatementDef{
 
     public boolean isAsync = false;
     public static final int COLLISION_SHAPE_DEFAULT = 0;
+    public static final int COLLISION_SHAPE_NONE = 5;
     public static final int COLLISION_SHAPE_BOX = 10;
     public static final int COLLISION_SHAPE_BOXES = 20;
+    public static final int COLLISION_SHAPE_MESH = 30;
 
     public static final int VAR_TYPE_3D = 1;
     public static final int VAR_TYPE_2D = 2;

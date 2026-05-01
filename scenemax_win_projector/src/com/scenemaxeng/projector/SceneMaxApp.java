@@ -3877,15 +3877,14 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                     return null;
                 }
 
-            } else {
+            } else if (modelInst.varDef.collisionShape != VariableDef.COLLISION_SHAPE_NONE &&
+                    (isPhysical || modelInst.varDef.collisionShape != VariableDef.COLLISION_SHAPE_DEFAULT)) {
 
-                if (modelInst.varDef.collisionShape != VariableDef.COLLISION_SHAPE_DEFAULT) {
-                    if (modelInst.varDef.collisionShape == VariableDef.COLLISION_SHAPE_BOX) {
-                        //modelShape = new BoxCollisionShape(((BoundingBox)parentNode.getWorldBound()).getExtent(new Vector3f()));
-                        modelShape = CollisionShapeFactory.createMergedBoxShape(parentNode);
-                    } else if (modelInst.varDef.collisionShape == VariableDef.COLLISION_SHAPE_BOXES) {
-                        modelShape = CollisionShapeFactory.createBoxShape(parentNode);
-                    }
+                if (modelInst.varDef.collisionShape == VariableDef.COLLISION_SHAPE_BOX) {
+                    //modelShape = new BoxCollisionShape(((BoundingBox)parentNode.getWorldBound()).getExtent(new Vector3f()));
+                    modelShape = CollisionShapeFactory.createMergedBoxShape(parentNode);
+                } else if (modelInst.varDef.collisionShape == VariableDef.COLLISION_SHAPE_BOXES) {
+                    modelShape = CollisionShapeFactory.createBoxShape(parentNode);
                 } else {
                     try {
                         modelShape = CollisionShapeFactory.createDynamicMeshShape(parentNode);

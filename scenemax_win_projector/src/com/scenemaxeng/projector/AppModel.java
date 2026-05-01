@@ -12,6 +12,7 @@ import com.jme3.anim.AnimTrack;
 import com.jme3.anim.util.HasLocalTransform;
 import com.jme3.anim.tween.action.ClipAction;
 import com.jme3.animation.*;
+import com.jme3.asset.AssetInfo;
 import com.jme3.asset.AssetManager;
 import com.jme3.asset.ModelKey;
 import com.jme3.math.Quaternion;
@@ -21,7 +22,14 @@ import com.jme3.scene.plugins.bvh.SkeletonMapping;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
 import jme3utilities.wes.AnimationEdit;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -29,6 +37,10 @@ import java.util.List;
 import java.util.Map;
 
 public class AppModel {
+
+    private static final int GLB_MAGIC = 0x46546C67;
+    private static final int GLB_JSON_CHUNK = 0x4E4F534A;
+    private static final int GLB_BIN_CHUNK = 0x004E4942;
 
     public float accelerate=0;
     public float steer=0;
@@ -97,6 +109,26 @@ public class AppModel {
         return composer;
     }
 
+    public AnimComposer getOrCreateAnimComposerForSkinningControl() {
+        AnimComposer existingComposer = getAnimComposer();
+        if (existingComposer != null) {
+            return existingComposer;
+        }
+
+        Spatial target = skinningControlNode;
+        if (target == null || target.getControl(SkinningControl.class) == null) {
+            target = findSkinningControlNode(model.getChild(0));
+        }
+        if (target == null) {
+            return null;
+        }
+
+        skinningControlNode = target;
+        composer = new AnimComposer();
+        target.addControl(composer);
+        return composer;
+    }
+
     private AnimComposer findAnimationComposer(Spatial sp) {
 
         AnimComposer ctl = sp.getControl(AnimComposer.class);
@@ -116,6 +148,29 @@ public class AppModel {
 
         return null;
 
+    }
+
+    private Spatial findSkinningControlNode(Spatial sp) {
+        if (sp == null) {
+            return null;
+        }
+
+        SkinningControl ctl = sp.getControl(SkinningControl.class);
+        if (ctl != null) {
+            return sp;
+        }
+
+        if (sp instanceof Node) {
+            Node nd = (Node) sp;
+            for (Spatial spChild : nd.getChildren()) {
+                Spatial ctlChild = findSkinningControlNode(spChild);
+                if (ctlChild != null) {
+                    return ctlChild;
+                }
+            }
+        }
+
+        return null;
     }
 
     public SkinningControl getSkinningControl() {
@@ -255,6 +310,9 @@ public class AppModel {
 
         AnimComposer targetComposer = getAnimComposer();
         if (targetComposer == null) {
+            targetComposer = getOrCreateAnimComposerForSkinningControl();
+        }
+        if (targetComposer == null) {
             return false;
         }
 
@@ -267,32 +325,40 @@ public class AppModel {
         try {
             ModelKey sourceKey = new ModelKey(resourceAnimation.path);
             assetManager.deleteFromCache(sourceKey);
-            Spatial sourceSpatial = assetManager.loadModel(sourceKey);
-            AnimComposer sourceComposer = findAnimationComposer(sourceSpatial);
+            Spatial sourceSpatial = null;
+            AnimComposer sourceComposer = null;
+            try {
+                sourceSpatial = assetManager.loadModel(sourceKey);
+                sourceComposer = findAnimationComposer(sourceSpatial);
+            } catch (Exception loadException) {
+                System.out.println("External animation model loader could not expose animation data, trying glTF JSON fallback: "
+                        + resourceAnimation.path + " (" + loadException.getMessage() + ")");
+            }
+
+            AnimClip retargeted;
             if (sourceComposer == null) {
-                System.out.println("External animation has no AnimComposer: " + resourceAnimation.path);
-                return false;
-            }
+                retargeted = retargetGltfAnimationByName(assetManager, resourceAnimation.path, resourceAnimation.clipName, animationName);
+            } else {
+                AnimClip sourceClip = selectClip(sourceComposer, resourceAnimation.clipName, animationName);
+                if (sourceClip == null) {
+                    System.out.println("External animation clip not found: " + resourceAnimation.clipName + " in " + resourceAnimation.path);
+                    return false;
+                }
+                System.out.println("External animation loaded " + resourceAnimation.path + " clip " + sourceClip.getName()
+                        + " with " + sourceClip.getTracks().length + " source tracks");
 
-            AnimClip sourceClip = selectClip(sourceComposer, resourceAnimation.clipName, animationName);
-            if (sourceClip == null) {
-                System.out.println("External animation clip not found: " + resourceAnimation.clipName + " in " + resourceAnimation.path);
-                return false;
-            }
-            System.out.println("External animation loaded " + resourceAnimation.path + " clip " + sourceClip.getName()
-                    + " with " + sourceClip.getTracks().length + " source tracks");
+                SkinningControl sourceSkinning = findSkinningControl(sourceSpatial);
+                SkinningControl targetSkinning = getSkinningControl();
+                if (targetSkinning == null) {
+                    System.out.println("External animation retargeting requires a target armature: " + animationName);
+                    return false;
+                }
 
-            SkinningControl sourceSkinning = findSkinningControl(sourceSpatial);
-            SkinningControl targetSkinning = getSkinningControl();
-            if (targetSkinning == null) {
-                System.out.println("External animation retargeting requires a target armature: " + animationName);
-                return false;
-            }
-
-            AnimClip retargeted = retargetClipByName(sourceClip, animationName);
-            if (!hasAnimatedMotionTracks(retargeted) && sourceSkinning != null) {
-                System.out.println("External animation name-based retarget produced no visible rotation tracks, trying Wes retarget: " + animationName);
-                retargeted = retargetClip(sourceClip, sourceSkinning.getArmature(), targetSkinning.getArmature(), animationName);
+                retargeted = retargetClipByName(sourceClip, animationName);
+                if (!hasAnimatedMotionTracks(retargeted) && sourceSkinning != null) {
+                    System.out.println("External animation name-based retarget produced no visible rotation tracks, trying Wes retarget: " + animationName);
+                    retargeted = retargetClip(sourceClip, sourceSkinning.getArmature(), targetSkinning.getArmature(), animationName);
+                }
             }
             if (retargeted == null) {
                 System.out.println("External animation could not be retargeted to model skeleton: " + animationName);
@@ -312,6 +378,312 @@ public class AppModel {
             e.printStackTrace();
             return false;
         }
+    }
+
+    private AnimClip retargetGltfAnimationByName(AssetManager assetManager, String assetPath, String clipName, String runtimeName) throws IOException {
+        ParsedGltf gltf = readGltfAnimationAsset(assetManager, assetPath);
+        if (gltf == null || gltf.animations == null || gltf.nodes == null) {
+            System.out.println("External animation GLB has no readable glTF animation JSON: " + assetPath);
+            return null;
+        }
+
+        JSONObject animation = selectGltfAnimation(gltf.animations, clipName, runtimeName);
+        if (animation == null) {
+            System.out.println("External animation GLB clip not found: " + clipName + " in " + assetPath);
+            return null;
+        }
+
+        Map<String, HasLocalTransform> targetJoints = getTargetJointMap();
+        if (targetJoints.isEmpty()) {
+            System.out.println("External animation retargeting requires a target armature: " + runtimeName);
+            return null;
+        }
+
+        JSONArray samplers = animation.optJSONArray("samplers");
+        JSONArray channels = animation.optJSONArray("channels");
+        if (samplers == null || channels == null) {
+            return null;
+        }
+
+        Map<Integer, ParsedGltfNodeAnimation> nodeAnimations = new HashMap<>();
+        for (int i = 0; i < channels.length(); i++) {
+            JSONObject channel = channels.optJSONObject(i);
+            JSONObject target = channel != null ? channel.optJSONObject("target") : null;
+            if (target == null) {
+                continue;
+            }
+            int nodeIndex = target.optInt("node", -1);
+            String path = target.optString("path", "");
+            JSONObject sampler = samplers.optJSONObject(channel.optInt("sampler", -1));
+            if (nodeIndex < 0 || sampler == null) {
+                continue;
+            }
+
+            ParsedGltfNodeAnimation nodeAnimation = nodeAnimations.computeIfAbsent(nodeIndex,
+                    index -> new ParsedGltfNodeAnimation(index, gltf.nodes.optJSONObject(index)));
+            float[] times = readFloatAccessor(gltf, sampler.optInt("input", -1));
+            int outputAccessor = sampler.optInt("output", -1);
+            if ("rotation".equals(path)) {
+                nodeAnimation.rotationTimes = times;
+                nodeAnimation.rotations = readQuaternionAccessor(gltf, outputAccessor);
+            } else if ("translation".equals(path)) {
+                nodeAnimation.translationTimes = times;
+                nodeAnimation.translations = readVectorAccessor(gltf, outputAccessor);
+            } else if ("scale".equals(path)) {
+                nodeAnimation.scaleTimes = times;
+                nodeAnimation.scales = readVectorAccessor(gltf, outputAccessor);
+            }
+        }
+
+        int movingTracks = 0;
+        for (ParsedGltfNodeAnimation nodeAnimation : nodeAnimations.values()) {
+            if (hasRotationMotion(nodeAnimation.rotations) || hasTranslationMotion(nodeAnimation.translations)) {
+                movingTracks++;
+            }
+        }
+        boolean fullBodyClip = movingTracks > 12;
+
+        List<AnimTrack> tracks = new ArrayList<>();
+        List<String> movingMatches = new ArrayList<>();
+        for (ParsedGltfNodeAnimation nodeAnimation : nodeAnimations.values()) {
+            if (!hasRotationMotion(nodeAnimation.rotations) && !hasTranslationMotion(nodeAnimation.translations)) {
+                continue;
+            }
+
+            HasLocalTransform matchingTarget = findMatchingTarget(targetJoints, nodeAnimation.name);
+            if (matchingTarget == null) {
+                continue;
+            }
+
+            float[] times = nodeAnimation.rotationTimes != null && nodeAnimation.rotationTimes.length > 0
+                    ? cloneTimes(nodeAnimation.rotationTimes)
+                    : cloneTimes(nodeAnimation.translationTimes);
+            int frameCount = times == null ? 0 : times.length;
+            if (frameCount == 0) {
+                continue;
+            }
+
+            Quaternion[] rotations = nodeAnimation.rotations == null
+                    ? constantRotations(matchingTarget, frameCount)
+                    : retargetGltfRotations(nodeAnimation, matchingTarget, frameCount, fullBodyClip);
+            Vector3f[] translations = retargetGltfTranslations(nodeAnimation, matchingTarget, frameCount);
+            tracks.add(new TransformTrack(matchingTarget, times, translations, rotations, constantScales(matchingTarget, frameCount)));
+            movingMatches.add(nodeAnimation.name + "->" + targetName(matchingTarget));
+        }
+
+        if (tracks.isEmpty()) {
+            System.out.println("External glTF animation retarget matched 0 moving tracks for " + runtimeName);
+            return null;
+        }
+
+        AnimClip retargeted = new AnimClip(runtimeName);
+        retargeted.setTracks(tracks.toArray(new AnimTrack[0]));
+        System.out.println("External glTF animation retarget matched " + tracks.size() + " tracks for " + runtimeName
+                + " " + summarizeMatches(movingMatches));
+        return retargeted;
+    }
+
+    private Quaternion[] retargetGltfRotations(ParsedGltfNodeAnimation nodeAnimation, HasLocalTransform target,
+                                               int frameCount, boolean fullBodyClip) {
+        Quaternion sourceRest = nodeAnimation.restRotation;
+        Quaternion inverseSourceRest = sourceRest.inverse();
+        Quaternion targetRest = restRotation(target);
+        Quaternion[] rotations = new Quaternion[frameCount];
+        for (int i = 0; i < rotations.length; i++) {
+            Quaternion sourceRotation = i < nodeAnimation.rotations.length && nodeAnimation.rotations[i] != null
+                    ? nodeAnimation.rotations[i]
+                    : sourceRest;
+            Quaternion sourceDelta = inverseSourceRest.mult(sourceRotation);
+            rotations[i] = applyRetargetedRotation(sourceDelta, targetRest, nodeAnimation.name, fullBodyClip);
+        }
+        return rotations;
+    }
+
+    private Vector3f[] retargetGltfTranslations(ParsedGltfNodeAnimation source, HasLocalTransform target, int frameCount) {
+        if (!hasTranslationMotion(source.translations) || isRootMotionJoint(source.name)) {
+            return constantTranslations(target, frameCount);
+        }
+
+        Vector3f targetRest = target.getLocalTransform().getTranslation().clone();
+        Vector3f[] translations = new Vector3f[frameCount];
+        for (int i = 0; i < translations.length; i++) {
+            Vector3f sourceTranslation = i < source.translations.length && source.translations[i] != null
+                    ? source.translations[i]
+                    : source.restTranslation;
+            translations[i] = targetRest.add(sourceTranslation.subtract(source.restTranslation));
+        }
+        return translations;
+    }
+
+    private Quaternion[] constantRotations(HasLocalTransform target, int frameCount) {
+        Quaternion rotation = target.getLocalTransform().getRotation().clone();
+        Quaternion[] rotations = new Quaternion[frameCount];
+        for (int i = 0; i < rotations.length; i++) {
+            rotations[i] = rotation.clone();
+        }
+        return rotations;
+    }
+
+    private JSONObject selectGltfAnimation(JSONArray animations, String clipName, String runtimeName) {
+        JSONObject fallback = null;
+        for (int i = 0; i < animations.length(); i++) {
+            JSONObject animation = animations.optJSONObject(i);
+            if (animation == null) {
+                continue;
+            }
+            String name = animation.optString("name", "");
+            if ((clipName != null && clipName.equals(name)) || (runtimeName != null && runtimeName.equals(name))) {
+                return animation;
+            }
+            if (fallback == null) {
+                fallback = animation;
+            }
+        }
+        return fallback;
+    }
+
+    private ParsedGltf readGltfAnimationAsset(AssetManager assetManager, String assetPath) throws IOException {
+        AssetInfo info = assetManager.locateAsset(new ModelKey(assetPath));
+        if (info == null) {
+            return null;
+        }
+
+        byte[] bytes;
+        try (InputStream input = info.openStream()) {
+            bytes = input.readAllBytes();
+        }
+        return parseGlb(bytes);
+    }
+
+    private ParsedGltf parseGlb(byte[] bytes) {
+        if (bytes == null || bytes.length < 20) {
+            return null;
+        }
+
+        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
+        int magic = buffer.getInt();
+        buffer.getInt();
+        int length = buffer.getInt();
+        if (magic != GLB_MAGIC || length != bytes.length) {
+            return null;
+        }
+
+        byte[] jsonData = null;
+        byte[] binData = null;
+        while (buffer.remaining() >= 8) {
+            int chunkLength = buffer.getInt();
+            int chunkType = buffer.getInt();
+            if (chunkLength < 0 || chunkLength > buffer.remaining()) {
+                return null;
+            }
+            byte[] chunk = new byte[chunkLength];
+            buffer.get(chunk);
+            if (chunkType == GLB_JSON_CHUNK && jsonData == null) {
+                jsonData = chunk;
+            } else if (chunkType == GLB_BIN_CHUNK && binData == null) {
+                binData = chunk;
+            }
+        }
+        if (jsonData == null) {
+            return null;
+        }
+
+        String jsonText = new String(trimJsonPadding(jsonData), StandardCharsets.UTF_8);
+        JSONObject root = new JSONObject(jsonText);
+        return new ParsedGltf(root, binData);
+    }
+
+    private float[] readFloatAccessor(ParsedGltf gltf, int accessorIndex) {
+        float[][] values = readFloatTuples(gltf, accessorIndex, 1);
+        float[] result = new float[values.length];
+        for (int i = 0; i < values.length; i++) {
+            result[i] = values[i].length == 0 ? 0f : values[i][0];
+        }
+        return result;
+    }
+
+    private Quaternion[] readQuaternionAccessor(ParsedGltf gltf, int accessorIndex) {
+        float[][] values = readFloatTuples(gltf, accessorIndex, 4);
+        Quaternion[] result = new Quaternion[values.length];
+        for (int i = 0; i < values.length; i++) {
+            float[] value = values[i];
+            result[i] = new Quaternion(value[0], value[1], value[2], value[3]);
+        }
+        return result;
+    }
+
+    private Vector3f[] readVectorAccessor(ParsedGltf gltf, int accessorIndex) {
+        float[][] values = readFloatTuples(gltf, accessorIndex, 3);
+        Vector3f[] result = new Vector3f[values.length];
+        for (int i = 0; i < values.length; i++) {
+            float[] value = values[i];
+            result[i] = new Vector3f(value[0], value[1], value[2]);
+        }
+        return result;
+    }
+
+    private float[][] readFloatTuples(ParsedGltf gltf, int accessorIndex, int expectedComponents) {
+        if (gltf == null || gltf.bin == null || gltf.accessors == null || gltf.bufferViews == null
+                || accessorIndex < 0 || accessorIndex >= gltf.accessors.length()) {
+            return new float[0][];
+        }
+
+        JSONObject accessor = gltf.accessors.optJSONObject(accessorIndex);
+        if (accessor == null || accessor.optInt("componentType", -1) != 5126) {
+            return new float[0][];
+        }
+        JSONObject bufferView = gltf.bufferViews.optJSONObject(accessor.optInt("bufferView", -1));
+        if (bufferView == null) {
+            return new float[0][];
+        }
+
+        int componentCount = Math.max(expectedComponents, componentCount(accessor.optString("type", "")));
+        int count = accessor.optInt("count", 0);
+        int byteOffset = bufferView.optInt("byteOffset", 0) + accessor.optInt("byteOffset", 0);
+        int stride = bufferView.optInt("byteStride", componentCount * Float.BYTES);
+        ByteBuffer buffer = ByteBuffer.wrap(gltf.bin).order(ByteOrder.LITTLE_ENDIAN);
+        float[][] result = new float[count][expectedComponents];
+        for (int i = 0; i < count; i++) {
+            int tupleOffset = byteOffset + i * stride;
+            if (tupleOffset < 0 || tupleOffset + componentCount * Float.BYTES > gltf.bin.length) {
+                return new float[0][];
+            }
+            for (int j = 0; j < expectedComponents; j++) {
+                result[i][j] = buffer.getFloat(tupleOffset + j * Float.BYTES);
+            }
+        }
+        return result;
+    }
+
+    private int componentCount(String type) {
+        if ("SCALAR".equals(type)) {
+            return 1;
+        }
+        if ("VEC2".equals(type)) {
+            return 2;
+        }
+        if ("VEC3".equals(type)) {
+            return 3;
+        }
+        if ("VEC4".equals(type)) {
+            return 4;
+        }
+        return 1;
+    }
+
+    private byte[] trimJsonPadding(byte[] jsonData) {
+        int end = jsonData.length;
+        while (end > 0) {
+            byte b = jsonData[end - 1];
+            if (b == 0 || b == 0x20 || b == '\n' || b == '\r' || b == '\t') {
+                end--;
+            } else {
+                break;
+            }
+        }
+        byte[] trimmed = new byte[end];
+        System.arraycopy(jsonData, 0, trimmed, 0, end);
+        return trimmed;
     }
 
     private AnimClip selectClip(AnimComposer sourceComposer, String clipName, String fallbackName) {
@@ -860,5 +1232,64 @@ public class AppModel {
         return r;
     }
 
+    private static final class ParsedGltf {
+        final JSONObject root;
+        final byte[] bin;
+        final JSONArray nodes;
+        final JSONArray accessors;
+        final JSONArray bufferViews;
+        final JSONArray animations;
+
+        ParsedGltf(JSONObject root, byte[] bin) {
+            this.root = root;
+            this.bin = bin;
+            this.nodes = root.optJSONArray("nodes");
+            this.accessors = root.optJSONArray("accessors");
+            this.bufferViews = root.optJSONArray("bufferViews");
+            this.animations = root.optJSONArray("animations");
+        }
+    }
+
+    private static final class ParsedGltfNodeAnimation {
+        final int nodeIndex;
+        final String name;
+        final Quaternion restRotation;
+        final Vector3f restTranslation;
+        float[] rotationTimes;
+        Quaternion[] rotations;
+        float[] translationTimes;
+        Vector3f[] translations;
+        float[] scaleTimes;
+        Vector3f[] scales;
+
+        ParsedGltfNodeAnimation(int nodeIndex, JSONObject node) {
+            this.nodeIndex = nodeIndex;
+            this.name = node == null ? "" : node.optString("name", "");
+            this.restRotation = readRotation(node);
+            this.restTranslation = readVector(node == null ? null : node.optJSONArray("translation"), new Vector3f(0f, 0f, 0f));
+        }
+
+        private static Quaternion readRotation(JSONObject node) {
+            JSONArray rotation = node == null ? null : node.optJSONArray("rotation");
+            if (rotation == null || rotation.length() < 4) {
+                return Quaternion.IDENTITY.clone();
+            }
+            return new Quaternion(
+                    (float) rotation.optDouble(0, 0.0),
+                    (float) rotation.optDouble(1, 0.0),
+                    (float) rotation.optDouble(2, 0.0),
+                    (float) rotation.optDouble(3, 1.0));
+        }
+
+        private static Vector3f readVector(JSONArray values, Vector3f defaults) {
+            if (values == null || values.length() < 3) {
+                return defaults.clone();
+            }
+            return new Vector3f(
+                    (float) values.optDouble(0, defaults.x),
+                    (float) values.optDouble(1, defaults.y),
+                    (float) values.optDouble(2, defaults.z));
+        }
+    }
 
 }

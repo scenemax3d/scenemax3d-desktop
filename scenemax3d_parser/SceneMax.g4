@@ -413,7 +413,7 @@ model_attr : print_pos_attr | init_rotate_attr | init_joints_attr |
              collision_shape_attr;
 
 collision_shape_attr : Collision Shape collision_shape_options ;
-collision_shape_options : Box | Boxes | None;
+collision_shape_options : Box | Boxes | Mesh | None;
 calibration_attr : Calibrate '(' pos_axes ')' ;
 shadow_mode_attr : Shadow Mode shadow_mode_options ;
 shadow_mode_options : Cast | Receive | On ;
@@ -913,7 +913,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Spark | Fire | Flame | Destination | Gradient | Orbital | Start | Gravity | Duration |
     Water | Strength | Depth | Terrain | Camera | Chase | Trailing | Vertical | Horizontal | Rotation | Max | Min | Distance |
     Angle | Parent | Detach | Attach | Draw | Debug | On | Off | Calibrate | Shadow | Cast | Receive | SkyBox | Solar | System |
-    Cloud | Billboard | Model | Sprite | From | Having | For | Contains | Each | Name | Joints | Dynamic | Static | Collider |
+    Cloud | Billboard | Model | Mesh | Sprite | From | Having | For | Contains | Each | Name | Joints | Dynamic | Static | Collider |
     Hidden | Where | And | In | Out | Then | Rows | Cols | To | Be | Frames | Seconds | Wait | Using | At | Speed | Of | Rotate | Scale |
     Mass | Velocity | Angular | Restitution | Data | Move | Belongs | The | Group | Look | Looking | Roll | Turn | Forward |
     Backward | Left | Right | Up | Down | Code | Light | Lights | Add | Probe | Minimap | Play | Sound | Audio | Hide | Show |
@@ -1047,6 +1047,7 @@ Cloudiness : 'Cloudiness' | 'cloudiness' ;
 
 Billboard : 'Billboard' | 'billboard' ;
 Model : 'Model' | 'model' ;
+Mesh : 'Mesh' | 'mesh' ;
 Sprite : 'Sprite' | 'sprite' ;
 From : 'From' | 'from' ;
 Having : 'having' | 'Having' | ':' ;

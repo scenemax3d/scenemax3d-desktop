@@ -107,6 +107,7 @@ dependencies {
 
     implementation("com.google.guava:guava:33.5.0-jre")
     implementation 'org.antlr:antlr4-runtime:4.5.3'
+    implementation 'org.json:json:20210307'
 
     implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: [])
 

@@ -47,9 +47,15 @@ dependencies {
     implementation "${jme3.g}:jme3-effects:${jme3.v}"
     implementation "${jme3.g}:jme3-plugins:${jme3.v}"
 
-    // Design-time importer for FBX/DAE/BVH/etc. Animation files are converted to J3O in a worker JVM.
+    // Design-time importer for FBX/DAE/BVH/etc. Models and animation files are converted to J3O in a worker JVM.
     compileOnly 'com.github.stephengold:MonkeyWrench:1.0.0'
     animationImporterRuntime('com.github.stephengold:MonkeyWrench:1.0.0') {
+        transitive = false
+    }
+    animationImporterRuntime('com.github.stephengold:Heart:9.2.0') {
+        transitive = false
+    }
+    animationImporterRuntime('com.github.stephengold:Wes:0.8.1') {
         transitive = false
     }
     animationImporterRuntime "org.lwjgl:lwjgl:${lwjgl3}"
@@ -63,11 +69,19 @@ dependencies {
 }
 
 def animationImporterLibsDir = layout.buildDirectory.dir("generated/animation-importer-libs")
+def fbx2GltfVersion = '0.13.1'
+def fbx2GltfZipName = 'FBX2glTF-windows-x86_64.zip'
+def fbx2GltfZipUrl = "https://github.com/godotengine/FBX2glTF/releases/download/v${fbx2GltfVersion}/${fbx2GltfZipName}"
+def fbx2GltfZipSha256 = 'effef95553afd4951e92c7330c0ab3152974544d30a7fc8e46c4d57d4332f378'
+def fbx2GltfZipFile = layout.buildDirectory.file("downloaded/fbx2gltf/${fbx2GltfZipName}")
 
 tasks.register('copyAnimationImporterRuntime', Copy) {
     from configurations.animationImporterRuntime
     into animationImporterLibsDir
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    doFirst {
+        delete animationImporterLibsDir
+    }
     doLast {
         def dir = animationImporterLibsDir.get().asFile
         def indexFile = new File(dir, "index.txt")
@@ -79,10 +93,43 @@ tasks.register('copyAnimationImporterRuntime', Copy) {
     }
 }
 
+tasks.register('downloadFbx2Gltf') {
+    outputs.file(fbx2GltfZipFile)
+    doLast {
+        def target = fbx2GltfZipFile.get().asFile
+        target.parentFile.mkdirs()
+        if (!target.isFile()) {
+            new URL(fbx2GltfZipUrl).withInputStream { input ->
+                target.withOutputStream { output ->
+                    output << input
+                }
+            }
+        }
+
+        def digest = java.security.MessageDigest.getInstance('SHA-256')
+        target.withInputStream { input ->
+            byte[] buffer = new byte[8192]
+            int read
+            while ((read = input.read(buffer)) != -1) {
+                digest.update(buffer, 0, read)
+            }
+        }
+        def actual = digest.digest().collect { String.format('%02x', it) }.join()
+        if (!fbx2GltfZipSha256.equalsIgnoreCase(actual)) {
+            target.delete()
+            throw new GradleException("Unexpected FBX2glTF checksum for ${target.name}: ${actual}")
+        }
+    }
+}
+
 processResources {
     dependsOn tasks.named('copyAnimationImporterRuntime')
+    dependsOn tasks.named('downloadFbx2Gltf')
     from(animationImporterLibsDir) {
         into 'animation-importer-libs'
+    }
+    from(fbx2GltfZipFile) {
+        into 'fbx2gltf'
     }
 }
 

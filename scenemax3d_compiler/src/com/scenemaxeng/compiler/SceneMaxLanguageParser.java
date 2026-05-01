@@ -2448,6 +2448,10 @@ public class SceneMaxLanguageParser implements IParser {
                                 varDef.collisionShape = VariableDef.COLLISION_SHAPE_BOX;
                             } else if(shapeType.equals("boxes")) {
                                 varDef.collisionShape = VariableDef.COLLISION_SHAPE_BOXES;
+                            } else if(shapeType.equals("mesh")) {
+                                varDef.collisionShape = VariableDef.COLLISION_SHAPE_MESH;
+                            } else if(shapeType.equals("none")) {
+                                varDef.collisionShape = VariableDef.COLLISION_SHAPE_NONE;
                             }
                         }
                     }

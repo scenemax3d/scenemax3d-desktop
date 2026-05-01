@@ -22,11 +22,16 @@ import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 /**
  * A document panel for importing 3D models.  Extends DesignerPanel so the
@@ -60,6 +65,10 @@ public class Import3DModelPanel extends DesignerPanel {
 
     private static final String PENDING_MARKER_FILE = "_import_pending.json";
     private static final ImageIcon THUMBNAIL_PLACEHOLDER = createPlaceholderIcon();
+    private static final Set<String> SUPPORTED_MODEL_EXTENSIONS = Set.of(
+            ".3ds", ".3mf", ".blend", ".bvh", ".dae", ".fbx", ".glb", ".gltf",
+            ".j3o", ".lwo", ".meshxml", ".mesh.xml", ".obj", ".ply", ".stl"
+    );
 
     // Import settings fields
     private JTextField txtFileName;
@@ -885,18 +894,47 @@ public class Import3DModelPanel extends DesignerPanel {
         txtFileName.setText(displayLabel == null ? selectedFile : displayLabel);
         String requestedName = defaultName == null ? stripModelExtension(sourceFile.getName()) : defaultName;
         txtName.setText(uniqueImportModelName(requestedName));
+        File companionTempRootToDelete = null;
 
         if (selectedFile.toLowerCase().endsWith(".zip")) {
             String extractedFolder = extractModelZip(selectedFile);
-            selectedFile = findGltfFile(extractedFolder);
+            selectedFile = findSupportedModelFile(extractedFolder);
+        } else {
+            File companionZip = findCompanionTextureZip(sourceFile);
+            if (companionZip != null) {
+                boolean usingCompanionAssets = false;
+                if (".fbx".equals(modelExtension(sourceFile.getName()))) {
+                    try {
+                        companionTempRootToDelete = stageSourceWithCompanionAssets(sourceFile, companionZip);
+                        selectedFile = new File(companionTempRootToDelete, sourceFile.getName()).getAbsolutePath();
+                        usingCompanionAssets = true;
+                    } catch (IOException e) {
+                        FileUtils.deleteQuietly(companionTempRootToDelete);
+                        showImportError("Failed to prepare companion textures", e);
+                        return false;
+                    }
+                } else {
+                    String extractedFolder = extractModelZip(companionZip.getAbsolutePath());
+                    String packagedModel = findSupportedModelFile(extractedFolder);
+                    if (packagedModel != null) {
+                        selectedFile = packagedModel;
+                        usingCompanionAssets = true;
+                    }
+                }
+                if (usingCompanionAssets) {
+                    txtFileName.setText((displayLabel == null ? sourceFile.getAbsolutePath() : displayLabel)
+                            + " (using textures from " + companionZip.getName() + ")");
+                }
+            }
         }
 
         if (selectedFile == null) {
-            JOptionPane.showMessageDialog(this, "No .gltf or .glb file found in archive",
+            JOptionPane.showMessageDialog(this, "No supported model file found in archive",
                     "Error", JOptionPane.ERROR_MESSAGE);
             if (tempRootToDelete != null) {
                 FileUtils.deleteQuietly(tempRootToDelete);
             }
+            FileUtils.deleteQuietly(companionTempRootToDelete);
             return false;
         }
 
@@ -908,14 +946,24 @@ public class Import3DModelPanel extends DesignerPanel {
         if (tempRootToDelete != null) {
             FileUtils.deleteQuietly(tempRootToDelete);
         }
+        FileUtils.deleteQuietly(companionTempRootToDelete);
         return imported;
+    }
+
+    private File stageSourceWithCompanionAssets(File sourceFile, File companionZip) throws IOException {
+        File tempRoot = Files.createTempDirectory("scenemax-companion-assets-").toFile();
+        unzip(companionZip.getAbsolutePath(), tempRoot.getAbsolutePath());
+        Files.copy(sourceFile.toPath(), new File(tempRoot, sourceFile.getName()).toPath(), StandardCopyOption.REPLACE_EXISTING);
+        return tempRoot;
     }
 
     private String stripModelExtension(String fileName) {
         String lower = fileName.toLowerCase();
-        if (lower.endsWith(".gltf")) return fileName.substring(0, fileName.length() - 5);
-        if (lower.endsWith(".glb")) return fileName.substring(0, fileName.length() - 4);
         if (lower.endsWith(".zip")) return fileName.substring(0, fileName.length() - 4);
+        String extension = modelExtension(fileName);
+        if (!extension.isEmpty()) {
+            return fileName.substring(0, fileName.length() - extension.length());
+        }
         return fileName;
     }
 
@@ -974,13 +1022,13 @@ public class Import3DModelPanel extends DesignerPanel {
 
         jfc.setFileFilter(new FileFilter() {
             public String getDescription() {
-                return "3D Model File (*.zip, *.gltf, *.glb)";
+                return "3D Model File (*.zip, *.fbx, *.dae, *.obj, *.gltf, *.glb, *.j3o, ...)";
             }
 
             public boolean accept(File f) {
                 if (f.isDirectory()) return true;
                 String name = f.getName().toLowerCase();
-                return name.endsWith(".zip") || name.endsWith(".gltf") || name.endsWith(".glb");
+                return name.endsWith(".zip") || isSupportedModelFile(f);
             }
         });
 
@@ -995,7 +1043,7 @@ public class Import3DModelPanel extends DesignerPanel {
     }
 
     // =====================================================================
-    //  Temporary Import (copy files + register in assets mapping)
+    //  Temporary Import (convert model + register in assets mapping)
     // =====================================================================
 
     private boolean temporaryImport() {
@@ -1015,9 +1063,7 @@ public class Import3DModelPanel extends DesignerPanel {
             return false;
         }
 
-        boolean isGlb = selectedFile.toLowerCase().endsWith(".glb");
         File srcFile = new File(selectedFile);
-        File srcDir = srcFile.getParentFile();
         selectedFileDestDir = resourcesFolder + "/Models/" + name;
         File destDir = new File(selectedFileDestDir);
 
@@ -1032,17 +1078,14 @@ public class Import3DModelPanel extends DesignerPanel {
             cleanupExistingModelForOverride(name, destDir);
         }
 
-        destDir.mkdirs();
+        if (!destDir.mkdirs() && !destDir.isDirectory()) {
+            JOptionPane.showMessageDialog(this, "Failed to create model folder: " + destDir.getAbsolutePath(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
 
         try {
-            File importedModelFile;
-            if (isGlb) {
-                importedModelFile = new File(destDir, name + ".glb");
-                FileUtils.copyFile(srcFile, importedModelFile);
-            } else {
-                FileUtils.copyDirectory(srcDir, destDir);
-                importedModelFile = new File(destDir, srcFile.getName());
-            }
+            File importedModelFile = AnimationImportProcessRunner.convertModelForRuntime(srcFile, destDir, name);
 
             importedModelFilePath = importedModelFile.getAbsolutePath();
             try {
@@ -1102,11 +1145,25 @@ public class Import3DModelPanel extends DesignerPanel {
 
         } catch (IOException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Failed to copy model files: " + e.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
+            FileUtils.deleteQuietly(destDir);
+            showImportError("Failed to import model", e);
         }
 
         return false;
+    }
+
+    private void showImportError(String title, Throwable error) {
+        String details = rootMessage(error);
+        JTextArea textArea = new JTextArea(details == null ? error.toString() : details, 18, 90);
+        textArea.setEditable(false);
+        textArea.setLineWrap(false);
+        textArea.setWrapStyleWord(false);
+        textArea.setCaretPosition(0);
+
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        scrollPane.setPreferredSize(new Dimension(760, 360));
+
+        JOptionPane.showMessageDialog(this, scrollPane, title, JOptionPane.ERROR_MESSAGE);
     }
 
     private void loadModelPreview() {
@@ -1185,9 +1242,6 @@ public class Import3DModelPanel extends DesignerPanel {
         }
         if (cmbBundledAnimations.getItemCount() > 0) {
             cmbBundledAnimations.setSelectedIndex(0);
-            Timer timer = new Timer(350, e -> applySelectedBundledAnimation(0));
-            timer.setRepeats(false);
-            timer.start();
         }
     }
 
@@ -1773,21 +1827,44 @@ public class Import3DModelPanel extends DesignerPanel {
         }
     }
 
-    private String findGltfFile(String folder) {
+    private String findSupportedModelFile(String folder) {
         File f = new File(folder);
         File[] files = f.listFiles();
         if (files == null) return null;
         for (File f2 : files) {
             if (f2.isDirectory()) {
-                String nested = findGltfFile(f2.getAbsolutePath());
+                String nested = findSupportedModelFile(f2.getAbsolutePath());
                 if (nested != null) {
                     return nested;
                 }
-            } else if (f2.getName().toLowerCase().endsWith(".gltf") || f2.getName().toLowerCase().endsWith(".glb")) {
+            } else if (isSupportedModelFile(f2)) {
                 return f2.getAbsolutePath();
             }
         }
         return null;
+    }
+
+    private static boolean isSupportedModelFile(File file) {
+        return file != null && file.isFile() && SUPPORTED_MODEL_EXTENSIONS.contains(modelExtension(file.getName()));
+    }
+
+    private static boolean isSupportedModelName(String fileName) {
+        return SUPPORTED_MODEL_EXTENSIONS.contains(modelExtension(fileName));
+    }
+
+    private static boolean isTextureName(String fileName) {
+        String lower = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        return lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                || lower.endsWith(".webp") || lower.endsWith(".tga") || lower.endsWith(".bmp");
+    }
+
+    private static String modelExtension(String fileName) {
+        String lower = fileName == null ? "" : fileName.toLowerCase();
+        if (lower.endsWith(".mesh.xml")) {
+            return ".mesh.xml";
+        }
+        int dot = lower.lastIndexOf('.');
+        return dot >= 0 ? lower.substring(dot) : "";
     }
 
     private String extractModelZip(String zipFile) {
@@ -1802,6 +1879,79 @@ public class Import3DModelPanel extends DesignerPanel {
         }
         unzip(zipFile, folder.getAbsolutePath());
         return folder.getAbsolutePath();
+    }
+
+    private File findCompanionTextureZip(File sourceFile) {
+        if (sourceFile == null || !sourceFile.isFile()) {
+            return null;
+        }
+        String extension = modelExtension(sourceFile.getName());
+        if (!".fbx".equals(extension) && !".dae".equals(extension) && !".obj".equals(extension)) {
+            return null;
+        }
+        File parent = sourceFile.getParentFile();
+        File[] zips = parent == null ? null : parent.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".zip"));
+        if (zips == null || zips.length == 0) {
+            return null;
+        }
+
+        Set<String> sourceTokens = modelNameTokens(sourceFile.getName());
+        File best = null;
+        int bestScore = 0;
+        for (File zip : zips) {
+            if (!zipContainsModelAndTexture(zip)) {
+                continue;
+            }
+            Set<String> zipTokens = modelNameTokens(zip.getName());
+            int score = 0;
+            for (String token : sourceTokens) {
+                if (zipTokens.contains(token)) {
+                    score++;
+                }
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = zip;
+            }
+        }
+        return bestScore >= 2 ? best : null;
+    }
+
+    private Set<String> modelNameTokens(String name) {
+        Set<String> tokens = new HashSet<>();
+        String[] rawTokens = name == null ? new String[0] : name.toLowerCase(Locale.ROOT).split("[^a-z]+");
+        for (String token : rawTokens) {
+            if (token.length() >= 4) {
+                tokens.add(token);
+            }
+        }
+        return tokens;
+    }
+
+    private boolean zipContainsModelAndTexture(File zipFile) {
+        boolean hasModel = false;
+        boolean hasTexture = false;
+        try (ZipFile zip = new ZipFile(zipFile)) {
+            java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                String name = entry.getName().toLowerCase(Locale.ROOT);
+                if (isSupportedModelName(name)) {
+                    hasModel = true;
+                }
+                if (isTextureName(name)) {
+                    hasTexture = true;
+                }
+                if (hasModel && hasTexture) {
+                    return true;
+                }
+            }
+        } catch (IOException ignored) {
+        }
+        return false;
     }
 
     private boolean modelNameExists(String name, String path, String fileName) {
