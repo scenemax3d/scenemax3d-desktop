@@ -16,6 +16,10 @@ In Mar-22, 2026 the entire solution was uploaded to GitHub as an open source (MI
 
 SceneMax3D includes project documentation in the [`docs/`](docs/) folder, covering the scripting language, control flow, and other engine concepts.
 
+For IDE extension development, see the enhanced plugin system guide in [`docs/plugin-system.md`](docs/plugin-system.md). It covers plugin discovery, lifecycle, toolbar/menu actions, views, asset providers, settings, model import/preview, packaging, and a minimal plugin example.
+
+For a real-world enhanced plugin reference, see the Meshy AI plugin guide in [`docs/meshy-ai-plugin.md`](docs/meshy-ai-plugin.md), which explains the Meshy integration, community search, rig/animation filters, static model imports, preview/import flow, and source-code map.
+
 For AI-assisted workflows, see the built-in MCP and Local Gemma guide in [`docs/built-in-mcp-server.md`](docs/built-in-mcp-server.md), which explains setup for Claude, Codex, Claude Desktop, and local Gemma-powered assistance.
 
 For a tool-by-tool reference covering purpose, common inputs, outputs, and agent-facing usage patterns, see [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md).
@@ -36,7 +40,7 @@ If you want to try SceneMax3D without building from source, download the Windows
 - **3D Model Import** -- load models into your scenes
 - **Cinematic Camera System** -- build dynamic camera moves, chase cameras, and dramatic gameplay cutaways
 - **Multi-Project Support** -- manage multiple projects from a single workspace
-- **Plugin System** -- extend functionality via plugins (WebSocket-based communication)
+- **Enhanced Plugin System** -- extend the IDE with Java plugins that add toolbar/menu actions, Swing views, asset providers, settings, and model import/preview workflows
 - **Built-in MCP Server & AI Console** -- connect Claude Code, Codex, Claude Desktop, and Local Gemma to live SceneMax project tools
 - **Classroom Mode** -- collaborative features for educational settings
 - **Export Targets** -- package as desktop builds or generate a Web Start bundle (JNLP + landing page)

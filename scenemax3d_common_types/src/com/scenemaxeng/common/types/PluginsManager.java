@@ -8,28 +8,46 @@ import java.io.File;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 public class PluginsManager {
 
-    public static JSONObject getSceneMax3dPlugin(String pluginName) {
+    public static JSONArray getPluginsIndex() {
         File pluginsDir = new File("plugins");
         File index = new File(pluginsDir, "index.json");
-        JSONArray pluginsIndex;
         if (!index.exists()) {
-            return null;
+            return new JSONArray();
         }
 
         try {
-            pluginsIndex = new JSONArray(FileUtils.readFileToString(index, StandardCharsets.UTF_8));
-            for (Object it : pluginsIndex) {
-                JSONObject item = (JSONObject)it;
-                String name = item.getString("name");
-                if (name.equals(pluginName)) {
-                    return item;
-                }
-            }
+            return new JSONArray(FileUtils.readFileToString(index, StandardCharsets.UTF_8));
         } catch (Exception e) {
             e.printStackTrace();
+            return new JSONArray();
+        }
+    }
+
+    public static List<JSONObject> getActiveEnhancedPlugins() {
+        List<JSONObject> plugins = new ArrayList<>();
+        JSONArray pluginsIndex = getPluginsIndex();
+        for (Object it : pluginsIndex) {
+            JSONObject item = (JSONObject) it;
+            if (item.optBoolean("active", true) && item.optBoolean("enhanced", false)) {
+                plugins.add(item);
+            }
+        }
+        return plugins;
+    }
+
+    public static JSONObject getSceneMax3dPlugin(String pluginName) {
+        JSONArray pluginsIndex = getPluginsIndex();
+        for (Object it : pluginsIndex) {
+            JSONObject item = (JSONObject)it;
+            String name = item.getString("name");
+            if (name.equals(pluginName)) {
+                return item;
+            }
         }
 
         return null;

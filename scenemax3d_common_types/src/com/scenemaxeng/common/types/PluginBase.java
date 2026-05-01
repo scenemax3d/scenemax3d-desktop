@@ -9,6 +9,13 @@ import java.nio.charset.StandardCharsets;
 
 public class PluginBase implements ISceneMaxPlugin {
     protected ISceneMaxPlugin observer;
+    protected SceneMaxPluginContext context;
+
+    @Override
+    public int initialize(SceneMaxPluginContext context) {
+        this.context = context;
+        return 0;
+    }
 
     @Override
     public int start(Object... args) {
