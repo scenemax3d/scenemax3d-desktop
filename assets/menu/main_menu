@@ -39,7 +39,8 @@
     ]},
 
     {"name": "View", "items": [
-      {"name": "AI Console","command": "show_ai_console"}
+      {"name": "AI Console","command": "show_ai_console"},
+      {"name": "Plugins","command": "plugins"}
     ]},
 
     {"name": "Git", "items": [
