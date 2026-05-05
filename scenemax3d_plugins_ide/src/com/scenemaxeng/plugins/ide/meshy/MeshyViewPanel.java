@@ -72,6 +72,9 @@ final class MeshyViewPanel extends JPanel {
     private final JButton refineButton = new JButton("Refine Selected");
     private final JButton refreshButton = new JButton("Search Tasks");
     private final JButton communitySearchButton = new JButton("Search Community");
+    private final JButton communityPrevPageButton = new JButton("Previous");
+    private final JButton communityNextPageButton = new JButton("Next");
+    private final JLabel communityPageLabel = new JLabel("Page 1");
     private final JButton previewImportButton = new JButton("Preview And Import");
     private final JButton downloadButton = new JButton("Import Directly");
     private final JButton docsButton = new JButton("Docs");
@@ -97,6 +100,12 @@ final class MeshyViewPanel extends JPanel {
     private final Map<String, ImageIcon> thumbnailCache = new ConcurrentHashMap<>();
     private final Set<String> loadingThumbnailUrls = ConcurrentHashMap.newKeySet();
     private int communityPage = 1;
+    private int communityPageSize = COMMUNITY_PAGE_SIZE;
+    private boolean communityHasMore = false;
+    private String communityLastQuery = "";
+    private String communityLastSort = "-public_popularity";
+    private boolean communityLastRigOrAnimationOnly = false;
+    private boolean communityLastAnimationOnly = false;
     private boolean busy;
 
     MeshyViewPanel(SceneMaxPluginContext context) {
@@ -178,9 +187,16 @@ final class MeshyViewPanel extends JPanel {
         communityList.addListSelectionListener(e -> updateSelectionState());
         JScrollPane communityScroll = new JScrollPane(communityList);
         communityScroll.setBorder(BorderFactory.createEmptyBorder());
+        JPanel communityTab = new JPanel(new BorderLayout(0, 6));
+        JPanel communityPaging = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
+        communityPaging.add(communityPrevPageButton);
+        communityPaging.add(communityNextPageButton);
+        communityPaging.add(communityPageLabel);
+        communityTab.add(communityPaging, BorderLayout.NORTH);
+        communityTab.add(communityScroll, BorderLayout.CENTER);
 
         resultsTabs.addTab("My Tasks", resultsScroll);
-        resultsTabs.addTab("Community", communityScroll);
+        resultsTabs.addTab("Community", communityTab);
         resultsTabs.addChangeListener(e -> updateSelectionState());
         resultsTabs.setBorder(BorderFactory.createTitledBorder("Meshy Models"));
         add(resultsTabs, BorderLayout.CENTER);
@@ -189,6 +205,8 @@ final class MeshyViewPanel extends JPanel {
         refineButton.addActionListener(e -> refineSelected());
         refreshButton.addActionListener(e -> refreshTasks());
         communitySearchButton.addActionListener(e -> searchCommunityModels());
+        communityPrevPageButton.addActionListener(e -> loadPreviousCommunityPage());
+        communityNextPageButton.addActionListener(e -> loadNextCommunityPage());
         previewImportButton.addActionListener(e -> previewSelected());
         downloadButton.addActionListener(e -> downloadSelected());
         filterField.addActionListener(e -> applyFilter());
@@ -357,35 +375,71 @@ final class MeshyViewPanel extends JPanel {
 
     private void searchCommunityModels() {
         communityPage = 1;
-        setBusy(true, "Searching Meshy community models...");
+        communityHasMore = false;
+        loadCommunityModels(false);
+    }
+
+    private void loadNextCommunityPage() {
+        if (!communityHasMore) {
+            return;
+        }
+        communityPage++;
+        loadCommunityModels(true);
+    }
+
+    private void loadPreviousCommunityPage() {
+        if (communityPage <= 1) {
+            return;
+        }
+        communityPage--;
+        loadCommunityModels(true);
+    }
+
+    private void loadCommunityModels(boolean useLastSearch) {
+        setBusy(true, useLastSearch ? "Loading Meshy community page " + communityPage + "..." : "Searching Meshy community models...");
         resultsTabs.setSelectedIndex(1);
         SortOption sort = (SortOption) communitySortCombo.getSelectedItem();
-        String query = communitySearchField.getText().trim();
-        String sortValue = sort == null ? "-public_popularity" : sort.value;
-        boolean rigOrAnimationOnly = communityRiggedCheck.isSelected();
-        boolean animationOnly = communityAnimatedCheck.isSelected();
-        int pageSize = (rigOrAnimationOnly || animationOnly) ? 96 : COMMUNITY_PAGE_SIZE;
-        new SwingWorker<JSONArray, Void>() {
+        if (!useLastSearch) {
+            communityLastQuery = communitySearchField.getText().trim();
+            communityLastSort = sort == null ? "-public_popularity" : sort.value;
+            communityLastRigOrAnimationOnly = communityRiggedCheck.isSelected();
+            communityLastAnimationOnly = communityAnimatedCheck.isSelected();
+            communityPageSize = (communityLastRigOrAnimationOnly || communityLastAnimationOnly) ? 96 : COMMUNITY_PAGE_SIZE;
+        }
+        String query = useLastSearch ? communityLastQuery : communitySearchField.getText().trim();
+        String sortValue = useLastSearch ? communityLastSort : (sort == null ? "-public_popularity" : sort.value);
+        boolean rigOrAnimationOnly = useLastSearch ? communityLastRigOrAnimationOnly : communityRiggedCheck.isSelected();
+        boolean animationOnly = useLastSearch ? communityLastAnimationOnly : communityAnimatedCheck.isSelected();
+        int pageSize = communityPageSize;
+        int requestedPage = communityPage;
+        new SwingWorker<MeshyService.CommunitySearchResult, Void>() {
             @Override
-            protected JSONArray doInBackground() throws Exception {
-                return MeshyService.searchCommunityModels(query, sortValue, communityPage, pageSize);
+            protected MeshyService.CommunitySearchResult doInBackground() throws Exception {
+                return MeshyService.searchCommunityModels(query, sortValue, requestedPage, pageSize);
             }
 
             @Override
             protected void done() {
                 try {
-                    JSONArray models = get();
+                    MeshyService.CommunitySearchResult result = get();
+                    JSONArray models = result.models;
                     communityListModel.clear();
+                    int added = 0;
                     for (int i = 0; i < models.length(); i++) {
                         MeshyCommunityModelItem item = new MeshyCommunityModelItem(models.getJSONObject(i));
                         if (matchesCommunityMotionFilter(item, rigOrAnimationOnly, animationOnly)) {
-                            communityListModel.addElement(item);
+                            added += addCommunityItemIfAbsent(item) ? 1 : 0;
                         }
                     }
+                    communityPage = result.pageNum;
+                    communityPageSize = result.pageSize;
+                    communityHasMore = result.hasMore;
+                    updateSelectionState();
                     if (rigOrAnimationOnly || animationOnly) {
                         statusLabel.setText("Loaded " + communityListModel.size()
                                 + " Meshy community model(s) with "
-                                + (animationOnly ? "animation metadata." : "rig/animation hints."));
+                                + (animationOnly ? "animation metadata" : "rig/animation hints")
+                                + " on page " + communityPage + communityMoreStatusSuffix(result) + ".");
                         if (communityListModel.isEmpty()) {
                             JOptionPane.showMessageDialog(MeshyViewPanel.this,
                                     "Meshy's public community search does not expose a strict rigged-only filter. "
@@ -393,7 +447,12 @@ final class MeshyViewPanel extends JPanel {
                                     "Meshy AI", JOptionPane.INFORMATION_MESSAGE);
                         }
                     } else {
-                        statusLabel.setText("Loaded " + communityListModel.size() + " Meshy community model(s).");
+                        statusLabel.setText("Loaded " + communityListModel.size()
+                                + " Meshy community model(s) on page " + communityPage
+                                + communityMoreStatusSuffix(result) + ".");
+                    }
+                    if (useLastSearch && added == 0 && communityHasMore) {
+                        statusLabel.setText(statusLabel.getText() + " This page had no visible matches; press Next to continue.");
                     }
                 } catch (Exception e) {
                     showError("Community search failed", e);
@@ -402,6 +461,35 @@ final class MeshyViewPanel extends JPanel {
                 }
             }
         }.execute();
+    }
+
+    private boolean addCommunityItemIfAbsent(MeshyCommunityModelItem item) {
+        String key = communityItemKey(item);
+        for (int i = 0; i < communityListModel.size(); i++) {
+            if (key.equals(communityItemKey(communityListModel.get(i)))) {
+                return false;
+            }
+        }
+        communityListModel.addElement(item);
+        return true;
+    }
+
+    private String communityItemKey(MeshyCommunityModelItem item) {
+        if (item == null) {
+            return "";
+        }
+        if (!item.resultId().isEmpty()) {
+            return "result:" + item.resultId();
+        }
+        if (!item.id().isEmpty()) {
+            return "id:" + item.id();
+        }
+        return "title:" + item.title();
+    }
+
+    private String communityMoreStatusSuffix(MeshyService.CommunitySearchResult result) {
+        String totalText = result.total >= 0 ? " of " + result.total : "";
+        return result.hasMore ? totalText + "; more available" : totalText;
     }
 
     private void downloadSelected() {
@@ -750,10 +838,13 @@ final class MeshyViewPanel extends JPanel {
     }
 
     private void updateSelectionState() {
+        communityPageLabel.setText("Page " + communityPage + (communityHasMore ? " / more" : ""));
         if (isCommunityTabSelected()) {
             MeshyCommunityModelItem selected = communityList.getSelectedValue();
             boolean canDownloadCommunity = selected != null && !selected.downloadTaskId().isEmpty();
             refineButton.setEnabled(false);
+            communityPrevPageButton.setEnabled(!busy && communityPage > 1);
+            communityNextPageButton.setEnabled(!busy && communityHasMore);
             previewImportButton.setEnabled(!busy && canDownloadCommunity);
             downloadButton.setEnabled(!busy && canDownloadCommunity);
             return;
@@ -764,6 +855,8 @@ final class MeshyViewPanel extends JPanel {
         refineButton.setEnabled(!busy && hasSelection && selected.isPreview() && "SUCCEEDED".equals(selected.status()));
         boolean hasFinishedModel = hasSelection && "SUCCEEDED".equals(selected.status()) && !selected.glbUrl().isEmpty();
         boolean canImport = hasFinishedModel && selected.isTextured();
+        communityPrevPageButton.setEnabled(false);
+        communityNextPageButton.setEnabled(false);
         previewImportButton.setEnabled(!busy && canImport);
         downloadButton.setEnabled(!busy && canImport);
         if (!busy && hasSelection && selected.isPreview() && "SUCCEEDED".equals(selected.status())) {
@@ -780,6 +873,8 @@ final class MeshyViewPanel extends JPanel {
         createPreviewButton.setEnabled(!busy);
         refreshButton.setEnabled(!busy);
         communitySearchButton.setEnabled(!busy);
+        communityPrevPageButton.setEnabled(!busy && communityPage > 1 && isCommunityTabSelected());
+        communityNextPageButton.setEnabled(!busy && communityHasMore && isCommunityTabSelected());
         taskList.setEnabled(!busy);
         communityList.setEnabled(!busy);
         if (busy && message != null && !message.isEmpty()) {

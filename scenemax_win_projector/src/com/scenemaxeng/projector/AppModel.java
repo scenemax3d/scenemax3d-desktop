@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class AppModel {
@@ -55,6 +56,7 @@ public class AppModel {
     private AnimControl control;
 
     private AnimComposer composer;
+    private final Map<String, String> attachedExternalAnimationKeys = new HashMap<>();
     public Transform resetTransform;
 
 
@@ -322,6 +324,14 @@ public class AppModel {
             return false;
         }
 
+        String normalizedName = animationName.toLowerCase();
+        String animationKey = externalAnimationKey(resourceAnimation);
+        if (animationKey.equals(attachedExternalAnimationKeys.get(normalizedName))
+                && targetComposer.hasAction(animationName)
+                && targetComposer.hasAnimClip(animationName)) {
+            return true;
+        }
+
         try {
             ModelKey sourceKey = new ModelKey(resourceAnimation.path);
             assetManager.deleteFromCache(sourceKey);
@@ -373,11 +383,18 @@ public class AppModel {
             }
             targetComposer.addAnimClip(retargeted);
             targetComposer.addAction(animationName, new ClipAction(retargeted));
+            attachedExternalAnimationKeys.put(normalizedName, animationKey);
             return true;
         } catch (Exception e) {
             e.printStackTrace();
             return false;
         }
+    }
+
+    private String externalAnimationKey(ResourceAnimation resourceAnimation) {
+        String path = resourceAnimation.path == null ? "" : resourceAnimation.path;
+        String clipName = resourceAnimation.clipName == null ? "" : resourceAnimation.clipName;
+        return path + "|" + clipName;
     }
 
     private AnimClip retargetGltfAnimationByName(AssetManager assetManager, String assetPath, String clipName, String runtimeName) throws IOException {
@@ -486,8 +503,12 @@ public class AppModel {
     private Quaternion[] retargetGltfRotations(ParsedGltfNodeAnimation nodeAnimation, HasLocalTransform target,
                                                int frameCount, boolean fullBodyClip) {
         Quaternion sourceRest = nodeAnimation.restRotation;
-        Quaternion inverseSourceRest = sourceRest.inverse();
         Quaternion targetRest = restRotation(target);
+        if (canUseAuthoredLocalRotations(nodeAnimation.name, sourceRest, target)) {
+            return authoredLocalRotations(nodeAnimation.rotations, nodeAnimation.restRotation, frameCount);
+        }
+
+        Quaternion inverseSourceRest = sourceRest.inverse();
         Quaternion[] rotations = new Quaternion[frameCount];
         for (int i = 0; i < rotations.length; i++) {
             Quaternion sourceRotation = i < nodeAnimation.rotations.length && nodeAnimation.rotations[i] != null
@@ -775,6 +796,10 @@ public class AppModel {
         }
 
         Quaternion sourceRest = restRotation(sourceTarget);
+        if (canUseAuthoredLocalRotations(sourceName, sourceRest, target)) {
+            return authoredLocalRotations(sourceRotations, sourceRest, sourceRotations.length);
+        }
+
         Quaternion inverseSourceRest = sourceRest.inverse();
         Quaternion targetRest = restRotation(target);
         Quaternion[] rotations = new Quaternion[sourceRotations.length];
@@ -797,6 +822,40 @@ public class AppModel {
         }
 
         return targetRest.mult(sourceDelta);
+    }
+
+    private boolean canUseAuthoredLocalRotations(String sourceName, Quaternion sourceRest, HasLocalTransform target) {
+        String targetName = targetName(target);
+        if (sourceName == null || targetName == null || isAssimpFbxHelper(sourceName)) {
+            return false;
+        }
+        return isMixamoJoint(sourceName)
+                && (sourceName.equals(targetName)
+                || sourceName.equalsIgnoreCase(targetName)
+                || normalizeJointName(sourceName).equals(normalizeJointName(targetName)))
+                && hasCompatibleRestRotation(sourceRest, restRotation(target));
+    }
+
+    private boolean hasCompatibleRestRotation(Quaternion sourceRest, Quaternion targetRest) {
+        if (sourceRest == null || targetRest == null) {
+            return false;
+        }
+        return Math.abs(sourceRest.dot(targetRest)) > 0.9995f;
+    }
+
+    private boolean isMixamoJoint(String jointName) {
+        return jointName != null && jointName.toLowerCase(Locale.ROOT).contains("mixamorig");
+    }
+
+    private Quaternion[] authoredLocalRotations(Quaternion[] sourceRotations, Quaternion fallbackRotation, int frameCount) {
+        Quaternion[] rotations = new Quaternion[frameCount];
+        for (int i = 0; i < rotations.length; i++) {
+            Quaternion rotation = sourceRotations != null && i < sourceRotations.length && sourceRotations[i] != null
+                    ? sourceRotations[i]
+                    : fallbackRotation;
+            rotations[i] = rotation.clone();
+        }
+        return rotations;
     }
 
     private Quaternion assimpFbxBoneDelta(HasLocalTransform sourceTarget, Quaternion sourceRotation) {

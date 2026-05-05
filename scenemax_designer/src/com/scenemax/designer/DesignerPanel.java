@@ -39,6 +39,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -204,6 +205,8 @@ public class DesignerPanel extends JPanel {
     private JPanel sceneShaderPanel;
     private JComboBox<String> cboShadowMode;
     private JPanel shadowModePanel;
+    private JComboBox<String> cboModelCollisionShape;
+    private JPanel modelCollisionShapePanel;
     private JCheckBox chkJointMapping;
     private JButton btnEditJointMapping;
     private JPanel jointMappingPanel;
@@ -1075,6 +1078,22 @@ public class DesignerPanel extends JPanel {
         shadowModePanel.setVisible(false);
         propertiesForm.add(shadowModePanel);
 
+        // Collision Shape combo (MODEL only)
+        modelCollisionShapePanel = new JPanel();
+        modelCollisionShapePanel.setLayout(new BoxLayout(modelCollisionShapePanel, BoxLayout.Y_AXIS));
+        modelCollisionShapePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        modelCollisionShapePanel.add(Box.createVerticalStrut(8));
+        JPanel collisionShapeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        collisionShapeRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        collisionShapeRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        collisionShapeRow.add(new JLabel("Collision Shape:"));
+        cboModelCollisionShape = new JComboBox<>(new String[]{"None", "Default", "Box", "Boxes", "Mesh"});
+        cboModelCollisionShape.addActionListener(e -> applyModelCollisionShapeChange());
+        collisionShapeRow.add(cboModelCollisionShape);
+        modelCollisionShapePanel.add(collisionShapeRow);
+        modelCollisionShapePanel.setVisible(false);
+        propertiesForm.add(modelCollisionShapePanel);
+
         // Joint Mapping checkbox + edit button (MODEL only)
         jointMappingPanel = new JPanel();
         jointMappingPanel.setLayout(new BoxLayout(jointMappingPanel, BoxLayout.Y_AXIS));
@@ -1453,6 +1472,7 @@ public class DesignerPanel extends JPanel {
         JComboBox<String> cmbModels = new JComboBox<>(modelNames.toArray(new String[0]));
         JCheckBox chkStatic = new JCheckBox("Static");
         JCheckBox chkDynamic = new JCheckBox("Dynamic");
+        JComboBox<String> cboCollisionShape = new JComboBox<>(new String[]{"None", "Default", "Box", "Boxes", "Mesh"});
         cmbModels.setRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> list, Object value, int index,
@@ -1505,6 +1525,11 @@ public class DesignerPanel extends JPanel {
         optionsPanel.add(chkDynamic);
         panel.add(optionsPanel, gbc);
 
+        gbc.gridx = 0; gbc.gridy = 2; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        panel.add(new JLabel("Collision Shape:"), gbc);
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1;
+        panel.add(cboCollisionShape, gbc);
+
         int result = JOptionPane.showConfirmDialog(this, panel,
                 "Add 3D Model", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
 
@@ -1514,7 +1539,8 @@ public class DesignerPanel extends JPanel {
             boolean isDynamic = chkDynamic.isSelected();
             if (selectedModel != null) {
                 boolean isVehicle = app.isModelVehicle(selectedModel);
-                app.enqueue(() -> { app.addModel(selectedModel, isStatic, isDynamic, isVehicle, targetList, insertIndex); return null; });
+                String collisionShape = modelCollisionShapeFromLabel((String) cboCollisionShape.getSelectedItem());
+                app.enqueue(() -> { app.addModel(selectedModel, isStatic, isDynamic, isVehicle, collisionShape, targetList, insertIndex); return null; });
             }
         }
     }
@@ -1796,6 +1822,10 @@ public class DesignerPanel extends JPanel {
         if (activeDesignerPanel != null) {
             activeDesignerPanel.deactivatePanel();
         }
+    }
+
+    public static boolean hasLiveSharedCanvas() {
+        return sharedApp != null && sharedCanvas != null;
     }
 
     public void reloadFromDisk() {
@@ -2623,6 +2653,7 @@ public class DesignerPanel extends JPanel {
                 shaderPanel.setVisible(false);
                 sceneShaderPanel.setVisible(false);
                 shadowModePanel.setVisible(false);
+                modelCollisionShapePanel.setVisible(false);
                 jointMappingPanel.setVisible(false);
                 pathPropertiesPanel.setVisible(false);
                 cinematicTrackPanel.setVisible(false);
@@ -2782,18 +2813,22 @@ public class DesignerPanel extends JPanel {
                 shadowModePanel.setVisible(true);
 
                 if (entity.getType() == DesignerEntityType.MODEL) {
+                    cboModelCollisionShape.setSelectedItem(modelCollisionShapeLabel(entity.getModelCollisionShape()));
+                    modelCollisionShapePanel.setVisible(true);
                     String jm = entity.getJointMapping();
                     boolean hasJoints = jm != null && !jm.trim().isEmpty();
                     chkJointMapping.setSelected(hasJoints);
                     btnEditJointMapping.setEnabled(hasJoints);
                     jointMappingPanel.setVisible(true);
                 } else {
+                    modelCollisionShapePanel.setVisible(false);
                     jointMappingPanel.setVisible(false);
                 }
             } else {
                 hiddenPanel.setVisible(false);
                 shaderPanel.setVisible(false);
                 shadowModePanel.setVisible(false);
+                modelCollisionShapePanel.setVisible(false);
                 jointMappingPanel.setVisible(false);
             }
 
@@ -2902,6 +2937,7 @@ public class DesignerPanel extends JPanel {
             hiddenPanel.setVisible(false);
             shaderPanel.setVisible(false);
             shadowModePanel.setVisible(false);
+            modelCollisionShapePanel.setVisible(false);
             jointMappingPanel.setVisible(false);
             pathPropertiesPanel.setVisible(false);
             cinematicTrackPanel.setVisible(false);
@@ -3271,6 +3307,43 @@ public class DesignerPanel extends JPanel {
             app.markDocumentDirty();
             return null;
         });
+    }
+
+    private void applyModelCollisionShapeChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.MODEL) return;
+
+        String shape = modelCollisionShapeFromLabel((String) cboModelCollisionShape.getSelectedItem());
+        app.enqueue(() -> {
+            sel.setModelCollisionShape(shape);
+            app.markDocumentDirty();
+            return null;
+        });
+    }
+
+    private static String modelCollisionShapeFromLabel(String label) {
+        if (label == null || label.trim().isEmpty()) {
+            return "none";
+        }
+        return label.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String modelCollisionShapeLabel(String value) {
+        String shape = value == null ? "none" : value.trim().toLowerCase(Locale.ROOT);
+        switch (shape) {
+            case "default":
+                return "Default";
+            case "box":
+                return "Box";
+            case "boxes":
+                return "Boxes";
+            case "mesh":
+                return "Mesh";
+            case "none":
+            default:
+                return "None";
+        }
     }
 
     private void applyJointMappingCheckChange() {
