@@ -33,11 +33,17 @@ import com.jme3.system.AppSettings;
 import com.jme3.system.JmeCanvasContext;
 import com.jme3.texture.Texture;
 import com.scenemaxeng.projector.SceneMaxApp;
+import org.lwjgl.input.Mouse;
 
 import java.awt.Canvas;
+import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.File;
 import java.util.Map;
 
@@ -66,6 +72,24 @@ public class InventoryModelPreview {
         ctx.setSystemListener(app);
         canvas = ctx.getCanvas();
         canvas.setMinimumSize(new Dimension(120, 120));
+        canvas.setCursor(Cursor.getDefaultCursor());
+        canvas.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                releaseMouseCapture();
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                releaseMouseCapture();
+            }
+        });
+        canvas.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent e) {
+                releaseMouseCapture();
+            }
+        });
         canvas.addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
@@ -88,15 +112,33 @@ public class InventoryModelPreview {
     }
 
     public void stop() {
+        releaseMouseCapture();
         app.stop();
     }
 
     public void previewModel(String path, Map<String, String> properties) {
+        releaseMouseCapture();
         app.previewModel(path, properties);
     }
 
     public void clearPreview() {
+        releaseMouseCapture();
         app.clearPreview();
+    }
+
+    public void releaseMouseCapture() {
+        canvas.setCursor(Cursor.getDefaultCursor());
+        app.releaseMouseCapture();
+        releaseNativeMouseGrab();
+    }
+
+    private static void releaseNativeMouseGrab() {
+        try {
+            if (Mouse.isCreated() && Mouse.isGrabbed()) {
+                Mouse.setGrabbed(false);
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     private static class PreviewApp extends SceneMaxApp {
@@ -140,6 +182,7 @@ public class InventoryModelPreview {
             viewPort.setBackgroundColor(new ColorRGBA(0.05f, 0.065f, 0.08f, 1f));
             flyCam.setEnabled(false);
             inputManager.setCursorVisible(true);
+            InventoryModelPreview.releaseNativeMouseGrab();
             setDisplayFps(false);
             setDisplayStatView(false);
 
@@ -196,6 +239,7 @@ public class InventoryModelPreview {
                 return;
             }
             enqueue(() -> {
+                releaseMouseCaptureNow();
                 loadModel(path, properties);
                 return null;
             });
@@ -203,9 +247,29 @@ public class InventoryModelPreview {
 
         void clearPreview() {
             enqueue(() -> {
+                releaseMouseCaptureNow();
                 showFallbackBox();
                 return null;
             });
+        }
+
+        void releaseMouseCapture() {
+            try {
+                enqueue(() -> {
+                    releaseMouseCaptureNow();
+                    return null;
+                });
+            } catch (IllegalStateException ignored) {
+                releaseMouseCaptureNow();
+            }
+        }
+
+        private void releaseMouseCaptureNow() {
+            orbiting = false;
+            if (inputManager != null) {
+                inputManager.setCursorVisible(true);
+            }
+            InventoryModelPreview.releaseNativeMouseGrab();
         }
 
         private void loadModel(String path, Map<String, String> properties) {

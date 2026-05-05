@@ -1754,6 +1754,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 } else if (cmd.equals("copy_absolute_path")) {
                     String absolutePath = new File(filePath).getAbsolutePath();
                     Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(absolutePath), null);
+                } else if (cmd.equals("open_in_explorer")) {
+                    openInExplorer(filePath);
                 }
 
             }
@@ -1779,7 +1781,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         addScriptsTreePopupMenuItem("Save", "save", popup, popupActionListener, false, true, file);
         addScriptsTreePopupMenuItem("Reload from disk", "reload_from_disk", popup, popupActionListener, false, true, file);
         addScriptsTreePopupMenuItem("Refresh Project Files", "refresh_project_tree", popup, popupActionListener, true, true, file);
-        addScriptsTreePopupMenuItem("Copy Absolute Path", "copy_absolute_path", popup, popupActionListener, false, true, file);
+        addScriptsTreePopupMenuItem("Copy absolute path", "copy_absolute_path", popup, popupActionListener, true, true, file);
+        addScriptsTreePopupMenuItem("Open in explorer", "open_in_explorer", popup, popupActionListener, true, true, file);
         JMenuItem item = addScriptsTreePopupMenuItem("Delete...", "delete", popup, popupActionListener, false, true, file);
         if (item != null) {
             item.setEnabled(!file.getName().equals("main"));
@@ -1832,6 +1835,38 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
 
         return popup;
+    }
+
+    private void openInExplorer(String filePath) {
+        File target = new File(filePath).getAbsoluteFile();
+        File folder = target.isDirectory() ? target : target.getParentFile();
+        if (folder == null) {
+            folder = target;
+        }
+
+        try {
+            if (isWindows()) {
+                new ProcessBuilder("explorer.exe", folder.getAbsolutePath()).start();
+                return;
+            }
+
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().open(folder);
+                return;
+            }
+
+            throw new IOException("Desktop integration is not supported on this system.");
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Could not open folder:\n" + folder.getAbsolutePath(),
+                    "Open in explorer",
+                    JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
     }
 
     private void exportProgramToLocalZipFile(String filePath) {

@@ -3840,7 +3840,21 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         if (modelInst.varDef.isStatic) {
             am.isStatic = true;
-            parentNode.breadthFirstTraversal(visitor);
+            if (modelInst.varDef.collisionShape == VariableDef.COLLISION_SHAPE_NONE) {
+                parentNode.breadthFirstTraversal(visitorSetName);
+            } else if (modelInst.varDef.collisionShape == VariableDef.COLLISION_SHAPE_BOX
+                    || modelInst.varDef.collisionShape == VariableDef.COLLISION_SHAPE_BOXES) {
+                parentNode.breadthFirstTraversal(visitorSetName);
+                CollisionShape staticModelShape = modelInst.varDef.collisionShape == VariableDef.COLLISION_SHAPE_BOX
+                        ? CollisionShapeFactory.createMergedBoxShape(parentNode)
+                        : CollisionShapeFactory.createBoxShape(parentNode);
+                RigidBodyControl modelCtl = new RigidBodyControl(staticModelShape, 0f);
+                parentNode.addControl(modelCtl);
+                bulletAppState.getPhysicsSpace().add(modelCtl);
+                ctls.add(modelCtl);
+            } else {
+                parentNode.breadthFirstTraversal(visitor);
+            }
         } else {
             parentNode.breadthFirstTraversal(visitorSetName); // we need to give all sub geometries a name & map them
             // - we will use that for ray casting & other utilities

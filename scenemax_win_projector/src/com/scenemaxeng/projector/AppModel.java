@@ -502,13 +502,13 @@ public class AppModel {
 
     private Quaternion[] retargetGltfRotations(ParsedGltfNodeAnimation nodeAnimation, HasLocalTransform target,
                                                int frameCount, boolean fullBodyClip) {
-        if (canUseAuthoredLocalRotations(nodeAnimation.name, target)) {
+        Quaternion sourceRest = nodeAnimation.restRotation;
+        Quaternion targetRest = restRotation(target);
+        if (canUseAuthoredLocalRotations(nodeAnimation.name, sourceRest, target)) {
             return authoredLocalRotations(nodeAnimation.rotations, nodeAnimation.restRotation, frameCount);
         }
 
-        Quaternion sourceRest = nodeAnimation.restRotation;
         Quaternion inverseSourceRest = sourceRest.inverse();
-        Quaternion targetRest = restRotation(target);
         Quaternion[] rotations = new Quaternion[frameCount];
         for (int i = 0; i < rotations.length; i++) {
             Quaternion sourceRotation = i < nodeAnimation.rotations.length && nodeAnimation.rotations[i] != null
@@ -796,7 +796,7 @@ public class AppModel {
         }
 
         Quaternion sourceRest = restRotation(sourceTarget);
-        if (canUseAuthoredLocalRotations(sourceName, target)) {
+        if (canUseAuthoredLocalRotations(sourceName, sourceRest, target)) {
             return authoredLocalRotations(sourceRotations, sourceRest, sourceRotations.length);
         }
 
@@ -824,7 +824,7 @@ public class AppModel {
         return targetRest.mult(sourceDelta);
     }
 
-    private boolean canUseAuthoredLocalRotations(String sourceName, HasLocalTransform target) {
+    private boolean canUseAuthoredLocalRotations(String sourceName, Quaternion sourceRest, HasLocalTransform target) {
         String targetName = targetName(target);
         if (sourceName == null || targetName == null || isAssimpFbxHelper(sourceName)) {
             return false;
@@ -832,7 +832,15 @@ public class AppModel {
         return isMixamoJoint(sourceName)
                 && (sourceName.equals(targetName)
                 || sourceName.equalsIgnoreCase(targetName)
-                || normalizeJointName(sourceName).equals(normalizeJointName(targetName)));
+                || normalizeJointName(sourceName).equals(normalizeJointName(targetName)))
+                && hasCompatibleRestRotation(sourceRest, restRotation(target));
+    }
+
+    private boolean hasCompatibleRestRotation(Quaternion sourceRest, Quaternion targetRest) {
+        if (sourceRest == null || targetRest == null) {
+            return false;
+        }
+        return Math.abs(sourceRest.dot(targetRest)) > 0.9995f;
     }
 
     private boolean isMixamoJoint(String jointName) {

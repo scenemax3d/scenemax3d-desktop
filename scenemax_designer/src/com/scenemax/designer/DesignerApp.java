@@ -102,6 +102,7 @@ public class DesignerApp extends SceneMaxApp {
         float archWidth, archHeight, archDepth, archThickness;
         int archSegments;
         String resourcePath;
+        String modelCollisionShape;
         boolean staticModel;
         boolean dynamicModel;
         boolean vehicleModel;
@@ -694,6 +695,7 @@ public class DesignerApp extends SceneMaxApp {
 
         // Call SceneMaxApp's init - sets up asset management, lighting, physics, etc.
         super.simpleInitApp();
+        ensureDesignerFallbackLightingForPreviewScene();
         captureDesignerFallbackLighting();
 
         // Reload AssetsMapping with the project's resources folder so that
@@ -724,6 +726,7 @@ public class DesignerApp extends SceneMaxApp {
                 ? designerFile.getParentFile().getAbsolutePath()
                 : designerProjectPath;
         initDesignerRuntime(runtimePath);
+        ensureDesignerFallbackLightingForPreviewScene();
         captureDesignerFallbackLighting();
 
         // --- Designer extras ---
@@ -955,17 +958,25 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     public String addModel(String resourceName, boolean isStatic, boolean isDynamic, boolean isVehicle) {
-        return addModel(resourceName, isStatic, isDynamic, isVehicle, null, -1);
+        return addModel(resourceName, isStatic, isDynamic, isVehicle, "none", null, -1);
     }
 
     /** Creates a 3D model at a specific position in a target list. */
     public String addModel(String resourceName, boolean isStatic, boolean isDynamic, boolean isVehicle,
                          List<DesignerEntity> targetList, int insertIndex) {
+        return addModel(resourceName, isStatic, isDynamic, isVehicle, "none", targetList, insertIndex);
+    }
+
+    /** Creates a 3D model at a specific position in a target list. */
+    public String addModel(String resourceName, boolean isStatic, boolean isDynamic, boolean isVehicle,
+                         String collisionShape, List<DesignerEntity> targetList, int insertIndex) {
         String name = "model_" + (++modelCounter);
         String prefix = isStatic ? "static " : isDynamic ? "dynamic " : "";
         String vehicleSuffix = isVehicle ? " vehicle" : "";
         float initialY = isVehicle ? 5f : 0f;
-        String code = name + " => " + prefix + resourceName + vehicleSuffix + ": pos (0," + initialY + ",0) async";
+        String normalizedCollisionShape = normalizeModelCollisionShape(collisionShape);
+        String code = name + " => " + prefix + resourceName + vehicleSuffix + ": pos (0," + initialY + ",0)"
+                + buildModelCollisionShapeSuffix(normalizedCollisionShape) + " async";
         addEntityViaCode(name, code, DesignerEntityType.MODEL, 0, 0, 0, 0, resourceName, isStatic, isDynamic, isVehicle, false, false, targetList, insertIndex);
 
         // Apply the model's configured scale from ResourceSetup instead of defaulting to 1
@@ -976,6 +987,8 @@ public class DesignerApp extends SceneMaxApp {
                 pe.savedScale = new Vector3f(res.scaleX, res.scaleY, res.scaleZ);
             }
         }
+        PendingEntity pe = pendingEntities.get(pendingEntities.size() - 1);
+        pe.modelCollisionShape = normalizedCollisionShape;
         return name;
     }
 
@@ -1377,6 +1390,53 @@ public class DesignerApp extends SceneMaxApp {
             }
         }
         designerFallbackLightingEnabled = !designerFallbackLights.isEmpty();
+    }
+
+    private void ensureDesignerFallbackLightingForPreviewScene() {
+        if (rootNode.getLocalLightList().size() > 0) {
+            ensureDesignerFallbackAmbientLight();
+            return;
+        }
+
+        if (!designerFallbackLights.isEmpty()) {
+            designerFallbackLightingEnabled = false;
+            restoreDesignerFallbackLighting();
+            ensureDesignerFallbackAmbientLight();
+            return;
+        }
+
+        DirectionalLight key = new DirectionalLight();
+        key.setDirection(new Vector3f(-0.35f, -0.75f, -0.45f).normalizeLocal());
+        key.setColor(ColorRGBA.White.mult(1.6f));
+        rootNode.addLight(key);
+        designerFallbackLights.add(key);
+
+        AmbientLight ambient = new AmbientLight();
+        ambient.setColor(ColorRGBA.White.mult(0.65f));
+        rootNode.addLight(ambient);
+        designerFallbackLights.add(ambient);
+
+        designerFallbackLightingEnabled = true;
+    }
+
+    private void ensureDesignerFallbackAmbientLight() {
+        if (hasLocalAmbientLight()) {
+            return;
+        }
+        AmbientLight ambient = new AmbientLight();
+        ambient.setColor(ColorRGBA.White.mult(0.65f));
+        rootNode.addLight(ambient);
+        designerFallbackLights.add(ambient);
+        designerFallbackLightingEnabled = true;
+    }
+
+    private boolean hasLocalAmbientLight() {
+        for (Light light : rootNode.getLocalLightList()) {
+            if (light instanceof AmbientLight) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isLocalLightAttached(Light light) {
@@ -2875,6 +2935,7 @@ public class DesignerApp extends SceneMaxApp {
                         entity.setStaticModel(pe.staticModel);
                         entity.setDynamicModel(pe.dynamicModel);
                         entity.setVehicleModel(pe.vehicleModel);
+                        entity.setModelCollisionShape(pe.modelCollisionShape);
                         entity.setHidden(pe.hidden);
                         entity.setShader(pe.shader != null ? pe.shader : "");
                         entity.setShadowMode(pe.shadowMode);
@@ -3536,6 +3597,8 @@ public class DesignerApp extends SceneMaxApp {
                 ? designerFile.getParentFile().getAbsolutePath()
                 : designerProjectPath;
         initDesignerRuntime(runtimePath);
+        ensureDesignerFallbackLightingForPreviewScene();
+        captureDesignerFallbackLighting();
 
         // Restore camera (clearScene resets it to default)
         cam.setLocation(savedCamPos);
@@ -3612,6 +3675,7 @@ public class DesignerApp extends SceneMaxApp {
         }
         pendingEntities.clear();
         clearSceneAll();
+        ensureDesignerFallbackLightingForPreviewScene();
         captureDesignerFallbackLighting();
         document = null;
         designerFile = null;
@@ -3667,6 +3731,7 @@ public class DesignerApp extends SceneMaxApp {
                 ? designerFile.getParentFile().getAbsolutePath()
                 : designerProjectPath;
         initDesignerRuntime(runtimePath);
+        ensureDesignerFallbackLightingForPreviewScene();
         captureDesignerFallbackLighting();
 
         // Re-attach grid and gizmos if they were detached
@@ -4139,6 +4204,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.staticModel = entityTemplate.isStaticModel();
                     pending.dynamicModel = entityTemplate.isDynamicModel();
                     pending.vehicleModel = entityTemplate.isVehicleModel();
+                    pending.modelCollisionShape = entityTemplate.getModelCollisionShape();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shader = entityTemplate.getShader();
                     pending.shadowMode = entityTemplate.getShadowMode();
@@ -4326,11 +4392,34 @@ public class DesignerApp extends SceneMaxApp {
             case MODEL:
                 String staticPfx = entity.isStaticModel() ? "static " : "";
                 String vehicleSfx = entity.isVehicleModel() ? " vehicle" : "";
+                String collisionSuffix = buildModelCollisionShapeSuffix(entity.getModelCollisionShape());
                 return name + " => " + staticPfx + entity.getResourcePath() + vehicleSfx +
-                       ":" + hiddenAttr + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" +
-                       scaleSuffix + rotateSuffix + shadowSuffix + " async";
+                        ":" + hiddenAttr + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" +
+                        scaleSuffix + rotateSuffix + shadowSuffix + collisionSuffix + " async";
             default:
                 return "";
+        }
+    }
+
+    private String buildModelCollisionShapeSuffix(String value) {
+        String shape = normalizeModelCollisionShape(value);
+        return "default".equals(shape) ? "" : ", collision shape " + shape;
+    }
+
+    private String normalizeModelCollisionShape(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "none";
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        switch (normalized) {
+            case "default":
+            case "box":
+            case "boxes":
+            case "mesh":
+            case "none":
+                return normalized;
+            default:
+                return "none";
         }
     }
 

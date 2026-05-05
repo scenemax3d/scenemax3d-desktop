@@ -1,6 +1,8 @@
 
+m1 => meshy_azure3 : pos(-4,0,0), scale 0.02
+m2 => adi2 : pos (4,-2,0)
 
-m => meshy_azure3: scale 0.02
+wait 5 Seconds
 
-wait 10 Seconds
-m.walking1 then headspin_start then zombie_punch1 then mutant_punch1 
+m1.walking1 then hit1 then headspin_start then zombie_punch1 then mutant_punch1 Async
+m2.walking1 then hit1 then headspin_start then zombie_punch1 then mutant_punch1 

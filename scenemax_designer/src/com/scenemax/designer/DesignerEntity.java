@@ -81,6 +81,7 @@ public class DesignerEntity {
     private boolean staticModel;
     private boolean dynamicModel;
     private boolean vehicleModel;
+    private String modelCollisionShape = "none";
 
     // Shared flags for BOX, SPHERE (and MODEL already has staticModel)
     private boolean staticEntity;
@@ -235,6 +236,11 @@ public class DesignerEntity {
 
     public boolean isVehicleModel() { return vehicleModel; }
     public void setVehicleModel(boolean vehicleModel) { this.vehicleModel = vehicleModel; }
+
+    public String getModelCollisionShape() { return normalizeModelCollisionShape(modelCollisionShape); }
+    public void setModelCollisionShape(String modelCollisionShape) {
+        this.modelCollisionShape = normalizeModelCollisionShape(modelCollisionShape);
+    }
 
     public boolean isStaticEntity() { return staticEntity; }
     public void setStaticEntity(boolean staticEntity) { this.staticEntity = staticEntity; }
@@ -463,6 +469,7 @@ public class DesignerEntity {
                 json.put("staticModel", staticModel);
                 json.put("dynamicModel", dynamicModel);
                 json.put("vehicleModel", vehicleModel);
+                json.put("modelCollisionShape", getModelCollisionShape());
                 json.put("hidden", hidden);
                 json.put("shader", shader);
                 json.put("shadowMode", shadowMode);
@@ -643,6 +650,7 @@ public class DesignerEntity {
                 entity.staticModel = json.optBoolean("staticModel", false);
                 entity.dynamicModel = json.optBoolean("dynamicModel", false);
                 entity.vehicleModel = json.optBoolean("vehicleModel", false);
+                entity.modelCollisionShape = normalizeModelCollisionShape(json.optString("modelCollisionShape", "none"));
                 entity.hidden = json.optBoolean("hidden", false);
                 entity.shader = json.optString("shader", "");
                 entity.shadowMode = json.optString("shadowMode", "none");
@@ -725,5 +733,22 @@ public class DesignerEntity {
         if (!json.has("scale")) return new Vector3f(1, 1, 1);
         org.json.JSONArray arr = json.getJSONArray("scale");
         return new Vector3f((float) arr.getDouble(0), (float) arr.getDouble(1), (float) arr.getDouble(2));
+    }
+
+    private static String normalizeModelCollisionShape(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "none";
+        }
+        String normalized = value.trim().toLowerCase();
+        switch (normalized) {
+            case "default":
+            case "box":
+            case "boxes":
+            case "mesh":
+            case "none":
+                return normalized;
+            default:
+                return "none";
+        }
     }
 }

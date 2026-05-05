@@ -361,10 +361,29 @@ public class DesignerDocument {
                 String vehicleSuffix = entity.isVehicleModel() ? " vehicle" : "";
                 String modelHidden = entity.isHidden() ? " : hidden," : ":";
                 String jointsSuffix = buildJointsMappingSuffix(entity.getJointMapping());
+                String collisionSuffix = buildModelCollisionShapeSuffix(entity.getModelCollisionShape());
                 return name + " => " + modelPrefix + entity.getResourcePath() + vehicleSuffix +
-                       modelHidden + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + scaleSuffix + rotateSuffix + shadowSuffix + jointsSuffix + " async" + shaderAssignment;
+                       modelHidden + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + scaleSuffix + rotateSuffix + shadowSuffix + collisionSuffix + jointsSuffix + " async" + shaderAssignment;
             default:
                 return "";
+        }
+    }
+
+    private static String buildModelCollisionShapeSuffix(String value) {
+        String shape = value != null ? value.trim().toLowerCase(Locale.ROOT) : "none";
+        if (shape.isEmpty()) {
+            shape = "none";
+        }
+        switch (shape) {
+            case "default":
+                return "";
+            case "box":
+            case "boxes":
+            case "mesh":
+            case "none":
+                return ", collision shape " + shape;
+            default:
+                return ", collision shape none";
         }
     }
 

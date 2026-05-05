@@ -1,6 +1,7 @@
 package com.scenemax.desktop;
 
 import com.scenemax.designer.inventory.InventoryModelPreview;
+import com.scenemax.designer.DesignerPanel;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -42,6 +43,16 @@ public class ProjectInventoryDialog extends JDialog {
         setMinimumSize(new Dimension(1020, 680));
         setSize(1240, 760);
         addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                inventoryPanel.dispose();
+            }
+
+            @Override
+            public void windowDeactivated(WindowEvent e) {
+                inventoryPanel.releasePreviewMouseCapture();
+            }
+
             @Override
             public void windowClosed(WindowEvent e) {
                 inventoryPanel.dispose();
@@ -103,6 +114,7 @@ class ProjectInventoryPanel extends JPanel {
     private Clip currentClip;
     private InventoryAsset selectedAsset;
     private String selectedCategory = CATEGORY_ALL;
+    private boolean disposed;
 
     ProjectInventoryPanel() {
         super(new BorderLayout(10, 10));
@@ -123,10 +135,25 @@ class ProjectInventoryPanel extends JPanel {
     }
 
     void dispose() {
+        if (disposed) {
+            return;
+        }
+        disposed = true;
         stopAudio();
+        releasePreviewMouseCapture();
         if (previewApp != null) {
             previewApp.stop();
             previewApp = null;
+        }
+        previewCanvas = null;
+    }
+
+    void releasePreviewMouseCapture() {
+        if (previewApp != null) {
+            previewApp.releaseMouseCapture();
+        }
+        if (previewCanvas != null) {
+            previewCanvas.setCursor(Cursor.getDefaultCursor());
         }
     }
 
@@ -246,6 +273,7 @@ class ProjectInventoryPanel extends JPanel {
         JPanel center = new JPanel(new BorderLayout(8, 8));
         center.add(previewPanel, BorderLayout.NORTH);
         propertiesTable.setFillsViewportHeight(true);
+        propertiesTable.putClientProperty("terminateEditOnFocusLost", Boolean.TRUE);
         propertiesTable.getColumnModel().getColumn(0).setPreferredWidth(92);
         center.add(new JScrollPane(propertiesTable), BorderLayout.CENTER);
         details.add(center, BorderLayout.CENTER);
@@ -318,19 +346,27 @@ class ProjectInventoryPanel extends JPanel {
         if (CATEGORY_MODELS.equals(asset.category)) {
             showModelPreview(asset);
         } else if (CATEGORY_AUDIO.equals(asset.category)) {
+            releasePreviewMouseCapture();
             audioLabel.setText("<html><center>" + escapeHtml(asset.name) + "<br>" + escapeHtml(asset.path) + "</center></html>");
             playAudioButton.setEnabled(asset.file != null && asset.file.isFile());
             previewCards.show(previewPanel, "audio");
         } else if (CATEGORY_SPRITES.equals(asset.category) || CATEGORY_TEXTURES.equals(asset.category)
                 || CATEGORY_FONTS.equals(asset.category) || CATEGORY_SKYBOXES.equals(asset.category)
                 || (asset.file != null && asset.file.isFile() && isImageFile(asset.file))) {
+            releasePreviewMouseCapture();
             showImagePreview(asset);
         } else {
+            releasePreviewMouseCapture();
             showTextPreview(asset);
         }
     }
 
     private void showModelPreview(InventoryAsset asset) {
+        if (!canUseLiveModelPreview()) {
+            stopPreviewApp();
+            showModelPreviewFallback(asset);
+            return;
+        }
         ensurePreviewApp();
         previewCards.show(previewPanel, "canvas");
         if (previewApp != null) {
@@ -352,11 +388,31 @@ class ProjectInventoryPanel extends JPanel {
                 return;
             }
             imagePreviewLabel.setText("");
-            imagePreviewLabel.setIcon(new ImageIcon(scaleToFit(image, 320, 230)));
-            previewCards.show(previewPanel, "image");
+            showImage(image);
         } catch (IOException ex) {
             showTextPreview(asset);
         }
+    }
+
+    private void showModelPreviewFallback(InventoryAsset asset) {
+        File cached = getCachedThumbnailFile(asset);
+        if (cached.isFile()) {
+            try {
+                BufferedImage image = ImageIO.read(cached);
+                if (image != null) {
+                    imagePreviewLabel.setText("");
+                    showImage(image);
+                    return;
+                }
+            } catch (IOException ignored) {
+            }
+        }
+        showTextPreview(asset);
+    }
+
+    private void showImage(BufferedImage image) {
+        imagePreviewLabel.setIcon(new ImageIcon(scaleToFit(image, 320, 230)));
+        previewCards.show(previewPanel, "image");
     }
 
     private void showTextPreview(InventoryAsset asset) {
@@ -513,6 +569,42 @@ class ProjectInventoryPanel extends JPanel {
         Files.writeString(asset.indexFile.toPath(), json.toString(2));
     }
 
+    private void renameModelAsset(InventoryAsset asset, String newName) throws IOException {
+        if (asset == null || !CATEGORY_MODELS.equals(asset.category)
+                || asset.indexFile == null || asset.arrayKey == null || !asset.indexFile.isFile()) {
+            return;
+        }
+        String trimmedName = newName == null ? "" : newName.trim();
+        if (trimmedName.isEmpty() || trimmedName.equals(asset.name)) {
+            return;
+        }
+
+        JSONObject json = new JSONObject(Util.readFile(asset.indexFile));
+        JSONArray array = json.optJSONArray(asset.arrayKey);
+        if (array == null) {
+            return;
+        }
+
+        boolean changed = false;
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject obj = array.optJSONObject(i);
+            if (obj != null && matchesIndexedAsset(asset, obj)) {
+                obj.put("name", trimmedName);
+                changed = true;
+                break;
+            }
+        }
+        if (!changed) {
+            throw new IOException("Could not find the selected model in " + asset.indexFile.getName());
+        }
+
+        Files.writeString(asset.indexFile.toPath(), json.toString(2));
+        asset.name = trimmedName;
+        asset.properties.put("Name", trimmedName);
+        propertiesTableModel.setAsset(asset);
+        assetList.repaint();
+    }
+
     private boolean matchesIndexedAsset(InventoryAsset asset, JSONObject obj) {
         String name = obj.optString("name", "");
         String path = primaryIndexedPath(obj, asset.category);
@@ -551,6 +643,13 @@ class ProjectInventoryPanel extends JPanel {
     }
 
     private void ensurePreviewApp() {
+        if (disposed) {
+            return;
+        }
+        if (!canUseLiveModelPreview()) {
+            stopPreviewApp();
+            return;
+        }
         if (previewApp != null) {
             return;
         }
@@ -563,9 +662,40 @@ class ProjectInventoryPanel extends JPanel {
             previewCanvas.setName(project.name + " model preview");
         }
 
+        previewApp.start();
         canvasCard.removeAll();
         canvasCard.add(previewCanvas, BorderLayout.CENTER);
-        previewApp.start();
+        schedulePreviewMouseRelease();
+        canvasCard.revalidate();
+        canvasCard.repaint();
+    }
+
+    private void schedulePreviewMouseRelease() {
+        final int[] runs = {0};
+        javax.swing.Timer timer = new javax.swing.Timer(250, e -> {
+            releasePreviewMouseCapture();
+            runs[0]++;
+            if (runs[0] >= 6) {
+                ((javax.swing.Timer) e.getSource()).stop();
+            }
+        });
+        timer.setInitialDelay(0);
+        timer.start();
+    }
+
+    private boolean canUseLiveModelPreview() {
+        return !DesignerPanel.hasLiveSharedCanvas();
+    }
+
+    private void stopPreviewApp() {
+        releasePreviewMouseCapture();
+        if (previewApp != null) {
+            previewApp.stop();
+            previewApp = null;
+        }
+        previewCanvas = null;
+        canvasCard.removeAll();
+        canvasCard.add(new JLabel("Select a 3D model to preview it.", SwingConstants.CENTER), BorderLayout.CENTER);
         canvasCard.revalidate();
         canvasCard.repaint();
     }
@@ -809,10 +939,12 @@ class ProjectInventoryPanel extends JPanel {
         }
     }
 
-    private static class PropertiesTableModel extends AbstractTableModel {
+    private class PropertiesTableModel extends AbstractTableModel {
         private final List<Map.Entry<String, String>> rows = new ArrayList<>();
+        private InventoryAsset asset;
 
         void setAsset(InventoryAsset asset) {
+            this.asset = asset;
             rows.clear();
             if (asset != null) {
                 rows.addAll(asset.properties.entrySet());
@@ -840,11 +972,49 @@ class ProjectInventoryPanel extends JPanel {
             Map.Entry<String, String> entry = rows.get(rowIndex);
             return columnIndex == 0 ? entry.getKey() : entry.getValue();
         }
+
+        @Override
+        public boolean isCellEditable(int rowIndex, int columnIndex) {
+            if (columnIndex != 1 || rowIndex < 0 || rowIndex >= rows.size()) {
+                return false;
+            }
+            return asset != null
+                    && CATEGORY_MODELS.equals(asset.category)
+                    && asset.indexFile != null
+                    && asset.arrayKey != null
+                    && asset.indexFile.isFile()
+                    && "Name".equals(rows.get(rowIndex).getKey());
+        }
+
+        @Override
+        public void setValueAt(Object value, int rowIndex, int columnIndex) {
+            if (!isCellEditable(rowIndex, columnIndex)) {
+                return;
+            }
+            String newName = value == null ? "" : value.toString().trim();
+            if (newName.isEmpty()) {
+                JOptionPane.showMessageDialog(ProjectInventoryPanel.this,
+                        "Model name cannot be empty.",
+                        "Rename Model",
+                        JOptionPane.INFORMATION_MESSAGE);
+                fireTableCellUpdated(rowIndex, columnIndex);
+                return;
+            }
+            try {
+                renameModelAsset(asset, newName);
+            } catch (IOException ex) {
+                JOptionPane.showMessageDialog(ProjectInventoryPanel.this,
+                        "Could not rename model:\n" + ex.getMessage(),
+                        "Rename Model",
+                        JOptionPane.ERROR_MESSAGE);
+                fireTableCellUpdated(rowIndex, columnIndex);
+            }
+        }
     }
 
     static class InventoryAsset {
         final String category;
-        final String name;
+        String name;
         final String source;
         final String path;
         final File file;

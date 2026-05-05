@@ -78,7 +78,7 @@ final class MeshyService {
         return new JSONArray();
     }
 
-    static JSONArray searchCommunityModels(String query, String sortBy, int pageNum, int pageSize) throws IOException {
+    static CommunitySearchResult searchCommunityModels(String query, String sortBy, int pageNum, int pageSize) throws IOException {
         StringBuilder url = new StringBuilder(COMMUNITY_URL)
                 .append("?pageNum=").append(pageNum)
                 .append("&pageSize=").append(pageSize)
@@ -90,19 +90,56 @@ final class MeshyService {
         String response = request("GET", url.toString(), null, null);
         String trimmed = response == null ? "" : response.trim();
         if (trimmed.startsWith("[")) {
-            return new JSONArray(trimmed);
+            JSONArray models = new JSONArray(trimmed);
+            return new CommunitySearchResult(models, pageNum, pageSize, -1, models.length() >= pageSize);
         }
         JSONObject object = new JSONObject(trimmed);
-        if (object.has("result")) {
-            return object.getJSONArray("result");
+        JSONObject metadataSource = object;
+        Object result = object.opt("result");
+        if (result instanceof JSONObject) {
+            metadataSource = (JSONObject) result;
         }
-        if (object.has("results")) {
-            return object.getJSONArray("results");
+
+        JSONArray models = firstArray(object, "result", "results", "data", "items", "list", "showcases");
+        if (models == null && result instanceof JSONObject) {
+            models = firstArray((JSONObject) result, "result", "results", "data", "items", "list", "showcases");
         }
-        if (object.has("data")) {
-            return object.getJSONArray("data");
+        if (models == null) {
+            models = new JSONArray();
         }
-        return new JSONArray();
+
+        int total = firstInt(object, -1, "total", "totalCount", "totalItems", "totalResults");
+        if (total < 0 && metadataSource != object) {
+            total = firstInt(metadataSource, -1, "total", "totalCount", "totalItems", "totalResults");
+        }
+        int responsePageNum = firstInt(object, pageNum, "pageNum", "page", "pageNumber", "currentPage");
+        if (metadataSource != object) {
+            responsePageNum = firstInt(metadataSource, responsePageNum, "pageNum", "page", "pageNumber", "currentPage");
+        }
+        int responsePageSize = firstInt(object, pageSize, "pageSize", "limit", "perPage");
+        if (metadataSource != object) {
+            responsePageSize = firstInt(metadataSource, responsePageSize, "pageSize", "limit", "perPage");
+        }
+
+        boolean hasMore = firstBoolean(object, false, "hasMore", "has_more", "hasNextPage", "hasNext");
+        if (!hasMore && metadataSource != object) {
+            hasMore = firstBoolean(metadataSource, false, "hasMore", "has_more", "hasNextPage", "hasNext");
+        }
+        int totalPages = firstInt(object, -1, "totalPages", "pageCount", "pages");
+        if (totalPages < 0 && metadataSource != object) {
+            totalPages = firstInt(metadataSource, -1, "totalPages", "pageCount", "pages");
+        }
+        if (!hasMore && totalPages > 0) {
+            hasMore = responsePageNum < totalPages;
+        }
+        if (!hasMore && total >= 0) {
+            hasMore = responsePageNum * responsePageSize < total;
+        }
+        if (!hasMore && total < 0 && totalPages < 0) {
+            hasMore = models.length() >= responsePageSize;
+        }
+
+        return new CommunitySearchResult(models, responsePageNum, responsePageSize, total, hasMore);
     }
 
     static String getCommunityDownloadUrl(String apiKey, String resultId, String format) throws IOException {
@@ -252,6 +289,43 @@ final class MeshyService {
         return "";
     }
 
+    private static JSONArray firstArray(JSONObject object, String... keys) {
+        if (object == null) {
+            return null;
+        }
+        for (String key : keys) {
+            Object value = object.opt(key);
+            if (value instanceof JSONArray) {
+                return (JSONArray) value;
+            }
+        }
+        return null;
+    }
+
+    private static int firstInt(JSONObject object, int fallback, String... keys) {
+        if (object == null) {
+            return fallback;
+        }
+        for (String key : keys) {
+            if (object.has(key) && !object.isNull(key)) {
+                return object.optInt(key, fallback);
+            }
+        }
+        return fallback;
+    }
+
+    private static boolean firstBoolean(JSONObject object, boolean fallback, String... keys) {
+        if (object == null) {
+            return fallback;
+        }
+        for (String key : keys) {
+            if (object.has(key) && !object.isNull(key)) {
+                return object.optBoolean(key, fallback);
+            }
+        }
+        return fallback;
+    }
+
     private static CommunityDownloadAsset firstDownloadAsset(JSONObject object, String fallbackFormat) {
         String[][] keys = {
                 {"glbUrl", ".glb"},
@@ -308,6 +382,22 @@ final class MeshyService {
         CommunityDownloadAsset(String url, String extension) {
             this.url = url;
             this.extension = extension == null || extension.trim().isEmpty() ? ".glb" : extension;
+        }
+    }
+
+    static final class CommunitySearchResult {
+        final JSONArray models;
+        final int pageNum;
+        final int pageSize;
+        final int total;
+        final boolean hasMore;
+
+        CommunitySearchResult(JSONArray models, int pageNum, int pageSize, int total, boolean hasMore) {
+            this.models = models == null ? new JSONArray() : models;
+            this.pageNum = pageNum;
+            this.pageSize = pageSize;
+            this.total = total;
+            this.hasMore = hasMore;
         }
     }
 }
