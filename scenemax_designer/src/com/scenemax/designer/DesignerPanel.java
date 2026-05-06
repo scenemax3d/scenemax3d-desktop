@@ -31,6 +31,7 @@ import java.awt.event.MouseEvent;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.GeneralPath;
 import java.awt.geom.Line2D;
+import java.awt.geom.Rectangle2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -373,6 +374,28 @@ public class DesignerPanel extends JPanel {
             }
         });
 
+        JButton btnCopy = new JButton(createDesignerToolbarIcon("copy"));
+        btnCopy.setToolTipText("Copy Selected");
+        btnCopy.addActionListener(e -> {
+            if (app != null) {
+                app.enqueue(() -> {
+                    app.copySelectedEntityToClipboard();
+                    return null;
+                });
+            }
+        });
+
+        JButton btnPaste = new JButton(createDesignerToolbarIcon("paste"));
+        btnPaste.setToolTipText("Paste Copied Object");
+        btnPaste.addActionListener(e -> {
+            if (app != null) {
+                app.enqueue(() -> {
+                    app.pasteEntityFromClipboard();
+                    return null;
+                });
+            }
+        });
+
         toolbar.add(new JLabel("  Add: "));
         toolbar.add(btnAddSphere);
         toolbar.add(btnAddBox);
@@ -389,6 +412,8 @@ public class DesignerPanel extends JPanel {
         toolbar.add(btnAddCinematic);
         toolbar.addSeparator();
         toolbar.add(btnDelete);
+        toolbar.add(btnCopy);
+        toolbar.add(btnPaste);
         toolbar.addSeparator();
 
         toolbar.add(new JLabel("  Gizmo: "));
@@ -4403,6 +4428,8 @@ public class DesignerPanel extends JPanel {
             case "light":           drawToolbarLight(g);           break;
             case "model":     drawToolbarModel(g);     break;
             case "delete":    drawToolbarDelete(g);    break;
+            case "copy":      drawToolbarCopy(g);      break;
+            case "paste":     drawToolbarPaste(g);     break;
             case "translate": drawToolbarTranslate(g); break;
             case "rotate":    drawToolbarRotate(g);    break;
             case "orbit":     drawToolbarOrbit(g);     break;
@@ -4584,6 +4611,22 @@ public class DesignerPanel extends JPanel {
         g.draw(new Line2D.Float(8, 8, 8, 14));
         g.draw(new Line2D.Float(10, 8, 10, 14));
         g.draw(new Line2D.Float(12, 8, 12, 14));
+    }
+
+    private static void drawToolbarCopy(Graphics2D g) {
+        g.draw(new Rectangle2D.Float(7, 4, 8, 10));
+        g.draw(new Rectangle2D.Float(4, 7, 8, 10));
+        g.draw(new Line2D.Float(7, 7, 12, 7));
+        g.draw(new Line2D.Float(12, 7, 12, 14));
+    }
+
+    private static void drawToolbarPaste(Graphics2D g) {
+        g.drawRoundRect(5, 7, 10, 10, 2, 2);
+        g.draw(new Line2D.Float(8, 5, 12, 5));
+        g.draw(new Line2D.Float(8, 5, 7, 8));
+        g.draw(new Line2D.Float(12, 5, 13, 8));
+        g.draw(new Line2D.Float(8, 10, 12, 10));
+        g.draw(new Line2D.Float(8, 13, 12, 13));
     }
 
     /** Translate: four-direction arrow / move cross */

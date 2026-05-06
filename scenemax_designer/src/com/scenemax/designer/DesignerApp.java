@@ -51,17 +51,26 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Core designer 3D application. Extends SceneMaxApp to leverage
@@ -116,6 +125,7 @@ public class DesignerApp extends SceneMaxApp {
         String nodeName;
         int framesWaited;
         boolean selectAfterCreation;
+        boolean markDirtyOnCreation;
         // For document loading: saved transform to apply
         String entityId;
         Quaternion savedRotation;
@@ -127,6 +137,19 @@ public class DesignerApp extends SceneMaxApp {
         // Index within the target list to insert at (-1 = append)
         int insertIndex = -1;
     }
+
+    private static class DesignerClipboardPayload {
+        final JSONObject entityJson;
+        final String sourceResourcesFolder;
+
+        DesignerClipboardPayload(JSONObject entityJson, String sourceResourcesFolder) {
+            this.entityJson = entityJson;
+            this.sourceResourcesFolder = sourceResourcesFolder;
+        }
+    }
+
+    private static DesignerClipboardPayload entityClipboard;
+    private static final float PASTE_X_OFFSET = 0.5f;
 
     private String designerProjectPath;
     private File designerFile;
@@ -654,6 +677,65 @@ public class DesignerApp extends SceneMaxApp {
 
     public SelectionManager getSelectionManager() {
         return selectionManager;
+    }
+
+    public boolean copySelectedEntityToClipboard() {
+        if (selectionManager == null) {
+            return false;
+        }
+        DesignerEntity selected = selectionManager.getSelected();
+        if (selected == null || selected.getType() == DesignerEntityType.CAMERA) {
+            return false;
+        }
+
+        entityClipboard = new DesignerClipboardPayload(
+                new JSONObject(selected.toJSON().toString()),
+                getProjectResourcesFolder());
+        return true;
+    }
+
+    public boolean canPasteEntityFromClipboard() {
+        return entityClipboard != null;
+    }
+
+    public boolean pasteEntityFromClipboard() {
+        if (entityClipboard == null) {
+            return false;
+        }
+
+        JSONObject pastedJson = new JSONObject(entityClipboard.entityJson.toString());
+        copyMissingClipboardResources(pastedJson, entityClipboard.sourceResourcesFolder, getProjectResourcesFolder());
+
+        Map<String, String> idMap = new HashMap<>();
+        Map<String, String> nameMap = new HashMap<>();
+        Set<String> usedNames = collectExistingEntityNames();
+        preparePastedEntityJson(pastedJson, usedNames, idMap, nameMap);
+        rewritePastedEntityReferences(pastedJson, idMap, nameMap);
+        offsetPastedEntityJson(pastedJson, PASTE_X_OFFSET);
+
+        String pastedRootId = pastedJson.optString("id", "");
+        int pendingBefore = pendingEntities.size();
+        loadEntityDefs(Collections.singletonList(pastedJson), entities, null);
+
+        for (int i = pendingBefore; i < pendingEntities.size(); i++) {
+            PendingEntity pending = pendingEntities.get(i);
+            pending.markDirtyOnCreation = true;
+            if (pastedRootId.equals(pending.entityId)) {
+                pending.selectAfterCreation = true;
+            }
+        }
+
+        DesignerEntity pastedRoot = findEntityById(pastedRootId, entities);
+        if (pastedRoot != null && selectionManager != null) {
+            selectionManager.select(pastedRoot);
+        }
+
+        refreshDesignerFallbackLighting();
+        if (pendingEntities.size() == pendingBefore) {
+            markDocumentDirty();
+        }
+        notifySceneChanged();
+        return true;
     }
 
     public void setGizmoMode(GizmoMode mode) {
@@ -1524,6 +1606,452 @@ public class DesignerApp extends SceneMaxApp {
             }
         }
         return null;
+    }
+
+    private Set<String> collectExistingEntityNames() {
+        Set<String> used = new HashSet<>();
+        collectExistingEntityNames(entities, used);
+        return used;
+    }
+
+    private void collectExistingEntityNames(List<DesignerEntity> source, Set<String> used) {
+        if (source == null) {
+            return;
+        }
+        for (DesignerEntity entity : source) {
+            if (entity == null || entity.getType() == DesignerEntityType.CAMERA) {
+                continue;
+            }
+            String name = entity.getName();
+            if (name != null && !name.isBlank()) {
+                used.add(name.toLowerCase(Locale.ROOT));
+            }
+            collectExistingEntityNames(entity.getChildren(), used);
+        }
+    }
+
+    private void preparePastedEntityJson(JSONObject entityJson, Set<String> usedNames,
+                                         Map<String, String> idMap, Map<String, String> nameMap) {
+        String oldId = entityJson.optString("id", "");
+        String newId = UUID.randomUUID().toString();
+        entityJson.put("id", newId);
+        if (!oldId.isBlank()) {
+            idMap.put(oldId, newId);
+        }
+
+        String oldName = entityJson.optString("name", "object");
+        String newName = makeUniqueEntityName(oldName, usedNames);
+        entityJson.put("name", newName);
+        if (!oldName.isBlank()) {
+            nameMap.put(oldName, newName);
+        }
+
+        JSONArray children = entityJson.optJSONArray("children");
+        if (children != null) {
+            for (int i = 0; i < children.length(); i++) {
+                JSONObject child = children.optJSONObject(i);
+                if (child != null) {
+                    preparePastedEntityJson(child, usedNames, idMap, nameMap);
+                }
+            }
+        }
+    }
+
+    private String makeUniqueEntityName(String requestedName, Set<String> usedNames) {
+        String base = requestedName != null && !requestedName.isBlank() ? requestedName.trim() : "object";
+        String candidate = base;
+        int suffix = 2;
+        while (usedNames.contains(candidate.toLowerCase(Locale.ROOT))) {
+            candidate = suffix == 2 ? base + "_copy" : base + "_copy_" + suffix;
+            suffix++;
+        }
+        usedNames.add(candidate.toLowerCase(Locale.ROOT));
+        return candidate;
+    }
+
+    private void rewritePastedEntityReferences(JSONObject entityJson, Map<String, String> idMap, Map<String, String> nameMap) {
+        String lookAt = entityJson.optString("lightLookAtTarget", "");
+        if (!lookAt.isBlank() && nameMap.containsKey(lookAt)) {
+            entityJson.put("lightLookAtTarget", nameMap.get(lookAt));
+        }
+
+        String targetId = entityJson.optString("cinematicTargetEntityId", "");
+        if (!targetId.isBlank() && idMap.containsKey(targetId)) {
+            entityJson.put("cinematicTargetEntityId", idMap.get(targetId));
+        }
+        String targetName = entityJson.optString("cinematicTargetEntityName", "");
+        if (!targetName.isBlank() && nameMap.containsKey(targetName)) {
+            entityJson.put("cinematicTargetEntityName", nameMap.get(targetName));
+        }
+
+        JSONArray segments = entityJson.optJSONArray("cinematicSegments");
+        if (segments != null) {
+            for (int i = 0; i < segments.length(); i++) {
+                JSONObject segment = segments.optJSONObject(i);
+                if (segment == null) {
+                    continue;
+                }
+                String trackId = segment.optString("trackId", "");
+                if (!trackId.isBlank() && idMap.containsKey(trackId)) {
+                    segment.put("trackId", idMap.get(trackId));
+                }
+                String trackName = segment.optString("trackName", "");
+                if (!trackName.isBlank() && nameMap.containsKey(trackName)) {
+                    segment.put("trackName", nameMap.get(trackName));
+                }
+            }
+        }
+
+        JSONArray children = entityJson.optJSONArray("children");
+        if (children != null) {
+            for (int i = 0; i < children.length(); i++) {
+                JSONObject child = children.optJSONObject(i);
+                if (child != null) {
+                    rewritePastedEntityReferences(child, idMap, nameMap);
+                }
+            }
+        }
+    }
+
+    private void offsetPastedEntityJson(JSONObject entityJson, float offsetX) {
+        String type = entityJson.optString("type", "");
+        if ("SECTION".equals(type)) {
+            offsetChildren(entityJson.optJSONArray("children"), offsetX);
+            return;
+        }
+
+        offsetPositionArray(entityJson.optJSONArray("position"), offsetX);
+        if ("PATH".equals(type)) {
+            offsetPathData(entityJson.optJSONObject("pathData"), offsetX);
+        }
+    }
+
+    private void offsetChildren(JSONArray children, float offsetX) {
+        if (children == null) {
+            return;
+        }
+        for (int i = 0; i < children.length(); i++) {
+            JSONObject child = children.optJSONObject(i);
+            if (child != null) {
+                offsetPastedEntityJson(child, offsetX);
+            }
+        }
+    }
+
+    private void offsetPositionArray(JSONArray position, float offsetX) {
+        if (position == null || position.length() < 1) {
+            return;
+        }
+        position.put(0, position.optDouble(0, 0.0) + offsetX);
+    }
+
+    private void offsetPathData(JSONObject pathData, float offsetX) {
+        if (pathData == null) {
+            return;
+        }
+        JSONArray controlPoints = pathData.optJSONArray("controlPoints");
+        if (controlPoints == null) {
+            return;
+        }
+        for (int i = 0; i < controlPoints.length(); i++) {
+            JSONObject point = controlPoints.optJSONObject(i);
+            if (point != null) {
+                offsetPositionArray(point.optJSONArray("position"), offsetX);
+            }
+        }
+    }
+
+    private void copyMissingClipboardResources(JSONObject entityJson, String sourceResourcesFolder, String targetResourcesFolder) {
+        if (sourceResourcesFolder == null || sourceResourcesFolder.isBlank()
+                || targetResourcesFolder == null || targetResourcesFolder.isBlank()) {
+            return;
+        }
+        try {
+            if (new File(sourceResourcesFolder).getCanonicalFile().equals(new File(targetResourcesFolder).getCanonicalFile())) {
+                return;
+            }
+        } catch (IOException ignored) {
+        }
+
+        Set<String> modelNames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        Set<String> materialNames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        Set<String> shaderNames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        collectResourceNames(entityJson, modelNames, materialNames, shaderNames);
+
+        Set<String> copiedModels = new HashSet<>();
+        for (String modelName : modelNames) {
+            copyModelResourceIfMissing(modelName, sourceResourcesFolder, targetResourcesFolder, copiedModels);
+        }
+        for (String materialName : materialNames) {
+            copyMaterialResourceIfMissing(materialName, sourceResourcesFolder, targetResourcesFolder);
+        }
+        for (String shaderName : shaderNames) {
+            copyShaderResourceIfMissing(shaderName, sourceResourcesFolder, targetResourcesFolder);
+        }
+        reloadProjectAssetsMapping(targetResourcesFolder);
+    }
+
+    private void collectResourceNames(JSONObject entityJson, Set<String> modelNames,
+                                      Set<String> materialNames, Set<String> shaderNames) {
+        if ("MODEL".equals(entityJson.optString("type", ""))) {
+            String model = entityJson.optString("resourcePath", "").trim();
+            if (!model.isEmpty()) {
+                modelNames.add(model);
+            }
+        }
+        String material = entityJson.optString("material", "").trim();
+        if (!material.isEmpty()) {
+            materialNames.add(material);
+        }
+        String shader = entityJson.optString("shader", "").trim();
+        if (!shader.isEmpty()) {
+            shaderNames.add(shader);
+        }
+
+        JSONArray children = entityJson.optJSONArray("children");
+        if (children != null) {
+            for (int i = 0; i < children.length(); i++) {
+                JSONObject child = children.optJSONObject(i);
+                if (child != null) {
+                    collectResourceNames(child, modelNames, materialNames, shaderNames);
+                }
+            }
+        }
+    }
+
+    private void copyModelResourceIfMissing(String modelName, String sourceResourcesFolder,
+                                            String targetResourcesFolder, Set<String> copiedModels) {
+        if (modelName == null || modelName.isBlank()) {
+            return;
+        }
+        String key = modelName.toLowerCase(Locale.ROOT);
+        if (!copiedModels.add(key) || targetHasModelResource(modelName)) {
+            return;
+        }
+
+        JSONObject model = findIndexedResource(sourceResourcesFolder,
+                new String[]{"Models/models-ext.json", "models/models-ext.json"}, "models", modelName);
+        if (model == null) {
+            return;
+        }
+        JSONObject copiedModel = new JSONObject(model.toString());
+        copyIndexedResourcePath(sourceResourcesFolder, targetResourcesFolder, copiedModel);
+        appendIndexedResourceIfMissing(targetResourcesFolder,
+                new String[]{"Models/models-ext.json", "models/models-ext.json"}, "models", copiedModel);
+
+        JSONObject physics = model.optJSONObject("physics");
+        JSONObject vehicle = physics != null ? physics.optJSONObject("vehicle") : null;
+        if (vehicle != null) {
+            copyModelResourceIfMissing(vehicle.optString("wheelModel", ""), sourceResourcesFolder, targetResourcesFolder, copiedModels);
+            copyModelResourceIfMissing(vehicle.optString("rearWheelModel", ""), sourceResourcesFolder, targetResourcesFolder, copiedModels);
+            copyMaterialResourceIfMissing(vehicle.optString("chassisMaterial", ""), sourceResourcesFolder, targetResourcesFolder);
+            copyMaterialResourceIfMissing(vehicle.optString("wheelMaterial", ""), sourceResourcesFolder, targetResourcesFolder);
+        }
+    }
+
+    private void copyMaterialResourceIfMissing(String materialName, String sourceResourcesFolder, String targetResourcesFolder) {
+        if (materialName == null || materialName.isBlank() || targetHasMaterialResource(materialName)) {
+            return;
+        }
+        JSONObject material = findIndexedResource(sourceResourcesFolder,
+                new String[]{"material/materials-ext.json"}, "materials", materialName);
+        if (material == null) {
+            return;
+        }
+        JSONObject copiedMaterial = new JSONObject(material.toString());
+        copyIndexedResourcePath(sourceResourcesFolder, targetResourcesFolder, copiedMaterial);
+        appendIndexedResourceIfMissing(targetResourcesFolder,
+                new String[]{"material/materials-ext.json"}, "materials", copiedMaterial);
+    }
+
+    private void copyShaderResourceIfMissing(String shaderName, String sourceResourcesFolder, String targetResourcesFolder) {
+        if (shaderName == null || shaderName.isBlank() || targetHasShaderResource(shaderName)) {
+            return;
+        }
+        JSONObject shader = findIndexedResource(sourceResourcesFolder,
+                new String[]{"shaders/shaders-ext.json"}, "shaders", shaderName);
+        String[] targetIndex = new String[]{"shaders/shaders-ext.json"};
+        String arrayKey = "shaders";
+        if (shader == null) {
+            shader = findIndexedResource(sourceResourcesFolder,
+                    new String[]{"environment_shaders/environment-shaders-ext.json"}, "environmentShaders", shaderName);
+            targetIndex = new String[]{"environment_shaders/environment-shaders-ext.json"};
+            arrayKey = "environmentShaders";
+        }
+        if (shader == null) {
+            return;
+        }
+        JSONObject copiedShader = new JSONObject(shader.toString());
+        copyIndexedResourcePath(sourceResourcesFolder, targetResourcesFolder, copiedShader);
+        appendIndexedResourceIfMissing(targetResourcesFolder, targetIndex, arrayKey, copiedShader);
+    }
+
+    private boolean targetHasModelResource(String modelName) {
+        return getAssetsMapping() != null
+                && getAssetsMapping().get3DModelsIndex() != null
+                && getAssetsMapping().get3DModelsIndex().containsKey(modelName.toLowerCase(Locale.ROOT));
+    }
+
+    private boolean targetHasMaterialResource(String materialName) {
+        return getAssetsMapping() != null
+                && getAssetsMapping().getMaterialsIndex() != null
+                && getAssetsMapping().getMaterialsIndex().containsKey(materialName.toLowerCase(Locale.ROOT));
+    }
+
+    private boolean targetHasShaderResource(String shaderName) {
+        return getAssetsMapping() != null
+                && getAssetsMapping().getShadersIndex() != null
+                && getAssetsMapping().getShadersIndex().containsKey(shaderName.toLowerCase(Locale.ROOT));
+    }
+
+    private JSONObject findIndexedResource(String resourcesFolder, String[] indexPaths, String arrayKey, String name) {
+        if (resourcesFolder == null || name == null || name.isBlank()) {
+            return null;
+        }
+        File indexFile = findExistingIndexFile(resourcesFolder, indexPaths);
+        if (indexFile == null || !indexFile.exists()) {
+            return null;
+        }
+        try {
+            String content = Files.readString(indexFile.toPath(), StandardCharsets.UTF_8);
+            if (content == null || content.isBlank()) {
+                return null;
+            }
+            JSONArray array = new JSONObject(content).optJSONArray(arrayKey);
+            if (array == null) {
+                return null;
+            }
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject entry = array.optJSONObject(i);
+                if (entry != null && name.equalsIgnoreCase(entry.optString("name", ""))) {
+                    return new JSONObject(entry.toString());
+                }
+            }
+        } catch (Exception ex) {
+            System.err.println("Failed to read resource index: " + indexFile.getAbsolutePath());
+            ex.printStackTrace();
+        }
+        return null;
+    }
+
+    private void appendIndexedResourceIfMissing(String resourcesFolder, String[] indexPaths,
+                                                String arrayKey, JSONObject resource) {
+        String name = resource.optString("name", "");
+        if (name.isBlank()) {
+            return;
+        }
+        File indexFile = ensureIndexFile(resourcesFolder, indexPaths, arrayKey);
+        try {
+            JSONObject root;
+            if (indexFile.exists()) {
+                String content = Files.readString(indexFile.toPath(), StandardCharsets.UTF_8);
+                root = content != null && !content.isBlank() ? new JSONObject(content) : new JSONObject();
+            } else {
+                root = new JSONObject();
+            }
+            JSONArray array = root.optJSONArray(arrayKey);
+            if (array == null) {
+                array = new JSONArray();
+                root.put(arrayKey, array);
+            }
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject entry = array.optJSONObject(i);
+                if (entry != null && name.equalsIgnoreCase(entry.optString("name", ""))) {
+                    return;
+                }
+            }
+            array.put(resource);
+            Files.createDirectories(indexFile.getParentFile().toPath());
+            Files.writeString(indexFile.toPath(), root.toString(2), StandardCharsets.UTF_8);
+        } catch (Exception ex) {
+            System.err.println("Failed to update resource index: " + indexFile.getAbsolutePath());
+            ex.printStackTrace();
+        }
+    }
+
+    private File findExistingIndexFile(String resourcesFolder, String[] indexPaths) {
+        for (String indexPath : indexPaths) {
+            File candidate = new File(resourcesFolder, indexPath);
+            if (candidate.exists()) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private File ensureIndexFile(String resourcesFolder, String[] indexPaths, String arrayKey) {
+        File existing = findExistingIndexFile(resourcesFolder, indexPaths);
+        if (existing != null) {
+            return existing;
+        }
+        return new File(resourcesFolder, indexPaths[0]);
+    }
+
+    private void copyIndexedResourcePath(String sourceResourcesFolder, String targetResourcesFolder, JSONObject resource) {
+        String path = resource.optString("path", "").replace('\\', '/').trim();
+        if (path.isEmpty()) {
+            return;
+        }
+        File sourcePath = new File(sourceResourcesFolder, path);
+        if (!sourcePath.exists()) {
+            return;
+        }
+        File sourceToCopy = sourcePath.isDirectory() ? sourcePath : sourcePath.getParentFile();
+        if (sourceToCopy == null) {
+            sourceToCopy = sourcePath;
+        }
+        String relativeCopyPath = relativizeResourcePath(new File(sourceResourcesFolder), sourceToCopy);
+        File targetPath = new File(targetResourcesFolder, relativeCopyPath);
+        try {
+            copyPathRecursive(sourceToCopy.toPath(), targetPath.toPath());
+        } catch (IOException ex) {
+            System.err.println("Failed to copy resource files from " + sourceToCopy + " to " + targetPath);
+            ex.printStackTrace();
+        }
+    }
+
+    private String relativizeResourcePath(File resourcesRoot, File resourceFile) {
+        String relative = resourcesRoot.getAbsoluteFile().toURI()
+                .relativize(resourceFile.getAbsoluteFile().toURI())
+                .getPath();
+        return relative != null ? relative.replace('\\', '/') : resourceFile.getName();
+    }
+
+    private void copyPathRecursive(Path source, Path target) throws IOException {
+        if (Files.isDirectory(source)) {
+            try (Stream<Path> stream = Files.walk(source)) {
+                List<Path> paths = stream.sorted(Comparator.naturalOrder()).collect(Collectors.toList());
+                for (Path path : paths) {
+                    Path relative = source.relativize(path);
+                    Path destination = target.resolve(relative);
+                    if (Files.isDirectory(path)) {
+                        Files.createDirectories(destination);
+                    } else {
+                        Files.createDirectories(destination.getParent());
+                        Files.copy(path, destination, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+            }
+        } else {
+            Files.createDirectories(target.getParent());
+            Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private void reloadProjectAssetsMapping(String resourcesFolder) {
+        if (resourcesFolder == null || resourcesFolder.isBlank()) {
+            return;
+        }
+        assetsMapping = new AssetsMapping(resourcesFolder);
+        try {
+            File resDir = new File(resourcesFolder);
+            if (resDir.exists()) {
+                assetManager.registerLocator(resDir.getCanonicalPath(),
+                        com.jme3.asset.plugins.FileLocator.class);
+            }
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
     }
 
     private void buildStairsNode(Node node, DesignerEntity entity) {
@@ -2974,8 +3502,10 @@ public class DesignerApp extends SceneMaxApp {
                 System.out.println("[TRACE] After add: target.size()=" + target.size()
                         + ", entities.size()=" + entities.size());
 
-                if (pe.selectAfterCreation) {
+                if (pe.markDirtyOnCreation || pe.selectAfterCreation) {
                     markDocumentDirty();
+                }
+                if (pe.selectAfterCreation) {
                     selectionManager.select(entity);
                 }
 
@@ -3821,6 +4351,8 @@ public class DesignerApp extends SceneMaxApp {
         if (pathDrawingMode != null && pathDrawingMode.isActive()) {
             pathDrawingMode.cancel();
         }
+        removeSceneNodesRecursive(entities);
+        detachRootDesignerNativeNodes();
         for (PathVisual pv : pathVisuals.values()) {
             pv.removeFromParent();
         }
@@ -3842,6 +4374,15 @@ public class DesignerApp extends SceneMaxApp {
         List<Spatial> snapshot = new ArrayList<>(rootNode.getChildren());
         for (Spatial child : snapshot) {
             if (child != null && nodeName.equals(child.getName())) {
+                child.removeFromParent();
+            }
+        }
+    }
+
+    private void detachRootDesignerNativeNodes() {
+        List<Spatial> snapshot = new ArrayList<>(rootNode.getChildren());
+        for (Spatial child : snapshot) {
+            if (child != null && child.getName() != null && child.getName().endsWith("_designer")) {
                 child.removeFromParent();
             }
         }

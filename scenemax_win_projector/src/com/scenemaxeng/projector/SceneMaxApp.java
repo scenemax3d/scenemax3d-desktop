@@ -966,6 +966,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         stopTrackedAudioNodes();
         _printChannels.clear();
         _drawChannels.clear();
+        disableFallbackLightingForCustomScene();
 
         // Kill ALL models, boxes, spheres — including shared/static ones
         for (Object key : models.keySet().toArray()) {
@@ -1011,6 +1012,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         for (Object key : lights.keySet().toArray()) {
             this.killLight((String) key);
         }
+        removeAllRootLights();
 
         for (Object key : effekseerEffects.keySet().toArray()) {
             this.killEffekseerEffect((String) key);
@@ -1047,6 +1049,16 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         effekseerInstances = new HashMap<>();
         if (lights.isEmpty()) {
             installFallbackLighting();
+        }
+    }
+
+    private void removeAllRootLights() {
+        List<Light> localLights = new ArrayList<>();
+        for (Light light : rootNode.getLocalLightList()) {
+            localLights.add(light);
+        }
+        for (Light light : localLights) {
+            rootNode.removeLight(light);
         }
     }
 
