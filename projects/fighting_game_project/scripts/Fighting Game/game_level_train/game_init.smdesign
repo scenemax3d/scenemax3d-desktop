@@ -2704,14 +2704,14 @@
       ],
       "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "model_21 => static meshy_ai_dragon_gate_0504202330_texture: pos (40.464985,-92.20159,-103.70199), scale 43.4, collision shape none async",
+      "sceneMaxCode": "model_21 => static meshy_ai_dragon_gate_0504202330_texture: pos (40.464985,-64.232185,-103.70199), scale 43.4, collision shape none async",
       "staticModel": true,
       "name": "model_21",
       "vehicleModel": false,
       "id": "9d62eca3-725b-4585-9025-1bea65b85385",
       "position": [
         40.464985,
-        -92.20159,
+        -64.232185,
         -103.70199
       ]
     }
@@ -2731,15 +2731,15 @@
   },
   "camera": {
     "rotation": [
-      0.0017221352,
-      0.9843868,
-      -0.17574584,
-      0.009646014
+      0.3768442,
+      -0.246019,
+      0.104537345,
+      0.88686806
     ],
     "position": [
-      36.787884,
-      -22.994171,
-      129.62015
+      71.516846,
+      143.97173,
+      -118.98522
     ]
   },
   "version": 1
