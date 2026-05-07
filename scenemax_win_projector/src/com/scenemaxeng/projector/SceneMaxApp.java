@@ -250,6 +250,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private int activeCinematicCameraCount = 0;
     private final CameraModifierManager cameraModifierManager = new CameraModifierManager();
     private RuntimeCameraSystemValue activeCameraSystemValue = null;
+    private final Map<String, Boolean> pendingModelVisibility = new HashMap<>();
+    private final Map<String, SwitchModeCommand> pendingModelSwitchModes = new HashMap<>();
 
     // UI system manager for .smui documents
     private com.scenemaxeng.common.ui.widget.UIManager uiManager;
@@ -4002,9 +4004,14 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     public int attachModelSpatial(Spatial model, final ModelInst inst) {
         if (model!=null) {
-            if (inst.varDef.visible) {
+            String modelName = model.getName();
+            Boolean pendingVisibility = pendingModelVisibility.remove(modelName);
+            boolean visible = pendingVisibility != null ? pendingVisibility : inst.varDef.visible;
+            if (visible) {
                 rootNode.attachChild(model);
+                model.updateGeometricState();
             }
+            applyPendingModelRuntimeState(modelName);
 
             return 0;
         }
@@ -4017,6 +4024,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         Spatial parentNode = this.loadModelSpatial(name, resourcePath, modelInst);
         return this.attachModelSpatial(parentNode, modelInst);
 
+    }
+
+    private void applyPendingModelRuntimeState(String modelName) {
+        SwitchModeCommand pendingSwitch = pendingModelSwitchModes.remove(modelName);
+        if (pendingSwitch != null && pendingSwitch.switchTo == SwitchModeCommand.CHARACTER) {
+            switchModelToCharacterMode(modelName, pendingSwitch);
+        }
     }
 
     private Spatial findSkinningControlNode(Spatial sp) {
@@ -4314,6 +4328,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         AppModel am = models.get(varName);
 
+        if(am==null) {
+            if (isPlainModelVisibilityCommand(show)) {
+                pendingModelVisibility.put(varName, show.show);
+            }
+            return;
+        }
+
         if(am!=null) {
 
             if(show.axisX || show.axisY || show.axisZ) {
@@ -4388,12 +4409,26 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 removeCollisionControlsFromPhysics(varName);
 
             } else {
+                pendingModelVisibility.remove(varName);
                 rootNode.attachChild(am.model);
+                am.model.updateGeometricState();
                 addCollisionControlsToPhysics(varName);
             }
 
         }
 
+    }
+
+    private boolean isPlainModelVisibilityCommand(ActionCommandShowHide show) {
+        return !show.axisX
+                && !show.axisY
+                && !show.axisZ
+                && !show.info
+                && !show.wireframe
+                && !show.speedo
+                && !show.tacho
+                && !show.joints
+                && !show.outline;
     }
 
     private void removeOutlineFilter(Spatial sp) {
@@ -5671,26 +5706,28 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         if(calculatedPosition!=null) {
-            m.setLocalTranslation(calculatedPosition);
+            setModelRuntimePosition(am, m, calculatedPosition);
         } else if(varForPos!=null) {
             Spatial sp = getEntitySpatial(varForPos.varName,varForPos.varDef.varType);
-            if(am.physicalControl instanceof SceneMax3DGenericVehicle) {
-                SceneMax3DGenericVehicle v = (SceneMax3DGenericVehicle) am.physicalControl;
-                v.getVehicleControl().setPhysicsLocation(sp.getLocalTranslation());
-
-            } else {
-                m.setLocalTranslation(sp.getLocalTranslation());
-            }
+            setModelRuntimePosition(am, m, sp.getLocalTranslation());
         } else {
-            if(am.physicalControl instanceof SceneMax3DGenericVehicle) {
-                SceneMax3DGenericVehicle v = (SceneMax3DGenericVehicle)am.physicalControl;
-                v.getVehicleControl().setPhysicsLocation(new Vector3f(valX.floatValue(), valY.floatValue(), valZ.floatValue()));
-               // v.setLocation(new Vector3f(valX.floatValue(), valY.floatValue(), valZ.floatValue()));
-            } else {
-                m.setLocalTranslation(valX.floatValue(), valY.floatValue(), valZ.floatValue());
-            }
+            setModelRuntimePosition(am, m, new Vector3f(valX.floatValue(), valY.floatValue(), valZ.floatValue()));
         }
 
+    }
+
+    private void setModelRuntimePosition(AppModel am, Spatial model, Vector3f position) {
+        Vector3f pos = position.clone();
+        if(am.physicalControl instanceof SceneMax3DGenericVehicle) {
+            SceneMax3DGenericVehicle v = (SceneMax3DGenericVehicle)am.physicalControl;
+            v.getVehicleControl().setPhysicsLocation(pos);
+        } else if(am.physicalControl instanceof CharacterControl) {
+            CharacterControl ctl = (CharacterControl)am.physicalControl;
+            ctl.setPhysicsLocation(pos);
+            model.setLocalTranslation(pos);
+        } else {
+            model.setLocalTranslation(pos);
+        }
     }
 
     public void posSprite(String targetVar, Double valX, Double valY, Double valZ, RunTimeVarDef varForPos, Vector3f calculatedPosition) {
@@ -6759,6 +6796,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         Node parentNode;
         AppModel am = models.get(targetVar);
         if (am == null) {
+            pendingModelSwitchModes.put(targetVar, cmd);
             return;
         }
 
@@ -6794,6 +6832,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         CapsuleCollisionShape capsule = new CapsuleCollisionShape(am.resource.capsuleRadius*scaleRatio, am.resource.capsuleHeight*scaleRatio);
         CharacterControl charCtl = new CharacterControl(capsule, am.resource.stepHeight);
+        Vector3f characterStartLocation = parentNode.getParent() == null
+                ? parentNode.getLocalTranslation().clone()
+                : parentNode.getWorldTranslation().clone();
+        charCtl.setPhysicsLocation(characterStartLocation);
         charCtl.setJumpSpeed(20f);
         charCtl.setGravity(cmd.gravityVal.floatValue());//
 

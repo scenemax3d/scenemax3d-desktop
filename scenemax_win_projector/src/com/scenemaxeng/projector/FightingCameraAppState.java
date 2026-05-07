@@ -37,8 +37,10 @@ class FightingCameraAppState {
             return;
         }
 
+        boolean initializedThisFrame = false;
         if (!initialized) {
             initialized = true;
+            initializedThisFrame = true;
             storeFrustum();
             smoothedLookAt.set(player.getWorldTranslation()).interpolateLocal(opponent.getWorldTranslation(), 0.5f);
         }
@@ -69,7 +71,11 @@ class FightingCameraAppState {
         }
 
         float alpha = smoothingAlpha(settings.damping, tpf);
-        smoothedLookAt.interpolateLocal(lookAt, alpha);
+        if (initializedThisFrame) {
+            smoothedLookAt.set(lookAt);
+        } else {
+            smoothedLookAt.interpolateLocal(lookAt, alpha);
+        }
 
         Vector3f desiredPos = smoothedLookAt.clone()
                 .addLocal(Vector3f.UNIT_Y.mult(settings.height))
@@ -89,10 +95,15 @@ class FightingCameraAppState {
             desiredPos.z = Math.min(settings.arenaMaxZ, desiredPos.z);
         }
 
-        Vector3f smoothedPos = cam.getLocation().clone().interpolateLocal(desiredPos, alpha);
         float distanceFactor = clamp01((fighterDistance - settings.minDistance) / Math.max(0.001f, settings.maxDistance - settings.minDistance));
         float targetFov = FastMath.interpolateLinear(distanceFactor, settings.fov, settings.maxFov);
-        app.applySystemCameraFrame(smoothedPos, smoothedLookAt, FastMath.interpolateLinear(alpha, currentFovDegrees(), targetFov), tpf);
+        Vector3f smoothedPos = initializedThisFrame
+                ? desiredPos
+                : cam.getLocation().clone().interpolateLocal(desiredPos, alpha);
+        float smoothedFov = initializedThisFrame
+                ? targetFov
+                : FastMath.interpolateLinear(alpha, currentFovDegrees(), targetFov);
+        app.applySystemCameraFrame(smoothedPos, smoothedLookAt, smoothedFov, tpf);
     }
 
     void cleanup() {
