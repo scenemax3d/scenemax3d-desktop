@@ -81,7 +81,7 @@ public class DesignerEntity {
     private boolean staticModel;
     private boolean dynamicModel;
     private boolean vehicleModel;
-    private String modelCollisionShape = "none";
+    private String modelCollisionShape = "default";
 
     // Shared flags for BOX, SPHERE (and MODEL already has staticModel)
     private boolean staticEntity;
@@ -650,7 +650,7 @@ public class DesignerEntity {
                 entity.staticModel = json.optBoolean("staticModel", false);
                 entity.dynamicModel = json.optBoolean("dynamicModel", false);
                 entity.vehicleModel = json.optBoolean("vehicleModel", false);
-                entity.modelCollisionShape = normalizeModelCollisionShape(json.optString("modelCollisionShape", "none"));
+                entity.modelCollisionShape = normalizeModelCollisionShape(json.optString("modelCollisionShape", "default"));
                 entity.hidden = json.optBoolean("hidden", false);
                 entity.shader = json.optString("shader", "");
                 entity.shadowMode = json.optString("shadowMode", "none");
@@ -737,7 +737,7 @@ public class DesignerEntity {
 
     private static String normalizeModelCollisionShape(String value) {
         if (value == null || value.trim().isEmpty()) {
-            return "none";
+            return "default";
         }
         String normalized = value.trim().toLowerCase();
         switch (normalized) {
@@ -748,7 +748,7 @@ public class DesignerEntity {
             case "none":
                 return normalized;
             default:
-                return "none";
+                return "default";
         }
     }
 }

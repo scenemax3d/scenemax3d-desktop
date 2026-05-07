@@ -370,9 +370,9 @@ public class DesignerDocument {
     }
 
     private static String buildModelCollisionShapeSuffix(String value) {
-        String shape = value != null ? value.trim().toLowerCase(Locale.ROOT) : "none";
+        String shape = value != null ? value.trim().toLowerCase(Locale.ROOT) : "default";
         if (shape.isEmpty()) {
-            shape = "none";
+            shape = "default";
         }
         switch (shape) {
             case "default":
@@ -383,7 +383,7 @@ public class DesignerDocument {
             case "none":
                 return ", collision shape " + shape;
             default:
-                return ", collision shape none";
+                return "";
         }
     }
 

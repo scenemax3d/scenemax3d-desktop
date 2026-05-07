@@ -50,6 +50,7 @@
         0.02,
         0.02
       ],
+      "modelCollisionShape": "default",
       "type": "MODEL",
       "sceneMaxCode": "level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on async",
       "staticModel": true,
@@ -80,6 +81,7 @@
         25,
         25
       ],
+      "modelCollisionShape": "default",
       "type": "MODEL",
       "sceneMaxCode": "ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0 async",
       "staticModel": false,
@@ -121,9 +123,9 @@
       "shadowMode": "both",
       "rotation": [
         0,
-        -1,
+        0.8216386,
         0,
-        7.54979E-8
+        0.5700088
       ],
       "resourcePath": "tiger3",
       "jointMapping": "",
@@ -132,6 +134,7 @@
         0.04,
         0.04
       ],
+      "modelCollisionShape": "default",
       "type": "MODEL",
       "sceneMaxCode": "tg => tiger3: pos (13.0,-14.0,43.0), scale 0.04, rotate(0.0,-179.99998,0.0), shadow mode on async",
       "staticModel": false,
@@ -139,9 +142,9 @@
       "vehicleModel": false,
       "id": "7ce35e67-ecb0-468d-b486-659b902279da",
       "position": [
-        13,
-        -14,
-        43
+        10.163753,
+        -5.6443043,
+        49.335724
       ]
     },
     {
@@ -162,6 +165,7 @@
         3,
         3
       ],
+      "modelCollisionShape": "default",
       "type": "MODEL",
       "sceneMaxCode": "boss => boss: hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast async",
       "staticModel": false,
@@ -238,6 +242,7 @@
             3,
             3
           ],
+          "modelCollisionShape": "default",
           "type": "MODEL",
           "sceneMaxCode": "player1 => fighter1: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast async",
           "staticModel": false,
@@ -599,6 +604,7 @@
             3,
             3
           ],
+          "modelCollisionShape": "default",
           "type": "MODEL",
           "sceneMaxCode": "player2 => old_fighter2: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on async",
           "staticModel": false,
@@ -1149,6 +1155,37 @@
         0
       ],
       "cinematicRuntimeId": "cinematic1"
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "resourcePath": "meshy_ai_dragon_gate_0504202330_texture",
+      "jointMapping": "",
+      "scale": [
+        30,
+        30,
+        30
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "model_21 => static meshy_ai_dragon_gate_0504202330_texture: pos (-23.555279,-81.401955,100.0), scale 10.0, collision shape none async",
+      "staticModel": true,
+      "name": "model_21",
+      "vehicleModel": false,
+      "id": "393076d1-cb35-4443-9bc3-c33011d3b489",
+      "position": [
+        22.532026,
+        -66.486755,
+        100
+      ]
     }
   ],
   "gameCamera": {
@@ -1166,15 +1203,15 @@
   },
   "camera": {
     "rotation": [
-      -0.09143161,
-      0.8484876,
-      -0.15597656,
-      -0.49737337
+      -0.022194553,
+      0.977679,
+      -0.13957103,
+      -0.15547028
     ],
     "position": [
-      91.78476,
-      -66.66638,
-      58.99296
+      16.567833,
+      -43.70291,
+      222.96744
     ]
   },
   "version": 1

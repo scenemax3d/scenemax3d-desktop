@@ -4949,7 +4949,7 @@ public class DesignerApp extends SceneMaxApp {
 
     private String normalizeModelCollisionShape(String value) {
         if (value == null || value.trim().isEmpty()) {
-            return "none";
+            return "default";
         }
         String normalized = value.trim().toLowerCase(Locale.ROOT);
         switch (normalized) {
@@ -4960,7 +4960,7 @@ public class DesignerApp extends SceneMaxApp {
             case "none":
                 return normalized;
             default:
-                return "none";
+                return "default";
         }
     }
 
