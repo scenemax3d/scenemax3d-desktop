@@ -836,75 +836,75 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         for (Object key : models.keySet().toArray()) {
             AppModel am = models.get(key);
-            if (!am.entityInst.varDef.isShared) {
+            if (!isSharedEntity(am.entityInst)) {
                 this.killModel((String) key);
             }
         }
 
         for (Object key : boxes.keySet().toArray()) {
-            if (!geoName2EntityInst.get(key).varDef.isShared) {
+            if (!isSharedEntity(geoName2EntityInst.get(key))) {
                 this.killBox((String) key);
             }
         }
 
         for (Object key : spheres.keySet().toArray()) {
-            if (!geoName2EntityInst.get(key).varDef.isShared) {
+            if (!isSharedEntity(geoName2EntityInst.get(key))) {
                 this.killSphere((String) key);
             }
         }
 
         for (Object key : cylinders.keySet().toArray()) {
-            if (!geoName2EntityInst.get(key).varDef.isShared) {
+            if (!isSharedEntity(geoName2EntityInst.get(key))) {
                 this.killCylinder((String) key);
             }
         }
 
         for (Object key : hollowCylinders.keySet().toArray()) {
-            if (!geoName2EntityInst.get(key).varDef.isShared) {
+            if (!isSharedEntity(geoName2EntityInst.get(key))) {
                 this.killHollowCylinder((String) key);
             }
         }
 
         for (Object key : quads.keySet().toArray()) {
-            if (!geoName2EntityInst.get(key).varDef.isShared) {
+            if (!isSharedEntity(geoName2EntityInst.get(key))) {
                 this.killQuad((String) key);
             }
         }
 
         for (Object key : wedges.keySet().toArray()) {
-            if (!geoName2EntityInst.get(key).varDef.isShared) {
+            if (!isSharedEntity(geoName2EntityInst.get(key))) {
                 this.killWedge((String) key);
             }
         }
 
         for (Object key : cones.keySet().toArray()) {
-            if (!geoName2EntityInst.get(key).varDef.isShared) {
+            if (!isSharedEntity(geoName2EntityInst.get(key))) {
                 this.killCone((String) key);
             }
         }
 
         for (Object key : stairsMap.keySet().toArray()) {
-            if (!geoName2EntityInst.get(key).varDef.isShared) {
+            if (!isSharedEntity(geoName2EntityInst.get(key))) {
                 this.killStairs((String) key);
             }
         }
 
         for (Object key : arches.keySet().toArray()) {
-            if (!geoName2EntityInst.get(key).varDef.isShared) {
+            if (!isSharedEntity(geoName2EntityInst.get(key))) {
                 this.killArch((String) key);
             }
         }
 
         for (Object key : lights.keySet().toArray()) {
             LightInst inst = lights.get(key);
-            if (inst != null && !inst.varDef.isShared) {
+            if (inst != null && !isSharedEntity(inst)) {
                 this.killLight((String) key);
             }
         }
 
         for (Object key : effekseerEffects.keySet().toArray()) {
             EffekseerInst inst = effekseerEffects.get(key);
-            if (inst != null && !inst.varDef.isShared) {
+            if (inst != null && !isSharedEntity(inst)) {
                 this.killEffekseerEffect((String) key);
             }
         }
@@ -948,6 +948,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             installFallbackLighting();
         }
         //this.mainScope.clearVars();
+    }
+
+    private boolean isSharedEntity(EntityInstBase inst) {
+        return inst != null && inst.varDef != null && (inst.varDef.isShared || inst.runtimeShared);
     }
 
     /**
@@ -1803,6 +1807,15 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     public void instantiateVariable(ProgramDef prg, VariableDef var, SceneMaxScope scope) {
+
+        EntityInstBase existingInst = scope != null ? scope.getEntityInst(var.varName) : null;
+        if (existingInst != null && existingInst.varDef != null
+                && (existingInst.varDef.isShared || existingInst.runtimeShared)) {
+            if (existingInst.varDef.isShared) {
+                var.isShared = true;
+            }
+            return;
+        }
 
         if(var.varType==VariableDef.VAR_TYPE_3D) {
             String fromRes = "";
@@ -4967,6 +4980,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         if(_controllers.size()==this.eventHandlersCount) {
+            updateRuntimeCameraStates(tpf);
             return;
         }
 
@@ -5001,21 +5015,25 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
           }
 
-          if(followCameraState!=null) {
-              followCameraState.update(tpf);
-          }
-          if(fightingCameraState!=null) {
-              fightingCameraState.update(tpf);
-          }
-          if(gameplayCameraState!=null) {
-              gameplayCameraState.update(tpf);
-          }
+          updateRuntimeCameraStates(tpf);
 
         if (this.switchStateCode != null) {
             this.switchState();
         }
 
       }
+
+    private void updateRuntimeCameraStates(float tpf) {
+        if(followCameraState!=null) {
+            followCameraState.update(tpf);
+        }
+        if(fightingCameraState!=null) {
+            fightingCameraState.update(tpf);
+        }
+        if(gameplayCameraState!=null) {
+            gameplayCameraState.update(tpf);
+        }
+    }
 
     private void updateRuntimeShaderMaterials() {
         for (Material material : runtimeShaderMaterials) {
@@ -7837,6 +7855,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return;// error not found
         }
 
+        if (attachToEntity.varDef.isShared) {
+            markSpatialEntitiesShared(attachedSpatial);
+        }
+        if (attachedSpatial == attachToSpatial || isDescendantOf(attachToSpatial, attachedSpatial)) {
+            return;
+        }
+
         Node attachedNode = (Node)attachedSpatial;
         if(attachedEntityJointName!=null && attachedEntity.varDef.varType==VariableDef.VAR_TYPE_3D) {
             attachedNode = getAttachJointNode(attachedEntity, attachedEntityJointName);
@@ -7882,6 +7907,64 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     }
 
+    private void markSpatialEntitiesShared(Spatial rootSpatial) {
+        if (rootSpatial == null) {
+            return;
+        }
+        for (EntityInstBase inst : getAllEntityInstances()) {
+            if (inst == null || inst.varDef == null || inst.scope == null) {
+                continue;
+            }
+            Spatial spatial = getEntitySpatial(inst.getVarRunTimeName(), inst.varDef.varType);
+            if (isDescendantOf(spatial, rootSpatial)) {
+                inst.runtimeShared = true;
+            }
+        }
+    }
+
+    private Collection<EntityInstBase> getAllEntityInstances() {
+        LinkedHashMap<String, EntityInstBase> instances = new LinkedHashMap<>();
+        addEntityInstances(instances, modelInstances.values());
+        addEntityInstances(instances, spriteInstances.values());
+        addEntityInstances(instances, sphereInstances.values());
+        addEntityInstances(instances, boxInstances.values());
+        addEntityInstances(instances, cylinderInstances.values());
+        addEntityInstances(instances, hollowCylinderInstances.values());
+        addEntityInstances(instances, quadInstances.values());
+        addEntityInstances(instances, wedgeInstances.values());
+        addEntityInstances(instances, coneInstances.values());
+        addEntityInstances(instances, stairsInstances.values());
+        addEntityInstances(instances, archInstances.values());
+        addEntityInstances(instances, effekseerInstances.values());
+        addEntityInstances(instances, lights.values());
+        addEntityInstances(instances, geoName2EntityInst.values());
+        return instances.values();
+    }
+
+    private void addEntityInstances(Map<String, EntityInstBase> target, Collection<? extends EntityInstBase> source) {
+        for (EntityInstBase inst : source) {
+            if (inst == null || inst.varDef == null) {
+                continue;
+            }
+            String key = inst.entityKey != null ? inst.entityKey : inst.getVarRunTimeName();
+            target.put(key, inst);
+        }
+    }
+
+    private boolean isDescendantOf(Spatial child, Spatial ancestor) {
+        if (child == null || ancestor == null) {
+            return false;
+        }
+        Spatial current = child;
+        while (current != null) {
+            if (current == ancestor) {
+                return true;
+            }
+            current = current.getParent();
+        }
+        return false;
+    }
+
     private Node getAttachJointNode(RunTimeVarDef entityVarDef, String jointName) {
         AppModel model = models.get(entityVarDef.varName);
         try {
@@ -7902,6 +7985,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         Spatial attachEntity = getEntitySpatial(entityToAttach.varName,entityToAttach.varDef.varType);
         if(attachEntity==null){
             return;// error not found
+        }
+
+        if (targetEntity.varDef.isShared) {
+            markSpatialEntitiesShared(attachEntity);
+        }
+        if (attachEntity == target || isDescendantOf(target, attachEntity)) {
+            return;
         }
 
         Node targetNode = (Node)target;

@@ -8,6 +8,7 @@ public class EntityInstBase {
     public SceneMaxScope scope;
     public String entityKey;
     public float thresholdX=100;
+    public boolean runtimeShared;
 
     // Cached runtime name to avoid repeated string concatenation (varName + "@" + scopeId).
     // Computed lazily on first access. Safe because varDef and scope are set once at construction.

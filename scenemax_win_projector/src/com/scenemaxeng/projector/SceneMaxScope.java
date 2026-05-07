@@ -43,8 +43,15 @@ public class SceneMaxScope {
         }
 
         this.mainController = new CompositeController();
-        // Keep only ModelInst entries (not SphereInst/BoxInst subclasses or SpriteInst)
-        this.entities.entrySet().removeIf(e -> e.getValue().getClass() != ModelInst.class);
+        // Keep legacy shared models and entities promoted to shared at runtime.
+        this.entities.entrySet().removeIf(e -> {
+            EntityInstBase inst = e.getValue();
+            if (inst == null) {
+                return true;
+            }
+            boolean shared = inst.varDef != null && (inst.varDef.isShared || inst.runtimeShared);
+            return inst.getClass() != ModelInst.class && !shared;
+        });
         this.groups = new HashMap<>();
     }
 

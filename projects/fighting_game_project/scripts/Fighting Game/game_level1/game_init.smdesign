@@ -50,9 +50,8 @@
         0.02,
         0.02
       ],
-      "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on, collision shape none async",
+      "sceneMaxCode": "level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on async",
       "staticModel": true,
       "name": "level2",
       "vehicleModel": false,
@@ -81,9 +80,8 @@
         25,
         25
       ],
-      "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0, collision shape none async",
+      "sceneMaxCode": "ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0 async",
       "staticModel": false,
       "name": "ring",
       "vehicleModel": false,
@@ -134,9 +132,8 @@
         0.04,
         0.04
       ],
-      "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "tg => tiger3: pos (13.0,-14.0,43.0), scale 0.04, rotate(0.0,-179.99998,0.0), shadow mode on, collision shape none async",
+      "sceneMaxCode": "tg => tiger3: pos (13.0,-14.0,43.0), scale 0.04, rotate(0.0,-179.99998,0.0), shadow mode on async",
       "staticModel": false,
       "name": "tg",
       "vehicleModel": false,
@@ -165,9 +162,8 @@
         3,
         3
       ],
-      "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "boss => boss: hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast, collision shape none async",
+      "sceneMaxCode": "boss => boss: hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast async",
       "staticModel": false,
       "name": "boss",
       "vehicleModel": false,
@@ -242,9 +238,8 @@
             3,
             3
           ],
-          "modelCollisionShape": "none",
           "type": "MODEL",
-          "sceneMaxCode": "player1 => fighter1: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast, collision shape none async",
+          "sceneMaxCode": "player1 => fighter1: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast async",
           "staticModel": false,
           "name": "player1",
           "vehicleModel": false,
@@ -604,9 +599,8 @@
             3,
             3
           ],
-          "modelCollisionShape": "none",
           "type": "MODEL",
-          "sceneMaxCode": "player2 => old_fighter2: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on, collision shape none async",
+          "sceneMaxCode": "player2 => old_fighter2: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on async",
           "staticModel": false,
           "name": "player2",
           "vehicleModel": false,
@@ -1057,10 +1051,10 @@
           "cinematicTrackData": {
             "anchorCount": 360,
             "previewSpeed": 30,
-            "selectedStartAnchor": 269,
+            "selectedStartAnchor": -1,
             "radiusZ": 18,
             "radiusX": 22,
-            "selectedEndAnchor": 262
+            "selectedEndAnchor": -1
           }
         },
         {
@@ -1155,37 +1149,6 @@
         0
       ],
       "cinematicRuntimeId": "cinematic1"
-    },
-    {
-      "shader": "",
-      "dynamicModel": false,
-      "hidden": false,
-      "shadowMode": "none",
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "resourcePath": "meshy_ai_dragon_gate_0504202330_texture",
-      "jointMapping": "",
-      "scale": [
-        35.1,
-        35.1,
-        35.1
-      ],
-      "modelCollisionShape": "none",
-      "type": "MODEL",
-      "sceneMaxCode": "model_21 => static meshy_ai_dragon_gate_0504202330_texture: pos (40.964985,-58.217552,78.692276), scale 35.1, collision shape none async",
-      "staticModel": true,
-      "name": "model_21",
-      "vehicleModel": false,
-      "id": "f3563e64-ee75-44db-ba3f-543d318b879a",
-      "position": [
-        40.964985,
-        -58.217552,
-        78.692276
-      ]
     }
   ],
   "gameCamera": {
@@ -1203,15 +1166,15 @@
   },
   "camera": {
     "rotation": [
-      0.05381883,
-      0.12885012,
-      -0.007003351,
-      0.9901778
+      -0.09143161,
+      0.8484876,
+      -0.15597656,
+      -0.49737337
     ],
     "position": [
-      -50.88305,
-      21.67704,
-      -192.20047
+      91.78476,
+      -66.66638,
+      58.99296
     ]
   },
   "version": 1

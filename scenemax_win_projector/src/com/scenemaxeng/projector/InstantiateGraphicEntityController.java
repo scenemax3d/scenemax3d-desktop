@@ -37,9 +37,18 @@ public class InstantiateGraphicEntityController extends SceneMaxBaseController {
     }
 
     private boolean isSharedEntityExists() {
+        EntityInstBase existingInst = this.scope.getEntityInst(cmd.varDef.varName);
+        if (existingInst != null && existingInst.varDef != null
+                && (existingInst.varDef.isShared || existingInst.runtimeShared)) {
+            if (existingInst.varDef.isShared) {
+                cmd.varDef.isShared = true;
+            }
+            return true;
+        }
+
         VariableDef vd = this.prg.vars_index.get(cmd.varDef.varName);
         if (vd !=null && vd.isShared) {
-            return this.scope.entities.containsKey(cmd.varDef.varName);
+            return existingInst != null;
         }
 
         return false;
