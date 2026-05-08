@@ -136,7 +136,7 @@
       ],
       "modelCollisionShape": "default",
       "type": "MODEL",
-      "sceneMaxCode": "tg => tiger3: pos (13.0,-14.0,43.0), scale 0.04, rotate(0.0,-179.99998,0.0), shadow mode on async",
+      "sceneMaxCode": "tg => tiger3: pos (10.163753,-5.6443043,49.335724), scale 0.04, rotate(0.0,110.49832,0.0), shadow mode on async",
       "staticModel": false,
       "name": "tg",
       "vehicleModel": false,
@@ -1176,7 +1176,7 @@
       ],
       "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "model_21 => static meshy_ai_dragon_gate_0504202330_texture: pos (-23.555279,-81.401955,100.0), scale 10.0, collision shape none async",
+      "sceneMaxCode": "model_21 => static meshy_ai_dragon_gate_0504202330_texture: pos (22.532026,-66.486755,100.0), scale 30.0, collision shape none async",
       "staticModel": true,
       "name": "model_21",
       "vehicleModel": false,
@@ -1203,15 +1203,15 @@
   },
   "camera": {
     "rotation": [
-      -0.022194553,
-      0.977679,
-      -0.13957103,
-      -0.15547028
+      -0.09904575,
+      0.8923991,
+      -0.2391176,
+      -0.36964384
     ],
     "position": [
-      16.567833,
-      -43.70291,
-      222.96744
+      9.185587,
+      7.5,
+      9.185586
     ]
   },
   "version": 1

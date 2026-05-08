@@ -37,6 +37,7 @@ game_start = {
 	
 	run set_camera_on_player
 	game_status=GAME_STATE_START  
+	run level1_dragon_rocks_start Async
 	//
 }
 

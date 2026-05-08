@@ -28,3 +28,10 @@ shake_the_world2 = {
 	
 }
 
+[camera_mode==CAMERA_MODE_DEFAULT && game_status==GAME_STATE_START]
+level1_earthquake_camera = {
+  fight_cam.apply bump_fx : duration 0.28, amplitude 0.95, x 0.18, y 0.16, z 0.05, ry 0.75, rz 1.35
+}
+
+run level1_earthquake_camera every 0.22 seconds
+

@@ -5,6 +5,7 @@ game_over = {
 	}
 	
 	game_status=GAME_STATE_OVER // game over
+	run level1_dragon_rocks_stop
 	wait 0.1 seconds 
 	//gameover.draw game_over3 : size (550,160) and pos(550,150)
   UI.layer1.panelMsg.txtMsg.message("GAME OVER", TextEffect.fade_in | TextEffect.zoom_in, 2) Async
