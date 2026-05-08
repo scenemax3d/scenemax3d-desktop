@@ -46,6 +46,10 @@ public class SceneMaxTokenManager extends AbstractTokenMaker {
         tokenMap.put("water", Token.RESERVED_WORD);
         tokenMap.put("function", Token.RESERVED_WORD);
         tokenMap.put("audio", Token.RESERVED_WORD);
+        tokenMap.put("logger", Token.RESERVED_WORD);
+        tokenMap.put("info", Token.RESERVED_WORD);
+        tokenMap.put("debug", Token.RESERVED_WORD);
+        tokenMap.put("error", Token.RESERVED_WORD);
         tokenMap.put("camera", Token.RESERVED_WORD);
         tokenMap.put("wedge", Token.RESERVED_WORD);
         tokenMap.put("cone", Token.RESERVED_WORD);

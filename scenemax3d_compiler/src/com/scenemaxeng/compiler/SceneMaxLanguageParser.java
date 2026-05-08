@@ -989,6 +989,21 @@ public class SceneMaxLanguageParser implements IParser {
                 return cmd;
             }
 
+            public ActionStatementBase visitLoggerStatement(SceneMaxParser.LoggerStatementContext ctx) {
+                LoggerCommand cmd = new LoggerCommand();
+                SceneMaxParser.Logger_statementContext loggerCtx = ctx.logger_statement();
+                cmd.message = loggerCtx.logical_expression();
+                if (loggerCtx.logger_level().Debug() != null) {
+                    cmd.level = LoggerCommand.DEBUG;
+                } else if (loggerCtx.logger_level().Error() != null) {
+                    cmd.level = LoggerCommand.ERROR;
+                } else {
+                    cmd.level = LoggerCommand.INFO;
+                }
+
+                return cmd;
+            }
+
             public StatementDef visitAttachCameraActions(SceneMaxParser.AttachCameraActionsContext ctx) {
                 FpsCameraCommand cmd = new FpsCameraCommand();
 

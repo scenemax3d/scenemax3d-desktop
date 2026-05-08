@@ -95,6 +95,7 @@ public class SceneMaxAutoComplete {
         "Cloud", "Flattening", "Cloudiness", "Hour",
         "Depth", "Strength",
         "Audio", "Sound", "Volume",
+        "Logger", "info", "debug", "error",
         "Lights", "Light", "Probe", "directional", "point", "spot", "sky", "ambient",
         "Direction", "Intensity", "Lumens", "Range", "Preset", "Exposure",
         "Low", "Medium", "High", "Warm", "Cool",

@@ -1449,6 +1449,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if(action instanceof PrintStatementCommand) {
             PrintStatementContoller ctl = new PrintStatementContoller(this, prg, (PrintStatementCommand)action,scope);
             scope.add(ctl);
+        } else if(action instanceof LoggerCommand) {
+            LoggerCommandController ctl = new LoggerCommandController(this, prg, scope, (LoggerCommand) action);
+            ctl.async = action.isAsync;
+            scope.add(ctl);
         } else if(action instanceof WaitStatementCommand) {
             WaitStatementController ctl = new WaitStatementController(this,prg,(WaitStatementCommand)action,scope);
             scope.add(ctl);
@@ -5302,6 +5306,17 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
         this.hasRunTimeError=true;
         this.runTimeError=enrichedError;
+    }
+
+    public void logRuntimeMessage(String levelName, String message) {
+        String normalizedLevel = levelName == null ? LoggerCommand.INFO : levelName.toLowerCase(Locale.ROOT);
+        if (LoggerCommand.ERROR.equals(normalizedLevel)) {
+            logger.log(Level.SEVERE, message);
+        } else if (LoggerCommand.DEBUG.equals(normalizedLevel)) {
+            logger.log(Level.INFO, "[DEBUG] " + message);
+        } else {
+            logger.log(Level.INFO, message);
+        }
     }
 
     public String formatRuntimeLocation(int lineNumber) {
