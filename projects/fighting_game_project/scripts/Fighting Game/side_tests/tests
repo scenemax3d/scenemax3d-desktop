@@ -1,4 +1,8 @@
 
+crystal=> meshy_crystal1
+crystal.Show
+crystal.turn left 360 in 1 Seconds loop while 1==1
+  
 m1 => meshy_azure3 : pos(-4,0,0), scale 0.02
 m2 => adi2 : pos (4,-2,0)
 

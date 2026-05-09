@@ -24,6 +24,7 @@ public class MoveToController extends SceneMaxBaseController {
     private Spatial lookingAtEntity;
     private PositionStatement lookingAtPosStatement;
     private final Vector3f frameOffset = new Vector3f();
+    private MotionEase.MotionEaseSpec motionEase;
 
     //private static HashMap<String,MoveToController> activeMoveControllers = new HashMap<>();
 
@@ -112,6 +113,7 @@ public class MoveToController extends SceneMaxBaseController {
             targetPos = redVector.clone().add(extraDistVec);
 
             totalDist = targetPos.distance(startPos);
+            motionEase = MotionEase.fromCommand(cmd, scope);
 
         }
 
@@ -130,7 +132,7 @@ public class MoveToController extends SceneMaxBaseController {
             currentProgress = timePassed / targetTime;
         }
 
-        float deltaProgress = MotionEase.delta(((MoveToCommand)this.cmd).motionEaseType, previousProgress, currentProgress);
+        float deltaProgress = MotionEase.delta(motionEase, previousProgress, currentProgress);
         frameOffset.set(dir).multLocal(totalDist * deltaProgress);
 
         Vector3f currPos = null;

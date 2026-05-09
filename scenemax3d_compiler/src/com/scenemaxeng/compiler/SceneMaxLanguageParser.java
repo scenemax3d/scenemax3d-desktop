@@ -16,6 +16,7 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -3143,7 +3144,7 @@ public class SceneMaxLanguageParser implements IParser {
                 cmd.numSign = numSign;
                 cmd.numExpr = ctx.turn_verbal().turn_degrees().logical_expression();
                 cmd.speedExp = ctx.turn_verbal().speed_expr().logical_expression();
-                cmd.motionEaseType = parseMotionEase(ctx.turn_verbal().motion_ease_attr());
+                applyMotionEase(cmd, ctx.turn_verbal().motion_ease_attr());
 
                 rotate.statements.add(cmd);
                 return rotate;
@@ -3178,7 +3179,7 @@ public class SceneMaxLanguageParser implements IParser {
                 cmd.numSign = numSign;
                 cmd.numExpr = ctx.roll_verbal().turn_degrees().logical_expression();
                 cmd.speedExp = ctx.roll_verbal().speed_expr().logical_expression();
-                cmd.motionEaseType = parseMotionEase(ctx.roll_verbal().motion_ease_attr());
+                applyMotionEase(cmd, ctx.roll_verbal().motion_ease_attr());
 
                 rotate.statements.add(cmd);
                 return rotate;
@@ -3238,7 +3239,7 @@ public class SceneMaxLanguageParser implements IParser {
                 cmd.numExpr = ctx.move_verbal().logical_expression();
                 cmd.speedExpr=speedExprCtx.logical_expression();
                 cmd.loopExpr = ctx.move_verbal().loop_expr();
-                cmd.motionEaseType = parseMotionEase(ctx.move_verbal().motion_ease_attr());
+                applyMotionEase(cmd, ctx.move_verbal().motion_ease_attr());
                 move.statements.add(cmd);
 
                 return move;
@@ -3277,7 +3278,7 @@ public class SceneMaxLanguageParser implements IParser {
                 cmd.varLineNum = ctx.move_to().var_decl().getStart().getLine();
                 cmd.extraDistanceExpr = ctx.move_to().logical_expression();
                 cmd.speedExpr = ctx.move_to().speed_expr().logical_expression();
-                cmd.motionEaseType = parseMotionEase(ctx.move_to().motion_ease_attr());
+                applyMotionEase(cmd, ctx.move_to().motion_ease_attr());
 
                 cmd.validate(prg);
 
@@ -3611,7 +3612,7 @@ public class SceneMaxLanguageParser implements IParser {
                 }
 
                 cmd.loopExpr = ctx.directional_move().loop_expr();
-                cmd.motionEaseType = parseMotionEase(ctx.directional_move().motion_ease_attr());
+                applyMotionEase(cmd, ctx.directional_move().motion_ease_attr());
                 return cmd;
 
             }
@@ -3641,7 +3642,7 @@ public class SceneMaxLanguageParser implements IParser {
                         cmd.numSign = numSign;
                         cmd.numExpr = actx.logical_expression();//new ActionLogicalExpression(actx.logical_expression(),prg);
                         cmd.speedExpr=speedExprCtx.logical_expression();//speedExpr;
-                        cmd.motionEaseType = parseMotionEase(ctx.move().motion_ease_attr());
+                        applyMotionEase(cmd, ctx.move().motion_ease_attr());
 
                         move.statements.add(cmd);
 
@@ -3670,7 +3671,7 @@ public class SceneMaxLanguageParser implements IParser {
                 cmd.axis = ctx.rotate_to().axis_name().getText();
                 cmd.speedExpr = ctx.rotate_to().speed_expr().logical_expression();
                 cmd.rotateValExpr = ctx.rotate_to().logical_expression();
-                cmd.motionEaseType = parseMotionEase(ctx.rotate_to().motion_ease_attr());
+                applyMotionEase(cmd, ctx.rotate_to().motion_ease_attr());
                 return cmd;
             }
 
@@ -3725,7 +3726,7 @@ public class SceneMaxLanguageParser implements IParser {
 
                         //cmd.speed = speed;
                         cmd.speedExp = speedExprCtx.logical_expression();//speedExp;
-                        cmd.motionEaseType = parseMotionEase(ctx.motion_ease_attr());
+                        applyMotionEase(cmd, ctx.motion_ease_attr());
 
                         rotate.statements.add(cmd);
 
@@ -3944,22 +3945,49 @@ public class SceneMaxLanguageParser implements IParser {
 
     }
 
+    private void applyMotionEase(TimedVariableMotionCommand cmd, SceneMaxParser.Motion_ease_attrContext ctx) {
+        cmd.motionEaseType = parseMotionEase(ctx);
+        cmd.motionEaseFunction = parseMotionEaseFunction(ctx);
+        cmd.motionEaseParamExprs = parseMotionEaseParams(ctx);
+    }
+
+    private void applyMotionEase(TimedMotionCommand cmd, SceneMaxParser.Motion_ease_attrContext ctx) {
+        cmd.motionEaseType = parseMotionEase(ctx);
+        cmd.motionEaseFunction = parseMotionEaseFunction(ctx);
+        cmd.motionEaseParamExprs = parseMotionEaseParams(ctx);
+    }
+
     private int parseMotionEase(SceneMaxParser.Motion_ease_attrContext ctx) {
 
         if(ctx==null) {
             return MotionEaseType.LINEAR;
         }
 
-        if(ctx.In()!=null && ctx.Out()!=null) {
+        SceneMaxParser.Motion_ease_directionContext direction = ctx.motion_ease_direction();
+        if(direction.In()!=null && direction.Out()!=null) {
             return MotionEaseType.EASE_IN_OUT;
         }
 
-        if(ctx.Out()!=null) {
+        if(direction.Out()!=null) {
             return MotionEaseType.EASE_OUT;
         }
 
         return MotionEaseType.EASE_IN;
 
+    }
+
+    private String parseMotionEaseFunction(SceneMaxParser.Motion_ease_attrContext ctx) {
+        if(ctx==null || ctx.QUOTED_STRING()==null) {
+            return null;
+        }
+        return trimQuotedString(ctx.QUOTED_STRING().getText());
+    }
+
+    private List<SceneMaxParser.Logical_expressionContext> parseMotionEaseParams(SceneMaxParser.Motion_ease_attrContext ctx) {
+        if(ctx==null || ctx.motion_ease_params()==null) {
+            return Collections.emptyList();
+        }
+        return ctx.motion_ease_params().logical_expression();
     }
 
     private void setEntityPos(EntityPos pos, SceneMaxParser.Pos_entityContext entityPos) {

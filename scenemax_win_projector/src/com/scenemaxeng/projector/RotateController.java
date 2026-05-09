@@ -23,6 +23,7 @@ public class RotateController extends SceneMaxBaseController{
 
     // Cached to avoid per-frame allocation
     private ActionLogicalExpressionVm loopExprCached;
+    private MotionEase.MotionEaseSpec motionEase;
     //private VariableDef targetVarDef;
 
 
@@ -60,6 +61,7 @@ public class RotateController extends SceneMaxBaseController{
             targetTime = speedExpr==null?1.0f:(float) ActionLogicalExpressionVm.toDouble(speedExpr.evaluate());
 
             this.enableEntity(targetVar);// enable this entity
+            motionEase = MotionEase.fromCommand(rotateCmd, scope);
             targetCalculated=true;
         }
 
@@ -84,7 +86,7 @@ public class RotateController extends SceneMaxBaseController{
             currentProgress = 1f;
         }
 
-        float rotateVal = targetVal * MotionEase.delta(rotateCmd.motionEaseType, previousProgress, currentProgress);
+        float rotateVal = targetVal * MotionEase.delta(motionEase, previousProgress, currentProgress);
 
         if (targetVarDef.varType == VariableDef.VAR_TYPE_CAMERA) {
             this.app.rotateCamera(axisNum, direction, rotateVal);

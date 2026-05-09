@@ -12,6 +12,7 @@ public class RotateToController extends SceneMaxBaseController {
     private float passedTime = 0;
     private float targetTime=0;
     private float targetVal=0;
+    private MotionEase.MotionEaseSpec motionEase;
 
 
     public RotateToController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope, ActionCommandRotateTo cmd) {
@@ -71,6 +72,7 @@ public class RotateToController extends SceneMaxBaseController {
             targetVal=delta;
 
             targetCalculated = true;
+            motionEase = MotionEase.fromCommand(cmd, scope);
 
         }
 
@@ -96,7 +98,7 @@ public class RotateToController extends SceneMaxBaseController {
             currentProgress = 1f;
         }
 
-        float rotateVal = targetVal * MotionEase.delta(this.cmd.motionEaseType, previousProgress, currentProgress);
+        float rotateVal = targetVal * MotionEase.delta(motionEase, previousProgress, currentProgress);
 
         if (targetVarDef.varType == VariableDef.VAR_TYPE_CAMERA) {
             this.app.rotateCamera(axisNum, direction, rotateVal);

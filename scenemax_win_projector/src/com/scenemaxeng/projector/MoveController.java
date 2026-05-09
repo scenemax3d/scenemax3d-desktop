@@ -25,6 +25,7 @@ public class MoveController extends SceneMaxBaseController{
     private ActionLogicalExpressionVm loopExprCached;
 
     private ActionCommandMove cmd;
+    private MotionEase.MotionEaseSpec motionEase;
 
     public MoveController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope, ActionCommandMove cmd) {
         super(app, prg, scope, cmd);
@@ -79,6 +80,7 @@ public class MoveController extends SceneMaxBaseController{
 //            }
 
             this.enableEntity(targetVar);// enable this entity
+            motionEase = MotionEase.fromCommand(cmd, scope);
             targetCalculated=true;
         }
 
@@ -103,7 +105,7 @@ public class MoveController extends SceneMaxBaseController{
             currentProgress = 1f;
         }
 
-        float progressDelta = MotionEase.delta(cmd.motionEaseType, previousProgress, currentProgress);
+        float progressDelta = MotionEase.delta(motionEase, previousProgress, currentProgress);
         float val = targetVal * progressDelta;
 
         if(cmd.verbalCommand>0) {
