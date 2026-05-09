@@ -1176,16 +1176,69 @@
       ],
       "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "model_21 => static meshy_ai_dragon_gate_0504202330_texture: pos (22.532026,-66.486755,100.0), scale 30.0, collision shape none async",
+      "sceneMaxCode": "dragons_gate => static meshy_ai_dragon_gate_0504202330_texture: pos (22.532026,-66.486755,148.68306), scale 30.0, collision shape none async",
       "staticModel": true,
-      "name": "model_21",
+      "name": "dragons_gate",
       "vehicleModel": false,
       "id": "393076d1-cb35-4443-9bc3-c33011d3b489",
       "position": [
         22.532026,
         -66.486755,
-        100
+        148.68306
       ]
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": true,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "resourcePath": "meshy_crystal1",
+      "jointMapping": "",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "modelCollisionShape": "box",
+      "type": "MODEL",
+      "sceneMaxCode": "crystal => static meshy_crystal1: hidden, pos (23.844534,-88.28118,161.98776), collision shape box async",
+      "staticModel": true,
+      "name": "crystal",
+      "vehicleModel": false,
+      "id": "1bdd3174-0757-4dd5-a8c2-c85062ab81a9",
+      "position": [
+        23.844534,
+        -88.28118,
+        161.98776
+      ]
+    },
+    {
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "name": "player_got_crystal",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "codeText": "// player_got_crystal\nwhen player1 collides with crystal do\n\tswitch to \"game_level_train\"\nend do",
+      "id": "e322b200-18eb-4c85-949c-b6f9fafeb123",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "type": "CODE"
     }
   ],
   "gameCamera": {
@@ -1203,15 +1256,15 @@
   },
   "camera": {
     "rotation": [
-      -0.09904575,
-      0.8923991,
-      -0.2391176,
-      -0.36964384
+      0.004535374,
+      0.98045814,
+      -0.19535376,
+      0.022762524
     ],
     "position": [
-      9.185587,
-      7.5,
-      9.185586
+      11.583369,
+      8.234467,
+      279.2084
     ]
   },
   "version": 1

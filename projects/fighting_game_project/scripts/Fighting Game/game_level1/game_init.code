@@ -102,7 +102,12 @@ player2.show
 
 player2.look at (player1)
 player1.look at (player2)
-model_21 => static meshy_ai_dragon_gate_0504202330_texture: pos (22.532026,-66.486755,100.0), scale 30.0, collision shape none async
+dragons_gate => static meshy_ai_dragon_gate_0504202330_texture: pos (22.532026,-66.486755,148.68306), scale 30.0, collision shape none async
+crystal => static meshy_crystal1 : hidden, pos (23.844534,-88.28118,161.98776), collision shape box async
+// player_got_crystal
+when player1 collides with crystal do
+	switch to "game_level_train"
+end do
 
 // Write your finalization code here.
 // This code will be included at the end of the generated .code file.

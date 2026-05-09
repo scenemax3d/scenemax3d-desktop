@@ -1,18 +1,38 @@
+var level1_dragon_rocks_started=0,
+    level1_dragon_rock_count=0,
+    level1_dragon_rock_slot_1=0,
+    level1_dragon_rock_slot_2=0,
+    level1_dragon_rock_slot_3=0,
+    level1_dragon_rock_slot_4=0,
+    level1_dragon_rock_slot_5=0,
+    level1_dragon_rock_player1_hit_guard=0,
+    level1_dragon_rock_player2_hit_guard=0
+
 hit_fx = camera.system.modifiers.hit_modifier
 bump_fx = camera.system.modifiers.bump_modifier
 
 fight_cam = camera.system.fighting(player1, player2, depth 18, height 3, side 1.5, min distance 10, max distance 28, damping 8)
-// follow_cam = camera.system.third_person(player1, distance 9, height 3, side 8, look ahead 2, damping 7, fov 55, max fov 62)
+crystal_hunt_cam = camera.system.third_person(player1, distance 12, height 3.4, side 4.5, look ahead 4, damping 7, fov 62, max fov 72)
 
 set_camera_on_player = {
   if(camera_mode==CAMERA_MODE_DEFAULT) {
   	camera.attach stop
-    camera.system = fight_cam
+    if(enemy_ko==1) {
+      camera.system = crystal_hunt_cam
+    } else {
+      camera.system = fight_cam
+    }
     
   } else if(camera_mode==CAMERA_MODE_ATTACH_PLAYER1) {
   	//camera.attach to player1 : pos(0,1.5,-7) // and rotate(-15,0,0)
   }
 
+}
+
+level1_switch_to_crystal_hunt_camera = {
+  camera.chase stop
+  camera_mode=CAMERA_MODE_DEFAULT
+  run set_camera_on_player
 }
 
 
@@ -28,7 +48,7 @@ shake_the_world2 = {
 	
 }
 
-[camera_mode==CAMERA_MODE_DEFAULT && game_status==GAME_STATE_START]
+[camera_mode==CAMERA_MODE_DEFAULT && game_status==GAME_STATE_START && level1_dragon_rock_count>0]
 level1_earthquake_camera = {
   fight_cam.apply bump_fx : duration 0.28, amplitude 0.95, x 0.18, y 0.16, z 0.05, ry 0.75, rz 1.35
 }

@@ -12,6 +12,7 @@ public class DirectionalMoveController extends SceneMaxBaseController{
     private Double dist;
     private DirectionalMoveCommand cmd;
     private ActionLogicalExpressionVm loopExprCached;
+    private MotionEase.MotionEaseSpec motionEase;
 
     public DirectionalMoveController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope, DirectionalMoveCommand cmd) {
         super(app, prg, scope, cmd);
@@ -42,6 +43,7 @@ public class DirectionalMoveController extends SceneMaxBaseController{
             if (cmd.timeExpr != null) {
                 this.targetTime = ((Double) new ActionLogicalExpressionVm(cmd.timeExpr, this.scope).evaluate()).floatValue();
                 this.originalTargetTime = this.targetTime;
+                motionEase = MotionEase.fromCommand(cmd, scope);
             } else {
                 this.app.moveDirectional(this.targetVar, cmd.direction, dist);
                 return true;
@@ -92,7 +94,7 @@ public class DirectionalMoveController extends SceneMaxBaseController{
 
         float previousProgress = previousTime / originalTargetTime;
         float currentProgress = currentTime / originalTargetTime;
-        float progressDelta = MotionEase.delta(cmd.motionEaseType, previousProgress, currentProgress);
+        float progressDelta = MotionEase.delta(motionEase, previousProgress, currentProgress);
         return dist * originalTargetTime * progressDelta / tpf;
     }
 }

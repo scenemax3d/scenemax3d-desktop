@@ -1,10 +1,15 @@
 var player2_head_hit_cnt = 0
 
+when (life2 < 5 && level1_dragon_rocks_started==0) {
+	run level1_dragon_rocks_start Async
+}
+	
 player2_head_hit = {
   
   score = score + 10;
   run popup_msg ("+10") async
 	life2 = life2 - 1
+	
 	player2_head_hit_cnt = player2_head_hit_cnt + 1
 	if (player2_head_hit_cnt % 3 == 0) {
 		do async

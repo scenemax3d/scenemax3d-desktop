@@ -707,7 +707,9 @@ move_verbal : var_decl '.' Move move_direction logical_expression In speed_expr 
 
 directional_move : var_decl '.' Move move_direction logical_expression (For logical_expression Seconds motion_ease_attr?)? loop_expr?;
 move_direction : Forward | Backward | Left | Right | Up | Down ;
-motion_ease_attr : Ease In Out? | Ease Out ;
+motion_ease_attr : Ease motion_ease_direction (QUOTED_STRING motion_ease_params?)? ;
+motion_ease_direction : In Out? | Out ;
+motion_ease_params : '(' logical_expression (',' logical_expression)* ')' ;
 
 scale : var_decl '.' Scale Equals? logical_expression ;
 pos : var_decl '.' Pos '(' (pos_axes | pos_entity | position_statement) ')' ;
