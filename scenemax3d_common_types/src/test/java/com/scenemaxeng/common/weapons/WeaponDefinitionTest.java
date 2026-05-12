@@ -6,59 +6,62 @@ import static org.junit.Assert.*;
 
 public class WeaponDefinitionTest {
     @Test
-    public void weaponDefinitionRoundTripsThroughJson() {
+    public void weaponDefinitionRoundTripsMinimalPostureDataThroughJson() {
         WeaponDefinition original = WeaponDefinition.createTemplate("Iron Sword", "sword");
         original.setModelAssetId("Models/IronSword/iron_sword.j3o");
-        original.getAttackProfiles().get(0).setAttackAnimation("SwordSlash");
-        original.getAttackProfiles().get(0).setAttackSound("SwordSwing");
-        original.getAttackProfiles().get(0).setMeleeTrailEffect("SwordTrail");
-        original.getAttackProfiles().get(0).setProjectileLaunchOffsetZ(0.5);
-        original.getAttackProfiles().get(0).setAttackHandlerProcedure("player1_on_primary_attack");
-        ProjectileDefinition projectile = new ProjectileDefinition();
-        projectile.setId("coin");
-        projectile.setScaleX(1.5);
-        projectile.setScaleY(1.5);
-        projectile.setScaleZ(1.5);
-        original.getProjectileDefinitions().add(projectile);
+        original.getDefaultPosture().setId("fight");
+        original.getDefaultPosture().setName("Fight");
+        original.getDefaultPosture().setAttachmentPoint("mixamorig:RightHand");
+        original.getDefaultPosture().getTransform().setScaleX(0.35);
+        original.setDefaultPostureId("fight");
+
+        WeaponPostureDefinition ready = new WeaponPostureDefinition();
+        ready.setId("ready");
+        ready.setName("Ready");
+        ready.setAttachmentPoint("mixamorig:Spine2");
+        ready.getTransform().setRotationZ(90);
+        original.getPostures().add(ready);
 
         WeaponDefinition loaded = WeaponDefinition.fromJSON(original.toJSON());
 
         assertEquals(original.getId(), loaded.getId());
-        assertEquals("Iron Sword", loaded.getName());
         assertEquals("Models/IronSword/iron_sword.j3o", loaded.getModelAssetId());
-        assertEquals(1, loaded.getAttackProfiles().size());
-        assertEquals("SwordSlash", loaded.getAttackProfiles().get(0).getAttackAnimation());
-        assertEquals("SwordSwing", loaded.getAttackProfiles().get(0).getAttackSound());
-        assertEquals("SwordTrail", loaded.getAttackProfiles().get(0).getMeleeTrailEffect());
-        assertEquals(0.5, loaded.getAttackProfiles().get(0).getProjectileLaunchOffsetZ(), 0.001);
-        assertEquals("player1_on_primary_attack", loaded.getAttackProfiles().get(0).getAttackHandlerProcedure());
-        assertEquals(1.5, loaded.findProjectileDefinition("coin").getScaleX(), 0.001);
+        assertEquals(2, loaded.getPostures().size());
+        assertEquals("fight", loaded.getDefaultPosture().getId());
+        assertEquals("mixamorig:RightHand", loaded.getDefaultPosture().getAttachmentPoint());
+        assertEquals(0.35, loaded.getDefaultPosture().getTransform().getScaleX(), 0.0001);
+        assertEquals("mixamorig:Spine2", loaded.findPosture("ready").getAttachmentPoint());
+        assertFalse(loaded.toJSON().has("category"));
+        assertFalse(loaded.toJSON().has("handMode"));
         assertTrue(loaded.validate().isValid());
     }
 
     @Test
     public void validationCatchesMissingRequiredFields() {
         WeaponDefinition definition = WeaponDefinition.createTemplate("Broken", "sword");
-        definition.setName("");
-        definition.getAttackProfiles().clear();
-        definition.getDamageProfile().setBaseDamage(0);
+        definition.setId("");
+        definition.getPostures().clear();
 
         WeaponValidationResult result = definition.validate();
 
         assertFalse(result.isValid());
-        assertTrue(result.getIssues().stream().anyMatch(issue -> issue.getField().equals("name")));
-        assertTrue(result.getIssues().stream().anyMatch(issue -> issue.getField().equals("attackProfiles")));
-        assertTrue(result.getIssues().stream().anyMatch(issue -> issue.getField().equals("damageProfile.baseDamage")));
+        assertTrue(result.getIssues().stream().anyMatch(issue -> issue.getField().equals("id")));
+        assertTrue(result.getIssues().stream().anyMatch(issue -> issue.getField().equals("postures")));
     }
 
     @Test
-    public void rangedTemplateIncludesAmmoAndProjectile() {
-        WeaponDefinition definition = WeaponDefinition.createTemplate("Pistol", "pistol");
+    public void legacyAttachmentFieldsLoadAsDefaultPosture() {
+        WeaponDefinition definition = WeaponDefinition.fromJSON(new org.json.JSONObject()
+                .put("id", "weapon_legacy")
+                .put("name", "Legacy Weapon")
+                .put("category", "melee")
+                .put("allowedEquipmentSlots", new org.json.JSONArray().put("rightHand"))
+                .put("defaultAttachmentPoint", "mixamorig:RightHand")
+                .put("attachmentTransform", new org.json.JSONObject().put("scaleX", 0.5)));
 
-        assertEquals("ranged", definition.getCategory());
-        assertTrue(definition.getAmmoDefinition().isUsesAmmo());
-        assertEquals(12, definition.getAmmoDefinition().getMagazineSize());
-        assertFalse(definition.getProjectileDefinitions().isEmpty());
-        assertTrue(definition.validate().isValid());
+        assertEquals("weapon_legacy", definition.getId());
+        assertEquals("mixamorig:RightHand", definition.getDefaultPosture().getAttachmentPoint());
+        assertEquals(0.5, definition.getDefaultPosture().getTransform().getScaleX(), 0.0001);
+        assertFalse(definition.toJSON().has("allowedEquipmentSlots"));
     }
 }

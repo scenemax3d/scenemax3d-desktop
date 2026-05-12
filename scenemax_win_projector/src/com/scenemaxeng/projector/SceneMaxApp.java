@@ -483,10 +483,6 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         loadMaterialsMap();
         //loadSkyBoxMaterials();
 
-        if(_appObserver!=null) {
-            _appObserver.init();
-        }
-
         // bullet init
         initBulletAppState();
 
@@ -503,6 +499,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         addLighting();
         ensureEffekseerRenderProcessor();
 
+        if(_appObserver!=null) {
+            _appObserver.init();
+        }
 
         terrainHandler = new UITerrainHandler();
         terrainHandler.assetManager=this.assetManager;
@@ -543,6 +542,14 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         return getWeaponSystem().equipWeapon(ownerVarName, weaponNameOrId, slotId);
     }
 
+    public boolean setWeaponPosture(String ownerVarName, String postureIdOrName) {
+        return getWeaponSystem().setWeaponPosture(ownerVarName, postureIdOrName);
+    }
+
+    public boolean setWeaponPosture(String ownerVarName, String slotId, String postureIdOrName) {
+        return getWeaponSystem().setWeaponPosture(ownerVarName, slotId, postureIdOrName);
+    }
+
     public boolean unequipWeapon(String ownerVarName) {
         return unequipWeapon(ownerVarName, "rightHand");
     }
@@ -553,75 +560,6 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     public EquippedWeaponRuntime getEquippedWeapon(String ownerVarName, String slotId) {
         return getWeaponSystem().getEquippedWeapon(ownerVarName, slotId);
-    }
-
-    public WeaponAttackResult beginWeaponAttack(String ownerVarName, String inputActionOrAttackId) {
-        return getWeaponSystem().beginAttack(ownerVarName, inputActionOrAttackId);
-    }
-
-    public WeaponAttackResult beginWeaponAttack(String ownerVarName, String slotId, String inputActionOrAttackId) {
-        return getWeaponSystem().beginAttack(ownerVarName, slotId, inputActionOrAttackId);
-    }
-
-    public boolean reloadWeapon(String ownerVarName) {
-        return getWeaponSystem().beginReload(ownerVarName);
-    }
-
-    public boolean reloadWeapon(String ownerVarName, String slotId) {
-        return getWeaponSystem().beginReload(ownerVarName, slotId);
-    }
-
-    public WeaponDamageEvent resolveWeaponHit(String ownerVarName, String targetVarName) {
-        return getWeaponSystem().resolveHit(ownerVarName, targetVarName);
-    }
-
-    public WeaponDamageEvent resolveWeaponHit(String ownerVarName, String slotId, String targetVarName) {
-        return getWeaponSystem().resolveHit(ownerVarName, slotId, targetVarName);
-    }
-
-    public WeaponDamageEvent getLastWeaponDamageEvent(String ownerVarName) {
-        return getWeaponSystem().getLastDamageEvent(ownerVarName);
-    }
-
-    public WeaponRuntimeEvent getLastWeaponEvent() {
-        return getWeaponSystem().getLastEvent();
-    }
-
-    public WeaponRuntimeEvent getLastWeaponEvent(String eventType) {
-        return getWeaponSystem().getLastEvent(eventType);
-    }
-
-    public boolean hasWeaponEvent(String eventType) {
-        return getWeaponSystem().hasEvent(eventType);
-    }
-
-    public java.util.List<WeaponRuntimeEvent> getQueuedWeaponEvents() {
-        return getWeaponSystem().getQueuedEvents();
-    }
-
-    public java.util.List<WeaponRuntimeEvent> drainWeaponEvents() {
-        return getWeaponSystem().drainEvents();
-    }
-
-    public org.json.JSONArray drainWeaponEventsAsJSON() {
-        return getWeaponSystem().drainEventsAsJSON();
-    }
-
-    public WeaponAttackResult fireWeapon(String ownerVarName, String inputActionOrAttackId) {
-        return getWeaponSystem().fireWeapon(ownerVarName, inputActionOrAttackId);
-    }
-
-    public WeaponAttackResult fireWeapon(String ownerVarName, String slotId, String inputActionOrAttackId,
-                                         Vector3f origin, Vector3f direction) {
-        return getWeaponSystem().fireWeapon(ownerVarName, slotId, inputActionOrAttackId, origin, direction);
-    }
-
-    public WeaponAttackResult fireWeaponAt(String ownerVarName, String targetVarName, String inputActionOrAttackId) {
-        return getWeaponSystem().fireWeaponAt(ownerVarName, targetVarName, inputActionOrAttackId);
-    }
-
-    public WeaponAttackResult fireWeaponAt(String ownerVarName, String slotId, String targetVarName, String inputActionOrAttackId) {
-        return getWeaponSystem().fireWeaponAt(ownerVarName, slotId, targetVarName, inputActionOrAttackId);
     }
 
     public AssetManager getAssetManager() {
@@ -778,6 +716,12 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         rootNode.addLight(sun);
         fallbackLights.add(sun);
 
+        AmbientLight ambient = new AmbientLight();
+        ambient.setColor(ColorRGBA.White.mult(0.45f));
+        ambient.setEnabled(true);
+        rootNode.addLight(ambient);
+        fallbackLights.add(ambient);
+
         DirectionalLightShadowFilter shadowFilter = new DirectionalLightShadowFilter(assetManager, 4096, 4);
         shadowFilter.setLight(sun);
         shadowFilter.setShadowIntensity(0.3f);
@@ -787,13 +731,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         ensureLightingPostProcessor().addFilter(shadowFilter);
         fallbackLightingFilters.add(shadowFilter);
 
-//        AmbientLight al = new AmbientLight();
-//        al.setColor(ColorRGBA.White.mult(0.8f));
-//        al.setEnabled(true);
-//        rootNode.addLight(al);
-
-
-
+        rootNode.updateGeometricState();
     }
 
     private void disableFallbackLightingForCustomScene() {
@@ -1249,6 +1187,16 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     public void runPartialCode(String code, SceneMaxScope scope, boolean closeOnError) {
 
+        if (this.prg == null) {
+            this.prg = new ProgramDef();
+            this.prg.addCameraVariableDef();
+        }
+
+        if (mainScope == null) {
+            mainScope = new SceneMaxScope();
+            mainScope.mainController.adhereToPauseStatus = false;
+        }
+
         // parse & compile the source code
         final ProgramDef prg = new SceneMaxLanguageParser(this.prg, resolveCurrentScriptContextPath()).parse(code);
         if(prg==null){
@@ -1267,8 +1215,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         if(scope==null) {
             scope=mainScope;
-            this.prg.vars.addAll(prg.vars);
-            this.prg.vars_index.putAll(prg.vars_index);
+            ensureMainScopeControllerRegistered();
+            mergePartialProgramState(prg);
         }
 
         boolean isMainScope = mainScope==scope;
@@ -1790,6 +1738,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             scope.add(ctl);
         } else if (action instanceof ArrayCommand) {
             ArrayCommandController ctl = new ArrayCommandController(this,prg,scope,(ArrayCommand)action);
+            scope.add(ctl);
+        } else if (action instanceof WeaponCommand) {
+            WeaponCommandController ctl = new WeaponCommandController(this, prg, scope, (WeaponCommand) action);
             scope.add(ctl);
         } else if (action instanceof PluginActionCommand) {
             PluginActionController ctl = new PluginActionController(this, prg, scope, (PluginActionCommand) action);
@@ -3859,6 +3810,15 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
     }
 
+    void isolateLoadedModelMaterials(Spatial spatial) {
+        forEachGeometry(spatial, geometry -> {
+            Material material = geometry.getMaterial();
+            if (material != null) {
+                geometry.setMaterial(material.clone());
+            }
+        });
+    }
+
     public Spatial loadModelSpatial(final String name, String resourcePath, final ModelInst modelInst) {
         final ResourceSetup resource = assetsMapping.get3DModelsIndex().get(resourcePath.toLowerCase());
         if (resource == null) {
@@ -3882,6 +3842,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         if (mm == null) {
             return null;
         }
+
+        isolateLoadedModelMaterials(mm);
 
         if (modelInst.varDef.shadowMode == 3) {
             mm.setShadowMode(RenderQueue.ShadowMode.CastAndReceive);
@@ -5039,6 +5001,25 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             controller.animate(m, animationName, speed);
         }
 
+    }
+
+    private void ensureMainScopeControllerRegistered() {
+        if (mainScope != null && mainScope.mainController != null && !_controllers.contains(mainScope.mainController)) {
+            registerController(mainScope.mainController);
+        }
+    }
+
+    private void mergePartialProgramState(ProgramDef partialProgram) {
+        if (partialProgram == null || this.prg == null) {
+            return;
+        }
+
+        this.prg.vars.addAll(partialProgram.vars);
+        this.prg.vars_index.putAll(partialProgram.vars_index);
+        this.prg.models.putAll(partialProgram.models);
+        this.prg.sprites.putAll(partialProgram.sprites);
+        this.prg.groups.putAll(partialProgram.groups);
+        this.prg.functions.putAll(partialProgram.functions);
     }
 
     public void playRuntimeAnimation(String targetVar, String animationName, double speed) {

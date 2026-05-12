@@ -1,5 +1,6 @@
 package com.scenemax.designer.weapon;
 
+import com.jme3.anim.AnimClip;
 import com.jme3.anim.AnimComposer;
 import com.jme3.anim.Joint;
 import com.jme3.anim.SkinningControl;
@@ -9,8 +10,6 @@ import com.jme3.animation.Bone;
 import com.jme3.animation.LoopMode;
 import com.jme3.animation.SkeletonControl;
 import com.jme3.asset.plugins.FileLocator;
-import com.jme3.audio.AudioContext;
-import com.jme3.audio.AudioNode;
 import com.jme3.bounding.BoundingBox;
 import com.jme3.bounding.BoundingSphere;
 import com.jme3.bounding.BoundingVolume;
@@ -39,7 +38,6 @@ import com.jme3.scene.Node;
 import com.jme3.scene.SceneGraphVisitor;
 import com.jme3.scene.Spatial;
 import com.jme3.scene.shape.Box;
-import com.jme3.scene.shape.Line;
 import com.jme3.texture.Texture;
 import com.scenemax.designer.DesignerEntity;
 import com.scenemax.designer.DesignerEntityType;
@@ -48,14 +46,10 @@ import com.scenemax.designer.gizmo.GizmoMode;
 import com.scenemax.designer.gizmo.RotateGizmo;
 import com.scenemax.designer.gizmo.TranslateGizmo;
 import com.scenemaxeng.common.types.AssetsMapping;
-import com.scenemaxeng.common.types.ResourceAudio;
 import com.scenemaxeng.common.types.ResourceSetup;
-import com.scenemaxeng.common.weapons.AttackProfile;
-import com.scenemaxeng.common.weapons.ProjectileDefinition;
-import com.scenemaxeng.common.weapons.WeaponEffectSet;
 import com.scenemaxeng.common.weapons.WeaponAttachmentTransform;
-import com.scenemaxeng.common.weapons.WeaponAnimationSet;
 import com.scenemaxeng.common.weapons.WeaponDefinition;
+import com.scenemaxeng.common.weapons.WeaponPostureDefinition;
 import com.scenemaxeng.projector.AppModel;
 import com.scenemaxeng.projector.SceneMaxApp;
 
@@ -64,6 +58,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -79,7 +74,6 @@ class WeaponPreviewApp extends SceneMaxApp {
     private final Node fallbackAttachmentNode = new Node("WeaponPreviewFallbackAttachment");
     private final Node weaponTransformNode = new Node("WeaponPreviewWeaponTransform");
     private final Node weaponVisualNode = new Node("WeaponPreviewWeaponVisual");
-    private final Node attackPreviewRoot = new Node("WeaponPreviewAttackDebug");
     private final DesignerEntity weaponEntity = new DesignerEntity("Preview Weapon", DesignerEntityType.MODEL);
 
     private TranslateGizmo translateGizmo;
@@ -87,34 +81,24 @@ class WeaponPreviewApp extends SceneMaxApp {
     private GizmoManager gizmoManager;
     private AssetsMapping previewAssets;
     private WeaponDefinition weaponDefinition;
+    private String weaponDefinitionSnapshot = "";
     private String holderModelId;
-    private int selectedAttackIndex;
+    private int selectedPostureIndex;
     private Spatial holderSpatial;
     private Spatial weaponSpatial;
     private AppModel holderAppModel;
     private AnimChannel legacyAnimationChannel;
-    private Spatial attackRangeLine;
-    private Geometry targetDummy;
-    private Spatial projectilePreview;
-    private Geometry muzzleMarker;
-    private Geometry impactMarker;
+    private String previewAnimationName = "";
     private PointLight cameraLight;
     private Consumer<WeaponAttachmentTransform> transformChangedCallback;
     private Consumer<List<String>> attachmentPointsChangedCallback;
+    private Consumer<List<String>> animationNamesChangedCallback;
     private Consumer<String> statusChangedCallback;
 
     private float cameraDistance = 6f;
     private float yaw = (float) Math.toRadians(35);
     private float pitch = (float) Math.toRadians(18);
     private boolean orbiting;
-    private boolean attackPreviewActive;
-    private float attackPreviewTime;
-    private AttackProfile attackPreviewProfile;
-    private float attackPreviewDuration;
-    private boolean attackSoundPlayed;
-    private boolean impactFeedbackPlayed;
-    private float feedbackMarkerTime;
-    private final List<AudioNode> previewAudioNodes = new ArrayList<>();
     private final Vector2f lastMouse = new Vector2f();
 
     WeaponPreviewApp(File resourcesRoot) {
@@ -147,7 +131,6 @@ class WeaponPreviewApp extends SceneMaxApp {
         rootNode.attachChild(previewRoot);
         previewRoot.attachChild(holderWrapper);
         holderWrapper.attachChild(fallbackAttachmentNode);
-        rootNode.attachChild(attackPreviewRoot);
 
         AmbientLight ambient = new AmbientLight();
         ambient.setColor(ColorRGBA.White.mult(1.35f));
@@ -207,8 +190,6 @@ class WeaponPreviewApp extends SceneMaxApp {
             gizmoManager.scaleGizmoToCamera(cam);
             gizmoManager.updateGizmoPosition();
         }
-        updateAttackPreview(tpf);
-        updateFeedbackMarkers(tpf);
     }
 
     void setTransformChangedCallback(Consumer<WeaponAttachmentTransform> callback) {
@@ -219,23 +200,33 @@ class WeaponPreviewApp extends SceneMaxApp {
         this.attachmentPointsChangedCallback = callback;
     }
 
+    void setAnimationNamesChangedCallback(Consumer<List<String>> callback) {
+        this.animationNamesChangedCallback = callback;
+    }
+
     void setStatusChangedCallback(Consumer<String> callback) {
         this.statusChangedCallback = callback;
     }
 
     void setWeaponDefinition(WeaponDefinition definition) {
         enqueue(() -> {
+            String snapshot = definition == null ? "" : definition.toJSON().toString();
+            if (snapshot.equals(weaponDefinitionSnapshot)) {
+                return null;
+            }
+            weaponDefinitionSnapshot = snapshot;
             this.weaponDefinition = cloneWeapon(definition);
-            clampSelectedAttackIndex();
+            clampSelectedPostureIndex();
             reloadPreview();
             return null;
         });
     }
 
-    void setSelectedAttackIndex(int selectedAttackIndex) {
+    void setSelectedPostureIndex(int selectedPostureIndex) {
         enqueue(() -> {
-            this.selectedAttackIndex = Math.max(0, selectedAttackIndex);
-            clampSelectedAttackIndex();
+            this.selectedPostureIndex = Math.max(0, selectedPostureIndex);
+            clampSelectedPostureIndex();
+            reloadPreview();
             return null;
         });
     }
@@ -243,7 +234,16 @@ class WeaponPreviewApp extends SceneMaxApp {
     void setAttachmentPoint(String attachmentPoint) {
         enqueue(() -> {
             if (weaponDefinition != null) {
-                weaponDefinition.setDefaultAttachmentPoint(attachmentPoint == null ? "" : attachmentPoint);
+                WeaponPostureDefinition posture = selectedPosture();
+                if (posture == null) {
+                    return null;
+                }
+                String normalized = attachmentPoint == null ? "" : attachmentPoint.trim();
+                if (normalized.equals(safeString(posture.getAttachmentPoint()))) {
+                    return null;
+                }
+                posture.setAttachmentPoint(normalized);
+                weaponDefinitionSnapshot = weaponDefinition.toJSON().toString();
                 reloadPreview();
             }
             return null;
@@ -252,8 +252,20 @@ class WeaponPreviewApp extends SceneMaxApp {
 
     void setHolderModelId(String holderModelId) {
         enqueue(() -> {
-            this.holderModelId = holderModelId;
+            String normalized = holderModelId == null || holderModelId.trim().isEmpty() ? null : holderModelId.trim();
+            if (Objects.equals(this.holderModelId, normalized)) {
+                return null;
+            }
+            this.holderModelId = normalized;
             reloadPreview();
+            return null;
+        });
+    }
+
+    void setPreviewAnimation(String animationName) {
+        enqueue(() -> {
+            this.previewAnimationName = animationName == null ? "" : animationName.trim();
+            playPreviewAnimation();
             return null;
         });
     }
@@ -290,39 +302,6 @@ class WeaponPreviewApp extends SceneMaxApp {
                     zDeg * FastMath.DEG_TO_RAD);
             weaponTransformNode.setLocalRotation(delta.mult(weaponTransformNode.getLocalRotation()));
             publishCurrentTransform();
-            return null;
-        });
-    }
-
-    void previewSelectedAttack() {
-        enqueue(() -> {
-            attackPreviewProfile = selectedAttack();
-            attackPreviewTime = 0f;
-            attackPreviewDuration = previewDurationForAttack(attackPreviewProfile);
-            attackPreviewActive = attackPreviewProfile != null;
-            attackSoundPlayed = false;
-            impactFeedbackPlayed = false;
-            playAnimation(attackAnimationName(attackPreviewProfile), false);
-            playPrimaryStartFeedback();
-            rebuildAttackDebug(false);
-            return null;
-        });
-    }
-
-    void previewReload() {
-        enqueue(() -> {
-            stopAttackPreviewNow();
-            playAnimation(reloadAnimationName(), false);
-            playPreviewSound(effectSet().reloadSound, "reload sound");
-            showMarker(weaponTransformNode.getWorldTranslation(), new ColorRGBA(0.25f, 0.7f, 1f, 1f), true);
-            return null;
-        });
-    }
-
-    void stopAttackPreview() {
-        enqueue(() -> {
-            stopAttackPreviewNow();
-            updateStatus("Preview stopped.");
             return null;
         });
     }
@@ -369,13 +348,12 @@ class WeaponPreviewApp extends SceneMaxApp {
         weaponSpatial = null;
         holderAppModel = null;
         legacyAnimationChannel = null;
-        clearPreviewAudio();
-        stopAttackPreviewNow();
 
         loadHolderModel();
         Node attachmentNode = resolveAttachmentNode();
         loadWeaponModel(attachmentNode);
-        applyAttachmentTransform(weaponDefinition != null ? weaponDefinition.getAttachmentTransform() : null);
+        WeaponPostureDefinition posture = selectedPosture();
+        applyAttachmentTransform(posture == null ? null : posture.getTransform());
 
         weaponEntity.setSceneNode(weaponTransformNode);
         publishAttachmentPoints();
@@ -383,6 +361,8 @@ class WeaponPreviewApp extends SceneMaxApp {
             gizmoManager.onSelectionChanged(weaponEntity);
             gizmoManager.updateGizmoPosition();
         }
+        publishAnimationNames();
+        playPreviewAnimation();
         fitCamera();
     }
 
@@ -402,7 +382,9 @@ class WeaponPreviewApp extends SceneMaxApp {
             holderSpatial = assetManager.loadModel(resource.path);
             holderSpatial.setShadowMode(RenderQueue.ShadowMode.CastAndReceive);
             applyReadablePreviewMaterials(holderSpatial);
+            fallbackAttachmentNode.removeFromParent();
             holderWrapper.attachChild(holderSpatial);
+            holderWrapper.attachChild(fallbackAttachmentNode);
             holderAppModel = new AppModel(holderWrapper);
             holderAppModel.resource = resource;
             holderAppModel.skinningControlNode = findSkinningControlNode(holderSpatial);
@@ -420,7 +402,8 @@ class WeaponPreviewApp extends SceneMaxApp {
         if (weaponDefinition == null || holderSpatial == null) {
             return fallbackAttachmentNode;
         }
-        String attachmentPoint = weaponDefinition.getDefaultAttachmentPoint();
+        WeaponPostureDefinition posture = selectedPosture();
+        String attachmentPoint = posture == null ? "" : posture.getAttachmentPoint();
         if (attachmentPoint == null || attachmentPoint.trim().isEmpty()) {
             return fallbackAttachmentNode;
         }
@@ -546,117 +529,90 @@ class WeaponPreviewApp extends SceneMaxApp {
         attachmentPointsChangedCallback.accept(listAttachmentPoints());
     }
 
+    private void publishAnimationNames() {
+        if (animationNamesChangedCallback == null) {
+            return;
+        }
+        animationNamesChangedCallback.accept(listPreviewAnimations());
+    }
+
     private List<String> listAttachmentPoints() {
         Set<String> names = new LinkedHashSet<>();
         collectAttachmentPoints(holderSpatial, names);
         return new ArrayList<>(names);
     }
 
-    private void clampSelectedAttackIndex() {
-        if (weaponDefinition == null || weaponDefinition.getAttackProfiles().isEmpty()) {
-            selectedAttackIndex = 0;
-            return;
-        }
-        selectedAttackIndex = Math.max(0, Math.min(selectedAttackIndex, weaponDefinition.getAttackProfiles().size() - 1));
-    }
-
-    private AttackProfile selectedAttack() {
-        if (weaponDefinition == null || weaponDefinition.getAttackProfiles().isEmpty()) {
-            return null;
-        }
-        clampSelectedAttackIndex();
-        return weaponDefinition.getAttackProfiles().get(selectedAttackIndex);
-    }
-
-    private String attackAnimationName(AttackProfile attack) {
-        return firstNonEmpty(
-                attack == null ? "" : attack.getAttackAnimation(),
-                attack == null ? "" : attack.getAnimationEventBinding());
-    }
-
-    private String reloadAnimationName() {
-        WeaponAnimationSet animations = weaponDefinition == null ? null : weaponDefinition.getAnimationSet();
-        return animations == null ? "" : safeString(animations.reloadAnimation);
-    }
-
-    private WeaponEffectSet effectSet() {
-        return weaponDefinition == null || weaponDefinition.getEffectSet() == null
-                ? new WeaponEffectSet()
-                : weaponDefinition.getEffectSet();
-    }
-
-    private String attackSoundName(AttackProfile attack) {
-        return firstNonEmpty(
-                attack == null ? "" : attack.getAttackSound(),
-                attack == null ? "" : attack.getSoundEventBinding());
-    }
-
-    private String impactSoundName(AttackProfile attack) {
-        return firstNonEmpty(attack == null ? "" : attack.getImpactSound());
-    }
-
-    private String muzzleFlashName(AttackProfile attack) {
-        return firstNonEmpty(attack == null ? "" : attack.getMuzzleFlashEffect());
-    }
-
-    private String meleeTrailName(AttackProfile attack) {
-        return firstNonEmpty(attack == null ? "" : attack.getMeleeTrailEffect());
-    }
-
-    private String impactEffectName(AttackProfile attack) {
-        return firstNonEmpty(
-                attack == null ? "" : attack.getImpactEffect(),
-                attack == null ? "" : attack.getEffectEventBinding());
-    }
-
-    private String firstNonEmpty(String... values) {
-        if (values == null) {
-            return "";
-        }
-        for (String value : values) {
-            String safe = safeString(value);
-            if (!safe.isEmpty()) {
-                return safe;
+    private List<String> listPreviewAnimations() {
+        Set<String> names = new LinkedHashSet<>();
+        AnimComposer composer = findAnimComposer(holderSpatial);
+        if (composer != null) {
+            for (AnimClip clip : composer.getAnimClips()) {
+                if (clip != null && clip.getName() != null && !clip.getName().isBlank()) {
+                    names.add(clip.getName());
+                }
             }
         }
-        return "";
+        AnimControl control = findAnimControl(holderSpatial);
+        if (control != null) {
+            names.addAll(control.getAnimationNames());
+        }
+        if (previewAssets != null) {
+            previewAssets.getAnimationsIndex().values().forEach(animation -> {
+                if (animation != null && animation.name != null && !animation.name.isBlank()) {
+                    names.add(animation.name);
+                }
+            });
+        }
+        return new ArrayList<>(names);
     }
 
-    private void playAnimation(String animationName, boolean loop) {
-        String name = safeString(animationName);
-        if (name.isEmpty()) {
-            updateStatus("No animation assigned for this preview action.");
+    private void clampSelectedPostureIndex() {
+        if (weaponDefinition == null || weaponDefinition.getPostures().isEmpty()) {
+            selectedPostureIndex = 0;
             return;
         }
-        if (holderSpatial == null) {
-            updateStatus("No preview character model is loaded.");
-            return;
-        }
+        selectedPostureIndex = Math.max(0, Math.min(selectedPostureIndex, weaponDefinition.getPostures().size() - 1));
+    }
 
-        double speed = 1.0;
-        WeaponAnimationSet animations = weaponDefinition == null ? null : weaponDefinition.getAnimationSet();
-        if (animations != null && animations.animationSpeedMultiplier > 0) {
-            speed = animations.animationSpeedMultiplier;
+    private WeaponPostureDefinition selectedPosture() {
+        if (weaponDefinition == null || weaponDefinition.getPostures().isEmpty()) {
+            return null;
+        }
+        clampSelectedPostureIndex();
+        return weaponDefinition.getPostures().get(selectedPostureIndex);
+    }
+
+    private void updateStatus(String status) {
+        if (statusChangedCallback != null) {
+            statusChangedCallback.accept(status);
+        }
+    }
+
+    private String safeString(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private void playPreviewAnimation() {
+        String name = safeString(previewAnimationName);
+        stopPreviewAnimation();
+        if (name.isEmpty() || holderSpatial == null) {
+            return;
         }
 
         AnimComposer composer = findAnimComposer(holderSpatial);
-        if (composer != null) {
-            if (composer.hasAction(name) || composer.hasAnimClip(name)) {
-                composer.setGlobalSpeed((float) speed);
-                composer.setCurrentAction(name);
-                updateStatus("Previewing animation: " + name);
-                return;
-            }
+        if (composer != null && (composer.hasAction(name) || composer.hasAnimClip(name))) {
+            composer.setGlobalSpeed(1f);
+            composer.setCurrentAction(name);
+            updateStatus("Previewing animation: " + name);
+            return;
         }
 
         AnimControl control = findAnimControl(holderSpatial);
         if (control != null && control.getAnimationNames().contains(name)) {
-            if (legacyAnimationChannel == null) {
-                legacyAnimationChannel = control.createChannel();
-            }
+            legacyAnimationChannel = control.createChannel();
             legacyAnimationChannel.setAnim(name);
-            legacyAnimationChannel.setLoopMode(loop ? LoopMode.Loop : LoopMode.DontLoop);
-            legacyAnimationChannel.setSpeed((float) speed);
+            legacyAnimationChannel.setLoopMode(LoopMode.Loop);
+            legacyAnimationChannel.setSpeed(1f);
             updateStatus("Previewing animation: " + name);
             return;
         }
@@ -665,14 +621,40 @@ class WeaponPreviewApp extends SceneMaxApp {
             boolean attached = holderAppModel.attachExternalAnimation(assetManager, previewAssets, name);
             AnimComposer attachedComposer = holderAppModel.getAnimComposer();
             if (attached && attachedComposer != null && attachedComposer.hasAction(name)) {
-                attachedComposer.setGlobalSpeed((float) speed);
+                attachedComposer.setGlobalSpeed(1f);
                 attachedComposer.setCurrentAction(name);
                 updateStatus("Previewing animation: " + name);
                 return;
             }
         }
 
-        updateStatus("Animation not found on selected model: " + name);
+        updateStatus("Animation not found: " + name);
+    }
+
+    private void stopPreviewAnimation() {
+        AnimComposer composer = findAnimComposer(holderSpatial);
+        if (composer != null) {
+            try {
+                composer.removeCurrentAction();
+                composer.reset();
+            } catch (Exception ignored) {
+            }
+        }
+        if (holderAppModel != null && holderAppModel.getAnimComposer() != null
+                && holderAppModel.getAnimComposer() != composer) {
+            try {
+                holderAppModel.getAnimComposer().removeCurrentAction();
+                holderAppModel.getAnimComposer().reset();
+            } catch (Exception ignored) {
+            }
+        }
+        if (legacyAnimationChannel != null) {
+            try {
+                legacyAnimationChannel.reset(true);
+            } catch (Exception ignored) {
+            }
+            legacyAnimationChannel = null;
+        }
     }
 
     private AnimComposer findAnimComposer(Spatial spatial) {
@@ -729,411 +711,6 @@ class WeaponPreviewApp extends SceneMaxApp {
             }
         }
         return null;
-    }
-
-    private void updateStatus(String status) {
-        if (statusChangedCallback != null) {
-            statusChangedCallback.accept(status);
-        }
-    }
-
-    private String safeString(String value) {
-        return value == null ? "" : value.trim();
-    }
-
-    private void stopAttackPreviewNow() {
-        attackPreviewActive = false;
-        attackPreviewTime = 0f;
-        attackPreviewProfile = null;
-        attackPreviewDuration = 0f;
-        attackSoundPlayed = false;
-        impactFeedbackPlayed = false;
-        feedbackMarkerTime = 0f;
-        clearPreviewAudio();
-        stopPreviewAnimation();
-        weaponVisualNode.setLocalTranslation(Vector3f.ZERO);
-        weaponVisualNode.setLocalRotation(Quaternion.IDENTITY);
-        weaponVisualNode.setLocalScale(Vector3f.UNIT_XYZ);
-        attackPreviewRoot.detachAllChildren();
-        attackRangeLine = null;
-        targetDummy = null;
-        projectilePreview = null;
-        muzzleMarker = null;
-        impactMarker = null;
-    }
-
-    private void updateAttackPreview(float tpf) {
-        if (!attackPreviewActive || attackPreviewProfile == null) {
-            return;
-        }
-        attackPreviewTime += tpf;
-        float startup = Math.max(0.01f, (float) attackPreviewProfile.getStartupTime());
-        float active = Math.max(0.01f, (float) attackPreviewProfile.getActiveTime());
-        float recovery = Math.max(0.01f, (float) attackPreviewProfile.getRecoveryTime());
-        float total = Math.max(startup + active + recovery, attackPreviewDuration);
-        float normalized = FastMath.clamp(attackPreviewTime / total, 0f, 1f);
-        boolean hitWindow = attackPreviewTime >= startup && attackPreviewTime <= startup + active;
-        if (!attackSoundPlayed) {
-            playPrimaryStartFeedback();
-        }
-        if (hitWindow && !impactFeedbackPlayed) {
-            impactFeedbackPlayed = true;
-            playPreviewSound(impactSoundName(attackPreviewProfile), "impact sound");
-            showMarker(attackTargetPosition(), new ColorRGBA(1f, 0.18f, 0.08f, 1f), false);
-            String impact = impactEffectName(attackPreviewProfile);
-            if (!impact.isEmpty()) {
-                updateStatus("Impact effect marker: " + impact);
-            }
-        }
-        if (isProjectilePreviewAttack(attackPreviewProfile)) {
-            updateProjectilePreview(normalized);
-        } else {
-            float swing = (-35f + 85f * normalized) * FastMath.DEG_TO_RAD;
-            float lift = FastMath.sin(normalized * FastMath.PI) * 0.08f;
-            weaponVisualNode.setLocalRotation(new Quaternion().fromAngles(0f, swing * 0.25f, swing));
-            weaponVisualNode.setLocalTranslation(0f, lift, 0f);
-        }
-        rebuildAttackDebug(hitWindow);
-        if (attackPreviewTime >= total) {
-            stopAttackPreviewNow();
-        }
-    }
-
-    private float previewDurationForAttack(AttackProfile attack) {
-        float startup = attack == null ? 0.01f : Math.max(0.01f, (float) attack.getStartupTime());
-        float active = attack == null ? 0.01f : Math.max(0.01f, (float) attack.getActiveTime());
-        float recovery = attack == null ? 0.01f : Math.max(0.01f, (float) attack.getRecoveryTime());
-        if (isProjectilePreviewAttack(attack)) {
-            ProjectileDefinition projectile = projectileDefinitionForAttack(attack);
-            float range = attack == null ? 1.5f : Math.max(0.25f, (float) attack.getRange());
-            float speed = projectile == null ? 0f : Math.max(0f, (float) projectile.getSpeed());
-            float travelTime = speed > 0f ? range / speed : 0f;
-            return Math.max(1.75f, Math.max(startup + active + recovery, travelTime));
-        }
-        return startup + active + recovery;
-    }
-
-    private void updateFeedbackMarkers(float tpf) {
-        if (feedbackMarkerTime <= 0f) {
-            return;
-        }
-        feedbackMarkerTime -= tpf;
-        if (feedbackMarkerTime <= 0f) {
-            if (muzzleMarker != null) {
-                muzzleMarker.removeFromParent();
-                muzzleMarker = null;
-            }
-            if (impactMarker != null) {
-                impactMarker.removeFromParent();
-                impactMarker = null;
-            }
-        }
-    }
-
-    private void playPrimaryStartFeedback() {
-        if (attackSoundPlayed) {
-            return;
-        }
-        attackSoundPlayed = true;
-        playPreviewSound(attackSoundName(attackPreviewProfile), "attack sound");
-        showMarker(weaponTransformNode.getWorldTranslation(), new ColorRGBA(1f, 0.82f, 0.16f, 1f), true);
-        String flash = muzzleFlashName(attackPreviewProfile);
-        String trail = meleeTrailName(attackPreviewProfile);
-        if (!flash.isEmpty()) {
-            updateStatus("Muzzle flash marker: " + flash);
-        } else if (!trail.isEmpty()) {
-            updateStatus("Melee trail marker: " + trail);
-        }
-    }
-
-    private void updateProjectilePreview(float normalized) {
-        ensureAttackDebugGeometry(false);
-        Vector3f target = projectileTargetPosition();
-        Vector3f pos = projectilePositionAt(FastMath.clamp(normalized, 0f, 1f));
-        if (projectilePreview != null) {
-            projectilePreview.setLocalTranslation(pos);
-            if (pos.distanceSquared(target) > 0.0001f) {
-                projectilePreview.lookAt(target, Vector3f.UNIT_Y);
-            }
-        }
-    }
-
-    private void rebuildAttackDebug(boolean hitWindow) {
-        ensureAttackDebugGeometry(hitWindow);
-        Vector3f source = isProjectilePreviewAttack(attackPreviewProfile)
-                ? projectileStartPosition()
-                : weaponTransformNode.getWorldTranslation();
-        Vector3f target = isProjectilePreviewAttack(attackPreviewProfile)
-                ? projectileTargetPosition()
-                : attackTargetPosition();
-        if (attackRangeLine != null) {
-            attackRangeLine.removeFromParent();
-        }
-        ColorRGBA lineColor = hitWindow ? new ColorRGBA(1f, 0.62f, 0.15f, 1f) : new ColorRGBA(0.55f, 0.7f, 1f, 1f);
-        attackRangeLine = isProjectilePreviewAttack(attackPreviewProfile)
-                ? createProjectilePath("WeaponPreviewProjectilePath", lineColor)
-                : createLine("WeaponPreviewAttackRange", source, target, lineColor);
-        attackPreviewRoot.attachChild(attackRangeLine);
-        if (targetDummy != null) {
-            targetDummy.setLocalTranslation(target);
-            targetDummy.setMaterial(colorMaterial(hitWindow
-                    ? new ColorRGBA(1f, 0.25f, 0.12f, 1f)
-                    : new ColorRGBA(0.38f, 0.42f, 0.48f, 1f)));
-        }
-    }
-
-    private void ensureAttackDebugGeometry(boolean hitWindow) {
-        if (targetDummy == null) {
-            targetDummy = new Geometry("WeaponPreviewTargetDummy", new Box(0.25f, 0.55f, 0.25f));
-            targetDummy.setMaterial(colorMaterial(new ColorRGBA(0.38f, 0.42f, 0.48f, 1f)));
-            attackPreviewRoot.attachChild(targetDummy);
-        }
-        String type = attackPreviewProfile == null || attackPreviewProfile.getAttackType() == null
-                ? ""
-                : attackPreviewProfile.getAttackType();
-        if (isProjectilePreviewAttack(attackPreviewProfile) && !"hitscan".equalsIgnoreCase(type) && projectilePreview == null) {
-            projectilePreview = createProjectilePreviewSpatial();
-            attackPreviewRoot.attachChild(projectilePreview);
-        } else if ("hitscan".equalsIgnoreCase(type) && projectilePreview == null) {
-            projectilePreview = createProjectileFallbackSpatial("WeaponPreviewHitscanMarker",
-                    new ColorRGBA(1f, 0.82f, 0.22f, 1f));
-            attackPreviewRoot.attachChild(projectilePreview);
-        }
-    }
-
-    private Spatial createProjectilePreviewSpatial() {
-        ProjectileDefinition projectileDefinition = projectileDefinitionForAttack(attackPreviewProfile);
-        if (projectileDefinition != null) {
-            ResourceSetup resource = resolveModel(projectileDefinition.getModelAssetId());
-            if (resource != null) {
-                try {
-                    Spatial projectile = assetManager.loadModel(resource.path);
-                    projectile.setName("WeaponPreviewProjectileModel");
-                    projectile.setShadowMode(RenderQueue.ShadowMode.CastAndReceive);
-                    applyReadablePreviewMaterials(projectile);
-                    projectile = wrapProjectileForTravel(projectile, projectileDefinition);
-                    updateStatus("Previewing projectile model: " + projectileDefinition.getName());
-                    return projectile;
-                } catch (Exception ex) {
-                    updateStatus("Projectile model failed to load: " + projectileDefinition.getModelAssetId());
-                }
-            } else if (!safeString(projectileDefinition.getModelAssetId()).isEmpty()) {
-                updateStatus("Projectile model asset not found: " + projectileDefinition.getModelAssetId());
-            }
-        } else {
-            updateStatus("No projectile definition bound to this attack.");
-        }
-        return createProjectileFallbackSpatial("WeaponPreviewProjectileFallback",
-                new ColorRGBA(1f, 0.82f, 0.22f, 1f));
-    }
-
-    private Spatial createProjectileFallbackSpatial(String name, ColorRGBA color) {
-        Geometry fallback = new Geometry(name, new Box(0.06f, 0.06f, 0.16f));
-        fallback.setMaterial(colorMaterial(color));
-        return fallback;
-    }
-
-    private Spatial wrapProjectileForTravel(Spatial projectile, ProjectileDefinition projectileDefinition) {
-        Node root = new Node("WeaponPreviewProjectileRoot");
-        root.attachChild(projectile);
-        root.setLocalScale(
-                Math.max(0.001f, (float) projectileDefinition.getScaleX()),
-                Math.max(0.001f, (float) projectileDefinition.getScaleY()),
-                Math.max(0.001f, (float) projectileDefinition.getScaleZ()));
-        return root;
-    }
-
-    private Vector3f projectileStartPosition() {
-        Vector3f start = weaponTransformNode.getWorldTranslation().clone();
-        AttackProfile attack = attackPreviewProfile;
-        Vector3f localOffset = new Vector3f(
-                attack == null ? 0f : (float) attack.getProjectileLaunchOffsetX(),
-                attack == null ? 0f : (float) attack.getProjectileLaunchOffsetY(),
-                attack == null ? 0.35f : (float) attack.getProjectileLaunchOffsetZ());
-        return start.add(weaponTransformNode.getWorldRotation().mult(localOffset));
-    }
-
-    private Vector3f projectileTargetPosition() {
-        float range = attackPreviewProfile == null ? 1.5f : Math.max(0.25f, (float) attackPreviewProfile.getRange());
-        return projectileStartPosition().add(holderForward().mult(range));
-    }
-
-    private Vector3f projectilePositionAt(float normalized) {
-        Vector3f start = projectileStartPosition();
-        Vector3f forward = holderForward();
-        float range = attackPreviewProfile == null ? 1.5f : Math.max(0.25f, (float) attackPreviewProfile.getRange());
-        Vector3f position = start.add(forward.mult(range * normalized));
-        ProjectileDefinition projectile = projectileDefinitionForAttack(attackPreviewProfile);
-        if (projectile != null && projectile.getGravityScale() != 0) {
-            float duration = Math.max(0.01f, projectileTravelDuration());
-            float time = duration * normalized;
-            position.y -= 0.5f * 9.81f * (float) projectile.getGravityScale() * time * time;
-        }
-        return position;
-    }
-
-    private float projectileTravelDuration() {
-        ProjectileDefinition projectile = projectileDefinitionForAttack(attackPreviewProfile);
-        float range = attackPreviewProfile == null ? 1.5f : Math.max(0.25f, (float) attackPreviewProfile.getRange());
-        float speed = projectile == null ? 0f : Math.max(0f, (float) projectile.getSpeed());
-        return speed > 0f ? range / speed : Math.max(0.01f, attackPreviewDuration);
-    }
-
-    private Vector3f holderForward() {
-        Vector3f forward = holderWrapper.getWorldRotation().mult(Vector3f.UNIT_Z).normalizeLocal();
-        if (forward.lengthSquared() < 0.0001f) {
-            return Vector3f.UNIT_Z.clone();
-        }
-        return forward;
-    }
-
-    private boolean isProjectilePreviewAttack(AttackProfile attack) {
-        if (attack == null) {
-            return false;
-        }
-        String type = safeString(attack.getAttackType());
-        if ("projectile".equalsIgnoreCase(type) || "hitscan".equalsIgnoreCase(type)) {
-            return true;
-        }
-        return !safeString(attack.getProjectileDefinitionId()).isEmpty() || projectileDefinitionForAttack(attack) != null;
-    }
-
-    private ProjectileDefinition projectileDefinitionForAttack(AttackProfile attack) {
-        if (weaponDefinition == null || attack == null) {
-            return null;
-        }
-        String projectileId = safeString(attack.getProjectileDefinitionId());
-        if (projectileId.isEmpty()) {
-            projectileId = safeString(attack.getId());
-        }
-        if (projectileId.isEmpty()) {
-            return null;
-        }
-        for (ProjectileDefinition projectile : weaponDefinition.getProjectileDefinitions()) {
-            if (projectile != null && projectile.getId() != null
-                    && projectile.getId().trim().equalsIgnoreCase(projectileId)) {
-                return projectile;
-            }
-        }
-        return null;
-    }
-
-    private Vector3f attackTargetPosition() {
-        float range = attackPreviewProfile == null ? 1.5f : Math.max(0.25f, (float) attackPreviewProfile.getRange());
-        Vector3f origin = holderWrapper.getWorldTranslation().clone();
-        if (origin.lengthSquared() < 0.0001f) {
-            origin = weaponTransformNode.getWorldTranslation().clone();
-        }
-        Vector3f forward = holderForward();
-        return origin.add(forward.mult(range)).add(0f, 0.55f, 0f);
-    }
-
-    private Spatial createProjectilePath(String name, ColorRGBA color) {
-        Node path = new Node(name);
-        Vector3f previous = projectilePositionAt(0f);
-        int segments = 16;
-        for (int i = 1; i <= segments; i++) {
-            float t = i / (float) segments;
-            Vector3f next = projectilePositionAt(t);
-            path.attachChild(createLine(name + "_" + i, previous, next, color));
-            previous = next;
-        }
-        return path;
-    }
-
-    private Geometry createLine(String name, Vector3f start, Vector3f end, ColorRGBA color) {
-        Line line = new Line(start, end);
-        line.setLineWidth(3f);
-        Geometry geometry = new Geometry(name, line);
-        Material material = colorMaterial(color);
-        material.getAdditionalRenderState().setLineWidth(3f);
-        geometry.setMaterial(material);
-        return geometry;
-    }
-
-    private void showMarker(Vector3f position, ColorRGBA color, boolean muzzle) {
-        Geometry marker = new Geometry(muzzle ? "WeaponPreviewMuzzleMarker" : "WeaponPreviewImpactMarker",
-                new Box(0.11f, 0.11f, 0.11f));
-        marker.setMaterial(colorMaterial(color));
-        marker.setLocalTranslation(position == null ? Vector3f.ZERO : position);
-        attackPreviewRoot.attachChild(marker);
-        if (muzzle) {
-            if (muzzleMarker != null) {
-                muzzleMarker.removeFromParent();
-            }
-            muzzleMarker = marker;
-        } else {
-            if (impactMarker != null) {
-                impactMarker.removeFromParent();
-            }
-            impactMarker = marker;
-        }
-        feedbackMarkerTime = 0.35f;
-    }
-
-    private void playPreviewSound(String soundName, String label) {
-        String key = safeString(soundName);
-        if (key.isEmpty() || previewAssets == null) {
-            return;
-        }
-        ResourceAudio audio = previewAssets.getAudioIndex().get(key.toLowerCase(Locale.ROOT));
-        if (audio == null) {
-            updateStatus("Missing " + label + ": " + key);
-            return;
-        }
-        try {
-            if (AudioContext.getAudioRenderer() == null && audioRenderer != null) {
-                AudioContext.setAudioRenderer(audioRenderer);
-            }
-            AudioNode node = new AudioNode(assetManager, audio.path, audio.dataType);
-            node.setPositional(false);
-            node.setLooping(false);
-            node.setVolume(1f);
-            rootNode.attachChild(node);
-            node.playInstance();
-            previewAudioNodes.add(node);
-        } catch (Exception ex) {
-            updateStatus("Sound preview unavailable: " + key);
-        }
-    }
-
-    private void clearPreviewAudio() {
-        for (AudioNode node : previewAudioNodes) {
-            if (node == null) {
-                continue;
-            }
-            try {
-                node.stop();
-                node.removeFromParent();
-            } catch (Exception ignored) {
-            }
-        }
-        previewAudioNodes.clear();
-    }
-
-    private void stopPreviewAnimation() {
-        AnimComposer composer = findAnimComposer(holderSpatial);
-        if (composer != null) {
-            try {
-                composer.removeCurrentAction();
-                composer.reset();
-            } catch (Exception ignored) {
-            }
-        }
-        if (holderAppModel != null && holderAppModel.getAnimComposer() != null
-                && holderAppModel.getAnimComposer() != composer) {
-            try {
-                holderAppModel.getAnimComposer().removeCurrentAction();
-                holderAppModel.getAnimComposer().reset();
-            } catch (Exception ignored) {
-            }
-        }
-        if (legacyAnimationChannel != null) {
-            try {
-                legacyAnimationChannel.reset(true);
-            } catch (Exception ignored) {
-            }
-        }
     }
 
     private void collectAttachmentPoints(Spatial spatial, Set<String> names) {
@@ -1230,8 +807,19 @@ class WeaponPreviewApp extends SceneMaxApp {
             center = sphere.getCenter().clone();
             radius = Math.max(0.5f, sphere.getRadius());
         }
-        cameraDistance = Math.max(2.3f, radius * 2.7f);
+        float aspect = canvasAspect();
+        float verticalFov = 45f * FastMath.DEG_TO_RAD;
+        float horizontalFov = 2f * FastMath.atan(FastMath.tan(verticalFov * 0.5f) * Math.max(0.1f, aspect));
+        float fitFov = Math.max(0.1f, Math.min(verticalFov, horizontalFov));
+        cameraDistance = Math.max(0.25f, (radius / FastMath.tan(fitFov * 0.5f)) * 1.25f);
+        cam.setFrustumPerspective(45f, aspect, 0.01f, Math.max(1000f, cameraDistance * 8f));
         updateCamera(center);
+    }
+
+    private float canvasAspect() {
+        int width = cam != null && cam.getWidth() > 0 ? cam.getWidth() : 640;
+        int height = cam != null && cam.getHeight() > 0 ? cam.getHeight() : 520;
+        return height <= 0 ? 1f : Math.max(0.1f, width / (float) height);
     }
 
     private Vector3f currentCenter() {

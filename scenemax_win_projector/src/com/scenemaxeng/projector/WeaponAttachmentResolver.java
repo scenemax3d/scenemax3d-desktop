@@ -10,6 +10,7 @@ import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.types.ResourceSetup;
 import com.scenemaxeng.common.weapons.WeaponAttachmentTransform;
 import com.scenemaxeng.common.weapons.WeaponDefinition;
+import com.scenemaxeng.common.weapons.WeaponPostureDefinition;
 
 public class WeaponAttachmentResolver {
     private final SceneMaxApp app;
@@ -19,6 +20,10 @@ public class WeaponAttachmentResolver {
     }
 
     public Spatial attachWeaponModel(String ownerVarName, WeaponDefinition definition) {
+        return attachWeaponModel(ownerVarName, definition, null);
+    }
+
+    public Spatial attachWeaponModel(String ownerVarName, WeaponDefinition definition, String postureIdOrName) {
         if (definition.getModelAssetId() == null || definition.getModelAssetId().trim().isEmpty()) {
             return null;
         }
@@ -28,15 +33,17 @@ public class WeaponAttachmentResolver {
             return null;
         }
 
-        Node attachNode = resolveAttachmentNode(ownerVarName, definition.getDefaultAttachmentPoint());
+        WeaponPostureDefinition posture = definition.findPosture(postureIdOrName);
+        Node attachNode = resolveAttachmentNode(ownerVarName, posture.getAttachmentPoint());
         if (attachNode == null) {
             model.removeFromParent();
             return null;
         }
 
         model.setName("weapon_" + definition.getId() + "_" + ownerVarName);
-        applyAttachmentTransform(model, definition.getAttachmentTransform());
+        applyAttachmentTransform(model, posture.getTransform());
         attachNode.attachChild(model);
+        attachNode.updateGeometricState();
         model.updateGeometricState();
         return model;
     }
@@ -55,9 +62,11 @@ public class WeaponAttachmentResolver {
         }
 
         try {
-            return assetManager.loadModel(modelPath);
+            Spatial model = assetManager.loadModel(modelPath);
+            app.isolateLoadedModelMaterials(model);
+            return model;
         } catch (Exception ex) {
-            app.handleRuntimeError("Weapon '" + definition.getName() + "' could not load model '" + modelAssetId + "'.");
+            app.handleRuntimeError("Weapon '" + definition.getId() + "' could not load model '" + modelAssetId + "'.");
             return null;
         }
     }

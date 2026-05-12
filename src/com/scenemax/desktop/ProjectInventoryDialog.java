@@ -1317,15 +1317,11 @@ class ProjectInventoryPanel extends JPanel {
                                 .append(issue.getMessage());
                     }
                 }
-                asset.name = weapon.getName() == null || weapon.getName().isBlank() ? asset.name : weapon.getName();
+                asset.name = weapon.getId() == null || weapon.getId().isBlank() ? asset.name : weapon.getId();
                 asset.properties.put("Name", asset.name);
                 asset.put("Weapon ID", weapon.getId());
-                asset.put("Weapon Category", weapon.getCategory());
-                asset.put("Hand Mode", weapon.getHandMode());
                 asset.put("Model Asset", weapon.getModelAssetId());
-                asset.put("Attacks", weapon.getAttackProfiles().size());
-                asset.put("Projectiles", weapon.getProjectileDefinitions().size());
-                asset.put("Uses Ammo", weapon.getAmmoDefinition().isUsesAmmo());
+                asset.put("Postures", weapon.getPostures().size());
                 asset.put("Status", validation.isValid() ? (warnings > 0 ? "Warnings" : "Valid") : "Invalid");
                 asset.put("Validation Errors", errors);
                 asset.put("Validation Warnings", warnings);

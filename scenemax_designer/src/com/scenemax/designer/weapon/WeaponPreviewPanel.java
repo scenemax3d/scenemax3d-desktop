@@ -3,8 +3,6 @@ package com.scenemax.designer.weapon;
 import com.jme3.system.AppSettings;
 import com.jme3.system.JmeCanvasContext;
 import com.scenemax.designer.gizmo.GizmoMode;
-import com.scenemaxeng.common.types.AssetsMapping;
-import com.scenemaxeng.common.types.ResourceSetup;
 import com.scenemaxeng.common.weapons.WeaponAttachmentTransform;
 import com.scenemaxeng.common.weapons.WeaponDefinition;
 import org.lwjgl.input.Mouse;
@@ -19,30 +17,27 @@ import java.awt.event.FocusEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 public class WeaponPreviewPanel extends JPanel {
-    private final File resourcesRoot;
     private final WeaponPreviewApp app;
     private final Canvas canvas;
-    private final JComboBox<String> holderCombo = new JComboBox<>();
-    private final JComboBox<String> attachmentCombo = new JComboBox<>();
     private final JLabel statusLabel = new JLabel("Preview");
+    private final JComboBox<String> previewAnimationCombo = new JComboBox<>();
 
     private Consumer<WeaponAttachmentTransform> transformChangedCallback;
     private Consumer<String> attachmentPointChangedCallback;
-    private boolean updatingAttachmentCombo;
+    private Consumer<List<String>> attachmentPointsChangedCallback;
+    private boolean updatingPreviewAnimations;
     private String selectedAttachmentPoint = "";
-    private int selectedAttackIndex;
+    private int selectedPostureIndex;
 
     public WeaponPreviewPanel(File resourcesRoot) {
         super(new BorderLayout(0, 8));
-        this.resourcesRoot = resourcesRoot;
         setBorder(new EmptyBorder(0, 10, 0, 0));
+        setMinimumSize(new Dimension(180, 180));
+        setPreferredSize(new Dimension(420, 420));
 
         app = new WeaponPreviewApp(resourcesRoot);
         AppSettings settings = new AppSettings(true);
@@ -61,7 +56,8 @@ public class WeaponPreviewPanel extends JPanel {
         JmeCanvasContext ctx = (JmeCanvasContext) app.getContext();
         ctx.setSystemListener(app);
         canvas = ctx.getCanvas();
-        canvas.setMinimumSize(new Dimension(260, 260));
+        canvas.setMinimumSize(new Dimension(80, 80));
+        canvas.setPreferredSize(new Dimension(360, 320));
         canvas.setCursor(Cursor.getDefaultCursor());
         canvas.addMouseListener(new MouseAdapter() {
             @Override
@@ -98,14 +94,19 @@ public class WeaponPreviewPanel extends JPanel {
             }
         });
         app.setAttachmentPointsChangedCallback(points ->
-                SwingUtilities.invokeLater(() -> updateAttachmentPoints(points)));
+                SwingUtilities.invokeLater(() -> {
+                    if (attachmentPointsChangedCallback != null) {
+                        attachmentPointsChangedCallback.accept(points);
+                    }
+                }));
+        app.setAnimationNamesChangedCallback(names ->
+                SwingUtilities.invokeLater(() -> updatePreviewAnimationOptions(names)));
         app.setStatusChangedCallback(status ->
                 SwingUtilities.invokeLater(() -> statusLabel.setText(status)));
 
         add(buildToolbar(), BorderLayout.NORTH);
         add(canvas, BorderLayout.CENTER);
         add(statusLabel, BorderLayout.SOUTH);
-        reloadHolderModels();
         app.startCanvas();
     }
 
@@ -117,24 +118,44 @@ public class WeaponPreviewPanel extends JPanel {
         this.attachmentPointChangedCallback = callback;
     }
 
+    public void setAttachmentPointsChangedCallback(Consumer<List<String>> callback) {
+        this.attachmentPointsChangedCallback = callback;
+    }
+
     public void setWeaponDefinition(WeaponDefinition definition) {
-        selectedAttachmentPoint = definition == null ? "" : nullToEmpty(definition.getDefaultAttachmentPoint());
-        selectAttachmentPoint(selectedAttachmentPoint);
-        app.setSelectedAttackIndex(selectedAttackIndex);
+        selectedAttachmentPoint = definition == null || definition.getDefaultPosture() == null
+                ? ""
+                : nullToEmpty(definition.getDefaultPosture().getAttachmentPoint());
+        app.setSelectedPostureIndex(selectedPostureIndex);
         app.setWeaponDefinition(definition);
-        String name = definition == null || definition.getName() == null || definition.getName().isBlank()
+        String name = definition == null || definition.getId() == null || definition.getId().isBlank()
                 ? "Preview"
-                : definition.getName();
+                : definition.getId();
         statusLabel.setText(name);
     }
 
-    public void setSelectedAttackIndex(int selectedAttackIndex) {
-        this.selectedAttackIndex = Math.max(0, selectedAttackIndex);
-        app.setSelectedAttackIndex(this.selectedAttackIndex);
+    public void setSelectedPostureIndex(int selectedPostureIndex) {
+        this.selectedPostureIndex = Math.max(0, selectedPostureIndex);
+        app.setSelectedPostureIndex(this.selectedPostureIndex);
     }
 
     public void refreshAssets() {
-        reloadHolderModels();
+    }
+
+    public void setHolderModelId(String modelId) {
+        app.setHolderModelId(modelId == null || modelId.trim().isEmpty() ? null : modelId.trim());
+    }
+
+    public void setPreviewAnimation(String animationName) {
+        app.setPreviewAnimation(animationName);
+    }
+
+    public void setAttachmentPoint(String attachmentPoint) {
+        selectedAttachmentPoint = nullToEmpty(attachmentPoint);
+        app.setAttachmentPoint(selectedAttachmentPoint);
+        if (attachmentPointChangedCallback != null) {
+            attachmentPointChangedCallback.accept(selectedAttachmentPoint);
+        }
     }
 
     public void disposePreview() {
@@ -143,68 +164,27 @@ public class WeaponPreviewPanel extends JPanel {
     }
 
     private JPanel buildToolbar() {
-        JPanel toolbar = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(0, 0, 4, 6);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.gridy = 0;
+        JPanel toolbar = new JPanel();
+        toolbar.setLayout(new BoxLayout(toolbar, BoxLayout.Y_AXIS));
 
-        gbc.gridx = 0;
-        gbc.weightx = 0;
-        toolbar.add(new JLabel("Using Model"), gbc);
-
-        gbc.gridx = 1;
-        gbc.weightx = 1;
-        toolbar.add(holderCombo, gbc);
-
-        gbc.gridx = 2;
-        gbc.weightx = 0;
-        JButton refreshButton = new JButton("Refresh");
-        refreshButton.addActionListener(e -> reloadHolderModels());
-        toolbar.add(refreshButton, gbc);
-
-        gbc.gridy = 1;
-        gbc.gridx = 0;
-        toolbar.add(new JLabel("Attach To"), gbc);
-        gbc.gridx = 1;
-        gbc.weightx = 1;
-        toolbar.add(attachmentCombo, gbc);
-        gbc.gridx = 2;
-        gbc.weightx = 0;
-        JButton clearAttachButton = new JButton("Clear");
-        clearAttachButton.addActionListener(e -> chooseAttachmentPoint(""));
-        toolbar.add(clearAttachButton, gbc);
-
-        attachmentCombo.addActionListener(e -> {
-            if (updatingAttachmentCombo) {
-                return;
-            }
-            Object selected = attachmentCombo.getSelectedItem();
-            chooseAttachmentPoint(selected == null ? "" : String.valueOf(selected));
-        });
-
-        gbc.gridy = 2;
-        gbc.gridx = 0;
-        toolbar.add(modeButton("Move", GizmoMode.TRANSLATE), gbc);
-        gbc.gridx = 1;
-        toolbar.add(modeButton("Rotate", GizmoMode.ROTATE), gbc);
-        gbc.gridx = 2;
+        JPanel modeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 3));
+        modeRow.add(modeButton("Move", GizmoMode.TRANSLATE));
+        modeRow.add(modeButton("Rotate", GizmoMode.ROTATE));
         JButton resetView = new JButton("Reset View");
         resetView.addActionListener(e -> app.resetCamera());
-        toolbar.add(resetView, gbc);
+        modeRow.add(resetView);
+        toolbar.add(modeRow);
 
-        gbc.gridy = 3;
-        gbc.gridx = 0;
-        toolbar.add(testButton("Test Attack", () -> app.previewSelectedAttack()), gbc);
-        gbc.gridx = 1;
-        toolbar.add(testButton("Test Reload", () -> app.previewReload()), gbc);
-        gbc.gridx = 2;
-        toolbar.add(testButton("Stop Test", () -> app.stopAttackPreview()), gbc);
-
-        gbc.gridy = 4;
-        gbc.gridx = 0;
-        gbc.gridwidth = 3;
-        toolbar.add(nudgePanel(), gbc);
+        JPanel animationRow = new JPanel(new BorderLayout(6, 3));
+        animationRow.add(new JLabel("Test Animation"), BorderLayout.WEST);
+        previewAnimationCombo.setPrototypeDisplayValue("MMMMMMMMMMMMMMMMMMMM");
+        previewAnimationCombo.addActionListener(e -> {
+            if (!updatingPreviewAnimations) {
+                app.setPreviewAnimation(selectedPreviewAnimation());
+            }
+        });
+        animationRow.add(previewAnimationCombo, BorderLayout.CENTER);
+        toolbar.add(animationRow);
         return toolbar;
     }
 
@@ -214,117 +194,38 @@ public class WeaponPreviewPanel extends JPanel {
         return button;
     }
 
-    private JButton testButton(String label, Runnable action) {
-        JButton button = new JButton(label);
-        button.addActionListener(e -> action.run());
-        return button;
-    }
-
-    private JPanel nudgePanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 3, 0));
-        panel.add(nudgeButton("X-", () -> app.nudgeOffset(-0.01f, 0f, 0f)));
-        panel.add(nudgeButton("X+", () -> app.nudgeOffset(0.01f, 0f, 0f)));
-        panel.add(nudgeButton("Y-", () -> app.nudgeOffset(0f, -0.01f, 0f)));
-        panel.add(nudgeButton("Y+", () -> app.nudgeOffset(0f, 0.01f, 0f)));
-        panel.add(nudgeButton("Z-", () -> app.nudgeOffset(0f, 0f, -0.01f)));
-        panel.add(nudgeButton("Z+", () -> app.nudgeOffset(0f, 0f, 0.01f)));
-        panel.add(nudgeButton("RX", () -> app.nudgeRotation(1f, 0f, 0f)));
-        panel.add(nudgeButton("RY", () -> app.nudgeRotation(0f, 1f, 0f)));
-        panel.add(nudgeButton("RZ", () -> app.nudgeRotation(0f, 0f, 1f)));
-        panel.add(nudgeButton("S-", () -> app.scaleWeapon(0.9f)));
-        panel.add(nudgeButton("S+", () -> app.scaleWeapon(1.1f)));
-        panel.add(nudgeButton("SX+", () -> app.nudgeScale(0.01f, 0f, 0f)));
-        panel.add(nudgeButton("SY+", () -> app.nudgeScale(0f, 0.01f, 0f)));
-        panel.add(nudgeButton("SZ+", () -> app.nudgeScale(0f, 0f, 0.01f)));
-        return panel;
-    }
-
-    private JButton nudgeButton(String label, Runnable action) {
-        JButton button = new JButton(label);
-        button.setMargin(new Insets(2, 6, 2, 6));
-        button.addActionListener(e -> action.run());
-        return button;
-    }
-
-    private void reloadHolderModels() {
-        List<String> models = listModelReferences();
-        String previous = holderCombo.getSelectedItem() == null ? null : String.valueOf(holderCombo.getSelectedItem());
-        for (java.awt.event.ActionListener listener : holderCombo.getActionListeners()) {
-            holderCombo.removeActionListener(listener);
-        }
-        holderCombo.removeAllItems();
-        for (String model : models) {
-            holderCombo.addItem(model);
-        }
-        if (previous != null && models.contains(previous)) {
-            holderCombo.setSelectedItem(previous);
-        } else if (!models.isEmpty()) {
-            holderCombo.setSelectedIndex(0);
-        }
-        holderCombo.addActionListener(e -> {
-            Object selected = holderCombo.getSelectedItem();
-            app.setHolderModelId(selected == null ? null : String.valueOf(selected));
-        });
-        Object selected = holderCombo.getSelectedItem();
-        app.setHolderModelId(selected == null ? null : String.valueOf(selected));
-    }
-
-    private void updateAttachmentPoints(List<String> points) {
-        updatingAttachmentCombo = true;
-        attachmentCombo.removeAllItems();
-        attachmentCombo.addItem("");
-        boolean hasSelected = selectedAttachmentPoint == null || selectedAttachmentPoint.isEmpty();
-        for (String point : points) {
-            if (point == null || point.trim().isEmpty()) {
-                continue;
-            }
-            attachmentCombo.addItem(point);
-            if (point.equals(selectedAttachmentPoint)) {
-                hasSelected = true;
-            }
-        }
-        if (!hasSelected) {
-            attachmentCombo.addItem(selectedAttachmentPoint);
-        }
-        selectAttachmentPoint(selectedAttachmentPoint);
-        updatingAttachmentCombo = false;
-    }
-
-    private void selectAttachmentPoint(String attachmentPoint) {
-        updatingAttachmentCombo = true;
-        attachmentCombo.setSelectedItem(nullToEmpty(attachmentPoint));
-        updatingAttachmentCombo = false;
-    }
-
-    private void chooseAttachmentPoint(String attachmentPoint) {
-        selectedAttachmentPoint = nullToEmpty(attachmentPoint);
-        selectAttachmentPoint(selectedAttachmentPoint);
-        app.setAttachmentPoint(selectedAttachmentPoint);
-        if (attachmentPointChangedCallback != null) {
-            attachmentPointChangedCallback.accept(selectedAttachmentPoint);
-        }
-    }
-
     private String nullToEmpty(String value) {
         return value == null ? "" : value.trim();
     }
 
-    private List<String> listModelReferences() {
-        if (resourcesRoot == null || !resourcesRoot.isDirectory()) {
-            return Collections.emptyList();
-        }
-        AssetsMapping assets = new AssetsMapping(resourcesRoot.getAbsolutePath());
-        List<String> values = new ArrayList<>();
-        for (ResourceSetup resource : assets.get3DModelsIndex().values()) {
-            if (resource != null && resource.name != null && !resource.name.trim().isEmpty()) {
-                values.add(resource.name);
+    private void updatePreviewAnimationOptions(List<String> animations) {
+        String current = selectedPreviewAnimation();
+        updatingPreviewAnimations = true;
+        previewAnimationCombo.removeAllItems();
+        previewAnimationCombo.addItem("");
+        boolean hasCurrent = current.isEmpty();
+        if (animations != null) {
+            for (String animation : animations) {
+                if (animation == null || animation.trim().isEmpty()) {
+                    continue;
+                }
+                previewAnimationCombo.addItem(animation);
+                if (animation.equals(current)) {
+                    hasCurrent = true;
+                }
             }
         }
-        return values.stream()
-                .filter(value -> value != null && !value.trim().isEmpty())
-                .distinct()
-                .sorted(String.CASE_INSENSITIVE_ORDER)
-                .collect(Collectors.toList());
+        if (!hasCurrent) {
+            previewAnimationCombo.addItem(current);
+        }
+        previewAnimationCombo.setSelectedItem(current);
+        updatingPreviewAnimations = false;
+        app.setPreviewAnimation(selectedPreviewAnimation());
+    }
+
+    private String selectedPreviewAnimation() {
+        Object selected = previewAnimationCombo.getSelectedItem();
+        return selected == null ? "" : String.valueOf(selected).trim();
     }
 
     private void releaseMouseCapture() {

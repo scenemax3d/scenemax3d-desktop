@@ -591,9 +591,7 @@ public class AssetsMapping {
                 if (definition.getId() != null && !definition.getId().isBlank()) {
                     _weapons.put(definition.getId().toLowerCase(), definition);
                 }
-                if (definition.getName() != null && !definition.getName().isBlank()) {
-                    _weapons.put(definition.getName().toLowerCase(), definition);
-                }
+                _weapons.put(stripExtension(file.getName()).toLowerCase(), definition);
             } catch (Exception ignored) {
             }
         }
@@ -667,5 +665,12 @@ public class AssetsMapping {
         return designerFile == null ? null : Util.readFile(designerFile);
     }
 
+    private static String stripExtension(String name) {
+        if (name == null) {
+            return "";
+        }
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) : name;
+    }
 
 }
