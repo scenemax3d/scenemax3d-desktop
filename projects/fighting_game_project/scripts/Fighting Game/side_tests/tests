@@ -5,7 +5,7 @@
   
 //m1 => meshy_azure3 : pos(-4,0,0), scale 0.02
 
-m2 => adi2 : pos (4,-2,0)
+m2 => fighter1 : pos (4,-2,0)
 m2.weapon = "weapon_player_weapon"
 //m2.weapon.use primary
 
@@ -14,5 +14,11 @@ m2.walking1 then hit1 then headspin_start then zombie_punch1 then mutant_punch1
 
 
 when key space is pressed once do
-	m2.weapon.use primary
+	m2.weapon.posture = "fight"
+	m2.zombie_punch1
+end do
+
+when key Z is pressed once do
+	m2.weapon.posture = "ready"
+	m2.idle2 loop 
 end do

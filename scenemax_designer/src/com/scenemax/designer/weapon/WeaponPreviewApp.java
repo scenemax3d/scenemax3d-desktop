@@ -167,8 +167,7 @@ class WeaponPreviewApp extends SceneMaxApp {
 
         weaponEntity.setSceneNode(weaponTransformNode);
         registerInput();
-        reloadPreview();
-        updateCamera(currentCenter());
+        reloadPreview(true);
     }
 
     @Override
@@ -214,19 +213,32 @@ class WeaponPreviewApp extends SceneMaxApp {
             if (snapshot.equals(weaponDefinitionSnapshot)) {
                 return null;
             }
+            WeaponDefinition nextDefinition = cloneWeapon(definition);
+            boolean canUpdateInPlace = canApplyPostureUpdateInPlace(nextDefinition);
+            boolean shouldFitCamera = weaponDefinition == null
+                    || !Objects.equals(safeString(weaponDefinition.getModelAssetId()), safeString(modelAssetId(nextDefinition)));
             weaponDefinitionSnapshot = snapshot;
-            this.weaponDefinition = cloneWeapon(definition);
+            this.weaponDefinition = nextDefinition;
             clampSelectedPostureIndex();
-            reloadPreview();
+            if (canUpdateInPlace) {
+                applySelectedPostureInPlace();
+            } else {
+                reloadPreview(shouldFitCamera);
+            }
             return null;
         });
     }
 
     void setSelectedPostureIndex(int selectedPostureIndex) {
         enqueue(() -> {
-            this.selectedPostureIndex = Math.max(0, selectedPostureIndex);
-            clampSelectedPostureIndex();
-            reloadPreview();
+            int requestedIndex = Math.max(0, selectedPostureIndex);
+            if (this.selectedPostureIndex == requestedIndex) {
+                return null;
+            }
+            this.selectedPostureIndex = requestedIndex;
+            if (weaponDefinition != null && requestedIndex < weaponDefinition.getPostures().size()) {
+                reloadPreview(false);
+            }
             return null;
         });
     }
@@ -244,7 +256,7 @@ class WeaponPreviewApp extends SceneMaxApp {
                 }
                 posture.setAttachmentPoint(normalized);
                 weaponDefinitionSnapshot = weaponDefinition.toJSON().toString();
-                reloadPreview();
+                reloadPreview(false);
             }
             return null;
         });
@@ -257,7 +269,7 @@ class WeaponPreviewApp extends SceneMaxApp {
                 return null;
             }
             this.holderModelId = normalized;
-            reloadPreview();
+            reloadPreview(true);
             return null;
         });
     }
@@ -331,7 +343,7 @@ class WeaponPreviewApp extends SceneMaxApp {
         });
     }
 
-    private void reloadPreview() {
+    private void reloadPreview(boolean fitCamera) {
         holderWrapper.detachAllChildren();
         holderWrapper.setLocalTranslation(Vector3f.ZERO);
         holderWrapper.setLocalRotation(Quaternion.IDENTITY);
@@ -363,7 +375,33 @@ class WeaponPreviewApp extends SceneMaxApp {
         }
         publishAnimationNames();
         playPreviewAnimation();
-        fitCamera();
+        if (fitCamera) {
+            fitCamera();
+        } else {
+            updateCamera(currentCenter());
+        }
+    }
+
+    private boolean canApplyPostureUpdateInPlace(WeaponDefinition nextDefinition) {
+        if (weaponDefinition == null || nextDefinition == null) {
+            return false;
+        }
+        if (!Objects.equals(safeString(weaponDefinition.getModelAssetId()), safeString(nextDefinition.getModelAssetId()))) {
+            return false;
+        }
+        WeaponPostureDefinition currentPosture = postureAt(weaponDefinition, selectedPostureIndex);
+        WeaponPostureDefinition nextPosture = postureAt(nextDefinition, selectedPostureIndex);
+        return currentPosture != null
+                && nextPosture != null
+                && Objects.equals(safeString(currentPosture.getAttachmentPoint()), safeString(nextPosture.getAttachmentPoint()));
+    }
+
+    private void applySelectedPostureInPlace() {
+        WeaponPostureDefinition posture = selectedPosture();
+        applyAttachmentTransform(posture == null ? null : posture.getTransform());
+        if (gizmoManager != null) {
+            gizmoManager.updateGizmoPosition();
+        }
     }
 
     private void loadHolderModel() {
@@ -580,6 +618,17 @@ class WeaponPreviewApp extends SceneMaxApp {
         }
         clampSelectedPostureIndex();
         return weaponDefinition.getPostures().get(selectedPostureIndex);
+    }
+
+    private WeaponPostureDefinition postureAt(WeaponDefinition definition, int index) {
+        if (definition == null || index < 0 || index >= definition.getPostures().size()) {
+            return null;
+        }
+        return definition.getPostures().get(index);
+    }
+
+    private String modelAssetId(WeaponDefinition definition) {
+        return definition == null ? "" : definition.getModelAssetId();
     }
 
     private void updateStatus(String status) {

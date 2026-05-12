@@ -332,7 +332,7 @@ public class WeaponDesignerPanel extends JPanel {
 
     private void addPosture() {
         applySelectedPostureFromUi();
-        WeaponPostureDefinition posture = new WeaponPostureDefinition();
+        WeaponPostureDefinition posture = WeaponPostureDefinition.fromJSON(document.getDefaultPosture().toJSON());
         int count = document.getPostures().size() + 1;
         posture.setId(uniquePostureId(count == 1 ? "default" : "posture_" + count));
         posture.setName("Posture " + count);
