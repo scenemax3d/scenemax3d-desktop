@@ -69,15 +69,23 @@ public class WeaponDesignerPanel extends JPanel {
     private final JSpinner spnDamageMultiplier = spinner(1, 0.01, 999, 0.1);
     private final JSpinner spnAmmoCost = spinner(0, 0, 999, 1);
     private final JTextField txtProjectileId = new JTextField();
+    private final JSpinner spnProjectileLaunchOffsetX = spinner(0, -999, 999, 0.01);
+    private final JSpinner spnProjectileLaunchOffsetY = spinner(0, -999, 999, 0.01);
+    private final JSpinner spnProjectileLaunchOffsetZ = spinner(0.35, -999, 999, 0.01);
     private final JTextField txtAttackAnim = new JTextField();
     private final JTextField txtAttackFxSound = new JTextField();
     private final JTextField txtAttackImpactSound = new JTextField();
     private final JTextField txtAttackMuzzleFx = new JTextField();
     private final JTextField txtAttackTrailFx = new JTextField();
     private final JTextField txtAttackImpactFx = new JTextField();
+    private final JTextField txtAttackHandler = new JTextField();
 
     private final JTextField txtProjectileName = new JTextField();
+    private final JLabel lblProjectileBinding = new JLabel("No projectile bound to selected attack.");
     private final JTextField txtProjectileModel = new JTextField();
+    private final JSpinner spnProjectileScaleX = spinner(1, 0.01, 999, 0.01);
+    private final JSpinner spnProjectileScaleY = spinner(1, 0.01, 999, 0.01);
+    private final JSpinner spnProjectileScaleZ = spinner(1, 0.01, 999, 0.01);
     private final JSpinner spnProjectileSpeed = spinner(30, 0.01, 9999, 1);
     private final JSpinner spnProjectileGravity = spinner(0, -99, 99, 0.1);
     private final JSpinner spnProjectileLifetime = spinner(5, 0.01, 999, 0.1);
@@ -218,19 +226,7 @@ public class WeaponDesignerPanel extends JPanel {
                 row("Scale Z", spnScaleZ)
         )));
         tabs.addTab("Attacks", buildAttacksTab());
-        tabs.addTab("Projectile", scroll(form(
-                row("Projectile Name", txtProjectileName),
-                row("Projectile Model", assetPicker(txtProjectileModel, "model")),
-                row("Speed", spnProjectileSpeed),
-                row("Gravity Scale", spnProjectileGravity),
-                row("Lifetime", spnProjectileLifetime),
-                row("Collision Radius", spnProjectileRadius),
-                row("Pierce Count", spnProjectilePierce),
-                row("", chkProjectileExplodes),
-                row("Explosion Radius", spnExplosionRadius),
-                row("Trail Effect", assetPicker(txtTrailEffect, "effect")),
-                row("Impact Effect", assetPicker(txtImpactEffectProjectile, "effect"))
-        )));
+        tabs.addTab("Projectile", scroll(buildProjectileTab()));
         tabs.addTab("Damage", scroll(form(
                 row("Base Damage", spnBaseDamage),
                 row("Damage Type", cboDamageType),
@@ -266,6 +262,7 @@ public class WeaponDesignerPanel extends JPanel {
 
         previewRefreshTimer = new Timer(180, e -> refreshPreviewFromUi());
         previewRefreshTimer.setRepeats(false);
+        txtProjectileId.getDocument().addDocumentListener(projectileBindingListener());
         bindDirtyTracking(tabs);
     }
 
@@ -294,19 +291,6 @@ public class WeaponDesignerPanel extends JPanel {
         selectedAttackIndex = Math.max(0, Math.min(selectedAttackIndex, document.getAttackProfiles().size() - 1));
         refreshAttackList();
         refreshSelectedAttackFields();
-
-        ProjectileDefinition projectile = primaryProjectile();
-        txtProjectileName.setText(projectile.getName());
-        txtProjectileModel.setText(projectile.getModelAssetId());
-        spnProjectileSpeed.setValue(projectile.getSpeed());
-        spnProjectileGravity.setValue(projectile.getGravityScale());
-        spnProjectileLifetime.setValue(projectile.getLifetime());
-        spnProjectileRadius.setValue(projectile.getCollisionRadius());
-        spnProjectilePierce.setValue((double) projectile.getPierceCount());
-        chkProjectileExplodes.setSelected(projectile.isExplodeOnImpact());
-        spnExplosionRadius.setValue(projectile.getExplosionRadius());
-        txtTrailEffect.setText(projectile.getTrailEffectId());
-        txtImpactEffectProjectile.setText(projectile.getImpactEffectId());
 
         spnBaseDamage.setValue(document.getDamageProfile().getBaseDamage());
         cboDamageType.setSelectedItem(document.getDamageProfile().getDamageType());
@@ -350,23 +334,7 @@ public class WeaponDesignerPanel extends JPanel {
 
         applySelectedAttackFromUi();
 
-        ProjectileDefinition projectile = primaryProjectile();
-        if (!txtProjectileId.getText().trim().isEmpty()) {
-            projectile.setId(txtProjectileId.getText().trim());
-        } else if (projectile.getId() == null || projectile.getId().trim().isEmpty()) {
-            projectile.setId("projectile");
-        }
-        projectile.setName(txtProjectileName.getText().trim().isEmpty() ? "Projectile" : txtProjectileName.getText().trim());
-        projectile.setModelAssetId(txtProjectileModel.getText().trim());
-        projectile.setSpeed(number(spnProjectileSpeed));
-        projectile.setGravityScale(number(spnProjectileGravity));
-        projectile.setLifetime(number(spnProjectileLifetime));
-        projectile.setCollisionRadius(number(spnProjectileRadius));
-        projectile.setPierceCount((int) Math.round(number(spnProjectilePierce)));
-        projectile.setExplodeOnImpact(chkProjectileExplodes.isSelected());
-        projectile.setExplosionRadius(number(spnExplosionRadius));
-        projectile.setTrailEffectId(txtTrailEffect.getText().trim());
-        projectile.setImpactEffectId(txtImpactEffectProjectile.getText().trim());
+        applySelectedProjectileFromUi();
 
         document.getDamageProfile().setBaseDamage(number(spnBaseDamage));
         document.getDamageProfile().setDamageType(String.valueOf(cboDamageType.getSelectedItem()));
@@ -404,13 +372,20 @@ public class WeaponDesignerPanel extends JPanel {
 
     private void refreshScriptExamples() {
         String weaponName = txtName.getText().trim().isEmpty() ? "New Weapon" : txtName.getText().trim();
+        String handlerName = txtAttackHandler.getText().trim();
+        String handlerBlock = handlerName.isEmpty()
+                ? ""
+                : "\nAttack handler stub:\n" +
+                        "    " + handlerName + " (attack) = {}\n" +
+                        "    The handler runs before ammo is consumed and receives a mutable attack instance.\n";
         scriptText.setText(
                 "Suggested setup:\n" +
                         "    player.weapon = \"" + weaponName + "\"\n\n" +
                         "Suggested primary attack:\n" +
                         "    player.weapon.use primary\n\n" +
                         "Suggested damage access:\n" +
-                        "    player.weapon.damage.number\n"
+                        "    player.weapon.damage.number\n" +
+                        handlerBlock
         );
         scriptText.setCaretPosition(0);
     }
@@ -419,6 +394,30 @@ public class WeaponDesignerPanel extends JPanel {
         if (!updatingUi) {
             applyUiToDocument();
         }
+    }
+
+    private Component buildProjectileTab() {
+        JButton createButton = new JButton("Create / Bind Projectile");
+        createButton.addActionListener(e -> createOrSyncSelectedProjectileDefinition());
+        lblProjectileBinding.setFont(lblProjectileBinding.getFont().deriveFont(Font.BOLD));
+        return form(
+                row("Selected Attack", lblProjectileBinding),
+                row("", createButton),
+                row("Projectile Name", txtProjectileName),
+                row("Projectile Model", assetPicker(txtProjectileModel, "model")),
+                row("Scale X", spnProjectileScaleX),
+                row("Scale Y", spnProjectileScaleY),
+                row("Scale Z", spnProjectileScaleZ),
+                row("Speed", spnProjectileSpeed),
+                row("Gravity Scale", spnProjectileGravity),
+                row("Lifetime", spnProjectileLifetime),
+                row("Collision Radius", spnProjectileRadius),
+                row("Pierce Count", spnProjectilePierce),
+                row("", chkProjectileExplodes),
+                row("Explosion Radius", spnExplosionRadius),
+                row("Trail Effect", assetPicker(txtTrailEffect, "effect")),
+                row("Impact Effect", assetPicker(txtImpactEffectProjectile, "effect"))
+        );
     }
 
     private Component buildAttacksTab() {
@@ -434,6 +433,7 @@ public class WeaponDesignerPanel extends JPanel {
                 return;
             }
             applySelectedAttackFromUi();
+            applySelectedProjectileFromUi();
             selectedAttackIndex = newIndex;
             refreshSelectedAttackFields();
             refreshAttackList();
@@ -470,12 +470,16 @@ public class WeaponDesignerPanel extends JPanel {
                 row("Damage Multiplier", spnDamageMultiplier),
                 row("Ammo Cost", spnAmmoCost),
                 row("Projectile ID", txtProjectileId),
+                row("Launch Offset X", spnProjectileLaunchOffsetX),
+                row("Launch Offset Y", spnProjectileLaunchOffsetY),
+                row("Launch Offset Z", spnProjectileLaunchOffsetZ),
                 row("Animation", assetPicker(txtAttackAnim, "animation")),
                 row("Attack Sound", assetPicker(txtAttackFxSound, "audio")),
                 row("Impact Sound", assetPicker(txtAttackImpactSound, "audio")),
                 row("Muzzle Flash Effect", assetPicker(txtAttackMuzzleFx, "effect")),
                 row("Melee Trail Effect", assetPicker(txtAttackTrailFx, "effect")),
-                row("Impact Effect", assetPicker(txtAttackImpactFx, "effect"))
+                row("Impact Effect", assetPicker(txtAttackImpactFx, "effect")),
+                row("Attack Handler", txtAttackHandler)
         );
 
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, scroll(right));
@@ -487,6 +491,7 @@ public class WeaponDesignerPanel extends JPanel {
 
     private void addAttackProfile() {
         applySelectedAttackFromUi();
+        applySelectedProjectileFromUi();
         AttackProfile attack = new AttackProfile();
         int count = document.getAttackProfiles().size() + 1;
         attack.setId(uniqueAttackId(defaultAttackId(count)));
@@ -502,6 +507,7 @@ public class WeaponDesignerPanel extends JPanel {
 
     private void duplicateAttackProfile() {
         applySelectedAttackFromUi();
+        applySelectedProjectileFromUi();
         AttackProfile source = selectedAttack();
         AttackProfile copy = AttackProfile.fromJSON(source.toJSON());
         copy.setId(uniqueAttackId(source.getId() + "_copy"));
@@ -523,6 +529,8 @@ public class WeaponDesignerPanel extends JPanel {
             return;
         }
         int index = Math.max(0, Math.min(selectedAttackIndex, document.getAttackProfiles().size() - 1));
+        applySelectedAttackFromUi();
+        applySelectedProjectileFromUi();
         document.getAttackProfiles().remove(index);
         selectedAttackIndex = Math.max(0, Math.min(index, document.getAttackProfiles().size() - 1));
         refreshAttackList();
@@ -573,12 +581,17 @@ public class WeaponDesignerPanel extends JPanel {
         spnDamageMultiplier.setValue(attack.getDamageMultiplier());
         spnAmmoCost.setValue((double) attack.getAmmoCost());
         txtProjectileId.setText(attack.getProjectileDefinitionId());
+        spnProjectileLaunchOffsetX.setValue(attack.getProjectileLaunchOffsetX());
+        spnProjectileLaunchOffsetY.setValue(attack.getProjectileLaunchOffsetY());
+        spnProjectileLaunchOffsetZ.setValue(attack.getProjectileLaunchOffsetZ());
         txtAttackAnim.setText(attack.getAttackAnimation());
         txtAttackFxSound.setText(attack.getAttackSound());
         txtAttackImpactSound.setText(attack.getImpactSound());
         txtAttackMuzzleFx.setText(attack.getMuzzleFlashEffect());
         txtAttackTrailFx.setText(attack.getMeleeTrailEffect());
         txtAttackImpactFx.setText(attack.getImpactEffect());
+        txtAttackHandler.setText(attack.getAttackHandlerProcedure());
+        refreshSelectedProjectileFields();
         updatingUi = wasUpdating;
     }
 
@@ -599,13 +612,158 @@ public class WeaponDesignerPanel extends JPanel {
         attack.setDamageMultiplier(number(spnDamageMultiplier));
         attack.setAmmoCost((int) Math.round(number(spnAmmoCost)));
         attack.setProjectileDefinitionId(txtProjectileId.getText().trim());
+        attack.setProjectileLaunchOffsetX(number(spnProjectileLaunchOffsetX));
+        attack.setProjectileLaunchOffsetY(number(spnProjectileLaunchOffsetY));
+        attack.setProjectileLaunchOffsetZ(number(spnProjectileLaunchOffsetZ));
         attack.setAttackAnimation(txtAttackAnim.getText().trim());
         attack.setAttackSound(txtAttackFxSound.getText().trim());
         attack.setImpactSound(txtAttackImpactSound.getText().trim());
         attack.setMuzzleFlashEffect(txtAttackMuzzleFx.getText().trim());
         attack.setMeleeTrailEffect(txtAttackTrailFx.getText().trim());
         attack.setImpactEffect(txtAttackImpactFx.getText().trim());
+        attack.setAttackHandlerProcedure(txtAttackHandler.getText().trim());
         refreshAttackList();
+    }
+
+    private void refreshSelectedProjectileFields() {
+        ProjectileDefinition projectile = selectedProjectile(false);
+        boolean wasUpdating = updatingUi;
+        updatingUi = true;
+        if (projectile == null) {
+            clearProjectileFields();
+        } else {
+            lblProjectileBinding.setText("Editing projectile '" + projectile.getId() + "' for " + attackLabel(selectedAttack(), selectedAttackIndex));
+            txtProjectileName.setText(projectile.getName());
+            txtProjectileModel.setText(projectile.getModelAssetId());
+            spnProjectileScaleX.setValue(projectile.getScaleX());
+            spnProjectileScaleY.setValue(projectile.getScaleY());
+            spnProjectileScaleZ.setValue(projectile.getScaleZ());
+            spnProjectileSpeed.setValue(projectile.getSpeed());
+            spnProjectileGravity.setValue(projectile.getGravityScale());
+            spnProjectileLifetime.setValue(projectile.getLifetime());
+            spnProjectileRadius.setValue(projectile.getCollisionRadius());
+            spnProjectilePierce.setValue((double) projectile.getPierceCount());
+            chkProjectileExplodes.setSelected(projectile.isExplodeOnImpact());
+            spnExplosionRadius.setValue(projectile.getExplosionRadius());
+            txtTrailEffect.setText(projectile.getTrailEffectId());
+            txtImpactEffectProjectile.setText(projectile.getImpactEffectId());
+        }
+        updatingUi = wasUpdating;
+    }
+
+    private void clearProjectileFields() {
+        lblProjectileBinding.setText("No projectile bound to selected attack.");
+        txtProjectileName.setText("");
+        txtProjectileModel.setText("");
+        ProjectileDefinition defaults = new ProjectileDefinition();
+        spnProjectileScaleX.setValue(defaults.getScaleX());
+        spnProjectileScaleY.setValue(defaults.getScaleY());
+        spnProjectileScaleZ.setValue(defaults.getScaleZ());
+        spnProjectileSpeed.setValue(defaults.getSpeed());
+        spnProjectileGravity.setValue(defaults.getGravityScale());
+        spnProjectileLifetime.setValue(defaults.getLifetime());
+        spnProjectileRadius.setValue(defaults.getCollisionRadius());
+        spnProjectilePierce.setValue((double) defaults.getPierceCount());
+        chkProjectileExplodes.setSelected(defaults.isExplodeOnImpact());
+        spnExplosionRadius.setValue(defaults.getExplosionRadius());
+        txtTrailEffect.setText("");
+        txtImpactEffectProjectile.setText("");
+    }
+
+    private void applySelectedProjectileFromUi() {
+        if (document == null || updatingUi) {
+            return;
+        }
+        String projectileId = projectileIdForSelectedAttack(true);
+        if (projectileId.isEmpty()) {
+            return;
+        }
+        ProjectileDefinition projectile = findProjectileById(projectileId);
+        if (projectile == null) {
+            projectile = new ProjectileDefinition();
+            projectile.setId(projectileId);
+            document.getProjectileDefinitions().add(projectile);
+        }
+        projectile.setId(projectileId);
+        projectile.setName(txtProjectileName.getText().trim().isEmpty() ? "Projectile" : txtProjectileName.getText().trim());
+        projectile.setModelAssetId(txtProjectileModel.getText().trim());
+        projectile.setScaleX(number(spnProjectileScaleX));
+        projectile.setScaleY(number(spnProjectileScaleY));
+        projectile.setScaleZ(number(spnProjectileScaleZ));
+        projectile.setSpeed(number(spnProjectileSpeed));
+        projectile.setGravityScale(number(spnProjectileGravity));
+        projectile.setLifetime(number(spnProjectileLifetime));
+        projectile.setCollisionRadius(number(spnProjectileRadius));
+        projectile.setPierceCount((int) Math.round(number(spnProjectilePierce)));
+        projectile.setExplodeOnImpact(chkProjectileExplodes.isSelected());
+        projectile.setExplosionRadius(number(spnExplosionRadius));
+        projectile.setTrailEffectId(txtTrailEffect.getText().trim());
+        projectile.setImpactEffectId(txtImpactEffectProjectile.getText().trim());
+    }
+
+    private void createOrSyncSelectedProjectileDefinition() {
+        applySelectedAttackFromUi();
+        AttackProfile attack = selectedAttack();
+        String projectileId = projectileIdForSelectedAttack(true);
+        if (projectileId.isEmpty()) {
+            projectileId = uniqueProjectileId(attack.getId() == null || attack.getId().trim().isEmpty()
+                    ? "projectile"
+                    : attack.getId().trim());
+            txtProjectileId.setText(projectileId);
+            attack.setProjectileDefinitionId(projectileId);
+        }
+        ProjectileDefinition projectile = findProjectileById(projectileId);
+        if (projectile == null) {
+            projectile = new ProjectileDefinition();
+            projectile.setId(projectileId);
+            String attackName = attack.getName() == null || attack.getName().trim().isEmpty()
+                    ? "Projectile"
+                    : attack.getName().trim() + " Projectile";
+            projectile.setName(attackName);
+            document.getProjectileDefinitions().add(projectile);
+        }
+        if (!"projectile".equalsIgnoreCase(attack.getAttackType()) && !"hitscan".equalsIgnoreCase(attack.getAttackType())) {
+            attack.setAttackType("projectile");
+            cboAttackType.setSelectedItem("projectile");
+        }
+        refreshSelectedProjectileFields();
+        markDirty();
+        refreshValidation();
+    }
+
+    private ProjectileDefinition selectedProjectile(boolean create) {
+        String projectileId = projectileIdForSelectedAttack(false);
+        if (projectileId.isEmpty()) {
+            return null;
+        }
+        ProjectileDefinition projectile = findProjectileById(projectileId);
+        if (projectile == null && create) {
+            projectile = new ProjectileDefinition();
+            projectile.setId(projectileId);
+            document.getProjectileDefinitions().add(projectile);
+        }
+        return projectile;
+    }
+
+    private String projectileIdForSelectedAttack(boolean preferUi) {
+        String projectileId = preferUi ? txtProjectileId.getText().trim() : "";
+        if (projectileId.isEmpty()) {
+            AttackProfile attack = selectedAttack();
+            projectileId = attack.getProjectileDefinitionId() == null ? "" : attack.getProjectileDefinitionId().trim();
+        }
+        return projectileId;
+    }
+
+    private ProjectileDefinition findProjectileById(String projectileId) {
+        if (projectileId == null || projectileId.trim().isEmpty()) {
+            return null;
+        }
+        for (ProjectileDefinition projectile : document.getProjectileDefinitions()) {
+            if (projectile.getId() != null && projectile.getId().trim().equalsIgnoreCase(projectileId.trim())) {
+                return projectile;
+            }
+        }
+        return null;
     }
 
     private AttackProfile selectedAttack() {
@@ -648,6 +806,22 @@ public class WeaponDesignerPanel extends JPanel {
         String normalizedBase = baseId == null || baseId.trim().isEmpty() ? "attack" : baseId.trim();
         Set<String> existing = document.getAttackProfiles().stream()
                 .map(AttackProfile::getId)
+                .filter(id -> id != null)
+                .map(id -> id.trim().toLowerCase(Locale.ROOT))
+                .collect(Collectors.toSet());
+        String candidate = normalizedBase;
+        int suffix = 2;
+        while (existing.contains(candidate.toLowerCase(Locale.ROOT))) {
+            candidate = normalizedBase + "_" + suffix;
+            suffix++;
+        }
+        return candidate;
+    }
+
+    private String uniqueProjectileId(String baseId) {
+        String normalizedBase = baseId == null || baseId.trim().isEmpty() ? "projectile" : baseId.trim();
+        Set<String> existing = document.getProjectileDefinitions().stream()
+                .map(ProjectileDefinition::getId)
                 .filter(id -> id != null)
                 .map(id -> id.trim().toLowerCase(Locale.ROOT))
                 .collect(Collectors.toSet());
@@ -719,20 +893,6 @@ public class WeaponDesignerPanel extends JPanel {
             onDirtyCallback.run();
         }
         refreshValidation();
-    }
-
-    private AttackProfile primaryAttack() {
-        if (document.getAttackProfiles().isEmpty()) {
-            document.getAttackProfiles().add(new AttackProfile());
-        }
-        return document.getAttackProfiles().get(0);
-    }
-
-    private ProjectileDefinition primaryProjectile() {
-        if (document.getProjectileDefinitions().isEmpty()) {
-            document.getProjectileDefinitions().add(new ProjectileDefinition());
-        }
-        return document.getProjectileDefinitions().get(0);
     }
 
     private void appendProjectValidation(WeaponValidationResult result) {
@@ -884,6 +1044,34 @@ public class WeaponDesignerPanel extends JPanel {
             @Override
             public void changedUpdate(DocumentEvent e) {
                 markDirty();
+            }
+        };
+    }
+
+    private DocumentListener projectileBindingListener() {
+        return new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                refreshLater();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                refreshLater();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                refreshLater();
+            }
+
+            private void refreshLater() {
+                if (!updatingUi) {
+                    SwingUtilities.invokeLater(() -> {
+                        applySelectedAttackFromUi();
+                        refreshSelectedProjectileFields();
+                    });
+                }
             }
         };
     }

@@ -12,6 +12,14 @@ public class WeaponDefinitionTest {
         original.getAttackProfiles().get(0).setAttackAnimation("SwordSlash");
         original.getAttackProfiles().get(0).setAttackSound("SwordSwing");
         original.getAttackProfiles().get(0).setMeleeTrailEffect("SwordTrail");
+        original.getAttackProfiles().get(0).setProjectileLaunchOffsetZ(0.5);
+        original.getAttackProfiles().get(0).setAttackHandlerProcedure("player1_on_primary_attack");
+        ProjectileDefinition projectile = new ProjectileDefinition();
+        projectile.setId("coin");
+        projectile.setScaleX(1.5);
+        projectile.setScaleY(1.5);
+        projectile.setScaleZ(1.5);
+        original.getProjectileDefinitions().add(projectile);
 
         WeaponDefinition loaded = WeaponDefinition.fromJSON(original.toJSON());
 
@@ -22,6 +30,9 @@ public class WeaponDefinitionTest {
         assertEquals("SwordSlash", loaded.getAttackProfiles().get(0).getAttackAnimation());
         assertEquals("SwordSwing", loaded.getAttackProfiles().get(0).getAttackSound());
         assertEquals("SwordTrail", loaded.getAttackProfiles().get(0).getMeleeTrailEffect());
+        assertEquals(0.5, loaded.getAttackProfiles().get(0).getProjectileLaunchOffsetZ(), 0.001);
+        assertEquals("player1_on_primary_attack", loaded.getAttackProfiles().get(0).getAttackHandlerProcedure());
+        assertEquals(1.5, loaded.findProjectileDefinition("coin").getScaleX(), 0.001);
         assertTrue(loaded.validate().isValid());
     }
 

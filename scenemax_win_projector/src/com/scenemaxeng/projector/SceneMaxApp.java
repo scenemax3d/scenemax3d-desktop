@@ -1846,6 +1846,33 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         return null;
     }
 
+    public boolean runFunctionWithParamsNow(String funcName, Map<String, Object> params) {
+        if (funcName == null || funcName.trim().isEmpty() || prg == null) {
+            return false;
+        }
+        FunctionBlockDef fDef = prg.getFunc(funcName.trim());
+        if (fDef == null) {
+            return false;
+        }
+        SceneMaxScope scope = mainScope != null ? mainScope : new SceneMaxScope();
+        DoBlockController c = new DoBlockController(this, scope, fDef.doBlock);
+        c.app = this;
+        c.goExpr = fDef.goExpr;
+        c.async = false;
+        c.setFuncScopeParams(new HashMap<>(params != null ? params : Collections.emptyMap()));
+        c.init();
+
+        int guard = 0;
+        while (!c.run(0f)) {
+            guard++;
+            if (guard > 2048) {
+                handleRuntimeError("Function '" + funcName.trim() + "' did not complete synchronously.");
+                return false;
+            }
+        }
+        return true;
+    }
+
 
     public int getEntityScopeId(SceneMaxScope scope, String targetVar, int varType) {
         return getEntityScopeId(scope, targetVar);

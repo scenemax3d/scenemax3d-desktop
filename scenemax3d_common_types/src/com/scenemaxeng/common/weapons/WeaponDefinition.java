@@ -64,6 +64,8 @@ public class WeaponDefinition {
             attack.setAmmoCost(1);
             attack.setProjectileDefinitionId("bullet");
             ProjectileDefinition projectile = new ProjectileDefinition();
+            projectile.setId("bullet");
+            projectile.setName("Bullet");
             definition.projectileDefinitions.add(projectile);
             definition.ammoDefinition.setUsesAmmo(true);
             definition.ammoDefinition.setMagazineSize(12);
@@ -85,7 +87,10 @@ public class WeaponDefinition {
             attack.setRange(45);
             attack.setAmmoCost(1);
             attack.setProjectileDefinitionId("arrow");
-            definition.projectileDefinitions.add(new ProjectileDefinition());
+            ProjectileDefinition projectile = new ProjectileDefinition();
+            projectile.setId("arrow");
+            projectile.setName("Arrow");
+            definition.projectileDefinitions.add(projectile);
             definition.ammoDefinition.setUsesAmmo(true);
             definition.ammoDefinition.setMagazineSize(1);
             definition.ammoDefinition.setDefaultMagazineAmmo(1);
@@ -103,7 +108,10 @@ public class WeaponDefinition {
             attack.setCooldown(0.75);
             attack.setRange(35);
             attack.setProjectileDefinitionId("magic_bolt");
-            definition.projectileDefinitions.add(new ProjectileDefinition());
+            ProjectileDefinition projectile = new ProjectileDefinition();
+            projectile.setId("magic_bolt");
+            projectile.setName("Magic Bolt");
+            definition.projectileDefinitions.add(projectile);
         }
         return definition;
     }

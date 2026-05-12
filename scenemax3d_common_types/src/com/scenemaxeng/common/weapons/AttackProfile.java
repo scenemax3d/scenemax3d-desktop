@@ -16,12 +16,16 @@ public class AttackProfile {
     private double staminaCost = 0.0;
     private int ammoCost = 0;
     private String projectileDefinitionId = "";
+    private double projectileLaunchOffsetX = 0.0;
+    private double projectileLaunchOffsetY = 0.0;
+    private double projectileLaunchOffsetZ = 0.35;
     private String attackAnimation = "";
     private String attackSound = "";
     private String impactSound = "";
     private String muzzleFlashEffect = "";
     private String meleeTrailEffect = "";
     private String impactEffect = "";
+    private String attackHandlerProcedure = "";
     private String animationEventBinding = "";
     private String soundEventBinding = "";
     private String effectEventBinding = "";
@@ -42,12 +46,16 @@ public class AttackProfile {
                 .put("staminaCost", staminaCost)
                 .put("ammoCost", ammoCost)
                 .put("projectileDefinitionId", projectileDefinitionId)
+                .put("projectileLaunchOffsetX", projectileLaunchOffsetX)
+                .put("projectileLaunchOffsetY", projectileLaunchOffsetY)
+                .put("projectileLaunchOffsetZ", projectileLaunchOffsetZ)
                 .put("attackAnimation", attackAnimation)
                 .put("attackSound", attackSound)
                 .put("impactSound", impactSound)
                 .put("muzzleFlashEffect", muzzleFlashEffect)
                 .put("meleeTrailEffect", meleeTrailEffect)
                 .put("impactEffect", impactEffect)
+                .put("attackHandlerProcedure", attackHandlerProcedure)
                 .put("animationEventBinding", animationEventBinding)
                 .put("soundEventBinding", soundEventBinding)
                 .put("effectEventBinding", effectEventBinding)
@@ -72,6 +80,9 @@ public class AttackProfile {
         profile.staminaCost = json.optDouble("staminaCost", profile.staminaCost);
         profile.ammoCost = json.optInt("ammoCost", profile.ammoCost);
         profile.projectileDefinitionId = json.optString("projectileDefinitionId", profile.projectileDefinitionId);
+        profile.projectileLaunchOffsetX = json.optDouble("projectileLaunchOffsetX", profile.projectileLaunchOffsetX);
+        profile.projectileLaunchOffsetY = json.optDouble("projectileLaunchOffsetY", profile.projectileLaunchOffsetY);
+        profile.projectileLaunchOffsetZ = json.optDouble("projectileLaunchOffsetZ", profile.projectileLaunchOffsetZ);
         profile.attackAnimation = json.optString("attackAnimation",
                 json.optString("animationEventBinding", profile.attackAnimation));
         profile.attackSound = json.optString("attackSound",
@@ -81,6 +92,7 @@ public class AttackProfile {
         profile.meleeTrailEffect = json.optString("meleeTrailEffect", profile.meleeTrailEffect);
         profile.impactEffect = json.optString("impactEffect",
                 json.optString("effectEventBinding", profile.impactEffect));
+        profile.attackHandlerProcedure = json.optString("attackHandlerProcedure", profile.attackHandlerProcedure);
         profile.animationEventBinding = json.optString("animationEventBinding", profile.animationEventBinding);
         profile.soundEventBinding = json.optString("soundEventBinding", profile.soundEventBinding);
         profile.effectEventBinding = json.optString("effectEventBinding", profile.effectEventBinding);
@@ -227,6 +239,30 @@ public class AttackProfile {
         this.projectileDefinitionId = projectileDefinitionId;
     }
 
+    public double getProjectileLaunchOffsetX() {
+        return projectileLaunchOffsetX;
+    }
+
+    public void setProjectileLaunchOffsetX(double projectileLaunchOffsetX) {
+        this.projectileLaunchOffsetX = projectileLaunchOffsetX;
+    }
+
+    public double getProjectileLaunchOffsetY() {
+        return projectileLaunchOffsetY;
+    }
+
+    public void setProjectileLaunchOffsetY(double projectileLaunchOffsetY) {
+        this.projectileLaunchOffsetY = projectileLaunchOffsetY;
+    }
+
+    public double getProjectileLaunchOffsetZ() {
+        return projectileLaunchOffsetZ;
+    }
+
+    public void setProjectileLaunchOffsetZ(double projectileLaunchOffsetZ) {
+        this.projectileLaunchOffsetZ = projectileLaunchOffsetZ;
+    }
+
     public String getAnimationEventBinding() {
         return animationEventBinding;
     }
@@ -281,6 +317,14 @@ public class AttackProfile {
 
     public void setImpactEffect(String impactEffect) {
         this.impactEffect = impactEffect;
+    }
+
+    public String getAttackHandlerProcedure() {
+        return attackHandlerProcedure;
+    }
+
+    public void setAttackHandlerProcedure(String attackHandlerProcedure) {
+        this.attackHandlerProcedure = attackHandlerProcedure;
     }
 
     public String getSoundEventBinding() {

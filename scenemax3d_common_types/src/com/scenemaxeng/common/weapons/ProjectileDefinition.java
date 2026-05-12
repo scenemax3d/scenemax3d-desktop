@@ -6,6 +6,9 @@ public class ProjectileDefinition {
     private String id = "projectile";
     private String name = "Projectile";
     private String modelAssetId = "";
+    private double scaleX = 1.0;
+    private double scaleY = 1.0;
+    private double scaleZ = 1.0;
     private double speed = 30.0;
     private double gravityScale = 0.0;
     private double lifetime = 5.0;
@@ -22,6 +25,9 @@ public class ProjectileDefinition {
                 .put("id", id)
                 .put("name", name)
                 .put("modelAssetId", modelAssetId)
+                .put("scaleX", scaleX)
+                .put("scaleY", scaleY)
+                .put("scaleZ", scaleZ)
                 .put("speed", speed)
                 .put("gravityScale", gravityScale)
                 .put("lifetime", lifetime)
@@ -45,6 +51,9 @@ public class ProjectileDefinition {
         projectile.id = json.optString("id", projectile.id);
         projectile.name = json.optString("name", projectile.name);
         projectile.modelAssetId = json.optString("modelAssetId", projectile.modelAssetId);
+        projectile.scaleX = json.optDouble("scaleX", projectile.scaleX);
+        projectile.scaleY = json.optDouble("scaleY", projectile.scaleY);
+        projectile.scaleZ = json.optDouble("scaleZ", projectile.scaleZ);
         projectile.speed = json.optDouble("speed", projectile.speed);
         projectile.gravityScale = json.optDouble("gravityScale", projectile.gravityScale);
         projectile.lifetime = json.optDouble("lifetime", projectile.lifetime);
@@ -73,6 +82,9 @@ public class ProjectileDefinition {
         if (collisionRadius <= 0) {
             result.addError("projectileDefinitions.collisionRadius", "Projectile collision radius must be greater than zero.");
         }
+        if (scaleX <= 0 || scaleY <= 0 || scaleZ <= 0) {
+            result.addError("projectileDefinitions.scale", "Projectile scale values must be greater than zero.");
+        }
     }
 
     public String getId() {
@@ -97,6 +109,30 @@ public class ProjectileDefinition {
 
     public void setModelAssetId(String modelAssetId) {
         this.modelAssetId = modelAssetId;
+    }
+
+    public double getScaleX() {
+        return scaleX;
+    }
+
+    public void setScaleX(double scaleX) {
+        this.scaleX = scaleX;
+    }
+
+    public double getScaleY() {
+        return scaleY;
+    }
+
+    public void setScaleY(double scaleY) {
+        this.scaleY = scaleY;
+    }
+
+    public double getScaleZ() {
+        return scaleZ;
+    }
+
+    public void setScaleZ(double scaleZ) {
+        this.scaleZ = scaleZ;
     }
 
     public double getSpeed() {

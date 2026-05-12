@@ -6,6 +6,8 @@ import com.jme3.scene.Spatial;
 import com.scenemaxeng.common.weapons.AttackProfile;
 import com.scenemaxeng.common.weapons.DamageProfile;
 import com.scenemaxeng.common.weapons.ProjectileDefinition;
+import com.scenemaxeng.common.weapons.WeaponAttackInstance;
+import com.scenemaxeng.common.weapons.WeaponProjectilePath;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -21,6 +23,8 @@ public class WeaponProjectileRuntime {
     private final ProjectileDefinition projectileDefinition;
     private final Spatial spatial;
     private final Vector3f velocity;
+    private final Vector3f origin;
+    private final WeaponProjectilePath pathOverride;
     private final Set<String> hitTargets = new HashSet<>();
     private double age;
     private int remainingPierces;
@@ -36,13 +40,17 @@ public class WeaponProjectileRuntime {
         this.projectileDefinition = projectileDefinition;
         this.spatial = spatial;
         this.remainingPierces = Math.max(0, projectileDefinition.getPierceCount());
+        this.origin = origin == null ? Vector3f.ZERO.clone() : origin.clone();
+        this.pathOverride = attackProfile instanceof WeaponAttackInstance
+                ? ((WeaponAttackInstance) attackProfile).getProjectilePathOverride()
+                : null;
         Vector3f normalizedDirection = direction == null || direction.lengthSquared() == 0
                 ? Vector3f.UNIT_Z.clone()
                 : direction.normalize();
         this.velocity = normalizedDirection.mult((float) projectileDefinition.getSpeed());
         if (spatial != null) {
-            spatial.setLocalTranslation(origin);
-            spatial.lookAt(origin.add(normalizedDirection), Vector3f.UNIT_Y);
+            spatial.setLocalTranslation(this.origin);
+            spatial.lookAt(this.origin.add(normalizedDirection), Vector3f.UNIT_Y);
         }
     }
 
@@ -58,15 +66,7 @@ public class WeaponProjectileRuntime {
             return damageEvents;
         }
 
-        if (projectileDefinition.getGravityScale() != 0) {
-            velocity.y -= GRAVITY * projectileDefinition.getGravityScale() * tpf;
-        }
-        if (spatial != null) {
-            spatial.move(velocity.mult(tpf));
-            if (velocity.lengthSquared() > 0.0001f) {
-                spatial.lookAt(spatial.getWorldTranslation().add(velocity.normalize()), Vector3f.UNIT_Y);
-            }
-        }
+        updateProjectileMotion(tpf);
 
         String directHit = findDirectHitTarget();
         if (directHit != null) {
@@ -87,6 +87,52 @@ public class WeaponProjectileRuntime {
         }
 
         return damageEvents;
+    }
+
+    private void updateProjectileMotion(float tpf) {
+        if (spatial == null) {
+            return;
+        }
+        if (pathOverride != null && pathOverride.hasUsablePoints()) {
+            Vector3f previous = spatial.getWorldTranslation().clone();
+            Vector3f next = resolvePathPosition(age);
+            spatial.setLocalTranslation(next);
+            Vector3f delta = next.subtract(previous);
+            if (delta.lengthSquared() > 0.0001f) {
+                spatial.lookAt(next.add(delta.normalize()), Vector3f.UNIT_Y);
+            }
+            return;
+        }
+        if (projectileDefinition.getGravityScale() != 0) {
+            velocity.y -= GRAVITY * projectileDefinition.getGravityScale() * tpf;
+        }
+        spatial.move(velocity.mult(tpf));
+        if (velocity.lengthSquared() > 0.0001f) {
+            spatial.lookAt(spatial.getWorldTranslation().add(velocity.normalize()), Vector3f.UNIT_Y);
+        }
+    }
+
+    private Vector3f resolvePathPosition(double pathTime) {
+        List<WeaponProjectilePath.Point> points = pathOverride.getReadOnlyPoints();
+        WeaponProjectilePath.Point previous = points.get(0);
+        WeaponProjectilePath.Point next = points.get(points.size() - 1);
+        for (int i = 1; i < points.size(); i++) {
+            next = points.get(i);
+            if (pathTime <= next.getTime()) {
+                break;
+            }
+            previous = next;
+        }
+        double segmentDuration = Math.max(0.0001, next.getTime() - previous.getTime());
+        float blend = (float) Math.max(0, Math.min(1, (pathTime - previous.getTime()) / segmentDuration));
+        Vector3f a = toVector(previous);
+        Vector3f b = toVector(next);
+        Vector3f result = a.interpolateLocal(b, blend);
+        return pathOverride.isRelativeToOrigin() ? origin.add(result) : result;
+    }
+
+    private Vector3f toVector(WeaponProjectilePath.Point point) {
+        return new Vector3f((float) point.getX(), (float) point.getY(), (float) point.getZ());
     }
 
     private String findDirectHitTarget() {

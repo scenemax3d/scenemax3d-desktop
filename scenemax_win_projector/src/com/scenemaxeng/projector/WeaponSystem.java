@@ -1,5 +1,7 @@
 package com.scenemaxeng.projector;
 
+import com.jme3.math.FastMath;
+import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
@@ -8,6 +10,7 @@ import com.scenemaxeng.common.types.ResourceSetup;
 import com.scenemaxeng.common.weapons.AttackProfile;
 import com.scenemaxeng.common.weapons.DamageProfile;
 import com.scenemaxeng.common.weapons.ProjectileDefinition;
+import com.scenemaxeng.common.weapons.WeaponAttackInstance;
 import com.scenemaxeng.common.weapons.WeaponDefinition;
 import com.scenemaxeng.common.weapons.WeaponInstance;
 import com.scenemaxeng.common.weapons.WeaponValidationResult;
@@ -142,7 +145,18 @@ public class WeaponSystem {
         if (runtime == null) {
             return WeaponAttackResult.failed("weapon_not_equipped", null);
         }
-        WeaponAttackResult result = runtime.beginAttack(inputActionOrAttackId);
+        WeaponAttackResult result = runtime.validateAttackStart(inputActionOrAttackId);
+        if (result.isSuccess()) {
+            AttackProfile attackProfile = runtime.findAttackProfile(inputActionOrAttackId);
+            WeaponAttackInstance attackInstance = createAttackInstance(runtime, slotId, attackProfile);
+            if (!invokeAttackHandler(attackInstance)) {
+                result = WeaponAttackResult.failed("attack_handler_failed", runtime);
+            } else if (attackInstance.isCancelled()) {
+                result = WeaponAttackResult.failed("attack_cancelled", runtime);
+            } else {
+                result = runtime.beginPreparedAttack(attackInstance);
+            }
+        }
         if (result.isSuccess()) {
             feedbackPlayer.playAttackFeedback(runtime);
             emitEvent(WeaponRuntimeEvent.ATTACK_STARTED, runtime, null, null, ammoData(runtime));
@@ -247,7 +261,8 @@ public class WeaponSystem {
 
         EquippedWeaponRuntime runtime = attackResult.getWeapon();
         AttackProfile attackProfile = runtime.getActiveAttackProfile();
-        Vector3f resolvedOrigin = origin != null ? origin.clone() : resolveMuzzleOrigin(runtime);
+        Vector3f resolvedOrigin = applyLaunchOffset(runtime, attackProfile,
+                origin != null ? origin.clone() : resolveMuzzleOrigin(runtime));
         Vector3f resolvedDirection = direction != null && direction.lengthSquared() > 0
                 ? direction.normalize()
                 : resolveForwardDirection(runtime);
@@ -336,8 +351,7 @@ public class WeaponSystem {
     }
 
     private void spawnProjectile(EquippedWeaponRuntime runtime, AttackProfile attackProfile, Vector3f origin, Vector3f direction) {
-        ProjectileDefinition projectileDefinition = runtime.getWeaponDefinition()
-                .findProjectileDefinition(resolveProjectileId(attackProfile));
+        ProjectileDefinition projectileDefinition = resolveProjectileDefinition(runtime, attackProfile);
         if (projectileDefinition == null) {
             app.handleRuntimeError("Cannot fire weapon '" + runtime.getWeaponDefinition().getName() + "': projectile definition was not found.");
             return;
@@ -387,12 +401,49 @@ public class WeaponSystem {
         if (closestTarget == null) {
             return null;
         }
-        ProjectileDefinition projectileDefinition = runtime.getWeaponDefinition()
-                .findProjectileDefinition(resolveProjectileId(attackProfile));
+        ProjectileDefinition projectileDefinition = resolveProjectileDefinition(runtime, attackProfile);
         DamageProfile damageProfile = projectileDefinition != null && projectileDefinition.getDamageProfileOverride() != null
                 ? projectileDefinition.getDamageProfileOverride()
                 : runtime.getWeaponDefinition().getDamageProfile();
         return runtime.createDamageEvent(closestTarget, attackProfile, damageProfile);
+    }
+
+    private WeaponAttackInstance createAttackInstance(EquippedWeaponRuntime runtime, String slotId, AttackProfile attackProfile) {
+        ProjectileDefinition projectileDefinition = attackProfile != null
+                ? runtime.getWeaponDefinition().findProjectileDefinition(resolveProjectileId(attackProfile))
+                : null;
+        WeaponAttackInstance attackInstance = WeaponAttackInstance.from(attackProfile, projectileDefinition);
+        attackInstance.setOwnerCharacterId(runtime.getOwnerCharacterId());
+        attackInstance.setWeaponInstanceId(runtime.getWeaponInstanceId());
+        attackInstance.setSlotId(slotId);
+        return attackInstance;
+    }
+
+    private boolean invokeAttackHandler(WeaponAttackInstance attackInstance) {
+        if (attackInstance == null) {
+            return true;
+        }
+        String handler = attackInstance.getAttackHandlerProcedure();
+        if (handler == null || handler.trim().isEmpty()) {
+            return true;
+        }
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("attack", attackInstance);
+        boolean invoked = app.runFunctionWithParamsNow(handler.trim(), params);
+        if (!invoked) {
+            app.handleRuntimeError("Attack handler '" + handler.trim() + "' was not found or did not complete.");
+        }
+        return invoked;
+    }
+
+    private ProjectileDefinition resolveProjectileDefinition(EquippedWeaponRuntime runtime, AttackProfile attackProfile) {
+        if (attackProfile instanceof WeaponAttackInstance) {
+            ProjectileDefinition override = ((WeaponAttackInstance) attackProfile).getProjectileDefinitionOverride();
+            if (override != null) {
+                return override;
+            }
+        }
+        return runtime.getWeaponDefinition().findProjectileDefinition(resolveProjectileId(attackProfile));
     }
 
     private String resolveProjectileId(AttackProfile attackProfile) {
@@ -410,15 +461,30 @@ public class WeaponSystem {
 
         String modelPath = modelAssetId.trim();
         AssetsMapping assetsMapping = app.getAssetsMapping();
+        ResourceSetup resource = null;
         if (assetsMapping != null) {
-            ResourceSetup resource = assetsMapping.get3DModelsIndex().get(modelPath.toLowerCase(Locale.ROOT));
+            resource = assetsMapping.get3DModelsIndex().get(modelPath.toLowerCase(Locale.ROOT));
             if (resource != null) {
                 modelPath = resource.path;
             }
         }
 
         try {
-            return app.getAssetManager().loadModel(modelPath);
+            Spatial model = app.getAssetManager().loadModel(modelPath);
+            if (resource != null) {
+                model.setLocalScale(
+                        (float) (resource.scaleX * projectileDefinition.getScaleX()),
+                        (float) (resource.scaleY * projectileDefinition.getScaleY()),
+                        (float) (resource.scaleZ * projectileDefinition.getScaleZ()));
+                model.setLocalTranslation(resource.localTranslationX, resource.localTranslationY, resource.localTranslationZ);
+                model.setLocalRotation(new Quaternion().fromAngles(0f, resource.rotateY * FastMath.DEG_TO_RAD, 0f));
+            } else {
+                model.setLocalScale(
+                        (float) projectileDefinition.getScaleX(),
+                        (float) projectileDefinition.getScaleY(),
+                        (float) projectileDefinition.getScaleZ());
+            }
+            return model;
         } catch (Exception ex) {
             app.handleRuntimeError("Projectile '" + projectileDefinition.getName() + "' could not load model '" + modelAssetId + "'.");
             return new Node();
@@ -431,6 +497,25 @@ public class WeaponSystem {
         }
         Spatial owner = app.getEntitySpatial(runtime.getOwnerCharacterId());
         return owner != null ? owner.getWorldTranslation().clone() : Vector3f.ZERO.clone();
+    }
+
+    private Vector3f applyLaunchOffset(EquippedWeaponRuntime runtime, AttackProfile attackProfile, Vector3f origin) {
+        if (origin == null || attackProfile == null) {
+            return origin;
+        }
+        Vector3f localOffset = new Vector3f(
+                (float) attackProfile.getProjectileLaunchOffsetX(),
+                (float) attackProfile.getProjectileLaunchOffsetY(),
+                (float) attackProfile.getProjectileLaunchOffsetZ());
+        if (localOffset.lengthSquared() == 0) {
+            return origin;
+        }
+        Spatial source = runtime.getSpawnedModel() != null
+                ? runtime.getSpawnedModel()
+                : app.getEntitySpatial(runtime.getOwnerCharacterId());
+        return source != null
+                ? origin.add(source.getWorldRotation().mult(localOffset))
+                : origin.add(localOffset);
     }
 
     private Vector3f resolveForwardDirection(EquippedWeaponRuntime runtime) {

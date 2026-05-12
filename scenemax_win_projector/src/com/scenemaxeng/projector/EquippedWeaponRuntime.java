@@ -85,6 +85,30 @@ public class EquippedWeaponRuntime {
         if (profile == null) {
             return WeaponAttackResult.failed("attack_profile_not_found", this);
         }
+        return beginPreparedAttack(profile);
+    }
+
+    public WeaponAttackResult validateAttackStart(String inputActionOrAttackId) {
+        if (currentState == WeaponRuntimeState.RELOADING) {
+            return WeaponAttackResult.failed("weapon_is_reloading", this);
+        }
+        if (isAttackInProgress() || currentState == WeaponRuntimeState.DRAWING || currentState == WeaponRuntimeState.SHEATHING) {
+            return WeaponAttackResult.failed("weapon_is_busy", this);
+        }
+        if (cooldownTimer > 0) {
+            currentState = WeaponRuntimeState.COOLDOWN;
+            return WeaponAttackResult.failed("weapon_is_cooling_down", this);
+        }
+        if (findAttackProfile(inputActionOrAttackId) == null) {
+            return WeaponAttackResult.failed("attack_profile_not_found", this);
+        }
+        return WeaponAttackResult.success(this);
+    }
+
+    public WeaponAttackResult beginPreparedAttack(AttackProfile profile) {
+        if (profile == null) {
+            return WeaponAttackResult.failed("attack_profile_not_found", this);
+        }
         if (!hasAmmoFor(profile)) {
             AmmoDefinition ammo = weaponDefinition.getAmmoDefinition();
             if (ammo != null && ammo.isAutoReload() && beginReload()) {
@@ -149,7 +173,7 @@ public class EquippedWeaponRuntime {
                 resolvedDamageProfile, damage, critical);
     }
 
-    private AttackProfile findAttackProfile(String inputActionOrAttackId) {
+    public AttackProfile findAttackProfile(String inputActionOrAttackId) {
         if (weaponDefinition.getAttackProfiles().isEmpty()) {
             return null;
         }

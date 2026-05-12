@@ -51,6 +51,7 @@ import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.types.ResourceAudio;
 import com.scenemaxeng.common.types.ResourceSetup;
 import com.scenemaxeng.common.weapons.AttackProfile;
+import com.scenemaxeng.common.weapons.ProjectileDefinition;
 import com.scenemaxeng.common.weapons.WeaponEffectSet;
 import com.scenemaxeng.common.weapons.WeaponAttachmentTransform;
 import com.scenemaxeng.common.weapons.WeaponAnimationSet;
@@ -92,9 +93,9 @@ class WeaponPreviewApp extends SceneMaxApp {
     private Spatial weaponSpatial;
     private AppModel holderAppModel;
     private AnimChannel legacyAnimationChannel;
-    private Geometry attackRangeLine;
+    private Spatial attackRangeLine;
     private Geometry targetDummy;
-    private Geometry projectilePreview;
+    private Spatial projectilePreview;
     private Geometry muzzleMarker;
     private Geometry impactMarker;
     private PointLight cameraLight;
@@ -109,6 +110,7 @@ class WeaponPreviewApp extends SceneMaxApp {
     private boolean attackPreviewActive;
     private float attackPreviewTime;
     private AttackProfile attackPreviewProfile;
+    private float attackPreviewDuration;
     private boolean attackSoundPlayed;
     private boolean impactFeedbackPlayed;
     private float feedbackMarkerTime;
@@ -296,6 +298,7 @@ class WeaponPreviewApp extends SceneMaxApp {
         enqueue(() -> {
             attackPreviewProfile = selectedAttack();
             attackPreviewTime = 0f;
+            attackPreviewDuration = previewDurationForAttack(attackPreviewProfile);
             attackPreviewActive = attackPreviewProfile != null;
             attackSoundPlayed = false;
             impactFeedbackPlayed = false;
@@ -319,6 +322,7 @@ class WeaponPreviewApp extends SceneMaxApp {
     void stopAttackPreview() {
         enqueue(() -> {
             stopAttackPreviewNow();
+            updateStatus("Preview stopped.");
             return null;
         });
     }
@@ -741,9 +745,12 @@ class WeaponPreviewApp extends SceneMaxApp {
         attackPreviewActive = false;
         attackPreviewTime = 0f;
         attackPreviewProfile = null;
+        attackPreviewDuration = 0f;
         attackSoundPlayed = false;
         impactFeedbackPlayed = false;
         feedbackMarkerTime = 0f;
+        clearPreviewAudio();
+        stopPreviewAnimation();
         weaponVisualNode.setLocalTranslation(Vector3f.ZERO);
         weaponVisualNode.setLocalRotation(Quaternion.IDENTITY);
         weaponVisualNode.setLocalScale(Vector3f.UNIT_XYZ);
@@ -763,7 +770,7 @@ class WeaponPreviewApp extends SceneMaxApp {
         float startup = Math.max(0.01f, (float) attackPreviewProfile.getStartupTime());
         float active = Math.max(0.01f, (float) attackPreviewProfile.getActiveTime());
         float recovery = Math.max(0.01f, (float) attackPreviewProfile.getRecoveryTime());
-        float total = startup + active + recovery;
+        float total = Math.max(startup + active + recovery, attackPreviewDuration);
         float normalized = FastMath.clamp(attackPreviewTime / total, 0f, 1f);
         boolean hitWindow = attackPreviewTime >= startup && attackPreviewTime <= startup + active;
         if (!attackSoundPlayed) {
@@ -778,8 +785,7 @@ class WeaponPreviewApp extends SceneMaxApp {
                 updateStatus("Impact effect marker: " + impact);
             }
         }
-        String type = attackPreviewProfile.getAttackType() == null ? "" : attackPreviewProfile.getAttackType();
-        if ("projectile".equalsIgnoreCase(type) || "hitscan".equalsIgnoreCase(type)) {
+        if (isProjectilePreviewAttack(attackPreviewProfile)) {
             updateProjectilePreview(normalized);
         } else {
             float swing = (-35f + 85f * normalized) * FastMath.DEG_TO_RAD;
@@ -791,6 +797,20 @@ class WeaponPreviewApp extends SceneMaxApp {
         if (attackPreviewTime >= total) {
             stopAttackPreviewNow();
         }
+    }
+
+    private float previewDurationForAttack(AttackProfile attack) {
+        float startup = attack == null ? 0.01f : Math.max(0.01f, (float) attack.getStartupTime());
+        float active = attack == null ? 0.01f : Math.max(0.01f, (float) attack.getActiveTime());
+        float recovery = attack == null ? 0.01f : Math.max(0.01f, (float) attack.getRecoveryTime());
+        if (isProjectilePreviewAttack(attack)) {
+            ProjectileDefinition projectile = projectileDefinitionForAttack(attack);
+            float range = attack == null ? 1.5f : Math.max(0.25f, (float) attack.getRange());
+            float speed = projectile == null ? 0f : Math.max(0f, (float) projectile.getSpeed());
+            float travelTime = speed > 0f ? range / speed : 0f;
+            return Math.max(1.75f, Math.max(startup + active + recovery, travelTime));
+        }
+        return startup + active + recovery;
     }
 
     private void updateFeedbackMarkers(float tpf) {
@@ -828,23 +848,31 @@ class WeaponPreviewApp extends SceneMaxApp {
 
     private void updateProjectilePreview(float normalized) {
         ensureAttackDebugGeometry(false);
-        Vector3f source = weaponTransformNode.getWorldTranslation();
-        Vector3f target = attackTargetPosition();
-        Vector3f pos = source.clone().interpolateLocal(target, FastMath.clamp(normalized, 0f, 1f));
+        Vector3f target = projectileTargetPosition();
+        Vector3f pos = projectilePositionAt(FastMath.clamp(normalized, 0f, 1f));
         if (projectilePreview != null) {
             projectilePreview.setLocalTranslation(pos);
+            if (pos.distanceSquared(target) > 0.0001f) {
+                projectilePreview.lookAt(target, Vector3f.UNIT_Y);
+            }
         }
     }
 
     private void rebuildAttackDebug(boolean hitWindow) {
         ensureAttackDebugGeometry(hitWindow);
-        Vector3f source = weaponTransformNode.getWorldTranslation();
-        Vector3f target = attackTargetPosition();
+        Vector3f source = isProjectilePreviewAttack(attackPreviewProfile)
+                ? projectileStartPosition()
+                : weaponTransformNode.getWorldTranslation();
+        Vector3f target = isProjectilePreviewAttack(attackPreviewProfile)
+                ? projectileTargetPosition()
+                : attackTargetPosition();
         if (attackRangeLine != null) {
             attackRangeLine.removeFromParent();
         }
-        attackRangeLine = createLine("WeaponPreviewAttackRange", source, target,
-                hitWindow ? new ColorRGBA(1f, 0.62f, 0.15f, 1f) : new ColorRGBA(0.55f, 0.7f, 1f, 1f));
+        ColorRGBA lineColor = hitWindow ? new ColorRGBA(1f, 0.62f, 0.15f, 1f) : new ColorRGBA(0.55f, 0.7f, 1f, 1f);
+        attackRangeLine = isProjectilePreviewAttack(attackPreviewProfile)
+                ? createProjectilePath("WeaponPreviewProjectilePath", lineColor)
+                : createLine("WeaponPreviewAttackRange", source, target, lineColor);
         attackPreviewRoot.attachChild(attackRangeLine);
         if (targetDummy != null) {
             targetDummy.setLocalTranslation(target);
@@ -863,11 +891,131 @@ class WeaponPreviewApp extends SceneMaxApp {
         String type = attackPreviewProfile == null || attackPreviewProfile.getAttackType() == null
                 ? ""
                 : attackPreviewProfile.getAttackType();
-        if (("projectile".equalsIgnoreCase(type) || "hitscan".equalsIgnoreCase(type)) && projectilePreview == null) {
-            projectilePreview = new Geometry("WeaponPreviewProjectile", new Box(0.06f, 0.06f, 0.16f));
-            projectilePreview.setMaterial(colorMaterial(new ColorRGBA(1f, 0.82f, 0.22f, 1f)));
+        if (isProjectilePreviewAttack(attackPreviewProfile) && !"hitscan".equalsIgnoreCase(type) && projectilePreview == null) {
+            projectilePreview = createProjectilePreviewSpatial();
+            attackPreviewRoot.attachChild(projectilePreview);
+        } else if ("hitscan".equalsIgnoreCase(type) && projectilePreview == null) {
+            projectilePreview = createProjectileFallbackSpatial("WeaponPreviewHitscanMarker",
+                    new ColorRGBA(1f, 0.82f, 0.22f, 1f));
             attackPreviewRoot.attachChild(projectilePreview);
         }
+    }
+
+    private Spatial createProjectilePreviewSpatial() {
+        ProjectileDefinition projectileDefinition = projectileDefinitionForAttack(attackPreviewProfile);
+        if (projectileDefinition != null) {
+            ResourceSetup resource = resolveModel(projectileDefinition.getModelAssetId());
+            if (resource != null) {
+                try {
+                    Spatial projectile = assetManager.loadModel(resource.path);
+                    projectile.setName("WeaponPreviewProjectileModel");
+                    projectile.setShadowMode(RenderQueue.ShadowMode.CastAndReceive);
+                    applyReadablePreviewMaterials(projectile);
+                    projectile = wrapProjectileForTravel(projectile, projectileDefinition);
+                    updateStatus("Previewing projectile model: " + projectileDefinition.getName());
+                    return projectile;
+                } catch (Exception ex) {
+                    updateStatus("Projectile model failed to load: " + projectileDefinition.getModelAssetId());
+                }
+            } else if (!safeString(projectileDefinition.getModelAssetId()).isEmpty()) {
+                updateStatus("Projectile model asset not found: " + projectileDefinition.getModelAssetId());
+            }
+        } else {
+            updateStatus("No projectile definition bound to this attack.");
+        }
+        return createProjectileFallbackSpatial("WeaponPreviewProjectileFallback",
+                new ColorRGBA(1f, 0.82f, 0.22f, 1f));
+    }
+
+    private Spatial createProjectileFallbackSpatial(String name, ColorRGBA color) {
+        Geometry fallback = new Geometry(name, new Box(0.06f, 0.06f, 0.16f));
+        fallback.setMaterial(colorMaterial(color));
+        return fallback;
+    }
+
+    private Spatial wrapProjectileForTravel(Spatial projectile, ProjectileDefinition projectileDefinition) {
+        Node root = new Node("WeaponPreviewProjectileRoot");
+        root.attachChild(projectile);
+        root.setLocalScale(
+                Math.max(0.001f, (float) projectileDefinition.getScaleX()),
+                Math.max(0.001f, (float) projectileDefinition.getScaleY()),
+                Math.max(0.001f, (float) projectileDefinition.getScaleZ()));
+        return root;
+    }
+
+    private Vector3f projectileStartPosition() {
+        Vector3f start = weaponTransformNode.getWorldTranslation().clone();
+        AttackProfile attack = attackPreviewProfile;
+        Vector3f localOffset = new Vector3f(
+                attack == null ? 0f : (float) attack.getProjectileLaunchOffsetX(),
+                attack == null ? 0f : (float) attack.getProjectileLaunchOffsetY(),
+                attack == null ? 0.35f : (float) attack.getProjectileLaunchOffsetZ());
+        return start.add(weaponTransformNode.getWorldRotation().mult(localOffset));
+    }
+
+    private Vector3f projectileTargetPosition() {
+        float range = attackPreviewProfile == null ? 1.5f : Math.max(0.25f, (float) attackPreviewProfile.getRange());
+        return projectileStartPosition().add(holderForward().mult(range));
+    }
+
+    private Vector3f projectilePositionAt(float normalized) {
+        Vector3f start = projectileStartPosition();
+        Vector3f forward = holderForward();
+        float range = attackPreviewProfile == null ? 1.5f : Math.max(0.25f, (float) attackPreviewProfile.getRange());
+        Vector3f position = start.add(forward.mult(range * normalized));
+        ProjectileDefinition projectile = projectileDefinitionForAttack(attackPreviewProfile);
+        if (projectile != null && projectile.getGravityScale() != 0) {
+            float duration = Math.max(0.01f, projectileTravelDuration());
+            float time = duration * normalized;
+            position.y -= 0.5f * 9.81f * (float) projectile.getGravityScale() * time * time;
+        }
+        return position;
+    }
+
+    private float projectileTravelDuration() {
+        ProjectileDefinition projectile = projectileDefinitionForAttack(attackPreviewProfile);
+        float range = attackPreviewProfile == null ? 1.5f : Math.max(0.25f, (float) attackPreviewProfile.getRange());
+        float speed = projectile == null ? 0f : Math.max(0f, (float) projectile.getSpeed());
+        return speed > 0f ? range / speed : Math.max(0.01f, attackPreviewDuration);
+    }
+
+    private Vector3f holderForward() {
+        Vector3f forward = holderWrapper.getWorldRotation().mult(Vector3f.UNIT_Z).normalizeLocal();
+        if (forward.lengthSquared() < 0.0001f) {
+            return Vector3f.UNIT_Z.clone();
+        }
+        return forward;
+    }
+
+    private boolean isProjectilePreviewAttack(AttackProfile attack) {
+        if (attack == null) {
+            return false;
+        }
+        String type = safeString(attack.getAttackType());
+        if ("projectile".equalsIgnoreCase(type) || "hitscan".equalsIgnoreCase(type)) {
+            return true;
+        }
+        return !safeString(attack.getProjectileDefinitionId()).isEmpty() || projectileDefinitionForAttack(attack) != null;
+    }
+
+    private ProjectileDefinition projectileDefinitionForAttack(AttackProfile attack) {
+        if (weaponDefinition == null || attack == null) {
+            return null;
+        }
+        String projectileId = safeString(attack.getProjectileDefinitionId());
+        if (projectileId.isEmpty()) {
+            projectileId = safeString(attack.getId());
+        }
+        if (projectileId.isEmpty()) {
+            return null;
+        }
+        for (ProjectileDefinition projectile : weaponDefinition.getProjectileDefinitions()) {
+            if (projectile != null && projectile.getId() != null
+                    && projectile.getId().trim().equalsIgnoreCase(projectileId)) {
+                return projectile;
+            }
+        }
+        return null;
     }
 
     private Vector3f attackTargetPosition() {
@@ -876,11 +1024,21 @@ class WeaponPreviewApp extends SceneMaxApp {
         if (origin.lengthSquared() < 0.0001f) {
             origin = weaponTransformNode.getWorldTranslation().clone();
         }
-        Vector3f forward = holderWrapper.getWorldRotation().mult(Vector3f.UNIT_Z).normalizeLocal();
-        if (forward.lengthSquared() < 0.0001f) {
-            forward = Vector3f.UNIT_Z.clone();
-        }
+        Vector3f forward = holderForward();
         return origin.add(forward.mult(range)).add(0f, 0.55f, 0f);
+    }
+
+    private Spatial createProjectilePath(String name, ColorRGBA color) {
+        Node path = new Node(name);
+        Vector3f previous = projectilePositionAt(0f);
+        int segments = 16;
+        for (int i = 1; i <= segments; i++) {
+            float t = i / (float) segments;
+            Vector3f next = projectilePositionAt(t);
+            path.attachChild(createLine(name + "_" + i, previous, next, color));
+            previous = next;
+        }
+        return path;
     }
 
     private Geometry createLine(String name, Vector3f start, Vector3f end, ColorRGBA color) {
@@ -951,6 +1109,31 @@ class WeaponPreviewApp extends SceneMaxApp {
             }
         }
         previewAudioNodes.clear();
+    }
+
+    private void stopPreviewAnimation() {
+        AnimComposer composer = findAnimComposer(holderSpatial);
+        if (composer != null) {
+            try {
+                composer.removeCurrentAction();
+                composer.reset();
+            } catch (Exception ignored) {
+            }
+        }
+        if (holderAppModel != null && holderAppModel.getAnimComposer() != null
+                && holderAppModel.getAnimComposer() != composer) {
+            try {
+                holderAppModel.getAnimComposer().removeCurrentAction();
+                holderAppModel.getAnimComposer().reset();
+            } catch (Exception ignored) {
+            }
+        }
+        if (legacyAnimationChannel != null) {
+            try {
+                legacyAnimationChannel.reset(true);
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     private void collectAttachmentPoints(Spatial spatial, Set<String> names) {
