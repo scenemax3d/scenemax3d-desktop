@@ -24,6 +24,8 @@ For AI-assisted workflows, see the built-in MCP and Local Gemma guide in [`docs/
 
 For a tool-by-tool reference covering purpose, common inputs, outputs, and agent-facing usage patterns, see [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md).
 
+For weapon authoring and runtime equip/posture examples, see [`docs/weapons-designer.md`](docs/weapons-designer.md).
+
 For hands-on examples, see the demo projects guide in [`projects/readme.md`](projects/readme.md), which walks through the sample games and explains how they are structured.
 
 ## Ready-to-Use Binaries

@@ -608,8 +608,12 @@ action_operation
    | array_push # arrayPush
    | array_pop # arrayPop
    | array_clear #arrayClear
+   | weapon_action # weaponAction
    ;
 
+weapon_action : weapon_equip | weapon_posture ;
+weapon_equip : var_decl '.' Weapon Equals (Empty | logical_expression) ;
+weapon_posture : var_decl '.' Weapon '.' Posture Equals logical_expression ;
 
 replay : var_decl '.' Replay replay_options (Having replay_attributes)? ;
 replay_attributes : replay_attribute (and_expr replay_attribute)* ;
@@ -930,7 +934,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
     Screen | Scene | Environment | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
-    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error;
+    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Weapon | Posture | Empty;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
@@ -1260,6 +1264,9 @@ When : 'When' | 'when' ;
 After : 'After' | 'after' ;
 Collides : 'Collides' | 'collides' ;
 With : 'With' | 'with' ;
+Weapon : 'Weapon' | 'weapon' ;
+Posture : 'Posture' | 'posture' ;
+Empty : 'Empty' | 'empty' ;
 
 /////////////////////////////////// LOGICAL EXPRESSION TOKENS /////////////////
 OR    :     '||' | 'or' | 'Or';

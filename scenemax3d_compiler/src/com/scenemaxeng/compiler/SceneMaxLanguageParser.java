@@ -2843,6 +2843,34 @@ public class SceneMaxLanguageParser implements IParser {
                 return cmd;
             }
 
+            @Override
+            public ActionStatementBase visitWeaponAction(SceneMaxParser.WeaponActionContext ctx) {
+                WeaponCommand cmd = new WeaponCommand();
+                SceneMaxParser.Weapon_actionContext weapon = ctx.weapon_action();
+                if (weapon.weapon_equip() != null) {
+                    SceneMaxParser.Weapon_equipContext equip = weapon.weapon_equip();
+                    cmd.ownerVarName = equip.var_decl().getText();
+                    if (equip.Empty() != null) {
+                        cmd.action = WeaponCommand.ACTION_UNEQUIP;
+                    } else {
+                        cmd.action = WeaponCommand.ACTION_EQUIP;
+                        cmd.weaponNameExpr = equip.logical_expression();
+                    }
+                } else if (weapon.weapon_posture() != null) {
+                    cmd.action = WeaponCommand.ACTION_SET_POSTURE;
+                    cmd.ownerVarName = weapon.weapon_posture().var_decl().getText();
+                    cmd.postureNameExpr = weapon.weapon_posture().logical_expression();
+                }
+
+                VariableDef owner = prg.getVar(cmd.ownerVarName);
+                if (owner == null) {
+                    prg.syntaxErrors.add(_sourceFileName + ": line " + ctx.start.getLine() + ", weapon owner '" + cmd.ownerVarName + "' not exists");
+                } else {
+                    cmd.varDef = owner;
+                }
+                return cmd;
+            }
+
             public ActionStatementBase visitCameraModifierApply(SceneMaxParser.CameraModifierApplyContext ctx) {
                 CameraModifierApplyCommand cmd = new CameraModifierApplyCommand();
                 cmd.targetVar = ctx.camera_modifier_apply().var_decl(0).getText();

@@ -9,6 +9,7 @@ import com.scenemax.designer.material.MaterialDesignerPanel;
 import com.scenemax.designer.shader.EnvironmentShaderDesignerPanel;
 import com.scenemax.designer.shader.ShaderDesignerPanel;
 import com.scenemax.designer.ui.designer.UIDesignerPanel;
+import com.scenemax.designer.weapon.WeaponDesignerPanel;
 import org.apache.commons.io.FileUtils;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 
@@ -45,6 +46,8 @@ public class EditorTabPanel extends JPanel {
         EnvironmentShaderDesignerPanel environmentShaderDesignerPanel;
         boolean isMaterialDesignerTab;
         MaterialDesignerPanel materialDesignerPanel;
+        boolean isWeaponDesignerTab;
+        WeaponDesignerPanel weaponDesignerPanel;
         boolean isAnimationImportTab;
         ImportAnimationPanel animationImportPanel;
         boolean isPluginViewTab;
@@ -69,6 +72,8 @@ public class EditorTabPanel extends JPanel {
             this.environmentShaderDesignerPanel = null;
             this.isMaterialDesignerTab = false;
             this.materialDesignerPanel = null;
+            this.isWeaponDesignerTab = false;
+            this.weaponDesignerPanel = null;
             this.isAnimationImportTab = false;
             this.animationImportPanel = null;
             this.isPluginViewTab = false;
@@ -183,6 +188,8 @@ public class EditorTabPanel extends JPanel {
                 name = "\u2601 " + name; // cloud icon prefix
             } else if (tabData.isMaterialDesignerTab) {
                 name = "\u25C8 " + name;
+            } else if (tabData.isWeaponDesignerTab) {
+                name = "\u2694 " + name;
             } else if (tabData.isAnimationImportTab) {
                 name = "\u25B6 " + name;
             } else if (tabData.isPluginViewTab) {
@@ -470,6 +477,38 @@ public class EditorTabPanel extends JPanel {
         switchToTab(tabData);
     }
 
+    public void openWeaponDesignerFile(String filePath, WeaponDesignerPanel panel) {
+        String normalizedPath = new File(filePath).getAbsolutePath();
+
+        if (tabButtons.containsKey(normalizedPath)) {
+            TabData existing = null;
+            for (TabData td : tabs) {
+                if (td.filePath.equals(normalizedPath)) {
+                    existing = td;
+                    break;
+                }
+            }
+            if (existing != null) {
+                switchToTab(existing);
+                return;
+            }
+        }
+
+        TabData tabData = new TabData(normalizedPath, "");
+        tabData.isWeaponDesignerTab = true;
+        tabData.weaponDesignerPanel = panel;
+        tabs.add(tabData);
+
+        TabButton btn = new TabButton(tabData);
+        btn.updateTitle();
+        tabButtons.put(normalizedPath, btn);
+        tabBar.add(btn);
+        tabBar.revalidate();
+        tabBar.repaint();
+
+        switchToTab(tabData);
+    }
+
     public void openAnimationImportFile(String filePath, ImportAnimationPanel panel) {
         String normalizedPath = new File(filePath).getAbsolutePath();
 
@@ -582,6 +621,11 @@ public class EditorTabPanel extends JPanel {
                 newTab.materialDesignerPanel.activatePanel();
                 centerContainer.add(newTab.materialDesignerPanel, BorderLayout.CENTER);
             }
+        } else if (newTab.isWeaponDesignerTab) {
+            if (newTab.weaponDesignerPanel != null) {
+                newTab.weaponDesignerPanel.activatePanel();
+                centerContainer.add(newTab.weaponDesignerPanel, BorderLayout.CENTER);
+            }
         } else if (newTab.isAnimationImportTab) {
             if (newTab.animationImportPanel != null) {
                 centerContainer.add(newTab.animationImportPanel, BorderLayout.CENTER);
@@ -689,6 +733,13 @@ public class EditorTabPanel extends JPanel {
             return;
         }
 
+        if (currentTab.isWeaponDesignerTab) {
+            if (currentTab.weaponDesignerPanel != null) {
+                currentTab.weaponDesignerPanel.deactivatePanel();
+            }
+            return;
+        }
+
         if (currentTab.isAnimationImportTab) {
             return;
         }
@@ -740,6 +791,10 @@ public class EditorTabPanel extends JPanel {
         } else if (tabData.isMaterialDesignerTab) {
             if (tabData.materialDesignerPanel != null) {
                 tabData.materialDesignerPanel.deactivatePanel();
+            }
+        } else if (tabData.isWeaponDesignerTab) {
+            if (tabData.weaponDesignerPanel != null) {
+                tabData.weaponDesignerPanel.deactivatePanel();
             }
         } else if (tabData.isAnimationImportTab) {
             // No shared JME context to deactivate.
@@ -844,6 +899,17 @@ public class EditorTabPanel extends JPanel {
         if (activeTab.isMaterialDesignerTab) {
             if (activeTab.materialDesignerPanel != null) {
                 activeTab.materialDesignerPanel.saveDocument();
+            }
+            activeTab.dirty = false;
+            TabButton btn = tabButtons.get(activeTab.filePath);
+            if (btn != null) {
+                btn.updateTitle();
+            }
+            return;
+        }
+        if (activeTab.isWeaponDesignerTab) {
+            if (activeTab.weaponDesignerPanel != null) {
+                activeTab.weaponDesignerPanel.saveDocument();
             }
             activeTab.dirty = false;
             TabButton btn = tabButtons.get(activeTab.filePath);
@@ -971,6 +1037,7 @@ public class EditorTabPanel extends JPanel {
                     && !td.isEffekseerDesignerTab
                     && !td.isShaderDesignerTab && !td.isEnvironmentShaderDesignerTab
                     && !td.isMaterialDesignerTab
+                    && !td.isWeaponDesignerTab
                     && !td.isAnimationImportTab) {
                 td.content = newContent;
                 td.dirty = false;
@@ -1046,6 +1113,12 @@ public class EditorTabPanel extends JPanel {
                 }
                 switchToTab(tab);
                 tab.materialDesignerPanel.reloadFromDisk();
+            } else if (tab.isWeaponDesignerTab) {
+                if (tab.weaponDesignerPanel == null) {
+                    return false;
+                }
+                switchToTab(tab);
+                tab.weaponDesignerPanel.reloadFromDisk();
             } else if (tab.isAnimationImportTab) {
                 return false;
             } else {
@@ -1098,6 +1171,8 @@ public class EditorTabPanel extends JPanel {
             tab.environmentShaderDesignerPanel.discardEditorState();
         } else if (tab.isMaterialDesignerTab && tab.materialDesignerPanel != null) {
             tab.materialDesignerPanel.discardEditorState();
+        } else if (tab.isWeaponDesignerTab && tab.weaponDesignerPanel != null) {
+            tab.weaponDesignerPanel.discardEditorState();
         }
     }
 
@@ -1122,6 +1197,7 @@ public class EditorTabPanel extends JPanel {
                 && !tab.isShaderDesignerTab
                 && !tab.isEnvironmentShaderDesignerTab
                 && !tab.isMaterialDesignerTab
+                && !tab.isWeaponDesignerTab
                 && !tab.isAnimationImportTab;
     }
 
@@ -1146,6 +1222,9 @@ public class EditorTabPanel extends JPanel {
         }
         if (tab.isMaterialDesignerTab) {
             return "material_designer";
+        }
+        if (tab.isWeaponDesignerTab) {
+            return "weapon_designer";
         }
         if (tab.isAnimationImportTab) {
             return "animation_import";
@@ -1250,6 +1329,11 @@ public class EditorTabPanel extends JPanel {
                 toClose.materialDesignerPanel.clearAndDeactivatePanel();
                 toClose.materialDesignerPanel = null;
                 toClose.isMaterialDesignerTab = false;
+            }
+            if (deleting && toClose.isWeaponDesignerTab && toClose.weaponDesignerPanel != null) {
+                toClose.weaponDesignerPanel.clearAndDeactivatePanel();
+                toClose.weaponDesignerPanel = null;
+                toClose.isWeaponDesignerTab = false;
             }
             if (deleting && toClose.isAnimationImportTab) {
                 toClose.animationImportPanel = null;

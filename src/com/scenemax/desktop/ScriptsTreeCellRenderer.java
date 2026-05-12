@@ -19,6 +19,7 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
     private static final ImageIcon ICON_SHADER_DESIGNER = createShaderDesignerIcon();
     private static final ImageIcon ICON_ENVIRONMENT_SHADER_DESIGNER = createEnvironmentShaderDesignerIcon();
     private static final ImageIcon ICON_MATERIAL_DESIGNER = createMaterialDesignerIcon();
+    private static final ImageIcon ICON_WEAPON_DESIGNER = createWeaponDesignerIcon();
 
     private JLabel label;
 
@@ -53,6 +54,8 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
             label.setIcon(ICON_ENVIRONMENT_SHADER_DESIGNER);
         } else if (name.endsWith(".mat")) {
             label.setIcon(ICON_MATERIAL_DESIGNER);
+        } else if (name.endsWith(".smweapon")) {
+            label.setIcon(ICON_WEAPON_DESIGNER);
         } else if (name.endsWith(".cs")) {
             label.setIcon(ICON_CSHARP);
         } else if (name.equals("main")) {
@@ -62,6 +65,21 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
         }
 
         return label;
+    }
+
+    private static ImageIcon createWeaponDesignerIcon() {
+        BufferedImage img = new BufferedImage(24, 24, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setStroke(new BasicStroke(2.1f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.setColor(new Color(220, 225, 235));
+        g.drawLine(7, 18, 18, 7);
+        g.drawLine(14, 5, 19, 10);
+        g.setColor(new Color(245, 172, 76));
+        g.drawLine(6, 14, 10, 18);
+        g.fillOval(4, 17, 4, 4);
+        g.dispose();
+        return new ImageIcon(img);
     }
 
     /**
