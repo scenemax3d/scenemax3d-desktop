@@ -252,6 +252,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private RuntimeCameraSystemValue activeCameraSystemValue = null;
     private final Map<String, Boolean> pendingModelVisibility = new HashMap<>();
     private final Map<String, SwitchModeCommand> pendingModelSwitchModes = new HashMap<>();
+    private WeaponSystem weaponSystem;
 
     // UI system manager for .smui documents
     private com.scenemaxeng.common.ui.widget.UIManager uiManager;
@@ -453,6 +454,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 String projFolder = "./projects/"+this.projectName;
                 assetsMapping = new AssetsMapping(projFolder+"/resources");
                 assetsMapping.loadCinematicsFromProject(projFolder);
+                assetsMapping.loadWeaponsFromProject(projFolder);
                 assetManager.registerLocator(new File(projFolder+"/resources").getCanonicalPath(), FileLocator.class);
             } else if(workingFolder!=null) {
                 this.logger.log(Level.INFO, "SimpleInitApp workingFolder = "+this.workingFolder);
@@ -463,6 +465,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                     assetsMapping = new AssetsMapping(resourcesFolder.getAbsolutePath());
                     assetManager.registerLocator(resourcesFolder.getCanonicalPath(), FileLocator.class);
                     assetsMapping.loadCinematicsFromProject(projFolder);
+                    assetsMapping.loadWeaponsFromProject(projFolder);
                 }
                 if (assetsMapping == null) {
                     assetsMapping = new AssetsMapping();
@@ -523,6 +526,102 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     public AssetsMapping getAssetsMapping() {
         return SceneMaxApp.assetsMapping;
+    }
+
+    public WeaponSystem getWeaponSystem() {
+        if (weaponSystem == null) {
+            weaponSystem = new WeaponSystem(this);
+        }
+        return weaponSystem;
+    }
+
+    public EquippedWeaponRuntime equipWeapon(String ownerVarName, String weaponNameOrId) {
+        return equipWeapon(ownerVarName, weaponNameOrId, "rightHand");
+    }
+
+    public EquippedWeaponRuntime equipWeapon(String ownerVarName, String weaponNameOrId, String slotId) {
+        return getWeaponSystem().equipWeapon(ownerVarName, weaponNameOrId, slotId);
+    }
+
+    public boolean unequipWeapon(String ownerVarName) {
+        return unequipWeapon(ownerVarName, "rightHand");
+    }
+
+    public boolean unequipWeapon(String ownerVarName, String slotId) {
+        return getWeaponSystem().unequipWeapon(ownerVarName, slotId);
+    }
+
+    public EquippedWeaponRuntime getEquippedWeapon(String ownerVarName, String slotId) {
+        return getWeaponSystem().getEquippedWeapon(ownerVarName, slotId);
+    }
+
+    public WeaponAttackResult beginWeaponAttack(String ownerVarName, String inputActionOrAttackId) {
+        return getWeaponSystem().beginAttack(ownerVarName, inputActionOrAttackId);
+    }
+
+    public WeaponAttackResult beginWeaponAttack(String ownerVarName, String slotId, String inputActionOrAttackId) {
+        return getWeaponSystem().beginAttack(ownerVarName, slotId, inputActionOrAttackId);
+    }
+
+    public boolean reloadWeapon(String ownerVarName) {
+        return getWeaponSystem().beginReload(ownerVarName);
+    }
+
+    public boolean reloadWeapon(String ownerVarName, String slotId) {
+        return getWeaponSystem().beginReload(ownerVarName, slotId);
+    }
+
+    public WeaponDamageEvent resolveWeaponHit(String ownerVarName, String targetVarName) {
+        return getWeaponSystem().resolveHit(ownerVarName, targetVarName);
+    }
+
+    public WeaponDamageEvent resolveWeaponHit(String ownerVarName, String slotId, String targetVarName) {
+        return getWeaponSystem().resolveHit(ownerVarName, slotId, targetVarName);
+    }
+
+    public WeaponDamageEvent getLastWeaponDamageEvent(String ownerVarName) {
+        return getWeaponSystem().getLastDamageEvent(ownerVarName);
+    }
+
+    public WeaponRuntimeEvent getLastWeaponEvent() {
+        return getWeaponSystem().getLastEvent();
+    }
+
+    public WeaponRuntimeEvent getLastWeaponEvent(String eventType) {
+        return getWeaponSystem().getLastEvent(eventType);
+    }
+
+    public boolean hasWeaponEvent(String eventType) {
+        return getWeaponSystem().hasEvent(eventType);
+    }
+
+    public java.util.List<WeaponRuntimeEvent> getQueuedWeaponEvents() {
+        return getWeaponSystem().getQueuedEvents();
+    }
+
+    public java.util.List<WeaponRuntimeEvent> drainWeaponEvents() {
+        return getWeaponSystem().drainEvents();
+    }
+
+    public org.json.JSONArray drainWeaponEventsAsJSON() {
+        return getWeaponSystem().drainEventsAsJSON();
+    }
+
+    public WeaponAttackResult fireWeapon(String ownerVarName, String inputActionOrAttackId) {
+        return getWeaponSystem().fireWeapon(ownerVarName, inputActionOrAttackId);
+    }
+
+    public WeaponAttackResult fireWeapon(String ownerVarName, String slotId, String inputActionOrAttackId,
+                                         Vector3f origin, Vector3f direction) {
+        return getWeaponSystem().fireWeapon(ownerVarName, slotId, inputActionOrAttackId, origin, direction);
+    }
+
+    public WeaponAttackResult fireWeaponAt(String ownerVarName, String targetVarName, String inputActionOrAttackId) {
+        return getWeaponSystem().fireWeaponAt(ownerVarName, targetVarName, inputActionOrAttackId);
+    }
+
+    public WeaponAttackResult fireWeaponAt(String ownerVarName, String slotId, String targetVarName, String inputActionOrAttackId) {
+        return getWeaponSystem().fireWeaponAt(ownerVarName, slotId, targetVarName, inputActionOrAttackId);
     }
 
     public AssetManager getAssetManager() {
@@ -822,6 +921,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     public void clearScene() {
         resetTransientCameraRuntimeState();
+        if (weaponSystem != null) {
+            weaponSystem.clear();
+        }
         this.clearThreads();
         groups.clear();
         _controllers.clear();
@@ -961,6 +1063,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
      */
     public void clearSceneAll() {
         resetTransientCameraRuntimeState();
+        if (weaponSystem != null) {
+            weaponSystem.clear();
+        }
         this.clearThreads();
         groups.clear();
         _controllers.clear();
@@ -4909,6 +5014,25 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     }
 
+    public void playRuntimeAnimation(String targetVar, String animationName, double speed) {
+        if (targetVar == null || animationName == null || animationName.trim().isEmpty()) {
+            return;
+        }
+        AppModel model = models.get(targetVar);
+        if (model == null) {
+            return;
+        }
+        SceneMaxBaseController host = new SceneMaxBaseController();
+        host.app = this;
+        AppModelAnimationController controller = new AppModelAnimationController(host);
+        controller.animate(model, animationName.trim(), Double.toString(speed > 0 ? speed : 1.0));
+    }
+
+    public Vector3f getEntityWorldPosition(String targetVar) {
+        Spatial spatial = getEntitySpatial(targetVar);
+        return spatial != null ? spatial.getWorldTranslation().clone() : null;
+    }
+
     @Override
     public void spritePlayFrames(String varName, float frame, SceneMaxScope scope) {
         SpriteEmitter sprite = sprites.get(varName);
@@ -4981,6 +5105,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             errs.add(this.runTimeError);
             showFloatingMessage(errs,"Close Application",0);
             return;
+        }
+
+        if (weaponSystem != null && !scenePaused) {
+            weaponSystem.update(tpf);
         }
 
         if(_controllers.size()==this.eventHandlersCount) {
@@ -5881,6 +6009,16 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 logAudioUnavailableOnce(ex);
             }
         }
+    }
+
+    public void playRuntimeSound(String sound) {
+        if (sound == null || sound.trim().isEmpty()) {
+            return;
+        }
+        PlayStopSoundCommand cmd = new PlayStopSoundCommand();
+        cmd.sound = sound.trim();
+        cmd.loop = false;
+        playSound(cmd.sound, cmd);
     }
 
     private boolean ensureAudioContextOnThisThread() {
@@ -7954,6 +8092,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         addEntityInstances(instances, lights.values());
         addEntityInstances(instances, geoName2EntityInst.values());
         return instances.values();
+    }
+
+    public Collection<EntityInstBase> getRuntimeEntityInstances() {
+        return getAllEntityInstances();
     }
 
     private void addEntityInstances(Map<String, EntityInstBase> target, Collection<? extends EntityInstBase> source) {
@@ -10072,6 +10214,34 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         if (inst.node.getParent() == null && inst.visible) {
             rootNode.attachChild(inst.node);
         }
+    }
+
+    public void playRuntimeEffect(String effectName, Vector3f position) {
+        String runtimeEffectName = resolveRuntimeEffekseerName(effectName);
+        if (runtimeEffectName == null) {
+            return;
+        }
+        Double x = position != null ? (double) position.x : null;
+        Double y = position != null ? (double) position.y : null;
+        Double z = position != null ? (double) position.z : null;
+        playEffekseerEffect(runtimeEffectName, x, y, z, null, 1.0f, new float[] {0f, 0f, 0f, 0f});
+    }
+
+    private String resolveRuntimeEffekseerName(String effectName) {
+        if (effectName == null || effectName.trim().isEmpty()) {
+            return null;
+        }
+        String trimmed = effectName.trim();
+        if (effekseerEffects.containsKey(trimmed)) {
+            return trimmed;
+        }
+        String prefix = trimmed + "@";
+        for (String key : effekseerEffects.keySet()) {
+            if (key.equalsIgnoreCase(trimmed) || key.toLowerCase().startsWith(prefix.toLowerCase())) {
+                return key;
+            }
+        }
+        return null;
     }
 
     public void renderEffekseerEffects(float tpf, ViewPort viewPort) {

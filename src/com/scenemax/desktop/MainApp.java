@@ -24,6 +24,7 @@ import com.scenemax.designer.shader.ShaderDesignerPanel;
 import com.scenemax.designer.shader.ShaderDocument;
 import com.scenemax.designer.shader.ShaderTemplatePreset;
 import com.scenemax.designer.ui.designer.UIDesignerPanel;
+import com.scenemax.designer.weapon.WeaponDesignerPanel;
 import com.scenemax.desktop.ai.SceneMaxAutomationBootstrap;
 import com.scenemax.desktop.ai.SceneMaxToolContext;
 import com.scenemax.desktop.ai.SceneMaxToolRegistry;
@@ -45,6 +46,7 @@ import com.scenemaxeng.compiler.MacroFilter;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
 import com.scenemaxeng.common.types.*;
+import com.scenemaxeng.common.weapons.WeaponDefinition;
 import com.scenemaxeng.compiler.Utils;
 import org.apache.commons.io.FileUtils;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
@@ -289,6 +291,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         || active.isEffekseerDesignerTab
                         || active.isShaderDesignerTab || active.isEnvironmentShaderDesignerTab
                         || active.isMaterialDesignerTab
+                        || active.isWeaponDesignerTab
                         || active.isAnimationImportTab;
                 textArea.setEnabled(!visualDesignerTab);
                 textAreaRTL.setEnabled(!visualDesignerTab);
@@ -573,6 +576,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     openProjectInventory();
                 } else if (cmd.equals("create_material_document")) {
                     createNewMaterialDocument(getSelectedScriptsFolder().getAbsolutePath());
+                } else if (cmd.equals("create_weapon_document")) {
+                    createNewWeaponDocument(getSelectedScriptsFolder().getAbsolutePath());
                 } else if (cmd.equals("font_generator")) {
                     FontGeneratorDialog dlg = new FontGeneratorDialog(MainApp.this);
                     dlg.setLocationRelativeTo(MainApp.this);
@@ -1520,6 +1525,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     createNewShaderDocument(filePath);
                 } else if (cmd.equals("new_material_document")) {
                     createNewMaterialDocument(filePath);
+                } else if (cmd.equals("new_weapon_document")) {
+                    createNewWeaponDocument(filePath);
                 } else if (cmd.equals("new_environment_shader_document")) {
                     createNewEnvironmentShaderDocument(filePath);
                 } else if (cmd.equals("clean_backup_files")) {
@@ -1573,9 +1580,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         boolean isShaderDesigner = f.getName().toLowerCase().endsWith(".smshader");
                         boolean isEnvironmentShaderDesigner = f.getName().toLowerCase().endsWith(".smenvshader");
                         boolean isMaterialDesigner = f.getName().toLowerCase().endsWith(".mat");
+                        boolean isWeaponDesigner = f.getName().toLowerCase().endsWith(WeaponDefinition.FILE_EXTENSION);
                         editorTabPanel.closeTabByPath(filePath,
                                 isDesigner || isUIDesigner || isEffekseerDesigner || isShaderDesigner
-                                        || isEnvironmentShaderDesigner || isMaterialDesigner);
+                                        || isEnvironmentShaderDesigner || isMaterialDesigner || isWeaponDesigner);
 
                         // If this is a .smdesign file, also delete its companion .code, _init.code
                         // and _end.code files and clean up any DB references (open_tabs)
@@ -1792,6 +1800,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         addScriptsTreePopupMenuItem("Create Designer Document", "new_designer", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create UI Document", "new_ui_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Material Document", "new_material_document", popup, popupActionListener, true, false, file);
+        addScriptsTreePopupMenuItem("Create Weapon", "new_weapon_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Shader Document", "new_shader_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Environment Shader Document", "new_environment_shader_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Sub Folder...", "create_sub_folder", popup, popupActionListener, true, false, file);
@@ -2302,7 +2311,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 || lowerPath.endsWith(".smeffectdesign")
                 || lowerPath.endsWith(".smshader")
                 || lowerPath.endsWith(".smenvshader")
-                || lowerPath.endsWith(".mat");
+                || lowerPath.endsWith(".mat")
+                || lowerPath.endsWith(WeaponDefinition.FILE_EXTENSION);
     }
 
     private boolean isAssetSensitiveDocument(File file) {
@@ -2774,6 +2784,55 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         openLastTreeNode();
     }
 
+    private void createNewWeaponDocument(String path) {
+        String docName = (String) JOptionPane.showInputDialog(
+                null,
+                "Type new weapon name",
+                "Weapon Name",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                null,
+                "");
+
+        if (docName == null || docName.trim().length() == 0) {
+            return;
+        }
+
+        String[] templates = {"Sword", "Pistol", "Bow", "Magic Staff"};
+        String template = (String) JOptionPane.showInputDialog(
+                null,
+                "Choose a starter template",
+                "Weapon Template",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                templates,
+                templates[0]
+        );
+        if (template == null) {
+            template = templates[0];
+        }
+
+        String displayName = docName.trim();
+        String fileName = displayName;
+        if (!fileName.toLowerCase(Locale.ROOT).endsWith(WeaponDefinition.FILE_EXTENSION)) {
+            fileName = fileName + WeaponDefinition.FILE_EXTENSION;
+        }
+
+        File f = new File(path + "/" + fileName);
+        try {
+            WeaponDefinition.writeTemplateFile(f, displayName, template);
+        } catch (IOException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(null, "Error creating weapon: " + e.getMessage(), "Weapon Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        File parentDir = new File(path);
+        saveSelectedTreeNodePosition(parentDir.getPath(), fileName);
+        loadScriptsFolder();
+        openLastTreeNode();
+    }
+
     private void openUIDesignerDocument(File f) {
         // If this UI designer file is already open, just switch to its tab
         if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
@@ -2901,6 +2960,28 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         });
 
         editorTabPanel.openMaterialDesignerFile(f.getAbsolutePath(), materialPanel);
+
+        lastSelectedFilePath = f.getAbsolutePath();
+        lastSelectedNodeIsFile = true;
+        btnRunScript.setEnabled(false);
+
+        saveSelectedTreeNodePosition(f.getParentFile().getPath(), f.getName());
+    }
+
+    private void openWeaponDesignerDocument(File f) {
+        if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
+            editorTabPanel.openWeaponDesignerFile(f.getAbsolutePath(), null);
+            return;
+        }
+
+        WeaponDesignerPanel weaponPanel = new WeaponDesignerPanel(f);
+        weaponPanel.setOnDirtyCallback(() -> editorTabPanel.markActiveTabDirty());
+        weaponPanel.setOnSavedCallback(() -> {
+            editorTabPanel.markTabClean(f.getAbsolutePath());
+            refreshAssetsMenu();
+        });
+
+        editorTabPanel.openWeaponDesignerFile(f.getAbsolutePath(), weaponPanel);
 
         lastSelectedFilePath = f.getAbsolutePath();
         lastSelectedNodeIsFile = true;
@@ -3353,6 +3434,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                             openEnvironmentShaderDesignerDocument(f);
                         } else if (f.getName().endsWith(".mat")) {
                             openMaterialDesignerDocument(f);
+                        } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(WeaponDefinition.FILE_EXTENSION)) {
+                            openWeaponDesignerDocument(f);
                         } else {
                             openFileInTab(f);
                         }
@@ -3549,6 +3632,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             openEnvironmentShaderDesignerDocument(f);
         } else if (f.getName().endsWith(".mat")) {
             openMaterialDesignerDocument(f);
+        } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(WeaponDefinition.FILE_EXTENSION)) {
+            openWeaponDesignerDocument(f);
         } else {
             openFileInTab(f);
         }
@@ -3683,6 +3768,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     openEnvironmentShaderDesignerDocument(f);
                 } else if (f.getName().endsWith(".mat")) {
                     openMaterialDesignerDocument(f);
+                } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(WeaponDefinition.FILE_EXTENSION)) {
+                    openWeaponDesignerDocument(f);
                 } else {
                     openFileInTab(f);
                 }
@@ -4325,6 +4412,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 || name.endsWith(".smshader")
                 || name.endsWith(".smenvshader")
                 || name.endsWith(".mat")
+                || name.endsWith(WeaponDefinition.FILE_EXTENSION)
                 || name.endsWith(".json")
                 || name.endsWith(".cs"));
     }

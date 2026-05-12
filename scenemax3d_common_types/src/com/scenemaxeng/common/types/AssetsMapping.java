@@ -2,6 +2,7 @@ package com.scenemaxeng.common.types;
 
 import com.jme3.audio.AudioData;
 import com.jme3.math.Vector3f;
+import com.scenemaxeng.common.weapons.WeaponDefinition;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -26,6 +27,7 @@ public class AssetsMapping {
     private HashMap<String,SkyBoxResource> _skyboxes=new HashMap<>();
     private HashMap<String, ResourceCinematicRig> _cinematics = new HashMap<>();
     private HashMap<String, ResourceAnimation> _animations = new HashMap<>();
+    private HashMap<String, WeaponDefinition> _weapons = new HashMap<>();
 
     private JSONObject getResourcesIndex() {
         String json = "";
@@ -78,6 +80,9 @@ public class AssetsMapping {
         res = getResourcesFolderIndex(extPath+"/animations/animations-ext.json");
         loadAnimationsFromJson(res);
 
+        loadWeaponsFromFolder(new File(extPath, "weapons"));
+        loadWeaponsFromFolder(new File(extPath, "Weapons"));
+
     }
 
     public AssetsMapping() {
@@ -117,6 +122,9 @@ public class AssetsMapping {
 
         res = getResourcesFolderIndex("./resources/animations/animations.json");
         loadAnimationsFromJson(res);
+
+        loadWeaponsFromFolder(new File("./resources/weapons"));
+        loadWeaponsFromFolder(new File("./resources/Weapons"));
 
         /////////////////////////////// READ SELF - CONTAINED ASSETS /////////////////////////////
         // self contained exec will read from embedded class-path resource file
@@ -555,6 +563,40 @@ public class AssetsMapping {
 
     public HashMap<String, ResourceAnimation> getAnimationsIndex() {
         return _animations;
+    }
+
+    public HashMap<String, WeaponDefinition> getWeaponsIndex() {
+        return _weapons;
+    }
+
+    public void loadWeaponsFromProject(String projectRootPath) {
+        if (projectRootPath == null || projectRootPath.isBlank()) {
+            return;
+        }
+        File projectRoot = new File(projectRootPath);
+        if (!projectRoot.exists()) {
+            return;
+        }
+        loadWeaponsFromFolder(projectRoot);
+    }
+
+    private void loadWeaponsFromFolder(File folder) {
+        if (folder == null || !folder.exists()) {
+            return;
+        }
+        Collection<File> files = org.apache.commons.io.FileUtils.listFiles(folder, new String[]{"smweapon"}, true);
+        for (File file : files) {
+            try {
+                WeaponDefinition definition = WeaponDefinition.load(file);
+                if (definition.getId() != null && !definition.getId().isBlank()) {
+                    _weapons.put(definition.getId().toLowerCase(), definition);
+                }
+                if (definition.getName() != null && !definition.getName().isBlank()) {
+                    _weapons.put(definition.getName().toLowerCase(), definition);
+                }
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     public void loadCinematicsFromProject(String projectRootPath) {

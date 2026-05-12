@@ -15,9 +15,15 @@ sourceSets {
     main {
         java {
             srcDirs = ['src']
+            exclude 'test/**'
         }
         resources {
             srcDirs = ['assets']
+        }
+    }
+    test {
+        java {
+            srcDirs = ['src/test/java']
         }
     }
 }
@@ -27,6 +33,7 @@ dependencies {
     implementation 'commons-io:commons-io:2.11.0'
     implementation "${jme3.g}:jme3-core:${jme3.v}"
     implementation 'org.json:json:20210307'
+    testImplementation 'junit:junit:4.12'
 
     //compile project(':scenemax3d_compiler')
 

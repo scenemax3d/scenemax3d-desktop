@@ -2,6 +2,9 @@ package com.scenemax.desktop;
 
 import com.scenemax.designer.inventory.InventoryModelPreview;
 import com.scenemax.designer.DesignerPanel;
+import com.scenemaxeng.common.weapons.WeaponDefinition;
+import com.scenemaxeng.common.weapons.WeaponValidationIssue;
+import com.scenemaxeng.common.weapons.WeaponValidationResult;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -76,6 +79,7 @@ class ProjectInventoryPanel extends JPanel {
     private static final String CATEGORY_TEXTURES = "Textures";
     private static final String CATEGORY_SHADERS = "Shaders";
     private static final String CATEGORY_MATERIALS = "Materials";
+    private static final String CATEGORY_WEAPONS = "Weapons";
     private static final String CATEGORY_EFFECTS = "Effekseer";
     private static final String CATEGORY_SCENES = "Scenes";
     private static final String CATEGORY_UI = "UI";
@@ -85,7 +89,7 @@ class ProjectInventoryPanel extends JPanel {
     private static final String[] CATEGORY_ORDER = {
             CATEGORY_ALL, CATEGORY_MODELS, CATEGORY_AUDIO, CATEGORY_SPRITES, CATEGORY_FONTS,
             CATEGORY_ANIMATIONS, CATEGORY_TEXTURES, CATEGORY_SHADERS, CATEGORY_MATERIALS,
-            CATEGORY_EFFECTS, CATEGORY_SCENES, CATEGORY_UI, CATEGORY_SKYBOXES, CATEGORY_TERRAIN
+            CATEGORY_WEAPONS, CATEGORY_EFFECTS, CATEGORY_SCENES, CATEGORY_UI, CATEGORY_SKYBOXES, CATEGORY_TERRAIN
     };
 
     private final List<InventoryAsset> allAssets = new ArrayList<>();
@@ -928,7 +932,9 @@ class ProjectInventoryPanel extends JPanel {
                                                       int index, boolean isSelected, boolean cellHasFocus) {
             icon.setIcon(iconForAsset(value, 82));
             name.setText(value == null ? "" : value.name);
-            meta.setText(value == null ? "" : value.source + " / " + value.category);
+            String status = value == null ? "" : value.properties.getOrDefault("Status", "");
+            String statusPrefix = status.isBlank() ? "" : status + " / ";
+            meta.setText(value == null ? "" : statusPrefix + value.source + " / " + value.category);
             Color bg = isSelected ? list.getSelectionBackground() : UIManager.getColor("Panel.background");
             Color fg = isSelected ? list.getSelectionForeground() : UIManager.getColor("Label.foreground");
             setBackground(bg);
@@ -1227,6 +1233,8 @@ class ProjectInventoryPanel extends JPanel {
             addStandaloneFiles(root, source, "environment_shaders", CATEGORY_SHADERS, ".j3md", ".j3m");
             addStandaloneFiles(root, source, "material", CATEGORY_MATERIALS, ".mat", ".j3m");
             addStandaloneFiles(root, source, "Materials", CATEGORY_MATERIALS, ".mat", ".j3m");
+            addStandaloneFiles(root, source, "weapons", CATEGORY_WEAPONS, ".smweapon");
+            addStandaloneFiles(root, source, "Weapons", CATEGORY_WEAPONS, ".smweapon");
             addStandaloneFiles(root, source, "scenes", CATEGORY_SCENES, ".smdesign", ".code", ".png");
         }
 
@@ -1239,6 +1247,9 @@ class ProjectInventoryPanel extends JPanel {
             for (File file : files) {
                 InventoryAsset asset = new InventoryAsset(category, stripExtension(file.getName()), source,
                         relativize(root, file), file, root);
+                if (CATEGORY_WEAPONS.equals(category)) {
+                    enrichWeaponAsset(asset);
+                }
                 add(asset);
             }
         }
@@ -1251,7 +1262,8 @@ class ProjectInventoryPanel extends JPanel {
                 String lower = file.getName().toLowerCase(Locale.ROOT);
                 return lower.endsWith(".smdesign") || lower.endsWith(".smui")
                         || lower.endsWith(".smeffectdesign") || lower.endsWith(".smshader")
-                        || lower.endsWith(".smenvshader") || lower.endsWith(".mat");
+                        || lower.endsWith(".smenvshader") || lower.endsWith(".mat")
+                        || lower.endsWith(".smweapon");
             });
             for (File file : files) {
                 String lower = file.getName().toLowerCase(Locale.ROOT);
@@ -1264,12 +1276,66 @@ class ProjectInventoryPanel extends JPanel {
                     category = CATEGORY_EFFECTS;
                 } else if (lower.endsWith(".smshader") || lower.endsWith(".smenvshader")) {
                     category = CATEGORY_SHADERS;
+                } else if (lower.endsWith(".smweapon")) {
+                    category = CATEGORY_WEAPONS;
                 } else {
                     category = CATEGORY_MATERIALS;
                 }
                 InventoryAsset asset = new InventoryAsset(category, stripExtension(file.getName()), "Designer",
                         relativize(projectRoot, file), file, null);
+                if (CATEGORY_WEAPONS.equals(category)) {
+                    enrichWeaponAsset(asset);
+                }
                 add(asset);
+            }
+        }
+
+        private void enrichWeaponAsset(InventoryAsset asset) {
+            if (asset == null || asset.file == null || !asset.file.isFile()) {
+                return;
+            }
+            try {
+                WeaponDefinition weapon = WeaponDefinition.load(asset.file);
+                WeaponValidationResult validation = weapon.validate();
+                int errors = 0;
+                int warnings = 0;
+                StringBuilder issueSummary = new StringBuilder();
+                for (WeaponValidationIssue issue : validation.getIssues()) {
+                    if (issue.getSeverity() == WeaponValidationIssue.Severity.ERROR) {
+                        errors++;
+                    } else {
+                        warnings++;
+                    }
+                    if (issueSummary.length() < 900) {
+                        if (issueSummary.length() > 0) {
+                            issueSummary.append("\n");
+                        }
+                        issueSummary.append(issue.getSeverity().name())
+                                .append(" - ")
+                                .append(issue.getField())
+                                .append(": ")
+                                .append(issue.getMessage());
+                    }
+                }
+                asset.name = weapon.getName() == null || weapon.getName().isBlank() ? asset.name : weapon.getName();
+                asset.properties.put("Name", asset.name);
+                asset.put("Weapon ID", weapon.getId());
+                asset.put("Weapon Category", weapon.getCategory());
+                asset.put("Hand Mode", weapon.getHandMode());
+                asset.put("Model Asset", weapon.getModelAssetId());
+                asset.put("Attacks", weapon.getAttackProfiles().size());
+                asset.put("Projectiles", weapon.getProjectileDefinitions().size());
+                asset.put("Uses Ammo", weapon.getAmmoDefinition().isUsesAmmo());
+                asset.put("Status", validation.isValid() ? (warnings > 0 ? "Warnings" : "Valid") : "Invalid");
+                asset.put("Validation Errors", errors);
+                asset.put("Validation Warnings", warnings);
+                if (issueSummary.length() > 0) {
+                    asset.put("Validation Issues", issueSummary.toString());
+                }
+            } catch (Exception ex) {
+                asset.put("Status", "Invalid");
+                asset.put("Validation Errors", 1);
+                asset.put("Validation Issues", "ERROR - file: Could not load weapon asset: " + ex.getMessage());
             }
         }
 

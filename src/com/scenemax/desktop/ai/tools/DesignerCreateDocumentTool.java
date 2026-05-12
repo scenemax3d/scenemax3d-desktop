@@ -12,6 +12,7 @@ import com.scenemax.desktop.ai.SceneMaxToolContext;
 import com.scenemax.desktop.ai.SceneMaxToolResult;
 import com.scenemax.desktop.ai.ToolPaths;
 import com.scenemaxeng.common.ui.model.UIDocument;
+import com.scenemaxeng.common.weapons.WeaponDefinition;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -27,7 +28,7 @@ public class DesignerCreateDocumentTool extends AbstractSceneMaxTool {
 
     @Override
     public String getDescription() {
-        return "Creates a new scene, UI, material, shader, or environment-shader document.";
+        return "Creates a new scene, UI, weapon, material, shader, or environment-shader document.";
     }
 
     @Override
@@ -38,7 +39,7 @@ public class DesignerCreateDocumentTool extends AbstractSceneMaxTool {
         properties.put("directoryPath", new JSONObject().put("type", "string"));
         properties.put("base", new JSONObject().put("type", "string"));
         properties.put("kind", new JSONObject().put("type", "string")
-                .put("description", "scene, ui, shader, environment_shader, or material"));
+                .put("description", "scene, ui, weapon, shader, environment_shader, or material"));
         properties.put("fileName", new JSONObject().put("type", "string"));
         properties.put("preset", new JSONObject().put("type", "string").put("description", "Optional starter preset name."));
         properties.put("openInEditor", new JSONObject().put("type", "boolean"));
@@ -98,6 +99,10 @@ public class DesignerCreateDocumentTool extends AbstractSceneMaxTool {
                 Path materialFile = directory.resolve(ensureExtension(fileName, ".mat"));
                 MaterialDocument.writeEmptyFile(materialFile.toFile(), parseMaterialPreset(preset));
                 return materialFile;
+            case "weapon":
+                Path weaponFile = directory.resolve(ensureExtension(fileName, WeaponDefinition.FILE_EXTENSION));
+                WeaponDefinition.writeTemplateFile(weaponFile.toFile(), stripExtension(weaponFile.getFileName().toString()), preset);
+                return weaponFile;
             default:
                 throw new IllegalArgumentException("Unsupported document kind: " + kind);
         }
@@ -117,5 +122,10 @@ public class DesignerCreateDocumentTool extends AbstractSceneMaxTool {
 
     private String ensureExtension(String fileName, String extension) {
         return fileName.toLowerCase().endsWith(extension) ? fileName : fileName + extension;
+    }
+
+    private String stripExtension(String fileName) {
+        int dot = fileName.lastIndexOf('.');
+        return dot > 0 ? fileName.substring(0, dot) : fileName;
     }
 }
