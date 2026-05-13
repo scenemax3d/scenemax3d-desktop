@@ -21,6 +21,9 @@ public class CollisionController extends CompositeController {
         CollisionStatementCommand collCmd = (CollisionStatementCommand)this.cmd;
         //RunTimeVarDef rt1 = findTargetVar(collCmd.varDef1.varName);
         RunTimeVarDef rt2 = findTargetVar(collCmd.destEntity.varName);
+        if (rt2 == null) {
+            rt2 = runtimeVarForPendingEntity(collCmd.destEntity);
+        }
         //this.targetVar1 = rt1.varName;
         this.targetVar2 = rt2.varName;
 
@@ -33,6 +36,9 @@ public class CollisionController extends CompositeController {
         int counter = 0;
         for (VariableDef vd : collCmd.sourceEntities) {
             RunTimeVarDef rt1 = findTargetVar(vd.varName);
+            if (rt1 == null) {
+                rt1 = runtimeVarForPendingEntity(vd);
+            }
 
             app.addCollisionHandler(
                     rt1.varName,
@@ -55,6 +61,15 @@ public class CollisionController extends CompositeController {
 
         return true;
 
+    }
+
+    private RunTimeVarDef runtimeVarForPendingEntity(VariableDef varDef) {
+        if (varDef == null) {
+            return null;
+        }
+        RunTimeVarDef runtime = new RunTimeVarDef(varDef);
+        runtime.varName = varDef.varName + "@" + scope.scopeId;
+        return runtime;
     }
 
 

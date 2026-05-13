@@ -4,6 +4,7 @@ import com.jme3.anim.AnimClip;
 import com.jme3.anim.AnimComposer;
 import com.jme3.anim.Joint;
 import com.jme3.anim.SkinningControl;
+import com.jme3.anim.tween.action.Action;
 import com.jme3.animation.AnimChannel;
 import com.jme3.animation.AnimControl;
 import com.jme3.animation.Bone;
@@ -38,6 +39,7 @@ import com.jme3.scene.Node;
 import com.jme3.scene.SceneGraphVisitor;
 import com.jme3.scene.Spatial;
 import com.jme3.scene.shape.Box;
+import com.jme3.scene.shape.Sphere;
 import com.jme3.texture.Texture;
 import com.scenemax.designer.DesignerEntity;
 import com.scenemax.designer.DesignerEntityType;
@@ -48,6 +50,7 @@ import com.scenemax.designer.gizmo.TranslateGizmo;
 import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.types.ResourceSetup;
 import com.scenemaxeng.common.weapons.WeaponAttachmentTransform;
+import com.scenemaxeng.common.weapons.WeaponColliderDefinition;
 import com.scenemaxeng.common.weapons.WeaponDefinition;
 import com.scenemaxeng.common.weapons.WeaponPostureDefinition;
 import com.scenemaxeng.projector.AppModel;
@@ -72,8 +75,10 @@ class WeaponPreviewApp extends SceneMaxApp {
     private final Node previewRoot = new Node("WeaponPreviewRoot");
     private final Node holderWrapper = new Node("WeaponPreviewHolder");
     private final Node fallbackAttachmentNode = new Node("WeaponPreviewFallbackAttachment");
+    private final Node weaponAttachmentScaleNode = new Node("WeaponPreviewWeaponAttachmentScale");
     private final Node weaponTransformNode = new Node("WeaponPreviewWeaponTransform");
     private final Node weaponVisualNode = new Node("WeaponPreviewWeaponVisual");
+    private final Node weaponColliderPreviewNode = new Node("WeaponPreviewWeaponColliders");
     private final DesignerEntity weaponEntity = new DesignerEntity("Preview Weapon", DesignerEntityType.MODEL);
 
     private TranslateGizmo translateGizmo;
@@ -89,16 +94,21 @@ class WeaponPreviewApp extends SceneMaxApp {
     private AppModel holderAppModel;
     private AnimChannel legacyAnimationChannel;
     private String previewAnimationName = "";
+    private int previewAnimationSpeedPercent = 100;
+    private boolean previewAnimationPaused;
+    private int lastPublishedAnimationPercent = -2;
     private PointLight cameraLight;
     private Consumer<WeaponAttachmentTransform> transformChangedCallback;
     private Consumer<List<String>> attachmentPointsChangedCallback;
     private Consumer<List<String>> animationNamesChangedCallback;
+    private Consumer<Integer> animationPercentChangedCallback;
     private Consumer<String> statusChangedCallback;
 
     private float cameraDistance = 6f;
     private float yaw = (float) Math.toRadians(35);
     private float pitch = (float) Math.toRadians(18);
     private boolean orbiting;
+    private boolean pendingCameraFit;
     private final Vector2f lastMouse = new Vector2f();
 
     WeaponPreviewApp(File resourcesRoot) {
@@ -181,6 +191,12 @@ class WeaponPreviewApp extends SceneMaxApp {
             pitch = FastMath.clamp(pitch + dy * 0.006f, (float) Math.toRadians(-70), (float) Math.toRadians(70));
             updateCamera(currentCenter());
         }
+        updateAttachmentScaleCompensation();
+        publishAnimationPercent();
+        if (pendingCameraFit) {
+            pendingCameraFit = false;
+            fitCamera();
+        }
         if (gizmoManager != null) {
             if (gizmoManager.isDragging()) {
                 gizmoManager.updateDrag(cam, inputManager.getCursorPosition());
@@ -201,6 +217,10 @@ class WeaponPreviewApp extends SceneMaxApp {
 
     void setAnimationNamesChangedCallback(Consumer<List<String>> callback) {
         this.animationNamesChangedCallback = callback;
+    }
+
+    void setAnimationPercentChangedCallback(Consumer<Integer> callback) {
+        this.animationPercentChangedCallback = callback;
     }
 
     void setStatusChangedCallback(Consumer<String> callback) {
@@ -282,6 +302,23 @@ class WeaponPreviewApp extends SceneMaxApp {
         });
     }
 
+    void setPreviewAnimationSpeedPercent(int speedPercent) {
+        enqueue(() -> {
+            this.previewAnimationSpeedPercent = Math.max(1, Math.min(100, speedPercent));
+            applyPreviewAnimationPlaybackSpeed();
+            return null;
+        });
+    }
+
+    void setPreviewAnimationPaused(boolean paused) {
+        enqueue(() -> {
+            this.previewAnimationPaused = paused;
+            applyPreviewAnimationPlaybackSpeed();
+            updateAnimationStatus();
+            return null;
+        });
+    }
+
     void setGizmoMode(GizmoMode mode) {
         enqueue(() -> {
             if (gizmoManager != null) {
@@ -350,12 +387,22 @@ class WeaponPreviewApp extends SceneMaxApp {
         holderWrapper.setLocalScale(Vector3f.UNIT_XYZ);
         holderWrapper.attachChild(fallbackAttachmentNode);
         fallbackAttachmentNode.detachAllChildren();
+        weaponAttachmentScaleNode.removeFromParent();
+        weaponAttachmentScaleNode.detachAllChildren();
+        weaponAttachmentScaleNode.setLocalTranslation(Vector3f.ZERO);
+        weaponAttachmentScaleNode.setLocalRotation(Quaternion.IDENTITY);
+        weaponAttachmentScaleNode.setLocalScale(Vector3f.UNIT_XYZ);
         weaponTransformNode.detachAllChildren();
         weaponVisualNode.detachAllChildren();
         weaponVisualNode.setLocalTranslation(Vector3f.ZERO);
         weaponVisualNode.setLocalRotation(Quaternion.IDENTITY);
         weaponVisualNode.setLocalScale(Vector3f.UNIT_XYZ);
+        weaponColliderPreviewNode.detachAllChildren();
+        weaponColliderPreviewNode.setLocalTranslation(Vector3f.ZERO);
+        weaponColliderPreviewNode.setLocalRotation(Quaternion.IDENTITY);
+        weaponColliderPreviewNode.setLocalScale(Vector3f.UNIT_XYZ);
         weaponTransformNode.attachChild(weaponVisualNode);
+        weaponTransformNode.attachChild(weaponColliderPreviewNode);
         holderSpatial = null;
         weaponSpatial = null;
         holderAppModel = null;
@@ -364,6 +411,7 @@ class WeaponPreviewApp extends SceneMaxApp {
         loadHolderModel();
         Node attachmentNode = resolveAttachmentNode();
         loadWeaponModel(attachmentNode);
+        loadColliderPreviews();
         WeaponPostureDefinition posture = selectedPosture();
         applyAttachmentTransform(posture == null ? null : posture.getTransform());
 
@@ -376,6 +424,7 @@ class WeaponPreviewApp extends SceneMaxApp {
         publishAnimationNames();
         playPreviewAnimation();
         if (fitCamera) {
+            pendingCameraFit = true;
             fitCamera();
         } else {
             updateCamera(currentCenter());
@@ -387,6 +436,9 @@ class WeaponPreviewApp extends SceneMaxApp {
             return false;
         }
         if (!Objects.equals(safeString(weaponDefinition.getModelAssetId()), safeString(nextDefinition.getModelAssetId()))) {
+            return false;
+        }
+        if (!Objects.equals(colliderSnapshot(weaponDefinition), colliderSnapshot(nextDefinition))) {
             return false;
         }
         WeaponPostureDefinition currentPosture = postureAt(weaponDefinition, selectedPostureIndex);
@@ -489,7 +541,9 @@ class WeaponPreviewApp extends SceneMaxApp {
         if (attachmentNode == null) {
             attachmentNode = fallbackAttachmentNode;
         }
-        attachmentNode.attachChild(weaponTransformNode);
+        compensateAttachmentScale(attachmentNode, weaponAttachmentScaleNode);
+        attachmentNode.attachChild(weaponAttachmentScaleNode);
+        weaponAttachmentScaleNode.attachChild(weaponTransformNode);
 
         String modelAssetId = weaponDefinition != null ? weaponDefinition.getModelAssetId() : null;
         ResourceSetup resource = resolveModel(modelAssetId);
@@ -498,6 +552,7 @@ class WeaponPreviewApp extends SceneMaxApp {
                 weaponSpatial = assetManager.loadModel(resource.path);
                 weaponSpatial.setShadowMode(RenderQueue.ShadowMode.CastAndReceive);
                 applyReadablePreviewMaterials(weaponSpatial);
+                applyResourceTransform(weaponSpatial, resource);
                 weaponVisualNode.attachChild(weaponSpatial);
                 return;
             } catch (Exception ex) {
@@ -510,6 +565,60 @@ class WeaponPreviewApp extends SceneMaxApp {
         fallback.setLocalTranslation(0f, 0f, 0.55f);
         weaponSpatial = fallback;
         weaponVisualNode.attachChild(weaponSpatial);
+    }
+
+    private void loadColliderPreviews() {
+        weaponColliderPreviewNode.detachAllChildren();
+        if (weaponDefinition == null) {
+            return;
+        }
+        for (WeaponColliderDefinition collider : weaponDefinition.getColliders()) {
+            if (collider == null || collider.getName() == null || collider.getName().trim().isEmpty()) {
+                continue;
+            }
+            Geometry geometry = createColliderPreviewGeometry(collider);
+            applyAttachmentTransform(geometry, collider.getTransform());
+            weaponColliderPreviewNode.attachChild(geometry);
+        }
+    }
+
+    private Geometry createColliderPreviewGeometry(WeaponColliderDefinition collider) {
+        Geometry geometry;
+        if (collider.isSphere()) {
+            geometry = new Geometry(collider.getName(), new Sphere(24, 24, 0.5f));
+        } else {
+            geometry = new Geometry(collider.getName(), new Box(0.5f, 0.5f, 0.5f));
+        }
+        Material material = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+        material.setColor("Color", collider.isSphere()
+                ? new ColorRGBA(0.2f, 0.72f, 1f, 0.72f)
+                : new ColorRGBA(0.1f, 1f, 0.35f, 0.72f));
+        material.getAdditionalRenderState().setWireframe(true);
+        material.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
+        geometry.setQueueBucket(RenderQueue.Bucket.Transparent);
+        geometry.setMaterial(material);
+        return geometry;
+    }
+
+    private void updateAttachmentScaleCompensation() {
+        if (weaponAttachmentScaleNode.getParent() instanceof Node) {
+            compensateAttachmentScale((Node) weaponAttachmentScaleNode.getParent(), weaponAttachmentScaleNode);
+        }
+    }
+
+    private void compensateAttachmentScale(Node attachmentNode, Node compensatedNode) {
+        Vector3f worldScale = attachmentNode == null ? Vector3f.UNIT_XYZ : attachmentNode.getWorldScale();
+        compensatedNode.setLocalScale(
+                inverseScaleComponent(worldScale.x),
+                inverseScaleComponent(worldScale.y),
+                inverseScaleComponent(worldScale.z));
+    }
+
+    private float inverseScaleComponent(float scale) {
+        if (Float.isNaN(scale) || Float.isInfinite(scale) || Math.abs(scale) < 0.000001f) {
+            return 1f;
+        }
+        return 1f / scale;
     }
 
     private void applyResourceTransform(Spatial spatial, ResourceSetup resource) {
@@ -548,6 +657,30 @@ class WeaponPreviewApp extends SceneMaxApp {
                 (float) transform.getRotationY() * FastMath.DEG_TO_RAD,
                 (float) transform.getRotationZ() * FastMath.DEG_TO_RAD));
         weaponTransformNode.setLocalScale(
+                (float) transform.getScaleX(),
+                (float) transform.getScaleY(),
+                (float) transform.getScaleZ());
+    }
+
+    private void applyAttachmentTransform(Spatial spatial, WeaponAttachmentTransform transform) {
+        if (spatial == null) {
+            return;
+        }
+        if (transform == null) {
+            spatial.setLocalTranslation(Vector3f.ZERO);
+            spatial.setLocalRotation(Quaternion.IDENTITY);
+            spatial.setLocalScale(Vector3f.UNIT_XYZ);
+            return;
+        }
+        spatial.setLocalTranslation(
+                (float) transform.getOffsetX(),
+                (float) transform.getOffsetY(),
+                (float) transform.getOffsetZ());
+        spatial.setLocalRotation(new Quaternion().fromAngles(
+                (float) transform.getRotationX() * FastMath.DEG_TO_RAD,
+                (float) transform.getRotationY() * FastMath.DEG_TO_RAD,
+                (float) transform.getRotationZ() * FastMath.DEG_TO_RAD));
+        spatial.setLocalScale(
                 (float) transform.getScaleX(),
                 (float) transform.getScaleY(),
                 (float) transform.getScaleZ());
@@ -631,6 +764,15 @@ class WeaponPreviewApp extends SceneMaxApp {
         return definition == null ? "" : definition.getModelAssetId();
     }
 
+    private String colliderSnapshot(WeaponDefinition definition) {
+        if (definition == null) {
+            return "";
+        }
+        return definition.getColliders().stream()
+                .map(collider -> collider == null ? "" : collider.toJSON().toString())
+                .reduce("", (left, right) -> left + "\n" + right);
+    }
+
     private void updateStatus(String status) {
         if (statusChangedCallback != null) {
             statusChangedCallback.accept(status);
@@ -644,15 +786,17 @@ class WeaponPreviewApp extends SceneMaxApp {
     private void playPreviewAnimation() {
         String name = safeString(previewAnimationName);
         stopPreviewAnimation();
+        lastPublishedAnimationPercent = -2;
         if (name.isEmpty() || holderSpatial == null) {
+            publishAnimationPercent();
             return;
         }
 
         AnimComposer composer = findAnimComposer(holderSpatial);
         if (composer != null && (composer.hasAction(name) || composer.hasAnimClip(name))) {
-            composer.setGlobalSpeed(1f);
+            composer.setGlobalSpeed(currentPreviewAnimationSpeed());
             composer.setCurrentAction(name);
-            updateStatus("Previewing animation: " + name);
+            updateAnimationStatus();
             return;
         }
 
@@ -661,8 +805,8 @@ class WeaponPreviewApp extends SceneMaxApp {
             legacyAnimationChannel = control.createChannel();
             legacyAnimationChannel.setAnim(name);
             legacyAnimationChannel.setLoopMode(LoopMode.Loop);
-            legacyAnimationChannel.setSpeed(1f);
-            updateStatus("Previewing animation: " + name);
+            legacyAnimationChannel.setSpeed(currentPreviewAnimationSpeed());
+            updateAnimationStatus();
             return;
         }
 
@@ -670,14 +814,15 @@ class WeaponPreviewApp extends SceneMaxApp {
             boolean attached = holderAppModel.attachExternalAnimation(assetManager, previewAssets, name);
             AnimComposer attachedComposer = holderAppModel.getAnimComposer();
             if (attached && attachedComposer != null && attachedComposer.hasAction(name)) {
-                attachedComposer.setGlobalSpeed(1f);
+                attachedComposer.setGlobalSpeed(currentPreviewAnimationSpeed());
                 attachedComposer.setCurrentAction(name);
-                updateStatus("Previewing animation: " + name);
+                updateAnimationStatus();
                 return;
             }
         }
 
         updateStatus("Animation not found: " + name);
+        publishAnimationPercent();
     }
 
     private void stopPreviewAnimation() {
@@ -704,6 +849,111 @@ class WeaponPreviewApp extends SceneMaxApp {
             }
             legacyAnimationChannel = null;
         }
+        lastPublishedAnimationPercent = -2;
+        publishAnimationPercent();
+    }
+
+    private void publishAnimationPercent() {
+        if (animationPercentChangedCallback == null) {
+            return;
+        }
+        int percent = currentAnimationPercent();
+        if (percent != lastPublishedAnimationPercent) {
+            lastPublishedAnimationPercent = percent;
+            animationPercentChangedCallback.accept(percent);
+        }
+    }
+
+    private int currentAnimationPercent() {
+        String name = safeString(previewAnimationName);
+        if (name.isEmpty()) {
+            return -1;
+        }
+
+        AnimComposer composer = findAnimComposer(holderSpatial);
+        Integer composerPercent = animationPercentForComposer(composer, name);
+        if (composerPercent != null) {
+            return composerPercent;
+        }
+
+        if (holderAppModel != null && holderAppModel.getAnimComposer() != composer) {
+            composerPercent = animationPercentForComposer(holderAppModel.getAnimComposer(), name);
+            if (composerPercent != null) {
+                return composerPercent;
+            }
+        }
+
+        if (legacyAnimationChannel != null && legacyAnimationChannel.getAnimationName() != null) {
+            float length = legacyAnimationChannel.getAnimMaxTime();
+            if (length > 0f) {
+                return percentFromTime(legacyAnimationChannel.getTime(), length);
+            }
+        }
+
+        return -1;
+    }
+
+    private Integer animationPercentForComposer(AnimComposer composer, String animationName) {
+        if (composer == null) {
+            return null;
+        }
+        Action action = composer.getCurrentAction();
+        if (action == null) {
+            action = composer.getCurrentAction("Default");
+        }
+        double length = action == null ? 0.0 : action.getLength();
+        if (length <= 0.0) {
+            AnimClip clip = composer.getAnimClip(animationName);
+            length = clip == null ? 0.0 : clip.getLength();
+        }
+        if (length <= 0.0) {
+            return null;
+        }
+        return percentFromTime(composer.getTime("Default"), length);
+    }
+
+    private int percentFromTime(double time, double length) {
+        if (Double.isNaN(time) || Double.isInfinite(time)
+                || Double.isNaN(length) || Double.isInfinite(length) || length <= 0.0) {
+            return -1;
+        }
+        double wrapped = time % length;
+        if (wrapped < 0.0) {
+            wrapped += length;
+        }
+        int percent = (int) Math.round((wrapped / length) * 100.0);
+        return Math.max(0, Math.min(100, percent));
+    }
+
+    private void applyPreviewAnimationPlaybackSpeed() {
+        float speed = currentPreviewAnimationSpeed();
+        AnimComposer composer = findAnimComposer(holderSpatial);
+        if (composer != null) {
+            composer.setGlobalSpeed(speed);
+        }
+        if (holderAppModel != null && holderAppModel.getAnimComposer() != null
+                && holderAppModel.getAnimComposer() != composer) {
+            holderAppModel.getAnimComposer().setGlobalSpeed(speed);
+        }
+        if (legacyAnimationChannel != null) {
+            legacyAnimationChannel.setSpeed(speed);
+        }
+    }
+
+    private float currentPreviewAnimationSpeed() {
+        if (previewAnimationPaused) {
+            return 0f;
+        }
+        return Math.max(1, Math.min(100, previewAnimationSpeedPercent)) / 100f;
+    }
+
+    private void updateAnimationStatus() {
+        String name = safeString(previewAnimationName);
+        if (name.isEmpty()) {
+            return;
+        }
+        String state = previewAnimationPaused ? "Stopped" : "Previewing";
+        updateStatus(state + " animation: " + name + " (" + previewAnimationSpeedPercent + "% speed)");
     }
 
     private AnimComposer findAnimComposer(Spatial spatial) {

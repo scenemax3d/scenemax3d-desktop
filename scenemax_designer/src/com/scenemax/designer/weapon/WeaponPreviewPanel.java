@@ -25,11 +25,16 @@ public class WeaponPreviewPanel extends JPanel {
     private final Canvas canvas;
     private final JLabel statusLabel = new JLabel("Preview");
     private final JComboBox<String> previewAnimationCombo = new JComboBox<>();
+    private final JSlider animationSpeedSlider = new JSlider(1, 100, 100);
+    private final JLabel animationSpeedValue = new JLabel("100%");
+    private final JLabel animationPercentValue = new JLabel("--%");
+    private final JButton stopResumeButton = new JButton("Stop");
 
     private Consumer<WeaponAttachmentTransform> transformChangedCallback;
     private Consumer<String> attachmentPointChangedCallback;
     private Consumer<List<String>> attachmentPointsChangedCallback;
     private boolean updatingPreviewAnimations;
+    private boolean animationPaused;
     private String selectedAttachmentPoint = "";
     private int selectedPostureIndex;
 
@@ -101,6 +106,8 @@ public class WeaponPreviewPanel extends JPanel {
                 }));
         app.setAnimationNamesChangedCallback(names ->
                 SwingUtilities.invokeLater(() -> updatePreviewAnimationOptions(names)));
+        app.setAnimationPercentChangedCallback(percent ->
+                SwingUtilities.invokeLater(() -> updateAnimationPercent(percent)));
         app.setStatusChangedCallback(status ->
                 SwingUtilities.invokeLater(() -> statusLabel.setText(status)));
 
@@ -185,6 +192,30 @@ public class WeaponPreviewPanel extends JPanel {
         });
         animationRow.add(previewAnimationCombo, BorderLayout.CENTER);
         toolbar.add(animationRow);
+
+        JPanel playbackRow = new JPanel(new BorderLayout(6, 3));
+        playbackRow.add(new JLabel("Animation Speed"), BorderLayout.WEST);
+        animationSpeedSlider.setMajorTickSpacing(25);
+        animationSpeedSlider.setMinorTickSpacing(5);
+        animationSpeedSlider.setPaintTicks(true);
+        animationSpeedSlider.addChangeListener(e -> {
+            int value = animationSpeedSlider.getValue();
+            animationSpeedValue.setText(value + "%");
+            app.setPreviewAnimationSpeedPercent(value);
+        });
+        playbackRow.add(animationSpeedSlider, BorderLayout.CENTER);
+        animationSpeedValue.setHorizontalAlignment(SwingConstants.RIGHT);
+        animationSpeedValue.setPreferredSize(new Dimension(44, animationSpeedValue.getPreferredSize().height));
+        playbackRow.add(animationSpeedValue, BorderLayout.EAST);
+        toolbar.add(playbackRow);
+
+        JPanel controlRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 3));
+        stopResumeButton.addActionListener(e -> toggleAnimationPaused());
+        controlRow.add(stopResumeButton);
+        controlRow.add(new JLabel("Animation Index"));
+        animationPercentValue.setPreferredSize(new Dimension(44, animationPercentValue.getPreferredSize().height));
+        controlRow.add(animationPercentValue);
+        toolbar.add(controlRow);
         return toolbar;
     }
 
@@ -221,11 +252,23 @@ public class WeaponPreviewPanel extends JPanel {
         previewAnimationCombo.setSelectedItem(current);
         updatingPreviewAnimations = false;
         app.setPreviewAnimation(selectedPreviewAnimation());
+        app.setPreviewAnimationSpeedPercent(animationSpeedSlider.getValue());
+        app.setPreviewAnimationPaused(animationPaused);
     }
 
     private String selectedPreviewAnimation() {
         Object selected = previewAnimationCombo.getSelectedItem();
         return selected == null ? "" : String.valueOf(selected).trim();
+    }
+
+    private void toggleAnimationPaused() {
+        animationPaused = !animationPaused;
+        stopResumeButton.setText(animationPaused ? "Resume" : "Stop");
+        app.setPreviewAnimationPaused(animationPaused);
+    }
+
+    private void updateAnimationPercent(int percent) {
+        animationPercentValue.setText(percent < 0 ? "--%" : percent + "%");
     }
 
     private void releaseMouseCapture() {

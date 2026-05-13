@@ -6670,6 +6670,52 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     }
 
+    public void registerWeaponCollider(String runtimeName, Node colliderNode, EntityInstBase inst, GhostControl ghostControl) {
+        if (runtimeName == null || runtimeName.trim().isEmpty() || colliderNode == null || inst == null || inst.varDef == null) {
+            return;
+        }
+        unregisterWeaponCollider(runtimeName);
+        colliderNode.setName(runtimeName);
+        colliderNode.setUserData("key", runtimeName);
+        if (inst.varDef.varType == VariableDef.VAR_TYPE_SPHERE) {
+            spheres.put(runtimeName, colliderNode);
+        } else {
+            boxes.put(runtimeName, colliderNode);
+        }
+        geoName2ModelName.put(runtimeName, runtimeName);
+        geoName2EntityInst.put(runtimeName, inst);
+        if (inst.scope != null) {
+            inst.scope.entities.put(inst.varDef.varName, inst);
+        }
+        List<java.lang.Object> ctls = new ArrayList<>();
+        if (ghostControl != null) {
+            ctls.add(ghostControl);
+            if (bulletAppState != null && bulletAppState.getPhysicsSpace() != null) {
+                bulletAppState.getPhysicsSpace().add(ghostControl);
+            }
+        }
+        collisionControlsCache.put(runtimeName, ctls);
+    }
+
+    public void unregisterWeaponCollider(String runtimeName) {
+        if (runtimeName == null || runtimeName.trim().isEmpty()) {
+            return;
+        }
+        removeCollisionControlsFromPhysics(runtimeName);
+        EntityInstBase inst = geoName2EntityInst.get(runtimeName);
+        if (inst != null && inst.scope != null && inst.varDef != null) {
+            EntityInstBase current = inst.scope.entities.get(inst.varDef.varName);
+            if (current == inst) {
+                inst.scope.entities.remove(inst.varDef.varName);
+            }
+        }
+        boxes.remove(runtimeName);
+        spheres.remove(runtimeName);
+        geoName2ModelName.remove(runtimeName);
+        geoName2EntityInst.remove(runtimeName);
+        collisionControlsCache.remove(runtimeName);
+    }
+
     public ISceneMax3dObjectWrapper getEntityWrapper(String targetVar, int varType) {
         if(varType==VariableDef.VAR_TYPE_2D) {
             return sprites.get(targetVar);

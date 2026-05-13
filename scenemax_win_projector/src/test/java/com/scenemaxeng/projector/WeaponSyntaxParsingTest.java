@@ -5,9 +5,14 @@ import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
 import com.scenemaxeng.compiler.VariableDef;
 import com.scenemaxeng.compiler.WeaponCommand;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import java.lang.reflect.Field;
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 
 import static org.junit.Assert.assertEquals;
@@ -15,6 +20,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class WeaponSyntaxParsingTest {
+    @Rule
+    public TemporaryFolder temporaryFolder = new TemporaryFolder();
 
     @Test
     public void parsesApprovedWeaponSyntax() {
@@ -101,6 +108,35 @@ public class WeaponSyntaxParsingTest {
 
         assertEquals("m2@" + app.getMainScope().scopeId, app.equippedOwner);
         assertEquals("weapon_player_weapon", app.equippedWeapon);
+    }
+
+    @Test
+    public void weaponCollidersAreKnownCollisionVariables() throws Exception {
+        File projectRoot = temporaryFolder.newFolder("project");
+        File scripts = new File(projectRoot, "scripts");
+        File resources = new File(projectRoot, "resources");
+        assertTrue(scripts.mkdirs());
+        assertTrue(resources.mkdirs());
+        File weaponFile = new File(scripts, "player_weapon.smweapon");
+        Files.write(weaponFile.toPath(), ("{\n"
+                + "  \"type\": \"SceneMaxWeaponDefinition\",\n"
+                + "  \"schemaVersion\": \"1.0\",\n"
+                + "  \"id\": \"weapon_player_weapon\",\n"
+                + "  \"modelAssetId\": \"meshy_axe\",\n"
+                + "  \"defaultPostureId\": \"default\",\n"
+                + "  \"postures\": [{\"id\":\"default\",\"name\":\"Default\",\"attachmentPoint\":\"RightHandSocket\"}],\n"
+                + "  \"colliders\": [{\"name\":\"player1_weapon_axe_upper_collider\",\"shape\":\"box\"}]\n"
+                + "}").getBytes(StandardCharsets.UTF_8));
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, new File(scripts, "level.sm").getAbsolutePath()).parse(
+                "player=>dragon\n"
+                        + "when player1_weapon_axe_upper_collider collides with player do\n"
+                        + "end do");
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+        VariableDef collider = prg.getVar("player1_weapon_axe_upper_collider");
+        assertNotNull(collider);
+        assertEquals(VariableDef.VAR_TYPE_BOX, collider.varType);
     }
 
     @SuppressWarnings("unchecked")

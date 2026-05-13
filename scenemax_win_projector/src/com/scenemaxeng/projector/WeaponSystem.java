@@ -47,7 +47,7 @@ public class WeaponSystem {
         EquipmentComponent equipment = equipmentByOwner.computeIfAbsent(ownerVarName, EquipmentComponent::new);
         EquippedWeaponRuntime existing = equipment.unequip(slot);
         if (existing != null) {
-            existing.detachModel();
+            existing.detachModel(app);
         }
 
         WeaponInstance instance = new WeaponInstance();
@@ -85,7 +85,7 @@ public class WeaponSystem {
         if (runtime == null) {
             return false;
         }
-        runtime.detachModel();
+        runtime.detachModel(app);
         return true;
     }
 
@@ -104,7 +104,7 @@ public class WeaponSystem {
     public void clear() {
         for (EquipmentComponent equipment : equipmentByOwner.values()) {
             for (EquippedWeaponRuntime runtime : equipment.getEquippedWeapons()) {
-                runtime.detachModel();
+                runtime.detachModel(app);
             }
         }
         equipmentByOwner.clear();
@@ -121,10 +121,11 @@ public class WeaponSystem {
             return false;
         }
         String resolvedPostureId = posture.getId();
-        runtime.detachModel();
+        runtime.detachModel(app);
         Spatial spawnedModel = attachmentResolver.attachWeaponModel(runtime.getOwnerCharacterId(),
                 runtime.getWeaponDefinition(), resolvedPostureId);
         runtime.setSpawnedModel(spawnedModel);
+        runtime.setRegisteredColliderNames(attachmentResolver.getLastRegisteredColliderNames());
         runtime.setCurrentPostureId(resolvedPostureId);
         return spawnedModel != null;
     }

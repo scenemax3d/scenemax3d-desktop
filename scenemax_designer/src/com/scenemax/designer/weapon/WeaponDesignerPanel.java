@@ -2,6 +2,7 @@ package com.scenemax.designer.weapon;
 
 import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.weapons.WeaponAttachmentTransform;
+import com.scenemaxeng.common.weapons.WeaponColliderDefinition;
 import com.scenemaxeng.common.weapons.WeaponDefinition;
 import com.scenemaxeng.common.weapons.WeaponPostureDefinition;
 import org.json.JSONObject;
@@ -39,6 +40,11 @@ public class WeaponDesignerPanel extends JPanel {
     private int selectedPostureIndex = 0;
     private boolean updatingPostureSelection;
 
+    private final DefaultListModel<String> colliderListModel = new DefaultListModel<>();
+    private final JList<String> colliderList = new JList<>(colliderListModel);
+    private int selectedColliderIndex = 0;
+    private boolean updatingColliderSelection;
+
     private final JTextField txtId = new JTextField();
     private final JTextField txtModel = new JTextField();
     private final JComboBox<String> cboPreviewPlayerModel = new JComboBox<>();
@@ -55,6 +61,21 @@ public class WeaponDesignerPanel extends JPanel {
     private final SliderField spnScaleX = slider(1, 0.01, 999, 0.01);
     private final SliderField spnScaleY = slider(1, 0.01, 999, 0.01);
     private final SliderField spnScaleZ = slider(1, 0.01, 999, 0.01);
+
+    private final JTextField txtColliderName = new JTextField();
+    private final JComboBox<String> cboColliderShape = new JComboBox<>(new String[]{
+            WeaponColliderDefinition.SHAPE_BOX,
+            WeaponColliderDefinition.SHAPE_SPHERE
+    });
+    private final SliderField colOffsetX = slider(0, -999, 999, 0.01);
+    private final SliderField colOffsetY = slider(0, -999, 999, 0.01);
+    private final SliderField colOffsetZ = slider(0, -999, 999, 0.01);
+    private final SliderField colRotX = slider(0, -360, 360, 1);
+    private final SliderField colRotY = slider(0, -360, 360, 1);
+    private final SliderField colRotZ = slider(0, -360, 360, 1);
+    private final SliderField colScaleX = slider(1, 0.01, 999, 0.01);
+    private final SliderField colScaleY = slider(1, 0.01, 999, 0.01);
+    private final SliderField colScaleZ = slider(1, 0.01, 999, 0.01);
 
     public WeaponDesignerPanel(File weaponFile) {
         super(new BorderLayout());
@@ -151,6 +172,7 @@ public class WeaponDesignerPanel extends JPanel {
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Overview", buildOverviewTab());
+        tabs.addTab("Colliders", buildCollidersTab());
         tabs.setMinimumSize(new Dimension(260, 180));
 
         previewPanel = new WeaponPreviewPanel(findResourcesRoot());
@@ -186,6 +208,67 @@ public class WeaponDesignerPanel extends JPanel {
         postures.add(buildPosturesSection(), BorderLayout.CENTER);
         panel.add(postures, BorderLayout.CENTER);
         return panel;
+    }
+
+    private Component buildCollidersTab() {
+        colliderList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        colliderList.setVisibleRowCount(10);
+        colliderList.addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting() || updatingUi || updatingColliderSelection) {
+                return;
+            }
+            int newIndex = colliderList.getSelectedIndex();
+            if (newIndex < 0 || newIndex == selectedColliderIndex) {
+                return;
+            }
+            applySelectedColliderFromUi();
+            selectedColliderIndex = newIndex;
+            refreshSelectedColliderFields();
+            refreshPreviewFromUi();
+        });
+
+        JPanel actions = new JPanel(new GridLayout(0, 1, 4, 4));
+        JButton addBox = new JButton("Add Box");
+        addBox.addActionListener(e -> addCollider(WeaponColliderDefinition.SHAPE_BOX));
+        JButton addSphere = new JButton("Add Sphere");
+        addSphere.addActionListener(e -> addCollider(WeaponColliderDefinition.SHAPE_SPHERE));
+        JButton duplicate = new JButton("Duplicate");
+        duplicate.addActionListener(e -> duplicateCollider());
+        JButton delete = new JButton("Delete");
+        delete.addActionListener(e -> deleteCollider());
+        actions.add(addBox);
+        actions.add(addSphere);
+        actions.add(duplicate);
+        actions.add(delete);
+
+        JPanel left = new JPanel(new BorderLayout(6, 6));
+        left.setBorder(new EmptyBorder(10, 10, 10, 4));
+        left.add(new JScrollPane(colliderList), BorderLayout.CENTER);
+        left.add(actions, BorderLayout.SOUTH);
+        left.setMinimumSize(new Dimension(150, 160));
+
+        JPanel right = form(
+                row("Name", txtColliderName),
+                row("Shape", cboColliderShape),
+                row("Position Offset X", colOffsetX),
+                row("Position Offset Y", colOffsetY),
+                row("Position Offset Z", colOffsetZ),
+                row("Rotation Offset X", colRotX),
+                row("Rotation Offset Y", colRotY),
+                row("Rotation Offset Z", colRotZ),
+                row("Scale X", colScaleX),
+                row("Scale Y", colScaleY),
+                row("Scale Z", colScaleZ)
+        );
+
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, scroll(right));
+        split.setContinuousLayout(true);
+        split.setOneTouchExpandable(true);
+        split.setMinimumSize(new Dimension(0, 0));
+        split.setResizeWeight(0.0);
+        split.setDividerLocation(240);
+        refreshColliderList();
+        return split;
     }
 
     private Component buildPosturesSection() {
@@ -319,15 +402,35 @@ public class WeaponDesignerPanel extends JPanel {
         selectedPostureIndex = Math.max(0, Math.min(selectedPostureIndex, document.getPostures().size() - 1));
         refreshPostureList();
         refreshSelectedPostureFields();
+        selectedColliderIndex = Math.max(0, Math.min(selectedColliderIndex, Math.max(0, document.getColliders().size() - 1)));
+        refreshColliderList();
+        refreshSelectedColliderFields();
         updatingUi = false;
         refreshPreviewFromUi();
     }
 
     private void applyUiToDocument() {
+        String previousModelAssetId = normalizeAssetId(document.getModelAssetId());
+        String nextModelAssetId = txtModel.getText().trim();
+        boolean modelChanged = !previousModelAssetId.equals(normalizeAssetId(nextModelAssetId));
+
         document.setId(txtId.getText().trim());
-        document.setModelAssetId(txtModel.getText().trim());
+        document.setModelAssetId(nextModelAssetId);
         document.getDesignerMetadata().put("previewPlayerModelAssetId", selectedComboValue(cboPreviewPlayerModel));
         applySelectedPostureFromUi();
+        applySelectedColliderFromUi();
+        if (modelChanged) {
+            resetPostureTransformsToDesignerDefaults();
+            refreshSelectedPostureFields();
+        }
+    }
+
+    private void resetPostureTransformsToDesignerDefaults() {
+        for (WeaponPostureDefinition posture : document.getPostures()) {
+            if (posture != null) {
+                posture.setTransform(new WeaponAttachmentTransform());
+            }
+        }
     }
 
     private void addPosture() {
@@ -456,12 +559,171 @@ public class WeaponDesignerPanel extends JPanel {
         return document.getPostures().get(selectedPostureIndex);
     }
 
+    private void addCollider(String shape) {
+        applySelectedColliderFromUi();
+        WeaponColliderDefinition collider = new WeaponColliderDefinition();
+        int count = document.getColliders().size() + 1;
+        collider.setName(uniqueColliderName("weapon_" + WeaponColliderDefinition.normalizedShape(shape) + "_collider_" + count));
+        collider.setShape(shape);
+        document.getColliders().add(collider);
+        selectedColliderIndex = document.getColliders().size() - 1;
+        refreshColliderList();
+        refreshSelectedColliderFields();
+        markDirty();
+    }
+
+    private void duplicateCollider() {
+        if (document.getColliders().isEmpty()) {
+            addCollider(WeaponColliderDefinition.SHAPE_BOX);
+            return;
+        }
+        applySelectedColliderFromUi();
+        WeaponColliderDefinition source = selectedCollider();
+        WeaponColliderDefinition copy = WeaponColliderDefinition.fromJSON(source.toJSON());
+        copy.setName(uniqueColliderName(source.getName() + "_copy"));
+        document.getColliders().add(selectedColliderIndex + 1, copy);
+        selectedColliderIndex++;
+        refreshColliderList();
+        refreshSelectedColliderFields();
+        markDirty();
+    }
+
+    private void deleteCollider() {
+        if (document.getColliders().isEmpty()) {
+            return;
+        }
+        int index = Math.max(0, Math.min(selectedColliderIndex, document.getColliders().size() - 1));
+        document.getColliders().remove(index);
+        selectedColliderIndex = Math.max(0, Math.min(index, Math.max(0, document.getColliders().size() - 1)));
+        refreshColliderList();
+        refreshSelectedColliderFields();
+        markDirty();
+    }
+
+    private void refreshColliderList() {
+        int safeIndex = document.getColliders().isEmpty()
+                ? -1
+                : Math.max(0, Math.min(selectedColliderIndex, document.getColliders().size() - 1));
+        updatingColliderSelection = true;
+        colliderListModel.clear();
+        for (WeaponColliderDefinition collider : document.getColliders()) {
+            colliderListModel.addElement(colliderLabel(collider));
+        }
+        selectedColliderIndex = Math.max(0, safeIndex);
+        if (safeIndex >= 0) {
+            colliderList.setSelectedIndex(safeIndex);
+        } else {
+            colliderList.clearSelection();
+        }
+        updatingColliderSelection = false;
+    }
+
+    private String colliderLabel(WeaponColliderDefinition collider) {
+        String name = collider.getName() == null || collider.getName().trim().isEmpty()
+                ? "weapon_collider"
+                : collider.getName().trim();
+        return name + " - " + collider.getShape();
+    }
+
+    private void refreshSelectedColliderFields() {
+        boolean wasUpdating = updatingUi;
+        updatingUi = true;
+        WeaponColliderDefinition collider = selectedColliderOrNull();
+        boolean enabled = collider != null;
+        txtColliderName.setEnabled(enabled);
+        cboColliderShape.setEnabled(enabled);
+        setColliderTransformControlsEnabled(enabled);
+        if (collider == null) {
+            txtColliderName.setText("");
+            cboColliderShape.setSelectedItem(WeaponColliderDefinition.SHAPE_BOX);
+            setColliderTransformFields(new WeaponAttachmentTransform());
+            updatingUi = wasUpdating;
+            return;
+        }
+        txtColliderName.setText(collider.getName());
+        cboColliderShape.setSelectedItem(collider.getShape());
+        setColliderTransformFields(collider.getTransform());
+        updatingUi = wasUpdating;
+    }
+
+    private void setColliderTransformControlsEnabled(boolean enabled) {
+        colOffsetX.setEnabled(enabled);
+        colOffsetY.setEnabled(enabled);
+        colOffsetZ.setEnabled(enabled);
+        colRotX.setEnabled(enabled);
+        colRotY.setEnabled(enabled);
+        colRotZ.setEnabled(enabled);
+        colScaleX.setEnabled(enabled);
+        colScaleY.setEnabled(enabled);
+        colScaleZ.setEnabled(enabled);
+    }
+
+    private void setColliderTransformFields(WeaponAttachmentTransform transform) {
+        colOffsetX.setValue(transform.getOffsetX());
+        colOffsetY.setValue(transform.getOffsetY());
+        colOffsetZ.setValue(transform.getOffsetZ());
+        colRotX.setValue(transform.getRotationX());
+        colRotY.setValue(transform.getRotationY());
+        colRotZ.setValue(transform.getRotationZ());
+        colScaleX.setValue(transform.getScaleX());
+        colScaleY.setValue(transform.getScaleY());
+        colScaleZ.setValue(transform.getScaleZ());
+    }
+
+    private void applySelectedColliderFromUi() {
+        WeaponColliderDefinition collider = selectedColliderOrNull();
+        if (collider == null) {
+            return;
+        }
+        collider.setName(txtColliderName.getText().trim());
+        collider.setShape(String.valueOf(cboColliderShape.getSelectedItem()));
+        WeaponAttachmentTransform transform = collider.getTransform();
+        transform.setOffsetX(number(colOffsetX));
+        transform.setOffsetY(number(colOffsetY));
+        transform.setOffsetZ(number(colOffsetZ));
+        transform.setRotationX(number(colRotX));
+        transform.setRotationY(number(colRotY));
+        transform.setRotationZ(number(colRotZ));
+        transform.setScaleX(number(colScaleX));
+        transform.setScaleY(number(colScaleY));
+        transform.setScaleZ(number(colScaleZ));
+        refreshColliderList();
+    }
+
+    private WeaponColliderDefinition selectedCollider() {
+        selectedColliderIndex = Math.max(0, Math.min(selectedColliderIndex, document.getColliders().size() - 1));
+        return document.getColliders().get(selectedColliderIndex);
+    }
+
+    private WeaponColliderDefinition selectedColliderOrNull() {
+        if (document == null || document.getColliders().isEmpty()) {
+            return null;
+        }
+        return selectedCollider();
+    }
+
     private String uniquePostureId(String baseId) {
         String normalizedBase = baseId == null || baseId.trim().isEmpty() ? "posture" : baseId.trim();
         Set<String> existing = document.getPostures().stream()
                 .map(WeaponPostureDefinition::getId)
                 .filter(id -> id != null)
                 .map(id -> id.trim().toLowerCase(Locale.ROOT))
+                .collect(Collectors.toSet());
+        String candidate = normalizedBase;
+        int suffix = 2;
+        while (existing.contains(candidate.toLowerCase(Locale.ROOT))) {
+            candidate = normalizedBase + "_" + suffix;
+            suffix++;
+        }
+        return candidate;
+    }
+
+    private String uniqueColliderName(String baseName) {
+        String normalizedBase = baseName == null || baseName.trim().isEmpty() ? "weapon_collider" : baseName.trim();
+        Set<String> existing = document.getColliders().stream()
+                .map(WeaponColliderDefinition::getName)
+                .filter(name -> name != null)
+                .map(name -> name.trim().toLowerCase(Locale.ROOT))
                 .collect(Collectors.toSet());
         String candidate = normalizedBase;
         int suffix = 2;
@@ -661,6 +923,10 @@ public class WeaponDesignerPanel extends JPanel {
                 ? combo.getEditor().getItem()
                 : combo.getSelectedItem();
         return selected == null ? "" : String.valueOf(selected).trim();
+    }
+
+    private String normalizeAssetId(String assetId) {
+        return assetId == null ? "" : assetId.trim().toLowerCase(Locale.ROOT);
     }
 
     private File findResourcesRoot() {
