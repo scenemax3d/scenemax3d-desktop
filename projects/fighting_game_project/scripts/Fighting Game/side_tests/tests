@@ -4,21 +4,31 @@
 //crystal.turn left 360 in 1 Seconds loop while 1==1
   
 //m1 => meshy_azure3 : pos(-4,0,0), scale 0.02
+s=>sinbad : pos (0,0,0)
+m2 => fighter1 : pos (4,0,0)
 
-m2 => fighter1 : pos (4,-2,0)
 m2.weapon = "weapon_player_weapon"
-//m2.weapon.use primary
+s.look at (m2)
+m2.look at (s)
+m2.move down 3 in 0.5 Seconds
+ 
+when weapon_sphere_collider_1 collides with s do
+	sys.print "weapon collision hit"
+	s.turn 360 in 1 seconds Async 
+	s.Dance
+end do 
 
-//m1.walking1 then hit1 then headspin_start then zombie_punch1 then mutant_punch1 Async
-m2.walking1 then hit1 then headspin_start then zombie_punch1 then mutant_punch1 
-
-
+//m2.walking1 then hit1 then headspin_start then zombie_punch1 then mutant_punch1 
+//
 when key space is pressed once do
 	m2.weapon.posture = "fight"
 	m2.zombie_punch1
 end do
-
+//
 when key Z is pressed once do
 	m2.weapon.posture = "ready"
 	m2.idle2 loop 
 end do
+
+wait 4 Seconds
+process.end

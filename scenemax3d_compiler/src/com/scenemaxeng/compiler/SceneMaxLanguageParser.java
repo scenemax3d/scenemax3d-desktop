@@ -20,7 +20,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 public class SceneMaxLanguageParser implements IParser {
@@ -182,98 +181,6 @@ public class SceneMaxLanguageParser implements IParser {
             }
         }
         return false;
-    }
-
-    private static void addWeaponColliderVariableDefs(ProgramDef prg, String codePath) {
-        if (prg == null) {
-            return;
-        }
-        List<File> searchRoots = collectWeaponSearchRoots(codePath);
-        Set<String> visitedFiles = new LinkedHashSet<>();
-        for (File root : searchRoots) {
-            if (root == null || !root.exists()) {
-                continue;
-            }
-            Collection<File> weaponFiles = FileUtils.listFiles(root, new String[]{"smweapon"}, true);
-            for (File weaponFile : weaponFiles) {
-                String fileKey;
-                try {
-                    fileKey = weaponFile.getCanonicalPath();
-                } catch (IOException ex) {
-                    fileKey = weaponFile.getAbsolutePath();
-                }
-                if (!visitedFiles.add(fileKey)) {
-                    continue;
-                }
-                addWeaponColliderVariableDefsFromFile(prg, weaponFile);
-            }
-        }
-    }
-
-    private static List<File> collectWeaponSearchRoots(String codePath) {
-        LinkedHashSet<File> roots = new LinkedHashSet<>();
-        File codeDir = resolveCodeDirectory(codePath);
-        if (codeDir == null) {
-            return new ArrayList<>();
-        }
-        File current = codeDir;
-        while (current != null) {
-            if (new File(current, "resources").isDirectory() && new File(current, "scripts").isDirectory()) {
-                try {
-                    roots.add(current.getCanonicalFile());
-                } catch (IOException ignored) {
-                    roots.add(current.getAbsoluteFile());
-                }
-                break;
-            }
-            current = current.getParentFile();
-        }
-        if (roots.isEmpty()) {
-            try {
-                roots.add(codeDir.getCanonicalFile());
-            } catch (IOException ignored) {
-                roots.add(codeDir.getAbsoluteFile());
-            }
-        }
-        return new ArrayList<>(roots);
-    }
-
-    private static void addWeaponColliderVariableDefsFromFile(ProgramDef prg, File weaponFile) {
-        try {
-            JSONObject root = new JSONObject(FileUtils.readFileToString(weaponFile, StandardCharsets.UTF_8));
-            JSONArray colliders = root.optJSONArray("colliders");
-            if (colliders == null) {
-                return;
-            }
-            for (int i = 0; i < colliders.length(); i++) {
-                JSONObject collider = colliders.optJSONObject(i);
-                if (collider == null) {
-                    continue;
-                }
-                String name = collider.optString("name", "").trim();
-                if (name.isEmpty() || prg.getVar(name) != null) {
-                    continue;
-                }
-                String shape = collider.optString("shape", "box").trim().toLowerCase(Locale.ROOT);
-                VariableDef varDef;
-                if ("sphere".equals(shape)) {
-                    SphereVariableDef sphere = new SphereVariableDef();
-                    sphere.resName = "sphere";
-                    sphere.isCollider = true;
-                    varDef = sphere;
-                } else {
-                    BoxVariableDef box = new BoxVariableDef();
-                    box.resName = "box";
-                    box.isCollider = true;
-                    varDef = box;
-                }
-                varDef.varName = name;
-                varDef.visible = false;
-                prg.vars.add(varDef);
-                prg.vars_index.put(varDef.varName, varDef);
-            }
-        } catch (Exception ignored) {
-        }
     }
 
     public SceneMaxLanguageParser(ProgramDef prg, String codePath) {
@@ -439,7 +346,6 @@ public class SceneMaxLanguageParser implements IParser {
                 if(prg.parent==null) {
                     prg.addCameraVariableDef();
                     prg.copySharedEntities(SceneMaxLanguageParser.this.previousProgramState);
-                    addWeaponColliderVariableDefs(prg, this.codePath);
                 }
 
                 DefineStatementVisitor defineStatementVisitor = new DefineStatementVisitor(prg,this.codePath);
@@ -2721,8 +2627,7 @@ public class SceneMaxLanguageParser implements IParser {
                 }
                 VariableDef vd = prg.getVar(destEntity);
                 if(vd==null) {
-                    prg.syntaxErrors.add(_sourceFileName + ": Object '"+destEntity+"' not defined at line:"+ctx.collision().collision_entity().var_decl().getStart().getLine());
-                    return null;
+                    vd = createDeferredCollisionEntity(destEntity);
                 }
                 cmd.destEntity = vd;
                 cmd.destJoint = destJoint;
@@ -2737,8 +2642,7 @@ public class SceneMaxLanguageParser implements IParser {
 
                     vd = prg.getVar(sourceEntity);
                     if(vd==null) {
-                        prg.syntaxErrors.add(_sourceFileName + ": Object '"+sourceEntity+"' not defined at line:"+collisionEntityContext.var_decl().getStart().getLine());
-                        return null;
+                        vd = createDeferredCollisionEntity(sourceEntity);
                     }
 
                     cmd.sourceEntities.add(vd);
@@ -2750,6 +2654,14 @@ public class SceneMaxLanguageParser implements IParser {
                 cmd.doBlock = doBlock;
 
                 return cmd;
+            }
+
+            private VariableDef createDeferredCollisionEntity(String varName) {
+                VariableDef varDef = new VariableDef();
+                varDef.varName = varName;
+                varDef.varType = VariableDef.VAR_TYPE_OBJECT;
+                varDef.visible = false;
+                return varDef;
             }
 
         }

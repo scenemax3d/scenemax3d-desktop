@@ -7,7 +7,6 @@ import com.scenemaxeng.common.weapons.WeaponPostureDefinition;
 import com.scenemaxeng.common.weapons.WeaponValidationResult;
 
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 
 public class WeaponSystem {
@@ -134,7 +133,7 @@ public class WeaponSystem {
         if (weaponNameOrId == null || weaponNameOrId.trim().isEmpty() || app.getAssetsMapping() == null) {
             return null;
         }
-        return app.getAssetsMapping().getWeaponsIndex().get(weaponNameOrId.trim().toLowerCase(Locale.ROOT));
+        return app.getAssetsMapping().getWeaponDefinition(weaponNameOrId);
     }
 
 }

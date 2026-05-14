@@ -6701,6 +6701,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
         List<java.lang.Object> ctls = new ArrayList<>();
         if (ghostControl != null) {
+            ghostControl.setUserObject(colliderNode);
             ctls.add(ghostControl);
             if (bulletAppState != null && bulletAppState.getPhysicsSpace() != null) {
                 bulletAppState.getPhysicsSpace().add(ghostControl);
