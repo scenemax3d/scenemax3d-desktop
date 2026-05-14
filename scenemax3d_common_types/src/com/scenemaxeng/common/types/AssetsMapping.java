@@ -13,7 +13,10 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 public class AssetsMapping {
 
@@ -28,6 +31,7 @@ public class AssetsMapping {
     private HashMap<String, ResourceCinematicRig> _cinematics = new HashMap<>();
     private HashMap<String, ResourceAnimation> _animations = new HashMap<>();
     private HashMap<String, WeaponDefinition> _weapons = new HashMap<>();
+    private LinkedHashSet<File> _weaponRoots = new LinkedHashSet<>();
 
     private JSONObject getResourcesIndex() {
         String json = "";
@@ -80,8 +84,8 @@ public class AssetsMapping {
         res = getResourcesFolderIndex(extPath+"/animations/animations-ext.json");
         loadAnimationsFromJson(res);
 
-        loadWeaponsFromFolder(new File(extPath, "weapons"));
-        loadWeaponsFromFolder(new File(extPath, "Weapons"));
+        addWeaponRoot(new File(extPath, "weapons"));
+        addWeaponRoot(new File(extPath, "Weapons"));
 
     }
 
@@ -123,8 +127,8 @@ public class AssetsMapping {
         res = getResourcesFolderIndex("./resources/animations/animations.json");
         loadAnimationsFromJson(res);
 
-        loadWeaponsFromFolder(new File("./resources/weapons"));
-        loadWeaponsFromFolder(new File("./resources/Weapons"));
+        addWeaponRoot(new File("./resources/weapons"));
+        addWeaponRoot(new File("./resources/Weapons"));
 
         /////////////////////////////// READ SELF - CONTAINED ASSETS /////////////////////////////
         // self contained exec will read from embedded class-path resource file
@@ -569,6 +573,24 @@ public class AssetsMapping {
         return _weapons;
     }
 
+    public WeaponDefinition getWeaponDefinition(String weaponNameOrId) {
+        if (weaponNameOrId == null || weaponNameOrId.trim().isEmpty()) {
+            return null;
+        }
+        String key = weaponNameOrId.trim().toLowerCase(Locale.ROOT);
+        WeaponDefinition cached = _weapons.get(key);
+        if (cached != null) {
+            return cached;
+        }
+
+        WeaponDefinition direct = loadWeaponByFileName(key);
+        if (direct != null) {
+            return direct;
+        }
+
+        return findAndCacheWeaponDefinition(key);
+    }
+
     public void loadWeaponsFromProject(String projectRootPath) {
         if (projectRootPath == null || projectRootPath.isBlank()) {
             return;
@@ -577,24 +599,98 @@ public class AssetsMapping {
         if (!projectRoot.exists()) {
             return;
         }
-        loadWeaponsFromFolder(projectRoot);
+        for (File folder : collectProjectWeaponFolders(projectRoot)) {
+            addWeaponRoot(folder);
+        }
     }
 
-    private void loadWeaponsFromFolder(File folder) {
-        if (folder == null || !folder.exists()) {
+    private List<File> collectProjectWeaponFolders(File projectRoot) {
+        LinkedHashSet<File> folders = new LinkedHashSet<>();
+        addExistingFolder(folders, new File(projectRoot, "scripts"));
+        addExistingFolder(folders, new File(projectRoot, "resources/weapons"));
+        addExistingFolder(folders, new File(projectRoot, "resources/Weapons"));
+        addExistingFolder(folders, new File(projectRoot, "weapons"));
+        addExistingFolder(folders, new File(projectRoot, "Weapons"));
+        return new ArrayList<>(folders);
+    }
+
+    private void addExistingFolder(Set<File> folders, File folder) {
+        if (folder == null || !folder.isDirectory()) {
             return;
         }
-        Collection<File> files = org.apache.commons.io.FileUtils.listFiles(folder, new String[]{"smweapon"}, true);
-        for (File file : files) {
-            try {
-                WeaponDefinition definition = WeaponDefinition.load(file);
-                if (definition.getId() != null && !definition.getId().isBlank()) {
-                    _weapons.put(definition.getId().toLowerCase(), definition);
+        try {
+            folders.add(folder.getCanonicalFile());
+        } catch (IOException ignored) {
+            folders.add(folder.getAbsoluteFile());
+        }
+    }
+
+    private void addWeaponRoot(File folder) {
+        addExistingFolder(_weaponRoots, folder);
+    }
+
+    private WeaponDefinition loadWeaponByFileName(String key) {
+        List<String> candidateNames = new ArrayList<>();
+        candidateNames.add(key);
+        if (key.startsWith("weapon_") && key.length() > "weapon_".length()) {
+            candidateNames.add(key.substring("weapon_".length()));
+        }
+        for (File root : _weaponRoots) {
+            for (String name : candidateNames) {
+                File file = new File(root, name + WeaponDefinition.FILE_EXTENSION);
+                if (file.isFile()) {
+                    WeaponDefinition definition = loadAndCacheWeaponDefinition(file);
+                    if (definition != null) {
+                        return definition;
+                    }
                 }
-                _weapons.put(stripExtension(file.getName()).toLowerCase(), definition);
-            } catch (Exception ignored) {
             }
         }
+        return null;
+    }
+
+    private WeaponDefinition findAndCacheWeaponDefinition(String key) {
+        for (File root : _weaponRoots) {
+            Collection<File> files = org.apache.commons.io.FileUtils.listFiles(root, new String[]{"smweapon"}, true);
+            for (File file : files) {
+                String fileKey = stripExtension(file.getName()).toLowerCase(Locale.ROOT);
+                if (key.equals(fileKey)) {
+                    WeaponDefinition definition = loadAndCacheWeaponDefinition(file);
+                    if (definition != null) {
+                        return definition;
+                    }
+                }
+                try {
+                    WeaponDefinition definition = WeaponDefinition.load(file);
+                    cacheWeaponDefinition(file, definition);
+                    if (definition.getId() != null && key.equals(definition.getId().trim().toLowerCase(Locale.ROOT))) {
+                        return definition;
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return null;
+    }
+
+    private WeaponDefinition loadAndCacheWeaponDefinition(File file) {
+        try {
+            WeaponDefinition definition = WeaponDefinition.load(file);
+            cacheWeaponDefinition(file, definition);
+            return definition;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private void cacheWeaponDefinition(File file, WeaponDefinition definition) {
+        if (definition == null || file == null) {
+            return;
+        }
+        if (definition.getId() != null && !definition.getId().isBlank()) {
+            _weapons.put(definition.getId().trim().toLowerCase(Locale.ROOT), definition);
+        }
+        _weapons.put(stripExtension(file.getName()).toLowerCase(Locale.ROOT), definition);
     }
 
     public void loadCinematicsFromProject(String projectRootPath) {

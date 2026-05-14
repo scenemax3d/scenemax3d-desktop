@@ -100,12 +100,26 @@ public class DesignerCreateDocumentTool extends AbstractSceneMaxTool {
                 MaterialDocument.writeEmptyFile(materialFile.toFile(), parseMaterialPreset(preset));
                 return materialFile;
             case "weapon":
-                Path weaponFile = directory.resolve(ensureExtension(fileName, WeaponDefinition.FILE_EXTENSION));
-                WeaponDefinition.writeTemplateFile(weaponFile.toFile(), stripExtension(weaponFile.getFileName().toString()), preset);
+                WeaponDefinition weaponDefinition = WeaponDefinition.createTemplate(stripExtension(fileName), preset);
+                Path weaponFile = resolveWeaponDirectory(directory).resolve(weaponDefinition.getId() + WeaponDefinition.FILE_EXTENSION);
+                weaponDefinition.save(weaponFile.toFile());
                 return weaponFile;
             default:
                 throw new IllegalArgumentException("Unsupported document kind: " + kind);
         }
+    }
+
+    private Path resolveWeaponDirectory(Path directory) {
+        Path current = directory;
+        while (current != null) {
+            Path resources = current.resolve("resources");
+            Path scripts = current.resolve("scripts");
+            if (Files.isDirectory(resources) && Files.isDirectory(scripts)) {
+                return resources.resolve("weapons");
+            }
+            current = current.getParent();
+        }
+        return directory.resolve("weapons");
     }
 
     private MaterialTemplatePreset parseMaterialPreset(String preset) {

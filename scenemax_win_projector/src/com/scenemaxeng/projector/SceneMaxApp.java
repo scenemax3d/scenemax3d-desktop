@@ -1335,6 +1335,12 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 resolveCurrentScriptContextPath());
     }
 
+    private void showRuntimeErrorMessage(String message) {
+        recordRuntimeIssue(message, "run");
+        logRuntimeMessage(LoggerCommand.ERROR, message);
+        showFloatingMessage(message);
+    }
+
     public void loadResource(StatementDef st) {
 
         if(st instanceof PlayStopSoundCommand){
@@ -1505,6 +1511,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if(action instanceof LoggerCommand) {
             LoggerCommandController ctl = new LoggerCommandController(this, prg, scope, (LoggerCommand) action);
             ctl.async = action.isAsync;
+            scope.add(ctl);
+        } else if(action instanceof ProcessEndCommand) {
+            ProcessEndController ctl = new ProcessEndController(this, prg, scope, (ProcessEndCommand) action);
             scope.add(ctl);
         } else if(action instanceof WaitStatementCommand) {
             WaitStatementController ctl = new WaitStatementController(this,prg,(WaitStatementCommand)action,scope);
@@ -4011,8 +4020,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
                 } catch (IllegalArgumentException e) {
                     String message = "Problem adding Dynamic Animation Control To Model: " + name + "\r\n" + e.getMessage();
-                    recordRuntimeIssue(message, "run");
-                    showFloatingMessage(message);
+                    showRuntimeErrorMessage(message);
                     return null;
                 }
 
@@ -5064,6 +5072,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     }
 
+    public void endRuntimeProcess() {
+        clearScene();
+        stop();
+    }
+
     @Override
     public void onStartCode() {
         if (_appObserver != null) _appObserver.onStartCode();
@@ -5435,7 +5448,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     public void handleRuntimeError(String err) {
         String enrichedError = enrichRuntimeError(err);
         recordRuntimeIssue(enrichedError, "run");
-        logger.log(Level.SEVERE, enrichedError);
+        logRuntimeMessage(LoggerCommand.ERROR, enrichedError);
 
         if (this.hasRunTimeError && this.runTimeError != null && !this.runTimeError.isBlank()) {
             return;
@@ -5916,8 +5929,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         SpriteEmitter se = sprites.get(targetVar);
         if (se==null) {
             String message = "[posSprite] Run-time error: Sprite '"+targetVar+"' not found";
-            recordRuntimeIssue(message, "run");
-            this.showFloatingMessage(message);
+            showRuntimeErrorMessage(message);
             return;
         }
         Spatial m = se.getSpatial();
@@ -6668,6 +6680,53 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         return null;
 
+    }
+
+    public void registerWeaponCollider(String runtimeName, Node colliderNode, EntityInstBase inst, GhostControl ghostControl) {
+        if (runtimeName == null || runtimeName.trim().isEmpty() || colliderNode == null || inst == null || inst.varDef == null) {
+            return;
+        }
+        unregisterWeaponCollider(runtimeName);
+        colliderNode.setName(runtimeName);
+        colliderNode.setUserData("key", runtimeName);
+        if (inst.varDef.varType == VariableDef.VAR_TYPE_SPHERE) {
+            spheres.put(runtimeName, colliderNode);
+        } else {
+            boxes.put(runtimeName, colliderNode);
+        }
+        geoName2ModelName.put(runtimeName, runtimeName);
+        geoName2EntityInst.put(runtimeName, inst);
+        if (inst.scope != null) {
+            inst.scope.entities.put(inst.varDef.varName, inst);
+        }
+        List<java.lang.Object> ctls = new ArrayList<>();
+        if (ghostControl != null) {
+            ghostControl.setUserObject(colliderNode);
+            ctls.add(ghostControl);
+            if (bulletAppState != null && bulletAppState.getPhysicsSpace() != null) {
+                bulletAppState.getPhysicsSpace().add(ghostControl);
+            }
+        }
+        collisionControlsCache.put(runtimeName, ctls);
+    }
+
+    public void unregisterWeaponCollider(String runtimeName) {
+        if (runtimeName == null || runtimeName.trim().isEmpty()) {
+            return;
+        }
+        removeCollisionControlsFromPhysics(runtimeName);
+        EntityInstBase inst = geoName2EntityInst.get(runtimeName);
+        if (inst != null && inst.scope != null && inst.varDef != null) {
+            EntityInstBase current = inst.scope.entities.get(inst.varDef.varName);
+            if (current == inst) {
+                inst.scope.entities.remove(inst.varDef.varName);
+            }
+        }
+        boxes.remove(runtimeName);
+        spheres.remove(runtimeName);
+        geoName2ModelName.remove(runtimeName);
+        geoName2EntityInst.remove(runtimeName);
+        collisionControlsCache.remove(runtimeName);
     }
 
     public ISceneMax3dObjectWrapper getEntityWrapper(String targetVar, int varType) {

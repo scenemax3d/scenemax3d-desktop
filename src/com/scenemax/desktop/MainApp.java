@@ -2813,24 +2813,35 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         }
 
         String displayName = docName.trim();
-        String fileName = displayName;
-        if (!fileName.toLowerCase(Locale.ROOT).endsWith(WeaponDefinition.FILE_EXTENSION)) {
-            fileName = fileName + WeaponDefinition.FILE_EXTENSION;
-        }
-
-        File f = new File(path + "/" + fileName);
+        WeaponDefinition definition = WeaponDefinition.createTemplate(displayName, template);
+        String fileName = definition.getId() + WeaponDefinition.FILE_EXTENSION;
+        File weaponFolder = resolveWeaponDocumentFolder(new File(path));
+        File f = new File(weaponFolder, fileName);
         try {
-            WeaponDefinition.writeTemplateFile(f, displayName, template);
+            definition.save(f);
         } catch (IOException e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(null, "Error creating weapon: " + e.getMessage(), "Weapon Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
-        File parentDir = new File(path);
+        File parentDir = f.getParentFile();
         saveSelectedTreeNodePosition(parentDir.getPath(), fileName);
         loadScriptsFolder();
         openLastTreeNode();
+    }
+
+    private File resolveWeaponDocumentFolder(File selectedFolder) {
+        File current = selectedFolder;
+        while (current != null) {
+            File resourcesFolder = new File(current, "resources");
+            File scriptsFolder = new File(current, "scripts");
+            if (resourcesFolder.isDirectory() && scriptsFolder.isDirectory()) {
+                return new File(resourcesFolder, "weapons");
+            }
+            current = current.getParentFile();
+        }
+        return new File(selectedFolder, "weapons");
     }
 
     private void openUIDesignerDocument(File f) {

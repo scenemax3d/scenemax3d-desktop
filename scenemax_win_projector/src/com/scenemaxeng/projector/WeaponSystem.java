@@ -7,7 +7,6 @@ import com.scenemaxeng.common.weapons.WeaponPostureDefinition;
 import com.scenemaxeng.common.weapons.WeaponValidationResult;
 
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 
 public class WeaponSystem {
@@ -47,7 +46,7 @@ public class WeaponSystem {
         EquipmentComponent equipment = equipmentByOwner.computeIfAbsent(ownerVarName, EquipmentComponent::new);
         EquippedWeaponRuntime existing = equipment.unequip(slot);
         if (existing != null) {
-            existing.detachModel();
+            existing.detachModel(app);
         }
 
         WeaponInstance instance = new WeaponInstance();
@@ -85,7 +84,7 @@ public class WeaponSystem {
         if (runtime == null) {
             return false;
         }
-        runtime.detachModel();
+        runtime.detachModel(app);
         return true;
     }
 
@@ -104,7 +103,7 @@ public class WeaponSystem {
     public void clear() {
         for (EquipmentComponent equipment : equipmentByOwner.values()) {
             for (EquippedWeaponRuntime runtime : equipment.getEquippedWeapons()) {
-                runtime.detachModel();
+                runtime.detachModel(app);
             }
         }
         equipmentByOwner.clear();
@@ -121,10 +120,11 @@ public class WeaponSystem {
             return false;
         }
         String resolvedPostureId = posture.getId();
-        runtime.detachModel();
+        runtime.detachModel(app);
         Spatial spawnedModel = attachmentResolver.attachWeaponModel(runtime.getOwnerCharacterId(),
                 runtime.getWeaponDefinition(), resolvedPostureId);
         runtime.setSpawnedModel(spawnedModel);
+        runtime.setRegisteredColliderNames(attachmentResolver.getLastRegisteredColliderNames());
         runtime.setCurrentPostureId(resolvedPostureId);
         return spawnedModel != null;
     }
@@ -133,7 +133,7 @@ public class WeaponSystem {
         if (weaponNameOrId == null || weaponNameOrId.trim().isEmpty() || app.getAssetsMapping() == null) {
             return null;
         }
-        return app.getAssetsMapping().getWeaponsIndex().get(weaponNameOrId.trim().toLowerCase(Locale.ROOT));
+        return app.getAssetsMapping().getWeaponDefinition(weaponNameOrId);
     }
 
 }

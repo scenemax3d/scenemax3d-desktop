@@ -1,13 +1,19 @@
 package com.scenemaxeng.projector;
 
 import com.scenemaxeng.compiler.GraphicEntityCreationCommand;
+import com.scenemaxeng.compiler.CollisionStatementCommand;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
 import com.scenemaxeng.compiler.VariableDef;
 import com.scenemaxeng.compiler.WeaponCommand;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import java.lang.reflect.Field;
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 
 import static org.junit.Assert.assertEquals;
@@ -15,6 +21,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class WeaponSyntaxParsingTest {
+    @Rule
+    public TemporaryFolder temporaryFolder = new TemporaryFolder();
 
     @Test
     public void parsesApprovedWeaponSyntax() {
@@ -101,6 +109,51 @@ public class WeaponSyntaxParsingTest {
 
         assertEquals("m2@" + app.getMainScope().scopeId, app.equippedOwner);
         assertEquals("weapon_player_weapon", app.equippedWeapon);
+    }
+
+    @Test
+    public void weaponCollidersCanBeDeferredUntilWeaponEquip() throws Exception {
+        File projectRoot = temporaryFolder.newFolder("project");
+        File scripts = new File(projectRoot, "scripts");
+        File resources = new File(projectRoot, "resources");
+        assertTrue(scripts.mkdirs());
+        assertTrue(resources.mkdirs());
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, new File(scripts, "level.sm").getAbsolutePath()).parse(
+                "player=>dragon\n"
+                        + "when player1_weapon_axe_upper_collider collides with player do\n"
+                        + "end do");
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+        assertEquals(null, prg.getVar("player1_weapon_axe_upper_collider"));
+        CollisionStatementCommand collision = (CollisionStatementCommand) prg.actions.get(1);
+        assertEquals("player1_weapon_axe_upper_collider", collision.sourceEntities.get(0).varName);
+        assertEquals(VariableDef.VAR_TYPE_OBJECT, collision.sourceEntities.get(0).varType);
+    }
+
+    @Test
+    public void runningFolderParseDoesNotLoadWeaponFilesForCollisionVariables() throws Exception {
+        File repoRoot = temporaryFolder.newFolder("repo");
+        assertTrue(new File(repoRoot, "resources").mkdirs());
+        File repoScripts = new File(repoRoot, "scripts");
+        assertTrue(repoScripts.mkdirs());
+        Files.write(new File(repoScripts, "outside.smweapon").toPath(), "{ invalid weapon json".getBytes(StandardCharsets.UTF_8));
+
+        File running = new File(repoRoot, "running");
+        File sideTests = new File(running, "side_tests");
+        File level = new File(running, "game_level_train");
+        assertTrue(sideTests.mkdirs());
+        assertTrue(level.mkdirs());
+        Files.write(new File(level, "player_weapon.smweapon").toPath(), "{ invalid weapon json".getBytes(StandardCharsets.UTF_8));
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, new File(sideTests, "tests").getAbsolutePath()).parse(
+                "player=>dragon\n"
+                        + "when staged_collider collides with player do\n"
+                        + "end do");
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+        assertEquals(null, prg.getVar("staged_collider"));
+        assertEquals(null, prg.getVar("outside_collider"));
     }
 
     @SuppressWarnings("unchecked")

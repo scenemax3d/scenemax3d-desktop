@@ -1005,6 +1005,10 @@ public class SceneMaxLanguageParser implements IParser {
                 return cmd;
             }
 
+            public ActionStatementBase visitProcessStatement(SceneMaxParser.ProcessStatementContext ctx) {
+                return new ProcessEndCommand();
+            }
+
             public StatementDef visitAttachCameraActions(SceneMaxParser.AttachCameraActionsContext ctx) {
                 FpsCameraCommand cmd = new FpsCameraCommand();
 
@@ -2623,8 +2627,7 @@ public class SceneMaxLanguageParser implements IParser {
                 }
                 VariableDef vd = prg.getVar(destEntity);
                 if(vd==null) {
-                    prg.syntaxErrors.add(_sourceFileName + ": Object '"+destEntity+"' not defined at line:"+ctx.collision().collision_entity().var_decl().getStart().getLine());
-                    return null;
+                    vd = createDeferredCollisionEntity(destEntity);
                 }
                 cmd.destEntity = vd;
                 cmd.destJoint = destJoint;
@@ -2639,8 +2642,7 @@ public class SceneMaxLanguageParser implements IParser {
 
                     vd = prg.getVar(sourceEntity);
                     if(vd==null) {
-                        prg.syntaxErrors.add(_sourceFileName + ": Object '"+sourceEntity+"' not defined at line:"+collisionEntityContext.var_decl().getStart().getLine());
-                        return null;
+                        vd = createDeferredCollisionEntity(sourceEntity);
                     }
 
                     cmd.sourceEntities.add(vd);
@@ -2652,6 +2654,14 @@ public class SceneMaxLanguageParser implements IParser {
                 cmd.doBlock = doBlock;
 
                 return cmd;
+            }
+
+            private VariableDef createDeferredCollisionEntity(String varName) {
+                VariableDef varDef = new VariableDef();
+                varDef.varName = varName;
+                varDef.varType = VariableDef.VAR_TYPE_OBJECT;
+                varDef.visible = false;
+                return varDef;
             }
 
         }

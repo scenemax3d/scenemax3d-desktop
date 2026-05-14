@@ -20,6 +20,7 @@ public class WeaponDefinition {
     private String modelAssetId = "";
     private String defaultPostureId = "default";
     private List<WeaponPostureDefinition> postures = new ArrayList<>();
+    private List<WeaponColliderDefinition> colliders = new ArrayList<>();
     private JSONObject designerMetadata = new JSONObject();
 
     public WeaponDefinition() {
@@ -37,6 +38,10 @@ public class WeaponDefinition {
         for (WeaponPostureDefinition posture : postures) {
             postureArray.put(posture.toJSON());
         }
+        JSONArray colliderArray = new JSONArray();
+        for (WeaponColliderDefinition collider : getColliders()) {
+            colliderArray.put(collider.toJSON());
+        }
         return new JSONObject()
                 .put("type", "SceneMaxWeaponDefinition")
                 .put("schemaVersion", SCHEMA_VERSION)
@@ -44,6 +49,7 @@ public class WeaponDefinition {
                 .put("modelAssetId", modelAssetId)
                 .put("defaultPostureId", defaultPostureId)
                 .put("postures", postureArray)
+                .put("colliders", colliderArray)
                 .put("designerMetadata", designerMetadata == null ? new JSONObject() : designerMetadata);
     }
 
@@ -70,6 +76,13 @@ public class WeaponDefinition {
             legacy.setTransform(WeaponAttachmentTransform.fromJSON(json.optJSONObject("attachmentTransform")));
             definition.postures.add(legacy);
             definition.defaultPostureId = legacy.getId();
+        }
+
+        JSONArray colliderArray = json.optJSONArray("colliders");
+        if (colliderArray != null) {
+            for (int i = 0; i < colliderArray.length(); i++) {
+                definition.colliders.add(WeaponColliderDefinition.fromJSON(colliderArray.optJSONObject(i)));
+            }
         }
 
         definition.designerMetadata = json.optJSONObject("designerMetadata");
@@ -110,6 +123,9 @@ public class WeaponDefinition {
             for (WeaponPostureDefinition posture : postures) {
                 posture.validate(result);
             }
+        }
+        for (WeaponColliderDefinition collider : getColliders()) {
+            collider.validate(result);
         }
         return result;
     }
@@ -204,6 +220,13 @@ public class WeaponDefinition {
     public List<WeaponPostureDefinition> getPostures() {
         ensurePostureExists();
         return postures;
+    }
+
+    public List<WeaponColliderDefinition> getColliders() {
+        if (colliders == null) {
+            colliders = new ArrayList<>();
+        }
+        return colliders;
     }
 
     public JSONObject getDesignerMetadata() {
