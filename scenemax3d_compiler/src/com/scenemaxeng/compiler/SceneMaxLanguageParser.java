@@ -1099,6 +1099,10 @@ public class SceneMaxLanguageParser implements IParser {
                 return cmd;
             }
 
+            public ActionStatementBase visitProcessStatement(SceneMaxParser.ProcessStatementContext ctx) {
+                return new ProcessEndCommand();
+            }
+
             public StatementDef visitAttachCameraActions(SceneMaxParser.AttachCameraActionsContext ctx) {
                 FpsCameraCommand cmd = new FpsCameraCommand();
 

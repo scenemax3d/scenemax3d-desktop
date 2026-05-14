@@ -27,6 +27,7 @@ statement
    | define_group       # defineGroup
    | debug_statement    # debugStatement
    | logger_statement   # loggerStatement
+   | process_statement  # processStatement
    | define_variable	# defVar
    | modify_variable    # modifyVar
    | skybox_actions     # skyBoxActions
@@ -111,6 +112,7 @@ debug_off : Off ;
 
 logger_statement : Logger '.' logger_level logical_expression ;
 logger_level : Info | Debug | Error ;
+process_statement : Process '.' End ;
 
 
 play_sound : Play Sound res_var_decl Loop? ;
@@ -934,7 +936,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
     Screen | Scene | Environment | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
-    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Weapon | Posture | Empty;
+    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Posture | Empty;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
@@ -1042,6 +1044,7 @@ Draw : 'Draw' | 'draw' ;
 Debug : 'debug' | 'Debug' ;
 Logger : 'Logger' | 'logger' ;
 Error : 'Error' | 'error' ;
+Process : 'Process' | 'process' ;
 On : 'on' | 'On' ;
 Off : 'off' | 'Off' ;
 
