@@ -29,6 +29,7 @@ statement
    | logger_statement   # loggerStatement
    | process_statement  # processStatement
    | define_variable	# defVar
+   | animation_controller_assignment # animationControllerAssignment
    | modify_variable    # modifyVar
    | skybox_actions     # skyBoxActions
    | screen_actions     # screenActions
@@ -38,6 +39,7 @@ statement
    | mini_map_actions # miniMapActions
    | ui_statement # uiStatement
    | action_statement   # actionStatement
+   | animation_controller_event # animationControllerEvent
    | do_block           # doBlock
    | function_invocation # functionInvocation
    | declare_variable   # declareVariable
@@ -438,6 +440,8 @@ init_scale_attr : Scale Equals? logical_expression ;
 init_mass_attr : Mass Equals? logical_expression ;
 
 modify_variable : variable_name_and_mandatory_assignemt (',' variable_name_and_mandatory_assignemt)*;
+animation_controller_assignment : res_var_decl Equals Animation var_decl '.' animation_name ;
+animation_controller_event : var_decl '.' Event '(' animation_name ',' logical_expression ')' Equals do_block ;
 
 particle_system_actions : Effects '.' particle_system_effect '.' particle_system_action (async_expr)? ;
 particle_system_effect: Flash | Explosion | Debris | Spark | SmokeTrail | ShockWave | Fire |
@@ -588,6 +592,7 @@ action_operation
    | hide       # hideStatement
    | show       # showStatement
    | delete     # deleteStatement
+   | animation_controller_run # animationControllerRunStatement
    | animate    # animateStatement
    | animate_short # animateShortStatement
    | stop # stopStatement
@@ -613,9 +618,11 @@ action_operation
    | weapon_action # weaponAction
    ;
 
-weapon_action : weapon_equip | weapon_posture ;
+weapon_action : weapon_equip | weapon_posture | weapon_detach | weapon_attach ;
 weapon_equip : var_decl '.' Weapon Equals (Empty | logical_expression) ;
 weapon_posture : var_decl '.' Weapon '.' Posture Equals logical_expression ;
+weapon_detach : var_decl '.' Weapon '.' Detach ;
+weapon_attach : var_decl '.' Weapon '.' Attach ;
 
 replay : var_decl '.' Replay replay_options (Having replay_attributes)? ;
 replay_attributes : replay_attribute (and_expr replay_attribute)* ;
@@ -789,6 +796,7 @@ file_attr : File Equals? QUOTED_STRING ;
 
 show_axis_option : Axis X? Y? Z? ;
 delete : var_decl '.' Delete ;
+animation_controller_run : var_decl '.' Run ;
 animate : var_decl '.' Animation animation_attr (and_expr animation_attr)* ;
 animation_attr : anim_attr_speed ;
 anim_attr_speed : Speed Equals? logical_expression speed_for_seconds? when_frames_above?;
@@ -936,7 +944,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
     Screen | Scene | Environment | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
-    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Posture | Empty;
+    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Posture | Empty | Event;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
@@ -1258,6 +1266,7 @@ Class : 'class' | 'Class' ;
 Function : 'Function' | 'function' ;
 Run : 'Run' | 'run' ;
 Call : 'Call' | 'call' ;
+Event : 'Event' | 'event' ;
 Every : 'Every' | 'every' ;
 Shared : 'Shared' | 'shared' ;
 Var : 'Var' | 'var' ;

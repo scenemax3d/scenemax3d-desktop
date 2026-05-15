@@ -48,6 +48,10 @@ public class SceneMaxAutoComplete {
     private ProgramDef cachedProgram = null;
     private long lastParseTime = 0;
     private static final long PARSE_COOLDOWN_MS = 2000; // re-parse at most every 2 seconds
+    private ProgramDef cachedLocalProgram = null;
+    private long lastLocalParseTime = 0;
+    private boolean localParseDirty = true;
+    private static final long LOCAL_PARSE_COOLDOWN_MS = 750; // avoid parsing incomplete text on every keystroke
 
     private static final int AUTO_TRIGGER_LENGTH = 2;
 
@@ -371,9 +375,22 @@ public class SceneMaxAutoComplete {
      * local scope symbols that may not be in the main file yet.
      */
     private ProgramDef parseCurrentEditor() {
+        long now = System.currentTimeMillis();
+        if (!localParseDirty) {
+            return cachedLocalProgram;
+        }
+        if (cachedLocalProgram != null && (now - lastLocalParseTime) < LOCAL_PARSE_COOLDOWN_MS) {
+            return cachedLocalProgram;
+        }
+
         try {
             String code = textArea.getText();
-            if (code == null || code.trim().isEmpty()) return null;
+            if (code == null || code.trim().isEmpty()) {
+                cachedLocalProgram = null;
+                localParseDirty = false;
+                lastLocalParseTime = now;
+                return null;
+            }
 
             // Strip project metadata
             code = code.replaceAll("//\\$\\[project\\]=(.+?);", "");
@@ -383,15 +400,21 @@ public class SceneMaxAutoComplete {
 
             SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, codePath);
             parser.enableChildParserMode(true); // don't clear static collections
-            return parser.parse(code);
+            cachedLocalProgram = parser.parse(code);
+            localParseDirty = false;
+            lastLocalParseTime = now;
+            return cachedLocalProgram;
         } catch (Exception e) {
-            return null;
+            localParseDirty = false;
+            lastLocalParseTime = now;
+            return cachedLocalProgram;
         }
     }
 
     // ---- Completion logic ----
 
     private void onTextChanged() {
+        localParseDirty = true;
         String prefix = getCurrentPrefix();
         if (prefix.length() >= AUTO_TRIGGER_LENGTH) {
             // Ensure we have a parse result (use cached if fresh enough)
@@ -517,7 +540,10 @@ public class SceneMaxAutoComplete {
      */
     public void invalidateCache() {
         cachedProgram = null;
+        cachedLocalProgram = null;
         lastParseTime = 0;
+        lastLocalParseTime = 0;
+        localParseDirty = true;
     }
 
     // ---- Building completion list from ProgramDef ----

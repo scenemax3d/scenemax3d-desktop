@@ -35,6 +35,7 @@ public class VariableDef extends StatementDef{
     public static final int VAR_TYPE_EFFEKSEER = 80;
     public static final int VAR_TYPE_CINEMATIC_CAMERA = 90;
     public static final int VAR_TYPE_LIGHT = 100;
+    public static final int VAR_TYPE_ANIMATION_CONTROLLER = 110;
     //public int threadId;
 
     public String resName;

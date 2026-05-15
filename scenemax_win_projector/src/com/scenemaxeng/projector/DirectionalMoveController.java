@@ -34,7 +34,9 @@ public class DirectionalMoveController extends SceneMaxBaseController{
         if (!targetCalculated) {
 
             targetCalculated = true;
-            findTargetVar();
+            if (findTargetVar() != 0) {
+                return true;
+            }
 
             if (cmd.distanceExpr != null) {
                 dist = (Double) new ActionLogicalExpressionVm(cmd.distanceExpr, this.scope).evaluate();

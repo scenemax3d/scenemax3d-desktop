@@ -9,10 +9,10 @@ import java.awt.image.BufferedImage;
 
 public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
 
-    private static final ImageIcon ICON_FOLDER   = new ImageIcon(ScriptsTreeCellRenderer.class.getResource("/images/folder_button2_24x24.png"));
-    private static final ImageIcon ICON_CSHARP   = new ImageIcon(ScriptsTreeCellRenderer.class.getResource("/images/c_sharp_1_24x24.png"));
-    private static final ImageIcon ICON_MAIN     = new ImageIcon(ScriptsTreeCellRenderer.class.getResource("/images/3d_script_2_24x24_blue.png"));
-    private static final ImageIcon ICON_SCRIPT   = new ImageIcon(ScriptsTreeCellRenderer.class.getResource("/images/3d_script_2_24x24.png"));
+    private static final ImageIcon ICON_FOLDER   = MainApp.loadImageIcon("/images/folder_button2_24x24.png");
+    private static final ImageIcon ICON_CSHARP   = MainApp.loadImageIcon("/images/c_sharp_1_24x24.png");
+    private static final ImageIcon ICON_MAIN     = MainApp.loadImageIcon("/images/3d_script_2_24x24_blue.png");
+    private static final ImageIcon ICON_SCRIPT   = MainApp.loadImageIcon("/images/3d_script_2_24x24.png");
     private static final ImageIcon ICON_DESIGNER = createDesignerIcon();
     private static final ImageIcon ICON_UI_DESIGNER = createUIDesignerIcon();
     private static final ImageIcon ICON_EFFEKSEER_DESIGNER = createEffekseerDesignerIcon();

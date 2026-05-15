@@ -30,10 +30,12 @@ public class WeaponSyntaxParsingTest {
                 "player=>dragon\n"
                         + "player.weapon = \"Iron Sword\"\n"
                         + "player.weapon.posture = \"fight\"\n"
+                        + "player.weapon.detach\n"
+                        + "player.weapon.attach\n"
                         + "player.weapon = empty");
 
         assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
-        assertEquals(4, prg.actions.size());
+        assertEquals(6, prg.actions.size());
 
         WeaponCommand equip = (WeaponCommand) prg.actions.get(1);
         assertEquals(WeaponCommand.ACTION_EQUIP, equip.action);
@@ -44,7 +46,15 @@ public class WeaponSyntaxParsingTest {
         assertEquals("player", posture.ownerVarName);
         assertNotNull(posture.postureNameExpr);
 
-        WeaponCommand unequip = (WeaponCommand) prg.actions.get(3);
+        WeaponCommand detach = (WeaponCommand) prg.actions.get(3);
+        assertEquals(WeaponCommand.ACTION_DETACH, detach.action);
+        assertEquals("player", detach.ownerVarName);
+
+        WeaponCommand attach = (WeaponCommand) prg.actions.get(4);
+        assertEquals(WeaponCommand.ACTION_ATTACH, attach.action);
+        assertEquals("player", attach.ownerVarName);
+
+        WeaponCommand unequip = (WeaponCommand) prg.actions.get(5);
         assertEquals(WeaponCommand.ACTION_UNEQUIP, unequip.action);
     }
 
@@ -112,6 +122,24 @@ public class WeaponSyntaxParsingTest {
     }
 
     @Test
+    public void weaponDetachAndAttachResolveOwnerToRuntimeModelKey() {
+        TrackingSceneMaxApp app = new TrackingSceneMaxApp();
+        app.initForTest();
+
+        app.runPartialCode("m2 => adi2 : pos (4,-2,0)\n"
+                + "m2.weapon.detach\n"
+                + "m2.weapon.attach", null, false);
+
+        CompositeController mainController = app.mainController();
+        for (int i = 0; i < 5 && app.attachOwner == null; i++) {
+            mainController.run(0f);
+        }
+
+        assertEquals("m2@" + app.getMainScope().scopeId, app.detachOwner);
+        assertEquals("m2@" + app.getMainScope().scopeId, app.attachOwner);
+    }
+
+    @Test
     public void weaponCollidersCanBeDeferredUntilWeaponEquip() throws Exception {
         File projectRoot = temporaryFolder.newFolder("project");
         File scripts = new File(projectRoot, "scripts");
@@ -171,6 +199,8 @@ public class WeaponSyntaxParsingTest {
         String equippedWeapon;
         String postureOwner;
         String postureName;
+        String detachOwner;
+        String attachOwner;
 
         void initForTest() {
             initDesignerRuntime("");
@@ -199,6 +229,18 @@ public class WeaponSyntaxParsingTest {
         public boolean setWeaponPosture(String ownerVarName, String postureIdOrName) {
             postureOwner = ownerVarName;
             postureName = postureIdOrName;
+            return true;
+        }
+
+        @Override
+        public boolean detachWeapon(String ownerVarName) {
+            detachOwner = ownerVarName;
+            return true;
+        }
+
+        @Override
+        public boolean attachWeapon(String ownerVarName) {
+            attachOwner = ownerVarName;
             return true;
         }
     }

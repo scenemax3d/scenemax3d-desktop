@@ -1,12 +1,9 @@
 
-
 enemy_knockout = {
 	
 	enemy_ko=1
 	op_hit = 2
   
-  crystal.Show
-  crystal.turn left 360 in 1 Seconds Loop while 1==1
   run level1_switch_to_crystal_hunt_camera
   
   do async
@@ -27,6 +24,7 @@ enemy_knockout = {
 	end do
 
 	do async
+	  run axe_lookup // player needs to collect the axe now 
 	  player2.shader = "dramatic_hit_red"
 	  player2.Knockout
 	  wait 2 seconds

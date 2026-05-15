@@ -108,6 +108,8 @@ crystal => static meshy_crystal1 : hidden, pos (23.844534,-88.28118,161.98776), 
 when player1 collides with crystal do
 	switch to "game_level_train"
 end do
+crystal_box => static meshy_wooden_box: pos (23.831593,-88.0,161.9128), scale 1.4, collision shape box async
+axe => meshy_axe : hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async
 
 // Write your finalization code here.
 // This code will be included at the end of the generated .code file.

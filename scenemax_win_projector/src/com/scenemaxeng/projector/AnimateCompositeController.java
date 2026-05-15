@@ -46,13 +46,23 @@ public class AnimateCompositeController extends CompositeController{
                 this.stopAnimationSequence();
                 return true;
             }
-            // remove the old animate composite controller if it exists
+            // Remove the old animation sequence if this action came from one.
+            // Runtime preview animations may have a plain host controller with no parent.
             if(m.currentAction!=null) {
                 if (m.currentAction.isProtected) {
                     return true;
                 }
-                SceneMaxBaseController hostController = m.currentAction.getHostController();
-                ((AnimateCompositeController)hostController.parentController).stopAnimationSequence();
+                SceneMaxBaseController hostController = m.currentAction.controller != null
+                        ? m.currentAction.getHostController()
+                        : null;
+                if (hostController != null && hostController.parentController instanceof AnimateCompositeController) {
+                    ((AnimateCompositeController) hostController.parentController).stopAnimationSequence();
+                } else if (m.currentAction.controller != null) {
+                    m.currentAction.controller.stop();
+                } else {
+                    m.currentAction.finishAnimation();
+                    m.currentAction.isProtected = false;
+                }
             }
 
             this.started = true;

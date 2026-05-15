@@ -558,6 +558,22 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         return getWeaponSystem().unequipWeapon(ownerVarName, slotId);
     }
 
+    public boolean detachWeapon(String ownerVarName) {
+        return detachWeapon(ownerVarName, "rightHand");
+    }
+
+    public boolean detachWeapon(String ownerVarName, String slotId) {
+        return getWeaponSystem().detachWeapon(ownerVarName, slotId);
+    }
+
+    public boolean attachWeapon(String ownerVarName) {
+        return attachWeapon(ownerVarName, "rightHand");
+    }
+
+    public boolean attachWeapon(String ownerVarName, String slotId) {
+        return getWeaponSystem().attachWeapon(ownerVarName, slotId);
+    }
+
     public EquippedWeaponRuntime getEquippedWeapon(String ownerVarName, String slotId) {
         return getWeaponSystem().getEquippedWeapon(ownerVarName, slotId);
     }
@@ -1450,6 +1466,19 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 scope.add(mc);
             }
 
+        } else if(action instanceof AnimationControllerAssignmentCommand) {
+            AnimationControllerAssignmentController ctl =
+                    new AnimationControllerAssignmentController(this, prg, scope, (AnimationControllerAssignmentCommand) action);
+            scope.add(ctl);
+        } else if(action instanceof AnimationControllerActionCommand) {
+            AnimationControllerActionController ctl =
+                    new AnimationControllerActionController(this, prg, scope, (AnimationControllerActionCommand) action);
+            ctl.async = action.isAsync;
+            scope.add(ctl);
+        } else if(action instanceof AnimationControllerEventCommand) {
+            AnimationControllerEventController ctl =
+                    new AnimationControllerEventController(this, prg, scope, (AnimationControllerEventCommand) action);
+            scope.add(ctl);
         } else if(action instanceof ActionCommandAnimate) {
             ActionCommandAnimate cmdAnim = (ActionCommandAnimate)action;
 
@@ -6708,6 +6737,39 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
         }
         collisionControlsCache.put(runtimeName, ctls);
+    }
+
+    public void registerWeaponModel(String runtimeName, Node weaponRoot, EntityInstBase inst) {
+        if (runtimeName == null || runtimeName.trim().isEmpty() || weaponRoot == null || inst == null || inst.varDef == null) {
+            return;
+        }
+        unregisterWeaponModel(runtimeName);
+        weaponRoot.setName(runtimeName);
+        weaponRoot.setUserData("key", runtimeName);
+        AppModel appModel = new AppModel(weaponRoot);
+        appModel.entityInst = inst;
+        models.put(runtimeName, appModel);
+        geoName2ModelName.put(runtimeName, runtimeName);
+        geoName2EntityInst.put(runtimeName, inst);
+        if (inst.scope != null) {
+            inst.scope.entities.put(inst.varDef.varName, inst);
+        }
+    }
+
+    public void unregisterWeaponModel(String runtimeName) {
+        if (runtimeName == null || runtimeName.trim().isEmpty()) {
+            return;
+        }
+        AppModel appModel = models.remove(runtimeName);
+        EntityInstBase inst = appModel != null ? appModel.entityInst : geoName2EntityInst.get(runtimeName);
+        if (inst != null && inst.scope != null && inst.varDef != null) {
+            EntityInstBase current = inst.scope.entities.get(inst.varDef.varName);
+            if (current == inst) {
+                inst.scope.entities.remove(inst.varDef.varName);
+            }
+        }
+        geoName2ModelName.remove(runtimeName);
+        geoName2EntityInst.remove(runtimeName);
     }
 
     public void unregisterWeaponCollider(String runtimeName) {

@@ -112,6 +112,23 @@ public class SceneMaxBaseController implements ISceneMaxController {
     protected int findTargetVar() {
 
         VariableDef varDef = cmd.varDef;
+        if (varDef == null) {
+            EntityInstBase entityInst = cmd.targetVar != null ? scope.getEntityInst(cmd.targetVar) : null;
+            if (entityInst != null && entityInst.varDef != null) {
+                this.targetVarDef = entityInst.varDef;
+                SceneMaxScope entityScope = entityInst.scope != null ? entityInst.scope : scope;
+                this.targetVar = entityInst.varDef.varName + "@" + entityScope.scopeId;
+                return 0;
+            }
+
+            app.handleRuntimeError(app.formatUndefinedVariableError(
+                    cmd.varLineNum,
+                    cmd.targetVar,
+                    null,
+                    getClass().getSimpleName()));
+            return 1;
+        }
+
         VarInst vi = scope.getVar(cmd.varDef.varName);
         if (vi != null && vi.value instanceof EntityInstBase) {
             varDef = ((EntityInstBase) vi.value).varDef;

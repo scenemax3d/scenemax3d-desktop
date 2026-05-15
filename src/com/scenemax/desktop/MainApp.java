@@ -3320,8 +3320,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 app.setExtendedState(JFrame.MAXIMIZED_BOTH);
                 app.setVisible(true);
 
-                URL imgURL = MainApp.class.getResource("/images/scenemax_icon.png");
-                app.setIconImage(new ImageIcon(imgURL).getImage());
+                app.setIconImage(loadImageIcon("/images/scenemax_icon.png").getImage());
 
             }
         });
@@ -3894,20 +3893,37 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     public JButton addToolbarButton(String img, String actionCommand, String toolTipText, ActionListener listener) {
 
         String imgLocation = "/images/" + img + ".png";
-        URL imageURL = MainApp.class.getResource(imgLocation);
 
         //Create and initialize the button.
         JButton button = new JButton();
         button.setActionCommand(actionCommand);
         button.setToolTipText(toolTipText);
         button.addActionListener(listener);
-        button.setIcon(new ImageIcon(imageURL));
+        button.setIcon(loadImageIcon(imgLocation));
         button.setOpaque(false);
         button.setContentAreaFilled(false);
         button.setBorderPainted(false);
 
         mainToolbar.add(button);
         return button;
+    }
+
+    static ImageIcon loadImageIcon(String resourcePath) {
+        URL imageUrl = MainApp.class.getResource(resourcePath);
+        if (imageUrl != null) {
+            return new ImageIcon(imageUrl);
+        }
+
+        String relativePath = resourcePath == null ? "" : resourcePath;
+        while (relativePath.startsWith("/")) {
+            relativePath = relativePath.substring(1);
+        }
+        File assetFile = new File("assets", relativePath);
+        if (assetFile.isFile()) {
+            return new ImageIcon(assetFile.getAbsolutePath());
+        }
+
+        return new ImageIcon(new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB));
     }
 
     public void addPluginToolbarAction(SceneMaxPluginAction action, SceneMaxPluginContext context) {
@@ -6553,7 +6569,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         btnAskQuestion = new JButton();
         btnAskQuestion.setEnabled(false);
         btnAskQuestion.setHorizontalTextPosition(0);
-        btnAskQuestion.setIcon(new ImageIcon(getClass().getResource("/images/raise_hand_72x72.png")));
+        btnAskQuestion.setIcon(loadImageIcon("/images/raise_hand_72x72.png"));
         btnAskQuestion.setText("Not Connected");
         btnAskQuestion.setVerticalAlignment(0);
         btnAskQuestion.setVerticalTextPosition(3);
@@ -6564,11 +6580,11 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         classroomPane.add(btnCancelQuestion, BorderLayout.SOUTH);
         btnActiveQuestions = new JButton();
         btnActiveQuestions.setEnabled(true);
-        btnActiveQuestions.setIcon(new ImageIcon(getClass().getResource("/images/question1_32x32.png")));
+        btnActiveQuestions.setIcon(loadImageIcon("/images/question1_32x32.png"));
         btnActiveQuestions.setText("");
         classroomPane.add(btnActiveQuestions, BorderLayout.NORTH);
         btnAnswers = new JButton();
-        btnAnswers.setIcon(new ImageIcon(getClass().getResource("/images/answer1_32x32.png")));
+        btnAnswers.setIcon(loadImageIcon("/images/answer1_32x32.png"));
         btnAnswers.setText("");
         leftPanel.add(btnAnswers, new GridConstraints(1, 1, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
         final JScrollPane scrollPane1 = new JScrollPane();

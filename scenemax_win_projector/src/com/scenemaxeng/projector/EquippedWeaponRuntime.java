@@ -15,6 +15,8 @@ public class EquippedWeaponRuntime {
     private String currentPostureId;
     private Spatial spawnedModel;
     private List<String> registeredColliderNames = new ArrayList<>();
+    private String registeredModelName;
+    private boolean detachedFromOwner;
 
     public EquippedWeaponRuntime(String ownerCharacterId, String weaponInstanceId,
                                  WeaponDefinition weaponDefinition, EquipmentSlot equipmentSlot) {
@@ -34,11 +36,16 @@ public class EquippedWeaponRuntime {
 
     public void detachModel(SceneMaxApp app) {
         if (app != null) {
+            if (registeredModelName != null && !registeredModelName.isBlank()) {
+                app.unregisterWeaponModel(registeredModelName);
+            }
+            registeredModelName = null;
             for (String colliderName : registeredColliderNames) {
                 app.unregisterWeaponCollider(colliderName);
             }
         }
         registeredColliderNames.clear();
+        detachedFromOwner = false;
         detachModel();
     }
 
@@ -82,5 +89,21 @@ public class EquippedWeaponRuntime {
 
     public List<String> getRegisteredColliderNames() {
         return Collections.unmodifiableList(registeredColliderNames);
+    }
+
+    public String getRegisteredModelName() {
+        return registeredModelName;
+    }
+
+    public void setRegisteredModelName(String registeredModelName) {
+        this.registeredModelName = registeredModelName;
+    }
+
+    public boolean isDetachedFromOwner() {
+        return detachedFromOwner;
+    }
+
+    public void setDetachedFromOwner(boolean detachedFromOwner) {
+        this.detachedFromOwner = detachedFromOwner;
     }
 }

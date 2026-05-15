@@ -23,6 +23,13 @@ public class ModelAnimateController extends SceneMaxBaseController {
     @Override
     public boolean run(float tpf) {
 
+        if (forceStop) {
+            if (controller != null) {
+                controller.stop();
+            }
+            return true;
+        }
+
         if(controller!=null && controller.isPaused()) {
             if (!app.scenePaused) {
                 controller.resume();
@@ -94,6 +101,10 @@ public class ModelAnimateController extends SceneMaxBaseController {
             this.reused = true;
         }
 
+    }
+
+    public AppModelAnimationController getAnimationController() {
+        return controller;
     }
 
 }

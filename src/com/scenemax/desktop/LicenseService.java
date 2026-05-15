@@ -2,6 +2,8 @@ package com.scenemax.desktop;
 
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.net.URL;
 
@@ -28,8 +30,14 @@ public class LicenseService {
 
         URL licenseURL = MainApp.class.getResource("/license/lic_terms_encrypted");
         try {
-            InputStream is = licenseURL.openStream();
-            byte[] terms = Util.toByteArray(is);
+            InputStream is = openLicenseStream(licenseURL);
+            if (is == null) {
+                return 1;
+            }
+            byte[] terms;
+            try (InputStream licenseStream = is) {
+                terms = Util.toByteArray(licenseStream);
+            }
             String termsAsText = new StrongAES().decrypt(terms);
 
             JSONObject conf = new JSONObject(termsAsText);
@@ -81,6 +89,24 @@ public class LicenseService {
         }
 
         return 1;
+    }
+
+    private static InputStream openLicenseStream(URL licenseURL) throws Exception {
+        if (licenseURL != null) {
+            return licenseURL.openStream();
+        }
+
+        File assetLicense = new File("assets/license/lic_terms_encrypted");
+        if (assetLicense.isFile()) {
+            return new FileInputStream(assetLicense);
+        }
+
+        File rootLicense = new File("lic_terms_encrypted");
+        if (rootLicense.isFile()) {
+            return new FileInputStream(rootLicense);
+        }
+
+        return null;
     }
 
     public static String getClassroomServer() {

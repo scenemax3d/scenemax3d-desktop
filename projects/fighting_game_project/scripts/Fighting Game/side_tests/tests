@@ -1,34 +1,47 @@
 
-//crystal=> meshy_crystal1
-//crystal.Show
-//crystal.turn left 360 in 1 Seconds loop while 1==1
-  
-//m1 => meshy_azure3 : pos(-4,0,0), scale 0.02
-s=>sinbad : pos (0,0,0)
-m2 => fighter1 : pos (4,0,0)
+axe=>meshy_axe : pos (0,0,0)
+player1 => fighter1 : pos (4,0,0)
 
-m2.weapon = "weapon_player_weapon"
-s.look at (m2)
-m2.look at (s)
-m2.move down 3 in 0.5 Seconds
- 
-when weapon_sphere_collider_1 collides with s do
-	sys.print "weapon collision hit"
-	s.turn 360 in 1 seconds Async 
-	s.Dance
-end do 
 
-//m2.walking1 then hit1 then headspin_start then zombie_punch1 then mutant_punch1 
+flash_axe = {
+	if (axe.data.axe_flash == 1) {
+	  axe.shader = "dramatic_hit_red"
+	  axe.data.axe_flash = 0
+	} else {
+		axe.shader = ""
+		axe.data.axe_flash = 1
+	}
+}
+
+axe_lookup = {
+	
+	axe.Show
+	axe.turn 360 in 1 second loop while 1==1
+	run flash_axe every 0.5 Seconds
+	player1.weapon = "weapon_player_weapon"
 //
-when key space is pressed once do
-	m2.weapon.posture = "fight"
-	m2.zombie_punch1
-end do
-//
-when key Z is pressed once do
-	m2.weapon.posture = "ready"
-	m2.idle2 loop 
-end do
+//	[player1.data.throw_axe == 1]
+//	when weapon_sphere_collider_1 collides with crystal_box do
+//		crystal_box.hide
+//		crystal.Show
+//    crystal.turn left 360 in 1 Seconds Loop while 1==1 
+//	end do
+	 
+	when key Q is pressed once do
+	  Logger.info "side test Q: preparing zombie_punch1"
+	  player1.weapon.posture = "fight"
+	  anim = animation player1.zombie_punch1
+	  anim.event("zombie_punch1", 30) = {
+	    Logger.info "side test Q: zombie_punch1 30 percent event"
+	  	player1.data.throw_axe = 1
+		  player1.weapon.Detach
+		  weapon_player_weapon.move forward 5 in 0.5 seconds
+		  player1.data.throw_axe = 0
+	  }
+	  Logger.info "side test Q: running zombie_punch1"
+	  anim.run
+	  Logger.info "side test Q: zombie_punch1 finished"
+	end do 
+}
 
-wait 4 Seconds
-process.end
+run axe_lookup
