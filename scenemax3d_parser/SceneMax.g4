@@ -237,9 +237,13 @@ camera_system_max_y_option : Max Y Equals? logical_expression ;
 camera_system_min_z_option : Min Z Equals? logical_expression ;
 camera_system_max_z_option : Max Z Equals? logical_expression ;
 camera_modifier_expr : Camera '.' System '.' Modifiers '.' res_var_decl ;
-camera_modifier_apply : var_decl '.' Apply var_decl (Having camera_modifier_override_list)? ;
+camera_modifier_apply : var_decl '.' Apply apply_target_ref (Having camera_modifier_override_list)? ;
+apply_target_ref : var_decl ('.' Weapon)? ;
 camera_modifier_override_list : camera_modifier_override (and_expr camera_modifier_override)* ;
 camera_modifier_override : res_var_decl (res_var_decl)? Equals? logical_expression ;
+motion_expr : System '.' Motion '(' logical_expression (',' motion_runtime_option (',' motion_runtime_option)*)? ')' ;
+motion_runtime_option : motion_target_option ;
+motion_target_option : Target Equals? (var_decl | '(' pos_axes ')') ;
 
 using_resource : Using resource_declaration (and_expr resource_declaration)* ;
 resource_declaration : res_var_decl (',' res_var_decl)* (Sprite | Model | Audio) ;
@@ -313,6 +317,7 @@ value    :
     |    BOOLEAN
     |    camera_system_expr
     |    camera_modifier_expr
+    |    motion_expr
     |    var_decl
     |    variable_field
     |    variable_data_field
@@ -944,7 +949,8 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
     Screen | Scene | Environment | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
-    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Posture | Empty | Event;
+    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Posture | Empty | Event |
+    Motion;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
@@ -1231,6 +1237,7 @@ TextEffect : 'TextEffect' | 'texteffect' | 'textEffect' ;
 Ease : 'Ease' | 'ease' ;
 Default : 'Default' | 'default' ;
 Modifiers : 'Modifiers' | 'modifiers' ;
+Motion : 'Motion' | 'motion' ;
 Apply : 'Apply' | 'apply' ;
 Plugins: 'plugins' | 'Plugins' ;
 Switch : 'Switch' | 'switch' ;

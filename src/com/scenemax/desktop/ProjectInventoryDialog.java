@@ -2,6 +2,9 @@ package com.scenemax.desktop;
 
 import com.scenemax.designer.inventory.InventoryModelPreview;
 import com.scenemax.designer.DesignerPanel;
+import com.scenemaxeng.common.motion.ThrowMotionDefinition;
+import com.scenemaxeng.common.motion.ThrowMotionValidationIssue;
+import com.scenemaxeng.common.motion.ThrowMotionValidationResult;
 import com.scenemaxeng.common.weapons.WeaponDefinition;
 import com.scenemaxeng.common.weapons.WeaponValidationIssue;
 import com.scenemaxeng.common.weapons.WeaponValidationResult;
@@ -80,6 +83,7 @@ class ProjectInventoryPanel extends JPanel {
     private static final String CATEGORY_SHADERS = "Shaders";
     private static final String CATEGORY_MATERIALS = "Materials";
     private static final String CATEGORY_WEAPONS = "Weapons";
+    private static final String CATEGORY_THROW_MOTIONS = "Throw Motions";
     private static final String CATEGORY_EFFECTS = "Effekseer";
     private static final String CATEGORY_SCENES = "Scenes";
     private static final String CATEGORY_UI = "UI";
@@ -89,7 +93,7 @@ class ProjectInventoryPanel extends JPanel {
     private static final String[] CATEGORY_ORDER = {
             CATEGORY_ALL, CATEGORY_MODELS, CATEGORY_AUDIO, CATEGORY_SPRITES, CATEGORY_FONTS,
             CATEGORY_ANIMATIONS, CATEGORY_TEXTURES, CATEGORY_SHADERS, CATEGORY_MATERIALS,
-            CATEGORY_WEAPONS, CATEGORY_EFFECTS, CATEGORY_SCENES, CATEGORY_UI, CATEGORY_SKYBOXES, CATEGORY_TERRAIN
+            CATEGORY_WEAPONS, CATEGORY_THROW_MOTIONS, CATEGORY_EFFECTS, CATEGORY_SCENES, CATEGORY_UI, CATEGORY_SKYBOXES, CATEGORY_TERRAIN
     };
 
     private final List<InventoryAsset> allAssets = new ArrayList<>();
@@ -1235,6 +1239,8 @@ class ProjectInventoryPanel extends JPanel {
             addStandaloneFiles(root, source, "Materials", CATEGORY_MATERIALS, ".mat", ".j3m");
             addStandaloneFiles(root, source, "weapons", CATEGORY_WEAPONS, ".smweapon");
             addStandaloneFiles(root, source, "Weapons", CATEGORY_WEAPONS, ".smweapon");
+            addStandaloneFiles(root, source, "throw_motions", CATEGORY_THROW_MOTIONS, ".smmotion");
+            addStandaloneFiles(root, source, "ThrowMotions", CATEGORY_THROW_MOTIONS, ".smmotion");
             addStandaloneFiles(root, source, "scenes", CATEGORY_SCENES, ".smdesign", ".code", ".png");
         }
 
@@ -1249,6 +1255,8 @@ class ProjectInventoryPanel extends JPanel {
                         relativize(root, file), file, root);
                 if (CATEGORY_WEAPONS.equals(category)) {
                     enrichWeaponAsset(asset);
+                } else if (CATEGORY_THROW_MOTIONS.equals(category)) {
+                    enrichThrowMotionAsset(asset);
                 }
                 add(asset);
             }
@@ -1263,7 +1271,7 @@ class ProjectInventoryPanel extends JPanel {
                 return lower.endsWith(".smdesign") || lower.endsWith(".smui")
                         || lower.endsWith(".smeffectdesign") || lower.endsWith(".smshader")
                         || lower.endsWith(".smenvshader") || lower.endsWith(".mat")
-                        || lower.endsWith(".smweapon");
+                        || lower.endsWith(".smweapon") || lower.endsWith(".smmotion");
             });
             for (File file : files) {
                 String lower = file.getName().toLowerCase(Locale.ROOT);
@@ -1278,6 +1286,8 @@ class ProjectInventoryPanel extends JPanel {
                     category = CATEGORY_SHADERS;
                 } else if (lower.endsWith(".smweapon")) {
                     category = CATEGORY_WEAPONS;
+                } else if (lower.endsWith(".smmotion")) {
+                    category = CATEGORY_THROW_MOTIONS;
                 } else {
                     category = CATEGORY_MATERIALS;
                 }
@@ -1285,6 +1295,8 @@ class ProjectInventoryPanel extends JPanel {
                         relativize(projectRoot, file), file, null);
                 if (CATEGORY_WEAPONS.equals(category)) {
                     enrichWeaponAsset(asset);
+                } else if (CATEGORY_THROW_MOTIONS.equals(category)) {
+                    enrichThrowMotionAsset(asset);
                 }
                 add(asset);
             }
@@ -1332,6 +1344,50 @@ class ProjectInventoryPanel extends JPanel {
                 asset.put("Status", "Invalid");
                 asset.put("Validation Errors", 1);
                 asset.put("Validation Issues", "ERROR - file: Could not load weapon asset: " + ex.getMessage());
+            }
+        }
+
+        private void enrichThrowMotionAsset(InventoryAsset asset) {
+            if (asset == null || asset.file == null || !asset.file.isFile()) {
+                return;
+            }
+            try {
+                ThrowMotionDefinition motion = ThrowMotionDefinition.load(asset.file);
+                ThrowMotionValidationResult validation = motion.validate();
+                int errors = 0;
+                int warnings = 0;
+                StringBuilder issueSummary = new StringBuilder();
+                for (ThrowMotionValidationIssue issue : validation.getIssues()) {
+                    if (issue.getSeverity() == ThrowMotionValidationIssue.Severity.ERROR) {
+                        errors++;
+                    } else {
+                        warnings++;
+                    }
+                    if (issueSummary.length() < 900) {
+                        if (issueSummary.length() > 0) {
+                            issueSummary.append("\n");
+                        }
+                        issueSummary.append(issue.getSeverity().name())
+                                .append(" - ")
+                                .append(issue.getField())
+                                .append(": ")
+                                .append(issue.getMessage());
+                    }
+                }
+                asset.name = motion.getId() == null || motion.getId().isBlank() ? asset.name : motion.getId();
+                asset.properties.put("Name", asset.name);
+                asset.put("Motion ID", motion.getId());
+                asset.put("Motion Type", ThrowMotionDefinition.displayNameForType(motion.getMotionType()));
+                asset.put("Status", validation.isValid() ? (warnings > 0 ? "Warnings" : "Valid") : "Invalid");
+                asset.put("Validation Errors", errors);
+                asset.put("Validation Warnings", warnings);
+                if (issueSummary.length() > 0) {
+                    asset.put("Validation Issues", issueSummary.toString());
+                }
+            } catch (Exception ex) {
+                asset.put("Status", "Invalid");
+                asset.put("Validation Errors", 1);
+                asset.put("Validation Issues", "ERROR - file: Could not load throw motion asset: " + ex.getMessage());
             }
         }
 
@@ -1449,6 +1505,7 @@ class ProjectInventoryPanel extends JPanel {
             if (CATEGORY_ANIMATIONS.equals(category)) return new Color(236, 89, 112);
             if (CATEGORY_TEXTURES.equals(category)) return new Color(62, 190, 205);
             if (CATEGORY_EFFECTS.equals(category)) return new Color(245, 96, 77);
+            if (CATEGORY_THROW_MOTIONS.equals(category)) return new Color(80, 210, 220);
             return new Color(120, 138, 160);
         }
 

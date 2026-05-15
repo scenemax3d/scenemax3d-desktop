@@ -17,6 +17,7 @@ import com.scenemax.designer.effekseer.EffekseerImporter;
 import com.scenemax.designer.material.MaterialDesignerPanel;
 import com.scenemax.designer.material.MaterialDocument;
 import com.scenemax.designer.material.MaterialTemplatePreset;
+import com.scenemax.designer.motion.ThrowMotionDesignerPanel;
 import com.scenemax.designer.shader.EnvironmentShaderDesignerPanel;
 import com.scenemax.designer.shader.EnvironmentShaderDocument;
 import com.scenemax.designer.shader.EnvironmentShaderTemplatePreset;
@@ -41,6 +42,7 @@ import com.scenemax.desktop.ai.mcp.SceneMaxMcpServer;
 import com.scenemax.desktop.plugins.IdePluginHostContext;
 import com.scenemaxeng.common.ui.model.UIDocument;
 import com.scenemaxeng.common.ui.model.UIWidgetDef;
+import com.scenemaxeng.common.motion.ThrowMotionDefinition;
 import com.scenemaxeng.compiler.ApplyMacroResults;
 import com.scenemaxeng.compiler.MacroFilter;
 import com.scenemaxeng.compiler.ProgramDef;
@@ -292,6 +294,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         || active.isShaderDesignerTab || active.isEnvironmentShaderDesignerTab
                         || active.isMaterialDesignerTab
                         || active.isWeaponDesignerTab
+                        || active.isThrowMotionDesignerTab
                         || active.isAnimationImportTab;
                 textArea.setEnabled(!visualDesignerTab);
                 textAreaRTL.setEnabled(!visualDesignerTab);
@@ -578,6 +581,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     createNewMaterialDocument(getSelectedScriptsFolder().getAbsolutePath());
                 } else if (cmd.equals("create_weapon_document")) {
                     createNewWeaponDocument(getSelectedScriptsFolder().getAbsolutePath());
+                } else if (cmd.equals("create_throw_motion_document")) {
+                    createNewThrowMotionDocument(getProjectFilesRootFolder().getAbsolutePath());
                 } else if (cmd.equals("font_generator")) {
                     FontGeneratorDialog dlg = new FontGeneratorDialog(MainApp.this);
                     dlg.setLocationRelativeTo(MainApp.this);
@@ -1527,6 +1532,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     createNewMaterialDocument(filePath);
                 } else if (cmd.equals("new_weapon_document")) {
                     createNewWeaponDocument(filePath);
+                } else if (cmd.equals("new_throw_motion_document")) {
+                    createNewThrowMotionDocument(filePath);
                 } else if (cmd.equals("new_environment_shader_document")) {
                     createNewEnvironmentShaderDocument(filePath);
                 } else if (cmd.equals("clean_backup_files")) {
@@ -1581,9 +1588,11 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         boolean isEnvironmentShaderDesigner = f.getName().toLowerCase().endsWith(".smenvshader");
                         boolean isMaterialDesigner = f.getName().toLowerCase().endsWith(".mat");
                         boolean isWeaponDesigner = f.getName().toLowerCase().endsWith(WeaponDefinition.FILE_EXTENSION);
+                        boolean isThrowMotionDesigner = f.getName().toLowerCase().endsWith(ThrowMotionDefinition.FILE_EXTENSION);
                         editorTabPanel.closeTabByPath(filePath,
                                 isDesigner || isUIDesigner || isEffekseerDesigner || isShaderDesigner
-                                        || isEnvironmentShaderDesigner || isMaterialDesigner || isWeaponDesigner);
+                                        || isEnvironmentShaderDesigner || isMaterialDesigner || isWeaponDesigner
+                                        || isThrowMotionDesigner);
 
                         // If this is a .smdesign file, also delete its companion .code, _init.code
                         // and _end.code files and clean up any DB references (open_tabs)
@@ -1801,6 +1810,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         addScriptsTreePopupMenuItem("Create UI Document", "new_ui_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Material Document", "new_material_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Weapon", "new_weapon_document", popup, popupActionListener, true, false, file);
+        addScriptsTreePopupMenuItem("Create Throw Motion", "new_throw_motion_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Shader Document", "new_shader_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Environment Shader Document", "new_environment_shader_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Sub Folder...", "create_sub_folder", popup, popupActionListener, true, false, file);
@@ -2312,7 +2322,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 || lowerPath.endsWith(".smshader")
                 || lowerPath.endsWith(".smenvshader")
                 || lowerPath.endsWith(".mat")
-                || lowerPath.endsWith(WeaponDefinition.FILE_EXTENSION);
+                || lowerPath.endsWith(WeaponDefinition.FILE_EXTENSION)
+                || lowerPath.endsWith(ThrowMotionDefinition.FILE_EXTENSION);
     }
 
     private boolean isAssetSensitiveDocument(File file) {
@@ -2844,6 +2855,81 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         return new File(selectedFolder, "weapons");
     }
 
+    private void createNewThrowMotionDocument(String path) {
+        String docName = (String) JOptionPane.showInputDialog(
+                null,
+                "Type new throw motion name",
+                "Throw Motion Name",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                null,
+                "");
+
+        if (docName == null || docName.trim().length() == 0) {
+            return;
+        }
+
+        String[] templates = {
+                ThrowMotionDefinition.TYPE_TARGET_ARC,
+                ThrowMotionDefinition.TYPE_BALLISTIC,
+                ThrowMotionDefinition.TYPE_STRAIGHT,
+                ThrowMotionDefinition.TYPE_HOMING,
+                ThrowMotionDefinition.TYPE_RETURNING,
+                ThrowMotionDefinition.TYPE_PHYSICS
+        };
+        String[] labels = new String[templates.length];
+        for (int i = 0; i < templates.length; i++) {
+            labels[i] = ThrowMotionDefinition.displayNameForType(templates[i]);
+        }
+        String selectedLabel = (String) JOptionPane.showInputDialog(
+                null,
+                "Choose a starter template",
+                "Throw Motion Template",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                labels,
+                labels[0]
+        );
+        String template = templates[0];
+        if (selectedLabel != null) {
+            for (int i = 0; i < labels.length; i++) {
+                if (labels[i].equals(selectedLabel)) {
+                    template = templates[i];
+                    break;
+                }
+            }
+        }
+
+        String displayName = docName.trim();
+        ThrowMotionDefinition definition = ThrowMotionDefinition.createTemplate(displayName, template);
+        String fileName = definition.getId() + ThrowMotionDefinition.FILE_EXTENSION;
+        File motionFolder = resolveDocumentCreationFolder(new File(path));
+        File f = new File(motionFolder, fileName);
+        try {
+            definition.save(f);
+        } catch (IOException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(null, "Error creating throw motion: " + e.getMessage(),
+                    "Throw Motion Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        File parentDir = f.getParentFile();
+        saveSelectedTreeNodePosition(parentDir.getPath(), fileName);
+        loadScriptsFolder();
+        openLastTreeNode();
+    }
+
+    private File resolveDocumentCreationFolder(File selectedFolder) {
+        if (selectedFolder != null && selectedFolder.isFile()) {
+            File parent = selectedFolder.getParentFile();
+            if (parent != null) {
+                return parent;
+            }
+        }
+        return selectedFolder == null ? getProjectFilesRootFolder() : selectedFolder;
+    }
+
     private void openUIDesignerDocument(File f) {
         // If this UI designer file is already open, just switch to its tab
         if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
@@ -2993,6 +3079,28 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         });
 
         editorTabPanel.openWeaponDesignerFile(f.getAbsolutePath(), weaponPanel);
+
+        lastSelectedFilePath = f.getAbsolutePath();
+        lastSelectedNodeIsFile = true;
+        btnRunScript.setEnabled(false);
+
+        saveSelectedTreeNodePosition(f.getParentFile().getPath(), f.getName());
+    }
+
+    private void openThrowMotionDesignerDocument(File f) {
+        if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
+            editorTabPanel.openThrowMotionDesignerFile(f.getAbsolutePath(), null);
+            return;
+        }
+
+        ThrowMotionDesignerPanel motionPanel = new ThrowMotionDesignerPanel(f);
+        motionPanel.setOnDirtyCallback(() -> editorTabPanel.markActiveTabDirty());
+        motionPanel.setOnSavedCallback(() -> {
+            editorTabPanel.markTabClean(f.getAbsolutePath());
+            refreshAssetsMenu();
+        });
+
+        editorTabPanel.openThrowMotionDesignerFile(f.getAbsolutePath(), motionPanel);
 
         lastSelectedFilePath = f.getAbsolutePath();
         lastSelectedNodeIsFile = true;
@@ -3257,6 +3365,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         return new File(Util.getScriptsFolder());
     }
 
+    private File getProjectFilesRootFolder() {
+        return new File(Util.getScriptsFolder());
+    }
+
     private JMenuItem addScriptsTreePopupMenuItem(String label, String action, JPopupMenu popup,
                                                   ActionListener popupActionListener, boolean addToFolderNode, boolean addToFileNode, File file) {
         if (!addToFolderNode && file.isDirectory()) {
@@ -3446,6 +3558,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                             openMaterialDesignerDocument(f);
                         } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(WeaponDefinition.FILE_EXTENSION)) {
                             openWeaponDesignerDocument(f);
+                        } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(ThrowMotionDefinition.FILE_EXTENSION)) {
+                            openThrowMotionDesignerDocument(f);
                         } else {
                             openFileInTab(f);
                         }
@@ -3644,6 +3758,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             openMaterialDesignerDocument(f);
         } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(WeaponDefinition.FILE_EXTENSION)) {
             openWeaponDesignerDocument(f);
+        } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(ThrowMotionDefinition.FILE_EXTENSION)) {
+            openThrowMotionDesignerDocument(f);
         } else {
             openFileInTab(f);
         }
@@ -3780,6 +3896,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     openMaterialDesignerDocument(f);
                 } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(WeaponDefinition.FILE_EXTENSION)) {
                     openWeaponDesignerDocument(f);
+                } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(ThrowMotionDefinition.FILE_EXTENSION)) {
+                    openThrowMotionDesignerDocument(f);
                 } else {
                     openFileInTab(f);
                 }
@@ -3830,7 +3948,9 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
         for (final File fileEntry : files) {
 
-            if (treeNode.getRoot() == treeNode && fileEntry.isFile()) {
+            if (treeNode.getRoot() == treeNode
+                    && fileEntry.isFile()
+                    && !fileEntry.getName().toLowerCase(Locale.ROOT).endsWith(ThrowMotionDefinition.FILE_EXTENSION)) {
                 continue;
             }
 
@@ -4440,6 +4560,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 || name.endsWith(".smenvshader")
                 || name.endsWith(".mat")
                 || name.endsWith(WeaponDefinition.FILE_EXTENSION)
+                || name.endsWith(ThrowMotionDefinition.FILE_EXTENSION)
                 || name.endsWith(".json")
                 || name.endsWith(".cs"));
     }

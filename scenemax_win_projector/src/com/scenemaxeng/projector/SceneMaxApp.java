@@ -1530,6 +1530,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if(action instanceof CameraModifierApplyCommand) {
             CameraModifierApplyController ctl = new CameraModifierApplyController(this, prg, scope, (CameraModifierApplyCommand) action);
             scope.add(ctl);
+        } else if(action instanceof ThrowMotionApplyCommand) {
+            ThrowMotionApplyController ctl = new ThrowMotionApplyController(this, prg, scope, (ThrowMotionApplyCommand) action);
+            ctl.async = action.isAsync;
+            scope.add(ctl);
         } else if(action instanceof CameraSystemAssignmentCommand) {
             CameraSystemAssignmentController ctl = new CameraSystemAssignmentController(this,prg,scope,(CameraSystemAssignmentCommand) action);
             scope.add(ctl);
