@@ -15,22 +15,29 @@ The throw motion system moves the target object along the authored path. It does
 
 Throw motion definitions use the `.smmotion` extension.
 
-The asset index loads throw motions from these locations:
+There are two copies involved while authoring:
 
-- `resources/throw_motions`
-- `resources/ThrowMotions`
-- `throw_motions`
-- `ThrowMotions`
-- project script folders loaded through the project asset mapping
+- the designer document, which can live anywhere in the project's files tree
+- the runtime resource, which is exported on Save under `resources/throw_motions`
+
+Runtime only loads the resource copy under the project's resources folder. Script-folder `.smmotion` files are source documents, not runtime resources.
 
 Examples:
 
 ```text
-resources/throw_motions/axe_throw.smmotion
-projects/fighting_game_project/scripts/Fighting Game/game_level_train/axe_throw.smmotion
+scripts/Fighting Game/game_level_train/axe_throw.smmotion
+resources/throw_motions/motion_axe_throw.smmotion
 ```
 
-Throw motions are indexed by both:
+When you click Save in the designer, SceneMax saves the source document in place and creates or updates:
+
+```text
+resources/throw_motions/<motion_id>.smmotion
+```
+
+SceneMax also removes duplicate throw motion resources with the same id from the runtime throw motion folders, so only one resource with that id remains available to the game.
+
+Runtime throw motions are indexed by both:
 
 - the `id` field inside the `.smmotion` file
 - the file name without `.smmotion`
@@ -718,7 +725,7 @@ Throw motion only moves the object. Let the weapon collider handle hits:
 ```scenemax
 player1.weapon = "weapon_player_weapon"
 
-when axe_upper_collider collides with enemy do
+when player1.weapon.colliders["axe_upper_collider"] collides with enemy do
   enemy.data.hit = 1
 end do
 
@@ -729,7 +736,7 @@ when key Q is pressed once do
 end do
 ```
 
-Use the collider name defined by the weapon asset. The exact runtime collider name depends on the weapon definition and owner scope.
+Use the collider name defined by the weapon asset. The owner-based form resolves the correct runtime collider for that player's equipped weapon, so the same weapon asset can be reused across multiple players without hard-coding generated collider ids.
 
 ## Runtime Notes
 
@@ -805,7 +812,7 @@ axe.turn 720 in 0.75 seconds async
 Throw motion does not perform collision checks. Add a collider and a collision command:
 
 ```scenemax
-when axe_upper_collider collides with enemy do
+when player1.weapon.colliders["axe_upper_collider"] collides with enemy do
   enemy.data.health = enemy.data.health - 10
 end do
 ```

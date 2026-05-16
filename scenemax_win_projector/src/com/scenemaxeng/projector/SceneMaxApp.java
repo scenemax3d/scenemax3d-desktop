@@ -22,11 +22,15 @@ import com.jme3.anim.Joint;
 import com.jme3.anim.SkinningControl;
 import com.jme3.animation.SkeletonControl;
 import com.jme3.app.Application;
+import com.jme3.app.FlyCamAppState;
+import com.jme3.app.StatsAppState;
 import com.jme3.app.state.AppState;
+import com.jme3.app.state.ConstantVerifierState;
 import com.jme3.asset.AssetInfo;
 import com.jme3.asset.AssetKey;
 import com.jme3.asset.AssetManager;
 import com.jme3.asset.plugins.FileLocator;
+import com.jme3.audio.AudioListenerState;
 import com.jme3.audio.AudioContext;
 import com.jme3.audio.AudioNode;
 
@@ -279,6 +283,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     public SceneMaxApp() {
+        super(new StatsAppState(), new FlyCamAppState(), new AudioListenerState(), new ConstantVerifierState());
         this.logger = Logger.getLogger(SceneMaxApp.class.getName());
         //debugLogger = ProjectorLogger.run();
         ActionLogicalExpressionVm.setApp(this);

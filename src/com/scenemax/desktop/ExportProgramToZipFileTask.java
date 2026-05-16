@@ -245,6 +245,7 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
         if(!exportCodeOnly) {
             copyEffekseerResourcesToExport();
             copyAnimationResourcesToExport(resources.getJSONArray("animations"));
+            copyThrowMotionResourcesToExport();
         }
 
 
@@ -483,6 +484,28 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
 
         appendAnimationIndex(new File("./resources/animations/animations.json"), targetArray);
         appendAnimationIndex(new File(projectAnimationsDir, "animations-ext.json"), targetArray);
+    }
+
+    private void copyThrowMotionResourcesToExport() {
+        File projectResources = getPackagedProjectResourcesFolder();
+        if (projectResources == null) {
+            return;
+        }
+
+        File exportThrowMotionsDir = new File("./" + targetFolderName + "/resources/throw_motions");
+        copyDirectoryContents(new File(projectResources, "throw_motions"), exportThrowMotionsDir);
+        copyDirectoryContents(new File(projectResources, "ThrowMotions"), exportThrowMotionsDir);
+    }
+
+    private void copyDirectoryContents(File source, File destination) {
+        if (source == null || destination == null || !source.isDirectory()) {
+            return;
+        }
+        try {
+            FileUtils.copyDirectory(source, destination);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private void appendAnimationIndex(File indexFile, JSONArray targetArray) {

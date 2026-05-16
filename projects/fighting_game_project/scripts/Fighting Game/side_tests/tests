@@ -1,6 +1,8 @@
 
 
 player1 => fighter1 : pos (4,-3,0)
+camera.chase player1
+
 axe_lookup = {
 	player1.weapon = "weapon_player_weapon"
  

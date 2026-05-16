@@ -19,13 +19,11 @@ public class CollisionController extends CompositeController {
         if(forceStop) return true;
 
         CollisionStatementCommand collCmd = (CollisionStatementCommand)this.cmd;
-        //RunTimeVarDef rt1 = findTargetVar(collCmd.varDef1.varName);
-        RunTimeVarDef rt2 = findTargetVar(collCmd.destEntity.varName);
+        CollisionTarget rt2 = resolveCollisionTarget(collCmd.destEndpoint, collCmd.destEntity);
         if (rt2 == null) {
-            rt2 = runtimeVarForPendingEntity(collCmd.destEntity);
+            return true;
         }
-        //this.targetVar1 = rt1.varName;
-        this.targetVar2 = rt2.varName;
+        this.targetVar2 = rt2.runtimeName;
 
         DoBlockCommand cmd = collCmd.doBlock;
         DoBlockController collisionController = new DoBlockController(app, this.scope, cmd);
@@ -34,21 +32,24 @@ public class CollisionController extends CompositeController {
         collisionController.async = cmd.isAsync;
 
         int counter = 0;
-        for (VariableDef vd : collCmd.sourceEntities) {
-            RunTimeVarDef rt1 = findTargetVar(vd.varName);
+        for (CollisionStatementCommand.CollisionEndpoint endpoint : sourceEndpoints(collCmd)) {
+            CollisionTarget rt1 = resolveCollisionTarget(endpoint,
+                    counter < collCmd.sourceEntities.size() ? collCmd.sourceEntities.get(counter) : null);
             if (rt1 == null) {
-                rt1 = runtimeVarForPendingEntity(vd);
+                counter++;
+                continue;
             }
 
             app.addCollisionHandler(
-                    rt1.varName,
-                    rt2.varName,
+                    rt1.runtimeName,
+                    rt2.runtimeName,
                     collisionController,
-                    this.scope.getEntityInst(vd.varName),
-                    this.scope.getEntityInst(collCmd.destEntity.varName),
-                    collCmd.sourceJoints.get(counter),
-                    collCmd.destJoint,
+                    rt1.entityInst,
+                    rt2.entityInst,
+                    rt1.joint,
+                    rt2.joint,
                     collCmd.goExpr);
+            counter++;
         }
 
 //        app.addCollisionHandler(this.targetVar1,this.targetVar2,
@@ -63,6 +64,59 @@ public class CollisionController extends CompositeController {
 
     }
 
+    private java.util.List<CollisionStatementCommand.CollisionEndpoint> sourceEndpoints(CollisionStatementCommand cmd) {
+        if (cmd.sourceEndpoints != null && !cmd.sourceEndpoints.isEmpty()) {
+            return cmd.sourceEndpoints;
+        }
+        java.util.List<CollisionStatementCommand.CollisionEndpoint> endpoints = new java.util.ArrayList<>();
+        for (int i = 0; i < cmd.sourceEntities.size(); i++) {
+            CollisionStatementCommand.CollisionEndpoint endpoint = new CollisionStatementCommand.CollisionEndpoint();
+            endpoint.entity = cmd.sourceEntities.get(i);
+            endpoint.joint = i < cmd.sourceJoints.size() ? cmd.sourceJoints.get(i) : null;
+            endpoints.add(endpoint);
+        }
+        return endpoints;
+    }
+
+    private CollisionTarget resolveCollisionTarget(CollisionStatementCommand.CollisionEndpoint endpoint,
+                                                   VariableDef fallbackEntity) {
+        if (endpoint != null && endpoint.equippedWeaponCollider) {
+            RunTimeVarDef owner = app.findVarRuntime(prg, scope, endpoint.ownerVarName);
+            if (owner == null) {
+                app.handleRuntimeError(app.formatUndefinedVariableError(
+                        endpoint.ownerVarLine,
+                        endpoint.ownerVarName,
+                        endpoint.ownerVarDef,
+                        getClass().getSimpleName()));
+                return null;
+            }
+            String runtimeName = endpoint.colliderName + "@" + runtimeScopeId(owner.varName);
+            return new CollisionTarget(runtimeName, null, endpoint.joint);
+        }
+
+        VariableDef entity = endpoint != null && endpoint.entity != null ? endpoint.entity : fallbackEntity;
+        RunTimeVarDef runtime = findTargetVar(entity == null ? null : entity.varName);
+        if (runtime == null) {
+            runtime = runtimeVarForPendingEntity(entity);
+        }
+        if (runtime == null) {
+            return null;
+        }
+        String entityName = entity == null ? "" : entity.varName;
+        String joint = endpoint == null ? null : endpoint.joint;
+        return new CollisionTarget(runtime.varName, scope.getEntityInst(entityName), joint);
+    }
+
+    private String runtimeScopeId(String runtimeVarName) {
+        if (runtimeVarName == null) {
+            return String.valueOf(scope.scopeId);
+        }
+        int at = runtimeVarName.lastIndexOf('@');
+        return at >= 0 && at < runtimeVarName.length() - 1
+                ? runtimeVarName.substring(at + 1)
+                : String.valueOf(scope.scopeId);
+    }
+
     private RunTimeVarDef runtimeVarForPendingEntity(VariableDef varDef) {
         if (varDef == null) {
             return null;
@@ -70,6 +124,18 @@ public class CollisionController extends CompositeController {
         RunTimeVarDef runtime = new RunTimeVarDef(varDef);
         runtime.varName = varDef.varName + "@" + scope.scopeId;
         return runtime;
+    }
+
+    private static class CollisionTarget {
+        private final String runtimeName;
+        private final EntityInstBase entityInst;
+        private final String joint;
+
+        private CollisionTarget(String runtimeName, EntityInstBase entityInst, String joint) {
+            this.runtimeName = runtimeName;
+            this.entityInst = entityInst;
+            this.joint = joint;
+        }
     }
 
 

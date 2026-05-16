@@ -647,7 +647,8 @@ check_static: When var_decl Is Static For logical_expression Seconds do_block ;
 
 collision : go_condition? When source_collision_entities Collides With collision_entity do_block ;
 source_collision_entities : collision_entity (',' collision_entity)* ;
-collision_entity : var_decl collision_joint_1? ;
+collision_entity : weapon_collider_ref | var_decl collision_joint_1? ;
+weapon_collider_ref : var_decl '.' Weapon '.' Colliders '[' QUOTED_STRING ']' ;
 collision_joint_1 : ('.' QUOTED_STRING) ;
 //collision_joint_2 : ('.' QUOTED_STRING) ;
 stop : var_decl '.' Stop ;
@@ -949,7 +950,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
     Screen | Scene | Environment | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
-    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Posture | Empty | Event |
+    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Colliders | Posture | Empty | Event |
     Motion;
 
 Protected : 'Protected' | 'protected' ;
@@ -1284,6 +1285,7 @@ After : 'After' | 'after' ;
 Collides : 'Collides' | 'collides' ;
 With : 'With' | 'with' ;
 Weapon : 'Weapon' | 'weapon' ;
+Colliders : 'Colliders' | 'colliders' ;
 Posture : 'Posture' | 'posture' ;
 Empty : 'Empty' | 'empty' ;
 

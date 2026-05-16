@@ -10,8 +10,10 @@ import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 public class ThrowMotionDesignerPanel extends JPanel {
     private final File motionFile;
@@ -94,6 +96,7 @@ public class ThrowMotionDesignerPanel extends JPanel {
         applyUiToDocument();
         try {
             document.save(motionFile);
+            exportRuntimeResource();
             dirty = false;
             if (onSavedCallback != null) {
                 onSavedCallback.run();
@@ -373,6 +376,86 @@ public class ThrowMotionDesignerPanel extends JPanel {
             current = current.getParentFile();
         }
         return null;
+    }
+
+    private void exportRuntimeResource() throws IOException {
+        File resourcesRoot = findResourcesRoot();
+        if (resourcesRoot == null) {
+            JOptionPane.showMessageDialog(this,
+                    "The throw motion was saved, but SceneMax could not find this project's resources folder.",
+                    "Runtime Resource Not Exported", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        String resourceId = document.getId() == null ? "" : document.getId().trim();
+        if (resourceId.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "Motion ID is required before SceneMax can export the runtime resource.",
+                    "Runtime Resource Not Exported", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        File runtimeFolder = new File(resourcesRoot, "throw_motions");
+        if (!runtimeFolder.exists() && !runtimeFolder.mkdirs()) {
+            throw new IOException("Unable to create " + runtimeFolder.getAbsolutePath());
+        }
+
+        File target = new File(runtimeFolder, runtimeFileName(resourceId));
+        document.save(target);
+        deleteDuplicateRuntimeResources(resourcesRoot, target, resourceId);
+    }
+
+    private void deleteDuplicateRuntimeResources(File resourcesRoot, File keepFile, String resourceId) {
+        List<File> roots = new ArrayList<>();
+        roots.add(new File(resourcesRoot, "throw_motions"));
+        roots.add(new File(resourcesRoot, "ThrowMotions"));
+        String normalizedId = resourceId.trim().toLowerCase(Locale.ROOT);
+
+        for (File root : roots) {
+            if (!root.isDirectory()) {
+                continue;
+            }
+            Collection<File> files = org.apache.commons.io.FileUtils.listFiles(root, new String[]{"smmotion"}, true);
+            for (File file : files) {
+                if (sameFile(file, keepFile)) {
+                    continue;
+                }
+                try {
+                    ThrowMotionDefinition existing = ThrowMotionDefinition.load(file);
+                    String existingId = existing.getId() == null ? "" : existing.getId().trim().toLowerCase(Locale.ROOT);
+                    if (normalizedId.equals(existingId) && isUnder(file, resourcesRoot)) {
+                        java.nio.file.Files.deleteIfExists(file.toPath());
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    private boolean sameFile(File a, File b) {
+        try {
+            return a.getCanonicalFile().equals(b.getCanonicalFile());
+        } catch (IOException ignored) {
+            return a.getAbsoluteFile().equals(b.getAbsoluteFile());
+        }
+    }
+
+    private boolean isUnder(File file, File folder) {
+        try {
+            return file.getCanonicalPath().startsWith(folder.getCanonicalPath() + File.separator);
+        } catch (IOException ignored) {
+            return file.getAbsolutePath().startsWith(folder.getAbsolutePath() + File.separator);
+        }
+    }
+
+    private String runtimeFileName(String resourceId) {
+        String safe = resourceId.trim().toLowerCase(Locale.ROOT)
+                .replaceAll("[\\\\/:*?\"<>|]+", "_")
+                .replaceAll("\\s+", "_");
+        if (safe.isEmpty()) {
+            safe = stripExtension(motionFile.getName()).toLowerCase(Locale.ROOT);
+        }
+        return safe + ThrowMotionDefinition.FILE_EXTENSION;
     }
 
     private void markDirty() {

@@ -2678,34 +2678,16 @@ public class SceneMaxLanguageParser implements IParser {
                     cmd.goExpr = ctx.collision().go_condition().logical_expression();
                 }
 
-                String destEntity = ctx.collision().collision_entity().var_decl().getText();
-                String destJoint = null;
-                if (ctx.collision().collision_entity().collision_joint_1()!=null) {
-                    destJoint = ctx.collision().collision_entity().collision_joint_1().QUOTED_STRING().getText();
-                    destJoint = stripQutes(destJoint);
-                }
-                VariableDef vd = prg.getVar(destEntity);
-                if(vd==null) {
-                    vd = createDeferredCollisionEntity(destEntity);
-                }
-                cmd.destEntity = vd;
-                cmd.destJoint = destJoint;
+                CollisionStatementCommand.CollisionEndpoint dest = parseCollisionEndpoint(ctx.collision().collision_entity());
+                cmd.destEndpoint = dest;
+                cmd.destEntity = dest.entity;
+                cmd.destJoint = dest.joint;
 
                 for (SceneMaxParser.Collision_entityContext collisionEntityContext : ctx.collision().source_collision_entities().collision_entity()) {
-                    String sourceEntity = collisionEntityContext.var_decl().getText();
-                    String sourceJoint = null;
-                    if (collisionEntityContext.collision_joint_1()!=null) {
-                        sourceJoint = collisionEntityContext.collision_joint_1().QUOTED_STRING().getText();
-                        sourceJoint = stripQutes(sourceJoint);
-                    }
-
-                    vd = prg.getVar(sourceEntity);
-                    if(vd==null) {
-                        vd = createDeferredCollisionEntity(sourceEntity);
-                    }
-
-                    cmd.sourceEntities.add(vd);
-                    cmd.sourceJoints.add(sourceJoint);
+                    CollisionStatementCommand.CollisionEndpoint source = parseCollisionEndpoint(collisionEntityContext);
+                    cmd.sourceEndpoints.add(source);
+                    cmd.sourceEntities.add(source.entity);
+                    cmd.sourceJoints.add(source.joint);
                 }
 
                 DoBlockCommand doBlock = new DoBlockVisitor(prg).visit(ctx.collision().do_block());
@@ -2713,6 +2695,37 @@ public class SceneMaxLanguageParser implements IParser {
                 cmd.doBlock = doBlock;
 
                 return cmd;
+            }
+
+            private CollisionStatementCommand.CollisionEndpoint parseCollisionEndpoint(
+                    SceneMaxParser.Collision_entityContext collisionEntityContext) {
+                CollisionStatementCommand.CollisionEndpoint endpoint = new CollisionStatementCommand.CollisionEndpoint();
+                if (collisionEntityContext.weapon_collider_ref() != null) {
+                    SceneMaxParser.Weapon_collider_refContext weaponCollider = collisionEntityContext.weapon_collider_ref();
+                    String ownerVarName = weaponCollider.var_decl().getText();
+                    endpoint.equippedWeaponCollider = true;
+                    endpoint.ownerVarName = ownerVarName;
+                    endpoint.ownerVarLine = weaponCollider.var_decl().getStart().getLine();
+                    endpoint.ownerVarDef = prg.getVar(ownerVarName);
+                    endpoint.colliderName = stripQutes(weaponCollider.QUOTED_STRING().getText());
+                    endpoint.entity = createDeferredCollisionEntity(endpoint.colliderName);
+                    return endpoint;
+                }
+
+                String entityName = collisionEntityContext.var_decl().getText();
+                String joint = null;
+                if (collisionEntityContext.collision_joint_1() != null) {
+                    joint = collisionEntityContext.collision_joint_1().QUOTED_STRING().getText();
+                    joint = stripQutes(joint);
+                }
+
+                VariableDef vd = prg.getVar(entityName);
+                if (vd == null) {
+                    vd = createDeferredCollisionEntity(entityName);
+                }
+                endpoint.entity = vd;
+                endpoint.joint = joint;
+                return endpoint;
             }
 
             private VariableDef createDeferredCollisionEntity(String varName) {

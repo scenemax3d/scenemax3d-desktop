@@ -9,6 +9,16 @@ when s1 collides with s2 do
 end do
 ```
 
+Detect collision against a collider on the currently equipped right-hand weapon:
+
+```scenemax
+when player1.weapon.colliders["weapon_sphere_collider_1"] collides with crystal_box do
+  crystal_box.hide
+end do
+```
+
+Use this form for reusable equipped weapons. The collider name is the collider id from the weapon asset; SceneMax resolves it through the owner at runtime, so the same weapon definition can be used by multiple players in the same scene.
+
 Detect collision of multiple objects against one target (each checked individually, not simultaneously):
 
 ```scenemax
