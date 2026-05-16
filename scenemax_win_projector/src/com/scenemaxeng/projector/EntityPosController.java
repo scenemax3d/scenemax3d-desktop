@@ -43,18 +43,11 @@ public class EntityPosController extends SceneMaxBaseController {
         } else if(cmd.entityPos!=null) {
 
             entityForPos = app.findVarRuntime(prg,this.scope,cmd.entityPos.entityName);
-            if(entityForPos!=null) {
-                Spatial sp = null;
-                if(cmd.entityPos.entityJointName!=null) {
-                    AppModel am = app.getAppModel(entityForPos.varName);
-                    sp = am.getJointAttachementNode(cmd.entityPos.entityJointName);
-                } else {
-                    sp = app.getEntitySpatial(entityForPos.varName, entityForPos.varDef.varType);
-                }
-
-                if (sp != null) {
-                    calculatedPosition = sp.getWorldTranslation();// sp.getLocalTranslation();
-                }
+            Spatial sp = app.resolveEntityPosSpatial(prg, this.scope, cmd.entityPos);
+            if (sp != null) {
+                calculatedPosition = sp.getWorldTranslation();// sp.getLocalTranslation();
+            } else if (cmd.entityPos.equippedWeapon) {
+                entityForPos = null;
             }
         }
 

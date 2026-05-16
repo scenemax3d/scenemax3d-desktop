@@ -8,9 +8,13 @@ import com.scenemaxeng.common.motion.ThrowMotionSample;
 import com.scenemaxeng.common.motion.ThrowMotionSampler;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.ThrowMotionApplyCommand;
+import com.scenemaxeng.compiler.ThrowMotionEventCommand;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class ThrowMotionApplyController extends SceneMaxBaseController {
     private static final float SAMPLE_DELTA = 1f / 60f;
@@ -26,6 +30,9 @@ public class ThrowMotionApplyController extends SceneMaxBaseController {
     private Vector3f upAxis;
     private Vector3f forwardAxis;
     private float time;
+    private double previousIndexPercent = -1.0;
+    private final Set<RuntimeThrowMotionValue.ThrowMotionRuntimeEvent> firedIndexEvents = new HashSet<>();
+    private boolean endEventFired;
 
     public ThrowMotionApplyController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope, ThrowMotionApplyCommand cmd) {
         super(app, prg, scope, cmd);
@@ -55,7 +62,15 @@ public class ThrowMotionApplyController extends SceneMaxBaseController {
         spatial.move(delta);
         previousWorld = nextWorld;
 
-        return time >= samples.get(samples.size() - 1).getTime();
+        double currentIndexPercent = currentIndexPercent();
+        fireIndexEvents(currentIndexPercent);
+
+        boolean finished = time >= samples.get(samples.size() - 1).getTime();
+        if (finished) {
+            fireEndEvents();
+        }
+        previousIndexPercent = currentIndexPercent;
+        return finished;
     }
 
     private boolean initMotion() {
@@ -92,6 +107,9 @@ public class ThrowMotionApplyController extends SceneMaxBaseController {
         samples = ThrowMotionSampler.sample(definition, scenario, SAMPLE_DELTA);
         previousWorld = startWorld.clone();
         time = 0f;
+        previousIndexPercent = -1.0;
+        firedIndexEvents.clear();
+        endEventFired = false;
 
         if (!samples.isEmpty()) {
             spatial.move(toWorld(samples.get(0).getPosition()).subtract(previousWorld));
@@ -230,6 +248,48 @@ public class ThrowMotionApplyController extends SceneMaxBaseController {
             return DEFAULT_TARGET_ARC_DISTANCE;
         }
         return DEFAULT_TARGET_ARC_DISTANCE;
+    }
+
+    private double currentIndexPercent() {
+        if (samples.isEmpty()) {
+            return 100.0;
+        }
+        float totalTime = samples.get(samples.size() - 1).getTime();
+        if (totalTime <= 0f) {
+            return 100.0;
+        }
+        return FastMath.clamp(time / totalTime, 0f, 1f) * 100.0;
+    }
+
+    private void fireIndexEvents(double currentIndexPercent) {
+        for (RuntimeThrowMotionValue.ThrowMotionRuntimeEvent event : new ArrayList<>(motionValue.events)) {
+            if (!ThrowMotionEventCommand.EVENT_ON_INDEX.equals(event.eventName) || firedIndexEvents.contains(event)) {
+                continue;
+            }
+            double indexPercent = FastMath.clamp((float) event.indexPercent, 0f, 100f);
+            if (previousIndexPercent < indexPercent && currentIndexPercent >= indexPercent) {
+                firedIndexEvents.add(event);
+                runEvent(event);
+            }
+        }
+    }
+
+    private void fireEndEvents() {
+        if (endEventFired) {
+            return;
+        }
+        endEventFired = true;
+        for (RuntimeThrowMotionValue.ThrowMotionRuntimeEvent event : new ArrayList<>(motionValue.events)) {
+            if (ThrowMotionEventCommand.EVENT_ON_END.equals(event.eventName)) {
+                runEvent(event);
+            }
+        }
+    }
+
+    private void runEvent(RuntimeThrowMotionValue.ThrowMotionRuntimeEvent event) {
+        DoBlockController doBlockController = new DoBlockController(app, scope, event.doBlock);
+        doBlockController.async = event.doBlock.isAsync;
+        app.registerController(doBlockController);
     }
 
 }

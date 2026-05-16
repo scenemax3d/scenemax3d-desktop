@@ -15,6 +15,11 @@ public class AnimationControllerEventCommand extends VariableActionStatement {
             return false;
         }
 
+        if (percentExpr == null) {
+            lastError = "Animation controller event '" + animationName + "' requires an animation percent";
+            return false;
+        }
+
         return true;
     }
 }

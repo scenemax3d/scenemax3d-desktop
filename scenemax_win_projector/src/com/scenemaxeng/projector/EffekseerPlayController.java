@@ -1,5 +1,7 @@
 package com.scenemaxeng.projector;
 
+import com.jme3.math.Vector3f;
+import com.jme3.scene.Spatial;
 import com.scenemaxeng.compiler.EffekseerPlayCommand;
 import com.scenemaxeng.compiler.ProgramDef;
 
@@ -25,6 +27,7 @@ public class EffekseerPlayController extends SceneMaxBaseController {
         Double y = null;
         Double z = null;
         RunTimeVarDef posEntity = null;
+        Vector3f calculatedPosition = null;
 
         if (cmd.xExpr != null) {
             x = (Double) new ActionLogicalExpressionVm(cmd.xExpr, scope).evaluate();
@@ -32,6 +35,12 @@ public class EffekseerPlayController extends SceneMaxBaseController {
             z = (Double) new ActionLogicalExpressionVm(cmd.zExpr, scope).evaluate();
         } else if (cmd.entityPos != null) {
             posEntity = app.findVarRuntime(prg, scope, cmd.entityPos.entityName);
+            Spatial spatial = app.resolveEntityPosSpatial(prg, scope, cmd.entityPos);
+            if (spatial != null) {
+                calculatedPosition = spatial.getWorldTranslation();
+            } else if (cmd.entityPos.equippedWeapon) {
+                posEntity = null;
+            }
         }
 
         float playbackSpeed = 1.0f;
@@ -52,7 +61,7 @@ public class EffekseerPlayController extends SceneMaxBaseController {
             }
         }
 
-        app.playEffekseerEffect(targetVar, x, y, z, posEntity, playbackSpeed, inputs);
+        app.playEffekseerEffect(targetVar, x, y, z, posEntity, calculatedPosition, playbackSpeed, inputs);
         return true;
     }
 }

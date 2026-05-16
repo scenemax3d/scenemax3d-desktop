@@ -39,7 +39,7 @@ statement
    | mini_map_actions # miniMapActions
    | ui_statement # uiStatement
    | action_statement   # actionStatement
-   | animation_controller_event # animationControllerEvent
+   | event_statement # eventStatement
    | do_block           # doBlock
    | function_invocation # functionInvocation
    | declare_variable   # declareVariable
@@ -266,7 +266,8 @@ print_pos_attr : Pos Equals? '(' (pos_axes | pos_entity) ')' ;
 pos_2d_attr : Pos '(' pos_axes_2d ')' ;
 pos_axes_2d : print_pos_x ',' print_pos_y ;
 pos_axes : print_pos_x ',' print_pos_y ',' print_pos_z ;
-pos_entity : var_decl collision_joint_1? ;
+pos_entity : weapon_collider_ref | weapon_ref | var_decl collision_joint_1? ;
+weapon_ref : var_decl '.' Weapon ;
 print_pos_x : logical_expression ;
 print_pos_y : logical_expression ;
 print_pos_z : logical_expression ;
@@ -446,7 +447,8 @@ init_mass_attr : Mass Equals? logical_expression ;
 
 modify_variable : variable_name_and_mandatory_assignemt (',' variable_name_and_mandatory_assignemt)*;
 animation_controller_assignment : res_var_decl Equals Animation var_decl '.' animation_name ;
-animation_controller_event : var_decl '.' Event '(' animation_name ',' logical_expression ')' Equals do_block ;
+event_statement : var_decl '.' Event '(' event_name (',' logical_expression)? ')' Equals do_block ;
+event_name : QUOTED_STRING | ID ;
 
 particle_system_actions : Effects '.' particle_system_effect '.' particle_system_action (async_expr)? ;
 particle_system_effect: Flash | Explosion | Debris | Spark | SmokeTrail | ShockWave | Fire |
