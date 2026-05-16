@@ -316,6 +316,8 @@ value    :
          number_expr
     |    QUOTED_STRING
     |    BOOLEAN
+    |    True
+    |    False
     |    camera_system_expr
     |    camera_modifier_expr
     |    motion_expr
@@ -779,7 +781,8 @@ play : sprite_play | effect_play | cinematic_play ;
 sprite_play : var_decl '.' Play '(' frames_expr (In speed_expr)? ')' play_duration_strategy? ;
 effect_play : var_decl '.' Play effect_play_options ;
 effect_play_options : effect_play_option (',' effect_play_option)* ;
-effect_play_option : print_pos_attr | effect_play_attr_list ;
+effect_play_option : print_pos_attr | effect_play_attr_list | effect_play_loop ;
+effect_play_loop : Loop ;
 effect_play_attr_list : Attr Equals? '[' effect_play_attr (',' effect_play_attr)* ']' ;
 effect_play_attr : effect_play_attr_name logical_expression ;
 effect_play_attr_name : QUOTED_STRING | var_decl ;

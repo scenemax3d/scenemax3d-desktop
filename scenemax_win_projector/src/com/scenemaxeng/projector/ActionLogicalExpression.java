@@ -583,9 +583,10 @@ public class ActionLogicalExpression extends ActionStatementBase {
         // ── Value (leaf node) ──────────────────────────────────────────
         public Object visitValue(SceneMaxParser.ValueContext ctx) {
 
-            if (ctx.BOOLEAN() != null) {
+            if (ctx.BOOLEAN() != null || ctx.True() != null || ctx.False() != null) {
                 // Avoid getText() + parseBoolean() — just check the token directly
-                res = ctx.BOOLEAN().getText().charAt(0) == 't' || ctx.BOOLEAN().getText().charAt(0) == 'T';
+                String text = ctx.BOOLEAN() != null ? ctx.BOOLEAN().getText() : ctx.getText();
+                res = text.charAt(0) == 't' || text.charAt(0) == 'T';
                 return res;
             }
 

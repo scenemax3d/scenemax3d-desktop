@@ -101,6 +101,8 @@ Supported attribute names:
 
 | Attribute | Meaning |
 | --- | --- |
+| `"loop"` | Runtime loop flag |
+| `"looping"` | Same as `loop` |
 | `"play_back_speed"` | Playback speed multiplier |
 | `"playback_speed"` | Same as `play_back_speed` |
 | `"speed"` | Same as `play_back_speed` |
@@ -116,8 +118,27 @@ Important notes:
 
 - Effekseer exposes four generic runtime dynamic inputs: `input0` to `input3`.
 - The friendly names `"homing force"`, `"orbit bias"`, and `"velocity damping"` are SceneMax aliases that map onto those input channels.
+- `"loop"` and `"looping"` accept booleans or numbers. `true` and non-zero numbers turn looping on; `false` and `0` turn it off.
 - An effect only reacts to a given input if the Effekseer asset was authored to use that dynamic input.
 - Unknown attribute names are ignored safely, but they will not affect the effect.
+
+## Looping An Effect
+
+Use `loop` on `.play` when the effect should keep running:
+
+```scenemax
+aura_fx => effects.effekseer.aura_loop
+aura_fx.play pos (player), loop
+```
+
+You can also set the loop flag at runtime through attributes:
+
+```scenemax
+should_loop = true
+aura_fx.play pos (player), attr = ["loop" should_loop]
+```
+
+Call `delete`, `hide`, or play the same effect again without loop when you want to stop or replace the looping playback.
 
 ### Example: Multiple Runtime Inputs
 

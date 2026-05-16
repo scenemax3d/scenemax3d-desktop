@@ -16,6 +16,7 @@ public class EffekseerInst extends EntityInstBase {
     public boolean loaded = false;
     public boolean pendingPlay = false;
     public boolean playing = false;
+    public boolean loop = false;
     public float playbackSpeed = 1.0f;
     public final float[] dynamicInputs = new float[] {0f, 0f, 0f, 0f};
 
