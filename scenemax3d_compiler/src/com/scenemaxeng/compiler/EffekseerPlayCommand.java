@@ -11,6 +11,7 @@ public class EffekseerPlayCommand extends VariableActionStatement {
     public ParserRuleContext xExpr;
     public ParserRuleContext yExpr;
     public ParserRuleContext zExpr;
+    public boolean loop = false;
     public final Map<String, ParserRuleContext> attrExprs = new LinkedHashMap<>();
 
     @Override

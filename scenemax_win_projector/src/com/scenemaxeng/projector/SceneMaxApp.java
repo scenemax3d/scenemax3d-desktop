@@ -10364,7 +10364,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             handleRuntimeError("Failed to load Effekseer effect '" + inst.assetId + "'");
             return;
         }
-        EffekseerNativeBridge.setLooping(context, false);
+        EffekseerNativeBridge.setLooping(context, inst.loop);
         EffekseerNativeBridge.setCompositeEnabled(context, true);
         inst.nativeContextHandle = context;
         inst.loaded = true;
@@ -10375,6 +10375,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     public void playEffekseerEffect(String targetVar, Double x, Double y, Double z, RunTimeVarDef posEntity, Vector3f calculatedPosition, float playbackSpeed, float[] dynamicInputs) {
+        playEffekseerEffect(targetVar, x, y, z, posEntity, calculatedPosition, false, playbackSpeed, dynamicInputs);
+    }
+
+    public void playEffekseerEffect(String targetVar, Double x, Double y, Double z, RunTimeVarDef posEntity, Vector3f calculatedPosition, boolean loop, float playbackSpeed, float[] dynamicInputs) {
         EffekseerInst inst = effekseerEffects.get(targetVar);
         if (inst == null) {
             return;
@@ -10398,6 +10402,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         inst.playbackSpeed = playbackSpeed;
+        inst.loop = loop;
+        EffekseerNativeBridge.setLooping(inst.nativeContextHandle, inst.loop);
         System.arraycopy(dynamicInputs, 0, inst.dynamicInputs, 0, inst.dynamicInputs.length);
         inst.pendingPlay = true;
         inst.playing = false;
@@ -10456,6 +10462,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             EffekseerNativeBridge.setEffectLocation(inst.nativeContextHandle, worldPos.x, worldPos.y, worldPos.z);
             EffekseerNativeBridge.setEffectTransform(inst.nativeContextHandle, worldMatrix);
             if (inst.pendingPlay) {
+                EffekseerNativeBridge.setLooping(inst.nativeContextHandle, inst.loop);
                 EffekseerNativeBridge.playEffect(inst.nativeContextHandle);
                 EffekseerNativeBridge.setEffectLocation(inst.nativeContextHandle, worldPos.x, worldPos.y, worldPos.z);
                 EffekseerNativeBridge.setEffectTransform(inst.nativeContextHandle, worldMatrix);
@@ -10467,7 +10474,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 inst.playing = true;
             }
             EffekseerNativeBridge.update(inst.nativeContextHandle, tpf);
-            if (inst.playing && !EffekseerNativeBridge.isEffectPlaying(inst.nativeContextHandle)) {
+            if (!inst.loop && inst.playing && !EffekseerNativeBridge.isEffectPlaying(inst.nativeContextHandle)) {
                 inst.playing = false;
                 inst.node.removeFromParent();
                 continue;

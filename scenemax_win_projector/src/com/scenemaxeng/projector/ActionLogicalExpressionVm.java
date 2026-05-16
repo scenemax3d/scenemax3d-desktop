@@ -338,8 +338,9 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
         public Void visitValue(SceneMaxParser.ValueContext ctx) {
             int line = lineOf(ctx);
 
-            if (ctx.BOOLEAN() != null) {
-                boolean value = ctx.BOOLEAN().getText().charAt(0) == 't' || ctx.BOOLEAN().getText().charAt(0) == 'T';
+            if (ctx.BOOLEAN() != null || ctx.True() != null || ctx.False() != null) {
+                String text = ctx.BOOLEAN() != null ? ctx.BOOLEAN().getText() : ctx.getText();
+                boolean value = text.charAt(0) == 't' || text.charAt(0) == 'T';
                 code.add(new Instruction(OpCode.PUSH_CONST, Boolean.valueOf(value), line));
                 return null;
             }

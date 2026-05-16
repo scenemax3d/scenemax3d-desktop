@@ -3992,6 +3992,8 @@ public class SceneMaxLanguageParser implements IParser {
                                     }
                                     cmd.attrExprs.put(key.toLowerCase(), attr.logical_expression());
                                 }
+                            } else if (opt.effect_play_loop() != null) {
+                                cmd.loop = true;
                             }
                         }
 

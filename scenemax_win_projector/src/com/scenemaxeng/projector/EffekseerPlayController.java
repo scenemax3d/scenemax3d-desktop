@@ -44,10 +44,16 @@ public class EffekseerPlayController extends SceneMaxBaseController {
         }
 
         float playbackSpeed = 1.0f;
+        boolean loop = cmd.loop;
         float[] inputs = new float[] {0f, 0f, 0f, 0f};
         for (Map.Entry<String, org.antlr.v4.runtime.ParserRuleContext> entry : cmd.attrExprs.entrySet()) {
-            float value = Float.parseFloat(new ActionLogicalExpressionVm(entry.getValue(), scope).evaluate().toString());
             String key = entry.getKey();
+            Object evaluatedValue = new ActionLogicalExpressionVm(entry.getValue(), scope).evaluate();
+            if ("loop".equals(key) || "looping".equals(key)) {
+                loop = toBoolean(evaluatedValue);
+                continue;
+            }
+            float value = Float.parseFloat(evaluatedValue.toString());
             if ("play_back_speed".equals(key) || "playback_speed".equals(key) || "speed".equals(key)) {
                 playbackSpeed = value;
             } else if ("input0".equals(key) || "homing force".equals(key)) {
@@ -61,7 +67,21 @@ public class EffekseerPlayController extends SceneMaxBaseController {
             }
         }
 
-        app.playEffekseerEffect(targetVar, x, y, z, posEntity, calculatedPosition, playbackSpeed, inputs);
+        app.playEffekseerEffect(targetVar, x, y, z, posEntity, calculatedPosition, loop, playbackSpeed, inputs);
         return true;
+    }
+
+    private boolean toBoolean(Object value) {
+        if (value instanceof Boolean) {
+            return ((Boolean) value).booleanValue();
+        }
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue() != 0.0;
+        }
+        if (value == null) {
+            return false;
+        }
+        String text = value.toString().trim();
+        return "true".equalsIgnoreCase(text) || "yes".equalsIgnoreCase(text) || "1".equals(text);
     }
 }

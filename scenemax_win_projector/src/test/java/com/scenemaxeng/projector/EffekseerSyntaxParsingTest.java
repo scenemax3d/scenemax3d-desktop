@@ -57,4 +57,28 @@ public class EffekseerSyntaxParsingTest {
         assertTrue(cmd.entityPos.equippedWeaponCollider);
         assertEquals("weapon_sphere_collider_1", cmd.entityPos.weaponColliderName);
     }
+
+    @Test
+    public void effectPlayAcceptsLoopOption() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "player1 => dragon\n"
+                        + "effect => effects.effekseer.A_Salamander1\n"
+                        + "effect.play pos (player1), loop");
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+        EffekseerPlayCommand cmd = (EffekseerPlayCommand) prg.actions.get(2);
+        assertTrue(cmd.loop);
+    }
+
+    @Test
+    public void effectPlayAcceptsRuntimeLoopAttribute() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "player1 => dragon\n"
+                        + "effect => effects.effekseer.A_Salamander1\n"
+                        + "effect.play pos (player1), attr = [\"loop\" true]");
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+        EffekseerPlayCommand cmd = (EffekseerPlayCommand) prg.actions.get(2);
+        assertNotNull(cmd.attrExprs.get("loop"));
+    }
 }
