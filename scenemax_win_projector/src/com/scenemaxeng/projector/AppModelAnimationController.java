@@ -16,6 +16,8 @@ public class AppModelAnimationController implements AnimEventListener {
     private double globalSpeed;
     private boolean paused;
     public boolean isProtected = false;
+    private AnimControl control;
+    private AnimChannel channel;
 
     public AppModelAnimationController(SceneMaxBaseController hostController) {
         this.hostController=hostController;
@@ -103,6 +105,7 @@ public class AppModelAnimationController implements AnimEventListener {
                     animationFinished = true;
                     return;
                 }
+                this.control = control;
                 control.addListener(this);
                 AnimChannel channel = m.getChannel();
                 if (channel == null) {
@@ -110,6 +113,7 @@ public class AppModelAnimationController implements AnimEventListener {
                     animationFinished = true;
                     return;
                 }
+                this.channel = channel;
                 channel.reset(false);
                 channel.setAnim(animationName);
                 channel.setLoopMode(LoopMode.DontLoop);
@@ -150,5 +154,41 @@ public class AppModelAnimationController implements AnimEventListener {
 
     public boolean isPaused() {
         return this.paused;
+    }
+
+    public void stop() {
+        animationFinished = true;
+        if (appModel != null && appModel.currentAction != null && appModel.currentAction.controller == this) {
+            appModel.currentAction.setSpeed(0);
+            appModel.currentAction.finishAnimation();
+            appModel.currentAction.isProtected = false;
+        }
+        if (control != null) {
+            control.removeListener(this);
+        }
+        if (channel != null) {
+            channel.setSpeed(0);
+        }
+    }
+
+    public double getCurrentPercent() {
+        if (appModel == null) {
+            return -1;
+        }
+
+        if (appModel.currentAction != null && appModel.currentAction.controller == this) {
+            AnimComposer composer = appModel.getAnimComposer();
+            double length = appModel.currentAction.getLength();
+            if (composer == null || length <= 0) {
+                return -1;
+            }
+            return composer.getTime("Default") / length * 100.0;
+        }
+
+        if (channel != null && channel.getAnimMaxTime() > 0) {
+            return channel.getTime() / channel.getAnimMaxTime() * 100.0;
+        }
+
+        return -1;
     }
 }

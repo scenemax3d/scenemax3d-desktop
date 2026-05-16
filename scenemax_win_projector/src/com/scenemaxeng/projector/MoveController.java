@@ -59,7 +59,9 @@ public class MoveController extends SceneMaxBaseController{
         if(!targetCalculated) {
             targetVal = numExpr==null?1.0f:(float) ActionLogicalExpressionVm.toDouble(numExpr.evaluate());
             targetTime = speedExpr==null?1.0f:(float) ActionLogicalExpressionVm.toDouble(speedExpr.evaluate());
-            this.findTargetVar();
+            if (this.findTargetVar() != 0) {
+                return true;
+            }
 //            if(cmd.varDef.varType==VariableDef.VAR_TYPE_SPHERE || cmd.varDef.varType==VariableDef.VAR_TYPE_BOX) {
 //                int threadId = app.getEntityThreadId(thread, cmd.targetVar,cmd.varDef.varType);
 //                this.targetVar = cmd.varDef.varName + "@" + threadId;//cmd.targetVar;

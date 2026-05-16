@@ -263,6 +263,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         copyEffekseerResourcesToDeploy(deployFolder);
         copyAnimationResourcesToDeploy(deployFolder, resources.getJSONArray("animations"));
+        copyThrowMotionResourcesToDeploy(deployFolder);
 
         // copy all materials - in the future, check and copy just what is needed
         File materials = new File("./deploy/Materials");
@@ -1210,6 +1211,17 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         mergeIndexedResourcesFromFile(new File("./resources/animations/animations.json"), "animations", targetArray);
         mergeIndexedResourcesFromFile(new File(projectAnimationsDir, "animations-ext.json"), "animations", targetArray);
+    }
+
+    private void copyThrowMotionResourcesToDeploy(File deployFolder) {
+        File projectResources = getPackagedProjectResourcesFolder();
+        if (projectResources == null) {
+            return;
+        }
+
+        File deployThrowMotionsDir = new File(deployFolder, "resources/throw_motions");
+        copyDirectoryContents(new File(projectResources, "throw_motions"), deployThrowMotionsDir);
+        copyDirectoryContents(new File(projectResources, "ThrowMotions"), deployThrowMotionsDir);
     }
 
     private File resolveEffekseerEffectSource(String assetId) {

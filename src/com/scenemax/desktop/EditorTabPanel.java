@@ -6,6 +6,7 @@ import com.scenemax.designer.Import3DModelPanel;
 import com.scenemax.designer.animation.ImportAnimationPanel;
 import com.scenemax.designer.effekseer.EffekseerEffectDesignerPanel;
 import com.scenemax.designer.material.MaterialDesignerPanel;
+import com.scenemax.designer.motion.ThrowMotionDesignerPanel;
 import com.scenemax.designer.shader.EnvironmentShaderDesignerPanel;
 import com.scenemax.designer.shader.ShaderDesignerPanel;
 import com.scenemax.designer.ui.designer.UIDesignerPanel;
@@ -48,6 +49,8 @@ public class EditorTabPanel extends JPanel {
         MaterialDesignerPanel materialDesignerPanel;
         boolean isWeaponDesignerTab;
         WeaponDesignerPanel weaponDesignerPanel;
+        boolean isThrowMotionDesignerTab;
+        ThrowMotionDesignerPanel throwMotionDesignerPanel;
         boolean isAnimationImportTab;
         ImportAnimationPanel animationImportPanel;
         boolean isPluginViewTab;
@@ -74,6 +77,8 @@ public class EditorTabPanel extends JPanel {
             this.materialDesignerPanel = null;
             this.isWeaponDesignerTab = false;
             this.weaponDesignerPanel = null;
+            this.isThrowMotionDesignerTab = false;
+            this.throwMotionDesignerPanel = null;
             this.isAnimationImportTab = false;
             this.animationImportPanel = null;
             this.isPluginViewTab = false;
@@ -190,6 +195,8 @@ public class EditorTabPanel extends JPanel {
                 name = "\u25C8 " + name;
             } else if (tabData.isWeaponDesignerTab) {
                 name = "\u2694 " + name;
+            } else if (tabData.isThrowMotionDesignerTab) {
+                name = "\u27A4 " + name;
             } else if (tabData.isAnimationImportTab) {
                 name = "\u25B6 " + name;
             } else if (tabData.isPluginViewTab) {
@@ -509,6 +516,38 @@ public class EditorTabPanel extends JPanel {
         switchToTab(tabData);
     }
 
+    public void openThrowMotionDesignerFile(String filePath, ThrowMotionDesignerPanel panel) {
+        String normalizedPath = new File(filePath).getAbsolutePath();
+
+        if (tabButtons.containsKey(normalizedPath)) {
+            TabData existing = null;
+            for (TabData td : tabs) {
+                if (td.filePath.equals(normalizedPath)) {
+                    existing = td;
+                    break;
+                }
+            }
+            if (existing != null) {
+                switchToTab(existing);
+                return;
+            }
+        }
+
+        TabData tabData = new TabData(normalizedPath, "");
+        tabData.isThrowMotionDesignerTab = true;
+        tabData.throwMotionDesignerPanel = panel;
+        tabs.add(tabData);
+
+        TabButton btn = new TabButton(tabData);
+        btn.updateTitle();
+        tabButtons.put(normalizedPath, btn);
+        tabBar.add(btn);
+        tabBar.revalidate();
+        tabBar.repaint();
+
+        switchToTab(tabData);
+    }
+
     public void openAnimationImportFile(String filePath, ImportAnimationPanel panel) {
         String normalizedPath = new File(filePath).getAbsolutePath();
 
@@ -626,6 +665,11 @@ public class EditorTabPanel extends JPanel {
                 newTab.weaponDesignerPanel.activatePanel();
                 centerContainer.add(newTab.weaponDesignerPanel, BorderLayout.CENTER);
             }
+        } else if (newTab.isThrowMotionDesignerTab) {
+            if (newTab.throwMotionDesignerPanel != null) {
+                newTab.throwMotionDesignerPanel.activatePanel();
+                centerContainer.add(newTab.throwMotionDesignerPanel, BorderLayout.CENTER);
+            }
         } else if (newTab.isAnimationImportTab) {
             if (newTab.animationImportPanel != null) {
                 centerContainer.add(newTab.animationImportPanel, BorderLayout.CENTER);
@@ -740,6 +784,13 @@ public class EditorTabPanel extends JPanel {
             return;
         }
 
+        if (currentTab.isThrowMotionDesignerTab) {
+            if (currentTab.throwMotionDesignerPanel != null) {
+                currentTab.throwMotionDesignerPanel.deactivatePanel();
+            }
+            return;
+        }
+
         if (currentTab.isAnimationImportTab) {
             return;
         }
@@ -795,6 +846,10 @@ public class EditorTabPanel extends JPanel {
         } else if (tabData.isWeaponDesignerTab) {
             if (tabData.weaponDesignerPanel != null) {
                 tabData.weaponDesignerPanel.deactivatePanel();
+            }
+        } else if (tabData.isThrowMotionDesignerTab) {
+            if (tabData.throwMotionDesignerPanel != null) {
+                tabData.throwMotionDesignerPanel.deactivatePanel();
             }
         } else if (tabData.isAnimationImportTab) {
             // No shared JME context to deactivate.
@@ -910,6 +965,17 @@ public class EditorTabPanel extends JPanel {
         if (activeTab.isWeaponDesignerTab) {
             if (activeTab.weaponDesignerPanel != null) {
                 activeTab.weaponDesignerPanel.saveDocument();
+            }
+            activeTab.dirty = false;
+            TabButton btn = tabButtons.get(activeTab.filePath);
+            if (btn != null) {
+                btn.updateTitle();
+            }
+            return;
+        }
+        if (activeTab.isThrowMotionDesignerTab) {
+            if (activeTab.throwMotionDesignerPanel != null) {
+                activeTab.throwMotionDesignerPanel.saveDocument();
             }
             activeTab.dirty = false;
             TabButton btn = tabButtons.get(activeTab.filePath);
@@ -1038,6 +1104,7 @@ public class EditorTabPanel extends JPanel {
                     && !td.isShaderDesignerTab && !td.isEnvironmentShaderDesignerTab
                     && !td.isMaterialDesignerTab
                     && !td.isWeaponDesignerTab
+                    && !td.isThrowMotionDesignerTab
                     && !td.isAnimationImportTab) {
                 td.content = newContent;
                 td.dirty = false;
@@ -1119,6 +1186,12 @@ public class EditorTabPanel extends JPanel {
                 }
                 switchToTab(tab);
                 tab.weaponDesignerPanel.reloadFromDisk();
+            } else if (tab.isThrowMotionDesignerTab) {
+                if (tab.throwMotionDesignerPanel == null) {
+                    return false;
+                }
+                switchToTab(tab);
+                tab.throwMotionDesignerPanel.reloadFromDisk();
             } else if (tab.isAnimationImportTab) {
                 return false;
             } else {
@@ -1173,6 +1246,8 @@ public class EditorTabPanel extends JPanel {
             tab.materialDesignerPanel.discardEditorState();
         } else if (tab.isWeaponDesignerTab && tab.weaponDesignerPanel != null) {
             tab.weaponDesignerPanel.discardEditorState();
+        } else if (tab.isThrowMotionDesignerTab && tab.throwMotionDesignerPanel != null) {
+            tab.throwMotionDesignerPanel.discardEditorState();
         }
     }
 
@@ -1198,6 +1273,7 @@ public class EditorTabPanel extends JPanel {
                 && !tab.isEnvironmentShaderDesignerTab
                 && !tab.isMaterialDesignerTab
                 && !tab.isWeaponDesignerTab
+                && !tab.isThrowMotionDesignerTab
                 && !tab.isAnimationImportTab;
     }
 
@@ -1225,6 +1301,9 @@ public class EditorTabPanel extends JPanel {
         }
         if (tab.isWeaponDesignerTab) {
             return "weapon_designer";
+        }
+        if (tab.isThrowMotionDesignerTab) {
+            return "throw_motion_designer";
         }
         if (tab.isAnimationImportTab) {
             return "animation_import";
@@ -1334,6 +1413,11 @@ public class EditorTabPanel extends JPanel {
                 toClose.weaponDesignerPanel.clearAndDeactivatePanel();
                 toClose.weaponDesignerPanel = null;
                 toClose.isWeaponDesignerTab = false;
+            }
+            if (deleting && toClose.isThrowMotionDesignerTab && toClose.throwMotionDesignerPanel != null) {
+                toClose.throwMotionDesignerPanel.clearAndDeactivatePanel();
+                toClose.throwMotionDesignerPanel = null;
+                toClose.isThrowMotionDesignerTab = false;
             }
             if (deleting && toClose.isAnimationImportTab) {
                 toClose.animationImportPanel = null;

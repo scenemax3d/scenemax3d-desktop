@@ -105,6 +105,7 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
         LOAD_FUNCTION_VALUE,
         LOAD_CAMERA_SYSTEM_VALUE,
         LOAD_CAMERA_MODIFIER_VALUE,
+        LOAD_MOTION_VALUE,
         LOAD_EXPR_POINTER,
         LOAD_ARRAY_VALUE,
         LOAD_ARRAY_LENGTH,
@@ -384,6 +385,11 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                 return null;
             }
 
+            if (ctx.motion_expr() != null) {
+                code.add(new Instruction(OpCode.LOAD_MOTION_VALUE, ctx.motion_expr(), line));
+                return null;
+            }
+
             if (ctx.logical_expression_pointer() != null) {
                 String varName = ctx.logical_expression_pointer().var_decl().getText();
                 code.add(new Instruction(OpCode.LOAD_EXPR_POINTER, varName, line));
@@ -521,6 +527,9 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                         break;
                     case LOAD_CAMERA_MODIFIER_VALUE:
                         pushValue(stack, loadCameraModifierValue((SceneMaxParser.Camera_modifier_exprContext) ins.a, ins.line));
+                        break;
+                    case LOAD_MOTION_VALUE:
+                        pushValue(stack, loadMotionValue(scope, (SceneMaxParser.Motion_exprContext) ins.a, ins.line));
                         break;
                     case LOAD_EXPR_POINTER:
                         pushValue(stack, loadExpressionPointer(scope, (String) ins.a, ins.line));
@@ -730,6 +739,34 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                 value.maxFov = value.fov;
             }
 
+            return value;
+        }
+
+        private Object loadMotionValue(SceneMaxScope scope, SceneMaxParser.Motion_exprContext ctx, int line) {
+            Object assetIdValue = execute(compileCached(ctx.logical_expression()), scope, new ArrayDeque<Object>(16));
+            String assetId = assetIdValue == null ? "" : assetIdValue.toString().trim();
+            if (assetId.isEmpty()) {
+                app.handleRuntimeError("Line " + line + ": system.motion expects a motion asset id");
+                return null;
+            }
+
+            RuntimeThrowMotionValue value = new RuntimeThrowMotionValue();
+            value.motionAssetId = assetId;
+            for (SceneMaxParser.Motion_runtime_optionContext option : ctx.motion_runtime_option()) {
+                if (option.motion_target_option() == null) {
+                    continue;
+                }
+                SceneMaxParser.Motion_target_optionContext target = option.motion_target_option();
+                if (target.var_decl() != null) {
+                    value.targetKind = RuntimeThrowMotionValue.TargetKind.OBJECT;
+                    value.targetVarName = target.var_decl().getText();
+                } else if (target.pos_axes() != null) {
+                    value.targetKind = RuntimeThrowMotionValue.TargetKind.POSITION;
+                    value.targetXExpr = target.pos_axes().print_pos_x().logical_expression();
+                    value.targetYExpr = target.pos_axes().print_pos_y().logical_expression();
+                    value.targetZExpr = target.pos_axes().print_pos_z().logical_expression();
+                }
+            }
             return value;
         }
 

@@ -5,7 +5,7 @@ game_start = {
   
   score=0
   life1=INITIAL_PLAYER_STRENGTH
-  life2=INITIAL_PLAYER_STRENGTH
+  life2=INITIAL_PLAYER_STRENGTH-9
 
   timer=60
   op_hit=0

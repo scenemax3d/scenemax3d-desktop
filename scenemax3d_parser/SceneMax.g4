@@ -29,6 +29,7 @@ statement
    | logger_statement   # loggerStatement
    | process_statement  # processStatement
    | define_variable	# defVar
+   | animation_controller_assignment # animationControllerAssignment
    | modify_variable    # modifyVar
    | skybox_actions     # skyBoxActions
    | screen_actions     # screenActions
@@ -38,6 +39,7 @@ statement
    | mini_map_actions # miniMapActions
    | ui_statement # uiStatement
    | action_statement   # actionStatement
+   | animation_controller_event # animationControllerEvent
    | do_block           # doBlock
    | function_invocation # functionInvocation
    | declare_variable   # declareVariable
@@ -235,9 +237,13 @@ camera_system_max_y_option : Max Y Equals? logical_expression ;
 camera_system_min_z_option : Min Z Equals? logical_expression ;
 camera_system_max_z_option : Max Z Equals? logical_expression ;
 camera_modifier_expr : Camera '.' System '.' Modifiers '.' res_var_decl ;
-camera_modifier_apply : var_decl '.' Apply var_decl (Having camera_modifier_override_list)? ;
+camera_modifier_apply : var_decl '.' Apply apply_target_ref (Having camera_modifier_override_list)? ;
+apply_target_ref : var_decl ('.' Weapon)? ;
 camera_modifier_override_list : camera_modifier_override (and_expr camera_modifier_override)* ;
 camera_modifier_override : res_var_decl (res_var_decl)? Equals? logical_expression ;
+motion_expr : System '.' Motion '(' logical_expression (',' motion_runtime_option (',' motion_runtime_option)*)? ')' ;
+motion_runtime_option : motion_target_option ;
+motion_target_option : Target Equals? (var_decl | '(' pos_axes ')') ;
 
 using_resource : Using resource_declaration (and_expr resource_declaration)* ;
 resource_declaration : res_var_decl (',' res_var_decl)* (Sprite | Model | Audio) ;
@@ -311,6 +317,7 @@ value    :
     |    BOOLEAN
     |    camera_system_expr
     |    camera_modifier_expr
+    |    motion_expr
     |    var_decl
     |    variable_field
     |    variable_data_field
@@ -438,6 +445,8 @@ init_scale_attr : Scale Equals? logical_expression ;
 init_mass_attr : Mass Equals? logical_expression ;
 
 modify_variable : variable_name_and_mandatory_assignemt (',' variable_name_and_mandatory_assignemt)*;
+animation_controller_assignment : res_var_decl Equals Animation var_decl '.' animation_name ;
+animation_controller_event : var_decl '.' Event '(' animation_name ',' logical_expression ')' Equals do_block ;
 
 particle_system_actions : Effects '.' particle_system_effect '.' particle_system_action (async_expr)? ;
 particle_system_effect: Flash | Explosion | Debris | Spark | SmokeTrail | ShockWave | Fire |
@@ -588,6 +597,7 @@ action_operation
    | hide       # hideStatement
    | show       # showStatement
    | delete     # deleteStatement
+   | animation_controller_run # animationControllerRunStatement
    | animate    # animateStatement
    | animate_short # animateShortStatement
    | stop # stopStatement
@@ -613,9 +623,11 @@ action_operation
    | weapon_action # weaponAction
    ;
 
-weapon_action : weapon_equip | weapon_posture ;
+weapon_action : weapon_equip | weapon_posture | weapon_detach | weapon_attach ;
 weapon_equip : var_decl '.' Weapon Equals (Empty | logical_expression) ;
 weapon_posture : var_decl '.' Weapon '.' Posture Equals logical_expression ;
+weapon_detach : var_decl '.' Weapon '.' Detach ;
+weapon_attach : var_decl '.' Weapon '.' Attach ;
 
 replay : var_decl '.' Replay replay_options (Having replay_attributes)? ;
 replay_attributes : replay_attribute (and_expr replay_attribute)* ;
@@ -635,7 +647,8 @@ check_static: When var_decl Is Static For logical_expression Seconds do_block ;
 
 collision : go_condition? When source_collision_entities Collides With collision_entity do_block ;
 source_collision_entities : collision_entity (',' collision_entity)* ;
-collision_entity : var_decl collision_joint_1? ;
+collision_entity : weapon_collider_ref | var_decl collision_joint_1? ;
+weapon_collider_ref : var_decl '.' Weapon '.' Colliders '[' QUOTED_STRING ']' ;
 collision_joint_1 : ('.' QUOTED_STRING) ;
 //collision_joint_2 : ('.' QUOTED_STRING) ;
 stop : var_decl '.' Stop ;
@@ -789,6 +802,7 @@ file_attr : File Equals? QUOTED_STRING ;
 
 show_axis_option : Axis X? Y? Z? ;
 delete : var_decl '.' Delete ;
+animation_controller_run : var_decl '.' Run ;
 animate : var_decl '.' Animation animation_attr (and_expr animation_attr)* ;
 animation_attr : anim_attr_speed ;
 anim_attr_speed : Speed Equals? logical_expression speed_for_seconds? when_frames_above?;
@@ -936,7 +950,8 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
     Screen | Scene | Environment | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
-    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Posture | Empty;
+    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Colliders | Posture | Empty | Event |
+    Motion;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
@@ -1223,6 +1238,7 @@ TextEffect : 'TextEffect' | 'texteffect' | 'textEffect' ;
 Ease : 'Ease' | 'ease' ;
 Default : 'Default' | 'default' ;
 Modifiers : 'Modifiers' | 'modifiers' ;
+Motion : 'Motion' | 'motion' ;
 Apply : 'Apply' | 'apply' ;
 Plugins: 'plugins' | 'Plugins' ;
 Switch : 'Switch' | 'switch' ;
@@ -1258,6 +1274,7 @@ Class : 'class' | 'Class' ;
 Function : 'Function' | 'function' ;
 Run : 'Run' | 'run' ;
 Call : 'Call' | 'call' ;
+Event : 'Event' | 'event' ;
 Every : 'Every' | 'every' ;
 Shared : 'Shared' | 'shared' ;
 Var : 'Var' | 'var' ;
@@ -1268,6 +1285,7 @@ After : 'After' | 'after' ;
 Collides : 'Collides' | 'collides' ;
 With : 'With' | 'with' ;
 Weapon : 'Weapon' | 'weapon' ;
+Colliders : 'Colliders' | 'colliders' ;
 Posture : 'Posture' | 'posture' ;
 Empty : 'Empty' | 'empty' ;
 

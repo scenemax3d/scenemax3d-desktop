@@ -14,6 +14,7 @@ public class VariableDeclarationCommand extends StatementDef {
     public SceneMaxParser.Logical_expressionContext minExpr;
     public SceneMaxParser.Logical_expressionContext maxExpr;
     public boolean isShared;
+    public int varType;
 
     public VariableAssignmentCommand toVarAssignment(ProgramDef prg) {
         VariableAssignmentCommand vac = new VariableAssignmentCommand();
@@ -26,6 +27,7 @@ public class VariableDeclarationCommand extends StatementDef {
                 vd.declaration = var;
                 vd.resName = "var";
                 vd.varName = var.varName;
+                vd.varType = var.varType;
                 vd.isExprPointer = var.isExprPointer;
                 vac.vars.add(vd);
                 if(var.array!=null) {

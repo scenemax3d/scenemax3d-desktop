@@ -1,10 +1,14 @@
 package com.scenemaxeng.projector;
 
 import com.jme3.scene.Spatial;
+import com.jme3.math.Quaternion;
+import com.jme3.math.Vector3f;
+import com.jme3.scene.Node;
 import com.scenemaxeng.common.weapons.WeaponDefinition;
 import com.scenemaxeng.common.weapons.WeaponInstance;
 import com.scenemaxeng.common.weapons.WeaponPostureDefinition;
 import com.scenemaxeng.common.weapons.WeaponValidationResult;
+import com.scenemaxeng.compiler.VariableDef;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -88,6 +92,48 @@ public class WeaponSystem {
         return true;
     }
 
+    public boolean detachWeapon(String ownerVarName, String slotId) {
+        EquippedWeaponRuntime runtime = getEquippedWeapon(ownerVarName, slotId);
+        if (runtime == null) {
+            app.handleRuntimeError("Cannot detach weapon: no weapon is equipped on '" + ownerVarName + "'.");
+            return false;
+        }
+        Spatial spawnedModel = runtime.getSpawnedModel();
+        if (spawnedModel == null) {
+            app.handleRuntimeError("Cannot detach weapon: weapon model is not available on '" + ownerVarName + "'.");
+            return false;
+        }
+        if (runtime.isDetachedFromOwner()) {
+            return true;
+        }
+
+        Vector3f worldTranslation = spawnedModel.getWorldTranslation().clone();
+        Quaternion worldRotation = spawnedModel.getWorldRotation().clone();
+        Vector3f worldScale = spawnedModel.getWorldScale().clone();
+
+        spawnedModel.removeFromParent();
+        app.getRootNode().attachChild(spawnedModel);
+        spawnedModel.setLocalTranslation(app.getRootNode().worldToLocal(worldTranslation, null));
+        spawnedModel.setLocalRotation(worldRotation);
+        spawnedModel.setLocalScale(worldScale);
+        spawnedModel.updateLogicalState(0f);
+        spawnedModel.updateGeometricState();
+        runtime.setDetachedFromOwner(true);
+        return true;
+    }
+
+    public boolean attachWeapon(String ownerVarName, String slotId) {
+        EquippedWeaponRuntime runtime = getEquippedWeapon(ownerVarName, slotId);
+        if (runtime == null) {
+            app.handleRuntimeError("Cannot attach weapon: no weapon is equipped on '" + ownerVarName + "'.");
+            return false;
+        }
+        if (!runtime.isDetachedFromOwner()) {
+            return true;
+        }
+        return applyPosture(runtime, runtime.getCurrentPostureId());
+    }
+
     public void update(float tpf) {
     }
 
@@ -125,8 +171,35 @@ public class WeaponSystem {
                 runtime.getWeaponDefinition(), resolvedPostureId);
         runtime.setSpawnedModel(spawnedModel);
         runtime.setRegisteredColliderNames(attachmentResolver.getLastRegisteredColliderNames());
+        runtime.setRegisteredModelName(registerWeaponModel(runtime, spawnedModel));
         runtime.setCurrentPostureId(resolvedPostureId);
+        runtime.setDetachedFromOwner(false);
         return spawnedModel != null;
+    }
+
+    private String registerWeaponModel(EquippedWeaponRuntime runtime, Spatial spawnedModel) {
+        if (!(spawnedModel instanceof Node) || runtime == null || runtime.getWeaponDefinition() == null) {
+            return null;
+        }
+        AppModel ownerModel = app.getAppModel(runtime.getOwnerCharacterId());
+        SceneMaxScope ownerScope = ownerModel != null && ownerModel.entityInst != null
+                ? ownerModel.entityInst.scope
+                : null;
+        String weaponName = runtime.getWeaponDefinition().getId() == null
+                ? ""
+                : runtime.getWeaponDefinition().getId().trim();
+        if (ownerScope == null || weaponName.isEmpty()) {
+            return null;
+        }
+
+        VariableDef varDef = new VariableDef();
+        varDef.varName = weaponName;
+        varDef.varType = VariableDef.VAR_TYPE_3D;
+        varDef.resName = runtime.getWeaponDefinition().getModelAssetId();
+        ModelInst inst = new ModelInst(null, varDef, ownerScope);
+        String runtimeName = weaponName + "@" + ownerScope.scopeId;
+        app.registerWeaponModel(runtimeName, (Node) spawnedModel, inst);
+        return runtimeName;
     }
 
     private WeaponDefinition resolveWeaponDefinition(String weaponNameOrId) {

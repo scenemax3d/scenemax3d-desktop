@@ -234,7 +234,7 @@ public class SceneMaxLanguageParser implements IParser {
         TokenStream tokens = new CommonTokenStream(lexer);
         SceneMaxParser parser = new SceneMaxParser(tokens);
 
-        parser.addErrorListener(new BaseErrorListener() {
+        BaseErrorListener syntaxErrorCollector = new BaseErrorListener() {
             @Override
             public void syntaxError(final Recognizer<?,?> recognizer, final Object offendingSymbol, final int line,
                                     final int charPositionInLine, final String msg, final RecognitionException e) {
@@ -246,7 +246,12 @@ public class SceneMaxLanguageParser implements IParser {
                 }
                 errors.add(err);
             }
-        });
+        };
+
+        lexer.removeErrorListeners();
+        lexer.addErrorListener(syntaxErrorCollector);
+        parser.removeErrorListeners();
+        parser.addErrorListener(syntaxErrorCollector);
 
 
         ProgramVisitor v = new ProgramVisitor(this.prg, this.codePath);
@@ -735,6 +740,9 @@ public class SceneMaxLanguageParser implements IParser {
                     VariableDeclarationCommand var = new VariableDeclarationCommand();
                     var.varName = v.res_var_decl().getText();
                     var.valExpr = v.var_value_option().single_value_option().logical_expression();
+                    if (isMotionValueExpression(var.valExpr)) {
+                        var.varType = VariableDef.VAR_TYPE_THROW_MOTION;
+                    }
                     vdc.siblings.add(var);
                 }
 
@@ -960,6 +968,9 @@ public class SceneMaxLanguageParser implements IParser {
                         var.array.addAll(v.var_value_option().array_value().logical_expression());
                     } else {
                         var.valExpr = v.var_value_option().single_value_option().logical_expression();
+                        if (isMotionValueExpression(var.valExpr)) {
+                            var.varType = VariableDef.VAR_TYPE_THROW_MOTION;
+                        }
                     }
 
                     cmd.siblings.add(var);
@@ -2121,6 +2132,50 @@ public class SceneMaxLanguageParser implements IParser {
                 return cmd;
             }
 
+            public StatementDef visitAnimationControllerAssignment(SceneMaxParser.AnimationControllerAssignmentContext ctx) {
+                SceneMaxParser.Animation_controller_assignmentContext assignment = ctx.animation_controller_assignment();
+                String controllerVar = assignment.res_var_decl().getText();
+                String sourceVar = assignment.var_decl().getText();
+
+                VariableDef controllerVarDef = prg.getVar(controllerVar);
+                if (controllerVarDef == null) {
+                    controllerVarDef = createImplicitVariableDef(prg, controllerVar);
+                }
+                controllerVarDef.varType = VariableDef.VAR_TYPE_ANIMATION_CONTROLLER;
+
+                String anim = assignment.animation_name().getText();
+                if (anim.startsWith("\"") && anim.length() > 2) {
+                    anim = anim.substring(1, anim.length() - 1);
+                }
+
+                AnimationControllerAssignmentCommand cmd = new AnimationControllerAssignmentCommand();
+                cmd.targetVar = controllerVar;
+                cmd.varDef = controllerVarDef;
+                cmd.sourceVar = sourceVar;
+                cmd.sourceVarDef = prg.getVar(sourceVar);
+                cmd.animationName = anim;
+                cmd.varLineNum = assignment.res_var_decl().getStart().getLine();
+                return cmd;
+            }
+
+            public StatementDef visitAnimationControllerEvent(SceneMaxParser.AnimationControllerEventContext ctx) {
+                SceneMaxParser.Animation_controller_eventContext event = ctx.animation_controller_event();
+                String anim = event.animation_name().getText();
+                if (anim.startsWith("\"") && anim.length() > 2) {
+                    anim = anim.substring(1, anim.length() - 1);
+                }
+
+                AnimationControllerEventCommand cmd = new AnimationControllerEventCommand();
+                cmd.targetVar = event.var_decl().getText();
+                cmd.varDef = prg.getVar(cmd.targetVar);
+                cmd.animationName = anim;
+                cmd.percentExpr = event.logical_expression();
+                cmd.doBlock = new DoBlockVisitor(prg).visit(event.do_block());
+                cmd.doBlock.isSecondLevelReturnPoint = true;
+                cmd.varLineNum = event.var_decl().getStart().getLine();
+                return cmd;
+            }
+
             public StatementDef visitCameraSystemAssignment(SceneMaxParser.CameraSystemAssignmentContext ctx) {
                 CameraSystemAssignmentCommand cmd = new CameraSystemAssignmentCommand();
                 cmd.targetVar = "camera";
@@ -2574,15 +2629,19 @@ public class SceneMaxLanguageParser implements IParser {
                 ctx.variable_name_and_mandatory_assignemt().forEach(modify_variableContext -> {
                     String varName = modify_variableContext.res_var_decl().getText();
                     VariableDef variableDef = prg.getVar(varName);
+                    SceneMaxParser.Logical_expressionContext valueExpr = modify_variableContext.var_value_option().single_value_option() != null
+                            ? modify_variableContext.var_value_option().single_value_option().logical_expression()
+                            : null;
                     if (variableDef == null) {
-                        SceneMaxParser.Logical_expressionContext valueExpr = modify_variableContext.var_value_option().single_value_option() != null
-                                ? modify_variableContext.var_value_option().single_value_option().logical_expression()
-                                : null;
-                        if (isCameraSystemValueExpression(valueExpr) || isCameraModifierValueExpression(valueExpr)) {
+                        if (isCameraSystemValueExpression(valueExpr) || isCameraModifierValueExpression(valueExpr)
+                                || isMotionValueExpression(valueExpr)) {
                             variableDef = createImplicitVariableDef(prg, varName);
                         } else {
                             prg.syntaxErrors.add(_sourceFileName+": line " + ctx.start.getLine() + ", variable '" + varName + "' not exists");
                         }
+                    }
+                    if (variableDef != null && isMotionValueExpression(valueExpr)) {
+                        variableDef.varType = VariableDef.VAR_TYPE_THROW_MOTION;
                     }
 
                     cmd.vars.add(variableDef);
@@ -2619,34 +2678,16 @@ public class SceneMaxLanguageParser implements IParser {
                     cmd.goExpr = ctx.collision().go_condition().logical_expression();
                 }
 
-                String destEntity = ctx.collision().collision_entity().var_decl().getText();
-                String destJoint = null;
-                if (ctx.collision().collision_entity().collision_joint_1()!=null) {
-                    destJoint = ctx.collision().collision_entity().collision_joint_1().QUOTED_STRING().getText();
-                    destJoint = stripQutes(destJoint);
-                }
-                VariableDef vd = prg.getVar(destEntity);
-                if(vd==null) {
-                    vd = createDeferredCollisionEntity(destEntity);
-                }
-                cmd.destEntity = vd;
-                cmd.destJoint = destJoint;
+                CollisionStatementCommand.CollisionEndpoint dest = parseCollisionEndpoint(ctx.collision().collision_entity());
+                cmd.destEndpoint = dest;
+                cmd.destEntity = dest.entity;
+                cmd.destJoint = dest.joint;
 
                 for (SceneMaxParser.Collision_entityContext collisionEntityContext : ctx.collision().source_collision_entities().collision_entity()) {
-                    String sourceEntity = collisionEntityContext.var_decl().getText();
-                    String sourceJoint = null;
-                    if (collisionEntityContext.collision_joint_1()!=null) {
-                        sourceJoint = collisionEntityContext.collision_joint_1().QUOTED_STRING().getText();
-                        sourceJoint = stripQutes(sourceJoint);
-                    }
-
-                    vd = prg.getVar(sourceEntity);
-                    if(vd==null) {
-                        vd = createDeferredCollisionEntity(sourceEntity);
-                    }
-
-                    cmd.sourceEntities.add(vd);
-                    cmd.sourceJoints.add(sourceJoint);
+                    CollisionStatementCommand.CollisionEndpoint source = parseCollisionEndpoint(collisionEntityContext);
+                    cmd.sourceEndpoints.add(source);
+                    cmd.sourceEntities.add(source.entity);
+                    cmd.sourceJoints.add(source.joint);
                 }
 
                 DoBlockCommand doBlock = new DoBlockVisitor(prg).visit(ctx.collision().do_block());
@@ -2654,6 +2695,37 @@ public class SceneMaxLanguageParser implements IParser {
                 cmd.doBlock = doBlock;
 
                 return cmd;
+            }
+
+            private CollisionStatementCommand.CollisionEndpoint parseCollisionEndpoint(
+                    SceneMaxParser.Collision_entityContext collisionEntityContext) {
+                CollisionStatementCommand.CollisionEndpoint endpoint = new CollisionStatementCommand.CollisionEndpoint();
+                if (collisionEntityContext.weapon_collider_ref() != null) {
+                    SceneMaxParser.Weapon_collider_refContext weaponCollider = collisionEntityContext.weapon_collider_ref();
+                    String ownerVarName = weaponCollider.var_decl().getText();
+                    endpoint.equippedWeaponCollider = true;
+                    endpoint.ownerVarName = ownerVarName;
+                    endpoint.ownerVarLine = weaponCollider.var_decl().getStart().getLine();
+                    endpoint.ownerVarDef = prg.getVar(ownerVarName);
+                    endpoint.colliderName = stripQutes(weaponCollider.QUOTED_STRING().getText());
+                    endpoint.entity = createDeferredCollisionEntity(endpoint.colliderName);
+                    return endpoint;
+                }
+
+                String entityName = collisionEntityContext.var_decl().getText();
+                String joint = null;
+                if (collisionEntityContext.collision_joint_1() != null) {
+                    joint = collisionEntityContext.collision_joint_1().QUOTED_STRING().getText();
+                    joint = stripQutes(joint);
+                }
+
+                VariableDef vd = prg.getVar(entityName);
+                if (vd == null) {
+                    vd = createDeferredCollisionEntity(entityName);
+                }
+                endpoint.entity = vd;
+                endpoint.joint = joint;
+                return endpoint;
             }
 
             private VariableDef createDeferredCollisionEntity(String varName) {
@@ -2870,6 +2942,12 @@ public class SceneMaxLanguageParser implements IParser {
                     cmd.action = WeaponCommand.ACTION_SET_POSTURE;
                     cmd.ownerVarName = weapon.weapon_posture().var_decl().getText();
                     cmd.postureNameExpr = weapon.weapon_posture().logical_expression();
+                } else if (weapon.weapon_detach() != null) {
+                    cmd.action = WeaponCommand.ACTION_DETACH;
+                    cmd.ownerVarName = weapon.weapon_detach().var_decl().getText();
+                } else if (weapon.weapon_attach() != null) {
+                    cmd.action = WeaponCommand.ACTION_ATTACH;
+                    cmd.ownerVarName = weapon.weapon_attach().var_decl().getText();
                 }
 
                 VariableDef owner = prg.getVar(cmd.ownerVarName);
@@ -2882,11 +2960,36 @@ public class SceneMaxLanguageParser implements IParser {
             }
 
             public ActionStatementBase visitCameraModifierApply(SceneMaxParser.CameraModifierApplyContext ctx) {
+                String targetVar = ctx.camera_modifier_apply().var_decl().getText();
+                VariableDef targetVarDef = prg.getVar(targetVar);
+                SceneMaxParser.Apply_target_refContext applyTarget = ctx.camera_modifier_apply().apply_target_ref();
+                String appliedVar = applyTarget.var_decl().getText();
+                boolean applyToWeapon = applyTarget.Weapon() != null;
+                if (targetVarDef != null && targetVarDef.varType == VariableDef.VAR_TYPE_THROW_MOTION) {
+                    ThrowMotionApplyCommand cmd = new ThrowMotionApplyCommand();
+                    cmd.motionVarName = targetVar;
+                    cmd.motionVarDef = targetVarDef;
+                    cmd.motionVarLine = ctx.camera_modifier_apply().var_decl().getStart().getLine();
+                    cmd.appliedObjectVarName = appliedVar;
+                    cmd.appliedObjectVarDef = prg.getVar(cmd.appliedObjectVarName);
+                    cmd.appliedObjectVarLine = applyTarget.var_decl().getStart().getLine();
+                    cmd.appliedObjectIsEquippedWeapon = applyToWeapon;
+                    cmd.targetVar = applyToWeapon ? cmd.appliedObjectVarName + ".weapon" : cmd.appliedObjectVarName;
+                    cmd.varDef = cmd.appliedObjectVarDef;
+                    cmd.varLineNum = cmd.appliedObjectVarLine;
+                    return cmd;
+                }
+
+                if (applyToWeapon) {
+                    prg.syntaxErrors.add(_sourceFileName + ": line " + applyTarget.start.getLine()
+                            + ", '.weapon' apply targets are only supported for throw motion assets");
+                }
+
                 CameraModifierApplyCommand cmd = new CameraModifierApplyCommand();
-                cmd.targetVar = ctx.camera_modifier_apply().var_decl(0).getText();
-                cmd.varDef = prg.getVar(cmd.targetVar);
-                cmd.targetVarLine = ctx.camera_modifier_apply().var_decl(0).getStart().getLine();
-                cmd.modifierVar = ctx.camera_modifier_apply().var_decl(1).getText();
+                cmd.targetVar = targetVar;
+                cmd.varDef = targetVarDef;
+                cmd.targetVarLine = ctx.camera_modifier_apply().var_decl().getStart().getLine();
+                cmd.modifierVar = appliedVar;
                 cmd.modifierVarDef = prg.getVar(cmd.modifierVar);
 
                 if (ctx.camera_modifier_apply().camera_modifier_override_list() != null) {
@@ -3271,6 +3374,7 @@ public class SceneMaxLanguageParser implements IParser {
                 cmd.verbalCommand=verbalCommand;
                 cmd.varDef=vd;
                 cmd.targetVar = var;
+                cmd.varLineNum = ctx.move_verbal().var_decl().getStart().getLine();
 
                 cmd.axis = axis;
                 cmd.numSign = numSign;
@@ -3615,11 +3719,30 @@ public class SceneMaxLanguageParser implements IParser {
 
             public ActionStatementBase visitStopStatement(SceneMaxParser.StopStatementContext ctx) {
                 String var=ctx.stop().var_decl().getText();
-                ActionCommandStop cmd = new ActionCommandStop();
                 VariableDef vd = prg.getVar(var);
+                if (vd != null && vd.varType == VariableDef.VAR_TYPE_ANIMATION_CONTROLLER) {
+                    AnimationControllerActionCommand cmd = new AnimationControllerActionCommand();
+                    cmd.action = AnimationControllerActionCommand.STOP;
+                    cmd.varDef = vd;
+                    cmd.targetVar = var;
+                    cmd.varLineNum = ctx.stop().var_decl().getStart().getLine();
+                    return cmd;
+                }
+
+                ActionCommandStop cmd = new ActionCommandStop();
                 cmd.varDef=vd;
                 cmd.targetVar = var;
 
+                return cmd;
+            }
+
+            public ActionStatementBase visitAnimationControllerRunStatement(SceneMaxParser.AnimationControllerRunStatementContext ctx) {
+                String var = ctx.animation_controller_run().var_decl().getText();
+                AnimationControllerActionCommand cmd = new AnimationControllerActionCommand();
+                cmd.action = AnimationControllerActionCommand.RUN;
+                cmd.varDef = prg.getVar(var);
+                cmd.targetVar = var;
+                cmd.varLineNum = ctx.animation_controller_run().var_decl().getStart().getLine();
                 return cmd;
             }
 
@@ -3675,6 +3798,7 @@ public class SceneMaxLanguageParser implements IParser {
                         VariableDef vd = prg.getVar(var);
                         cmd.varDef=vd;
                         cmd.targetVar = var;
+                        cmd.varLineNum = ctx.move().var_decl().getStart().getLine();
 
                         cmd.axis = axis;
                         cmd.numSign = numSign;
@@ -4074,6 +4198,11 @@ public class SceneMaxLanguageParser implements IParser {
     private boolean isCameraModifierValueExpression(SceneMaxParser.Logical_expressionContext expr) {
         SceneMaxParser.ValueContext valueCtx = resolveSimpleValueExpression(expr);
         return valueCtx != null && valueCtx.camera_modifier_expr() != null;
+    }
+
+    private boolean isMotionValueExpression(SceneMaxParser.Logical_expressionContext expr) {
+        SceneMaxParser.ValueContext valueCtx = resolveSimpleValueExpression(expr);
+        return valueCtx != null && valueCtx.motion_expr() != null;
     }
 
     private SceneMaxParser.ValueContext resolveSimpleValueExpression(SceneMaxParser.Logical_expressionContext expr) {

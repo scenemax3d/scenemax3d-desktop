@@ -70,7 +70,6 @@ tasks.register('cleanSceneMaxParserGenerated', Delete) {
 tasks.register('generateSceneMaxParserSources', JavaExec) {
     group = 'build setup'
     description = 'Generates Java sources from SceneMax.g4 using ANTLR.'
-    dependsOn tasks.named('cleanSceneMaxParserGenerated')
     classpath = configurations.antlrTool
     mainClass = 'org.antlr.v4.Tool'
     workingDir = parserDir
@@ -123,6 +122,10 @@ tasks.register('generateSceneMaxParser', Copy) {
     inputs.file(parserJarOutput)
     outputs.file(parserCompilerLib)
     outputs.file(parserProjectorLib)
+}
+
+tasks.named('clean') {
+    dependsOn tasks.named('cleanSceneMaxParserGenerated')
 }
 
 tasks.named('build') {

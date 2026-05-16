@@ -37,7 +37,7 @@ public class ActionCommandMove extends TimedVariableMotionCommand {
         }
 
         checkVariableExistsError();
-        return (this.varDef!=null);
+        return true;
 
     }
 

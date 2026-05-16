@@ -2,6 +2,7 @@ package com.scenemaxeng.common.types;
 
 import com.jme3.audio.AudioData;
 import com.jme3.math.Vector3f;
+import com.scenemaxeng.common.motion.ThrowMotionDefinition;
 import com.scenemaxeng.common.weapons.WeaponDefinition;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -9,6 +10,7 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Collection;
@@ -31,7 +33,9 @@ public class AssetsMapping {
     private HashMap<String, ResourceCinematicRig> _cinematics = new HashMap<>();
     private HashMap<String, ResourceAnimation> _animations = new HashMap<>();
     private HashMap<String, WeaponDefinition> _weapons = new HashMap<>();
+    private HashMap<String, ThrowMotionDefinition> _throwMotions = new HashMap<>();
     private LinkedHashSet<File> _weaponRoots = new LinkedHashSet<>();
+    private LinkedHashSet<File> _throwMotionRoots = new LinkedHashSet<>();
 
     private JSONObject getResourcesIndex() {
         String json = "";
@@ -86,6 +90,8 @@ public class AssetsMapping {
 
         addWeaponRoot(new File(extPath, "weapons"));
         addWeaponRoot(new File(extPath, "Weapons"));
+        addThrowMotionRoot(new File(extPath, "throw_motions"));
+        addThrowMotionRoot(new File(extPath, "ThrowMotions"));
 
     }
 
@@ -129,6 +135,8 @@ public class AssetsMapping {
 
         addWeaponRoot(new File("./resources/weapons"));
         addWeaponRoot(new File("./resources/Weapons"));
+        addThrowMotionRoot(new File("./resources/throw_motions"));
+        addThrowMotionRoot(new File("./resources/ThrowMotions"));
 
         /////////////////////////////// READ SELF - CONTAINED ASSETS /////////////////////////////
         // self contained exec will read from embedded class-path resource file
@@ -573,6 +581,28 @@ public class AssetsMapping {
         return _weapons;
     }
 
+    public HashMap<String, ThrowMotionDefinition> getThrowMotionsIndex() {
+        return _throwMotions;
+    }
+
+    public ThrowMotionDefinition getThrowMotionDefinition(String motionNameOrId) {
+        if (motionNameOrId == null || motionNameOrId.trim().isEmpty()) {
+            return null;
+        }
+        String key = motionNameOrId.trim().toLowerCase(Locale.ROOT);
+        ThrowMotionDefinition cached = _throwMotions.get(key);
+        if (cached != null) {
+            return cached;
+        }
+
+        ThrowMotionDefinition direct = loadThrowMotionByFileName(key);
+        if (direct != null) {
+            return direct;
+        }
+
+        return findAndCacheThrowMotionDefinition(key);
+    }
+
     public WeaponDefinition getWeaponDefinition(String weaponNameOrId) {
         if (weaponNameOrId == null || weaponNameOrId.trim().isEmpty()) {
             return null;
@@ -602,6 +632,9 @@ public class AssetsMapping {
         for (File folder : collectProjectWeaponFolders(projectRoot)) {
             addWeaponRoot(folder);
         }
+        for (File folder : collectProjectThrowMotionFolders(projectRoot)) {
+            addThrowMotionRoot(folder);
+        }
     }
 
     private List<File> collectProjectWeaponFolders(File projectRoot) {
@@ -611,6 +644,13 @@ public class AssetsMapping {
         addExistingFolder(folders, new File(projectRoot, "resources/Weapons"));
         addExistingFolder(folders, new File(projectRoot, "weapons"));
         addExistingFolder(folders, new File(projectRoot, "Weapons"));
+        return new ArrayList<>(folders);
+    }
+
+    private List<File> collectProjectThrowMotionFolders(File projectRoot) {
+        LinkedHashSet<File> folders = new LinkedHashSet<>();
+        addExistingFolder(folders, new File(projectRoot, "resources/throw_motions"));
+        addExistingFolder(folders, new File(projectRoot, "resources/ThrowMotions"));
         return new ArrayList<>(folders);
     }
 
@@ -627,6 +667,10 @@ public class AssetsMapping {
 
     private void addWeaponRoot(File folder) {
         addExistingFolder(_weaponRoots, folder);
+    }
+
+    private void addThrowMotionRoot(File folder) {
+        addExistingFolder(_throwMotionRoots, folder);
     }
 
     private WeaponDefinition loadWeaponByFileName(String key) {
@@ -691,6 +735,149 @@ public class AssetsMapping {
             _weapons.put(definition.getId().trim().toLowerCase(Locale.ROOT), definition);
         }
         _weapons.put(stripExtension(file.getName()).toLowerCase(Locale.ROOT), definition);
+    }
+
+    private ThrowMotionDefinition loadThrowMotionByFileName(String key) {
+        List<String> candidateNames = new ArrayList<>();
+        candidateNames.add(key);
+        if (key.startsWith("motion_") && key.length() > "motion_".length()) {
+            candidateNames.add(key.substring("motion_".length()));
+        }
+        for (File root : _throwMotionRoots) {
+            for (String name : candidateNames) {
+                File file = new File(root, name + ThrowMotionDefinition.FILE_EXTENSION);
+                if (file.isFile()) {
+                    ThrowMotionDefinition definition = loadAndCacheThrowMotionDefinition(file);
+                    if (definition != null) {
+                        return definition;
+                    }
+                }
+            }
+            ThrowMotionDefinition nested = loadThrowMotionByFileNameRecursive(root, candidateNames);
+            if (nested != null) {
+                return nested;
+            }
+            ThrowMotionDefinition matchingId = findAndCacheThrowMotionDefinitionInRoot(root, key);
+            if (matchingId != null) {
+                return matchingId;
+            }
+        }
+        return loadThrowMotionFromClasspath(candidateNames);
+    }
+
+    private ThrowMotionDefinition loadThrowMotionFromClasspath(List<String> candidateNames) {
+        for (String name : candidateNames) {
+            ThrowMotionDefinition definition = loadThrowMotionFromClasspath("resources/throw_motions/"
+                    + name + ThrowMotionDefinition.FILE_EXTENSION, name);
+            if (definition != null) {
+                return definition;
+            }
+            definition = loadThrowMotionFromClasspath("resources/ThrowMotions/"
+                    + name + ThrowMotionDefinition.FILE_EXTENSION, name);
+            if (definition != null) {
+                return definition;
+            }
+        }
+        return null;
+    }
+
+    private ThrowMotionDefinition loadThrowMotionFromClasspath(String resourcePath, String alias) {
+        try (InputStream in = AssetsMapping.class.getClassLoader().getResourceAsStream(resourcePath)) {
+            if (in == null) {
+                return null;
+            }
+            ThrowMotionDefinition definition = ThrowMotionDefinition.fromJSON(
+                    new JSONObject(new String(Util.toByteArray(in), StandardCharsets.UTF_8)));
+            cacheThrowMotionDefinition(alias, definition);
+            return definition;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private ThrowMotionDefinition loadThrowMotionByFileNameRecursive(File root, List<String> candidateNames) {
+        if (root == null || !root.isDirectory()) {
+            return null;
+        }
+        Collection<File> files = org.apache.commons.io.FileUtils.listFiles(root, new String[]{"smmotion"}, true);
+        for (String name : candidateNames) {
+            for (File file : files) {
+                if (name.equalsIgnoreCase(stripExtension(file.getName()))) {
+                    ThrowMotionDefinition definition = loadAndCacheThrowMotionDefinition(file);
+                    if (definition != null) {
+                        return definition;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private ThrowMotionDefinition findAndCacheThrowMotionDefinition(String key) {
+        for (File root : _throwMotionRoots) {
+            ThrowMotionDefinition definition = findAndCacheThrowMotionDefinitionInRoot(root, key);
+            if (definition != null) {
+                return definition;
+            }
+        }
+        return null;
+    }
+
+    private ThrowMotionDefinition findAndCacheThrowMotionDefinitionInRoot(File root, String key) {
+        if (root == null || !root.isDirectory()) {
+            return null;
+        }
+        Collection<File> files = org.apache.commons.io.FileUtils.listFiles(root, new String[]{"smmotion"}, true);
+        for (File file : files) {
+            String fileKey = stripExtension(file.getName()).toLowerCase(Locale.ROOT);
+            if (key.equals(fileKey)) {
+                ThrowMotionDefinition definition = loadAndCacheThrowMotionDefinition(file);
+                if (definition != null) {
+                    return definition;
+                }
+            }
+            try {
+                ThrowMotionDefinition definition = ThrowMotionDefinition.load(file);
+                cacheThrowMotionDefinition(file, definition);
+                if (definition.getId() != null && key.equals(definition.getId().trim().toLowerCase(Locale.ROOT))) {
+                    return definition;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
+    private ThrowMotionDefinition loadAndCacheThrowMotionDefinition(File file) {
+        try {
+            ThrowMotionDefinition definition = ThrowMotionDefinition.load(file);
+            cacheThrowMotionDefinition(file, definition);
+            return definition;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private void cacheThrowMotionDefinition(File file, ThrowMotionDefinition definition) {
+        if (definition == null || file == null) {
+            return;
+        }
+        if (definition.getId() != null && !definition.getId().isBlank()) {
+            _throwMotions.put(definition.getId().trim().toLowerCase(Locale.ROOT), definition);
+        }
+        _throwMotions.put(stripExtension(file.getName()).toLowerCase(Locale.ROOT), definition);
+    }
+
+    private void cacheThrowMotionDefinition(String alias, ThrowMotionDefinition definition) {
+        if (definition == null) {
+            return;
+        }
+        if (definition.getId() != null && !definition.getId().isBlank()) {
+            _throwMotions.put(definition.getId().trim().toLowerCase(Locale.ROOT), definition);
+        }
+        if (alias != null && !alias.isBlank()) {
+            _throwMotions.put(alias.trim().toLowerCase(Locale.ROOT), definition);
+        }
     }
 
     public void loadCinematicsFromProject(String projectRootPath) {

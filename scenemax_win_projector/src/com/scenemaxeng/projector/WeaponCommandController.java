@@ -34,6 +34,10 @@ public class WeaponCommandController extends SceneMaxBaseController {
             if (value != null) {
                 app.setWeaponPosture(owner, value.toString());
             }
+        } else if (weaponCommand.action == WeaponCommand.ACTION_DETACH) {
+            app.detachWeapon(owner);
+        } else if (weaponCommand.action == WeaponCommand.ACTION_ATTACH) {
+            app.attachWeapon(owner);
         }
         return true;
     }

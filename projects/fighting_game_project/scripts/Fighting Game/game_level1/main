@@ -17,7 +17,8 @@ add "enemy_ai",
     "/states/player1_general_states", 
     "/states/player2_general_states",
     "enemy_knockout" , 
-    "/utils/tiger_utils" code
+    "/utils/tiger_utils", 
+    "axe_utils" code
 
 player1.idle2 loop
 player2.Idle loop

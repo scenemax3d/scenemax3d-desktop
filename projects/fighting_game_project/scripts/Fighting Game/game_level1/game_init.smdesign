@@ -1239,6 +1239,68 @@
         0
       ],
       "type": "CODE"
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "resourcePath": "meshy_wooden_box",
+      "jointMapping": "",
+      "scale": [
+        1.4,
+        1.4,
+        1.4
+      ],
+      "modelCollisionShape": "box",
+      "type": "MODEL",
+      "sceneMaxCode": "crystal_box => static meshy_wooden_box: pos (23.831593,-88.0,161.9128), scale 1.4, collision shape box async",
+      "staticModel": true,
+      "name": "crystal_box",
+      "vehicleModel": false,
+      "id": "22817967-626c-4039-8b9a-03d53481c5df",
+      "position": [
+        23.831593,
+        -88,
+        161.9128
+      ]
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": true,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "resourcePath": "meshy_axe",
+      "jointMapping": "",
+      "scale": [
+        2,
+        2,
+        2
+      ],
+      "modelCollisionShape": "box",
+      "type": "MODEL",
+      "sceneMaxCode": "axe => meshy_axe: pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async",
+      "staticModel": false,
+      "name": "axe",
+      "vehicleModel": false,
+      "id": "9623875e-175c-4d46-8104-7f7a6aeb27df",
+      "position": [
+        23.46958,
+        -87.37234,
+        147.34291
+      ]
     }
   ],
   "gameCamera": {
@@ -1256,15 +1318,15 @@
   },
   "camera": {
     "rotation": [
-      0.004535374,
-      0.98045814,
-      -0.19535376,
-      0.022762524
+      0.2419444,
+      -0.34306952,
+      0.091925226,
+      0.9029485
     ],
     "position": [
-      11.583369,
-      8.234467,
-      279.2084
+      38.680885,
+      -74.146645,
+      130.21478
     ]
   },
   "version": 1
