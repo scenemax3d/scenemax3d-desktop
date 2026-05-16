@@ -35,14 +35,11 @@ public class EffekseerPlayController extends SceneMaxBaseController {
             z = (Double) new ActionLogicalExpressionVm(cmd.zExpr, scope).evaluate();
         } else if (cmd.entityPos != null) {
             posEntity = app.findVarRuntime(prg, scope, cmd.entityPos.entityName);
-            if (posEntity != null && cmd.entityPos.entityJointName != null) {
-                AppModel model = app.getAppModel(posEntity.varName);
-                if (model != null) {
-                    Spatial joint = model.getJointAttachementNode(cmd.entityPos.entityJointName);
-                    if (joint != null) {
-                        calculatedPosition = joint.getWorldTranslation();
-                    }
-                }
+            Spatial spatial = app.resolveEntityPosSpatial(prg, scope, cmd.entityPos);
+            if (spatial != null) {
+                calculatedPosition = spatial.getWorldTranslation();
+            } else if (cmd.entityPos.equippedWeapon) {
+                posEntity = null;
             }
         }
 

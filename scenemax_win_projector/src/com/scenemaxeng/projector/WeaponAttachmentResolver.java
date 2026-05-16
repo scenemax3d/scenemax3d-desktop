@@ -21,8 +21,6 @@ import com.scenemaxeng.common.weapons.WeaponAttachmentTransform;
 import com.scenemaxeng.common.weapons.WeaponColliderDefinition;
 import com.scenemaxeng.common.weapons.WeaponDefinition;
 import com.scenemaxeng.common.weapons.WeaponPostureDefinition;
-import com.scenemaxeng.compiler.BoxVariableDef;
-import com.scenemaxeng.compiler.SphereVariableDef;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -192,8 +190,7 @@ public class WeaponAttachmentResolver {
             GhostControl ghostControl = createColliderGhost(collider);
             colliderNode.addControl(ghostControl);
             transformRoot.attachChild(colliderNode);
-            EntityInstBase inst = createColliderInst(collider, ownerScope);
-            app.registerWeaponCollider(runtimeName, colliderNode, inst, ghostControl);
+            app.registerWeaponCollider(runtimeName, colliderName, colliderNode, ghostControl);
             registered.add(runtimeName);
         }
         lastRegisteredColliderNames = registered;
@@ -222,20 +219,4 @@ public class WeaponAttachmentResolver {
         return new GhostControl(new BoxCollisionShape(new Vector3f(sx * 0.5f, sy * 0.5f, sz * 0.5f)));
     }
 
-    private EntityInstBase createColliderInst(WeaponColliderDefinition collider, SceneMaxScope ownerScope) {
-        if (collider.isSphere()) {
-            SphereVariableDef varDef = new SphereVariableDef();
-            varDef.varName = collider.getName().trim();
-            varDef.resName = "sphere";
-            varDef.isCollider = true;
-            varDef.visible = false;
-            return new SphereInst(varDef, ownerScope);
-        }
-        BoxVariableDef varDef = new BoxVariableDef();
-        varDef.varName = collider.getName().trim();
-        varDef.resName = "box";
-        varDef.isCollider = true;
-        varDef.visible = false;
-        return new BoxInst(varDef, ownerScope);
-    }
 }

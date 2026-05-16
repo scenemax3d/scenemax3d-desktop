@@ -191,6 +191,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private static HashMap<String, AppModel> models = new HashMap<String, AppModel>();
 
     private static HashMap<String, List<java.lang.Object>> collisionControlsCache=new HashMap<>();
+    private final Map<String, WeaponColliderRuntime> weaponColliders = new HashMap<>();
+    private final Map<String, Spatial> weaponModels = new HashMap<>();
     private static HashMap<String, SpriteEmitter> sprites = new HashMap<String, SpriteEmitter>();
     protected static AssetsMapping assetsMapping = null;
     private static HashMap<String, AudioNode> _audioNodes = new HashMap<>();
@@ -883,6 +885,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         if (weaponSystem != null) {
             weaponSystem.clear();
         }
+        clearWeaponRuntimeRegistries();
         this.clearThreads();
         groups.clear();
         _controllers.clear();
@@ -1025,6 +1028,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         if (weaponSystem != null) {
             weaponSystem.clear();
         }
+        clearWeaponRuntimeRegistries();
         this.clearThreads();
         groups.clear();
         _controllers.clear();
@@ -1483,6 +1487,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if(action instanceof AnimationControllerEventCommand) {
             AnimationControllerEventController ctl =
                     new AnimationControllerEventController(this, prg, scope, (AnimationControllerEventCommand) action);
+            scope.add(ctl);
+        } else if(action instanceof ThrowMotionEventCommand) {
+            ThrowMotionEventController ctl =
+                    new ThrowMotionEventController(this, prg, scope, (ThrowMotionEventCommand) action);
             scope.add(ctl);
         } else if(action instanceof ActionCommandAnimate) {
             ActionCommandAnimate cmdAnim = (ActionCommandAnimate)action;
@@ -5700,11 +5708,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     public boolean checkCollision(String var1, String var2, String jointNameA, String jointNameB) {
 
-        String name1 = geoName2ModelName.get(var1);
+        String name1 = resolveCollisionRuntimeName(var1);
         if(name1==null) {
             return false;
         }
-        String name2 = geoName2ModelName.get(var2);
+        String name2 = resolveCollisionRuntimeName(var2);
         if(name2==null) {
             return false;
         }
@@ -5749,6 +5757,14 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         return false;
 
+    }
+
+    private String resolveCollisionRuntimeName(String physicsKey) {
+        String name = geoName2ModelName.get(physicsKey);
+        if (name != null) {
+            return name;
+        }
+        return weaponColliders.containsKey(physicsKey) ? physicsKey : null;
     }
 
     private final AnalogListener actionListenerAnalog = new AnalogListener() {
@@ -6720,84 +6736,69 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     }
 
-    public void registerWeaponCollider(String runtimeName, Node colliderNode, EntityInstBase inst, GhostControl ghostControl) {
-        if (runtimeName == null || runtimeName.trim().isEmpty() || colliderNode == null || inst == null || inst.varDef == null) {
+    public void registerWeaponCollider(String runtimeName, String colliderName, Node colliderNode, GhostControl ghostControl) {
+        if (runtimeName == null || runtimeName.trim().isEmpty() || colliderNode == null
+                || colliderName == null || colliderName.trim().isEmpty()) {
             return;
         }
         unregisterWeaponCollider(runtimeName);
         colliderNode.setName(runtimeName);
         colliderNode.setUserData("key", runtimeName);
-        if (inst.varDef.varType == VariableDef.VAR_TYPE_SPHERE) {
-            spheres.put(runtimeName, colliderNode);
-        } else {
-            boxes.put(runtimeName, colliderNode);
-        }
-        geoName2ModelName.put(runtimeName, runtimeName);
-        geoName2EntityInst.put(runtimeName, inst);
-        if (inst.scope != null) {
-            inst.scope.entities.put(inst.varDef.varName, inst);
-        }
-        List<java.lang.Object> ctls = new ArrayList<>();
         if (ghostControl != null) {
             ghostControl.setUserObject(colliderNode);
-            ctls.add(ghostControl);
             if (bulletAppState != null && bulletAppState.getPhysicsSpace() != null) {
                 bulletAppState.getPhysicsSpace().add(ghostControl);
             }
         }
-        collisionControlsCache.put(runtimeName, ctls);
+        weaponColliders.put(runtimeName, new WeaponColliderRuntime(runtimeName, colliderName.trim(), colliderNode, ghostControl));
     }
 
-    public void registerWeaponModel(String runtimeName, Node weaponRoot, EntityInstBase inst) {
-        if (runtimeName == null || runtimeName.trim().isEmpty() || weaponRoot == null || inst == null || inst.varDef == null) {
+    public void registerWeaponModel(String runtimeName, Node weaponRoot) {
+        if (runtimeName == null || runtimeName.trim().isEmpty() || weaponRoot == null) {
             return;
         }
         unregisterWeaponModel(runtimeName);
         weaponRoot.setName(runtimeName);
         weaponRoot.setUserData("key", runtimeName);
-        AppModel appModel = new AppModel(weaponRoot);
-        appModel.entityInst = inst;
-        models.put(runtimeName, appModel);
-        geoName2ModelName.put(runtimeName, runtimeName);
-        geoName2EntityInst.put(runtimeName, inst);
-        if (inst.scope != null) {
-            inst.scope.entities.put(inst.varDef.varName, inst);
-        }
+        weaponModels.put(runtimeName, weaponRoot);
     }
 
     public void unregisterWeaponModel(String runtimeName) {
         if (runtimeName == null || runtimeName.trim().isEmpty()) {
             return;
         }
-        AppModel appModel = models.remove(runtimeName);
-        EntityInstBase inst = appModel != null ? appModel.entityInst : geoName2EntityInst.get(runtimeName);
-        if (inst != null && inst.scope != null && inst.varDef != null) {
-            EntityInstBase current = inst.scope.entities.get(inst.varDef.varName);
-            if (current == inst) {
-                inst.scope.entities.remove(inst.varDef.varName);
-            }
+        Spatial model = weaponModels.remove(runtimeName);
+        if (model != null) {
+            model.removeFromParent();
         }
-        geoName2ModelName.remove(runtimeName);
-        geoName2EntityInst.remove(runtimeName);
     }
 
     public void unregisterWeaponCollider(String runtimeName) {
         if (runtimeName == null || runtimeName.trim().isEmpty()) {
             return;
         }
-        removeCollisionControlsFromPhysics(runtimeName);
-        EntityInstBase inst = geoName2EntityInst.get(runtimeName);
-        if (inst != null && inst.scope != null && inst.varDef != null) {
-            EntityInstBase current = inst.scope.entities.get(inst.varDef.varName);
-            if (current == inst) {
-                inst.scope.entities.remove(inst.varDef.varName);
+        WeaponColliderRuntime runtime = weaponColliders.remove(runtimeName);
+        if (runtime == null) {
+            return;
+        }
+        if (runtime.ghostControl != null && bulletAppState != null && bulletAppState.getPhysicsSpace() != null) {
+            bulletAppState.getPhysicsSpace().remove(runtime.ghostControl);
+        }
+        if (runtime.node != null) {
+            runtime.node.removeFromParent();
+        }
+    }
+
+    private void clearWeaponRuntimeRegistries() {
+        for (String runtimeName : new ArrayList<>(weaponColliders.keySet())) {
+            unregisterWeaponCollider(runtimeName);
+        }
+        for (Spatial model : new ArrayList<>(weaponModels.values())) {
+            if (model != null) {
+                model.removeFromParent();
             }
         }
-        boxes.remove(runtimeName);
-        spheres.remove(runtimeName);
-        geoName2ModelName.remove(runtimeName);
-        geoName2EntityInst.remove(runtimeName);
-        collisionControlsCache.remove(runtimeName);
+        weaponModels.clear();
     }
 
     public ISceneMax3dObjectWrapper getEntityWrapper(String targetVar, int varType) {
@@ -6849,6 +6850,49 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         return m;
 
+    }
+
+    public Spatial resolveEntityPosSpatial(ProgramDef prg, SceneMaxScope scope, EntityPos entityPos) {
+        if (entityPos == null || entityPos.entityName == null) {
+            return null;
+        }
+
+        RunTimeVarDef entityForPos = findVarRuntime(prg, scope, entityPos.entityName);
+        if (entityForPos == null) {
+            return null;
+        }
+
+        if (entityPos.equippedWeaponCollider) {
+            return getWeaponColliderSpatial(entityForPos.varName, entityPos.weaponColliderName);
+        }
+
+        if (entityPos.equippedWeapon) {
+            EquippedWeaponRuntime runtime = getEquippedWeapon(entityForPos.varName, "rightHand");
+            return runtime == null ? null : runtime.getSpawnedModel();
+        }
+
+        if (entityPos.entityJointName != null) {
+            AppModel model = getAppModel(entityForPos.varName);
+            return model == null ? null : model.getJointAttachementNode(entityPos.entityJointName);
+        }
+
+        return getEntitySpatial(entityForPos.varName, entityForPos.varDef.varType);
+    }
+
+    public Spatial getWeaponColliderSpatial(String ownerRuntimeName, String colliderName) {
+        if (ownerRuntimeName == null || colliderName == null || colliderName.trim().isEmpty()) {
+            return null;
+        }
+        String runtimeName = colliderName.trim() + "@" + runtimeScopeId(ownerRuntimeName);
+        WeaponColliderRuntime runtime = weaponColliders.get(runtimeName);
+        return runtime == null ? null : runtime.node;
+    }
+
+    private String runtimeScopeId(String runtimeVarName) {
+        int at = runtimeVarName == null ? -1 : runtimeVarName.lastIndexOf('@');
+        return at >= 0 && at < runtimeVarName.length() - 1
+                ? runtimeVarName.substring(at + 1)
+                : String.valueOf(mainScope == null ? 0 : mainScope.scopeId);
     }
 
     public void setChaseCameraOn(String targetVar, int varType, ChaseCameraCommand cmd) {
@@ -10169,19 +10213,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         if (inst.entityForPos != null) {
-            Spatial sp = null;
-            boolean jointPosition = false;
-            if (inst.varDef.entityPos != null && inst.varDef.entityPos.entityJointName != null) {
-                AppModel model = models.get(inst.entityForPos.varName);
-                if (model != null) {
-                    sp = model.getJointAttachementNode(inst.varDef.entityPos.entityJointName);
-                    jointPosition = sp != null;
-                }
-            } else {
-                sp = getEntitySpatial(inst.entityForPos.varName, inst.entityForPos.varDef.varType);
-            }
+            Spatial sp = resolveEntityPosSpatial(null, inst.scope, inst.varDef.entityPos);
             if (sp != null) {
-                inst.node.setLocalTranslation(jointPosition ? sp.getWorldTranslation() : sp.getLocalTranslation());
+                boolean worldPosition = inst.varDef.entityPos != null
+                        && (inst.varDef.entityPos.entityJointName != null || inst.varDef.entityPos.equippedWeapon);
+                inst.node.setLocalTranslation(worldPosition ? sp.getWorldTranslation() : sp.getLocalTranslation());
             }
         } else if (inst.varDef.xExpr != null) {
             float x = Float.parseFloat(new ActionLogicalExpressionVm(inst.varDef.xExpr, inst.scope).evaluate().toString());

@@ -3,6 +3,7 @@ package com.scenemaxeng.projector;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
 import com.scenemaxeng.compiler.ThrowMotionApplyCommand;
+import com.scenemaxeng.compiler.ThrowMotionEventCommand;
 import com.scenemaxeng.compiler.VariableAssignmentCommand;
 import com.scenemaxeng.compiler.VariableDef;
 import org.junit.Test;
@@ -88,5 +89,31 @@ public class ThrowMotionRuntimeSyntaxTest {
         assertEquals("player1", apply.appliedObjectVarName);
         assertTrue(apply.appliedObjectIsEquippedWeapon);
         assertTrue(apply.isAsync);
+    }
+
+    @Test
+    public void motionEventsCanRegisterEndAndIndexHandlers() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "player1 => dragon\n"
+                        + "crystal_box => box\n"
+                        + "motion = system.motion(\"motion_axe_throw\", target crystal_box)\n"
+                        + "motion.event(\"on_end\") = { }\n"
+                        + "motion.event(\"on_index\", 50) = { }\n"
+                        + "motion.apply player1.weapon");
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+        assertEquals(6, prg.actions.size());
+        assertTrue(prg.actions.get(3) instanceof ThrowMotionEventCommand);
+        assertTrue(prg.actions.get(4) instanceof ThrowMotionEventCommand);
+
+        ThrowMotionEventCommand onEnd = (ThrowMotionEventCommand) prg.actions.get(3);
+        assertEquals("motion", onEnd.targetVar);
+        assertEquals("on_end", onEnd.eventName);
+
+        ThrowMotionEventCommand onIndex = (ThrowMotionEventCommand) prg.actions.get(4);
+        assertEquals("motion", onIndex.targetVar);
+        assertEquals("on_index", onIndex.eventName);
+        assertEquals(50.0, ActionLogicalExpressionVm.toDouble(
+                new ActionLogicalExpressionVm(onIndex.indexPercentExpr, new SceneMaxScope()).evaluate()), 0.001);
     }
 }

@@ -2,12 +2,11 @@ package com.scenemaxeng.projector;
 
 import com.scenemaxeng.compiler.ActionCommandMove;
 import com.scenemaxeng.compiler.BoxVariableDef;
-import com.scenemaxeng.compiler.VariableDef;
 import com.jme3.scene.Node;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 
 public class RuntimeEntityResolutionTest {
 
@@ -32,26 +31,14 @@ public class RuntimeEntityResolutionTest {
     }
 
     @Test
-    public void weaponDefinitionIdResolvesToRegisteredWeaponModel() {
+    public void weaponDefinitionIdDoesNotRegisterGlobalWeaponEntity() {
         SceneMaxApp app = new SceneMaxApp();
         SceneMaxScope ownerScope = new SceneMaxScope();
 
-        VariableDef weaponDef = new VariableDef();
-        weaponDef.varName = "weapon_player_weapon";
-        weaponDef.varType = VariableDef.VAR_TYPE_3D;
         app.registerWeaponModel("weapon_player_weapon@" + ownerScope.scopeId,
-                new Node("weapon_player_weapon@" + ownerScope.scopeId),
-                new ModelInst(null, weaponDef, ownerScope));
+                new Node("weapon_player_weapon@" + ownerScope.scopeId));
 
-        assertNotNull(ownerScope.getEntityInst("weapon_player_weapon"));
-
-        ActionCommandMove cmd = new ActionCommandMove();
-        cmd.targetVar = "weapon_player_weapon";
-        TargetResolverProbe probe = new TargetResolverProbe(ownerScope, cmd);
-
-        assertEquals(0, probe.resolve());
-        assertEquals("weapon_player_weapon@" + ownerScope.scopeId, probe.resolvedTargetVar());
-        assertEquals(weaponDef.varType, probe.resolvedTargetVarDef().varType);
+        assertNull(ownerScope.getEntityInst("weapon_player_weapon"));
     }
 
     private static class TargetResolverProbe extends SceneMaxBaseController {

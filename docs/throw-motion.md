@@ -738,6 +738,22 @@ end do
 
 Use the collider name defined by the weapon asset. The owner-based form resolves the correct runtime collider for that player's equipped weapon, so the same weapon asset can be reused across multiple players without hard-coding generated collider ids.
 
+### Motion Events
+
+Register handlers on a motion instance before applying it:
+
+```scenemax
+motion = system.motion("motion_axe_throw", target crystal_box)
+motion.event("on_end") = {
+}
+motion.event("on_index", 50) = {
+}
+motion.apply player1.weapon
+```
+
+- `"on_end"` runs once when the throw motion finishes.
+- `"on_index"` runs once when the motion reaches the given path percent.
+
 ## Runtime Notes
 
 - `system.motion` returns a motion instance value. It does not move anything by itself.

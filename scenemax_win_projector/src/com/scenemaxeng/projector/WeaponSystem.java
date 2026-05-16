@@ -3,12 +3,10 @@ package com.scenemaxeng.projector;
 import com.jme3.scene.Spatial;
 import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
-import com.jme3.scene.Node;
 import com.scenemaxeng.common.weapons.WeaponDefinition;
 import com.scenemaxeng.common.weapons.WeaponInstance;
 import com.scenemaxeng.common.weapons.WeaponPostureDefinition;
 import com.scenemaxeng.common.weapons.WeaponValidationResult;
-import com.scenemaxeng.compiler.VariableDef;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -178,7 +176,7 @@ public class WeaponSystem {
     }
 
     private String registerWeaponModel(EquippedWeaponRuntime runtime, Spatial spawnedModel) {
-        if (!(spawnedModel instanceof Node) || runtime == null || runtime.getWeaponDefinition() == null) {
+        if (spawnedModel == null || runtime == null || runtime.getWeaponDefinition() == null) {
             return null;
         }
         AppModel ownerModel = app.getAppModel(runtime.getOwnerCharacterId());
@@ -192,13 +190,10 @@ public class WeaponSystem {
             return null;
         }
 
-        VariableDef varDef = new VariableDef();
-        varDef.varName = weaponName;
-        varDef.varType = VariableDef.VAR_TYPE_3D;
-        varDef.resName = runtime.getWeaponDefinition().getModelAssetId();
-        ModelInst inst = new ModelInst(null, varDef, ownerScope);
         String runtimeName = weaponName + "@" + ownerScope.scopeId;
-        app.registerWeaponModel(runtimeName, (Node) spawnedModel, inst);
+        if (spawnedModel instanceof com.jme3.scene.Node) {
+            app.registerWeaponModel(runtimeName, (com.jme3.scene.Node) spawnedModel);
+        }
         return runtimeName;
     }
 

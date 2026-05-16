@@ -9,6 +9,9 @@ public class EntityPos {
 
     public String entityName;
     public String entityJointName;
+    public boolean equippedWeapon;
+    public boolean equippedWeaponCollider;
+    public String weaponColliderName;
 
     public EntityPos() {}
     public EntityPos(SceneMaxParser.Logical_expressionContext posX, SceneMaxParser.Logical_expressionContext posY, SceneMaxParser.Logical_expressionContext posZ) {

@@ -27,4 +27,34 @@ public class EffekseerSyntaxParsingTest {
         assertEquals("player1", cmd.entityPos.entityName);
         assertEquals("mixamorig:RightHand", cmd.entityPos.entityJointName);
     }
+
+    @Test
+    public void effectPlayPosAcceptsEquippedWeaponTargets() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "player1 => dragon\n"
+                        + "effect => effects.effekseer.A_Salamander1\n"
+                        + "effect.play pos (player1.weapon)");
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+        EffekseerPlayCommand cmd = (EffekseerPlayCommand) prg.actions.get(2);
+        assertNotNull(cmd.entityPos);
+        assertEquals("player1", cmd.entityPos.entityName);
+        assertTrue(cmd.entityPos.equippedWeapon);
+    }
+
+    @Test
+    public void effectPlayPosAcceptsEquippedWeaponColliderTargets() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "player1 => dragon\n"
+                        + "effect => effects.effekseer.A_Salamander1\n"
+                        + "effect.play pos (player1.weapon.colliders[\"weapon_sphere_collider_1\"])");
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+        EffekseerPlayCommand cmd = (EffekseerPlayCommand) prg.actions.get(2);
+        assertNotNull(cmd.entityPos);
+        assertEquals("player1", cmd.entityPos.entityName);
+        assertTrue(cmd.entityPos.equippedWeapon);
+        assertTrue(cmd.entityPos.equippedWeaponCollider);
+        assertEquals("weapon_sphere_collider_1", cmd.entityPos.weaponColliderName);
+    }
 }

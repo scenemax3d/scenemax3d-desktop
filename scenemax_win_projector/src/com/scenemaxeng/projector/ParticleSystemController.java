@@ -42,23 +42,12 @@ public class ParticleSystemController extends SceneMaxBaseController {
         }
 
         if (cmd.entityPos!=null) {
-            RunTimeVarDef entityForPos = app.findVarRuntime(prg,scope,cmd.entityPos.entityName);
-            if(entityForPos!=null) {
-                Spatial sp = null;
-                if(cmd.entityPos.entityJointName!=null) {
-                    AppModel am = app.getAppModel(entityForPos.varName);
-                    sp = am.getJointAttachementNode(cmd.entityPos.entityJointName);
-
-                } else {
-                    sp = app.getEntitySpatial(entityForPos.varName, entityForPos.varDef.varType);
-                }
-
-                if (sp != null) {
-                    Vector3f pos = sp.getWorldTranslation();// sp.getLocalTranslation();
-                    cmd.posX = pos.getX();
-                    cmd.posY = pos.getY();
-                    cmd.posZ = pos.getZ();
-                }
+            Spatial sp = app.resolveEntityPosSpatial(prg, scope, cmd.entityPos);
+            if (sp != null) {
+                Vector3f pos = sp.getWorldTranslation();// sp.getLocalTranslation();
+                cmd.posX = pos.getX();
+                cmd.posY = pos.getY();
+                cmd.posZ = pos.getZ();
             }
 
         } else if (cmd.pos != null) {

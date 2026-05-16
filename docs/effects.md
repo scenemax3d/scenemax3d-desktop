@@ -67,6 +67,16 @@ hand_fx => effects.effekseer.A_Salamander1
 hand_fx.play pos (player1."mixamorig:RightHand")
 ```
 
+Equipped weapons and their colliders can be used as play positions too:
+
+```scenemax
+weapon_fx => effects.effekseer.spark
+weapon_fx.play pos (player1.weapon)
+
+hit_fx => effects.effekseer.impact_small
+hit_fx.play pos (player1.weapon.colliders["weapon_sphere_collider_1"])
+```
+
 ### Start From A Predefined Placement
 
 You can also define the effect's base transform when you create it, then play it later:

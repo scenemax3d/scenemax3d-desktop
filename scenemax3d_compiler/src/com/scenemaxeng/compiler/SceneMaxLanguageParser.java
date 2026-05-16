@@ -2158,18 +2158,32 @@ public class SceneMaxLanguageParser implements IParser {
                 return cmd;
             }
 
-            public StatementDef visitAnimationControllerEvent(SceneMaxParser.AnimationControllerEventContext ctx) {
-                SceneMaxParser.Animation_controller_eventContext event = ctx.animation_controller_event();
-                String anim = event.animation_name().getText();
-                if (anim.startsWith("\"") && anim.length() > 2) {
-                    anim = anim.substring(1, anim.length() - 1);
+            public StatementDef visitEventStatement(SceneMaxParser.EventStatementContext ctx) {
+                SceneMaxParser.Event_statementContext event = ctx.event_statement();
+                String eventName = event.event_name().getText();
+                if (eventName.startsWith("\"") && eventName.endsWith("\"")) {
+                    eventName = stripQutes(eventName);
                 }
 
-                AnimationControllerEventCommand cmd = new AnimationControllerEventCommand();
-                cmd.targetVar = event.var_decl().getText();
-                cmd.varDef = prg.getVar(cmd.targetVar);
-                cmd.animationName = anim;
-                cmd.percentExpr = event.logical_expression();
+                String targetVar = event.var_decl().getText();
+                VariableDef targetVarDef = prg.getVar(targetVar);
+                if (targetVarDef != null && targetVarDef.varType == VariableDef.VAR_TYPE_ANIMATION_CONTROLLER) {
+                    AnimationControllerEventCommand cmd = new AnimationControllerEventCommand();
+                    cmd.targetVar = targetVar;
+                    cmd.varDef = targetVarDef;
+                    cmd.animationName = eventName;
+                    cmd.percentExpr = event.logical_expression();
+                    cmd.doBlock = new DoBlockVisitor(prg).visit(event.do_block());
+                    cmd.doBlock.isSecondLevelReturnPoint = true;
+                    cmd.varLineNum = event.var_decl().getStart().getLine();
+                    return cmd;
+                }
+
+                ThrowMotionEventCommand cmd = new ThrowMotionEventCommand();
+                cmd.targetVar = targetVar;
+                cmd.varDef = targetVarDef;
+                cmd.eventName = eventName.toLowerCase();
+                cmd.indexPercentExpr = event.logical_expression();
                 cmd.doBlock = new DoBlockVisitor(prg).visit(event.do_block());
                 cmd.doBlock.isSecondLevelReturnPoint = true;
                 cmd.varLineNum = event.var_decl().getStart().getLine();
@@ -4153,6 +4167,21 @@ public class SceneMaxLanguageParser implements IParser {
     }
 
     private void setEntityPos(EntityPos pos, SceneMaxParser.Pos_entityContext entityPos) {
+        if (entityPos.weapon_collider_ref() != null) {
+            SceneMaxParser.Weapon_collider_refContext weaponCollider = entityPos.weapon_collider_ref();
+            pos.entityName = weaponCollider.var_decl().getText();
+            pos.equippedWeapon = true;
+            pos.equippedWeaponCollider = true;
+            pos.weaponColliderName = stripQutes(weaponCollider.QUOTED_STRING().getText());
+            return;
+        }
+
+        if (entityPos.weapon_ref() != null) {
+            pos.entityName = entityPos.weapon_ref().var_decl().getText();
+            pos.equippedWeapon = true;
+            return;
+        }
+
         pos.entityName = entityPos.var_decl().getText();
         if(entityPos.collision_joint_1()!=null) {
             pos.entityJointName = entityPos.collision_joint_1().QUOTED_STRING().getText();
