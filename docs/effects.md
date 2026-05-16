@@ -60,6 +60,13 @@ player_hit_fx => effects.effekseer.hit_flash
 player_hit_fx.play pos (player)
 ```
 
+You can also target a skeleton joint on an entity:
+
+```scenemax
+hand_fx => effects.effekseer.A_Salamander1
+hand_fx.play pos (player1."mixamorig:RightHand")
+```
+
 ### Start From A Predefined Placement
 
 You can also define the effect's base transform when you create it, then play it later:

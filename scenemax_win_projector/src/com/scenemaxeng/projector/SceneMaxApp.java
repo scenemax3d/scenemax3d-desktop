@@ -10169,9 +10169,19 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         if (inst.entityForPos != null) {
-            Spatial sp = getEntitySpatial(inst.entityForPos.varName, inst.entityForPos.varDef.varType);
+            Spatial sp = null;
+            boolean jointPosition = false;
+            if (inst.varDef.entityPos != null && inst.varDef.entityPos.entityJointName != null) {
+                AppModel model = models.get(inst.entityForPos.varName);
+                if (model != null) {
+                    sp = model.getJointAttachementNode(inst.varDef.entityPos.entityJointName);
+                    jointPosition = sp != null;
+                }
+            } else {
+                sp = getEntitySpatial(inst.entityForPos.varName, inst.entityForPos.varDef.varType);
+            }
             if (sp != null) {
-                inst.node.setLocalTranslation(sp.getLocalTranslation());
+                inst.node.setLocalTranslation(jointPosition ? sp.getWorldTranslation() : sp.getLocalTranslation());
             }
         } else if (inst.varDef.xExpr != null) {
             float x = Float.parseFloat(new ActionLogicalExpressionVm(inst.varDef.xExpr, inst.scope).evaluate().toString());
@@ -10325,6 +10335,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     public void playEffekseerEffect(String targetVar, Double x, Double y, Double z, RunTimeVarDef posEntity, float playbackSpeed, float[] dynamicInputs) {
+        playEffekseerEffect(targetVar, x, y, z, posEntity, null, playbackSpeed, dynamicInputs);
+    }
+
+    public void playEffekseerEffect(String targetVar, Double x, Double y, Double z, RunTimeVarDef posEntity, Vector3f calculatedPosition, float playbackSpeed, float[] dynamicInputs) {
         EffekseerInst inst = effekseerEffects.get(targetVar);
         if (inst == null) {
             return;
@@ -10336,7 +10350,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return;
         }
 
-        if (x != null) {
+        if (calculatedPosition != null) {
+            inst.node.setLocalTranslation(calculatedPosition);
+        } else if (x != null) {
             inst.node.setLocalTranslation(x.floatValue(), y.floatValue(), z.floatValue());
         } else if (posEntity != null) {
             Spatial sp = getEntitySpatial(posEntity.varName, posEntity.varDef.varType);
