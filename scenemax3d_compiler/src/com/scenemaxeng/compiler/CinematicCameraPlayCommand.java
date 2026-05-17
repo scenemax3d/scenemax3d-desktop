@@ -16,6 +16,7 @@ public class CinematicCameraPlayCommand extends VariableActionStatement {
     public SceneMaxParser.Logical_expressionContext lookAtZExpr;
     public PositionStatement lookAtPosStatement;
     public SceneMaxParser.Logical_expressionContext speedExpr;
+    public boolean reversePlayback;
 
     @Override
     public boolean validate(ProgramDef prg) {

@@ -2307,14 +2307,30 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     public DesignerEntity findCinematicRig() {
-        for (DesignerEntity entity : entities) {
+        List<DesignerEntity> rigs = getCinematicRigs();
+        return rigs.isEmpty() ? null : rigs.get(0);
+    }
+
+    public List<DesignerEntity> getCinematicRigs() {
+        List<DesignerEntity> rigs = new ArrayList<>();
+        collectCinematicRigs(entities, rigs);
+        return rigs;
+    }
+
+    private void collectCinematicRigs(List<DesignerEntity> source, List<DesignerEntity> rigs) {
+        if (source == null) {
+            return;
+        }
+        for (DesignerEntity entity : source) {
             if (entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
                 ensureCinematicRigNode(entity);
                 ensureCinematicRigRuntimeId(entity);
-                return entity;
+                rigs.add(entity);
+            }
+            if (entity.getType() == DesignerEntityType.SECTION || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                collectCinematicRigs(entity.getChildren(), rigs);
             }
         }
-        return null;
     }
 
     private void ensureCinematicRigNode(DesignerEntity rig) {
@@ -2325,15 +2341,7 @@ public class DesignerApp extends SceneMaxApp {
         rootNode.attachChild(rigNode);
     }
 
-    public void createCinematicRigWithPreset(String presetId, String targetEntityId, String targetEntityName) {
-        if (findCinematicRig() != null) {
-            DesignerEntity existing = findCinematicRig();
-            if (existing != null) {
-                selectionManager.select(existing);
-            }
-            return;
-        }
-
+    public DesignerEntity createCinematicRigWithPreset(String presetId, String targetEntityId, String targetEntityName) {
         DesignerEntity rig = new DesignerEntity("Cinematic Rig", DesignerEntityType.CINEMATIC_RIG);
         rig.setCinematicRuntimeId(generateDefaultCinematicRigRuntimeId());
         ensureCinematicRigNode(rig);
@@ -2372,6 +2380,7 @@ public class DesignerApp extends SceneMaxApp {
         markDocumentDirty();
         selectionManager.select(rig);
         notifySceneChanged();
+        return rig;
     }
 
     public void setCinematicRigRuntimeId(DesignerEntity rig, String runtimeId) {

@@ -6,13 +6,13 @@
 using desert1 sprite
 intro.draw intro_page
 
-loading.print "Loading..." : pos (100,10,0) , font "arial_64" , color=Green, size 2
+loading.print "Loading..." : pos (100,10,0) , font "arial_64" , color=white, size 1
 loading3.draw powered_by_scenemax3d : pos (100,700),size(200,200)
 lights.add probe "4"
 
 Scene.environment.shader = "ambient1"
-camera.pos(11.08251,-10.3619375,49.527325)
-camera.rotate(24.339067,126.80586,0.0)
+camera.pos(11.08251,-13.236266,49.527325)
+camera.rotate(-20.211672,131.23729,-0.051869337)
 
 floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material "wall", shadow mode cast
 level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on async

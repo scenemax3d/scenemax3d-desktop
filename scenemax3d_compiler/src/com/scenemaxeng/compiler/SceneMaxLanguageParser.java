@@ -3936,6 +3936,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 }
                             } else if (option.cinematic_duration_attr() != null) {
                                 cmd.speedExpr = option.cinematic_duration_attr().logical_expression();
+                            } else if (option.cinematic_reverse_attr() != null) {
+                                cmd.reversePlayback = true;
                             }
                         }
 

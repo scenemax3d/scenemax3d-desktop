@@ -134,6 +134,7 @@ Play the cinematic camera by providing:
 
 - `target`
 - `duration`
+- optional `reverse`
 
 Example:
 
@@ -147,6 +148,14 @@ This means:
 - anchor the rig relative to `player1`
 - keep the authored rig-to-target relationship during playback
 - play the entire cinematic sequence in `10` seconds
+
+To play the authored sequence backward, add the `reverse` flag:
+
+```scenemax
+intro_cam.play : target (player1 forward 1 up 3), duration 10, reverse
+```
+
+Reverse playback starts at the end of the authored cinematic sequence, traverses selected ranges in reverse order, and keeps the same total `duration`.
 
 ### Important Runtime Rule
 

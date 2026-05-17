@@ -96,7 +96,7 @@ class CinematicCameraController extends SceneMaxBaseController {
 
         float totalAnchorDistance = 0f;
         for (RuntimePlaybackSegment segment : playbackSegments) {
-            totalAnchorDistance += Math.max(0.0001f, segment.anchorDistance);
+            totalAnchorDistance += Math.max(0.0001f, Math.abs(segment.anchorDistance));
         }
         if (totalAnchorDistance <= 1e-6f) {
             float evenDuration = totalDuration / playbackSegments.size();
@@ -105,7 +105,7 @@ class CinematicCameraController extends SceneMaxBaseController {
             }
         } else {
             for (RuntimePlaybackSegment segment : playbackSegments) {
-                segment.duration = totalDuration * (Math.max(0.0001f, segment.anchorDistance) / totalAnchorDistance);
+                segment.duration = totalDuration * (Math.max(0.0001f, Math.abs(segment.anchorDistance)) / totalAnchorDistance);
             }
         }
 
@@ -170,10 +170,11 @@ class CinematicCameraController extends SceneMaxBaseController {
         updateRuntimeRigTransform(active.rig);
 
         float segmentProgress = active.duration <= 1e-6f ? 1f : FastMath.clamp(remaining / active.duration, 0f, 1f);
-        float easedProgress = applyRigEasing(active.rig, segmentProgress, active.firstSegment, active.lastSegment);
+        float easedProgress = applyRigEasing(active.rig, segmentProgress, active.firstSegment, active.lastSegment, cmd.reversePlayback);
         float anchorCursor = advanceAnchorCursor(active.startAnchor, active.anchorDistance, easedProgress, active.track.anchorCount);
         Vector3f cameraPos = computeTrackWorldPosition(active.track, anchorCursor);
-        Vector3f lookAt = resolveLookAtPoint(active, cameraPos, anchorCursor + 1f);
+        float lookAheadStep = active.anchorDistance < 0f ? -1f : 1f;
+        Vector3f lookAt = resolveLookAtPoint(active, cameraPos, anchorCursor + lookAheadStep);
         app.applyCameraFrame(cameraPos, lookAt, playbackFovDegrees, tpf);
     }
 
@@ -324,21 +325,38 @@ class CinematicCameraController extends SceneMaxBaseController {
 
     private void buildPlaybackSegments(RuntimeCinematicRig rig) {
         playbackSegments.clear();
-        for (int i = 0; i < rig.segments.size(); i++) {
-            RuntimeCinematicSegment segment = rig.segments.get(i);
-            RuntimeCinematicTrack track = rig.tracksById.get(segment.trackId);
-            if (track == null) {
-                continue;
+        if (cmd.reversePlayback) {
+            for (int i = rig.segments.size() - 1; i >= 0; i--) {
+                addPlaybackSegment(rig, rig.segments.get(i), true);
             }
-            RuntimePlaybackSegment playbackSegment = new RuntimePlaybackSegment();
-            playbackSegment.rig = rig;
-            playbackSegment.track = track;
+        } else {
+            for (RuntimeCinematicSegment segment : rig.segments) {
+                addPlaybackSegment(rig, segment, false);
+            }
+        }
+        for (int i = 0; i < playbackSegments.size(); i++) {
+            RuntimePlaybackSegment segment = playbackSegments.get(i);
+            segment.firstSegment = i == 0;
+            segment.lastSegment = i == playbackSegments.size() - 1;
+        }
+    }
+
+    private void addPlaybackSegment(RuntimeCinematicRig rig, RuntimeCinematicSegment segment, boolean reverse) {
+        RuntimeCinematicTrack track = rig.tracksById.get(segment.trackId);
+        if (track == null) {
+            return;
+        }
+        RuntimePlaybackSegment playbackSegment = new RuntimePlaybackSegment();
+        playbackSegment.rig = rig;
+        playbackSegment.track = track;
+        if (reverse) {
+            playbackSegment.startAnchor = normalizeAnchor(segment.endAnchor, track.anchorCount);
+            playbackSegment.anchorDistance = -computeForwardAnchorDistance(segment.startAnchor, segment.endAnchor, track.anchorCount);
+        } else {
             playbackSegment.startAnchor = normalizeAnchor(segment.startAnchor, track.anchorCount);
             playbackSegment.anchorDistance = computeForwardAnchorDistance(playbackSegment.startAnchor, segment.endAnchor, track.anchorCount);
-            playbackSegment.firstSegment = i == 0;
-            playbackSegment.lastSegment = i == rig.segments.size() - 1;
-            playbackSegments.add(playbackSegment);
         }
+        playbackSegments.add(playbackSegment);
     }
 
     private void logPlaybackSummary() {
@@ -422,31 +440,41 @@ class CinematicCameraController extends SceneMaxBaseController {
         while (cursor >= anchorCount) {
             cursor -= anchorCount;
         }
+        while (cursor < 0f) {
+            cursor += anchorCount;
+        }
         return cursor;
     }
 
-    private float applyRigEasing(RuntimeCinematicRig rig, float progress, boolean firstSegment, boolean lastSegment) {
+    private float applyRigEasing(RuntimeCinematicRig rig, float progress, boolean firstSegment, boolean lastSegment, boolean reverse) {
         float p = FastMath.clamp(progress, 0f, 1f);
         if (rig == null) {
             return p;
         }
-        String easeIn = firstSegment ? rig.easeIn : "linear";
-        String easeOut = lastSegment ? rig.easeOut : "linear";
+        String easeIn = firstSegment ? (reverse ? rig.easeOut : rig.easeIn) : "linear";
+        String easeOut = lastSegment ? (reverse ? rig.easeIn : rig.easeOut) : "linear";
         boolean useEaseIn = easeIn != null && !"linear".equals(easeIn);
         boolean useEaseOut = easeOut != null && !"linear".equals(easeOut);
         if (!useEaseIn && !useEaseOut) {
             return p;
         }
         if (useEaseIn && !useEaseOut) {
-            return applySingleEase(easeIn, p);
+            return applyBoundaryEase(easeIn, p, reverse);
         }
         if (!useEaseIn) {
-            return applySingleEase(easeOut, p);
+            return applyBoundaryEase(easeOut, p, reverse);
         }
         if (p < 0.5f) {
-            return 0.5f * applySingleEase(easeIn, p * 2f);
+            return 0.5f * applyBoundaryEase(easeIn, p * 2f, reverse);
         }
-        return 0.5f + 0.5f * applySingleEase(easeOut, (p - 0.5f) * 2f);
+        return 0.5f + 0.5f * applyBoundaryEase(easeOut, (p - 0.5f) * 2f, reverse);
+    }
+
+    private float applyBoundaryEase(String easeId, float t, boolean reverse) {
+        if (!reverse) {
+            return applySingleEase(easeId, t);
+        }
+        return 1f - applySingleEase(easeId, 1f - FastMath.clamp(t, 0f, 1f));
     }
 
     private float applySingleEase(String easeId, float t) {

@@ -6,6 +6,8 @@ axe_throw_cinematic_camera = {
 
   axe_throw_cam=>cinematic.camera.axe_throw_front
   axe_throw_cam.play : target player1.weapon, duration 0.85
+  audio.play "crash1"
+  wait 0.15 seconds
   run set_camera_on_player 
 }
 
@@ -33,10 +35,10 @@ flash_axe = {
 axe_lookup = {
 
 	// show the axe and make it flash
-	run show_axe_search_instructions
 	axe.Show
 	axe.turn 360 in 1 second loop while 1==1
 	run flash_axe every 0.5 Seconds
+  run show_axe_search_instructions
 
   // handle what happens when the axe collides with the box 
 	[player1.data.throw_axe == 1]
@@ -63,7 +65,7 @@ axe_lookup = {
 	  anim.event("zombie_punch1", 30) = {
 	  	player1.data.throw_axe = 1
 		  player1.weapon.Detach
-			audio.play "punch1"
+			audio.play "fall1"
 			effect => effects.effekseer.A_Salamander1  // Lance3
       effect.play pos (player1."mixamorig:RightHand") 
 		  motion = system.motion("motion_axe_throw", target crystal_box )
@@ -91,19 +93,28 @@ axe_lookup = {
 	  }
 	
 	  anim.run
-		
-		
+	
 	end do 
 }
 
 show_axe_search_instructions = {
-	do async
-		run popup_msg("AXE HINT: Look near the dragon gate. Find the flashing axe by the crystal path.")
-	end do
+
+ 	do async 
+ 	  camera.attach stop
+    camera.chase stop
+    axe_throw_cam=>cinematic.camera.cinematic_rig_axe
+    axe_throw_cam.play : target axe, duration 1.5
+    wait 0.5 seconds
+    axe_throw_cam.play : target axe, duration 1.5, reverse
+    run set_camera_on_player
+  end do
+  UI.layer1.panelMsg.txtMsg.message("Get The Axe!", TextEffect.fade_in | TextEffect.zoom_in, 3.5)
+  UI.layer1.panelMsg.txtMsg.text = ""
+		
 }
 
 show_axe_use_instructions = {
-	do async
-		run popup_msg("AXE READY: Press Q to throw it at the crystal box and open the gate.")
-	end do
+
+	UI.layer1.panelMsg.txtMsg.message("Press Q to throw AXE", TextEffect.fade_in | TextEffect.zoom_in, 3)
+	UI.layer1.panelMsg.txtMsg.text = ""
 }
