@@ -1,0 +1,27 @@
+{
+  "preview": {
+    "playbackSpeed": 1,
+    "showGround": false,
+    "backgroundMode": "transparent",
+    "motion": {
+      "orbitStrength": 0,
+      "forceScale": 1,
+      "damping": 0
+    },
+    "loop": true,
+    "camera": {
+      "pitchDeg": -15,
+      "distance": 29,
+      "yawDeg": 35
+    }
+  },
+  "assetId": "Lance3",
+  "name": "Lance3",
+  "source": {
+    "importedAt": "2026-05-15T20:44:12.098678100Z",
+    "originalImportPath": "C:\\Users\\adikt\\Downloads\\MAGICALxSPIRAL\\Lance3.efkproj",
+    "originalFormat": "efkproj",
+    "importedEffectFile": "effects/Lance3/Lance3.efkproj"
+  },
+  "version": 1
+}

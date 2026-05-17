@@ -1,0 +1,27 @@
+{
+  "preview": {
+    "playbackSpeed": 1,
+    "showGround": true,
+    "backgroundMode": "dark",
+    "motion": {
+      "orbitStrength": 0,
+      "forceScale": 1,
+      "damping": 0
+    },
+    "loop": true,
+    "camera": {
+      "pitchDeg": -15,
+      "distance": 12,
+      "yawDeg": 35
+    }
+  },
+  "assetId": "Lance5",
+  "name": "Lance5",
+  "source": {
+    "importedAt": "2026-05-15T20:47:35.951815400Z",
+    "originalImportPath": "C:\\Users\\adikt\\Downloads\\MAGICALxSPIRAL\\Lance5.efkproj",
+    "originalFormat": "efkproj",
+    "importedEffectFile": "effects/Lance5/Lance5.efkproj"
+  },
+  "version": 1
+}

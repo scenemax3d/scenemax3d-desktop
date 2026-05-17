@@ -1,0 +1,27 @@
+{
+  "preview": {
+    "playbackSpeed": 1,
+    "showGround": true,
+    "backgroundMode": "dark",
+    "motion": {
+      "orbitStrength": 0,
+      "forceScale": 1,
+      "damping": 0
+    },
+    "loop": true,
+    "camera": {
+      "pitchDeg": -15,
+      "distance": 12,
+      "yawDeg": 35
+    }
+  },
+  "assetId": "salamander13",
+  "name": "salamander13",
+  "source": {
+    "importedAt": "2026-05-15T20:50:36.070153900Z",
+    "originalImportPath": "C:\\Users\\adikt\\Downloads\\MAGICALxSPIRAL\\salamander13.efkproj",
+    "originalFormat": "efkproj",
+    "importedEffectFile": "effects/salamander13/salamander13.efkproj"
+  },
+  "version": 1
+}

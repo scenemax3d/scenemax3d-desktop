@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "displayName": "Dragon Gate Rock",
+  "motionType": "ballistic",
+  "id": "motion_dragon_gate_rock",
+  "type": "SceneMaxThrowMotionDefinition",
+  "parameters": {
+    "initialSpeed": 46,
+    "launchAngle": 8,
+    "gravityScale": 1.8,
+    "maxDistance": 95,
+    "maxLifetime": 2.35,
+    "alignToVelocity": true,
+    "spinSpeed": 1080
+  },
+  "designerMetadata": {}
+}
