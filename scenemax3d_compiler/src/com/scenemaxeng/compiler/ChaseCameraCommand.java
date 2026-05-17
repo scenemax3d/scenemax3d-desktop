@@ -8,6 +8,7 @@ public class ChaseCameraCommand extends VariableActionStatement {
     public static final int STOP = 20;
 
     public int command;
+    public EntityPos targetEntityPos;
     public boolean trailing=true;
     public SceneMaxParser.Logical_expressionContext rotationSpeedExpr;
     public SceneMaxParser.Logical_expressionContext verticalRotationExpr;

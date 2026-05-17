@@ -1075,7 +1075,7 @@ public class SceneMaxLanguageParser implements IParser {
 
                 if(ctxChase!=null) {
 
-                    String varName = ctxChase.var_decl().getText();
+                    String varName = cameraTargetOwnerVar(ctxChase.camera_target_ref());
                     VariableDef vd = prg.getVar(varName);
                     if(vd==null) {
                         prg.syntaxErrors.add(_sourceFileName+": line " + ctx.start.getLine() + ", variable '" + varName + "' not exists");
@@ -1084,6 +1084,7 @@ public class SceneMaxLanguageParser implements IParser {
 
                     cmd.varDef=vd;
                     cmd.targetVar = vd.varName;
+                    cmd.targetEntityPos = parseCameraTargetRef(ctxChase.camera_target_ref());
                     cmd.command = ChaseCameraCommand.CHASE;
 
                     SceneMaxParser.Chase_cam_having_exprContext having = ctxChase.chase_cam_having_expr();
@@ -3926,8 +3927,12 @@ public class SceneMaxLanguageParser implements IParser {
                             if (option.cinematic_target_attr() != null) {
                                 if (option.cinematic_target_attr().position_statement() != null) {
                                     cmd.lookAtPosStatement = parsePositionStatement(option.cinematic_target_attr().position_statement());
-                                } else if (option.cinematic_target_attr().var_decl() != null) {
-                                    cmd.lookAtTargetVar = option.cinematic_target_attr().var_decl().getText();
+                                } else if (option.cinematic_target_attr().camera_target_ref() != null) {
+                                    cmd.lookAtEntityPos = parseCameraTargetRef(option.cinematic_target_attr().camera_target_ref());
+                                    if (cmd.lookAtEntityPos != null && !cmd.lookAtEntityPos.equippedWeapon) {
+                                        cmd.lookAtTargetVar = cmd.lookAtEntityPos.entityName;
+                                        cmd.lookAtEntityPos = null;
+                                    }
                                 }
                             } else if (option.cinematic_duration_attr() != null) {
                                 cmd.speedExpr = option.cinematic_duration_attr().logical_expression();
@@ -4191,6 +4196,30 @@ public class SceneMaxLanguageParser implements IParser {
                 pos.entityJointName = pos.entityJointName.substring(1, pos.entityJointName.length() - 1);
             }
         }
+    }
+
+    private EntityPos parseCameraTargetRef(SceneMaxParser.Camera_target_refContext targetRef) {
+        if (targetRef == null) {
+            return null;
+        }
+        EntityPos pos = new EntityPos();
+        if (targetRef.weapon_ref() != null) {
+            pos.entityName = targetRef.weapon_ref().var_decl().getText();
+            pos.equippedWeapon = true;
+        } else if (targetRef.var_decl() != null) {
+            pos.entityName = targetRef.var_decl().getText();
+        }
+        return pos;
+    }
+
+    private String cameraTargetOwnerVar(SceneMaxParser.Camera_target_refContext targetRef) {
+        if (targetRef == null) {
+            return "";
+        }
+        if (targetRef.weapon_ref() != null) {
+            return targetRef.weapon_ref().var_decl().getText();
+        }
+        return targetRef.var_decl() == null ? "" : targetRef.var_decl().getText();
     }
 
     private String stripQutes(String str) {

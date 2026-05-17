@@ -185,8 +185,8 @@ camera_system_default : Default ;
 camera_system_expr : camera_system_dual_target_expr
                    | camera_system_single_target_expr
                    | camera_system_zero_target_expr ;
-camera_system_dual_target_expr : Camera '.' System '.' res_var_decl '(' var_decl ',' var_decl (',' camera_system_option (',' camera_system_option)*)? ')' ;
-camera_system_single_target_expr : Camera '.' System '.' res_var_decl '(' var_decl (',' camera_system_option (',' camera_system_option)*)? ')' ;
+camera_system_dual_target_expr : Camera '.' System '.' res_var_decl '(' camera_target_ref ',' camera_target_ref (',' camera_system_option (',' camera_system_option)*)? ')' ;
+camera_system_single_target_expr : Camera '.' System '.' res_var_decl '(' camera_target_ref (',' camera_system_option (',' camera_system_option)*)? ')' ;
 camera_system_zero_target_expr : Camera '.' System '.' res_var_decl '(' (camera_system_option (',' camera_system_option)*)? ')' ;
 camera_system_option : camera_system_depth_option
                      | camera_system_height_option
@@ -268,6 +268,7 @@ pos_axes_2d : print_pos_x ',' print_pos_y ;
 pos_axes : print_pos_x ',' print_pos_y ',' print_pos_z ;
 pos_entity : weapon_collider_ref | weapon_ref | var_decl collision_joint_1? ;
 weapon_ref : var_decl '.' Weapon ;
+camera_target_ref : weapon_ref | var_decl ;
 print_pos_x : logical_expression ;
 print_pos_y : logical_expression ;
 print_pos_z : logical_expression ;
@@ -542,7 +543,7 @@ attach_camera_action_stop : Attach Stop ;
 
 chase_camera_actions : Camera '.' chase_camera_action ;
 chase_camera_action : chase_camera_action_stop | chase_camera_action_chase ;
-chase_camera_action_chase : Chase var_decl chase_cam_having_expr? ;
+chase_camera_action_chase : Chase camera_target_ref chase_cam_having_expr? ;
 chase_cam_having_expr : Having chase_cam_options ;
 chase_cam_options : chase_cam_option (and_expr chase_cam_option)* ;
 chase_cam_option : chase_cam_option_trailing
@@ -789,7 +790,7 @@ effect_play_attr_name : QUOTED_STRING | var_decl ;
 cinematic_play : var_decl '.' Play Having cinematic_play_options ;
 cinematic_play_options : cinematic_play_option (and_expr cinematic_play_option)* ;
 cinematic_play_option : cinematic_target_attr | cinematic_duration_attr ;
-cinematic_target_attr : Target Equals? ( var_decl | position_statement ) ;
+cinematic_target_attr : Target Equals? ( camera_target_ref | position_statement ) ;
 cinematic_duration_attr : Duration Equals? logical_expression ;
 hide : var_decl '.' Hide show_options? ;
 show : var_decl '.' Show show_options? ;

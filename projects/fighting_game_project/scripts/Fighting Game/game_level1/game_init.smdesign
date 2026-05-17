@@ -1157,6 +1157,74 @@
       "cinematicRuntimeId": "cinematic1"
     },
     {
+      "cinematicTargetEntityId": "9623875e-175c-4d46-8104-7f7a6aeb27df",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "cinematicTargetOffset": [
+        0,
+        0,
+        0
+      ],
+      "cinematicEaseIn": "ease_out_quad",
+      "type": "CINEMATIC_RIG",
+      "cinematicTargetEntityName": "axe",
+      "children": [{
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "name": "axe_throw_front_track",
+        "scale": [
+          1,
+          1,
+          1
+        ],
+        "id": "75b35f9b-9bd8-4b04-a82c-d7ac9275f9d0",
+        "position": [
+          0,
+          0.85,
+          5.2
+        ],
+        "type": "CINEMATIC_TRACK",
+        "cinematicTrackData": {
+          "anchorCount": 360,
+          "previewSpeed": 30,
+          "selectedStartAnchor": 40,
+          "radiusZ": 0.4,
+          "radiusX": 1,
+          "selectedEndAnchor": 140
+        }
+      }],
+      "cinematicEaseOut": "ease_in_quad",
+      "name": "Axe Throw Front Camera",
+      "cinematicSegments": [{
+        "startAnchor": 40,
+        "trackId": "75b35f9b-9bd8-4b04-a82c-d7ac9275f9d0",
+        "endAnchor": 140,
+        "trackName": "axe_throw_front_track",
+        "speed": 24
+      }],
+      "cinematicPreviewDuration": 10,
+      "id": "a54a1935-061e-4d83-9a33-97ef75b2a713",
+      "position": [
+        23.46958,
+        -87.37234,
+        147.34291
+      ],
+      "cinematicRuntimeId": "axe_throw_front"
+    },
+    {
       "shader": "",
       "dynamicModel": false,
       "hidden": false,
@@ -1291,7 +1359,7 @@
       ],
       "modelCollisionShape": "box",
       "type": "MODEL",
-      "sceneMaxCode": "axe => meshy_axe: pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async",
+      "sceneMaxCode": "axe => meshy_axe: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async",
       "staticModel": false,
       "name": "axe",
       "vehicleModel": false,
@@ -1311,22 +1379,22 @@
       0.4376524
     ],
     "position": [
-      8.015769,
-      -8.97224,
-      51.23
+      11.08251,
+      -10.3619375,
+      49.527325
     ]
   },
   "camera": {
     "rotation": [
-      0.2419444,
-      -0.34306952,
-      0.091925226,
-      0.9029485
+      0.09414239,
+      -0.0189186,
+      0.0017893135,
+      0.99537736
     ],
     "position": [
-      38.680885,
-      -74.146645,
-      130.21478
+      24.481445,
+      -84.73585,
+      144.8234
     ]
   },
   "version": 1

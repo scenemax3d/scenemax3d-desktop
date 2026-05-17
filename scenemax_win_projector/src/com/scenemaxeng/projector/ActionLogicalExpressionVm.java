@@ -3,6 +3,7 @@ package com.scenemaxeng.projector;
 import com.abware.scenemaxlang.parser.SceneMaxBaseVisitor;
 import com.abware.scenemaxlang.parser.SceneMaxParser;
 import com.scenemaxeng.compiler.ActionStatementBase;
+import com.scenemaxeng.compiler.EntityPos;
 import com.scenemaxeng.compiler.VariableDef;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ParseTree;
@@ -794,17 +795,34 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                                                  RuntimeCameraSystemValue value,
                                                  int line) {
             if (ctx.camera_system_dual_target_expr() != null) {
-                value.primaryTargetVar = ctx.camera_system_dual_target_expr().var_decl(0).getText();
-                value.secondaryTargetVar = ctx.camera_system_dual_target_expr().var_decl(1).getText();
+                value.primaryTargetEntityPos = parseCameraTargetRef(ctx.camera_system_dual_target_expr().camera_target_ref(0));
+                value.secondaryTargetEntityPos = parseCameraTargetRef(ctx.camera_system_dual_target_expr().camera_target_ref(1));
+                value.primaryTargetVar = value.primaryTargetEntityPos == null ? null : value.primaryTargetEntityPos.entityName;
+                value.secondaryTargetVar = value.secondaryTargetEntityPos == null ? null : value.secondaryTargetEntityPos.entityName;
                 return;
             }
             if (ctx.camera_system_single_target_expr() != null) {
-                value.primaryTargetVar = ctx.camera_system_single_target_expr().var_decl().getText();
+                value.primaryTargetEntityPos = parseCameraTargetRef(ctx.camera_system_single_target_expr().camera_target_ref());
+                value.primaryTargetVar = value.primaryTargetEntityPos == null ? null : value.primaryTargetEntityPos.entityName;
                 return;
             }
             if (!RuntimeCameraSystemValue.TYPE_RTS.equalsIgnoreCase(value.systemType)) {
                 app.handleRuntimeError("Line " + line + ": camera.system." + value.systemType + " requires a target");
             }
+        }
+
+        private EntityPos parseCameraTargetRef(SceneMaxParser.Camera_target_refContext targetRef) {
+            if (targetRef == null) {
+                return null;
+            }
+            EntityPos pos = new EntityPos();
+            if (targetRef.weapon_ref() != null) {
+                pos.entityName = targetRef.weapon_ref().var_decl().getText();
+                pos.equippedWeapon = true;
+            } else if (targetRef.var_decl() != null) {
+                pos.entityName = targetRef.var_decl().getText();
+            }
+            return pos;
         }
 
         private void populateCameraSystemOptions(SceneMaxScope scope,

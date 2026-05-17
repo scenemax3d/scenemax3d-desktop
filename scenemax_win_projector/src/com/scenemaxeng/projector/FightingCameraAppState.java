@@ -4,6 +4,7 @@ import com.jme3.math.FastMath;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
 import com.jme3.scene.Spatial;
+import com.scenemaxeng.compiler.EntityPos;
 
 class FightingCameraAppState {
 
@@ -31,8 +32,8 @@ class FightingCameraAppState {
     }
 
     void update(float tpf) {
-        Spatial player = resolveSpatial(settings.primaryTargetVar);
-        Spatial opponent = resolveSpatial(settings.secondaryTargetVar);
+        Spatial player = resolveSpatial(settings.primaryTargetEntityPos, settings.primaryTargetVar);
+        Spatial opponent = resolveSpatial(settings.secondaryTargetEntityPos, settings.secondaryTargetVar);
         if (player == null || opponent == null) {
             return;
         }
@@ -113,7 +114,10 @@ class FightingCameraAppState {
         cam.setFrustum(initialFrustumNear, initialFrustumFar, initialFrustumLeft, initialFrustumRight, initialFrustumTop, initialFrustumBottom);
     }
 
-    private Spatial resolveSpatial(String varName) {
+    private Spatial resolveSpatial(EntityPos entityPos, String varName) {
+        if (entityPos != null) {
+            return app.resolveEntityPosSpatial(null, scope, entityPos);
+        }
         RunTimeVarDef rt = app.findVarRuntime(null, scope, varName);
         if (rt == null) {
             return null;

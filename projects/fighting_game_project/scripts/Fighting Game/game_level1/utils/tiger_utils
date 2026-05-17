@@ -73,58 +73,73 @@ level1_dragon_rock_explode(r) = {
   //Logger.info "DRAGON_ROCK effect delete done x=" + rock_fx_x + " y=" + rock_fx_y + " z=" + rock_fx_z
 }
 
+level1_dragon_rock_clear_slot(slot_id) = {
+  if(slot_id==1) {
+    level1_dragon_rock_slot_1=0
+  } else if(slot_id==2) {
+    level1_dragon_rock_slot_2=0
+  } else if(slot_id==3) {
+    level1_dragon_rock_slot_3=0
+  } else if(slot_id==4) {
+    level1_dragon_rock_slot_4=0
+  } else if(slot_id==5) {
+    level1_dragon_rock_slot_5=0
+  }
+}
+
+level1_watch_physics_dragon_gate_rock(r, slot_id) = {
+  var rock_age = 0
+  var rock_landed = 0
+
+  do
+    if(game_status!=GAME_STATE_START || level1_dragon_rocks_started==0 || r.y < -125.0) {
+      run level1_dragon_rock_clear_slot(slot_id)
+      run level1_dragon_rock_explode(r)
+      level1_dragon_rock_count=level1_dragon_rock_count-1
+      return
+    }
+
+    if(distance(player1, r) < 8.0 || distance(player2, r) < 8.0) {
+      run level1_dragon_rock_hit_players(r)
+      run level1_dragon_rock_clear_slot(slot_id)
+      run level1_dragon_rock_explode(r)
+      level1_dragon_rock_count=level1_dragon_rock_count-1
+      return
+    }
+
+    if(rock_landed==0 && r.y < -84.0) {
+      rock_landed=1
+      audio.play "crash1"
+      run shake_the_world2 async
+    }
+
+    wait 0.08 seconds
+    rock_age=rock_age+0.08
+  while rock_age < 5.75
+
+  run level1_dragon_rock_clear_slot(slot_id)
+  run level1_dragon_rock_explode(r)
+  level1_dragon_rock_count=level1_dragon_rock_count-1
+}
+
 level1_launch_dragon_gate_rock_1 = {
   level1_dragon_rock_slot_1=1
   level1_dragon_rock_count=level1_dragon_rock_count+1
 
+  // Ballistic throw motion gives a fast arc toward player1; box collision avoids mesh spawn hitches.
   var level1_dragon_rock_1_scale = 1.56 + rnd(365) * 0.01
-  dragon_gate_rock_1 => meshy_rock1 : pos (17.0,-57.0,96.0), scale level1_dragon_rock_1_scale, rotate(0.0,18.0,0.0), shadow mode on, collision shape none
-  dragon_gate_rock_1.move to (18.5,-48.0,99.0) in 0.36 seconds ease out "Sine"
-  dragon_gate_rock_1.move to (20.5,-44.0,96.0) in 0.26 seconds ease in out "Sine"
-  dragon_gate_rock_1.move to (22.5,-60.0,88.0) in 0.34 seconds ease in "Quad"
-  dragon_gate_rock_1.move to (24.0,-76.0,80.0) in 0.24 seconds ease in "Cubic"
-  dragon_gate_rock_1.move to (25.0,-86.4,72.0) in 0.16 seconds ease in "Cubic"
-  audio.play "crash1"
-  run shake_the_world2 async
-
-  do async
-    do
-      if(level1_dragon_rock_slot_1==1 && (distance(player1, dragon_gate_rock_1) < 8.0 || distance(player2, dragon_gate_rock_1) < 8.0)) {
-        level1_dragon_rock_slot_1=2
-        run level1_dragon_rock_hit_players(dragon_gate_rock_1)
-      }
-      wait 0.08 seconds
-    while level1_dragon_rock_slot_1==1
-  end do
-
-  dragon_gate_rock_1.roll right 1260 in 1.5 seconds ease out "Cubic" async
-  dragon_gate_rock_1.move to (34.75,-86.4,44.68) in 1.5 seconds ease out "Cubic"
-  if(level1_dragon_rock_slot_1==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_1)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_1=0
-    return
+  var level1_dragon_rock_1_target_x = player1.x + rnd(21) - 10
+  var level1_dragon_rock_1_target_y = player1.y + 1.5
+  var level1_dragon_rock_1_target_z = player1.z + rnd(21) - 10
+  if(player1.z > 70.0) {
+    level1_dragon_rock_1_target_y = player1.y + 11.0
+    level1_dragon_rock_1_target_z = player1.z - 18.0 + rnd(13) - 6
   }
-  dragon_gate_rock_1.roll right 700 in 1.3 seconds ease out "Cubic" async
-  dragon_gate_rock_1.move to (39.45,-86.4,31.49) in 1.3 seconds ease out "Cubic"
-  if(level1_dragon_rock_slot_1==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_1)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_1=0
-    return
-  }
-  dragon_gate_rock_1.roll right 260 in 1.1 seconds ease out "Quint" async
-  dragon_gate_rock_1.move to (41.8,-86.4,24.9) in 1.1 seconds ease out "Quint"
-  if(level1_dragon_rock_slot_1==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_1)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_1=0
-    return
-  }
-
-  level1_dragon_rock_slot_1=0
-  run level1_dragon_rock_explode(dragon_gate_rock_1)
-  level1_dragon_rock_count=level1_dragon_rock_count-1
+  dragon_gate_rock_1 => meshy_rock1 : pos (17.0,-57.0,96.0), scale level1_dragon_rock_1_scale, rotate(0.0,18.0,0.0), shadow mode on, collision shape box
+  level1_dragon_rock_1_motion = system.motion("motion_dragon_gate_rock", target (level1_dragon_rock_1_target_x,level1_dragon_rock_1_target_y,level1_dragon_rock_1_target_z))
+  level1_dragon_rock_1_motion.apply dragon_gate_rock_1 async
+  dragon_gate_rock_1.roll right 2400 in 5.75 seconds async
+  run level1_watch_physics_dragon_gate_rock(dragon_gate_rock_1, 1)
 }
 
 level1_launch_dragon_gate_rock_2 = {
@@ -132,53 +147,18 @@ level1_launch_dragon_gate_rock_2 = {
   level1_dragon_rock_count=level1_dragon_rock_count+1
 
   var level1_dragon_rock_2_scale = 1.44 + rnd(337) * 0.01
-  dragon_gate_rock_2 => meshy_rock1 : pos (28.0,-56.0,99.0), scale level1_dragon_rock_2_scale, rotate(0.0,-24.0,0.0), shadow mode on, collision shape none
-  dragon_gate_rock_2.move to (29.0,-47.0,102.0) in 0.38 seconds ease out "Sine"
-  dragon_gate_rock_2.move to (31.0,-43.0,99.0) in 0.26 seconds ease in out "Sine"
-  dragon_gate_rock_2.move to (31.8,-60.0,89.0) in 0.36 seconds ease in "Quad"
-  dragon_gate_rock_2.move to (32.6,-76.0,79.0) in 0.24 seconds ease in "Cubic"
-  dragon_gate_rock_2.move to (33.0,-86.2,70.0) in 0.16 seconds ease in "Cubic"
-  audio.play "crash1"
-  run shake_the_world2 async
-
-  do async
-    do
-      if(level1_dragon_rock_slot_2==1 && (distance(player1, dragon_gate_rock_2) < 8.0 || distance(player2, dragon_gate_rock_2) < 8.0)) {
-        level1_dragon_rock_slot_2=2
-        run level1_dragon_rock_hit_players(dragon_gate_rock_2)
-      }
-      wait 0.08 seconds
-    while level1_dragon_rock_slot_2==1
-  end do
-
-  dragon_gate_rock_2.roll left 1260 in 1.5 seconds ease out "Cubic" async
-  dragon_gate_rock_2.move to (36.0,-86.2,45.0) in 1.5 seconds ease out "Cubic"
-  if(level1_dragon_rock_slot_2==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_2)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_2=0
-    return
+  var level1_dragon_rock_2_target_x = player1.x + rnd(21) - 10
+  var level1_dragon_rock_2_target_y = player1.y + 1.5
+  var level1_dragon_rock_2_target_z = player1.z + rnd(21) - 10
+  if(player1.z > 70.0) {
+    level1_dragon_rock_2_target_y = player1.y + 11.0
+    level1_dragon_rock_2_target_z = player1.z - 18.0 + rnd(13) - 6
   }
-  dragon_gate_rock_2.roll left 700 in 1.3 seconds ease out "Cubic" async
-  dragon_gate_rock_2.move to (39.0,-86.2,30.0) in 1.3 seconds ease out "Cubic"
-  if(level1_dragon_rock_slot_2==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_2)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_2=0
-    return
-  }
-  dragon_gate_rock_2.roll left 260 in 1.1 seconds ease out "Quint" async
-  dragon_gate_rock_2.move to (38.0,-86.2,20.0) in 1.1 seconds ease out "Quint"
-  if(level1_dragon_rock_slot_2==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_2)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_2=0
-    return
-  }
-
-  level1_dragon_rock_slot_2=0
-  run level1_dragon_rock_explode(dragon_gate_rock_2)
-  level1_dragon_rock_count=level1_dragon_rock_count-1
+  dragon_gate_rock_2 => meshy_rock1 : pos (28.0,-56.0,99.0), scale level1_dragon_rock_2_scale, rotate(0.0,-24.0,0.0), shadow mode on, collision shape box
+  level1_dragon_rock_2_motion = system.motion("motion_dragon_gate_rock", target (level1_dragon_rock_2_target_x,level1_dragon_rock_2_target_y,level1_dragon_rock_2_target_z))
+  level1_dragon_rock_2_motion.apply dragon_gate_rock_2 async
+  dragon_gate_rock_2.roll left 2400 in 5.75 seconds async
+  run level1_watch_physics_dragon_gate_rock(dragon_gate_rock_2, 2)
 }
 
 level1_launch_dragon_gate_rock_3 = {
@@ -186,53 +166,18 @@ level1_launch_dragon_gate_rock_3 = {
   level1_dragon_rock_count=level1_dragon_rock_count+1
 
   var level1_dragon_rock_3_scale = 1.68 + rnd(393) * 0.01
-  dragon_gate_rock_3 => meshy_rock1 : pos (21.0,-54.0,101.0), scale level1_dragon_rock_3_scale, rotate(0.0,62.0,0.0), shadow mode on, collision shape none
-  dragon_gate_rock_3.move to (22.0,-45.0,105.0) in 0.38 seconds ease out "Sine"
-  dragon_gate_rock_3.move to (25.0,-42.0,101.0) in 0.27 seconds ease in out "Sine"
-  dragon_gate_rock_3.move to (27.0,-59.0,91.0) in 0.36 seconds ease in "Quad"
-  dragon_gate_rock_3.move to (28.0,-76.0,82.0) in 0.24 seconds ease in "Cubic"
-  dragon_gate_rock_3.move to (29.0,-86.5,74.0) in 0.16 seconds ease in "Cubic"
-  audio.play "crash1"
-  run shake_the_world2 async
-
-  do async
-    do
-      if(level1_dragon_rock_slot_3==1 && (distance(player1, dragon_gate_rock_3) < 8.0 || distance(player2, dragon_gate_rock_3) < 8.0)) {
-        level1_dragon_rock_slot_3=2
-        run level1_dragon_rock_hit_players(dragon_gate_rock_3)
-      }
-      wait 0.08 seconds
-    while level1_dragon_rock_slot_3==1
-  end do
-
-  dragon_gate_rock_3.roll right 1260 in 1.5 seconds ease out "Cubic" async
-  dragon_gate_rock_3.move to (35.0,-86.5,48.0) in 1.5 seconds ease out "Cubic"
-  if(level1_dragon_rock_slot_3==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_3)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_3=0
-    return
+  var level1_dragon_rock_3_target_x = player1.x + rnd(21) - 10
+  var level1_dragon_rock_3_target_y = player1.y + 1.5
+  var level1_dragon_rock_3_target_z = player1.z + rnd(21) - 10
+  if(player1.z > 70.0) {
+    level1_dragon_rock_3_target_y = player1.y + 11.0
+    level1_dragon_rock_3_target_z = player1.z - 18.0 + rnd(13) - 6
   }
-  dragon_gate_rock_3.roll right 700 in 1.3 seconds ease out "Cubic" async
-  dragon_gate_rock_3.move to (40.0,-86.5,29.0) in 1.3 seconds ease out "Cubic"
-  if(level1_dragon_rock_slot_3==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_3)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_3=0
-    return
-  }
-  dragon_gate_rock_3.roll right 260 in 1.1 seconds ease out "Quint" async
-  dragon_gate_rock_3.move to (42.0,-86.5,17.0) in 1.1 seconds ease out "Quint"
-  if(level1_dragon_rock_slot_3==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_3)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_3=0
-    return
-  }
-
-  level1_dragon_rock_slot_3=0
-  run level1_dragon_rock_explode(dragon_gate_rock_3)
-  level1_dragon_rock_count=level1_dragon_rock_count-1
+  dragon_gate_rock_3 => meshy_rock1 : pos (21.0,-54.0,101.0), scale level1_dragon_rock_3_scale, rotate(0.0,62.0,0.0), shadow mode on, collision shape box
+  level1_dragon_rock_3_motion = system.motion("motion_dragon_gate_rock", target (level1_dragon_rock_3_target_x,level1_dragon_rock_3_target_y,level1_dragon_rock_3_target_z))
+  level1_dragon_rock_3_motion.apply dragon_gate_rock_3 async
+  dragon_gate_rock_3.roll right 2400 in 5.75 seconds async
+  run level1_watch_physics_dragon_gate_rock(dragon_gate_rock_3, 3)
 }
 
 level1_launch_dragon_gate_rock_4 = {
@@ -240,53 +185,18 @@ level1_launch_dragon_gate_rock_4 = {
   level1_dragon_rock_count=level1_dragon_rock_count+1
 
   var level1_dragon_rock_4_scale = 1.5 + rnd(351) * 0.01
-  dragon_gate_rock_4 => meshy_rock1 : pos (33.0,-58.0,94.0), scale level1_dragon_rock_4_scale, rotate(0.0,-66.0,0.0), shadow mode on, collision shape none
-  dragon_gate_rock_4.move to (35.0,-47.0,99.0) in 0.38 seconds ease out "Sine"
-  dragon_gate_rock_4.move to (37.0,-43.0,95.0) in 0.26 seconds ease in out "Sine"
-  dragon_gate_rock_4.move to (38.0,-61.0,86.0) in 0.36 seconds ease in "Quad"
-  dragon_gate_rock_4.move to (39.0,-78.0,76.0) in 0.24 seconds ease in "Cubic"
-  dragon_gate_rock_4.move to (39.0,-86.3,68.0) in 0.16 seconds ease in "Cubic"
-  audio.play "crash1"
-  run shake_the_world2 async
-
-  do async
-    do
-      if(level1_dragon_rock_slot_4==1 && (distance(player1, dragon_gate_rock_4) < 8.0 || distance(player2, dragon_gate_rock_4) < 8.0)) {
-        level1_dragon_rock_slot_4=2
-        run level1_dragon_rock_hit_players(dragon_gate_rock_4)
-      }
-      wait 0.08 seconds
-    while level1_dragon_rock_slot_4==1
-  end do
-
-  dragon_gate_rock_4.roll left 1260 in 1.5 seconds ease out "Cubic" async
-  dragon_gate_rock_4.move to (39.56,-86.3,39.0) in 1.5 seconds ease out "Cubic"
-  if(level1_dragon_rock_slot_4==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_4)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_4=0
-    return
+  var level1_dragon_rock_4_target_x = player1.x + rnd(21) - 10
+  var level1_dragon_rock_4_target_y = player1.y + 1.5
+  var level1_dragon_rock_4_target_z = player1.z + rnd(21) - 10
+  if(player1.z > 70.0) {
+    level1_dragon_rock_4_target_y = player1.y + 11.0
+    level1_dragon_rock_4_target_z = player1.z - 18.0 + rnd(13) - 6
   }
-  dragon_gate_rock_4.roll left 700 in 1.3 seconds ease out "Cubic" async
-  dragon_gate_rock_4.move to (39.83,-86.3,25.0) in 1.3 seconds ease out "Cubic"
-  if(level1_dragon_rock_slot_4==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_4)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_4=0
-    return
-  }
-  dragon_gate_rock_4.roll left 260 in 1.1 seconds ease out "Quint" async
-  dragon_gate_rock_4.move to (39.97,-86.3,18.0) in 1.1 seconds ease out "Quint"
-  if(level1_dragon_rock_slot_4==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_4)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_4=0
-    return
-  }
-
-  level1_dragon_rock_slot_4=0
-  run level1_dragon_rock_explode(dragon_gate_rock_4)
-  level1_dragon_rock_count=level1_dragon_rock_count-1
+  dragon_gate_rock_4 => meshy_rock1 : pos (33.0,-58.0,94.0), scale level1_dragon_rock_4_scale, rotate(0.0,-66.0,0.0), shadow mode on, collision shape box
+  level1_dragon_rock_4_motion = system.motion("motion_dragon_gate_rock", target (level1_dragon_rock_4_target_x,level1_dragon_rock_4_target_y,level1_dragon_rock_4_target_z))
+  level1_dragon_rock_4_motion.apply dragon_gate_rock_4 async
+  dragon_gate_rock_4.roll left 2400 in 5.75 seconds async
+  run level1_watch_physics_dragon_gate_rock(dragon_gate_rock_4, 4)
 }
 
 level1_launch_dragon_gate_rock_5 = {
@@ -294,53 +204,18 @@ level1_launch_dragon_gate_rock_5 = {
   level1_dragon_rock_count=level1_dragon_rock_count+1
 
   var level1_dragon_rock_5_scale = 1.38 + rnd(323) * 0.01
-  dragon_gate_rock_5 => meshy_rock1 : pos (13.0,-55.0,91.0), scale level1_dragon_rock_5_scale, rotate(0.0,104.0,0.0), shadow mode on, collision shape none
-  dragon_gate_rock_5.move to (14.0,-46.0,94.0) in 0.38 seconds ease out "Sine"
-  dragon_gate_rock_5.move to (17.0,-43.0,92.0) in 0.27 seconds ease in out "Sine"
-  dragon_gate_rock_5.move to (19.0,-60.0,84.0) in 0.36 seconds ease in "Quad"
-  dragon_gate_rock_5.move to (21.0,-76.0,75.0) in 0.24 seconds ease in "Cubic"
-  dragon_gate_rock_5.move to (22.0,-86.4,66.0) in 0.16 seconds ease in "Cubic"
-  audio.play "crash1"
-  run shake_the_world2 async
-
-  do async
-    do
-      if(level1_dragon_rock_slot_5==1 && (distance(player1, dragon_gate_rock_5) < 8.0 || distance(player2, dragon_gate_rock_5) < 8.0)) {
-        level1_dragon_rock_slot_5=2
-        run level1_dragon_rock_hit_players(dragon_gate_rock_5)
-      }
-      wait 0.08 seconds
-    while level1_dragon_rock_slot_5==1
-  end do
-
-  dragon_gate_rock_5.roll right 1260 in 1.5 seconds ease out "Cubic" async
-  dragon_gate_rock_5.move to (31.0,-86.4,44.0) in 1.5 seconds ease out "Cubic"
-  if(level1_dragon_rock_slot_5==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_5)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_5=0
-    return
+  var level1_dragon_rock_5_target_x = player1.x + rnd(21) - 10
+  var level1_dragon_rock_5_target_y = player1.y + 1.5
+  var level1_dragon_rock_5_target_z = player1.z + rnd(21) - 10
+  if(player1.z > 70.0) {
+    level1_dragon_rock_5_target_y = player1.y + 11.0
+    level1_dragon_rock_5_target_z = player1.z - 18.0 + rnd(13) - 6
   }
-  dragon_gate_rock_5.roll right 700 in 1.3 seconds ease out "Cubic" async
-  dragon_gate_rock_5.move to (38.0,-86.4,29.0) in 1.3 seconds ease out "Cubic"
-  if(level1_dragon_rock_slot_5==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_5)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_5=0
-    return
-  }
-  dragon_gate_rock_5.roll right 260 in 1.1 seconds ease out "Quint" async
-  dragon_gate_rock_5.move to (40.0,-86.4,20.0) in 1.1 seconds ease out "Quint"
-  if(level1_dragon_rock_slot_5==2) {
-    run level1_dragon_rock_explode(dragon_gate_rock_5)
-    level1_dragon_rock_count=level1_dragon_rock_count-1
-    level1_dragon_rock_slot_5=0
-    return
-  }
-
-  level1_dragon_rock_slot_5=0
-  run level1_dragon_rock_explode(dragon_gate_rock_5)
-  level1_dragon_rock_count=level1_dragon_rock_count-1
+  dragon_gate_rock_5 => meshy_rock1 : pos (13.0,-55.0,91.0), scale level1_dragon_rock_5_scale, rotate(0.0,104.0,0.0), shadow mode on, collision shape box
+  level1_dragon_rock_5_motion = system.motion("motion_dragon_gate_rock", target (level1_dragon_rock_5_target_x,level1_dragon_rock_5_target_y,level1_dragon_rock_5_target_z))
+  level1_dragon_rock_5_motion.apply dragon_gate_rock_5 async
+  dragon_gate_rock_5.roll right 2400 in 5.75 seconds async
+  run level1_watch_physics_dragon_gate_rock(dragon_gate_rock_5, 5)
 }
 
 level1_spawn_dragon_gate_rock = {

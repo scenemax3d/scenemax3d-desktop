@@ -1,6 +1,7 @@
 package com.scenemaxeng.projector;
 
 import com.scenemaxeng.compiler.CameraSystemAssignmentCommand;
+import com.scenemaxeng.compiler.ChaseCameraCommand;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
 import com.scenemaxeng.compiler.VariableAssignmentCommand;
@@ -41,6 +42,31 @@ public class CameraSystemParsingTest {
         assertNotNull(prg.getVar("fps_cam"));
         assertNotNull(prg.getVar("race_cam"));
         assertNotNull(prg.getVar("platform_cam"));
+    }
+
+    @Test
+    public void parsesEquippedWeaponCameraSystemTarget() {
+        String code = "hero=>sinbad\n"
+                + "follow_cam = camera.system.third_person(hero.weapon, distance 9, height 3)\n";
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(code);
+
+        assertTrue(prg.syntaxErrors.isEmpty());
+        assertNotNull(prg.getVar("follow_cam"));
+    }
+
+    @Test
+    public void parsesChaseCameraEquippedWeaponTarget() {
+        String code = "hero=>sinbad\n"
+                + "camera.chase hero.weapon";
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(code);
+
+        assertTrue(prg.syntaxErrors.isEmpty());
+        assertTrue(prg.actions.get(1) instanceof ChaseCameraCommand);
+        ChaseCameraCommand cmd = (ChaseCameraCommand) prg.actions.get(1);
+        assertNotNull(cmd.targetEntityPos);
+        assertTrue(cmd.targetEntityPos.equippedWeapon);
     }
 
     @Test

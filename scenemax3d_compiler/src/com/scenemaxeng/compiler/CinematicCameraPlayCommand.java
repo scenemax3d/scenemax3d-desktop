@@ -10,6 +10,7 @@ public class CinematicCameraPlayCommand extends VariableActionStatement {
     public EntityPos entityPos;
     public PositionStatement posStatement;
     public String lookAtTargetVar;
+    public EntityPos lookAtEntityPos;
     public SceneMaxParser.Logical_expressionContext lookAtXExpr;
     public SceneMaxParser.Logical_expressionContext lookAtYExpr;
     public SceneMaxParser.Logical_expressionContext lookAtZExpr;

@@ -1,5 +1,7 @@
 package com.scenemaxeng.projector;
 
+import com.scenemaxeng.compiler.EntityPos;
+
 class RuntimeCameraSystemValue {
     static final String TYPE_FIGHTING = "fighting";
     static final String TYPE_THIRD_PERSON = "third_person";
@@ -11,6 +13,8 @@ class RuntimeCameraSystemValue {
     String systemType;
     String primaryTargetVar;
     String secondaryTargetVar;
+    EntityPos primaryTargetEntityPos;
+    EntityPos secondaryTargetEntityPos;
 
     float distance = 12f;
     float depth = 14f;

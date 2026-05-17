@@ -7,6 +7,7 @@ import com.jme3.math.Vector3f;
 import com.jme3.scene.Spatial;
 import com.scenemaxeng.compiler.CinematicCameraPlayCommand;
 import com.scenemaxeng.compiler.CinematicCameraVariableDef;
+import com.scenemaxeng.compiler.EntityPos;
 import com.scenemaxeng.compiler.PositionStatement;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.VariableDef;
@@ -179,11 +180,14 @@ class CinematicCameraController extends SceneMaxBaseController {
     private Vector3f resolveLookAtPoint(RuntimePlaybackSegment active, Vector3f cameraPos, float lookAheadCursor) {
         Vector3f explicitStatementPoint = resolveRuntimePoint(cmd.lookAtPosStatement, null);
         Vector3f explicitTargetPoint = null;
-        if (explicitTarget == null && cmd.lookAtTargetVar != null && !cmd.lookAtTargetVar.isBlank()) {
-            explicitTarget = app.findVarRuntime(prg, scope, cmd.lookAtTargetVar);
-        }
-        if (explicitTarget != null) {
-            Spatial targetSpatial = app.getEntitySpatial(explicitTarget.varName, explicitTarget.varDef.varType);
+        Spatial explicitTargetSpatial = resolveLookAtEntitySpatial();
+        if (explicitTargetSpatial != null) {
+            explicitTargetPoint = resolveTargetPoint(explicitTargetSpatial, active.rig.targetOffset);
+        } else {
+            if (explicitTarget == null && cmd.lookAtTargetVar != null && !cmd.lookAtTargetVar.isBlank()) {
+                explicitTarget = app.findVarRuntime(prg, scope, cmd.lookAtTargetVar);
+            }
+            Spatial targetSpatial = explicitTarget == null ? null : app.getEntitySpatial(explicitTarget.varName, explicitTarget.varDef.varType);
             if (targetSpatial != null) {
                 explicitTargetPoint = resolveTargetPoint(targetSpatial, active.rig.targetOffset);
             }
@@ -272,6 +276,14 @@ class CinematicCameraController extends SceneMaxBaseController {
                 }
             }
         }
+        Spatial explicitTargetSpatial = resolveLookAtEntitySpatial();
+        if (explicitTargetSpatial != null) {
+            ref.point = explicitTargetSpatial.getWorldTranslation().clone().addLocal(rig.targetOffset);
+            ref.rotation = explicitTargetSpatial.getWorldRotation() != null
+                    ? explicitTargetSpatial.getWorldRotation().clone()
+                    : new Quaternion();
+            return ref;
+        }
         if (rig.targetEntityName != null && !rig.targetEntityName.isBlank()) {
             RunTimeVarDef runtimeVar = app.findVarRuntime(prg, scope, rig.targetEntityName);
             if (runtimeVar != null) {
@@ -300,6 +312,14 @@ class CinematicCameraController extends SceneMaxBaseController {
             }
         }
         return fallback != null ? fallback.clone() : null;
+    }
+
+    private Spatial resolveLookAtEntitySpatial() {
+        EntityPos lookAtEntityPos = cmd.lookAtEntityPos;
+        if (lookAtEntityPos == null) {
+            return null;
+        }
+        return app.resolveEntityPosSpatial(prg, scope, lookAtEntityPos);
     }
 
     private void buildPlaybackSegments(RuntimeCinematicRig rig) {
@@ -334,11 +354,20 @@ class CinematicCameraController extends SceneMaxBaseController {
                 "Cinematic '{0}' playing. target={1}, duration={2}s, start={3}, end={4}",
                 new Object[]{
                         ((CinematicCameraVariableDef) cmd.varDef).cinematicCameraId,
-                        cmd.lookAtTargetVar != null ? cmd.lookAtTargetVar : last.rig.targetEntityName,
+                        cinematicTargetName(last.rig),
                         totalDuration,
                         startPos,
                         endPos
                 });
+    }
+
+    private String cinematicTargetName(RuntimeCinematicRig rig) {
+        if (cmd.lookAtEntityPos != null) {
+            return cmd.lookAtEntityPos.equippedWeapon
+                    ? cmd.lookAtEntityPos.entityName + ".weapon"
+                    : cmd.lookAtEntityPos.entityName;
+        }
+        return cmd.lookAtTargetVar != null ? cmd.lookAtTargetVar : rig.targetEntityName;
     }
 
     private Vector3f computeTrackWorldPosition(RuntimeCinematicTrack track, float anchorCursor) {
