@@ -1157,6 +1157,74 @@
       "cinematicRuntimeId": "cinematic1"
     },
     {
+      "cinematicTargetEntityId": "9623875e-175c-4d46-8104-7f7a6aeb27df",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "cinematicTargetOffset": [
+        0,
+        0,
+        0
+      ],
+      "cinematicEaseIn": "ease_out_quad",
+      "type": "CINEMATIC_RIG",
+      "cinematicTargetEntityName": "axe",
+      "children": [{
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "name": "axe_throw_front_track",
+        "scale": [
+          1,
+          1,
+          1
+        ],
+        "id": "75b35f9b-9bd8-4b04-a82c-d7ac9275f9d0",
+        "position": [
+          0,
+          0.85,
+          5.2
+        ],
+        "type": "CINEMATIC_TRACK",
+        "cinematicTrackData": {
+          "anchorCount": 360,
+          "previewSpeed": 30,
+          "selectedStartAnchor": 40,
+          "radiusZ": 0.4,
+          "radiusX": 1,
+          "selectedEndAnchor": 140
+        }
+      }],
+      "cinematicEaseOut": "ease_in_quad",
+      "name": "Axe Throw Front Camera",
+      "cinematicSegments": [{
+        "startAnchor": 40,
+        "trackId": "75b35f9b-9bd8-4b04-a82c-d7ac9275f9d0",
+        "endAnchor": 140,
+        "trackName": "axe_throw_front_track",
+        "speed": 24
+      }],
+      "cinematicPreviewDuration": 10,
+      "id": "a54a1935-061e-4d83-9a33-97ef75b2a713",
+      "position": [
+        23.46958,
+        -87.37234,
+        147.34291
+      ],
+      "cinematicRuntimeId": "axe_throw_front"
+    },
+    {
       "shader": "",
       "dynamicModel": false,
       "hidden": false,
@@ -1291,7 +1359,7 @@
       ],
       "modelCollisionShape": "box",
       "type": "MODEL",
-      "sceneMaxCode": "axe => meshy_axe: pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async",
+      "sceneMaxCode": "axe => meshy_axe: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async",
       "staticModel": false,
       "name": "axe",
       "vehicleModel": false,
@@ -1301,32 +1369,100 @@
         -87.37234,
         147.34291
       ]
+    },
+    {
+      "cinematicTargetEntityId": "9623875e-175c-4d46-8104-7f7a6aeb27df",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "cinematicTargetOffset": [
+        0,
+        1.5,
+        0
+      ],
+      "cinematicEaseIn": "linear",
+      "type": "CINEMATIC_RIG",
+      "cinematicTargetEntityName": "axe",
+      "children": [{
+        "rotation": [
+          0,
+          0.70710677,
+          0,
+          0.70710677
+        ],
+        "name": "cinematic_track_7",
+        "scale": [
+          1,
+          1,
+          1
+        ],
+        "id": "567bf36f-f0f7-4efc-87ac-2100ae817228",
+        "position": [
+          0,
+          3.5,
+          33.58814
+        ],
+        "type": "CINEMATIC_TRACK",
+        "cinematicTrackData": {
+          "anchorCount": 360,
+          "previewSpeed": 30,
+          "selectedStartAnchor": 210,
+          "radiusZ": 6,
+          "radiusX": 50,
+          "selectedEndAnchor": -1
+        }
+      }],
+      "cinematicEaseOut": "ease_out_expo",
+      "name": "Cinematic Rig",
+      "cinematicSegments": [{
+        "startAnchor": 340,
+        "trackId": "567bf36f-f0f7-4efc-87ac-2100ae817228",
+        "endAnchor": 140,
+        "trackName": "cinematic_track_7",
+        "speed": 26
+      }],
+      "cinematicPreviewDuration": 10,
+      "id": "09c75507-c01e-4505-9c37-6d6eb38b572c",
+      "position": [
+        22.948027,
+        -85.85016,
+        73.28616
+      ],
+      "cinematicRuntimeId": "cinematic_rig_axe"
     }
   ],
   "gameCamera": {
     "rotation": [
-      0.09438024,
-      0.87408334,
-      -0.18849707,
-      0.4376524
+      0.072840065,
+      -0.8967195,
+      -0.15963452,
+      -0.4063311
     ],
     "position": [
-      8.015769,
-      -8.97224,
-      51.23
+      11.08251,
+      -13.236266,
+      49.527325
     ]
   },
   "camera": {
     "rotation": [
-      0.2419444,
-      -0.34306952,
-      0.091925226,
-      0.9029485
+      0.011052075,
+      0.9097613,
+      -0.024270754,
+      0.41427428
     ],
     "position": [
-      38.680885,
-      -74.146645,
-      130.21478
+      0.21157646,
+      -9.59244,
+      58.988678
     ]
   },
   "version": 1

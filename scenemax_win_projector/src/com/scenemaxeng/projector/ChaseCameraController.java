@@ -1,5 +1,6 @@
 package com.scenemaxeng.projector;
 
+import com.jme3.scene.Spatial;
 import com.scenemaxeng.compiler.ChaseCameraCommand;
 import com.scenemaxeng.compiler.ProgramDef;
 
@@ -29,7 +30,9 @@ public class ChaseCameraController extends SceneMaxBaseController{
 
         if(!targetCalculated) {
 
-            findTargetVar();
+            if (cmd.targetEntityPos == null || !cmd.targetEntityPos.equippedWeapon) {
+                findTargetVar();
+            }
 
             if(cmd.havingAttributesExists) {
                 if(cmd.rotationSpeedExpr!=null) {
@@ -56,7 +59,14 @@ public class ChaseCameraController extends SceneMaxBaseController{
             targetCalculated=true;
         }
 
-        app.setChaseCameraOn(targetVar,targetVarDef.varType, cmd);
+        if (cmd.targetEntityPos != null && cmd.targetEntityPos.equippedWeapon) {
+            Spatial targetSpatial = app.resolveEntityPosSpatial(prg, scope, cmd.targetEntityPos);
+            if (targetSpatial != null) {
+                app.setChaseCameraOn(targetSpatial, cmd);
+            }
+        } else {
+            app.setChaseCameraOn(targetVar,targetVarDef.varType, cmd);
+        }
 
         return true;
 

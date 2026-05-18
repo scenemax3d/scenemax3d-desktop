@@ -50,6 +50,29 @@ public class CinematicCameraParsingTest {
     }
 
     @Test
+    public void parsesCinematicPlayReverseFlag() throws Exception {
+        File tempDir = Files.createTempDirectory("cinematic-reverse-parse-test").toFile();
+        tempDir.deleteOnExit();
+        File designerFile = new File(tempDir, "stadium.smdesign");
+        designerFile.deleteOnExit();
+        String smdesign = "{ \"entities\": [ { \"id\": \"internal-rig-id\", \"name\": \"Cinematic Rig\", \"type\": \"CINEMATIC_RIG\", "
+                + "\"position\": [0,0,0], \"rotation\": [0,0,0,1], \"scale\": [1,1,1], "
+                + "\"cinematicRuntimeId\": \"cine_rig_1\", \"children\": [], \"cinematicSegments\": [] } ] }";
+        Files.writeString(designerFile.toPath(), smdesign, StandardCharsets.UTF_8);
+
+        String code = "my_camera=>cinematic.camera.cine_rig_1\n"
+                + "my_camera.play : target player1, duration 30, reverse";
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, tempDir.getAbsolutePath()).parse(code);
+
+        assertTrue(prg.syntaxErrors.isEmpty());
+        assertTrue(prg.actions.get(1) instanceof CinematicCameraPlayCommand);
+
+        CinematicCameraPlayCommand play = (CinematicCameraPlayCommand) prg.actions.get(1);
+        assertTrue(play.reversePlayback);
+    }
+
+    @Test
     public void resolvesCinematicRigFromProjectAncestorFolder() throws Exception {
         File projectDir = Files.createTempDirectory("cinematic-project-test").toFile();
         projectDir.deleteOnExit();
@@ -102,6 +125,32 @@ public class CinematicCameraParsingTest {
         CinematicCameraPlayCommand play = (CinematicCameraPlayCommand) prg.actions.get(1);
         assertNotNull(play.lookAtPosStatement);
         assertEquals("player1", play.lookAtPosStatement.startEntity);
+        assertNull(play.lookAtTargetVar);
+    }
+
+    @Test
+    public void parsesCinematicPlayEquippedWeaponTarget() throws Exception {
+        File tempDir = Files.createTempDirectory("cinematic-weapon-target-test").toFile();
+        tempDir.deleteOnExit();
+        File designerFile = new File(tempDir, "stadium.smdesign");
+        designerFile.deleteOnExit();
+        String smdesign = "{ \"entities\": [ { \"id\": \"internal-rig-id\", \"name\": \"Cinematic Rig\", \"type\": \"CINEMATIC_RIG\", "
+                + "\"position\": [0,0,0], \"rotation\": [0,0,0,1], \"scale\": [1,1,1], "
+                + "\"cinematicRuntimeId\": \"cine_rig_1\", \"children\": [], \"cinematicSegments\": [] } ] }";
+        Files.writeString(designerFile.toPath(), smdesign, StandardCharsets.UTF_8);
+
+        String code = "my_camera=>cinematic.camera.cine_rig_1\n"
+                + "my_camera.play : target player1.weapon, duration 5";
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, tempDir.getAbsolutePath()).parse(code);
+
+        assertTrue(prg.syntaxErrors.isEmpty());
+        assertTrue(prg.actions.get(1) instanceof CinematicCameraPlayCommand);
+
+        CinematicCameraPlayCommand play = (CinematicCameraPlayCommand) prg.actions.get(1);
+        assertNotNull(play.lookAtEntityPos);
+        assertEquals("player1", play.lookAtEntityPos.entityName);
+        assertTrue(play.lookAtEntityPos.equippedWeapon);
         assertNull(play.lookAtTargetVar);
     }
 

@@ -352,14 +352,10 @@ public class DesignerPanel extends JPanel {
         });
 
         JButton btnAddCinematic = new JButton(createDesignerToolbarIcon("cinematic"));
-        btnAddCinematic.setToolTipText("Create Cinematic Rig or Add Rail");
+        btnAddCinematic.setToolTipText("Create Cinematic Rig / Add Rail");
         btnAddCinematic.addActionListener(e -> {
             if (app == null) return;
-            if (app.findCinematicRig() == null) {
-                showCreateCinematicRigDialog();
-            } else {
-                app.enqueue(() -> { app.addDefaultCinematicTrack(); return null; });
-            }
+            showCreateCinematicRigDialog();
         });
 
         JButton btnDelete = new JButton(createDesignerToolbarIcon("delete"));
@@ -1425,6 +1421,15 @@ public class DesignerPanel extends JPanel {
     private void showCreateCinematicRigDialog() {
         if (app == null) return;
 
+        List<DesignerEntity> existingRigs = app.getCinematicRigs();
+
+        JRadioButton rbCreateRig = new JRadioButton("Create New Rig", true);
+        JRadioButton rbAddRail = new JRadioButton("Add Rail to Existing Rig");
+        rbAddRail.setEnabled(!existingRigs.isEmpty());
+        ButtonGroup actionGroup = new ButtonGroup();
+        actionGroup.add(rbCreateRig);
+        actionGroup.add(rbAddRail);
+
         JComboBox<CinematicPresetOption> cboPreset = new JComboBox<>(new CinematicPresetOption[]{
                 new CinematicPresetOption("empty", "Empty Rig - start from scratch"),
                 new CinematicPresetOption("football_flyover", "Football Flyover - high arc then drop toward the field"),
@@ -1432,6 +1437,14 @@ public class DesignerPanel extends JPanel {
                 new CinematicPresetOption("sideline_sweep", "Sideline Sweep - long low-angle stadium-style pass")
         });
         cboPreset.setPreferredSize(new Dimension(340, 26));
+
+        DefaultComboBoxModel<String> rigModel = new DefaultComboBoxModel<>();
+        for (DesignerEntity rig : existingRigs) {
+            rigModel.addElement(formatCinematicRigLabel(rig));
+        }
+        JComboBox<String> cboExistingRig = new JComboBox<>(rigModel);
+        cboExistingRig.setPreferredSize(new Dimension(340, 26));
+        cboExistingRig.setEnabled(false);
 
         List<DesignerEntity> targetCandidates = app.getCinematicTargetCandidates();
         List<DesignerEntity> targetValues = new ArrayList<>();
@@ -1444,25 +1457,62 @@ public class DesignerPanel extends JPanel {
         JComboBox<String> cboTarget = new JComboBox<>(targetModel);
         cboTarget.setPreferredSize(new Dimension(340, 26));
 
+        Runnable updateEnabledState = () -> {
+            boolean createRig = rbCreateRig.isSelected();
+            cboPreset.setEnabled(createRig);
+            cboTarget.setEnabled(createRig);
+            cboExistingRig.setEnabled(!createRig && !existingRigs.isEmpty());
+        };
+        rbCreateRig.addActionListener(e -> updateEnabledState.run());
+        rbAddRail.addActionListener(e -> updateEnabledState.run());
+
         JPanel panel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(4, 4, 4, 4);
         gbc.anchor = GridBagConstraints.WEST;
 
         gbc.gridx = 0; gbc.gridy = 0;
+        panel.add(new JLabel("Action:"), gbc);
+        JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        actionPanel.add(rbCreateRig);
+        actionPanel.add(Box.createHorizontalStrut(12));
+        actionPanel.add(rbAddRail);
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1;
+        panel.add(actionPanel, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        panel.add(new JLabel("Existing Rig:"), gbc);
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1;
+        panel.add(cboExistingRig, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 2; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
         panel.add(new JLabel("Preset Rig:"), gbc);
         gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1;
         panel.add(cboPreset, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        gbc.gridx = 0; gbc.gridy = 3; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
         panel.add(new JLabel("Look At Target:"), gbc);
         gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1;
         panel.add(cboTarget, gbc);
 
+        updateEnabledState.run();
+
         int result = JOptionPane.showConfirmDialog(this, panel,
-                "Create Cinematic Rig", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+                "Cinematic Rig", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
 
         if (result == JOptionPane.OK_OPTION) {
+            if (rbAddRail.isSelected()) {
+                int rigIndex = cboExistingRig.getSelectedIndex();
+                if (rigIndex >= 0 && rigIndex < existingRigs.size()) {
+                    DesignerEntity rig = existingRigs.get(rigIndex);
+                    app.enqueue(() -> {
+                        app.addDefaultCinematicTrack(rig);
+                        return null;
+                    });
+                }
+                return;
+            }
+
             CinematicPresetOption preset = (CinematicPresetOption) cboPreset.getSelectedItem();
             int targetIndex = cboTarget.getSelectedIndex();
             final String presetId = preset != null ? preset.id : "empty";
@@ -1481,6 +1531,17 @@ public class DesignerPanel extends JPanel {
                 return null;
             });
         }
+    }
+
+    private String formatCinematicRigLabel(DesignerEntity rig) {
+        if (rig == null) {
+            return "";
+        }
+        String runtimeId = rig.getCinematicRuntimeId();
+        if (runtimeId != null && !runtimeId.isBlank()) {
+            return rig.getName() + " (" + runtimeId + ")";
+        }
+        return rig.getName();
     }
 
     private void showModelPickerDialog(java.util.List<DesignerEntity> targetList, int insertIndex) {
@@ -2123,6 +2184,20 @@ public class DesignerPanel extends JPanel {
 
         if (!(node.getUserObject() instanceof EntityTreeNode)) return;
         EntityTreeNode etn = (EntityTreeNode) node.getUserObject();
+
+        if (etn.entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+            JMenuItem addRailItem = new JMenuItem("Add Rail");
+            addRailItem.addActionListener(ev -> {
+                if (app != null) {
+                    app.enqueue(() -> {
+                        app.addDefaultCinematicTrack(etn.entity);
+                        return null;
+                    });
+                }
+            });
+            menu.add(addRailItem);
+            menu.addSeparator();
+        }
 
         // "New section..." - available on all nodes
         JMenuItem addSectionItem = new JMenuItem("New section...");

@@ -5014,14 +5014,16 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
             try {
                 Object app = invokeNoArg(panel, "getApp");
-                app.getClass()
+                Object created = app.getClass()
                         .getMethod("createCinematicRigWithPreset", String.class, String.class, String.class)
                         .invoke(app,
                                 preset == null || preset.isBlank() ? "empty" : preset,
                                 targetEntityId,
                                 targetEntityName);
 
-                DesignerEntity entity = (DesignerEntity) invokeNoArg(app, "findCinematicRig");
+                DesignerEntity entity = created instanceof DesignerEntity
+                        ? (DesignerEntity) created
+                        : (DesignerEntity) invokeNoArg(app, "findCinematicRig");
                 if (entity == null) {
                     failure.set(new IllegalStateException("Scene designer did not produce a cinematic rig."));
                     return;

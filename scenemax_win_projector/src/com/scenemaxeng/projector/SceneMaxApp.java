@@ -6924,15 +6924,18 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             m=boxes.get(targetVar);
         }
 
+        setChaseCameraOn(m, cmd);
+
+    }
+
+    public void setChaseCameraOn(Spatial m, ChaseCameraCommand cmd) {
+        if (isCinematicCameraPlaying()) {
+            return;
+        }
+
+        turnOffCameraStates();
+
         if(m!=null) {
-
-//            if(chaseCam!=null) {
-//                setChaseCameraAttributes(chaseCam, cmd);
-//                chaseCam.setSpatial(m);
-//                chaseCam.setEnabled(true);
-//                return;
-//            }
-
             SceneMaxChaseCamera cm = new SceneMaxChaseCamera(cam, m, inputManager);//
             cm.setSmoothMotion(true);
             cm.setTrailingEnabled(true);

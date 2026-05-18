@@ -5,6 +5,7 @@ import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
 import com.jme3.scene.Spatial;
+import com.scenemaxeng.compiler.EntityPos;
 
 class GameplayCameraAppState {
 
@@ -38,7 +39,7 @@ class GameplayCameraAppState {
             return;
         }
 
-        Spatial target = resolveSpatial(settings.primaryTargetVar);
+        Spatial target = resolveSpatial(settings.primaryTargetEntityPos, settings.primaryTargetVar);
         if (target == null) {
             return;
         }
@@ -148,7 +149,7 @@ class GameplayCameraAppState {
         float alpha = smoothingAlpha(settings.damping, tpf);
         Vector3f desiredLookAt;
         if (settings.primaryTargetVar != null) {
-            Spatial target = resolveSpatial(settings.primaryTargetVar);
+            Spatial target = resolveSpatial(settings.primaryTargetEntityPos, settings.primaryTargetVar);
             desiredLookAt = target != null ? target.getWorldTranslation().clone() : cam.getLocation().clone();
         } else {
             desiredLookAt = smoothedLookAt.lengthSquared() == 0f ? cam.getLocation().clone() : smoothedLookAt.clone();
@@ -166,7 +167,10 @@ class GameplayCameraAppState {
         app.applySystemCameraFrame(cam.getLocation().clone().interpolateLocal(desiredPos, alpha), smoothedLookAt, settings.fov, tpf);
     }
 
-    private Spatial resolveSpatial(String varName) {
+    private Spatial resolveSpatial(EntityPos entityPos, String varName) {
+        if (entityPos != null) {
+            return app.resolveEntityPosSpatial(null, scope, entityPos);
+        }
         if (varName == null || varName.isBlank()) {
             return null;
         }

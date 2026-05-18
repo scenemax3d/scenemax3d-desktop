@@ -1,0 +1,120 @@
+
+axe_throw_cinematic_camera = {
+
+  camera.attach stop
+  camera.chase stop
+
+  axe_throw_cam=>cinematic.camera.axe_throw_front
+  axe_throw_cam.play : target player1.weapon, duration 0.85
+  audio.play "crash1"
+  wait 0.15 seconds
+  run set_camera_on_player 
+}
+
+
+when player1 collides with axe do
+ 
+  run show_axe_use_instructions // player need to know how to throw the axe on the Box
+  axe.hide
+	player1.weapon = "weapon_player_weapon"
+	player1.data.has_axe = 1
+end do
+
+[player1.data.has_axe != 1]
+flash_axe = {
+	if (axe.data.axe_flash == 1) {
+	  axe.shader = "dramatic_hit_red"
+	  axe.data.axe_flash = 0
+	} else {
+		axe.shader = ""
+		axe.data.axe_flash = 1
+	}
+}
+
+
+axe_lookup = {
+
+	// show the axe and make it flash
+	axe.Show
+	axe.turn 360 in 1 second loop while 1==1
+	run flash_axe every 0.5 Seconds
+  run show_axe_search_instructions
+
+  // handle what happens when the axe collides with the box 
+	[player1.data.throw_axe == 1]
+	when player1.weapon.colliders["weapon_sphere_collider_1"] collides with crystal_box do
+	  audio.play "kick3"
+	  effect => effects.effekseer.Lance3 
+    effect.play pos (crystal), loop
+		crystal_box.hide
+		crystal.Show
+    crystal.turn left 360 in 1 Seconds Loop while 1==1 
+	end do
+
+	 // allow the player to throw the axe onto to the box 
+	[player1.data.has_axe == 1 && player1.data.throw_axe != 1]
+	when key Q is pressed once do
+		player1.look at (crystal_box)	
+	  player1.weapon.posture = "fight"
+	  anim = animation player1.zombie_punch1
+
+	  // in the pick of its momentum, throw the axe
+	  audio.play "jump1"
+	  //effect => effects.effekseer.A_Salamander1
+    //effect.play pos (player1."mixamorig:RightHand") 
+	  anim.event("zombie_punch1", 30) = {
+	  	player1.data.throw_axe = 1
+		  player1.weapon.Detach
+			audio.play "fall1"
+			effect => effects.effekseer.A_Salamander1  // Lance3
+      effect.play pos (player1."mixamorig:RightHand") 
+		  motion = system.motion("motion_axe_throw", target crystal_box )
+      
+			motion.event("on_end") = {
+				effect => effects.effekseer.Lance3 
+        effect.play pos (player1.weapon.colliders["weapon_sphere_collider_1"]) 
+        
+			}
+			motion.event("on_index", 50) = {
+				audio.play "punch1"
+				effect => effects.effekseer.A_Salamander1 
+        effect.play pos (player1.weapon.colliders["weapon_sphere_collider_1"])
+        anim.stop
+			}
+
+      //if(rnd(1) == 0) {
+      run axe_throw_cinematic_camera async
+      //}
+      motion.apply player1.weapon
+      
+		  player1.weapon.posture = "fight"
+		  player1.data.throw_axe = 0
+			
+	  }
+	
+	  anim.run
+	
+	end do 
+}
+
+show_axe_search_instructions = {
+
+ 	do async 
+ 	  camera.attach stop
+    camera.chase stop
+    axe_throw_cam=>cinematic.camera.cinematic_rig_axe
+    axe_throw_cam.play : target axe, duration 1.5
+    wait 0.5 seconds
+    axe_throw_cam.play : target axe, duration 1.5, reverse
+    run set_camera_on_player
+  end do
+  UI.layer1.panelMsg.txtMsg.message("Get The Axe!", TextEffect.fade_in | TextEffect.zoom_in, 3.5)
+  UI.layer1.panelMsg.txtMsg.text = ""
+		
+}
+
+show_axe_use_instructions = {
+
+	UI.layer1.panelMsg.txtMsg.message("Press Q to throw AXE", TextEffect.fade_in | TextEffect.zoom_in, 3)
+	UI.layer1.panelMsg.txtMsg.text = ""
+}

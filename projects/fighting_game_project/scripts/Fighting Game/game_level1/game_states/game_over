@@ -58,9 +58,8 @@ restart_game = {
 	audio.play "scream1"
 	player1.jumping
 	player1.idle2 loop
-	
-	//gameover.draw clear
-  UI.layer1.panelMsg.txtMsg.text = "";//message("GAME OVER", TextEffect.fade_in, 2)
+
+  UI.layer1.panelMsg.txtMsg.text = "";
 
 	run game_start
 
