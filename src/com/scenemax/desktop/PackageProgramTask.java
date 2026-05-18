@@ -263,6 +263,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         copyEffekseerResourcesToDeploy(deployFolder);
         copyAnimationResourcesToDeploy(deployFolder, resources.getJSONArray("animations"));
+        copyWeaponResourcesToDeploy(deployFolder);
         copyThrowMotionResourcesToDeploy(deployFolder);
 
         // copy all materials - in the future, check and copy just what is needed
@@ -1222,6 +1223,21 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         File deployThrowMotionsDir = new File(deployFolder, "resources/throw_motions");
         copyDirectoryContents(new File(projectResources, "throw_motions"), deployThrowMotionsDir);
         copyDirectoryContents(new File(projectResources, "ThrowMotions"), deployThrowMotionsDir);
+        copyStandaloneAssetFilesToDeploy(new File(projectResources, "throw_motions"), deployThrowMotionsDir, "smmotion", false);
+        copyStandaloneAssetFilesToDeploy(new File(projectResources, "ThrowMotions"), deployThrowMotionsDir, "smmotion", false);
+    }
+
+    private void copyWeaponResourcesToDeploy(File deployFolder) {
+        File projectResources = getPackagedProjectResourcesFolder();
+        if (projectResources == null) {
+            return;
+        }
+
+        File deployWeaponsDir = new File(deployFolder, "resources/weapons");
+        copyDirectoryContents(new File(projectResources, "weapons"), deployWeaponsDir);
+        copyDirectoryContents(new File(projectResources, "Weapons"), deployWeaponsDir);
+        copyStandaloneAssetFilesToDeploy(new File(projectResources, "weapons"), deployWeaponsDir, "smweapon", false);
+        copyStandaloneAssetFilesToDeploy(new File(projectResources, "Weapons"), deployWeaponsDir, "smweapon", false);
     }
 
     private File resolveEffekseerEffectSource(String assetId) {
@@ -1504,6 +1520,29 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 } else {
                     FileUtils.copyFile(child, targetChild);
                 }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void copyStandaloneAssetFilesToDeploy(File sourceRoot, File targetDir, String extension, boolean replaceExisting) {
+        if (sourceRoot == null || !sourceRoot.exists() || !sourceRoot.isDirectory()) {
+            return;
+        }
+        if (extension == null || extension.isBlank()) {
+            return;
+        }
+
+        try {
+            FileUtils.forceMkdir(targetDir);
+            Collection<File> files = FileUtils.listFiles(sourceRoot, new String[]{extension}, true);
+            for (File file : files) {
+                File targetFile = new File(targetDir, file.getName());
+                if (targetFile.exists() && !replaceExisting) {
+                    continue;
+                }
+                FileUtils.copyFile(file, targetFile);
             }
         } catch (IOException e) {
             throw new RuntimeException(e);

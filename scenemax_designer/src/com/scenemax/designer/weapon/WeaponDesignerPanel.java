@@ -102,6 +102,7 @@ public class WeaponDesignerPanel extends JPanel {
         applyUiToDocument();
         try {
             document.save(weaponFile);
+            exportRuntimeResource();
             dirty = false;
             if (onSavedCallback != null) {
                 onSavedCallback.run();
@@ -942,6 +943,15 @@ public class WeaponDesignerPanel extends JPanel {
             current = current.getParentFile();
         }
         return null;
+    }
+
+    private void exportRuntimeResource() throws IOException {
+        File exported = WeaponRuntimeResourceExporter.export(weaponFile, document);
+        if (exported == null) {
+            JOptionPane.showMessageDialog(this,
+                    "The weapon was saved, but SceneMax could not export the runtime resource under this project's resources folder.",
+                    "Runtime Resource Not Exported", JOptionPane.WARNING_MESSAGE);
+        }
     }
 
     private void markDirty() {

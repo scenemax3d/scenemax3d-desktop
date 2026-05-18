@@ -618,6 +618,11 @@ public class AssetsMapping {
             return direct;
         }
 
+        WeaponDefinition classpath = loadWeaponFromClasspath(buildWeaponCandidateNames(key));
+        if (classpath != null) {
+            return classpath;
+        }
+
         return findAndCacheWeaponDefinition(key);
     }
 
@@ -639,7 +644,6 @@ public class AssetsMapping {
 
     private List<File> collectProjectWeaponFolders(File projectRoot) {
         LinkedHashSet<File> folders = new LinkedHashSet<>();
-        addExistingFolder(folders, new File(projectRoot, "scripts"));
         addExistingFolder(folders, new File(projectRoot, "resources/weapons"));
         addExistingFolder(folders, new File(projectRoot, "resources/Weapons"));
         addExistingFolder(folders, new File(projectRoot, "weapons"));
@@ -674,11 +678,7 @@ public class AssetsMapping {
     }
 
     private WeaponDefinition loadWeaponByFileName(String key) {
-        List<String> candidateNames = new ArrayList<>();
-        candidateNames.add(key);
-        if (key.startsWith("weapon_") && key.length() > "weapon_".length()) {
-            candidateNames.add(key.substring("weapon_".length()));
-        }
+        List<String> candidateNames = buildWeaponCandidateNames(key);
         for (File root : _weaponRoots) {
             for (String name : candidateNames) {
                 File file = new File(root, name + WeaponDefinition.FILE_EXTENSION);
@@ -691,6 +691,51 @@ public class AssetsMapping {
             }
         }
         return null;
+    }
+
+    private List<String> buildWeaponCandidateNames(String key) {
+        List<String> candidateNames = new ArrayList<>();
+        String candidate = key;
+        while (candidate != null && !candidate.isBlank()) {
+            if (!candidateNames.contains(candidate)) {
+                candidateNames.add(candidate);
+            }
+            if (!candidate.startsWith("weapon_") || candidate.length() <= "weapon_".length()) {
+                break;
+            }
+            candidate = candidate.substring("weapon_".length());
+        }
+        return candidateNames;
+    }
+
+    private WeaponDefinition loadWeaponFromClasspath(List<String> candidateNames) {
+        for (String name : candidateNames) {
+            WeaponDefinition definition = loadWeaponFromClasspath("resources/weapons/"
+                    + name + WeaponDefinition.FILE_EXTENSION, name);
+            if (definition != null) {
+                return definition;
+            }
+            definition = loadWeaponFromClasspath("resources/Weapons/"
+                    + name + WeaponDefinition.FILE_EXTENSION, name);
+            if (definition != null) {
+                return definition;
+            }
+        }
+        return null;
+    }
+
+    private WeaponDefinition loadWeaponFromClasspath(String resourcePath, String alias) {
+        try (InputStream in = AssetsMapping.class.getClassLoader().getResourceAsStream(resourcePath)) {
+            if (in == null) {
+                return null;
+            }
+            WeaponDefinition definition = WeaponDefinition.fromJSON(
+                    new JSONObject(new String(Util.toByteArray(in), StandardCharsets.UTF_8)));
+            cacheWeaponDefinition(alias, definition);
+            return definition;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private WeaponDefinition findAndCacheWeaponDefinition(String key) {
@@ -735,6 +780,18 @@ public class AssetsMapping {
             _weapons.put(definition.getId().trim().toLowerCase(Locale.ROOT), definition);
         }
         _weapons.put(stripExtension(file.getName()).toLowerCase(Locale.ROOT), definition);
+    }
+
+    private void cacheWeaponDefinition(String alias, WeaponDefinition definition) {
+        if (definition == null) {
+            return;
+        }
+        if (definition.getId() != null && !definition.getId().isBlank()) {
+            _weapons.put(definition.getId().trim().toLowerCase(Locale.ROOT), definition);
+        }
+        if (alias != null && !alias.isBlank()) {
+            _weapons.put(alias.trim().toLowerCase(Locale.ROOT), definition);
+        }
     }
 
     private ThrowMotionDefinition loadThrowMotionByFileName(String key) {

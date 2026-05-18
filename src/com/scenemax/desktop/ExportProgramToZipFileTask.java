@@ -12,6 +12,7 @@ import javax.swing.*;
 import java.io.*;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -245,6 +246,7 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
         if(!exportCodeOnly) {
             copyEffekseerResourcesToExport();
             copyAnimationResourcesToExport(resources.getJSONArray("animations"));
+            copyWeaponResourcesToExport();
             copyThrowMotionResourcesToExport();
         }
 
@@ -495,6 +497,21 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
         File exportThrowMotionsDir = new File("./" + targetFolderName + "/resources/throw_motions");
         copyDirectoryContents(new File(projectResources, "throw_motions"), exportThrowMotionsDir);
         copyDirectoryContents(new File(projectResources, "ThrowMotions"), exportThrowMotionsDir);
+        copyStandaloneAssetFilesToExport(new File(projectResources, "throw_motions"), exportThrowMotionsDir, "smmotion", false);
+        copyStandaloneAssetFilesToExport(new File(projectResources, "ThrowMotions"), exportThrowMotionsDir, "smmotion", false);
+    }
+
+    private void copyWeaponResourcesToExport() {
+        File projectResources = getPackagedProjectResourcesFolder();
+        if (projectResources == null) {
+            return;
+        }
+
+        File exportWeaponsDir = new File("./" + targetFolderName + "/resources/weapons");
+        copyDirectoryContents(new File(projectResources, "weapons"), exportWeaponsDir);
+        copyDirectoryContents(new File(projectResources, "Weapons"), exportWeaponsDir);
+        copyStandaloneAssetFilesToExport(new File(projectResources, "weapons"), exportWeaponsDir, "smweapon", false);
+        copyStandaloneAssetFilesToExport(new File(projectResources, "Weapons"), exportWeaponsDir, "smweapon", false);
     }
 
     private void copyDirectoryContents(File source, File destination) {
@@ -503,6 +520,26 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
         }
         try {
             FileUtils.copyDirectory(source, destination);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void copyStandaloneAssetFilesToExport(File sourceRoot, File targetDir, String extension, boolean replaceExisting) {
+        if (sourceRoot == null || !sourceRoot.isDirectory() || targetDir == null
+                || extension == null || extension.isBlank()) {
+            return;
+        }
+        try {
+            FileUtils.forceMkdir(targetDir);
+            Collection<File> files = FileUtils.listFiles(sourceRoot, new String[]{extension}, true);
+            for (File file : files) {
+                File targetFile = new File(targetDir, file.getName());
+                if (targetFile.exists() && !replaceExisting) {
+                    continue;
+                }
+                FileUtils.copyFile(file, targetFile);
+            }
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
