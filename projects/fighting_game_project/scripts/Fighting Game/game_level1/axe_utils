@@ -13,11 +13,12 @@ axe_throw_cinematic_camera = {
 
 
 when player1 collides with axe do
- 
-  run show_axe_use_instructions // player need to know how to throw the axe on the Box
+  
   axe.hide
 	player1.weapon = "weapon_player_weapon"
 	player1.data.has_axe = 1
+	run show_axe_use_instructions // player need to know how to throw the axe on the Box
+
 end do
 
 [player1.data.has_axe != 1]

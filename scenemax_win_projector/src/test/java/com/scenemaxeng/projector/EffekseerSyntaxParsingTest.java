@@ -81,4 +81,14 @@ public class EffekseerSyntaxParsingTest {
         EffekseerPlayCommand cmd = (EffekseerPlayCommand) prg.actions.get(2);
         assertNotNull(cmd.attrExprs.get("loop"));
     }
+
+    @Test
+    public void effectScaleSyntaxParses() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "effect => effects.effekseer.A_Salamander1 : pos (0,0,0), scale 8\n"
+                        + "effect.scale = 10\n"
+                        + "effect.play pos (0,0,0), loop");
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+    }
 }

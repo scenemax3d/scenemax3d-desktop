@@ -9002,6 +9002,15 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         updateGeometryNodeScale(g,targetVar,scale,true);
     }
 
+    public void changeEffekseerScale(String targetVar, Double scale) {
+        EffekseerInst inst = effekseerEffects.get(targetVar);
+        if (inst == null) {
+            return;
+        }
+
+        inst.node.setLocalScale(scale.floatValue());
+    }
+
 
     public void characterJump(String targetVar, Double speed) {
 
@@ -10227,6 +10236,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             float y = Float.parseFloat(new ActionLogicalExpressionVm(inst.varDef.yExpr, inst.scope).evaluate().toString());
             float z = Float.parseFloat(new ActionLogicalExpressionVm(inst.varDef.zExpr, inst.scope).evaluate().toString());
             inst.node.setLocalTranslation(x, y, z);
+        }
+
+        if (inst.varDef.scaleExpr != null) {
+            float scale = Float.parseFloat(new ActionLogicalExpressionVm(inst.varDef.scaleExpr, inst.scope).evaluate().toString());
+            inst.node.setLocalScale(scale);
         }
     }
 
