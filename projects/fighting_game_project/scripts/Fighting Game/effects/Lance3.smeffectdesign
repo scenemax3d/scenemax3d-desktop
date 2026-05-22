@@ -11,7 +11,7 @@
     "loop": true,
     "camera": {
       "pitchDeg": -15,
-      "distance": 29,
+      "distance": 10,
       "yawDeg": 35
     }
   },

@@ -8,10 +8,10 @@
       "forceScale": 1,
       "damping": 0
     },
-    "loop": false,
+    "loop": true,
     "camera": {
       "pitchDeg": -15,
-      "distance": 33,
+      "distance": 8,
       "yawDeg": -180
     }
   },
