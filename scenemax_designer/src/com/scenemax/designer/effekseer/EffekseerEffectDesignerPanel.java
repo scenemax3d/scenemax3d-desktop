@@ -477,13 +477,17 @@ public class EffekseerEffectDesignerPanel extends JPanel {
         lines.add(EffekseerTooling.isConfiguredToolAvailable()
                 ? "Effekseer executable: " + EffekseerTooling.getConfiguredToolPath()
                 : "Effekseer executable is not configured or auto-detected.");
+        lines.add("Native preview guard: " + EffekseerNativePreviewGuard.getModeDescription());
         lines.add(resolveImportedEffectFile() != null && resolveImportedEffectFile().getName().toLowerCase().endsWith(".efkproj")
                 ? "Embedded canvas preview mode: supported for this import."
                 : "Embedded canvas preview mode: currently implemented for .efkproj imports.");
         File nativeRuntimeFile = EffekseerNativeEffectResolver.resolveRuntimeEffect(importedEffectFile);
-        lines.add(EffekseerNativeBridge.isAvailable()
-                ? "Native Effekseer bridge: available."
-                : "Native Effekseer bridge: unavailable. " + EffekseerNativeBridge.getLoadMessage());
+        boolean nativePreviewAllowed = EffekseerNativePreviewGuard.isNativePreviewAllowed();
+        lines.add(nativePreviewAllowed
+                ? (EffekseerNativeBridge.isAvailable()
+                        ? "Native Effekseer bridge: available."
+                        : "Native Effekseer bridge: unavailable. " + EffekseerNativeBridge.getLoadMessage())
+                : "Native Effekseer bridge: not loaded. " + EffekseerNativePreviewGuard.getAvailabilityMessage());
         lines.add(nativeRuntimeFile != null
                 ? "Native runtime effect candidate: " + nativeRuntimeFile.getName()
                 : "Native runtime effect candidate: none. Import or export a runtime-ready .efkefc/.efk beside the asset to use native playback.");

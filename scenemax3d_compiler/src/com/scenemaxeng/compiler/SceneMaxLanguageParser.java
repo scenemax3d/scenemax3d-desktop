@@ -3488,6 +3488,13 @@ public class SceneMaxLanguageParser implements IParser {
                 return cmd;
             }
 
+            public ActionStatementBase visitAngularVelocity(SceneMaxParser.AngularVelocityContext ctx) {
+                ChangeAngularVelocityCommand cmd = new ChangeAngularVelocityCommand();
+                cmd.targetVar = ctx.angular_velocity().var_decl().getText();
+                cmd.angularVelocityExpr = ctx.angular_velocity().logical_expression();
+                return cmd;
+            }
+
             public ActionStatementBase visitMassStatement(SceneMaxParser.MassStatementContext ctx) {
                 ChangeMassCommand cmd = new ChangeMassCommand();
                 cmd.varName = ctx.mass().var_decl().getText();

@@ -679,6 +679,36 @@ public class DesignerApp extends SceneMaxApp {
         return selectionManager;
     }
 
+    public boolean selectAndFrameModelResource(String resourceName) {
+        if (resourceName == null || resourceName.trim().isEmpty() || selectionManager == null) {
+            return false;
+        }
+        DesignerEntity entity = findModelEntityByResource(resourceName.trim(), entities);
+        if (entity == null || entity.getSceneNode() == null) {
+            return false;
+        }
+        selectionManager.select(entity);
+        focusCameraOnEntity(entity);
+        return true;
+    }
+
+    private DesignerEntity findModelEntityByResource(String resourceName, List<DesignerEntity> source) {
+        if (source == null) {
+            return null;
+        }
+        for (DesignerEntity entity : source) {
+            if (entity.getType() == DesignerEntityType.MODEL
+                    && resourceName.equalsIgnoreCase(entity.getResourcePath())) {
+                return entity;
+            }
+            DesignerEntity child = findModelEntityByResource(resourceName, entity.getChildren());
+            if (child != null) {
+                return child;
+            }
+        }
+        return null;
+    }
+
     public boolean copySelectedEntityToClipboard() {
         if (selectionManager == null) {
             return false;

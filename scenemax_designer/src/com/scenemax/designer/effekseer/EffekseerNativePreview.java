@@ -23,10 +23,13 @@ final class EffekseerNativePreview {
     private boolean pendingContextReset;
 
     public boolean isAvailable() {
-        return EffekseerNativeBridge.isAvailable();
+        return EffekseerNativePreviewGuard.isNativePreviewAllowed() && EffekseerNativeBridge.isAvailable();
     }
 
     public String getAvailabilityMessage() {
+        if (!EffekseerNativePreviewGuard.isNativePreviewAllowed()) {
+            return EffekseerNativePreviewGuard.getAvailabilityMessage();
+        }
         return EffekseerNativeBridge.getLoadMessage();
     }
 

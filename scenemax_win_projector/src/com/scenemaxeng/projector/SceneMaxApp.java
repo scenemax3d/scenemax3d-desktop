@@ -1748,6 +1748,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             ChangeVelocityController ctl = new ChangeVelocityController(this,prg,scope,(ChangeVelocityCommand)action);
             ctl.async=action.isAsync;
             scope.add(ctl);
+        } else if(action instanceof ChangeAngularVelocityCommand) {
+            ChangeAngularVelocityController ctl = new ChangeAngularVelocityController(this,prg,scope,(ChangeAngularVelocityCommand)action);
+            ctl.async=action.isAsync;
+            scope.add(ctl);
         } else if(action instanceof AnimateOptionsCommand) {
             AnimateOptionsController ctl = new AnimateOptionsController(this,prg,scope,(AnimateOptionsCommand)action);
             ctl.async=true;
@@ -10016,6 +10020,19 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
 
+    }
+
+    public void applyModelAngularVelocity(String name, Double angularVelocity) {
+        AppModel am = models.get(name);
+        if(am==null) {
+            return;
+        }
+
+        if(am.physicalControl instanceof RigidBodyControl) {
+            RigidBodyControl ctl = (RigidBodyControl)am.physicalControl;
+            float spin = angularVelocity.floatValue();
+            ctl.setAngularVelocity(new Vector3f(spin, spin * 0.55f, spin * 0.35f));
+        }
     }
 
     public AppModel getAppModel(String id) {

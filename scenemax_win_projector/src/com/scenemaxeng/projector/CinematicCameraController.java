@@ -46,6 +46,11 @@ class CinematicCameraController extends SceneMaxBaseController {
 
     @Override
     public void init() {
+        // Playback starts lazily from run(); composite blocks initialize future
+        // controllers before earlier waits have completed.
+    }
+
+    private void startPlayback() {
         findTargetVar();
         enableEntity(targetVar);
 
@@ -125,7 +130,7 @@ class CinematicCameraController extends SceneMaxBaseController {
             return true;
         }
         if (!targetCalculated) {
-            init();
+            startPlayback();
             if (forceStop) {
                 finishPlayback();
                 return true;

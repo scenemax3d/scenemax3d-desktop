@@ -117,6 +117,7 @@ public class Import3DModelPanel extends DesignerPanel {
     private String selectedFile;
     private String selectedFileDestDir;
     private String importedModelFilePath;
+    private String importedModelName;
     private String previewModelAssetPath;
     private String previewEntityName;
     private String resourcesFolder;
@@ -973,18 +974,29 @@ public class Import3DModelPanel extends DesignerPanel {
     }
 
     private String uniqueImportModelName(String requestedName) {
+        return uniqueImportModelName(requestedName, null);
+    }
+
+    private String uniqueImportModelName(String requestedName, String ignoredExistingName) {
         String base = sanitizeSceneMaxIdentifier(requestedName);
         if (base.isEmpty()) {
             base = "model";
         }
         String candidate = base;
         int index = 1;
-        while (modelNameExists(candidate, "./resources", "models.json")
-                || modelNameExists(candidate, resourcesFolder, "models-ext.json")
-                || new File(resourcesFolder + "/Models/" + candidate).exists()) {
+        while (modelNameExists(candidate, "./resources", "models.json", ignoredExistingName)
+                || modelNameExists(candidate, resourcesFolder, "models-ext.json", ignoredExistingName)
+                || modelDirectoryExists(candidate, ignoredExistingName)) {
             candidate = base + "_" + index++;
         }
         return candidate;
+    }
+
+    private boolean modelDirectoryExists(String candidate, String ignoredExistingName) {
+        if (candidate == null || candidate.equalsIgnoreCase(ignoredExistingName)) {
+            return false;
+        }
+        return new File(resourcesFolder + "/Models/" + candidate).exists();
     }
 
     private static String sanitizeSceneMaxIdentifier(String value) {
@@ -1140,6 +1152,7 @@ public class Import3DModelPanel extends DesignerPanel {
             writePendingMarker(name, selectedFileDestDir);
 
             previewModelAssetPath = modelPath;
+            importedModelName = name;
             modelPreviewLoaded = true;
             return true;
 
@@ -1171,9 +1184,30 @@ public class Import3DModelPanel extends DesignerPanel {
         if (app != null && name.length() > 0) {
             app.enqueue(() -> {
                 previewEntityName = app.addModel(name, chkStatic.isSelected(), false, false);
+                app.setGizmoMode(GizmoMode.TRANSLATE);
                 return null;
             });
+            focusPreviewCandidate(name, 0);
         }
+    }
+
+    private void focusPreviewCandidate(String resourceName, int retryCount) {
+        if (app == null || resourceName == null || resourceName.trim().isEmpty()) {
+            return;
+        }
+        app.enqueue(() -> {
+            if (app.selectAndFrameModelResource(resourceName)) {
+                return null;
+            }
+            if (retryCount < 20) {
+                SwingUtilities.invokeLater(() -> {
+                    Timer timer = new Timer(200, e -> focusPreviewCandidate(resourceName, retryCount + 1));
+                    timer.setRepeats(false);
+                    timer.start();
+                });
+            }
+            return null;
+        });
     }
 
     private void resetBundledAnimations(String status) {
@@ -1297,7 +1331,13 @@ public class Import3DModelPanel extends DesignerPanel {
             return;
         }
 
-        updateModelMetadata();
+        String finalName = resolveFinalImportName();
+        if (finalName == null) {
+            return;
+        }
+        txtName.setText(finalName);
+
+        updateModelMetadata(finalName);
         deletePendingMarker();
 
         modelImported = true;
@@ -1321,8 +1361,10 @@ public class Import3DModelPanel extends DesignerPanel {
     /**
      * Updates models-ext.json with the final values from the form fields.
      */
-    private void updateModelMetadata() {
-        String name = txtName.getText().trim();
+    private void updateModelMetadata(String name) {
+        String temporaryName = importedModelName != null && !importedModelName.trim().isEmpty()
+                ? importedModelName.trim()
+                : name;
         float scaleX = ((Number) spnScaleX.getValue()).floatValue();
         float scaleY = ((Number) spnScaleY.getValue()).floatValue();
         float scaleZ = ((Number) spnScaleZ.getValue()).floatValue();
@@ -1341,51 +1383,101 @@ public class Import3DModelPanel extends DesignerPanel {
         JSONObject res = getResourcesFolderIndex(resourcesFolder + "/Models/models-ext.json");
         JSONArray models = res.getJSONArray("models");
 
+        JSONObject targetModel = null;
         for (int i = 0; i < models.length(); i++) {
             JSONObject m = models.getJSONObject(i);
-            if (m.getString("name").equalsIgnoreCase(name)) {
-                m.put("scaleX", scaleX);
-                m.put("scaleY", scaleY);
-                m.put("scaleZ", scaleZ);
-                m.put("transX", transX);
-                m.put("transY", transY);
-                m.put("transZ", transZ);
-                m.put("rotateY", rotateY);
-                m.put("isStatic", isStatic);
-
-                JSONObject character = m.getJSONObject("physics").getJSONObject("character");
-                character.put("calibrateX", calX);
-                character.put("calibrateY", calY);
-                character.put("calibrateZ", calZ);
-                character.put("capsuleRadius", capsuleRadius);
-                character.put("capsuleHeight", capsuleHeight);
-                character.put("stepHeight", stepHeight);
+            if (m.getString("name").equalsIgnoreCase(temporaryName)) {
+                targetModel = m;
                 break;
             }
+        }
+        if (targetModel == null) {
+            for (int i = 0; i < models.length(); i++) {
+                JSONObject m = models.getJSONObject(i);
+                if (m.getString("name").equalsIgnoreCase(name)) {
+                    targetModel = m;
+                    break;
+                }
+            }
+        }
+
+        if (targetModel != null) {
+            targetModel.put("name", name);
+            targetModel.put("scaleX", scaleX);
+            targetModel.put("scaleY", scaleY);
+            targetModel.put("scaleZ", scaleZ);
+            targetModel.put("transX", transX);
+            targetModel.put("transY", transY);
+            targetModel.put("transZ", transZ);
+            targetModel.put("rotateY", rotateY);
+            targetModel.put("isStatic", isStatic);
+
+            JSONObject character = targetModel.getJSONObject("physics").getJSONObject("character");
+            character.put("calibrateX", calX);
+            character.put("calibrateY", calY);
+            character.put("calibrateZ", calZ);
+            character.put("capsuleRadius", capsuleRadius);
+            character.put("capsuleHeight", capsuleHeight);
+            character.put("stepHeight", stepHeight);
         }
 
         writeJsonFile(resourcesFolder + "/Models/models-ext.json", res.toString(2));
 
         // Update in-memory assets mapping
         if (app != null && app.getAssetsMapping() != null) {
-            ResourceSetup resSetup = app.getAssetsMapping().get3DModelsIndex().get(name.toLowerCase());
+            ResourceSetup resSetup = app.getAssetsMapping().get3DModelsIndex().remove(temporaryName.toLowerCase());
+            if (resSetup == null) {
+                resSetup = app.getAssetsMapping().get3DModelsIndex().get(name.toLowerCase());
+            }
             if (resSetup != null) {
-                resSetup.scaleX = scaleX;
-                resSetup.scaleY = scaleY;
-                resSetup.scaleZ = scaleZ;
-                resSetup.localTranslationX = transX;
-                resSetup.localTranslationY = transY;
-                resSetup.localTranslationZ = transZ;
-                resSetup.rotateY = rotateY;
-                resSetup.calibrateX = calX;
-                resSetup.calibrateY = calY;
-                resSetup.calibrateZ = calZ;
-                resSetup.capsuleRadius = capsuleRadius;
-                resSetup.capsuleHeight = capsuleHeight;
-                resSetup.stepHeight = stepHeight;
-                resSetup.isStatic = isStatic;
+                ResourceSetup renamedSetup = new ResourceSetup(name, resSetup.path,
+                        scaleX, scaleY, scaleZ, transX, transY, transZ, rotateY);
+                renamedSetup.calibrateX = calX;
+                renamedSetup.calibrateY = calY;
+                renamedSetup.calibrateZ = calZ;
+                renamedSetup.capsuleRadius = capsuleRadius;
+                renamedSetup.capsuleHeight = capsuleHeight;
+                renamedSetup.stepHeight = stepHeight;
+                renamedSetup.isStatic = isStatic;
+                renamedSetup.isVehicle = resSetup.isVehicle;
+                renamedSetup.chassis = resSetup.chassis;
+                renamedSetup.stiffness = resSetup.stiffness;
+                renamedSetup.compression = resSetup.compression;
+                renamedSetup.damping = resSetup.damping;
+                renamedSetup.mass = resSetup.mass;
+                renamedSetup.chassisMaterial = resSetup.chassisMaterial;
+                renamedSetup.wheelModel = resSetup.wheelModel;
+                renamedSetup.rearWheelModel = resSetup.rearWheelModel;
+                renamedSetup.wheelMaterial = resSetup.wheelMaterial;
+                renamedSetup.frontWheel = resSetup.frontWheel;
+                renamedSetup.backWheel = resSetup.backWheel;
+                renamedSetup.gearBox = resSetup.gearBox;
+                renamedSetup.engine = resSetup.engine;
+                renamedSetup.horn = resSetup.horn;
+                renamedSetup.localScale = resSetup.localScale;
+                app.getAssetsMapping().get3DModelsIndex().put(name.toLowerCase(), renamedSetup);
             }
         }
+        importedModelName = name;
+    }
+
+    private String resolveFinalImportName() {
+        String temporaryName = importedModelName != null && !importedModelName.trim().isEmpty()
+                ? importedModelName.trim()
+                : "";
+        String requestedName = sanitizeSceneMaxIdentifier(txtName.getText());
+        if (requestedName.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please enter a model name", "Error", JOptionPane.ERROR_MESSAGE);
+            return null;
+        }
+        if (!temporaryName.isEmpty() && requestedName.equalsIgnoreCase(temporaryName)) {
+            return temporaryName;
+        }
+        String finalName = uniqueImportModelName(requestedName, temporaryName);
+        if (!finalName.equals(requestedName)) {
+            txtName.setText(finalName);
+        }
+        return finalName;
     }
 
     // =====================================================================
@@ -1393,7 +1485,9 @@ public class Import3DModelPanel extends DesignerPanel {
     // =====================================================================
 
     private void rollbackImport() {
-        String name = txtName.getText().trim();
+        String name = importedModelName != null && !importedModelName.trim().isEmpty()
+                ? importedModelName.trim()
+                : txtName.getText().trim();
 
         removeModelFromList(name);
 
@@ -1428,6 +1522,7 @@ public class Import3DModelPanel extends DesignerPanel {
         modelPreviewLoaded = false;
         previewEntityName = null;
         importedModelFilePath = null;
+        importedModelName = null;
         animationInspectionPath = null;
         resetBundledAnimations("Select a model to inspect bundled animations.");
     }
@@ -1955,12 +2050,18 @@ public class Import3DModelPanel extends DesignerPanel {
     }
 
     private boolean modelNameExists(String name, String path, String fileName) {
+        return modelNameExists(name, path, fileName, null);
+    }
+
+    private boolean modelNameExists(String name, String path, String fileName, String ignoredExistingName) {
         JSONObject res = getResourcesFolderIndex(path + "/Models/" + fileName);
         if (res == null || !res.has("models")) return false;
         JSONArray models = res.getJSONArray("models");
         for (int i = 0; i < models.length(); i++) {
             JSONObject m = models.getJSONObject(i);
-            if (m.getString("name").equalsIgnoreCase(name)) {
+            String existingName = m.getString("name");
+            if (existingName.equalsIgnoreCase(name)
+                    && (ignoredExistingName == null || !existingName.equalsIgnoreCase(ignoredExistingName))) {
                 return true;
             }
         }

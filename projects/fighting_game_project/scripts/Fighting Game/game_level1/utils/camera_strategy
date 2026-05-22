@@ -6,7 +6,8 @@ var level1_dragon_rocks_started=0,
     level1_dragon_rock_slot_4=0,
     level1_dragon_rock_slot_5=0,
     level1_dragon_rock_player1_hit_guard=0,
-    level1_dragon_rock_player2_hit_guard=0
+    level1_dragon_rock_player2_hit_guard=0,
+    level1_camera_modifiers_paused=0
 
 hit_fx = camera.system.modifiers.hit_modifier
 bump_fx = camera.system.modifiers.bump_modifier
@@ -36,19 +37,19 @@ level1_switch_to_crystal_hunt_camera = {
 }
 
 
-[camera_mode==CAMERA_MODE_DEFAULT]
+[camera_mode==CAMERA_MODE_DEFAULT && level1_camera_modifiers_paused==0]
 shake_the_world = {
   fight_cam.apply hit_fx : duration 0.35, amplitude 1.4
 }
 
-[camera_mode==CAMERA_MODE_DEFAULT]
+[camera_mode==CAMERA_MODE_DEFAULT && level1_camera_modifiers_paused==0]
 shake_the_world2 = {
 	fight_cam.apply hit_fx
   fight_cam.apply bump_fx : duration 0.2, y 0.3
 	
 }
 
-[camera_mode==CAMERA_MODE_DEFAULT && game_status==GAME_STATE_START && level1_dragon_rock_count>0]
+[camera_mode==CAMERA_MODE_DEFAULT && game_status==GAME_STATE_START && level1_dragon_rock_count>0 && level1_camera_modifiers_paused==0]
 level1_earthquake_camera = {
   fight_cam.apply bump_fx : duration 0.28, amplitude 0.95, x 0.18, y 0.16, z 0.05, ry 0.75, rz 1.35
 }
