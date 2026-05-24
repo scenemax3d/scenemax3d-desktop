@@ -26,6 +26,10 @@ For a tool-by-tool reference covering purpose, common inputs, outputs, and agent
 
 For weapon authoring and runtime equip/posture examples, see [`docs/weapons-designer.md`](docs/weapons-designer.md).
 
+For throw motion authoring, projectile/return motion setup, and runtime examples, see [`docs/throw-motion.md`](docs/throw-motion.md).
+
+For inverse-kinematics authoring, joint setup, preview simulation, and runtime IK commands, see [`docs/ik-designer.md`](docs/ik-designer.md).
+
 For hands-on examples, see the demo projects guide in [`projects/readme.md`](projects/readme.md), which walks through the sample games and explains how they are structured.
 
 ## Ready-to-Use Binaries
@@ -41,6 +45,9 @@ If you want to try SceneMax3D without building from source, download the Windows
 - **Physics Engine** -- integrated Minie / Bullet physics
 - **3D Model Import** -- load models into your scenes
 - **Cinematic Camera System** -- build dynamic camera moves, chase cameras, and dramatic gameplay cutaways
+- **Weapons Designer** -- author `.smweapon` assets with equip postures, attachment points, preview models, runtime equip/unequip commands, and weapon collider support
+- **Throw Motion Designer** -- author `.smmotion` assets for throws, projectiles, boomerang-style returns, homing behavior, and reusable motion runtime commands
+- **IK Designer** -- author `.smik` inverse-kinematics assets with armature scanning, solver templates, skeleton preview, animation blending tests, and runtime layer commands
 - **Multi-Project Support** -- manage multiple projects from a single workspace
 - **Enhanced Plugin System** -- extend the IDE with Java plugins that add toolbar/menu actions, Swing views, asset providers, settings, and model import/preview workflows
 - **Built-in MCP Server & AI Console** -- connect Claude Code, Codex, Claude Desktop, and Local Gemma to live SceneMax project tools
@@ -137,7 +144,10 @@ The items below are planned for future delivery, but they will not necessarily b
 
 - **Messaging System** -- display in-game and runtime messages - **done**
 - **Health Bar System** -- built-in support for health bar setup and management
-- **Weapons/Inventory System** -- easy picking up and using weapons at runtime
+- **Weapons Designer and Runtime Equip System** -- easy authoring, previewing, and runtime use of weapons - **done**
+- **Inventory System** -- item storage, pickup rules, and inventory UI workflows
+- **Throw Motion Designer** -- reusable thrown-object and projectile motion authoring - **done**
+- **IK Designer** -- inverse-kinematics authoring and runtime layer controls - **done**
 - **Climbing System** -- easy definition of climbable objects and a climbing game state machine
 - **Leaderboard System** -- support for game leaderboards
 - **UI Frames** -- show messages inside frames - **done**
