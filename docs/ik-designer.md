@@ -207,6 +207,133 @@ player.ik.weapon_aim.stop : blend 0.1
 
 Targets are live scene references. If `lever_handle`, `enemy`, or any other target entity moves, the IK layer follows it every frame while the layer is playing. `blend` is the fade time in seconds, and `weight` is the layer influence from `0` to `1`.
 
+## Common Gameplay Use Cases
+
+The examples below assume you already created a `.smik` resource in the IK Designer and saved it as `player_interaction_ik`. They also assume the IK asset contains layer ids such as `right_hand_reach`, `head_look`, `weapon_aim`, or `right_foot_place`.
+
+Use IK when animation gives you the broad motion, but the exact final pose depends on the current scene. A regular animation can make a character reach, aim, or look roughly right. IK makes the hand, head, weapon, or foot adapt to the actual target position at runtime.
+
+### Reach For A Lever Or Button
+
+Use this when the player presses, pulls, picks up, opens, or touches something whose position may change from level to level.
+
+```scenemax
+player => dynamic fighter1 : pos (0, 0, 0), scale 3
+lever_handle => box : pos (2, 1, 3), scale 0.2
+
+player.ik = "player_interaction_ik"
+
+when key e is pressed do
+  player.reach_forward
+  player.ik.right_hand_reach.play : target lever_handle, blend 0.2, weight 1
+end do
+```
+
+Stop the layer when the interaction ends so the normal animation can fully take over again:
+
+```scenemax
+when key e is released do
+  player.ik.right_hand_reach.stop : blend 0.15
+end do
+```
+
+Why IK helps here: the same reach animation can work for many lever or button positions instead of needing one animation per exact height and distance.
+
+### Look At An Enemy Or Point Of Interest
+
+Use this for head tracking, NPC attention, conversation targets, or a character noticing something in the world.
+
+```scenemax
+player => dynamic fighter1 : pos (0, 0, 0), scale 3
+enemy => dynamic fighter2 : pos (5, 0, 4), scale 3
+
+player.ik = "player_interaction_ik"
+player.ik.head_look.play : target enemy, blend 0.25, weight 0.7
+```
+
+When the target should no longer hold the character's attention:
+
+```scenemax
+player.ik.head_look.stop : blend 0.25
+```
+
+Why IK helps here: the enemy can move and the head continues to follow it while the layer is playing.
+
+### Aim A Weapon While Playing A Combat Animation
+
+Use this when a character has idle, walk, or attack animations, but the weapon should still aim at the current enemy or cursor target.
+
+```scenemax
+player => dynamic fighter1 : pos (0, 0, 0), scale 3
+enemy => dynamic fighter2 : pos (8, 0, 5), scale 3
+
+player.weapon = "weapon_training_sword"
+player.ik = "player_interaction_ik"
+
+player.fight_idle loop
+player.ik.weapon_aim.play : target enemy, blend 0.15, weight 0.8
+```
+
+For a short attack, you can raise the IK weight during the active part and fade it down afterward:
+
+```scenemax
+player.slash
+player.ik.weapon_aim.play : target enemy, blend 0.08, weight 1
+wait 0.35 seconds
+player.ik.weapon_aim.stop : blend 0.2
+```
+
+Why IK helps here: the animation supplies the style and timing, while IK corrects the final aim toward the live target.
+
+### Place A Foot On Uneven Ground Or A Step
+
+Use this when a walking, climbing, or idle pose needs one foot to land on a known marker.
+
+```scenemax
+player => dynamic fighter1 : pos (0, 0, 0), scale 3
+right_step_marker => box : pos (0.4, 0.35, 1.0), scale 0.15
+
+player.ik = "player_interaction_ik"
+player.walk_slow loop
+player.ik.right_foot_place.play : target right_step_marker, blend 0.12, weight 0.6
+```
+
+Why IK helps here: the leg can adjust to the marker while the regular walking animation continues to provide the body motion.
+
+### Move The Target While IK Is Running
+
+The target can move after `play`. The IK layer reads the target's current world position every frame, so the chain follows the moving object.
+
+```scenemax
+player => dynamic fighter1 : pos (0, 0, 0), scale 3
+moving_target => sphere : pos (2, 1, 2), scale 0.15
+
+player.ik = "player_interaction_ik"
+player.ik.right_hand_reach.play : target moving_target, blend 0.2, weight 1
+
+moving_target.move right 3 in 2 seconds
+```
+
+Why IK helps here: the hand keeps tracking `moving_target` as it moves, instead of snapping only to the position it had when the command started.
+
+### Switch Or Clear IK Resources
+
+Attach an IK resource when a character enters a mode that needs it, then remove it when that mode ends.
+
+```scenemax
+player.ik = "player_interaction_ik"
+player.ik.right_hand_reach.play : target door_handle, blend 0.2, weight 1
+```
+
+When the character leaves that gameplay state:
+
+```scenemax
+player.ik.right_hand_reach.stop : blend 0.15
+player.ik = empty
+```
+
+Use `player.ik = empty` when you want to detach the IK setup completely. Use `player.ik.layer_id.stop` when you want to keep the resource attached but fade out one layer.
+
 ## Pole Target
 
 `Pole Target` is also a scene entity name. It is only used by bending chains such as arms and legs.
