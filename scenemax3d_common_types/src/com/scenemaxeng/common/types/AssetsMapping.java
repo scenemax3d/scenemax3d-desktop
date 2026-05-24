@@ -2,6 +2,7 @@ package com.scenemaxeng.common.types;
 
 import com.jme3.audio.AudioData;
 import com.jme3.math.Vector3f;
+import com.scenemaxeng.common.ik.IKDefinition;
 import com.scenemaxeng.common.motion.ThrowMotionDefinition;
 import com.scenemaxeng.common.weapons.WeaponDefinition;
 import org.json.JSONArray;
@@ -34,8 +35,10 @@ public class AssetsMapping {
     private HashMap<String, ResourceAnimation> _animations = new HashMap<>();
     private HashMap<String, WeaponDefinition> _weapons = new HashMap<>();
     private HashMap<String, ThrowMotionDefinition> _throwMotions = new HashMap<>();
+    private HashMap<String, IKDefinition> _ikDefinitions = new HashMap<>();
     private LinkedHashSet<File> _weaponRoots = new LinkedHashSet<>();
     private LinkedHashSet<File> _throwMotionRoots = new LinkedHashSet<>();
+    private LinkedHashSet<File> _ikRoots = new LinkedHashSet<>();
 
     private JSONObject getResourcesIndex() {
         String json = "";
@@ -92,6 +95,8 @@ public class AssetsMapping {
         addWeaponRoot(new File(extPath, "Weapons"));
         addThrowMotionRoot(new File(extPath, "throw_motions"));
         addThrowMotionRoot(new File(extPath, "ThrowMotions"));
+        addIKRoot(new File(extPath, "ik"));
+        addIKRoot(new File(extPath, "IK"));
 
     }
 
@@ -137,6 +142,8 @@ public class AssetsMapping {
         addWeaponRoot(new File("./resources/Weapons"));
         addThrowMotionRoot(new File("./resources/throw_motions"));
         addThrowMotionRoot(new File("./resources/ThrowMotions"));
+        addIKRoot(new File("./resources/ik"));
+        addIKRoot(new File("./resources/IK"));
 
         /////////////////////////////// READ SELF - CONTAINED ASSETS /////////////////////////////
         // self contained exec will read from embedded class-path resource file
@@ -173,6 +180,10 @@ public class AssetsMapping {
 
             ResourceSetup res3D = new ResourceSetup(name,path,scaleX,scaleY,scaleZ,transX,transY,transZ,rotateY);
             res3D.setJsonBuffer(spr.toString());
+            res3D.hasSkeleton = spr.optBoolean("hasSkeleton", false);
+            res3D.hasArmature = spr.optBoolean("hasArmature", res3D.hasSkeleton);
+            res3D.ikReady = spr.optBoolean("ikReady", false);
+            res3D.ikCompatibilityScanned = spr.optBoolean("ikCompatibilityScanned", false);
             if(spr.has("isStatic")) {
                 res3D.isStatic = spr.getBoolean("isStatic");
             }
@@ -585,6 +596,10 @@ public class AssetsMapping {
         return _throwMotions;
     }
 
+    public HashMap<String, IKDefinition> getIKDefinitionsIndex() {
+        return _ikDefinitions;
+    }
+
     public ThrowMotionDefinition getThrowMotionDefinition(String motionNameOrId) {
         if (motionNameOrId == null || motionNameOrId.trim().isEmpty()) {
             return null;
@@ -626,6 +641,24 @@ public class AssetsMapping {
         return findAndCacheWeaponDefinition(key);
     }
 
+    public IKDefinition getIKDefinition(String ikNameOrId) {
+        if (ikNameOrId == null || ikNameOrId.trim().isEmpty()) {
+            return null;
+        }
+        String key = ikNameOrId.trim().toLowerCase(Locale.ROOT);
+        IKDefinition cached = _ikDefinitions.get(key);
+        if (cached != null) {
+            return cached;
+        }
+
+        IKDefinition direct = loadIKByFileName(key);
+        if (direct != null) {
+            return direct;
+        }
+
+        return findAndCacheIKDefinition(key);
+    }
+
     public void loadWeaponsFromProject(String projectRootPath) {
         if (projectRootPath == null || projectRootPath.isBlank()) {
             return;
@@ -639,6 +672,9 @@ public class AssetsMapping {
         }
         for (File folder : collectProjectThrowMotionFolders(projectRoot)) {
             addThrowMotionRoot(folder);
+        }
+        for (File folder : collectProjectIKFolders(projectRoot)) {
+            addIKRoot(folder);
         }
     }
 
@@ -655,6 +691,13 @@ public class AssetsMapping {
         LinkedHashSet<File> folders = new LinkedHashSet<>();
         addExistingFolder(folders, new File(projectRoot, "resources/throw_motions"));
         addExistingFolder(folders, new File(projectRoot, "resources/ThrowMotions"));
+        return new ArrayList<>(folders);
+    }
+
+    private List<File> collectProjectIKFolders(File projectRoot) {
+        LinkedHashSet<File> folders = new LinkedHashSet<>();
+        addExistingFolder(folders, new File(projectRoot, "resources/ik"));
+        addExistingFolder(folders, new File(projectRoot, "resources/IK"));
         return new ArrayList<>(folders);
     }
 
@@ -675,6 +718,10 @@ public class AssetsMapping {
 
     private void addThrowMotionRoot(File folder) {
         addExistingFolder(_throwMotionRoots, folder);
+    }
+
+    private void addIKRoot(File folder) {
+        addExistingFolder(_ikRoots, folder);
     }
 
     private WeaponDefinition loadWeaponByFileName(String key) {
@@ -935,6 +982,199 @@ public class AssetsMapping {
         if (alias != null && !alias.isBlank()) {
             _throwMotions.put(alias.trim().toLowerCase(Locale.ROOT), definition);
         }
+    }
+
+    private IKDefinition loadIKByFileName(String key) {
+        List<String> candidateNames = buildIKCandidateNames(key);
+        for (File root : _ikRoots) {
+            for (String name : candidateNames) {
+                IKDefinition definition = loadIKFileIfExists(new File(root, name + IKDefinition.FILE_EXTENSION));
+                if (definition != null) {
+                    return definition;
+                }
+                definition = loadIKFileIfExists(new File(root, name + IKDefinition.LEGACY_FILE_EXTENSION));
+                if (definition != null) {
+                    return definition;
+                }
+            }
+            IKDefinition nested = loadIKByFileNameRecursive(root, candidateNames);
+            if (nested != null) {
+                return nested;
+            }
+            IKDefinition matchingId = findAndCacheIKDefinitionInRoot(root, key);
+            if (matchingId != null) {
+                return matchingId;
+            }
+        }
+        return loadIKFromClasspath(candidateNames);
+    }
+
+    private List<String> buildIKCandidateNames(String key) {
+        List<String> candidateNames = new ArrayList<>();
+        candidateNames.add(key);
+        if (key.startsWith("ik_") && key.length() > "ik_".length()) {
+            candidateNames.add(key.substring("ik_".length()));
+        }
+        return candidateNames;
+    }
+
+    private IKDefinition loadIKFromClasspath(List<String> candidateNames) {
+        for (String name : candidateNames) {
+            IKDefinition definition = loadIKFromClasspath("resources/ik/" + name + IKDefinition.FILE_EXTENSION, name);
+            if (definition != null) {
+                return definition;
+            }
+            definition = loadIKFromClasspath("resources/ik/" + name + IKDefinition.LEGACY_FILE_EXTENSION, name);
+            if (definition != null) {
+                return definition;
+            }
+            definition = loadIKFromClasspath("resources/IK/" + name + IKDefinition.FILE_EXTENSION, name);
+            if (definition != null) {
+                return definition;
+            }
+            definition = loadIKFromClasspath("resources/IK/" + name + IKDefinition.LEGACY_FILE_EXTENSION, name);
+            if (definition != null) {
+                return definition;
+            }
+        }
+        return null;
+    }
+
+    private IKDefinition loadIKFromClasspath(String resourcePath, String alias) {
+        try (InputStream in = AssetsMapping.class.getClassLoader().getResourceAsStream(resourcePath)) {
+            if (in == null) {
+                return null;
+            }
+            IKDefinition definition = IKDefinition.fromJSON(
+                    new JSONObject(new String(Util.toByteArray(in), StandardCharsets.UTF_8)));
+            cacheIKDefinition(alias, definition);
+            return definition;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private IKDefinition loadIKByFileNameRecursive(File root, List<String> candidateNames) {
+        if (root == null || !root.isDirectory()) {
+            return null;
+        }
+        Collection<File> files = org.apache.commons.io.FileUtils.listFiles(root, new String[]{"smik", "json"}, true);
+        for (String name : candidateNames) {
+            for (File file : files) {
+                if (!isIKFile(file)) {
+                    continue;
+                }
+                if (name.equalsIgnoreCase(stripIKExtension(file.getName()))) {
+                    IKDefinition definition = loadAndCacheIKDefinition(file);
+                    if (definition != null) {
+                        return definition;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private IKDefinition findAndCacheIKDefinition(String key) {
+        for (File root : _ikRoots) {
+            IKDefinition definition = findAndCacheIKDefinitionInRoot(root, key);
+            if (definition != null) {
+                return definition;
+            }
+        }
+        return null;
+    }
+
+    private IKDefinition findAndCacheIKDefinitionInRoot(File root, String key) {
+        if (root == null || !root.isDirectory()) {
+            return null;
+        }
+        Collection<File> files = org.apache.commons.io.FileUtils.listFiles(root, new String[]{"smik", "json"}, true);
+        for (File file : files) {
+            if (!isIKFile(file)) {
+                continue;
+            }
+            String fileKey = stripIKExtension(file.getName()).toLowerCase(Locale.ROOT);
+            if (key.equals(fileKey)) {
+                IKDefinition definition = loadAndCacheIKDefinition(file);
+                if (definition != null) {
+                    return definition;
+                }
+            }
+            try {
+                IKDefinition definition = IKDefinition.load(file);
+                cacheIKDefinition(file, definition);
+                if (definition.getId() != null && key.equals(definition.getId().trim().toLowerCase(Locale.ROOT))) {
+                    return definition;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
+    private IKDefinition loadAndCacheIKDefinition(File file) {
+        try {
+            IKDefinition definition = IKDefinition.load(file);
+            cacheIKDefinition(file, definition);
+            return definition;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private IKDefinition loadIKFileIfExists(File file) {
+        if (file != null && file.isFile()) {
+            return loadAndCacheIKDefinition(file);
+        }
+        return null;
+    }
+
+    private void cacheIKDefinition(File file, IKDefinition definition) {
+        if (definition == null || file == null) {
+            return;
+        }
+        if (definition.getId() != null && !definition.getId().isBlank()) {
+            _ikDefinitions.put(definition.getId().trim().toLowerCase(Locale.ROOT), definition);
+        }
+        _ikDefinitions.put(stripIKExtension(file.getName()).toLowerCase(Locale.ROOT), definition);
+    }
+
+    private void cacheIKDefinition(String alias, IKDefinition definition) {
+        if (definition == null) {
+            return;
+        }
+        if (definition.getId() != null && !definition.getId().isBlank()) {
+            _ikDefinitions.put(definition.getId().trim().toLowerCase(Locale.ROOT), definition);
+        }
+        if (alias != null && !alias.isBlank()) {
+            _ikDefinitions.put(alias.trim().toLowerCase(Locale.ROOT), definition);
+        }
+    }
+
+    private String stripIKExtension(String name) {
+        if (name == null) {
+            return "";
+        }
+        String lower = name.toLowerCase(Locale.ROOT);
+        String ext = IKDefinition.FILE_EXTENSION.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(ext)) {
+            return name.substring(0, name.length() - IKDefinition.FILE_EXTENSION.length());
+        }
+        String legacyExt = IKDefinition.LEGACY_FILE_EXTENSION.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(legacyExt)) {
+            return name.substring(0, name.length() - IKDefinition.LEGACY_FILE_EXTENSION.length());
+        }
+        return stripExtension(name);
+    }
+
+    private boolean isIKFile(File file) {
+        if (file == null) {
+            return false;
+        }
+        String lower = file.getName().toLowerCase(Locale.ROOT);
+        return lower.endsWith(IKDefinition.FILE_EXTENSION)
+                || lower.endsWith(IKDefinition.LEGACY_FILE_EXTENSION);
     }
 
     public void loadCinematicsFromProject(String projectRootPath) {

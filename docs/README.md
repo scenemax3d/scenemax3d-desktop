@@ -19,6 +19,7 @@
 - [Animation](animation.md)
 - [Weapons Designer](weapons-designer.md)
 - [Throw Motion Designer](throw-motion.md)
+- [IK Designer](ik-designer.md)
 - [Movement & Rotation](movement-and-rotation.md)
 - [Variables & Data Types](variables-and-data-types.md)
 - [Arrays](arrays.md)

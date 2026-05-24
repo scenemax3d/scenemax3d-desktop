@@ -449,7 +449,7 @@ init_scale_attr : Scale Equals? logical_expression ;
 init_mass_attr : Mass Equals? logical_expression ;
 
 modify_variable : variable_name_and_mandatory_assignemt (',' variable_name_and_mandatory_assignemt)*;
-animation_controller_assignment : res_var_decl Equals Animation var_decl '.' animation_name ;
+animation_controller_assignment : res_var_decl Equals Animation var_decl '.' (anim_expr (Then anim_expr)*) ;
 event_statement : var_decl '.' Event '(' event_name (',' logical_expression)? ')' Equals do_block ;
 event_name : QUOTED_STRING | ID ;
 
@@ -625,8 +625,22 @@ action_operation
    | array_push # arrayPush
    | array_pop # arrayPop
    | array_clear #arrayClear
+   | ik_action # ikAction
    | weapon_action # weaponAction
    ;
+
+ik_action : ik_attach | ik_layer_property | ik_layer_play | ik_layer_stop ;
+ik_attach : var_decl '.' IK Equals (Empty | logical_expression) ;
+ik_layer_ref : var_decl '.' IK '.' var_decl ;
+ik_layer_property : ik_layer_ref '.' ik_layer_property_name Equals? ik_layer_property_value ;
+ik_layer_property_name : Target | Weight | Blend ;
+ik_layer_property_value : pos_entity | logical_expression ;
+ik_layer_play : ik_layer_ref '.' Play (Having ik_layer_options)? ;
+ik_layer_stop : ik_layer_ref '.' Stop (Having ik_layer_stop_options)? ;
+ik_layer_options : ik_layer_option (',' ik_layer_option)* ;
+ik_layer_stop_options : ik_layer_stop_option (',' ik_layer_stop_option)* ;
+ik_layer_option : Target Equals? pos_entity | Weight Equals? logical_expression | Blend Equals? logical_expression ;
+ik_layer_stop_option : Blend Equals? logical_expression ;
 
 weapon_action : weapon_equip | weapon_posture | weapon_detach | weapon_attach ;
 weapon_equip : var_decl '.' Weapon Equals (Empty | logical_expression) ;
@@ -958,6 +972,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Screen | Scene | Environment | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
     Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Colliders | Posture | Empty | Event |
+    Weight | Blend |
     Motion;
 
 Protected : 'Protected' | 'protected' ;
@@ -1111,6 +1126,9 @@ Frames : 'frames' | 'Frames' | 'frame' | 'Frame' ;
 Seconds : 'seconds' | 'Seconds' | 'second' | 'Second' ;
 Wait : 'Wait' | 'wait' ;
 Target : 'Target' | 'target' ;
+Weight : 'Weight' | 'weight' ;
+Blend : 'Blend' | 'blend' ;
+IK : 'IK' | 'ik' ;
 Using : 'Using' | 'using' ;
 At : 'at' | 'At' ;
 Speed : 'speed' | 'Speed' ;

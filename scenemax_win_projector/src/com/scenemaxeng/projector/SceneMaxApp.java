@@ -5,6 +5,7 @@ import com.jayfella.jme.vehicle.skid.SkidMarksState;
 import com.scenemax.effekseer.runtime.EffekseerNativeBridge;
 import com.jme3.bullet.collision.PhysicsCollisionObject;
 import com.scenemaxeng.common.types.*;
+import com.scenemaxeng.common.ik.IKDefinition;
 import com.scenemaxeng.compiler.*;
 import com.abware.scenemaxlang.parser.SceneMaxParser;
 import com.epaga.particles.Emitter;
@@ -100,6 +101,8 @@ import com.jme3.util.TangentBinormalGenerator;
 import com.jme3.water.WaterFilter;
 import com.scenemaxeng.projector.outliner.OutlineFilter;
 import com.scenemaxeng.projector.outliner.SelectObjectOutliner;
+import com.scenemaxeng.projector.ik.IKControlComponent;
+import com.scenemaxeng.projector.ik.IKRuntimeSystem;
 import com.simsilica.lemur.*;
 import com.simsilica.lemur.Button;
 import com.simsilica.lemur.Container;
@@ -259,6 +262,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private final Map<String, Boolean> pendingModelVisibility = new HashMap<>();
     private final Map<String, SwitchModeCommand> pendingModelSwitchModes = new HashMap<>();
     private WeaponSystem weaponSystem;
+    private IKRuntimeSystem ikRuntimeSystem;
 
     // UI system manager for .smui documents
     private com.scenemaxeng.common.ui.widget.UIManager uiManager;
@@ -539,6 +543,26 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             weaponSystem = new WeaponSystem(this);
         }
         return weaponSystem;
+    }
+
+    public IKRuntimeSystem getIKRuntimeSystem() {
+        if (ikRuntimeSystem == null) {
+            ikRuntimeSystem = new IKRuntimeSystem(this);
+        }
+        return ikRuntimeSystem;
+    }
+
+    public IKControlComponent applyIK(String modelVarName, String ikNameOrId) {
+        if (assetsMapping == null || modelVarName == null || ikNameOrId == null) {
+            return null;
+        }
+        AppModel model = getModels().get(modelVarName);
+        IKDefinition definition = assetsMapping.getIKDefinition(ikNameOrId);
+        return getIKRuntimeSystem().apply(modelVarName, model, definition);
+    }
+
+    public IKControlComponent ik(String modelVarName) {
+        return getIKRuntimeSystem().get(modelVarName);
     }
 
     public EquippedWeaponRuntime equipWeapon(String ownerVarName, String weaponNameOrId) {
@@ -885,6 +909,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         if (weaponSystem != null) {
             weaponSystem.clear();
         }
+        if (ikRuntimeSystem != null) {
+            ikRuntimeSystem.clear();
+        }
         clearWeaponRuntimeRegistries();
         this.clearThreads();
         groups.clear();
@@ -1027,6 +1054,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         resetTransientCameraRuntimeState();
         if (weaponSystem != null) {
             weaponSystem.clear();
+        }
+        if (ikRuntimeSystem != null) {
+            ikRuntimeSystem.clear();
         }
         clearWeaponRuntimeRegistries();
         this.clearThreads();
@@ -1491,6 +1521,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if(action instanceof ThrowMotionEventCommand) {
             ThrowMotionEventController ctl =
                     new ThrowMotionEventController(this, prg, scope, (ThrowMotionEventCommand) action);
+            scope.add(ctl);
+        } else if(action instanceof IKCommand) {
+            IKCommandController ctl = new IKCommandController(this, prg, scope, (IKCommand) action);
             scope.add(ctl);
         } else if(action instanceof ActionCommandAnimate) {
             ActionCommandAnimate cmdAnim = (ActionCommandAnimate)action;

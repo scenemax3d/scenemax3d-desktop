@@ -22,13 +22,22 @@ public class AnimationRuntimeEventMonitorController extends SceneMaxBaseControll
             return true;
         }
 
-        if (!runtimeController.matchesAnimation(event.animationName)) {
+        if (!runtimeController.hasAnimation(event.animationName)) {
             return true;
+        }
+
+        if (!runtimeController.matchesAnimation(event.animationName)) {
+            previousPercent = -1;
+            return runtimeController.isFinished();
         }
 
         double currentPercent = runtimeController.getCurrentPercent();
         if (currentPercent < 0) {
             return runtimeController.isFinished();
+        }
+
+        if (previousPercent > currentPercent) {
+            previousPercent = -1;
         }
 
         boolean crossed = previousPercent < event.percent && currentPercent >= event.percent;

@@ -21,6 +21,7 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
     private static final ImageIcon ICON_MATERIAL_DESIGNER = createMaterialDesignerIcon();
     private static final ImageIcon ICON_WEAPON_DESIGNER = createWeaponDesignerIcon();
     private static final ImageIcon ICON_THROW_MOTION_DESIGNER = createThrowMotionDesignerIcon();
+    private static final ImageIcon ICON_IK_DESIGNER = createIKDesignerIcon();
 
     private JLabel label;
 
@@ -59,6 +60,8 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
             label.setIcon(ICON_WEAPON_DESIGNER);
         } else if (name.endsWith(".smmotion")) {
             label.setIcon(ICON_THROW_MOTION_DESIGNER);
+        } else if (name.endsWith(".smik") || name.endsWith(".ik.json")) {
+            label.setIcon(ICON_IK_DESIGNER);
         } else if (name.endsWith(".cs")) {
             label.setIcon(ICON_CSHARP);
         } else if (name.equals("main")) {
@@ -98,6 +101,26 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
         g.drawLine(13, 9, 20, 6);
         g.drawLine(17, 3, 20, 6);
         g.drawLine(18, 10, 20, 6);
+        g.dispose();
+        return new ImageIcon(img);
+    }
+
+    private static ImageIcon createIKDesignerIcon() {
+        BufferedImage img = new BufferedImage(24, 24, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.setColor(new Color(118, 220, 138));
+        g.fillOval(4, 5, 4, 4);
+        g.fillOval(10, 11, 4, 4);
+        g.fillOval(16, 17, 4, 4);
+        g.setColor(new Color(230, 238, 244));
+        g.drawLine(8, 8, 11, 12);
+        g.drawLine(14, 14, 17, 18);
+        g.setColor(new Color(244, 204, 80));
+        g.drawOval(3, 4, 6, 6);
+        g.setColor(new Color(90, 170, 255));
+        g.drawOval(15, 16, 6, 6);
         g.dispose();
         return new ImageIcon(img);
     }

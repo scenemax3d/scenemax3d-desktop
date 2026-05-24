@@ -1,6 +1,7 @@
 package com.scenemaxeng.projector;
 
 import com.scenemaxeng.compiler.ActionCommandAnimate;
+import com.scenemaxeng.compiler.ActionStatementBase;
 import com.scenemaxeng.compiler.DoBlockCommand;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.VariableDef;
@@ -17,6 +18,7 @@ public class AnimationRuntimeController {
     private final VariableDef sourceVarDef;
     private final String animationName;
     private final int varLineNum;
+    private final List<ActionCommandAnimate> animationCommands = new ArrayList<>();
     private final List<AnimationRuntimeEvent> events = new ArrayList<>();
     private AnimateCompositeController runningController;
     private ModelAnimateController runningAnimationController;
@@ -24,6 +26,13 @@ public class AnimationRuntimeController {
     public AnimationRuntimeController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope,
                                       String sourceVar, VariableDef sourceVarDef,
                                       String animationName, int varLineNum) {
+        this(app, prg, scope, sourceVar, sourceVarDef, animationName, varLineNum, null);
+    }
+
+    public AnimationRuntimeController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope,
+                                      String sourceVar, VariableDef sourceVarDef,
+                                      String animationName, int varLineNum,
+                                      List<ActionStatementBase> animationStatements) {
         this.app = app;
         this.prg = prg;
         this.scope = scope;
@@ -31,6 +40,14 @@ public class AnimationRuntimeController {
         this.sourceVarDef = sourceVarDef;
         this.animationName = animationName;
         this.varLineNum = varLineNum;
+
+        if (animationStatements != null) {
+            for (ActionStatementBase statement : animationStatements) {
+                if (statement instanceof ActionCommandAnimate) {
+                    animationCommands.add((ActionCommandAnimate) statement);
+                }
+            }
+        }
     }
 
     public void run() {
@@ -41,15 +58,15 @@ public class AnimationRuntimeController {
         sequenceCommand.varDef = sourceVarDef;
         sequenceCommand.varLineNum = varLineNum;
 
-        ActionCommandAnimate animationCommand = new ActionCommandAnimate();
-        animationCommand.targetVar = sourceVar;
-        animationCommand.varDef = sourceVarDef;
-        animationCommand.animationName = animationName;
-        animationCommand.varLineNum = varLineNum;
-
         runningController = new AnimateCompositeController(sequenceCommand, scope);
-        runningAnimationController = new ModelAnimateController(app, prg, animationCommand, scope);
-        runningController.add(runningAnimationController);
+        for (ActionCommandAnimate animationCommand : createAnimationCommands()) {
+            ModelAnimateController animationController =
+                    new ModelAnimateController(app, prg, animationCommand, scope);
+            if (runningAnimationController == null) {
+                runningAnimationController = animationController;
+            }
+            runningController.add(animationController);
+        }
         runningController.setUIProxy(app);
         runningController.init();
 
@@ -97,26 +114,85 @@ public class AnimationRuntimeController {
         if (runningAnimationController == null) {
             return -1;
         }
-        AppModelAnimationController controller = runningAnimationController.getAnimationController();
+        AppModelAnimationController controller = getActiveAnimationController().getAnimationController();
         return controller == null ? -1 : controller.getCurrentPercent();
     }
 
     public boolean isFinished() {
-        if (runningAnimationController == null) {
+        ModelAnimateController activeController = getActiveAnimationController();
+        if (activeController == null) {
             return true;
         }
-        AppModelAnimationController controller = runningAnimationController.getAnimationController();
+        AppModelAnimationController controller = activeController.getAnimationController();
         return controller != null && controller.animationFinished;
     }
 
     public boolean matchesAnimation(String name) {
-        return animationName.equalsIgnoreCase(name);
+        ModelAnimateController activeController = getActiveAnimationController();
+        return activeController != null
+                && activeController.getAnimationName() != null
+                && activeController.getAnimationName().equalsIgnoreCase(name);
+    }
+
+    public boolean hasAnimation(String name) {
+        if (name == null) {
+            return false;
+        }
+
+        if (!animationCommands.isEmpty()) {
+            for (ActionCommandAnimate animationCommand : animationCommands) {
+                if (animationCommand.animationName != null
+                        && animationCommand.animationName.equalsIgnoreCase(name)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        return animationName != null && animationName.equalsIgnoreCase(name);
     }
 
     private void startEventMonitor(AnimationRuntimeEvent event) {
         AnimationRuntimeEventMonitorController monitor =
                 new AnimationRuntimeEventMonitorController(app, scope, this, event);
         app.registerController(monitor);
+    }
+
+    private List<ActionCommandAnimate> createAnimationCommands() {
+        List<ActionCommandAnimate> commands = new ArrayList<>();
+        if (animationCommands.isEmpty()) {
+            ActionCommandAnimate animationCommand = new ActionCommandAnimate();
+            animationCommand.animationName = animationName;
+            animationCommand.targetVar = sourceVar;
+            animationCommand.varDef = sourceVarDef;
+            animationCommand.varLineNum = varLineNum;
+            commands.add(animationCommand);
+            return commands;
+        }
+
+        for (ActionCommandAnimate sourceCommand : animationCommands) {
+            ActionCommandAnimate animationCommand = new ActionCommandAnimate();
+            animationCommand.animationName = sourceCommand.animationName;
+            animationCommand.targetVar = sourceVar;
+            animationCommand.varDef = sourceVarDef;
+            animationCommand.varLineNum = sourceCommand.varLineNum;
+            animationCommand.speedExpr = sourceCommand.speedExpr;
+            animationCommand.goExpr = sourceCommand.goExpr;
+            animationCommand.loop = sourceCommand.loop;
+            animationCommand.isProtected = sourceCommand.isProtected;
+            commands.add(animationCommand);
+        }
+        return commands;
+    }
+
+    private ModelAnimateController getActiveAnimationController() {
+        if (runningController != null) {
+            SceneMaxBaseController activeController = runningController.getActiveController();
+            if (activeController instanceof ModelAnimateController) {
+                return (ModelAnimateController) activeController;
+            }
+        }
+        return runningAnimationController;
     }
 
     static class AnimationRuntimeEvent {
