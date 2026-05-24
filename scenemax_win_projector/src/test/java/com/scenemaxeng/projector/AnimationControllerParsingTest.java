@@ -1,5 +1,6 @@
 package com.scenemaxeng.projector;
 
+import com.scenemaxeng.compiler.ActionCommandAnimate;
 import com.scenemaxeng.compiler.AnimationControllerActionCommand;
 import com.scenemaxeng.compiler.AnimationControllerAssignmentCommand;
 import com.scenemaxeng.compiler.AnimationControllerEventCommand;
@@ -69,6 +70,29 @@ public class AnimationControllerParsingTest {
     }
 
     @Test
+    public void parsesAnimationControllerAssignmentSequenceAndSpeed() {
+        String code = "player1=>fighter\n"
+                + "anim = animation player1.zombie_punch1 at speed of 0.1 then Idle2";
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(code);
+
+        assertTrue(prg.syntaxErrors.toString(), prg.syntaxErrors.isEmpty());
+        assertTrue(prg.actions.get(1) instanceof AnimationControllerAssignmentCommand);
+
+        AnimationControllerAssignmentCommand assignment =
+                (AnimationControllerAssignmentCommand) prg.actions.get(1);
+        assertEquals("zombie_punch1", assignment.animationName);
+        assertEquals(2, assignment.statements.size());
+
+        ActionCommandAnimate punch = (ActionCommandAnimate) assignment.statements.get(0);
+        ActionCommandAnimate idle = (ActionCommandAnimate) assignment.statements.get(1);
+        assertEquals("player1", punch.targetVar);
+        assertEquals("zombie_punch1", punch.animationName);
+        assertNotNull(punch.speedExpr);
+        assertEquals("Idle2", idle.animationName);
+    }
+
+    @Test
     public void animationControllerRunBlocksUntilRuntimeAnimationFinishes() {
         SceneMaxScope scope = new SceneMaxScope();
         VariableDef varDef = new VariableDef();
@@ -107,6 +131,42 @@ public class AnimationControllerParsingTest {
         java.lang.reflect.Field field = AnimationRuntimeController.class.getDeclaredField("runningController");
         field.setAccessible(true);
         assertTrue(field.get(runtimeController) instanceof AnimateCompositeController);
+    }
+
+    @Test
+    public void animationControllerRuntimeUsesSequenceCommands() throws Exception {
+        String code = "player1=>fighter\n"
+                + "anim = animation player1.zombie_punch1 at speed of 0.1 then Idle2";
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(code);
+        AnimationControllerAssignmentCommand assignment =
+                (AnimationControllerAssignmentCommand) prg.actions.get(1);
+        AnimationRuntimeController runtimeController = new AnimationRuntimeController(
+                null,
+                prg,
+                new SceneMaxScope(),
+                assignment.sourceVar,
+                assignment.sourceVarDef,
+                assignment.animationName,
+                assignment.varLineNum,
+                assignment.statements);
+
+        runtimeController.run();
+
+        java.lang.reflect.Field runningField =
+                AnimationRuntimeController.class.getDeclaredField("runningController");
+        runningField.setAccessible(true);
+        AnimateCompositeController composite =
+                (AnimateCompositeController) runningField.get(runtimeController);
+
+        java.lang.reflect.Field controllersField =
+                CompositeController.class.getDeclaredField("_controllers");
+        controllersField.setAccessible(true);
+        java.util.ArrayList<?> controllers = (java.util.ArrayList<?>) controllersField.get(composite);
+
+        assertEquals(2, controllers.size());
+        assertTrue(controllers.get(0) instanceof ModelAnimateController);
+        assertTrue(controllers.get(1) instanceof ModelAnimateController);
     }
 
     @Test

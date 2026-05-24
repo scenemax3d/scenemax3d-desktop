@@ -38,6 +38,10 @@ public class ResourceSetup {
     public SceneMaxEngine engine;
     public boolean isVehicle;
     public boolean isStatic;
+    public boolean hasSkeleton;
+    public boolean hasArmature;
+    public boolean ikReady;
+    public boolean ikCompatibilityScanned;
     public String horn;
     public float localScale=1;
 
@@ -64,7 +68,20 @@ public class ResourceSetup {
     }
 
     public JSONObject toJson() {
-        JSONObject j = new JSONObject(jsonBUff);
+        JSONObject j = jsonBUff == null || jsonBUff.isBlank() ? new JSONObject() : new JSONObject(jsonBUff);
+        j.put("name", name);
+        j.put("path", path);
+        j.put("scaleX", scaleX);
+        j.put("scaleY", scaleY);
+        j.put("scaleZ", scaleZ);
+        j.put("transX", localTranslationX);
+        j.put("transY", localTranslationY);
+        j.put("transZ", localTranslationZ);
+        j.put("rotateY", rotateY);
+        j.put("hasSkeleton", hasSkeleton);
+        j.put("hasArmature", hasArmature);
+        j.put("ikReady", ikReady);
+        j.put("ikCompatibilityScanned", ikCompatibilityScanned);
 
         return j;
     }

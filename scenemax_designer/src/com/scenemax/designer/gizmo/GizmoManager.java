@@ -13,7 +13,7 @@ import com.scenemax.designer.selection.SelectionManager;
 
 /**
  * Manages gizmo display and drag interaction for the selected entity.
- * Supports both TRANSLATE and ROTATE modes.
+ * Supports TRANSLATE, ROTATE and SCALE modes.
  *
  * Picking uses screen-space distance to axis arrows or ring circles.
  *
@@ -52,6 +52,12 @@ public class GizmoManager implements SelectionManager.SelectionListener {
     private Vector3f rotateCenter = null;
     private float rotateStartAngle;
     private Quaternion entityStartRotation;
+
+    // Scale drag state
+    private Plane scalePlane = null;
+    private Vector3f scaleOrigin = null;
+    private float scaleStartT;
+    private Vector3f entityStartScale;
 
     /** Screen-space pixel threshold for picking */
     private static final float PICK_THRESHOLD_PX = 18f;
@@ -105,7 +111,7 @@ public class GizmoManager implements SelectionManager.SelectionListener {
             rotateGizmo.setCullHint(Node.CullHint.Always);
             return;
         }
-        if (mode == GizmoMode.TRANSLATE) {
+        if (mode == GizmoMode.TRANSLATE || mode == GizmoMode.SCALE) {
             translateGizmo.setCullHint(Node.CullHint.Never);
             rotateGizmo.setCullHint(Node.CullHint.Always);
         } else if (mode == GizmoMode.ROTATE) {
@@ -133,6 +139,8 @@ public class GizmoManager implements SelectionManager.SelectionListener {
             return tryStartTranslateDrag(cam, screenPos);
         } else if (mode == GizmoMode.ROTATE) {
             return tryStartRotateDrag(cam, screenPos);
+        } else if (mode == GizmoMode.SCALE) {
+            return tryStartScaleDrag(cam, screenPos);
         }
         return false;
     }
@@ -279,6 +287,77 @@ public class GizmoManager implements SelectionManager.SelectionListener {
         attachedEntity.getSceneNode().setLocalRotation(newRot);
     }
 
+    // =====================================================================
+    //  SCALE DRAG
+    // =====================================================================
+
+    private boolean tryStartScaleDrag(Camera cam, Vector2f screenPos) {
+        Vector3f origin3D = translateGizmo.getWorldTranslation();
+        Vector3f originScreen = cam.getScreenCoordinates(origin3D);
+
+        String bestAxis = null;
+        float bestDist = Float.MAX_VALUE;
+
+        for (String axis : new String[]{"X", "Y", "Z"}) {
+            Vector3f endpoint3D = translateGizmo.getAxisEndpoint(axis);
+            Vector3f endScreen = cam.getScreenCoordinates(endpoint3D);
+
+            float dist = distPointToSegment2D(
+                    screenPos.x, screenPos.y,
+                    originScreen.x, originScreen.y,
+                    endScreen.x, endScreen.y);
+
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestAxis = axis;
+            }
+        }
+
+        if (bestAxis != null && bestDist < PICK_THRESHOLD_PX) {
+            dragging = true;
+            dragAxis = bestAxis;
+            dragAxisDir = getAxisDirection(bestAxis);
+            entityStartScale = attachedEntity.getSceneNode().getLocalScale().clone();
+            scaleOrigin = origin3D.clone();
+            scalePlane = buildTranslateDragPlane(scaleOrigin, dragAxisDir, cam);
+            scaleStartT = computeScaleAxisT(cam, screenPos);
+            return true;
+        }
+        return false;
+    }
+
+    private void updateScaleDrag(Camera cam, Vector2f screenPos) {
+        float currentT = computeScaleAxisT(cam, screenPos);
+        float deltaT = currentT - scaleStartT;
+        float factor = Math.max(0.05f, 1f + deltaT * 0.25f);
+        Vector3f newScale = entityStartScale.clone();
+        if ("X".equals(dragAxis)) {
+            newScale.x = Math.max(0.001f, entityStartScale.x * factor);
+        } else if ("Y".equals(dragAxis)) {
+            newScale.y = Math.max(0.001f, entityStartScale.y * factor);
+        } else if ("Z".equals(dragAxis)) {
+            newScale.z = Math.max(0.001f, entityStartScale.z * factor);
+        }
+        attachedEntity.getSceneNode().setLocalScale(newScale);
+        updateGizmoPosition();
+    }
+
+    private float computeScaleAxisT(Camera cam, Vector2f screenPos) {
+        Vector3f worldNear = cam.getWorldCoordinates(screenPos, 0f).clone();
+        Vector3f worldFar = cam.getWorldCoordinates(screenPos, 1f).clone();
+        Vector3f rayDir = worldFar.subtract(worldNear).normalizeLocal();
+
+        float denom = scalePlane.getNormal().dot(rayDir);
+        if (Math.abs(denom) < 1e-8f) {
+            return scaleStartT;
+        }
+
+        float dist = (scalePlane.getConstant() - scalePlane.getNormal().dot(worldNear)) / denom;
+        Vector3f hitPoint = worldNear.add(rayDir.mult(dist));
+        Vector3f offset = hitPoint.subtract(scaleOrigin);
+        return offset.dot(dragAxisDir);
+    }
+
     /**
      * Computes the angle of the mouse ray intersection on the rotation plane,
      * measured from the rotation center.
@@ -325,6 +404,8 @@ public class GizmoManager implements SelectionManager.SelectionListener {
             updateTranslateDrag(cam, screenPos);
         } else if (mode == GizmoMode.ROTATE) {
             updateRotateDrag(cam, screenPos);
+        } else if (mode == GizmoMode.SCALE) {
+            updateScaleDrag(cam, screenPos);
         }
     }
 
@@ -339,6 +420,9 @@ public class GizmoManager implements SelectionManager.SelectionListener {
         rotatePlane = null;
         rotateCenter = null;
         entityStartRotation = null;
+        scalePlane = null;
+        scaleOrigin = null;
+        entityStartScale = null;
 
         // Notify that drag finished so properties panel can update
         if (dragEndCallback != null && entity != null) {

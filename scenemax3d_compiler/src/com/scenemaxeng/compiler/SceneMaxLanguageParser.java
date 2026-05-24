@@ -2144,18 +2144,33 @@ public class SceneMaxLanguageParser implements IParser {
                 }
                 controllerVarDef.varType = VariableDef.VAR_TYPE_ANIMATION_CONTROLLER;
 
-                String anim = assignment.animation_name().getText();
-                if (anim.startsWith("\"") && anim.length() > 2) {
-                    anim = anim.substring(1, anim.length() - 1);
-                }
-
                 AnimationControllerAssignmentCommand cmd = new AnimationControllerAssignmentCommand();
                 cmd.targetVar = controllerVar;
                 cmd.varDef = controllerVarDef;
                 cmd.sourceVar = sourceVar;
                 cmd.sourceVarDef = prg.getVar(sourceVar);
-                cmd.animationName = anim;
                 cmd.varLineNum = assignment.res_var_decl().getStart().getLine();
+
+                for (SceneMaxParser.Anim_exprContext animExpr : assignment.anim_expr()) {
+                    String anim = animExpr.animation_name().getText();
+                    if (anim.startsWith("\"") && anim.length() > 2) {
+                        anim = anim.substring(1, anim.length() - 1);
+                    }
+
+                    if (cmd.animationName == null) {
+                        cmd.animationName = anim;
+                    }
+
+                    ActionCommandAnimate animCmd = new ActionCommandAnimate();
+                    animCmd.animationName = anim;
+                    animCmd.targetVar = sourceVar;
+                    animCmd.varDef = cmd.sourceVarDef;
+                    animCmd.varLineNum = cmd.varLineNum;
+                    animCmd.speedExpr = animExpr.speed_of_expr() == null
+                            ? null
+                            : animExpr.speed_of_expr().logical_expression();
+                    cmd.statements.add(animCmd);
+                }
                 return cmd;
             }
 
@@ -2937,6 +2952,73 @@ public class SceneMaxLanguageParser implements IParser {
                 cmd.action = ArrayCommand.ArrayAction.Clear;
                 cmd.varName = ctx.array_clear().var_decl().getText();
 
+                return cmd;
+            }
+
+            @Override
+            public ActionStatementBase visitIkAction(SceneMaxParser.IkActionContext ctx) {
+                IKCommand cmd = new IKCommand();
+                SceneMaxParser.Ik_actionContext ik = ctx.ik_action();
+                if (ik.ik_attach() != null) {
+                    SceneMaxParser.Ik_attachContext attach = ik.ik_attach();
+                    cmd.ownerVarName = attach.var_decl().getText();
+                    if (attach.Empty() != null) {
+                        cmd.action = IKCommand.ACTION_REMOVE;
+                    } else {
+                        cmd.action = IKCommand.ACTION_APPLY;
+                        cmd.ikNameExpr = attach.logical_expression();
+                    }
+                } else if (ik.ik_layer_property() != null) {
+                    SceneMaxParser.Ik_layer_propertyContext property = ik.ik_layer_property();
+                    fillIKLayerRef(cmd, property.ik_layer_ref());
+                    SceneMaxParser.Ik_layer_property_nameContext propertyName = property.ik_layer_property_name();
+                    if (propertyName.Target() != null) {
+                        cmd.action = IKCommand.ACTION_SET_TARGET;
+                        cmd.targetEntityPos = parsePosEntity(property.ik_layer_property_value().pos_entity());
+                    } else if (propertyName.Weight() != null) {
+                        cmd.action = IKCommand.ACTION_SET_WEIGHT;
+                        cmd.weightExpr = property.ik_layer_property_value().logical_expression();
+                    } else if (propertyName.Blend() != null) {
+                        cmd.action = IKCommand.ACTION_SET_BLEND;
+                        cmd.blendExpr = property.ik_layer_property_value().logical_expression();
+                    }
+                } else if (ik.ik_layer_play() != null) {
+                    SceneMaxParser.Ik_layer_playContext play = ik.ik_layer_play();
+                    cmd.action = IKCommand.ACTION_PLAY;
+                    fillIKLayerRef(cmd, play.ik_layer_ref());
+                    if (play.ik_layer_options() != null) {
+                        for (SceneMaxParser.Ik_layer_optionContext option : play.ik_layer_options().ik_layer_option()) {
+                            if (option.Target() != null) {
+                                cmd.targetEntityPos = parsePosEntity(option.pos_entity());
+                            } else if (option.Weight() != null) {
+                                cmd.weightExpr = option.logical_expression();
+                            } else if (option.Blend() != null) {
+                                cmd.blendExpr = option.logical_expression();
+                            }
+                        }
+                    }
+                } else if (ik.ik_layer_stop() != null) {
+                    SceneMaxParser.Ik_layer_stopContext stop = ik.ik_layer_stop();
+                    cmd.action = IKCommand.ACTION_STOP;
+                    fillIKLayerRef(cmd, stop.ik_layer_ref());
+                    if (stop.ik_layer_stop_options() != null) {
+                        for (SceneMaxParser.Ik_layer_stop_optionContext option : stop.ik_layer_stop_options().ik_layer_stop_option()) {
+                            if (option.Blend() != null) {
+                                cmd.blendExpr = option.logical_expression();
+                            }
+                        }
+                    }
+                }
+
+                VariableDef owner = prg.getVar(cmd.ownerVarName);
+                if (owner == null) {
+                    prg.syntaxErrors.add(_sourceFileName + ": line " + ctx.start.getLine()
+                            + ", IK owner '" + cmd.ownerVarName + "' not exists");
+                } else {
+                    cmd.varDef = owner;
+                    cmd.targetVar = cmd.ownerVarName;
+                    cmd.varLineNum = ctx.start.getLine();
+                }
                 return cmd;
             }
 
@@ -4205,6 +4287,23 @@ public class SceneMaxLanguageParser implements IParser {
                 pos.entityJointName = pos.entityJointName.substring(1, pos.entityJointName.length() - 1);
             }
         }
+    }
+
+    private EntityPos parsePosEntity(SceneMaxParser.Pos_entityContext entityPos) {
+        if (entityPos == null) {
+            return null;
+        }
+        EntityPos pos = new EntityPos();
+        setEntityPos(pos, entityPos);
+        return pos;
+    }
+
+    private void fillIKLayerRef(IKCommand cmd, SceneMaxParser.Ik_layer_refContext ref) {
+        if (ref == null) {
+            return;
+        }
+        cmd.ownerVarName = ref.var_decl(0).getText();
+        cmd.layerId = ref.var_decl(1).getText();
     }
 
     private EntityPos parseCameraTargetRef(SceneMaxParser.Camera_target_refContext targetRef) {

@@ -107,4 +107,8 @@ public class ModelAnimateController extends SceneMaxBaseController {
         return controller;
     }
 
+    public String getAnimationName() {
+        return cmdAnim.animationName;
+    }
+
 }

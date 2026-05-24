@@ -27,7 +27,8 @@ public class AnimationControllerAssignmentController extends SceneMaxBaseControl
                 assignment.sourceVar,
                 assignment.sourceVarDef,
                 assignment.animationName,
-                assignment.varLineNum);
+                assignment.varLineNum,
+                assignment.statements);
         var.varType = VariableDef.VAR_TYPE_ANIMATION_CONTROLLER;
         return true;
     }

@@ -14,6 +14,7 @@ import com.scenemax.designer.effekseer.EffekseerEffectDocument;
 import com.scenemax.designer.effekseer.EffekseerEffectDesignerPanel;
 import com.scenemax.designer.effekseer.EffekseerImportResult;
 import com.scenemax.designer.effekseer.EffekseerImporter;
+import com.scenemax.designer.ik.IKDesignerPanel;
 import com.scenemax.designer.material.MaterialDesignerPanel;
 import com.scenemax.designer.material.MaterialDocument;
 import com.scenemax.designer.material.MaterialTemplatePreset;
@@ -42,6 +43,7 @@ import com.scenemax.desktop.ai.mcp.SceneMaxMcpServer;
 import com.scenemax.desktop.plugins.IdePluginHostContext;
 import com.scenemaxeng.common.ui.model.UIDocument;
 import com.scenemaxeng.common.ui.model.UIWidgetDef;
+import com.scenemaxeng.common.ik.IKDefinition;
 import com.scenemaxeng.common.motion.ThrowMotionDefinition;
 import com.scenemaxeng.compiler.ApplyMacroResults;
 import com.scenemaxeng.compiler.MacroFilter;
@@ -295,6 +297,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         || active.isMaterialDesignerTab
                         || active.isWeaponDesignerTab
                         || active.isThrowMotionDesignerTab
+                        || active.isIKDesignerTab
                         || active.isAnimationImportTab;
                 textArea.setEnabled(!visualDesignerTab);
                 textAreaRTL.setEnabled(!visualDesignerTab);
@@ -583,6 +586,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     createNewWeaponDocument(getSelectedScriptsFolder().getAbsolutePath());
                 } else if (cmd.equals("create_throw_motion_document")) {
                     createNewThrowMotionDocument(getProjectFilesRootFolder().getAbsolutePath());
+                } else if (cmd.equals("create_ik_document")) {
+                    createNewIKDocument(getSelectedScriptsFolder().getAbsolutePath());
                 } else if (cmd.equals("font_generator")) {
                     FontGeneratorDialog dlg = new FontGeneratorDialog(MainApp.this);
                     dlg.setLocationRelativeTo(MainApp.this);
@@ -1534,6 +1539,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     createNewWeaponDocument(filePath);
                 } else if (cmd.equals("new_throw_motion_document")) {
                     createNewThrowMotionDocument(filePath);
+                } else if (cmd.equals("new_ik_document")) {
+                    createNewIKDocument(filePath);
                 } else if (cmd.equals("new_environment_shader_document")) {
                     createNewEnvironmentShaderDocument(filePath);
                 } else if (cmd.equals("clean_backup_files")) {
@@ -1589,10 +1596,11 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         boolean isMaterialDesigner = f.getName().toLowerCase().endsWith(".mat");
                         boolean isWeaponDesigner = f.getName().toLowerCase().endsWith(WeaponDefinition.FILE_EXTENSION);
                         boolean isThrowMotionDesigner = f.getName().toLowerCase().endsWith(ThrowMotionDefinition.FILE_EXTENSION);
+                        boolean isIKDesigner = isIKDesignerFile(f.getName());
                         editorTabPanel.closeTabByPath(filePath,
                                 isDesigner || isUIDesigner || isEffekseerDesigner || isShaderDesigner
                                         || isEnvironmentShaderDesigner || isMaterialDesigner || isWeaponDesigner
-                                        || isThrowMotionDesigner);
+                                        || isThrowMotionDesigner || isIKDesigner);
 
                         // If this is a .smdesign file, also delete its companion .code, _init.code
                         // and _end.code files and clean up any DB references (open_tabs)
@@ -1811,6 +1819,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         addScriptsTreePopupMenuItem("Create Material Document", "new_material_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Weapon", "new_weapon_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Throw Motion", "new_throw_motion_document", popup, popupActionListener, true, false, file);
+        addScriptsTreePopupMenuItem("Create IK Asset", "new_ik_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Shader Document", "new_shader_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Environment Shader Document", "new_environment_shader_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Sub Folder...", "create_sub_folder", popup, popupActionListener, true, false, file);
@@ -2323,7 +2332,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 || lowerPath.endsWith(".smenvshader")
                 || lowerPath.endsWith(".mat")
                 || lowerPath.endsWith(WeaponDefinition.FILE_EXTENSION)
-                || lowerPath.endsWith(ThrowMotionDefinition.FILE_EXTENSION);
+                || lowerPath.endsWith(ThrowMotionDefinition.FILE_EXTENSION)
+                || isIKDesignerFile(lowerPath);
     }
 
     private boolean isAssetSensitiveDocument(File file) {
@@ -2920,6 +2930,75 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         openLastTreeNode();
     }
 
+    private void createNewIKDocument(String path) {
+        String docName = (String) JOptionPane.showInputDialog(
+                null,
+                "Type new IK asset name",
+                "IK Asset Name",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                null,
+                "");
+
+        if (docName == null || docName.trim().length() == 0) {
+            return;
+        }
+
+        String[] templates = {
+                IKLayerDefinitionLabel.TWO_BONE,
+                IKLayerDefinitionLabel.LOOK_AT,
+                IKLayerDefinitionLabel.FOOT
+        };
+        String selected = (String) JOptionPane.showInputDialog(
+                null,
+                "Choose a starter template",
+                "IK Template",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                templates,
+                templates[0]
+        );
+        String solver = IKLayerDefinitionLabel.toSolverType(selected);
+
+        IKDefinition definition = IKDefinition.createTemplate(docName.trim(), solver);
+        String fileName = definition.getId() + IKDefinition.FILE_EXTENSION;
+        File ikFolder = resolveIKDocumentFolder(new File(path));
+        File f = new File(ikFolder, fileName);
+        try {
+            definition.save(f);
+        } catch (IOException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(null, "Error creating IK asset: " + e.getMessage(),
+                    "IK Asset Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        File parentDir = f.getParentFile();
+        saveSelectedTreeNodePosition(parentDir.getPath(), fileName);
+        loadScriptsFolder();
+        openLastTreeNode();
+    }
+
+    private File resolveIKDocumentFolder(File selectedFolder) {
+        return resolveDocumentCreationFolder(selectedFolder);
+    }
+
+    private static final class IKLayerDefinitionLabel {
+        static final String TWO_BONE = "Two-Bone IK";
+        static final String LOOK_AT = "Look-At IK";
+        static final String FOOT = "Foot IK";
+
+        static String toSolverType(String label) {
+            if (LOOK_AT.equals(label)) {
+                return com.scenemaxeng.common.ik.IKLayerDefinition.SOLVER_LOOK_AT;
+            }
+            if (FOOT.equals(label)) {
+                return com.scenemaxeng.common.ik.IKLayerDefinition.SOLVER_FOOT;
+            }
+            return com.scenemaxeng.common.ik.IKLayerDefinition.SOLVER_TWO_BONE;
+        }
+    }
+
     private File resolveDocumentCreationFolder(File selectedFolder) {
         if (selectedFolder != null && selectedFolder.isFile()) {
             File parent = selectedFolder.getParentFile();
@@ -3101,6 +3180,28 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         });
 
         editorTabPanel.openThrowMotionDesignerFile(f.getAbsolutePath(), motionPanel);
+
+        lastSelectedFilePath = f.getAbsolutePath();
+        lastSelectedNodeIsFile = true;
+        btnRunScript.setEnabled(false);
+
+        saveSelectedTreeNodePosition(f.getParentFile().getPath(), f.getName());
+    }
+
+    private void openIKDesignerDocument(File f) {
+        if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
+            editorTabPanel.openIKDesignerFile(f.getAbsolutePath(), null);
+            return;
+        }
+
+        IKDesignerPanel ikPanel = new IKDesignerPanel(f);
+        ikPanel.setOnDirtyCallback(() -> editorTabPanel.markActiveTabDirty());
+        ikPanel.setOnSavedCallback(() -> {
+            editorTabPanel.markTabClean(f.getAbsolutePath());
+            refreshAssetsMenu();
+        });
+
+        editorTabPanel.openIKDesignerFile(f.getAbsolutePath(), ikPanel);
 
         lastSelectedFilePath = f.getAbsolutePath();
         lastSelectedNodeIsFile = true;
@@ -3560,6 +3661,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                             openWeaponDesignerDocument(f);
                         } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(ThrowMotionDefinition.FILE_EXTENSION)) {
                             openThrowMotionDesignerDocument(f);
+                        } else if (isIKDesignerFile(f.getName())) {
+                            openIKDesignerDocument(f);
                         } else {
                             openFileInTab(f);
                         }
@@ -3760,6 +3863,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             openWeaponDesignerDocument(f);
         } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(ThrowMotionDefinition.FILE_EXTENSION)) {
             openThrowMotionDesignerDocument(f);
+        } else if (isIKDesignerFile(f.getName())) {
+            openIKDesignerDocument(f);
         } else {
             openFileInTab(f);
         }
@@ -3898,6 +4003,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     openWeaponDesignerDocument(f);
                 } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(ThrowMotionDefinition.FILE_EXTENSION)) {
                     openThrowMotionDesignerDocument(f);
+                } else if (isIKDesignerFile(f.getName())) {
+                    openIKDesignerDocument(f);
                 } else {
                     openFileInTab(f);
                 }
@@ -3950,7 +4057,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
             if (treeNode.getRoot() == treeNode
                     && fileEntry.isFile()
-                    && !fileEntry.getName().toLowerCase(Locale.ROOT).endsWith(ThrowMotionDefinition.FILE_EXTENSION)) {
+                    && !fileEntry.getName().toLowerCase(Locale.ROOT).endsWith(ThrowMotionDefinition.FILE_EXTENSION)
+                    && !isIKDesignerFile(fileEntry.getName())) {
                 continue;
             }
 
@@ -4561,8 +4669,18 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 || name.endsWith(".mat")
                 || name.endsWith(WeaponDefinition.FILE_EXTENSION)
                 || name.endsWith(ThrowMotionDefinition.FILE_EXTENSION)
+                || isIKDesignerFile(name)
                 || name.endsWith(".json")
                 || name.endsWith(".cs"));
+    }
+
+    private static boolean isIKDesignerFile(String name) {
+        if (name == null) {
+            return false;
+        }
+        String lower = name.toLowerCase(Locale.ROOT);
+        return lower.endsWith(IKDefinition.FILE_EXTENSION)
+                || lower.endsWith(IKDefinition.LEGACY_FILE_EXTENSION);
     }
 
     private void deleteCurrentScriptFile() {
