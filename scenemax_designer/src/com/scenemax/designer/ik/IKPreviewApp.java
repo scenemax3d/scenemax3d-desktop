@@ -53,6 +53,7 @@ import com.scenemaxeng.projector.ik.FootIKSolver;
 import com.scenemaxeng.projector.ik.IKContext;
 import com.scenemaxeng.projector.ik.IKSolver;
 import com.scenemaxeng.projector.ik.LookAtIKSolver;
+import com.scenemaxeng.projector.ik.ThreeBoneIKSolver;
 import com.scenemaxeng.projector.ik.TwoBoneIKSolver;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -835,6 +836,11 @@ class IKPreviewApp extends SceneMaxApp {
             requirePreviewField(missing, "Root", layer.getRootJoint());
             requirePreviewField(missing, "Middle", layer.getMiddleJoint());
             requirePreviewField(missing, "End", layer.getEndJoint());
+        } else if (IKLayerDefinition.SOLVER_THREE_BONE.equalsIgnoreCase(solverType)) {
+            requirePreviewField(missing, "Root", layer.getRootJoint());
+            requirePreviewField(missing, "Middle", layer.getMiddleJoint());
+            requirePreviewField(missing, "Middle 2", layer.getSecondMiddleJoint());
+            requirePreviewField(missing, "End", layer.getEndJoint());
         } else if (IKLayerDefinition.SOLVER_FABRIK.equalsIgnoreCase(solverType)) {
             requirePreviewField(missing, "Start", layer.getStartJoint());
             requirePreviewField(missing, "End", layer.getEndJoint());
@@ -860,6 +866,9 @@ class IKPreviewApp extends SceneMaxApp {
         }
         if (IKLayerDefinition.SOLVER_FABRIK.equalsIgnoreCase(solverType)) {
             return new FABRIKIKSolver();
+        }
+        if (IKLayerDefinition.SOLVER_THREE_BONE.equalsIgnoreCase(solverType)) {
+            return new ThreeBoneIKSolver();
         }
         if (IKLayerDefinition.SOLVER_FOOT.equalsIgnoreCase(solverType)) {
             return new FootIKSolver();

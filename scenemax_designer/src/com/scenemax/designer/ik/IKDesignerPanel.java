@@ -40,6 +40,7 @@ public class IKDesignerPanel extends JPanel {
     private final JTextField txtLayerName = new JTextField();
     private final JComboBox<String> cboSolver = new JComboBox<>(new String[]{
             IKLayerDefinition.SOLVER_TWO_BONE,
+            IKLayerDefinition.SOLVER_THREE_BONE,
             IKLayerDefinition.SOLVER_LOOK_AT,
             IKLayerDefinition.SOLVER_FOOT,
             IKLayerDefinition.SOLVER_FABRIK,
@@ -51,6 +52,7 @@ public class IKDesignerPanel extends JPanel {
     private final JSpinner spnPriority = spinner(0, -100, 100, 1);
     private final JComboBox<String> cboRoot = editableCombo();
     private final JComboBox<String> cboMiddle = editableCombo();
+    private final JComboBox<String> cboSecondMiddle = editableCombo();
     private final JComboBox<String> cboEnd = editableCombo();
     private final JComboBox<String> cboStart = editableCombo();
     private final JComboBox<String> cboAffectedJoint = editableCombo();
@@ -64,6 +66,7 @@ public class IKDesignerPanel extends JPanel {
     private final JTextArea txtValidation = new JTextArea(5, 30);
     private JPanel rootRow;
     private JPanel middleRow;
+    private JPanel secondMiddleRow;
     private JPanel endRow;
     private JPanel startRow;
     private JPanel affectedRow;
@@ -245,6 +248,7 @@ public class IKDesignerPanel extends JPanel {
     private JPanel buildLayerForm() {
         rootRow = rowWithHelp("Root Joint", cboRoot, "First joint in a bending chain, closest to the body.");
         middleRow = rowWithHelp("Middle Joint", cboMiddle, "The hinge joint, such as an elbow or knee.");
+        secondMiddleRow = rowWithHelp("Middle 2 Joint", cboSecondMiddle, "Second bend joint for a four-joint / three-bone chain.");
         endRow = rowWithHelp("End Joint", cboEnd, "The joint that reaches or aims toward the target.");
         startRow = rowWithHelp("Start Joint", cboStart, "First joint in a FABRIK-style chain.");
         affectedRow = rowWithHelp("Affected Joints", affectedJointsEditor(), "LookAt/Aim joints allowed to rotate toward the target.");
@@ -261,6 +265,7 @@ public class IKDesignerPanel extends JPanel {
             row("Priority", spnPriority),
             rootRow,
             middleRow,
+            secondMiddleRow,
             endRow,
             startRow,
             affectedRow,
@@ -314,6 +319,7 @@ public class IKDesignerPanel extends JPanel {
         spnPriority.setValue(layer.getPriority());
         setComboSelection(cboRoot, layer.getRootJoint());
         setComboSelection(cboMiddle, layer.getMiddleJoint());
+        setComboSelection(cboSecondMiddle, layer.getSecondMiddleJoint());
         setComboSelection(cboEnd, layer.getEndJoint());
         setComboSelection(cboStart, layer.getStartJoint());
         txtAffected.setText(String.join(", ", layer.getAffectedJoints()));
@@ -378,6 +384,7 @@ public class IKDesignerPanel extends JPanel {
         updatingUi = true;
         updateComboItems(cboRoot, values, selectedComboText(cboRoot));
         updateComboItems(cboMiddle, values, selectedComboText(cboMiddle));
+        updateComboItems(cboSecondMiddle, values, selectedComboText(cboSecondMiddle));
         updateComboItems(cboEnd, values, selectedComboText(cboEnd));
         updateComboItems(cboStart, values, selectedComboText(cboStart));
         updateComboItems(cboAffectedJoint, values, selectedComboText(cboAffectedJoint));
@@ -533,6 +540,7 @@ public class IKDesignerPanel extends JPanel {
         cboSolver.setSelectedItem(template.solverType);
         setComboSelection(cboRoot, match.root);
         setComboSelection(cboMiddle, match.middle);
+        setComboSelection(cboSecondMiddle, match.secondMiddle);
         setComboSelection(cboEnd, match.end);
         setComboSelection(cboStart, match.start);
         txtAffected.setText(String.join(", ", match.affected));
@@ -565,6 +573,7 @@ public class IKDesignerPanel extends JPanel {
         layer.setPriority(intValue(spnPriority));
         layer.setRootJoint(selectedComboText(cboRoot));
         layer.setMiddleJoint(selectedComboText(cboMiddle));
+        layer.setSecondMiddleJoint(selectedComboText(cboSecondMiddle));
         layer.setEndJoint(selectedComboText(cboEnd));
         layer.setStartJoint(selectedComboText(cboStart));
         layer.getAffectedJoints().clear();
@@ -705,6 +714,7 @@ public class IKDesignerPanel extends JPanel {
         Map<String, String> joints = new LinkedHashMap<>();
         String solver = String.valueOf(cboSolver.getSelectedItem());
         boolean twoBone = IKLayerDefinition.SOLVER_TWO_BONE.equalsIgnoreCase(solver);
+        boolean threeBone = IKLayerDefinition.SOLVER_THREE_BONE.equalsIgnoreCase(solver);
         boolean foot = IKLayerDefinition.SOLVER_FOOT.equalsIgnoreCase(solver);
         boolean fabrik = IKLayerDefinition.SOLVER_FABRIK.equalsIgnoreCase(solver);
         boolean lookOrAim = IKLayerDefinition.SOLVER_LOOK_AT.equalsIgnoreCase(solver)
@@ -713,6 +723,11 @@ public class IKDesignerPanel extends JPanel {
         if (twoBone || foot) {
             addIfPresent(joints, selectedComboText(cboRoot), "Root");
             addIfPresent(joints, selectedComboText(cboMiddle), "Middle");
+            addIfPresent(joints, selectedComboText(cboEnd), "End");
+        } else if (threeBone) {
+            addIfPresent(joints, selectedComboText(cboRoot), "Root");
+            addIfPresent(joints, selectedComboText(cboMiddle), "Mid 1");
+            addIfPresent(joints, selectedComboText(cboSecondMiddle), "Mid 2");
             addIfPresent(joints, selectedComboText(cboEnd), "End");
         } else if (fabrik) {
             addIfPresent(joints, selectedComboText(cboStart), "Start");
@@ -796,18 +811,20 @@ public class IKDesignerPanel extends JPanel {
         }
         String solver = String.valueOf(cboSolver.getSelectedItem());
         boolean twoBone = IKLayerDefinition.SOLVER_TWO_BONE.equalsIgnoreCase(solver);
+        boolean threeBone = IKLayerDefinition.SOLVER_THREE_BONE.equalsIgnoreCase(solver);
         boolean foot = IKLayerDefinition.SOLVER_FOOT.equalsIgnoreCase(solver);
         boolean fabrik = IKLayerDefinition.SOLVER_FABRIK.equalsIgnoreCase(solver);
         boolean lookOrAim = IKLayerDefinition.SOLVER_LOOK_AT.equalsIgnoreCase(solver)
                 || IKLayerDefinition.SOLVER_AIM.equalsIgnoreCase(solver);
 
-        rootRow.setVisible(twoBone || foot);
-        middleRow.setVisible(twoBone || foot);
-        endRow.setVisible(twoBone || foot || fabrik || lookOrAim);
+        rootRow.setVisible(twoBone || threeBone || foot);
+        middleRow.setVisible(twoBone || threeBone || foot);
+        secondMiddleRow.setVisible(threeBone);
+        endRow.setVisible(twoBone || threeBone || foot || fabrik || lookOrAim);
         startRow.setVisible(fabrik);
         affectedRow.setVisible(lookOrAim);
         targetRow.setVisible(!foot);
-        poleRow.setVisible(twoBone || foot);
+        poleRow.setVisible(twoBone || threeBone || foot);
 
         revalidate();
         repaint();
@@ -857,18 +874,20 @@ public class IKDesignerPanel extends JPanel {
         final boolean needsTarget;
         final String[][] rootPatterns;
         final String[][] middlePatterns;
+        final String[][] secondMiddlePatterns;
         final String[][] endPatterns;
         final String[][] startPatterns;
         final String[][] affectedPatterns;
 
         IKUseCaseTemplate(String label, String solverType, boolean needsTarget,
-                          String[][] rootPatterns, String[][] middlePatterns, String[][] endPatterns,
+                          String[][] rootPatterns, String[][] middlePatterns, String[][] secondMiddlePatterns, String[][] endPatterns,
                           String[][] startPatterns, String[][] affectedPatterns) {
             this.label = label;
             this.solverType = solverType;
             this.needsTarget = needsTarget;
             this.rootPatterns = rootPatterns;
             this.middlePatterns = middlePatterns;
+            this.secondMiddlePatterns = secondMiddlePatterns;
             this.endPatterns = endPatterns;
             this.startPatterns = startPatterns;
             this.affectedPatterns = affectedPatterns;
@@ -879,28 +898,44 @@ public class IKDesignerPanel extends JPanel {
                     new IKUseCaseTemplate("Right hand reach", IKLayerDefinition.SOLVER_TWO_BONE, true,
                             groups("rightarm", "rightupperarm", "upperarmr", "rupperarm", "rightshoulder"),
                             groups("rightforearm", "rightlowerarm", "forearmr", "lowerarmr", "rightelbow"),
+                            null,
                             groups("righthand", "rightwrist", "handr", "wristr"),
                             null, null),
                     new IKUseCaseTemplate("Left hand reach", IKLayerDefinition.SOLVER_TWO_BONE, true,
                             groups("leftarm", "leftupperarm", "upperarml", "lupperarm", "leftshoulder"),
+                            groups("leftforearm", "leftlowerarm", "forearml", "lowerarml", "leftelbow"),
+                            null,
+                            groups("lefthand", "leftwrist", "handl", "wristl"),
+                            null, null),
+                    new IKUseCaseTemplate("Right arm with shoulder", IKLayerDefinition.SOLVER_THREE_BONE, true,
+                            groups("rightshoulder", "shoulderr", "rshoulder"),
+                            groups("rightarm", "rightupperarm", "upperarmr", "rupperarm"),
+                            groups("rightforearm", "rightlowerarm", "forearmr", "lowerarmr", "rightelbow"),
+                            groups("righthand", "rightwrist", "handr", "wristr"),
+                            null, null),
+                    new IKUseCaseTemplate("Left arm with shoulder", IKLayerDefinition.SOLVER_THREE_BONE, true,
+                            groups("leftshoulder", "shoulderl", "lshoulder"),
+                            groups("leftarm", "leftupperarm", "upperarml", "lupperarm"),
                             groups("leftforearm", "leftlowerarm", "forearml", "lowerarml", "leftelbow"),
                             groups("lefthand", "leftwrist", "handl", "wristl"),
                             null, null),
                     new IKUseCaseTemplate("Right foot placement", IKLayerDefinition.SOLVER_FOOT, false,
                             groups("rightupleg", "rightupperleg", "rightthigh", "thighr", "upperlegr"),
                             groups("rightleg", "rightlowerleg", "rightknee", "shinr", "calfr", "lowerlegr"),
+                            null,
                             groups("rightfoot", "rightankle", "footr", "ankler"),
                             null, null),
                     new IKUseCaseTemplate("Left foot placement", IKLayerDefinition.SOLVER_FOOT, false,
                             groups("leftupleg", "leftupperleg", "leftthigh", "thighl", "upperlegl"),
                             groups("leftleg", "leftlowerleg", "leftknee", "shinl", "calfl", "lowerlegl"),
+                            null,
                             groups("leftfoot", "leftankle", "footl", "anklel"),
                             null, null),
                     new IKUseCaseTemplate("Head look at", IKLayerDefinition.SOLVER_LOOK_AT, true,
-                            null, null, groups("head"),
+                            null, null, null, groups("head"),
                             null, groups("neck", "head")),
                     new IKUseCaseTemplate("Upper body aim", IKLayerDefinition.SOLVER_AIM, true,
-                            null, null, groups("rightshoulder", "rightarm", "righthand"),
+                            null, null, null, groups("rightshoulder", "rightarm", "righthand"),
                             null, groups("spine", "spine1", "spine2", "chest", "rightshoulder"))
             };
         }
@@ -909,6 +944,7 @@ public class IKDesignerPanel extends JPanel {
             IKUseCaseMatch match = new IKUseCaseMatch();
             match.root = findBest(joints, rootPatterns);
             match.middle = findBest(joints, middlePatterns);
+            match.secondMiddle = findBest(joints, secondMiddlePatterns);
             match.end = findBest(joints, endPatterns);
             match.start = findBest(joints, startPatterns);
             if (affectedPatterns != null) {
@@ -923,6 +959,11 @@ public class IKDesignerPanel extends JPanel {
             if ((IKLayerDefinition.SOLVER_TWO_BONE.equals(solverType) || IKLayerDefinition.SOLVER_FOOT.equals(solverType))) {
                 require(match, "Root Joint", match.root);
                 require(match, "Middle Joint", match.middle);
+                require(match, "End Joint", match.end);
+            } else if (IKLayerDefinition.SOLVER_THREE_BONE.equals(solverType)) {
+                require(match, "Root Joint", match.root);
+                require(match, "Middle Joint", match.middle);
+                require(match, "Middle 2 Joint", match.secondMiddle);
                 require(match, "End Joint", match.end);
             } else if (IKLayerDefinition.SOLVER_FABRIK.equals(solverType)) {
                 require(match, "Start Joint", match.start);
@@ -1013,6 +1054,7 @@ public class IKDesignerPanel extends JPanel {
     private static final class IKUseCaseMatch {
         String root = "";
         String middle = "";
+        String secondMiddle = "";
         String end = "";
         String start = "";
         final List<String> affected = new ArrayList<>();

@@ -11,6 +11,8 @@ public final class IKPresetLibrary {
         List<IKDefinition> presets = new ArrayList<>();
         presets.add(twoBone("Right Hand Target", "mixamorig:RightArm", "mixamorig:RightForeArm", "mixamorig:RightHand", "RightHandTarget", "RightElbowPole"));
         presets.add(twoBone("Left Hand Target", "mixamorig:LeftArm", "mixamorig:LeftForeArm", "mixamorig:LeftHand", "LeftHandTarget", "LeftElbowPole"));
+        presets.add(threeBone("Right Arm With Shoulder", "mixamorig:RightShoulder", "mixamorig:RightArm", "mixamorig:RightForeArm", "mixamorig:RightHand", "RightHandTarget", "RightElbowPole"));
+        presets.add(threeBone("Left Arm With Shoulder", "mixamorig:LeftShoulder", "mixamorig:LeftArm", "mixamorig:LeftForeArm", "mixamorig:LeftHand", "LeftHandTarget", "LeftElbowPole"));
         presets.add(twoBone("Right Foot IK", "mixamorig:RightUpLeg", "mixamorig:RightLeg", "mixamorig:RightFoot", "RightFootTarget", "RightKneePole"));
         presets.add(twoBone("Left Foot IK", "mixamorig:LeftUpLeg", "mixamorig:LeftLeg", "mixamorig:LeftFoot", "LeftFootTarget", "LeftKneePole"));
 
@@ -31,6 +33,19 @@ public final class IKPresetLibrary {
         IKLayerDefinition layer = definition.getLayers().get(0);
         layer.setRootJoint(root);
         layer.setMiddleJoint(middle);
+        layer.setEndJoint(end);
+        layer.setTarget(target);
+        layer.setPoleTarget(pole);
+        return definition;
+    }
+
+    public static IKDefinition threeBone(String name, String root, String middle, String secondMiddle,
+                                         String end, String target, String pole) {
+        IKDefinition definition = IKDefinition.createTemplate(name, IKLayerDefinition.SOLVER_THREE_BONE);
+        IKLayerDefinition layer = definition.getLayers().get(0);
+        layer.setRootJoint(root);
+        layer.setMiddleJoint(middle);
+        layer.setSecondMiddleJoint(secondMiddle);
         layer.setEndJoint(end);
         layer.setTarget(target);
         layer.setPoleTarget(pole);

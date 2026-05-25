@@ -37,9 +37,9 @@ Create IK Asset
 
 Choose a target model in the `Target Model` combo. The designer only lists project models that have a scanned IK-ready armature.
 
-The `Use Case` combo is the quickest way to start. Pick a common setup such as `Right hand reach`, `Left foot placement`, `Head look at`, or `Upper body aim`, then press `Apply`. The designer will switch to the right solver and try to fill the needed joints from the selected model's armature names. If the rig uses unusual joint names, it fills what it can and tells you which fields still need a manual choice.
+The `Use Case` combo is the quickest way to start. Pick a common setup such as `Right hand reach`, `Right arm with shoulder`, `Left foot placement`, `Head look at`, or `Upper body aim`, then press `Apply`. The designer will switch to the right solver and try to fill the needed joints from the selected model's armature names. If the rig uses unusual joint names, it fills what it can and tells you which fields still need a manual choice.
 
-Selected IK joints are highlighted in the preview skeleton and labeled with short IK role names such as `Root`, `Middle`, `End`, `Start`, `Look 1`, or `Aim 1`. This makes it easier to confirm that the template picked the correct arm, leg, head, or spine chain before saving.
+Selected IK joints are highlighted in the preview skeleton and labeled with short IK role names such as `Root`, `Middle`, `Mid 2`, `End`, `Start`, `Look 1`, or `Aim 1`. This makes it easier to confirm that the template picked the correct arm, leg, head, or spine chain before saving.
 
 ## Running The Preview
 
@@ -99,6 +99,35 @@ End Joint    = mixamorig:RightFoot
 Target Object = right_foot_goal
 Pole Target   = right_knee_pole
 ```
+
+### Three-Bone IK
+
+Use this when the limb needs one extra joint to participate. The most common case is an arm reach that should include the shoulder/clavicle instead of rotating only the upper arm and forearm.
+
+`Root Joint`
+: The first joint in the chain, closest to the body. For a shoulder-assisted arm reach this is usually the shoulder or clavicle.
+
+`Middle Joint`
+: The first bend after the root. For an arm this is usually the upper arm.
+
+`Middle 2 Joint`
+: The second bend before the end. For an arm this is usually the forearm.
+
+`End Joint`
+: The joint that should reach the target, usually the hand or wrist.
+
+Example shoulder-assisted arm:
+
+```text
+Root Joint     = mixamorig:RightShoulder
+Middle Joint   = mixamorig:RightArm
+Middle 2 Joint = mixamorig:RightForeArm
+End Joint      = mixamorig:RightHand
+Target Object  = right_hand_goal
+Pole Target    = right_elbow_pole
+```
+
+Use Two-Bone IK when the normal upper-arm -> forearm -> hand chain is enough. Use Three-Bone IK when the reach looks too stiff, the hand cannot comfortably reach the target, or you want the shoulder to contribute naturally.
 
 ### Foot IK
 
@@ -351,6 +380,7 @@ If the chain twists or bends backward, add a pole target and move it until the b
 Use the shortest chain that describes the motion you want:
 
 - arm reach: upper arm -> forearm -> hand
+- shoulder-assisted arm reach: shoulder -> upper arm -> forearm -> hand
 - leg placement: upper leg -> lower leg -> foot
 - head look: neck/head as affected joints
 - torso aim: spine joints as affected joints
