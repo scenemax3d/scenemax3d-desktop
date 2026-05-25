@@ -8,6 +8,7 @@ import java.util.List;
 
 public class IKLayerDefinition {
     public static final String SOLVER_TWO_BONE = "TwoBoneIK";
+    public static final String SOLVER_THREE_BONE = "ThreeBoneIK";
     public static final String SOLVER_LOOK_AT = "LookAtIK";
     public static final String SOLVER_FABRIK = "FABRIK";
     public static final String SOLVER_FOOT = "FootIK";
@@ -24,6 +25,7 @@ public class IKLayerDefinition {
 
     private String rootJoint = "";
     private String middleJoint = "";
+    private String secondMiddleJoint = "";
     private String endJoint = "";
     private String startJoint = "";
     private final List<String> affectedJoints = new ArrayList<>();
@@ -48,6 +50,7 @@ public class IKLayerDefinition {
         JSONObject chain = new JSONObject()
                 .put("root", rootJoint)
                 .put("middle", middleJoint)
+                .put("secondMiddle", secondMiddleJoint)
                 .put("end", endJoint)
                 .put("start", startJoint);
 
@@ -116,11 +119,15 @@ public class IKLayerDefinition {
         if (chain != null) {
             layer.rootJoint = chain.optString("root", layer.rootJoint);
             layer.middleJoint = chain.optString("middle", layer.middleJoint);
+            layer.secondMiddleJoint = chain.optString("secondMiddle",
+                    chain.optString("middle2", layer.secondMiddleJoint));
             layer.endJoint = chain.optString("end", layer.endJoint);
             layer.startJoint = chain.optString("start", layer.startJoint);
         } else {
             layer.rootJoint = json.optString("rootJoint", layer.rootJoint);
             layer.middleJoint = json.optString("middleJoint", layer.middleJoint);
+            layer.secondMiddleJoint = json.optString("secondMiddleJoint",
+                    json.optString("middle2Joint", layer.secondMiddleJoint));
             layer.endJoint = json.optString("endJoint", layer.endJoint);
             layer.startJoint = json.optString("startJoint", layer.startJoint);
         }
@@ -152,6 +159,12 @@ public class IKLayerDefinition {
         if (SOLVER_TWO_BONE.equalsIgnoreCase(solverType) || SOLVER_FOOT.equalsIgnoreCase(solverType)) {
             require(result, fieldPrefix + ".chain.root", rootJoint, "Root joint is required.");
             require(result, fieldPrefix + ".chain.middle", middleJoint, "Middle joint is required.");
+            require(result, fieldPrefix + ".chain.end", endJoint, "End joint is required.");
+        }
+        if (SOLVER_THREE_BONE.equalsIgnoreCase(solverType)) {
+            require(result, fieldPrefix + ".chain.root", rootJoint, "Root joint is required.");
+            require(result, fieldPrefix + ".chain.middle", middleJoint, "Middle joint is required.");
+            require(result, fieldPrefix + ".chain.secondMiddle", secondMiddleJoint, "Second middle joint is required.");
             require(result, fieldPrefix + ".chain.end", endJoint, "End joint is required.");
         }
         if (SOLVER_LOOK_AT.equalsIgnoreCase(solverType) || SOLVER_AIM.equalsIgnoreCase(solverType)) {
@@ -211,6 +224,8 @@ public class IKLayerDefinition {
     public void setRootJoint(String rootJoint) { this.rootJoint = rootJoint; }
     public String getMiddleJoint() { return middleJoint; }
     public void setMiddleJoint(String middleJoint) { this.middleJoint = middleJoint; }
+    public String getSecondMiddleJoint() { return secondMiddleJoint; }
+    public void setSecondMiddleJoint(String secondMiddleJoint) { this.secondMiddleJoint = secondMiddleJoint; }
     public String getEndJoint() { return endJoint; }
     public void setEndJoint(String endJoint) { this.endJoint = endJoint; }
     public String getStartJoint() { return startJoint; }

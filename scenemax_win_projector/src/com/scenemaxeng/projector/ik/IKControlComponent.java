@@ -149,6 +149,9 @@ public class IKControlComponent extends AbstractControl {
         if (IKLayerDefinition.SOLVER_FABRIK.equalsIgnoreCase(solverType)) {
             return new FABRIKIKSolver();
         }
+        if (IKLayerDefinition.SOLVER_THREE_BONE.equalsIgnoreCase(solverType)) {
+            return new ThreeBoneIKSolver();
+        }
         if (IKLayerDefinition.SOLVER_FOOT.equalsIgnoreCase(solverType)) {
             return new FootIKSolver();
         }

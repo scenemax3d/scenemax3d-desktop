@@ -102,6 +102,14 @@ public class IKContext {
                 findJoint(layer.getEndJoint()));
     }
 
+    public IKChain getThreeBoneChain() {
+        return new IKChain(
+                findJoint(layer.getRootJoint()),
+                findJoint(layer.getMiddleJoint()),
+                findJoint(layer.getSecondMiddleJoint()),
+                findJoint(layer.getEndJoint()));
+    }
+
     public Vector3f jointWorldPosition(Joint joint) {
         Transform transform = jointWorldTransform(joint);
         return transform == null ? null : transform.getTranslation().clone();

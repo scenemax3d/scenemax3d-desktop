@@ -45,4 +45,25 @@ public class IKDefinitionTest {
         assertFalse(result.isValid());
         assertTrue(result.toJSONArray().toString().contains("Target object is required"));
     }
+
+    @Test
+    public void serializesThreeBoneDefinitionWithSecondMiddleJoint() {
+        IKDefinition definition = IKPresetLibrary.threeBone(
+                "Right Arm With Shoulder",
+                "mixamorig:RightShoulder",
+                "mixamorig:RightArm",
+                "mixamorig:RightForeArm",
+                "mixamorig:RightHand",
+                "HandTarget",
+                "ElbowPole");
+
+        IKLayerDefinition layer = IKDefinition.fromJSON(definition.toJSON()).getLayers().get(0);
+
+        assertEquals(IKLayerDefinition.SOLVER_THREE_BONE, layer.getSolverType());
+        assertEquals("mixamorig:RightShoulder", layer.getRootJoint());
+        assertEquals("mixamorig:RightArm", layer.getMiddleJoint());
+        assertEquals("mixamorig:RightForeArm", layer.getSecondMiddleJoint());
+        assertEquals("mixamorig:RightHand", layer.getEndJoint());
+        assertTrue(definition.validate().isValid());
+    }
 }
