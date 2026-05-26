@@ -353,7 +353,7 @@ second_object : var_decl ;
 function_value : (var_decl '.')? java_func_name '(' (logical_expression ((',' logical_expression)*) )? ')' ;
 
 variable_data_field : var_decl '.' Data '.' field_name ;
-field_name : ID ;
+field_name : var_decl ;
 
 variable_field : var_decl '.' var_field ;
 var_field : X | Y | Z | RX | RY | RZ | Hit | AnimPercent | ReplayIndex ;

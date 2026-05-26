@@ -32,6 +32,16 @@ flash_axe = {
 	}
 }
 
+flash_axe_box = {
+	if (crystal_box.data.flash == 1) {
+	  crystal_box.shader = "dramatic_hit_red"
+	  crystal_box.data.flash = 0
+	} else {
+		crystal_box.shader = ""
+		crystal_box.data.flash = 1
+	}
+}
+
 
 axe_lookup = {
 
@@ -119,7 +129,9 @@ show_axe_search_instructions = {
 }
 
 show_axe_use_instructions = {
-
+  audio.play "coin1"
+  run shake_the_world2 
+  run flash_axe_box every 0.25 Seconds 
 	UI.layer1.panelMsg.txtMsg.message("Press Q to throw AXE", TextEffect.fade_in | TextEffect.zoom_in, 3)
 	UI.layer1.panelMsg.txtMsg.text = ""
 }

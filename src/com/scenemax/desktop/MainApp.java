@@ -160,6 +160,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private AiConsoleDialog aiConsoleDialog;
     private IdePluginHostContext pluginHostContext;
     private final java.util.List<ISceneMaxPlugin> enhancedPlugins = new ArrayList<>();
+    private boolean launcherRunInProgress;
     // (Designer panels are managed per-tab inside EditorTabPanel)
 
     private static final class AutomationRunSource {
@@ -187,7 +188,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
         mainToolbar.setFloatable(false);
 
-        btnRunScript = addToolbarButton(createToolbarIcon("run"), "run", "Run Program");
+        btnRunScript = addToolbarButton(createToolbarIcon("run"), "run", "Run Program (F10)");
         addToolbarButton(createToolbarIcon("create_folder"), "create_folder", "Create Folder");
         addToolbarButton(createToolbarIcon("save"), "save", "Save Changes");
 
@@ -332,6 +333,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         initTreePopupMenu();
         //initDb();
         initButtonHandlers();
+        initKeyboardShortcuts();
         WebCommunication.getInstance().subscribe(this);
         AppDB.getInstance().setParam("joined_room", "");
 
@@ -1281,6 +1283,54 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     }
 
+    private void initKeyboardShortcuts() {
+        InputMap inputMap = getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+        ActionMap actionMap = getRootPane().getActionMap();
+
+        inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_F10, 0), "run_project_main");
+        actionMap.put("run_project_main", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                prepareAndRunLauncher();
+            }
+        });
+
+        inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_F8, 0), "run_active_script_file");
+        actionMap.put("run_active_script_file", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                runActiveEditorScriptFile();
+            }
+        });
+
+        KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(e -> {
+            if (e.getID() != KeyEvent.KEY_PRESSED || e.getModifiersEx() != 0 || !isMainWindowKeyEvent(e)) {
+                return false;
+            }
+            if (e.getKeyCode() == KeyEvent.VK_F10) {
+                prepareAndRunLauncher();
+                return true;
+            }
+            if (e.getKeyCode() == KeyEvent.VK_F8) {
+                runActiveEditorScriptFile();
+                return true;
+            }
+            return false;
+        });
+    }
+
+    private boolean isMainWindowKeyEvent(KeyEvent e) {
+        Object source = e.getSource();
+        if (!(source instanceof Component)) {
+            return false;
+        }
+        if (source instanceof Window) {
+            return source == this;
+        }
+        Window eventWindow = SwingUtilities.getWindowAncestor((Component) source);
+        return eventWindow == this;
+    }
+
     private void showActiveQuestions() {
 
         ActiveQuestionsDialog dlg = new ActiveQuestionsDialog();
@@ -1794,6 +1844,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
         if (isRunnableCodeFile(file)) {
             JMenuItem runItem = new JMenuItem("Run");
+            runItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F8, 0));
             runItem.setActionCommand("run_file");
             runItem.addActionListener(popupActionListener);
             popup.add(runItem);
@@ -4560,6 +4611,9 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     protected boolean prepareAndRunLauncher() {
+        if (launcherRunInProgress) {
+            return false;
+        }
 
         btnRunScript.setEnabled(false);
         btnRecordScene.setEnabled(false);
@@ -4582,10 +4636,41 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         return runScriptFile(rootMain);
     }
 
+    private boolean runActiveEditorScriptFile() {
+        if (launcherRunInProgress) {
+            return false;
+        }
+
+        EditorTabPanel.TabData active = editorTabPanel != null ? editorTabPanel.getActiveTab() : null;
+        if (active == null || active.filePath == null) {
+            JOptionPane.showMessageDialog(null,
+                    "Open a script file in the editor first.",
+                    "Run Error", JOptionPane.INFORMATION_MESSAGE);
+            return false;
+        }
+
+        File target = new File(active.filePath);
+        if (!isRunnableCodeFile(target)) {
+            JOptionPane.showMessageDialog(null,
+                    "The active editor tab is not a runnable script file.",
+                    "Run Error", JOptionPane.INFORMATION_MESSAGE);
+            return false;
+        }
+
+        if (active.dirty) {
+            editorTabPanel.saveActiveTab();
+        }
+        return runScriptFile(target);
+    }
+
     private boolean runScriptFile(File scriptFile) {
+        if (launcherRunInProgress) {
+            return false;
+        }
 
         btnRunScript.setEnabled(false);
         btnRecordScene.setEnabled(false);
+        launcherRunInProgress = true;
 
         String prg;
         EditorTabPanel.TabData active = editorTabPanel != null ? editorTabPanel.getActiveTab() : null;
@@ -4600,6 +4685,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             } catch (IOException e) {
                 e.printStackTrace();
                 btnRunScript.setEnabled(true);
+                launcherRunInProgress = false;
                 JOptionPane.showMessageDialog(null,
                         "Error reading script file '" + scriptFile.getName() + "': " + e.getMessage(),
                         "Run Error", JOptionPane.ERROR_MESSAGE);
@@ -4610,6 +4696,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         new RunLauncherTask(scriptFile.getAbsolutePath(), prg, new Runnable() {
             @Override
             public void run() {
+                launcherRunInProgress = false;
                 btnRunScript.setEnabled(true);
             }
         }).execute();
