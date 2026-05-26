@@ -36,6 +36,7 @@ import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -56,6 +57,12 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     private final Set<String> uiReferencedSpriteNames = new LinkedHashSet<>();
     private final Set<String> uiReferencedFontNames = new LinkedHashSet<>();
     private final Set<String> uiReferencedImagePaths = new LinkedHashSet<>();
+    private final Set<String> animationNamesUsed = new LinkedHashSet<>();
+    private final Set<String> shaderNamesUsed = new LinkedHashSet<>();
+    private final Set<String> environmentShaderNamesUsed = new LinkedHashSet<>();
+    private final Set<String> materialNamesUsed = new LinkedHashSet<>();
+    private final Set<String> weaponAssetNamesUsed = new LinkedHashSet<>();
+    private final Set<String> throwMotionAssetNamesUsed = new LinkedHashSet<>();
     private final List<String> scannedScriptFiles = new ArrayList<>();
     private final List<String> scannedDesignerFiles = new ArrayList<>();
     private final PackageOptions options;
@@ -151,6 +158,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     @Override
     protected Integer doInBackground() throws Exception {
 
+        normalizePackageRootAndProgram();
         SceneMaxLanguageParser.modelsUsed = new ArrayList<>();
         SceneMaxLanguageParser.effekseerUsed = new ArrayList<>();
         SceneMaxLanguageParser.spriteSheetUsed = new ArrayList<>();
@@ -160,6 +168,12 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         uiReferencedSpriteNames.clear();
         uiReferencedFontNames.clear();
         uiReferencedImagePaths.clear();
+        animationNamesUsed.clear();
+        shaderNamesUsed.clear();
+        environmentShaderNamesUsed.clear();
+        materialNamesUsed.clear();
+        weaponAssetNamesUsed.clear();
+        throwMotionAssetNamesUsed.clear();
         scannedScriptFiles.clear();
         scannedDesignerFiles.clear();
         packagingInventoryJson = "";
@@ -172,6 +186,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         scannedScriptFiles.addAll(ScriptTreeResourceCollector.collectResources(this.scriptFolder, macroFilter));
         scannedDesignerFiles.addAll(DesignerDocumentResourceCollector.collectResources(getPackagedProjectRoot(), macroFilter));
         AssetsMapping assetsMapping = new AssetsMapping(Util.getResourcesFolder());
+        collectReferencedAuxiliaryAssets(assetsMapping);
 
         JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], shaders:[], environmentShaders:[], materials:[], cinematics:[], animations:[] }");
 
@@ -266,32 +281,6 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         copyWeaponResourcesToDeploy(deployFolder);
         copyThrowMotionResourcesToDeploy(deployFolder);
 
-        // copy all materials - in the future, check and copy just what is needed
-        File materials = new File("./deploy/Materials");
-        FileUtils.copyDirectory(new File(Util.getDefaultResourcesFolder() + "/Materials"), materials);
-
-        // copy all textures - in the future, check skybox & terrain and copy just what is needed
-        File textures = new File("./deploy/Textures");
-
-        FileUtils.copyDirectory(new File(Util.getDefaultResourcesFolder() + "/Textures"), textures,
-                new FileFilter() {
-                    @Override
-                    public boolean accept(File f) {
-                        if (f.isFile()) {
-                            return true;
-                        }
-
-                        boolean isFirstLevel = f.getParentFile().getName().equalsIgnoreCase("Textures");
-                        if (isFirstLevel && !(f.getName().equalsIgnoreCase("Terrain") ||
-                                f.getName().equalsIgnoreCase("Particles") ||
-                                f.getName().equalsIgnoreCase("Vehicles"))) {
-                            return false;
-                        }
-
-                        return true;
-                    }
-                });
-
 
         collectUiDocumentReferences(scriptFolder);
 
@@ -382,37 +371,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             }
         }
 
-        copyResourceDirectoryToDeploy("fonts");
-        mergeIndexedResources(
-                new File("./resources/fonts/fonts.json"),
-                new File(Util.getResourcesFolder(), "fonts/fonts-ext.json"),
-                "fonts",
-                resources.getJSONArray("fonts")
-        );
-
-        copyResourceDirectoryToDeploy("shaders");
-        mergeIndexedResources(
-                new File("./resources/shaders/shaders.json"),
-                new File(Util.getResourcesFolder(), "shaders/shaders-ext.json"),
-                "shaders",
-                resources.getJSONArray("shaders")
-        );
-
-        copyResourceDirectoryToDeploy("environment_shaders");
-        mergeIndexedResources(
-                new File("./resources/environment_shaders/environment-shaders.json"),
-                new File(Util.getResourcesFolder(), "environment_shaders/environment-shaders-ext.json"),
-                "environmentShaders",
-                resources.getJSONArray("environmentShaders")
-        );
-
-        copyResourceDirectoryToDeploy("material");
-        mergeIndexedResources(
-                new File("./resources/material/materials.json"),
-                new File(Util.getResourcesFolder(), "material/materials-ext.json"),
-                "materials",
-                resources.getJSONArray("materials")
-        );
+        appendUsedShaderResources(assetsMapping, resources.getJSONArray("shaders"), resources.getJSONArray("environmentShaders"));
+        appendUsedMaterialResources(assetsMapping, resources.getJSONArray("materials"));
 
         appendCinematicResources(resources.getJSONArray("cinematics"));
 
@@ -479,6 +439,44 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         uploadToItchIfRequested();
 
         return globalCounter;
+    }
+
+    private void normalizePackageRootAndProgram() throws IOException {
+        if (scriptFolder == null) {
+            return;
+        }
+
+        scriptFolder = resolvePackageScriptRoot(scriptFolder);
+        File mainFile = new File(scriptFolder, "main");
+        if (mainFile.isFile()) {
+            prg = FileUtils.readFileToString(mainFile, StandardCharsets.UTF_8);
+        } else if (prg == null) {
+            prg = "";
+        }
+    }
+
+    private File resolvePackageScriptRoot(File selectedScriptFolder) {
+        if (selectedScriptFolder == null) {
+            return null;
+        }
+
+        File current = selectedScriptFolder;
+        if (current.isFile()) {
+            current = current.getParentFile();
+        }
+
+        File nearestGameRoot = null;
+        File walker = current;
+        while (walker != null) {
+            File parent = walker.getParentFile();
+            if (parent != null && "scripts".equalsIgnoreCase(parent.getName())) {
+                nearestGameRoot = walker;
+                break;
+            }
+            walker = parent;
+        }
+
+        return nearestGameRoot == null ? current : nearestGameRoot;
     }
 
     private File copyAndApplyMacro(File folder) {
@@ -1163,10 +1161,6 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
     private void copyEffekseerResourcesToDeploy(File deployFolder) {
         File deployEffectsDir = new File(deployFolder, "resources/effects");
-        File projectResources = getPackagedProjectResourcesFolder();
-        if (projectResources != null) {
-            copyDirectoryContents(new File(projectResources, "effects"), deployEffectsDir);
-        }
 
         for (String effectName : SceneMaxLanguageParser.effekseerUsed) {
             String assetId = effectName;
@@ -1195,49 +1189,34 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     }
 
     private void copyAnimationResourcesToDeploy(File deployFolder, JSONArray targetArray) {
-        File projectResources = getPackagedProjectResourcesFolder();
-        if (projectResources == null) {
-            return;
-        }
-
-        File projectAnimationsDir = new File(projectResources, "animations");
-        File deployAnimationsDir = new File(deployFolder, "animations");
-        if (projectAnimationsDir.isDirectory()) {
-            try {
-                FileUtils.copyDirectory(projectAnimationsDir, deployAnimationsDir);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        mergeIndexedResourcesFromFile(new File("./resources/animations/animations.json"), "animations", targetArray);
-        mergeIndexedResourcesFromFile(new File(projectAnimationsDir, "animations-ext.json"), "animations", targetArray);
+        appendUsedIndexedResources(
+                deployFolder,
+                "animations",
+                targetArray,
+                animationNamesUsed,
+                new File("./resources/animations/animations.json"),
+                getProjectResourceIndexFile("animations/animations-ext.json")
+        );
     }
 
     private void copyThrowMotionResourcesToDeploy(File deployFolder) {
-        File projectResources = getPackagedProjectResourcesFolder();
-        if (projectResources == null) {
-            return;
-        }
-
         File deployThrowMotionsDir = new File(deployFolder, "resources/throw_motions");
-        copyDirectoryContents(new File(projectResources, "throw_motions"), deployThrowMotionsDir);
-        copyDirectoryContents(new File(projectResources, "ThrowMotions"), deployThrowMotionsDir);
-        copyStandaloneAssetFilesToDeploy(new File(projectResources, "throw_motions"), deployThrowMotionsDir, "smmotion", false);
-        copyStandaloneAssetFilesToDeploy(new File(projectResources, "ThrowMotions"), deployThrowMotionsDir, "smmotion", false);
+        copyReferencedStandaloneAssetsToDeploy(
+                collectStandaloneAssetFiles("smmotion", "throw_motions", "ThrowMotions"),
+                throwMotionAssetNamesUsed,
+                deployThrowMotionsDir,
+                "smmotion"
+        );
     }
 
     private void copyWeaponResourcesToDeploy(File deployFolder) {
-        File projectResources = getPackagedProjectResourcesFolder();
-        if (projectResources == null) {
-            return;
-        }
-
         File deployWeaponsDir = new File(deployFolder, "resources/weapons");
-        copyDirectoryContents(new File(projectResources, "weapons"), deployWeaponsDir);
-        copyDirectoryContents(new File(projectResources, "Weapons"), deployWeaponsDir);
-        copyStandaloneAssetFilesToDeploy(new File(projectResources, "weapons"), deployWeaponsDir, "smweapon", false);
-        copyStandaloneAssetFilesToDeploy(new File(projectResources, "Weapons"), deployWeaponsDir, "smweapon", false);
+        copyReferencedStandaloneAssetsToDeploy(
+                collectStandaloneAssetFiles("smweapon", "weapons", "Weapons"),
+                weaponAssetNamesUsed,
+                deployWeaponsDir,
+                "smweapon"
+        );
     }
 
     private File resolveEffekseerEffectSource(String assetId) {
@@ -1282,6 +1261,359 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         if (!missing.isEmpty()) {
             throw new IOException("Missing Effekseer native runtime libraries for the selected package targets:\n - "
                     + String.join("\n - ", missing));
+        }
+    }
+
+    private void collectReferencedAuxiliaryAssets(AssetsMapping assetsMapping) {
+        String sourceText = readScannedSourceText();
+        if (sourceText.length() == 0) {
+            return;
+        }
+
+        collectNamedReferences(sourceText, assetsMapping.getAnimationsIndex().keySet(), animationNamesUsed);
+        collectNamedReferences(sourceText, assetsMapping.getMaterialsIndex().keySet(), materialNamesUsed);
+
+        for (ResourceShader shader : assetsMapping.getShadersIndex().values()) {
+            if (shader == null || shader.name == null || !containsAssetName(sourceText, shader.name)) {
+                continue;
+            }
+            if (isEnvironmentShaderPath(shader.path)) {
+                environmentShaderNamesUsed.add(shader.name);
+            } else {
+                shaderNamesUsed.add(shader.name);
+            }
+        }
+
+        collectNamedReferences(sourceText, collectStandaloneAssetCandidateNames("smweapon", "weapons", "Weapons"), weaponAssetNamesUsed);
+        collectNamedReferences(sourceText, collectStandaloneAssetCandidateNames("smmotion", "throw_motions", "ThrowMotions"), throwMotionAssetNamesUsed);
+    }
+
+    private String readScannedSourceText() {
+        StringBuilder combined = new StringBuilder();
+        if (prg != null && !prg.isBlank()) {
+            combined.append(prg);
+        }
+        appendSourceFiles(combined, scannedScriptFiles);
+        appendSourceFiles(combined, scannedDesignerFiles);
+        return combined.toString();
+    }
+
+    private void appendSourceFiles(StringBuilder combined, List<String> paths) {
+        for (String path : paths) {
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            try {
+                combined.append('\n')
+                        .append(FileUtils.readFileToString(new File(path), StandardCharsets.UTF_8));
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
+    private void collectNamedReferences(String sourceText, Collection<String> names, Set<String> target) {
+        if (names == null || names.isEmpty()) {
+            return;
+        }
+        for (String name : names) {
+            if (name == null || name.isBlank()) {
+                continue;
+            }
+            if (containsAssetName(sourceText, name)) {
+                target.add(name);
+            }
+        }
+    }
+
+    private boolean containsAssetName(String sourceText, String assetName) {
+        if (sourceText == null || sourceText.length() == 0 || assetName == null || assetName.isBlank()) {
+            return false;
+        }
+        String pattern = "(?i)(^|[^A-Za-z0-9_\\-])" + Pattern.quote(assetName.trim()) + "($|[^A-Za-z0-9_\\-])";
+        return Pattern.compile(pattern).matcher(sourceText).find();
+    }
+
+    private void appendUsedShaderResources(AssetsMapping assetsMapping, JSONArray shadersArray, JSONArray environmentShadersArray) {
+        for (String shaderName : shaderNamesUsed) {
+            ResourceShader shader = assetsMapping.getShadersIndex().get(shaderName.toLowerCase(Locale.ROOT));
+            appendUsedShaderResource(shader, shadersArray);
+        }
+        for (String shaderName : environmentShaderNamesUsed) {
+            ResourceShader shader = assetsMapping.getShadersIndex().get(shaderName.toLowerCase(Locale.ROOT));
+            appendUsedShaderResource(shader, environmentShadersArray);
+        }
+    }
+
+    private void appendUsedShaderResource(ResourceShader shader, JSONArray targetArray) {
+        if (shader == null || shader.path == null || shader.path.isBlank()) {
+            return;
+        }
+        copyIndexedResourcePathToDeploy(new File("./deploy"), shader.path);
+        JSONObject resource = findIndexedResourceByName(
+                isEnvironmentShaderPath(shader.path) ? "environmentShaders" : "shaders",
+                shader.name,
+                isEnvironmentShaderPath(shader.path)
+                        ? new File("./resources/environment_shaders/environment-shaders.json")
+                        : new File("./resources/shaders/shaders.json"),
+                isEnvironmentShaderPath(shader.path)
+                        ? getProjectResourceIndexFile("environment_shaders/environment-shaders-ext.json")
+                        : getProjectResourceIndexFile("shaders/shaders-ext.json")
+        );
+        if (resource == null) {
+            resource = new JSONObject();
+            resource.put("name", shader.name);
+            resource.put("path", shader.path);
+        }
+        upsertIndexedResource(targetArray, resource);
+    }
+
+    private boolean isEnvironmentShaderPath(String path) {
+        return path != null && path.replace("\\", "/").toLowerCase(Locale.ROOT).startsWith("environment_shaders/");
+    }
+
+    private void appendUsedMaterialResources(AssetsMapping assetsMapping, JSONArray targetArray) {
+        for (String materialName : materialNamesUsed) {
+            ResourceMaterialAsset material = assetsMapping.getMaterialsIndex().get(materialName.toLowerCase(Locale.ROOT));
+            if (material == null || material.path == null || material.path.isBlank()) {
+                continue;
+            }
+            copyIndexedResourcePathToDeploy(new File("./deploy"), material.path);
+            JSONObject resource = findIndexedResourceByName(
+                    "materials",
+                    material.name,
+                    new File("./resources/material/materials.json"),
+                    getProjectResourceIndexFile("material/materials-ext.json")
+            );
+            if (resource == null) {
+                resource = new JSONObject();
+                resource.put("name", material.name);
+                resource.put("path", material.path);
+                resource.put("transparent", material.transparent);
+                resource.put("doubleSided", material.doubleSided);
+            }
+            upsertIndexedResource(targetArray, resource);
+        }
+    }
+
+    private void appendUsedIndexedResources(File deployFolder, String arrayKey, JSONArray targetArray, Set<String> usedNames, File... indexFiles) {
+        if (usedNames == null || usedNames.isEmpty()) {
+            return;
+        }
+        for (String usedName : usedNames) {
+            JSONObject resource = findIndexedResourceByName(arrayKey, usedName, indexFiles);
+            if (resource == null) {
+                continue;
+            }
+            copyIndexedResourcePathToDeploy(deployFolder, resource.optString("path", ""));
+            upsertIndexedResource(targetArray, resource);
+        }
+    }
+
+    private JSONObject findIndexedResourceByName(String arrayKey, String name, File... indexFiles) {
+        if (name == null || name.isBlank() || indexFiles == null) {
+            return null;
+        }
+        String key = name.toLowerCase(Locale.ROOT);
+        for (File indexFile : indexFiles) {
+            if (indexFile == null || !indexFile.isFile()) {
+                continue;
+            }
+            try {
+                JSONObject root = new JSONObject(FileUtils.readFileToString(indexFile, StandardCharsets.UTF_8));
+                JSONArray array = root.optJSONArray(arrayKey);
+                if (array == null) {
+                    continue;
+                }
+                for (int i = 0; i < array.length(); i++) {
+                    JSONObject resource = array.optJSONObject(i);
+                    if (resource == null) {
+                        continue;
+                    }
+                    if (key.equals(resource.optString("name", "").toLowerCase(Locale.ROOT))) {
+                        return new JSONObject(resource.toString());
+                    }
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+        return null;
+    }
+
+    private File getProjectResourceIndexFile(String relativePath) {
+        File projectResources = getPackagedProjectResourcesFolder();
+        return projectResources == null ? null : new File(projectResources, relativePath);
+    }
+
+    private void copyIndexedResourcePathToDeploy(File deployFolder, String resourcePath) {
+        if (resourcePath == null || resourcePath.isBlank()) {
+            return;
+        }
+
+        File sourceFile = resolveResourceFile(resourcePath);
+        if (sourceFile == null || !sourceFile.exists()) {
+            return;
+        }
+
+        File sourceToCopy = sourceFile.isDirectory() ? sourceFile : sourceFile.getParentFile();
+        String normalizedPath = resourcePath.replace("\\", "/");
+        String targetRelativePath = normalizedPath;
+        int slash = normalizedPath.lastIndexOf('/');
+        if (slash > 0) {
+            targetRelativePath = normalizedPath.substring(0, slash);
+        }
+
+        File target = new File(deployFolder, targetRelativePath);
+        try {
+            if (sourceToCopy != null && sourceToCopy.isDirectory()) {
+                FileUtils.copyDirectory(sourceToCopy, target);
+            } else if (sourceFile.isFile()) {
+                FileUtils.copyFile(sourceFile, new File(deployFolder, normalizedPath));
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private File resolveResourceFile(String resourcePath) {
+        String normalizedPath = resourcePath.replace("\\", "/");
+        File projectResources = getPackagedProjectResourcesFolder();
+        if (projectResources != null) {
+            File projectFile = new File(projectResources, normalizedPath);
+            if (projectFile.exists()) {
+                return projectFile;
+            }
+        }
+
+        File defaultFile = new File(Util.getDefaultResourcesFolder(), normalizedPath);
+        if (defaultFile.exists()) {
+            return defaultFile;
+        }
+
+        File activeFile = new File(Util.getResourcePath(normalizedPath));
+        return activeFile.exists() ? activeFile : null;
+    }
+
+    private Set<String> collectStandaloneAssetCandidateNames(String extension, String... folderNames) {
+        Set<String> names = new LinkedHashSet<>();
+        for (StandaloneAssetFile assetFile : collectStandaloneAssetFiles(extension, folderNames)) {
+            names.addAll(assetFile.candidateNames);
+        }
+        return names;
+    }
+
+    private List<StandaloneAssetFile> collectStandaloneAssetFiles(String extension, String... folderNames) {
+        List<StandaloneAssetFile> files = new ArrayList<>();
+        for (File root : collectStandaloneAssetRoots(folderNames)) {
+            Collection<File> found = FileUtils.listFiles(root, new String[]{extension}, true);
+            for (File file : found) {
+                files.add(new StandaloneAssetFile(root, file, collectStandaloneAssetCandidateNames(file)));
+            }
+        }
+        return files;
+    }
+
+    private List<File> collectStandaloneAssetRoots(String... folderNames) {
+        LinkedHashSet<File> roots = new LinkedHashSet<>();
+        File projectResources = getPackagedProjectResourcesFolder();
+        File defaultResources = new File(Util.getDefaultResourcesFolder());
+        for (String folderName : folderNames) {
+            addStandaloneAssetRoot(roots, projectResources == null ? null : new File(projectResources, folderName));
+            addStandaloneAssetRoot(roots, new File(defaultResources, folderName));
+        }
+        return new ArrayList<>(roots);
+    }
+
+    private void addStandaloneAssetRoot(Set<File> roots, File root) {
+        if (root == null || !root.isDirectory()) {
+            return;
+        }
+        try {
+            roots.add(root.getCanonicalFile());
+        } catch (IOException ignored) {
+            roots.add(root.getAbsoluteFile());
+        }
+    }
+
+    private Set<String> collectStandaloneAssetCandidateNames(File file) {
+        Set<String> names = new LinkedHashSet<>();
+        names.add(stripExtension(file.getName()));
+        try {
+            JSONObject root = new JSONObject(FileUtils.readFileToString(file, StandardCharsets.UTF_8));
+            addIfNotBlank(names, root.optString("id", ""));
+            addIfNotBlank(names, root.optString("displayName", ""));
+            JSONObject metadata = root.optJSONObject("designerMetadata");
+            if (metadata != null) {
+                addIfNotBlank(names, metadata.optString("displayName", ""));
+                addIfNotBlank(names, metadata.optString("name", ""));
+            }
+        } catch (Exception ignored) {
+        }
+        return names;
+    }
+
+    private void copyReferencedStandaloneAssetsToDeploy(List<StandaloneAssetFile> assetFiles, Set<String> usedNames,
+                                                        File targetDir, String extension) {
+        if (assetFiles == null || assetFiles.isEmpty() || usedNames == null || usedNames.isEmpty()) {
+            return;
+        }
+        try {
+            FileUtils.forceMkdir(targetDir);
+            for (StandaloneAssetFile assetFile : assetFiles) {
+                List<String> matchedNames = matchedStandaloneAssetNames(assetFile, usedNames);
+                if (matchedNames.isEmpty()) {
+                    continue;
+                }
+
+                File relativeTarget = new File(targetDir, assetFile.root.toURI().relativize(assetFile.file.toURI()).getPath());
+                File relativeParent = relativeTarget.getParentFile();
+                if (relativeParent != null) {
+                    FileUtils.forceMkdir(relativeParent);
+                }
+                FileUtils.copyFile(assetFile.file, relativeTarget);
+                FileUtils.copyFile(assetFile.file, new File(targetDir, assetFile.file.getName()));
+                for (String matchedName : matchedNames) {
+                    File aliasTarget = new File(targetDir, matchedName + "." + extension);
+                    if (!aliasTarget.getCanonicalFile().equals(assetFile.file.getCanonicalFile())) {
+                        FileUtils.copyFile(assetFile.file, aliasTarget);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private List<String> matchedStandaloneAssetNames(StandaloneAssetFile assetFile, Set<String> usedNames) {
+        List<String> matches = new ArrayList<>();
+        for (String usedName : usedNames) {
+            for (String candidateName : assetFile.candidateNames) {
+                if (usedName.equalsIgnoreCase(candidateName)) {
+                    matches.add(usedName);
+                    break;
+                }
+            }
+        }
+        return matches;
+    }
+
+    private String stripExtension(String name) {
+        if (name == null) {
+            return "";
+        }
+        int dot = name.lastIndexOf('.');
+        return dot <= 0 ? name : name.substring(0, dot);
+    }
+
+    private static final class StandaloneAssetFile {
+        private final File root;
+        private final File file;
+        private final Set<String> candidateNames;
+
+        private StandaloneAssetFile(File root, File file, Set<String> candidateNames) {
+            this.root = root;
+            this.file = file;
+            this.candidateNames = candidateNames;
         }
     }
 
@@ -1341,6 +1673,12 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         referenced.put("fonts", toSortedJsonArray(SceneMaxLanguageParser.fontsUsed));
         referenced.put("skyboxes", toSortedJsonArray(SceneMaxLanguageParser.skyboxUsed));
         referenced.put("terrains", toSortedJsonArray(SceneMaxLanguageParser.terrainsUsed));
+        referenced.put("animations", toSortedJsonArray(animationNamesUsed));
+        referenced.put("shaders", toSortedJsonArray(shaderNamesUsed));
+        referenced.put("environmentShaders", toSortedJsonArray(environmentShaderNamesUsed));
+        referenced.put("materials", toSortedJsonArray(materialNamesUsed));
+        referenced.put("weapons", toSortedJsonArray(weaponAssetNamesUsed));
+        referenced.put("throwMotions", toSortedJsonArray(throwMotionAssetNamesUsed));
         inventory.put("referencedResources", referenced);
 
         JSONObject missing = new JSONObject();
@@ -1352,6 +1690,12 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         missing.put("terrains", findMissingIndexedResources(SceneMaxLanguageParser.terrainsUsed, assetsMapping.getTerrainsIndex()));
         missing.put("effects", findMissingEffects(SceneMaxLanguageParser.effekseerUsed));
         missing.put("uiImages", findMissingUiImages(uiReferencedImagePaths));
+        missing.put("animations", findMissingIndexedResources(animationNamesUsed, assetsMapping.getAnimationsIndex()));
+        missing.put("shaders", findMissingIndexedResources(shaderNamesUsed, assetsMapping.getShadersIndex()));
+        missing.put("environmentShaders", findMissingIndexedResources(environmentShaderNamesUsed, assetsMapping.getShadersIndex()));
+        missing.put("materials", findMissingIndexedResources(materialNamesUsed, assetsMapping.getMaterialsIndex()));
+        missing.put("weapons", findMissingStandaloneAssets(weaponAssetNamesUsed, "smweapon", "weapons", "Weapons"));
+        missing.put("throwMotions", findMissingStandaloneAssets(throwMotionAssetNamesUsed, "smmotion", "throw_motions", "ThrowMotions"));
         inventory.put("missingResources", missing);
 
         inventory.put("packagedResources", new JSONObject(packagedResources.toString()));
@@ -1463,6 +1807,37 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             File resolved = resolveUiImageFile(imagePath);
             if ((resolved == null || !resolved.isFile()) && !missing.contains(imagePath)) {
                 missing.add(imagePath);
+            }
+        }
+        Collections.sort(missing);
+        JSONArray array = new JSONArray();
+        for (String name : missing) {
+            array.put(name);
+        }
+        return array;
+    }
+
+    private JSONArray findMissingStandaloneAssets(Collection<String> names, String extension, String... folderNames) {
+        List<String> missing = new ArrayList<>();
+        List<StandaloneAssetFile> assetFiles = collectStandaloneAssetFiles(extension, folderNames);
+        for (String name : names) {
+            if (name == null || name.isBlank()) {
+                continue;
+            }
+            boolean found = false;
+            for (StandaloneAssetFile assetFile : assetFiles) {
+                for (String candidateName : assetFile.candidateNames) {
+                    if (name.equalsIgnoreCase(candidateName)) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) {
+                    break;
+                }
+            }
+            if (!found && !missing.contains(name)) {
+                missing.add(name);
             }
         }
         Collections.sort(missing);

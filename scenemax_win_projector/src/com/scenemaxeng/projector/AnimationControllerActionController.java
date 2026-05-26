@@ -32,6 +32,25 @@ public class AnimationControllerActionController extends SceneMaxBaseController 
         } else if (action.action == AnimationControllerActionCommand.STOP) {
             controller.stop();
             started = false;
+        } else if (action.action == AnimationControllerActionCommand.REWIND) {
+            if (!started) {
+                double percent = ActionLogicalExpressionVm.toDouble(
+                        new ActionLogicalExpressionVm(action.rewindPercentExpr, scope).evaluate());
+                double duration = ActionLogicalExpressionVm.toDouble(
+                        new ActionLogicalExpressionVm(action.rewindDurationExpr, scope).evaluate());
+                MotionEase.MotionEaseSpec easeSpec = MotionEase.fromParts(
+                        action.motionEaseType,
+                        action.motionEaseFunction,
+                        action.motionEaseParamExprs,
+                        scope);
+                controller.startRewind(percent, duration, easeSpec);
+                started = true;
+            }
+            boolean finished = controller.updateRewind(tpf);
+            if (finished) {
+                started = false;
+            }
+            return finished;
         }
         return true;
     }

@@ -2246,6 +2246,11 @@ public class SceneMaxLanguageParser implements IParser {
                 }
 
                 DoBlockCommand doBlock = new DoBlockVisitor(prg).visit(ctx.input().do_block());
+                if (doBlock == null) {
+                    prg.syntaxErrors.add("Syntax error in input handler at line:"
+                            + ctx.input().getStart().getLine());
+                    return null;
+                }
                 doBlock.isSecondLevelReturnPoint = true;
                 cmd.doBlock = doBlock;
 
@@ -2778,32 +2783,62 @@ public class SceneMaxLanguageParser implements IParser {
 
             public IfStatementCommand visitIfStatement(SceneMaxParser.IfStatementContext ctx) {
 
+                SceneMaxParser.If_statementContext ifCtx = ctx.if_statement();
+                if(ifCtx==null || ifCtx.do_block()==null) {
+                    prg.syntaxErrors.add("Syntax error in 'if' block at line:"+getLine(ctx));
+                    return null;
+                }
+
                 IfStatementCommand cmd = new IfStatementCommand();
-                DoBlockCommand doBlock = new DoBlockVisitor(prg).visit(ctx.if_statement().do_block());
+                DoBlockCommand doBlock = new DoBlockVisitor(prg).visit(ifCtx.do_block());
+                if(doBlock==null) {
+                    return null;
+                }
                 cmd.doBlock = doBlock;
-                cmd.expression = ctx.if_statement().logical_expression();// new ActionLogicalExpression(ctx.if_statement().logical_expression(),prg);
+                cmd.expression = ifCtx.logical_expression();// new ActionLogicalExpression(ctx.if_statement().logical_expression(),prg);
 
                 // Add the else block
-                if(ctx.if_statement().else_expr()!=null) {
-                    cmd.elseCmd=new DoBlockVisitor(prg).visit(ctx.if_statement().else_expr().do_block());
+                if(ifCtx.else_expr()!=null) {
+                    if(ifCtx.else_expr().do_block()==null) {
+                        prg.syntaxErrors.add("Syntax error in 'else' block at line:"+getLine(ifCtx.else_expr()));
+                        return null;
+                    }
+                    cmd.elseCmd=new DoBlockVisitor(prg).visit(ifCtx.else_expr().do_block());
+                    if(cmd.elseCmd==null) {
+                        return null;
+                    }
 
                 }
 
                 // Add the else-if block(s)
-                if(ctx.if_statement().else_if_expr()!=null) {
+                if(ifCtx.else_if_expr()!=null && ifCtx.else_if_expr().size()>0) {
                     cmd.elseIfCommands=new ArrayList<>();
-                    for(int i=0;i<ctx.if_statement().else_if_expr().size();++i) {
-                        SceneMaxParser.Else_if_exprContext elseIfCtx = ctx.if_statement().else_if_expr(i);
+                    for(int i=0;i<ifCtx.else_if_expr().size();++i) {
+                        SceneMaxParser.Else_if_exprContext elseIfCtx = ifCtx.else_if_expr(i);
+                        if(elseIfCtx.do_block()==null) {
+                            prg.syntaxErrors.add("Syntax error in 'else if' block at line:"+getLine(elseIfCtx));
+                            return null;
+                        }
 
                         IfStatementCommand elseIfCmd = new IfStatementCommand();
                         elseIfCmd.expression = elseIfCtx.logical_expression();//new ActionLogicalExpression(elseIfCtx.logical_expression(),prg);
                         elseIfCmd.doBlock = new DoBlockVisitor(prg).visit(elseIfCtx.do_block());
+                        if(elseIfCmd.doBlock==null) {
+                            return null;
+                        }
 
                         cmd.elseIfCommands.add(elseIfCmd);
                     }
                 }
 
                 return cmd;
+            }
+
+            private int getLine(ParserRuleContext ctx) {
+                if(ctx==null || ctx.getStart()==null) {
+                    return -1;
+                }
+                return ctx.getStart().getLine();
             }
 
         }
@@ -2887,6 +2922,15 @@ public class SceneMaxLanguageParser implements IParser {
 
             @Override
             public DoBlockCommand visitDo_block(SceneMaxParser.Do_blockContext ctx) {
+
+                if(ctx==null) {
+                    prg.syntaxErrors.add("Syntax error in 'Do' block at line:-1");
+                    return null;
+                }
+                if(ctx.end_do_block()==null) {
+                    prg.syntaxErrors.add("Syntax error in 'Do' block at line:"+ctx.getStart().getLine());
+                    return null;
+                }
 
                 DoBlockCommand doCmd = new DoBlockCommand();
                 doCmd.inParams=this.inParams;
@@ -3841,12 +3885,22 @@ public class SceneMaxLanguageParser implements IParser {
             }
 
             public ActionStatementBase visitAnimationControllerRunStatement(SceneMaxParser.AnimationControllerRunStatementContext ctx) {
-                String var = ctx.animation_controller_run().var_decl().getText();
+                SceneMaxParser.Animation_controller_runContext runCtx = ctx.animation_controller_run();
+                String var = runCtx.var_decl().getText();
                 AnimationControllerActionCommand cmd = new AnimationControllerActionCommand();
-                cmd.action = AnimationControllerActionCommand.RUN;
+                if (runCtx.Run() != null) {
+                    cmd.action = AnimationControllerActionCommand.RUN;
+                } else {
+                    cmd.action = AnimationControllerActionCommand.REWIND;
+                    cmd.rewindPercentExpr = runCtx.logical_expression();
+                    cmd.rewindDurationExpr = runCtx.speed_expr().logical_expression();
+                    cmd.motionEaseType = parseMotionEase(runCtx.motion_ease_attr());
+                    cmd.motionEaseFunction = parseMotionEaseFunction(runCtx.motion_ease_attr());
+                    cmd.motionEaseParamExprs = parseMotionEaseParams(runCtx.motion_ease_attr());
+                }
                 cmd.varDef = prg.getVar(var);
                 cmd.targetVar = var;
-                cmd.varLineNum = ctx.animation_controller_run().var_decl().getStart().getLine();
+                cmd.varLineNum = runCtx.var_decl().getStart().getLine();
                 return cmd;
             }
 

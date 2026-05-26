@@ -177,6 +177,26 @@ public class WeaponSyntaxParsingTest {
     }
 
     @Test
+    public void conditionedCollisionCanUseWeaponColliderAsDestination() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "m1=>fighter1\n"
+                        + "m2=>fighter1\n"
+                        + "col=>sphere\n"
+                        + "var ik=0\n"
+                        + "[ik==1]\n"
+                        + "when col collides with m2.weapon.colliders[\"weapon_sphere_collider_1\"] do\n"
+                        + "end do");
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+        CollisionStatementCommand collision = (CollisionStatementCommand) prg.actions.get(4);
+        assertNotNull(collision.goExpr);
+        assertEquals("col", collision.sourceEndpoints.get(0).entity.varName);
+        assertTrue(collision.destEndpoint.equippedWeaponCollider);
+        assertEquals("m2", collision.destEndpoint.ownerVarName);
+        assertEquals("weapon_sphere_collider_1", collision.destEndpoint.colliderName);
+    }
+
+    @Test
     public void runningFolderParseDoesNotLoadWeaponFilesForCollisionVariables() throws Exception {
         File repoRoot = temporaryFolder.newFolder("repo");
         assertTrue(new File(repoRoot, "resources").mkdirs());

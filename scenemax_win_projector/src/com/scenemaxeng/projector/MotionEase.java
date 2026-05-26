@@ -20,15 +20,19 @@ public final class MotionEase {
     public static MotionEaseSpec fromCommand(ActionStatementBase cmd, SceneMaxScope scope) {
         if (cmd instanceof TimedVariableMotionCommand) {
             TimedVariableMotionCommand motion = (TimedVariableMotionCommand) cmd;
-            return new MotionEaseSpec(motion.motionEaseType, motion.motionEaseFunction,
-                    evaluateParams(motion.motionEaseParamExprs, scope));
+            return fromParts(motion.motionEaseType, motion.motionEaseFunction, motion.motionEaseParamExprs, scope);
         }
         if (cmd instanceof TimedMotionCommand) {
             TimedMotionCommand motion = (TimedMotionCommand) cmd;
-            return new MotionEaseSpec(motion.motionEaseType, motion.motionEaseFunction,
-                    evaluateParams(motion.motionEaseParamExprs, scope));
+            return fromParts(motion.motionEaseType, motion.motionEaseFunction, motion.motionEaseParamExprs, scope);
         }
         return LINEAR_SPEC;
+    }
+
+    public static MotionEaseSpec fromParts(int easeType, String functionName,
+                                           List<SceneMaxParser.Logical_expressionContext> paramExprs,
+                                           SceneMaxScope scope) {
+        return new MotionEaseSpec(easeType, functionName, evaluateParams(paramExprs, scope));
     }
 
     private static float[] evaluateParams(List<SceneMaxParser.Logical_expressionContext> paramExprs, SceneMaxScope scope) {

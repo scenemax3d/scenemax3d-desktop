@@ -51,6 +51,24 @@ public class AnimationControllerParsingTest {
     }
 
     @Test
+    public void parsesAnimationControllerRewindWithOptionalEasing() {
+        String code = "player1=>fighter\n"
+                + "my_anim = animation player1.kick\n"
+                + "my_anim.rewind 5 in 0.5 seconds ease out \"sine\"";
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(code);
+
+        assertTrue(prg.syntaxErrors.toString(), prg.syntaxErrors.isEmpty());
+        assertTrue(prg.actions.get(2) instanceof AnimationControllerActionCommand);
+
+        AnimationControllerActionCommand rewind = (AnimationControllerActionCommand) prg.actions.get(2);
+        assertEquals(AnimationControllerActionCommand.REWIND, rewind.action);
+        assertEquals("5", rewind.rewindPercentExpr.getText());
+        assertEquals("0.5", rewind.rewindDurationExpr.getText());
+        assertEquals("sine", rewind.motionEaseFunction);
+    }
+
+    @Test
     public void allowsAnimationEventToMoveRuntimeWeaponCollider() {
         String code = "m2=>fighter1 : pos (4,0,0)\n"
                 + "m2.weapon = \"weapon_player_weapon\"\n"
@@ -67,6 +85,38 @@ public class AnimationControllerParsingTest {
         ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(code);
 
         assertTrue(prg.syntaxErrors.isEmpty());
+    }
+
+    @Test
+    public void parsesInverseKinematicsCollisionRewindProgramShape() {
+        String code = "m1=>fighter1: pos (-5,-3,0)\n"
+                + "m2=>fighter1: pos(0,-3,0)\n"
+                + "m2.weapon = \"weapon_player_weapon\"\n"
+                + "m2.weapon.posture = \"fight\"\n"
+                + "anim = animation m2.zombie_punch1 at speed of 0.1\n"
+                + "col=>sphere : radius 0.5\n"
+                + "col.attach to m1.\"mixamorig:LeftHand\"\n"
+                + "var ik=0\n"
+                + "[ik==1]\n"
+                + "when col collides with m2.weapon.colliders[\"weapon_sphere_collider_1\"] do\n"
+                + "    anim.rewind 1 in 0.1 seconds ease out \"sine\"\n"
+                + "end do\n"
+                + "when key space is pressed once do\n"
+                + "    anim.run\n"
+                + "    m1.idle2 loop\n"
+                + "end do\n"
+                + "when key Q is pressed once do\n"
+                + "    ik=1\n"
+                + "    m1.ik = \"ik_test_ik\"\n"
+                + "    m1.ik.layer2.play : target m2.weapon.colliders[\"weapon_sphere_collider_1\"], blend 0.2, weight 1\n"
+                + "    wait 1 Seconds\n"
+                + "    m1.ik = empty\n"
+                + "    ik=0\n"
+                + "end do";
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(code);
+
+        assertTrue(prg.syntaxErrors.toString(), prg.syntaxErrors.isEmpty());
     }
 
     @Test
@@ -134,6 +184,30 @@ public class AnimationControllerParsingTest {
     }
 
     @Test
+    public void animationControllerRewindBlocksUntilRuntimeRewindFinishes() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse("player1=>fighter\n"
+                + "anim = animation player1.kick\n"
+                + "anim.rewind 5 in 0.5 seconds");
+        AnimationControllerActionCommand command = (AnimationControllerActionCommand) prg.actions.get(2);
+
+        SceneMaxScope scope = new SceneMaxScope();
+        VariableDef varDef = new VariableDef();
+        varDef.varName = "anim";
+        VarInst var = new VarInst(varDef, scope);
+        FakeAnimationRuntimeController runtimeController = new FakeAnimationRuntimeController();
+        var.value = runtimeController;
+        scope.vars_index.put("anim", var);
+
+        AnimationControllerActionController controller =
+                new AnimationControllerActionController(null, prg, scope, command);
+
+        assertFalse(controller.run(0.016f));
+        assertTrue(controller.run(0.016f));
+        assertEquals(1, runtimeController.rewindStartCount);
+        assertEquals(2, runtimeController.rewindUpdateCount);
+    }
+
+    @Test
     public void animationControllerRuntimeUsesSequenceCommands() throws Exception {
         String code = "player1=>fighter\n"
                 + "anim = animation player1.zombie_punch1 at speed of 0.1 then Idle2";
@@ -182,6 +256,8 @@ public class AnimationControllerParsingTest {
     private static class FakeAnimationRuntimeController extends AnimationRuntimeController {
         int runCount;
         int updateCount;
+        int rewindStartCount;
+        int rewindUpdateCount;
 
         FakeAnimationRuntimeController() {
             super(null, new ProgramDef(), new SceneMaxScope(), "player1", null, "zombie_punch1", 1);
@@ -196,6 +272,17 @@ public class AnimationControllerParsingTest {
         public boolean update(float tpf) {
             updateCount++;
             return updateCount >= 2;
+        }
+
+        @Override
+        public void startRewind(double percent, double durationSeconds, MotionEase.MotionEaseSpec easeSpec) {
+            rewindStartCount++;
+        }
+
+        @Override
+        public boolean updateRewind(float tpf) {
+            rewindUpdateCount++;
+            return rewindUpdateCount >= 2;
         }
     }
 
