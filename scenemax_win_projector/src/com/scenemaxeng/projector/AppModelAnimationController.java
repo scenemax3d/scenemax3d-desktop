@@ -172,23 +172,83 @@ public class AppModelAnimationController implements AnimEventListener {
     }
 
     public double getCurrentPercent() {
+        double length = getLength();
+        if (length <= 0) {
+            return -1;
+        }
+        return getCurrentTime() / length * 100.0;
+    }
+
+    public double getCurrentTime() {
         if (appModel == null) {
             return -1;
         }
 
         if (appModel.currentAction != null && appModel.currentAction.controller == this) {
             AnimComposer composer = appModel.getAnimComposer();
-            double length = appModel.currentAction.getLength();
-            if (composer == null || length <= 0) {
+            if (composer == null) {
                 return -1;
             }
-            return composer.getTime("Default") / length * 100.0;
+            return composer.getTime("Default");
         }
 
-        if (channel != null && channel.getAnimMaxTime() > 0) {
-            return channel.getTime() / channel.getAnimMaxTime() * 100.0;
+        if (channel != null) {
+            return channel.getTime();
         }
 
         return -1;
+    }
+
+    public double getLength() {
+        if (appModel != null && appModel.currentAction != null && appModel.currentAction.controller == this) {
+            return appModel.currentAction.getLength();
+        }
+
+        if (channel != null) {
+            return channel.getAnimMaxTime();
+        }
+
+        return -1;
+    }
+
+    public double getPlaybackSpeed() {
+        if (appModel != null && appModel.currentAction != null && appModel.currentAction.controller == this) {
+            return appModel.currentAction.getSpeed();
+        }
+
+        if (channel != null) {
+            return channel.getSpeed();
+        }
+
+        return 0;
+    }
+
+    public void setPlaybackSpeed(double speed) {
+        if (appModel != null && appModel.currentAction != null && appModel.currentAction.controller == this) {
+            appModel.currentAction.setSpeed(speed);
+        }
+
+        if (channel != null) {
+            channel.setSpeed((float) speed);
+        }
+    }
+
+    public void setCurrentTime(double time) {
+        double length = getLength();
+        if (length <= 0) {
+            return;
+        }
+
+        double clampedTime = Math.max(0, Math.min(length, time));
+        if (appModel != null && appModel.currentAction != null && appModel.currentAction.controller == this) {
+            AnimComposer composer = appModel.getAnimComposer();
+            if (composer != null) {
+                composer.setTime("Default", clampedTime);
+            }
+        }
+
+        if (channel != null) {
+            channel.setTime((float) clampedTime);
+        }
     }
 }

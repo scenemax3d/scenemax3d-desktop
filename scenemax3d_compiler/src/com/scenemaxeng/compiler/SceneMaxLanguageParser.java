@@ -2246,6 +2246,11 @@ public class SceneMaxLanguageParser implements IParser {
                 }
 
                 DoBlockCommand doBlock = new DoBlockVisitor(prg).visit(ctx.input().do_block());
+                if (doBlock == null) {
+                    prg.syntaxErrors.add("Syntax error in input handler at line:"
+                            + ctx.input().getStart().getLine());
+                    return null;
+                }
                 doBlock.isSecondLevelReturnPoint = true;
                 cmd.doBlock = doBlock;
 
@@ -3880,12 +3885,22 @@ public class SceneMaxLanguageParser implements IParser {
             }
 
             public ActionStatementBase visitAnimationControllerRunStatement(SceneMaxParser.AnimationControllerRunStatementContext ctx) {
-                String var = ctx.animation_controller_run().var_decl().getText();
+                SceneMaxParser.Animation_controller_runContext runCtx = ctx.animation_controller_run();
+                String var = runCtx.var_decl().getText();
                 AnimationControllerActionCommand cmd = new AnimationControllerActionCommand();
-                cmd.action = AnimationControllerActionCommand.RUN;
+                if (runCtx.Run() != null) {
+                    cmd.action = AnimationControllerActionCommand.RUN;
+                } else {
+                    cmd.action = AnimationControllerActionCommand.REWIND;
+                    cmd.rewindPercentExpr = runCtx.logical_expression();
+                    cmd.rewindDurationExpr = runCtx.speed_expr().logical_expression();
+                    cmd.motionEaseType = parseMotionEase(runCtx.motion_ease_attr());
+                    cmd.motionEaseFunction = parseMotionEaseFunction(runCtx.motion_ease_attr());
+                    cmd.motionEaseParamExprs = parseMotionEaseParams(runCtx.motion_ease_attr());
+                }
                 cmd.varDef = prg.getVar(var);
                 cmd.targetVar = var;
-                cmd.varLineNum = ctx.animation_controller_run().var_decl().getStart().getLine();
+                cmd.varLineNum = runCtx.var_decl().getStart().getLine();
                 return cmd;
             }
 

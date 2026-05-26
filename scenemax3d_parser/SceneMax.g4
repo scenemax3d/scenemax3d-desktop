@@ -823,7 +823,7 @@ file_attr : File Equals? QUOTED_STRING ;
 
 show_axis_option : Axis X? Y? Z? ;
 delete : var_decl '.' Delete ;
-animation_controller_run : var_decl '.' Run ;
+animation_controller_run : var_decl '.' (Run | Rewind logical_expression In speed_expr motion_ease_attr?) ;
 animate : var_decl '.' Animation animation_attr (and_expr animation_attr)* ;
 animation_attr : anim_attr_speed ;
 anim_attr_speed : Speed Equals? logical_expression speed_for_seconds? when_frames_above?;
@@ -969,9 +969,9 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Input | Reverse | Break | HandBrake | Horn | Engine | Power | Breaking | Friction | Suspension | Compression | Damping |
     Stiffness | Length | Stop | Return | Animate | Animation | Print | Append | Color | Font | SystemColor | Ray | Check | Pos |
     Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
-    Screen | Scene | Environment | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run |
+    Screen | Scene | Environment | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run | Rewind |
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
-    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Colliders | Posture | Empty | Event |
+    Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Colliders | Posture | Empty | Event | IK |
     Weight | Blend |
     Motion;
 
@@ -1298,6 +1298,7 @@ Borderless : 'Borderless' | 'borderless' ;
 Class : 'class' | 'Class' ;
 Function : 'Function' | 'function' ;
 Run : 'Run' | 'run' ;
+Rewind : 'Rewind' | 'rewind' ;
 Call : 'Call' | 'call' ;
 Event : 'Event' | 'event' ;
 Every : 'Every' | 'every' ;

@@ -22,6 +22,7 @@ public class AnimationRuntimeController {
     private final List<AnimationRuntimeEvent> events = new ArrayList<>();
     private AnimateCompositeController runningController;
     private ModelAnimateController runningAnimationController;
+    private RewindState rewindState;
 
     public AnimationRuntimeController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope,
                                       String sourceVar, VariableDef sourceVarDef,
@@ -99,7 +100,58 @@ public class AnimationRuntimeController {
             }
             runningController = null;
             runningAnimationController = null;
+            rewindState = null;
         }
+    }
+
+    public void startRewind(double percent, double durationSeconds, MotionEase.MotionEaseSpec easeSpec) {
+        AppModelAnimationController controller = getActiveAppAnimationController();
+        if (controller == null) {
+            rewindState = null;
+            return;
+        }
+
+        double length = controller.getLength();
+        double currentTime = controller.getCurrentTime();
+        if (length <= 0 || currentTime < 0) {
+            rewindState = null;
+            return;
+        }
+
+        double targetTime = Math.max(0, currentTime - length * Math.max(0, percent) / 100.0);
+        rewindState = new RewindState(controller, currentTime, targetTime,
+                Math.max(0, durationSeconds), controller.getPlaybackSpeed(), easeSpec);
+        controller.setPlaybackSpeed(0);
+        if (rewindState.durationSeconds <= 0) {
+            controller.setCurrentTime(targetTime);
+            finishRewind();
+        }
+    }
+
+    public boolean updateRewind(float tpf) {
+        if (rewindState == null) {
+            return true;
+        }
+
+        if (rewindState.controller != getActiveAppAnimationController()) {
+            finishRewind();
+            return true;
+        }
+
+        rewindState.elapsedSeconds += Math.max(0, tpf);
+        double progress = rewindState.durationSeconds <= 0
+                ? 1.0
+                : Math.min(1.0, rewindState.elapsedSeconds / rewindState.durationSeconds);
+        float easedProgress = MotionEase.apply(rewindState.easeSpec, (float) progress);
+        double currentTime = rewindState.startTime
+                + (rewindState.targetTime - rewindState.startTime) * easedProgress;
+        rewindState.controller.setCurrentTime(currentTime);
+
+        if (progress >= 1.0) {
+            finishRewind();
+            return true;
+        }
+        return false;
     }
 
     public void addEvent(String eventAnimationName, double percent, DoBlockCommand doBlock) {
@@ -195,6 +247,19 @@ public class AnimationRuntimeController {
         return runningAnimationController;
     }
 
+    private AppModelAnimationController getActiveAppAnimationController() {
+        ModelAnimateController activeController = getActiveAnimationController();
+        return activeController == null ? null : activeController.getAnimationController();
+    }
+
+    private void finishRewind() {
+        if (rewindState != null) {
+            rewindState.controller.setCurrentTime(rewindState.targetTime);
+            rewindState.controller.setPlaybackSpeed(rewindState.resumeSpeed);
+            rewindState = null;
+        }
+    }
+
     static class AnimationRuntimeEvent {
         final String animationName;
         final double percent;
@@ -204,6 +269,26 @@ public class AnimationRuntimeController {
             this.animationName = animationName;
             this.percent = percent;
             this.doBlock = doBlock;
+        }
+    }
+
+    private static class RewindState {
+        final AppModelAnimationController controller;
+        final double startTime;
+        final double targetTime;
+        final double durationSeconds;
+        final double resumeSpeed;
+        final MotionEase.MotionEaseSpec easeSpec;
+        double elapsedSeconds;
+
+        RewindState(AppModelAnimationController controller, double startTime, double targetTime,
+                    double durationSeconds, double resumeSpeed, MotionEase.MotionEaseSpec easeSpec) {
+            this.controller = controller;
+            this.startTime = startTime;
+            this.targetTime = targetTime;
+            this.durationSeconds = durationSeconds;
+            this.resumeSpeed = resumeSpeed;
+            this.easeSpec = easeSpec == null ? MotionEase.LINEAR_SPEC : easeSpec;
         }
     }
 }
