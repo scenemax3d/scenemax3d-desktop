@@ -1785,6 +1785,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             ChangeAngularVelocityController ctl = new ChangeAngularVelocityController(this,prg,scope,(ChangeAngularVelocityCommand)action);
             ctl.async=action.isAsync;
             scope.add(ctl);
+        } else if(action instanceof PhysicsMotionCommand) {
+            PhysicsMotionController ctl = new PhysicsMotionController(this, prg, scope, (PhysicsMotionCommand) action);
+            ctl.async=action.isAsync;
+            scope.add(ctl);
         } else if(action instanceof AnimateOptionsCommand) {
             AnimateOptionsController ctl = new AnimateOptionsController(this,prg,scope,(AnimateOptionsCommand)action);
             ctl.async=true;

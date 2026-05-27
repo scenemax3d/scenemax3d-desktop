@@ -592,6 +592,8 @@ action_operation
    | mass       # massStatement
    | velocity   # velocityStatement
    | angular_velocity # angularVelocity
+   | throw_physics # throwPhysicsStatement
+   | physics_command # physicsCommandStatement
    | restitution # restitutionStatement
    | friction    # frictionStatement
    | scale      # scaleStatement
@@ -757,6 +759,33 @@ user_data : var_decl '.' Data '.' field_name Equals logical_expression ;
 
 velocity : var_decl '.' Velocity Equals? logical_expression ;
 angular_velocity : var_decl '.' Angular Velocity Equals? logical_expression ;
+throw_physics : var_decl '.' Throw throw_target_ref Power Equals? logical_expression throw_option* ;
+throw_target_ref : throw_target_kind physics_target_ref ;
+throw_target_kind : Toward | At ;
+throw_option : Angle Equals? logical_expression
+             | Arc Equals? physics_arc_value
+             | Spin Equals? '(' pos_axes ')'
+             ;
+physics_arc_value : Low | Medium | High | logical_expression ;
+physics_target_ref : var_decl | position_statement | '(' pos_axes ')' ;
+physics_command : var_decl '.' Physics physics_operation ;
+physics_operation : physics_linear_action
+                  | physics_vector_action
+                  | physics_velocity_action
+                  | physics_stop_action
+                  ;
+physics_linear_action : physics_linear_mode physics_linear_target (for_time_expr)? ;
+physics_linear_mode : Impulse | Force ;
+physics_linear_target : move_direction logical_expression
+                      | Toward physics_target_ref Power Equals? logical_expression
+                      ;
+physics_vector_action : physics_vector_mode '(' pos_axes ')' physics_torque_impulse? (for_time_expr)? ;
+physics_torque_impulse : Impulse ;
+physics_vector_mode : Impulse | Force | Torque ;
+physics_velocity_action : Velocity '(' pos_axes ')'
+                        | Angular Velocity '(' pos_axes ')'
+                        ;
+physics_stop_action : Stop ;
 friction : var_decl '.' Friction Equals? logical_expression ;
 restitution : var_decl '.' Restitution Equals? logical_expression ;
 
@@ -973,7 +1002,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
     Effekseer | Attr | Cinematic | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Colliders | Posture | Empty | Event | IK |
     Weight | Blend |
-    Motion;
+    Motion | Throw | Toward | Arc | Spin | Physics | Impulse | Force | Torque;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
@@ -1265,6 +1294,14 @@ Default : 'Default' | 'default' ;
 Modifiers : 'Modifiers' | 'modifiers' ;
 Motion : 'Motion' | 'motion' ;
 Apply : 'Apply' | 'apply' ;
+Throw : 'Throw' | 'throw' ;
+Toward : 'Toward' | 'toward' ;
+Arc : 'Arc' | 'arc' ;
+Spin : 'Spin' | 'spin' ;
+Physics : 'Physics' | 'physics' ;
+Impulse : 'Impulse' | 'impulse' ;
+Force : 'Force' | 'force' ;
+Torque : 'Torque' | 'torque' ;
 Plugins: 'plugins' | 'Plugins' ;
 Switch : 'Switch' | 'switch' ;
 //Car : 'Car' | 'car' ;
@@ -1395,6 +1432,7 @@ fragment ESCAPED_QUOTE : '\\"';
 QUOTED_STRING :   '"' ( ESCAPED_QUOTE | ~('\n'|'\r') )*? '"';
 
 // : [ \t\r\n]+ -> skip ; // skip spaces, tabs, newlines
+BOM : '\uFEFF' -> skip ;
 WS : [ \r\n\t] + -> channel (HIDDEN) ;
 LINE_COMMENT : '//' ~[\r\n]* -> skip ;
 BlockComment : '/*' .*? '*/' -> skip ;

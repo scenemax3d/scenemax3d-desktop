@@ -160,10 +160,10 @@ public class SettingsDialog extends JDialog {
                     FileUtils.deleteQuietly(new File("OpenAL64.dll"));
                     String ver = Util.getAppVersion();
                     String launcherName = "launcher" + ver + ".jar";
-                    FileUtils.forceDelete(new File(launcherName));
+                    FileUtils.deleteQuietly(new File(launcherName));
                     JOptionPane.showMessageDialog(null, "RunTime reset finished successfully", "RunTime Reset", JOptionPane.INFORMATION_MESSAGE);
 
-                } catch (IOException ex) {
+                } catch (Exception ex) {
                     ex.printStackTrace();
                 }
             }
