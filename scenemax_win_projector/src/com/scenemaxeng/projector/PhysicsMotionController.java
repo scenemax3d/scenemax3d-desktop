@@ -19,6 +19,7 @@ public class PhysicsMotionController extends SceneMaxBaseController {
     private float duration;
     private Vector3f cachedVector;
     private RigidBodyControl body;
+    private int velocitySettleFrames;
 
     public PhysicsMotionController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope, PhysicsMotionCommand cmd) {
         super(app, prg, scope, cmd);
@@ -48,8 +49,18 @@ public class PhysicsMotionController extends SceneMaxBaseController {
             if (physics.action != PhysicsMotionCommand.ACTION_FORCE
                     && !(physics.action == PhysicsMotionCommand.ACTION_TORQUE && !physics.impulseMode)) {
                 applyVector(physics, cachedVector);
+                if (needsNextFrameVelocitySettle(physics)) {
+                    velocitySettleFrames = 1;
+                    return false;
+                }
                 return true;
             }
+        }
+
+        if (velocitySettleFrames > 0) {
+            applyVector(physics, cachedVector);
+            velocitySettleFrames--;
+            return velocitySettleFrames == 0;
         }
 
         applyVector(physics, cachedVector);
@@ -110,6 +121,12 @@ public class PhysicsMotionController extends SceneMaxBaseController {
             default:
                 break;
         }
+    }
+
+    private boolean needsNextFrameVelocitySettle(PhysicsMotionCommand physics) {
+        return physics.action == PhysicsMotionCommand.ACTION_THROW
+                || physics.action == PhysicsMotionCommand.ACTION_VELOCITY
+                || physics.action == PhysicsMotionCommand.ACTION_ANGULAR_VELOCITY;
     }
 
     private Vector3f calculateVector(PhysicsMotionCommand physics) {

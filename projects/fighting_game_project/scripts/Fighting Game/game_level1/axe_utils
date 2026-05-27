@@ -116,9 +116,9 @@ show_axe_search_instructions = {
  	  camera.attach stop
     camera.chase stop
     axe_throw_cam=>cinematic.camera.cinematic_rig_axe
-    axe_throw_cam.play : target axe, duration 1.5
+    axe_throw_cam.play : target axe, duration 10
     wait 1.5 seconds
-    axe_throw_cam.play : target axe, duration 1.5, reverse
+    axe_throw_cam.play : target axe, duration 10, reverse
     run set_camera_on_player
     level1_camera_modifiers_paused = 0
   end do

@@ -88,18 +88,11 @@ level1_dragon_rock_clear_slot(slot_id) = {
 }
 
 level1_fly_dragon_gate_rock_to_ground(r, slot_id) = {
-  var throw_distance = distance(player1, r)
-  var launch_power = 7.0 + throw_distance * 0.72 + rnd(4)
   var rock_age = 0
 
-  if(launch_power < 54.0) {
-    launch_power=54.0
-  } else if(launch_power > 112.0) {
-    launch_power=112.0
-  }
-
   r.physics stop
-  r.throw toward (player1 up 2) power launch_power angle -12.0 spin (1.5,3.0,1.0)
+  var dist = distance(player1,dragons_gate)
+  r.throw at player1 power dist*30/147 // apply power to the rocks according to distance
 
   do
     if(game_status!=GAME_STATE_START || level1_dragon_rocks_started==0 || r.y < -125.0) {
@@ -144,7 +137,7 @@ level1_launch_dragon_gate_rock_1 = {
   level1_dragon_rock_count=level1_dragon_rock_count+1
 
   var level1_dragon_rock_1_scale = 1.56 + rnd(365) * 0.01
-  dragon_gate_rock_1 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_1_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 8.0
+  dragon_gate_rock_1 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_1_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
   run level1_fly_dragon_gate_rock_to_ground(dragon_gate_rock_1, 1)
 }
 
@@ -153,7 +146,7 @@ level1_launch_dragon_gate_rock_2 = {
   level1_dragon_rock_count=level1_dragon_rock_count+1
 
   var level1_dragon_rock_2_scale = 1.44 + rnd(337) * 0.01
-  dragon_gate_rock_2 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_2_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 8.0
+  dragon_gate_rock_2 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_2_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
   run level1_fly_dragon_gate_rock_to_ground(dragon_gate_rock_2, 2)
 }
 
@@ -162,7 +155,7 @@ level1_launch_dragon_gate_rock_3 = {
   level1_dragon_rock_count=level1_dragon_rock_count+1
 
   var level1_dragon_rock_3_scale = 1.68 + rnd(393) * 0.01
-  dragon_gate_rock_3 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_3_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 8.0
+  dragon_gate_rock_3 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_3_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
   run level1_fly_dragon_gate_rock_to_ground(dragon_gate_rock_3, 3)
 }
 
@@ -171,7 +164,7 @@ level1_launch_dragon_gate_rock_4 = {
   level1_dragon_rock_count=level1_dragon_rock_count+1
 
   var level1_dragon_rock_4_scale = 1.5 + rnd(351) * 0.01
-  dragon_gate_rock_4 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_4_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 8.0
+  dragon_gate_rock_4 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_4_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
   run level1_fly_dragon_gate_rock_to_ground(dragon_gate_rock_4, 4)
 }
 

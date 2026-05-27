@@ -19,6 +19,7 @@ import com.scenemax.designer.material.MaterialDesignerPanel;
 import com.scenemax.designer.material.MaterialDocument;
 import com.scenemax.designer.material.MaterialTemplatePreset;
 import com.scenemax.designer.motion.ThrowMotionDesignerPanel;
+import com.scenemax.designer.physics.PhysicsSimulationPanel;
 import com.scenemax.designer.shader.EnvironmentShaderDesignerPanel;
 import com.scenemax.designer.shader.EnvironmentShaderDocument;
 import com.scenemax.designer.shader.EnvironmentShaderTemplatePreset;
@@ -594,6 +595,9 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     FontGeneratorDialog dlg = new FontGeneratorDialog(MainApp.this);
                     dlg.setLocationRelativeTo(MainApp.this);
                     dlg.setVisible(true);
+
+                } else if (cmd.equals("physics_simulation")) {
+                    openPluginView("physics-simulation", "Physics Simulation", new PhysicsSimulationPanel());
 
                 } else if (cmd.equals("open_assets_folder")) {
                     try {

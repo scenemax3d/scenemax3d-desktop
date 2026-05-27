@@ -57,6 +57,23 @@ public class PhysicsCommandParsingTest {
     }
 
     @Test
+    public void parsesThrowAtTargetWithUnderscoreAndDigitVariableName() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "m1=>fighter1: pos (-5,-3,0)\n"
+                        + "dragon_gate_rock_5 => meshy_rock1 : pos (0,0,0), collision shape box, mass 8.0\n"
+                        + "dragon_gate_rock_5.throw at m1 power 100");
+
+        assertTrue(String.join(System.lineSeparator(), prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+        assertTrue(prg.actions.get(2) instanceof PhysicsMotionCommand);
+
+        PhysicsMotionCommand throwCommand = (PhysicsMotionCommand) prg.actions.get(2);
+        assertEquals(PhysicsMotionCommand.ACTION_THROW, throwCommand.action);
+        assertEquals(PhysicsMotionCommand.TARGET_AT, throwCommand.targetMode);
+        assertEquals("dragon_gate_rock_5", throwCommand.targetVar);
+        assertEquals("m1", throwCommand.targetEntity);
+    }
+
+    @Test
     public void parsesRawPhysicsCommands() {
         ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
                 "rock => meshy_rock1 : mass 8, collision shape box\n"
