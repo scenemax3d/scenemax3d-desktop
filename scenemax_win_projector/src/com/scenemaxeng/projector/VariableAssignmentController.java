@@ -80,8 +80,28 @@ public class VariableAssignmentController extends CompositeController {
             } else {
 
                 if (var.varType == VariableDef.VAR_TYPE_ARRAY) {
-                    Object arrIndex = new ActionLogicalExpressionVm(varAssignmentCommand.arrayIndexes.get(varDef), this.scope).evaluate();
-                    var.values.set( ((Double)arrIndex).intValue(), retval);
+                    SceneMaxParser.Logical_expressionContext indexExpr = varAssignmentCommand.arrayIndexes.get(varDef);
+                    Object arrIndex = new ActionLogicalExpressionVm(indexExpr, this.scope).evaluate();
+                    if (!(arrIndex instanceof Number)) {
+                        reportArraySetError(varDef, resolveArraySetLine(varDef),
+                                "Array '" + varDef.varName + "' index must be a number");
+                        return true;
+                    }
+
+                    int arrayIndex = ((Number) arrIndex).intValue();
+                    if (var.values == null) {
+                        reportArraySetError(varDef, resolveArraySetLine(varDef),
+                                "Array '" + varDef.varName + "' is not initialized");
+                        return true;
+                    }
+                    if (arrayIndex < 0 || arrayIndex >= var.values.size()) {
+                        reportArraySetError(varDef, resolveArraySetLine(varDef),
+                                "Array '" + varDef.varName + "' index " + arrayIndex
+                                        + " out of bounds for length " + var.values.size());
+                        return true;
+                    }
+
+                    var.values.set(arrayIndex, retval);
                     index++;
                     continue;
                 }
@@ -122,6 +142,24 @@ public class VariableAssignmentController extends CompositeController {
         }
 
         return true;
+    }
+
+    private int resolveArraySetLine(VariableDef varDef) {
+        SceneMaxParser.Logical_expressionContext indexExpr = varAssignmentCommand.arrayIndexes.get(varDef);
+        if (indexExpr != null && indexExpr.start != null) {
+            return indexExpr.start.getLine();
+        }
+        if (varAssignmentCommand.varLineNum > 0) {
+            return varAssignmentCommand.varLineNum;
+        }
+        return varDef.varLineNum;
+    }
+
+    private void reportArraySetError(VariableDef varDef, int line, String message) {
+        String prefix = line > 0 ? "Line " + line + ": " : "";
+        if (app != null) {
+            app.handleRuntimeError(prefix + message);
+        }
     }
 
     private VarInst addVarIndex(VariableDef varDef) {

@@ -19,6 +19,7 @@ import com.scenemax.designer.material.MaterialDesignerPanel;
 import com.scenemax.designer.material.MaterialDocument;
 import com.scenemax.designer.material.MaterialTemplatePreset;
 import com.scenemax.designer.motion.ThrowMotionDesignerPanel;
+import com.scenemax.designer.physics.PhysicsSimulationPanel;
 import com.scenemax.designer.shader.EnvironmentShaderDesignerPanel;
 import com.scenemax.designer.shader.EnvironmentShaderDocument;
 import com.scenemax.designer.shader.EnvironmentShaderTemplatePreset;
@@ -594,6 +595,9 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     FontGeneratorDialog dlg = new FontGeneratorDialog(MainApp.this);
                     dlg.setLocationRelativeTo(MainApp.this);
                     dlg.setVisible(true);
+
+                } else if (cmd.equals("physics_simulation")) {
+                    openPluginView("physics-simulation", "Physics Simulation", new PhysicsSimulationPanel());
 
                 } else if (cmd.equals("open_assets_folder")) {
                     try {
@@ -6633,7 +6637,13 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     public void keyPressed(KeyEvent e) {
 
-        if ((e.getSource() == textArea || e.getSource() == textAreaRTL) && e.getKeyCode() == KeyEvent.VK_F && e.isControlDown()) {
+        if ((e.getSource() == textArea || e.getSource() == textAreaRTL)
+                && e.getKeyCode() == KeyEvent.VK_F && e.isControlDown() && e.isShiftDown()) {
+            formatActiveScriptFile();
+            e.consume();
+
+        } else if ((e.getSource() == textArea || e.getSource() == textAreaRTL)
+                && e.getKeyCode() == KeyEvent.VK_F && e.isControlDown()) {
 
             String selectedText = textAreaSP.isVisible() ? textArea.getSelectedText() : textAreaRTL.getSelectedText();
             String activeFilePath = editorTabPanel != null ? editorTabPanel.getActiveFilePath() : null;
@@ -6721,6 +6731,62 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             if (editorTabPanel != null && editorTabPanel.getActiveTab() != null) {
                 editorTabPanel.getActiveTab().isRtlMode = textAreaRtlSP.isVisible();
             }
+        }
+    }
+
+    private void formatActiveScriptFile() {
+        if (editorTabPanel == null || editorTabPanel.getActiveTab() == null) {
+            return;
+        }
+        if (!"text".equals(editorTabPanel.getActiveTabKind()) || !isActiveScriptFile(editorTabPanel.getActiveFilePath())) {
+            return;
+        }
+
+        JTextArea activeEditor = textAreaSP.isVisible() ? textArea : textAreaRTL;
+        int caretPosition = activeEditor.getCaretPosition();
+        String currentText = activeEditor.getText();
+        String formattedText = SceneMaxScriptFormatter.format(currentText);
+        if (formattedText.equals(currentText)) {
+            return;
+        }
+
+        textArea.setText(formattedText);
+        textAreaRTL.setText(formattedText);
+        JTextArea visibleEditor = textAreaSP.isVisible() ? textArea : textAreaRTL;
+        visibleEditor.setCaretPosition(Math.min(caretPosition, formattedText.length()));
+        editorTabPanel.markActiveTabDirty();
+        isDocumentChanged = true;
+        if (autoComplete != null) {
+            autoComplete.invalidateCache();
+        }
+    }
+
+    private boolean isActiveScriptFile(String filePath) {
+        if (filePath == null || filePath.isBlank()) {
+            return false;
+        }
+        File activeFile = new File(filePath);
+        if (!activeFile.isFile()) {
+            return false;
+        }
+        String scriptsFolder = Util.getScriptsFolder();
+        if (scriptsFolder == null || scriptsFolder.isBlank()) {
+            return false;
+        }
+        try {
+            String activePath = activeFile.getCanonicalPath();
+            String scriptsPath = new File(scriptsFolder).getCanonicalPath();
+            if (!scriptsPath.endsWith(File.separator)) {
+                scriptsPath += File.separator;
+            }
+            return activePath.startsWith(scriptsPath);
+        } catch (IOException ex) {
+            String activePath = activeFile.getAbsolutePath();
+            String scriptsPath = new File(scriptsFolder).getAbsolutePath();
+            if (!scriptsPath.endsWith(File.separator)) {
+                scriptsPath += File.separator;
+            }
+            return activePath.startsWith(scriptsPath);
         }
     }
 

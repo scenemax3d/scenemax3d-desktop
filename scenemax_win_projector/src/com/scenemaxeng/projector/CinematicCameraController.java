@@ -33,6 +33,7 @@ class CinematicCameraController extends SceneMaxBaseController {
     private RunTimeVarDef rigTarget;
     private boolean playbackRegistered;
     private float playbackFovDegrees = 50f;
+    private Quaternion lockedTargetPlacementRotation;
 
     private static class RuntimeTargetReference {
         Vector3f point;
@@ -247,12 +248,28 @@ class CinematicCameraController extends SceneMaxBaseController {
     private void updateRuntimeRigTransform(RuntimeCinematicRig rig) {
         RuntimeTargetReference targetReference = resolveCurrentTargetReference(rig);
         if (targetReference != null && rig != null && rig.hasRelativeTargetPlacement) {
-            runtimeRigPosition = targetReference.point.add(targetReference.rotation.mult(rig.relativeRigPositionToTarget));
-            runtimeRigRotation = targetReference.rotation.mult(rig.relativeRigRotationToTarget.clone());
+            Quaternion placementRotation = resolveRigPlacementRotation(targetReference.rotation);
+            runtimeRigPosition = targetReference.point.add(placementRotation.mult(rig.relativeRigPositionToTarget));
+            runtimeRigRotation = placementRotation.mult(rig.relativeRigRotationToTarget.clone());
         } else {
             runtimeRigPosition = rig != null && rig.position != null ? rig.position.clone() : new Vector3f();
             runtimeRigRotation = rig != null && rig.rotation != null ? rig.rotation.clone() : new Quaternion();
         }
+    }
+
+    Quaternion resolveRigPlacementRotation(Quaternion targetRotation) {
+        Quaternion resolved = targetRotation != null ? targetRotation : new Quaternion();
+        if (shouldFollowLiveTargetRotation()) {
+            return resolved;
+        }
+        if (lockedTargetPlacementRotation == null) {
+            lockedTargetPlacementRotation = resolved.clone();
+        }
+        return lockedTargetPlacementRotation;
+    }
+
+    private boolean shouldFollowLiveTargetRotation() {
+        return cmd.lookAtPosStatement != null;
     }
 
     private RuntimeTargetReference resolveCurrentTargetReference(RuntimeCinematicRig rig) {

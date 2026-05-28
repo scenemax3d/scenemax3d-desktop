@@ -39,7 +39,8 @@
     ]},
 
     {"name": "Tools", "items": [
-      {"name": "Font Generator...","command": "font_generator"}
+      {"name": "Font Generator...","command": "font_generator"},
+      {"name": "Physics Simulation","command": "physics_simulation"}
     ]},
 
     {"name": "View", "items": [

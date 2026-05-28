@@ -1,39 +1,22 @@
 
 
-player1 => fighter1 : pos (4,-3,0)
+s1=>collider sphere : pos (-4,0,0)
+r1 => meshy_rock1 : pos (4,5,0), scale 3, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
 
-b=>box : pos (-4,0,0)
-camera.chase b
-
-axe_lookup = {
-	player1.weapon = "weapon_player_weapon"
- 
-	when key Q is pressed once do
-	 
-    player1.weapon.posture = "fight"
-	  anim = animation player1.zombie_punch1
-	  anim.event("zombie_punch1", 30) = {
-
-	    do Async
-				camera.attach stop
-  			camera.chase stop
-
-  			axe_throw_cam=>cinematic.camera.axe_throw_front
-  			axe_throw_cam.play : target player1.weapon, duration 0.85
-	    end do
-	    
-		  player1.data.throw_axe = 1
-		  player1.weapon.Detach
-		  motion = system.motion("motion_axe_throw")
-      motion.apply player1.weapon
-      player1.weapon.posture = "fight"
-		  player1.data.throw_axe = 0
-	  }
-	  
-	  anim.run
-	  Camera.chase b
-	  
-	end do 
+xxx (x1, rock)={
+  var rock_age = 0
+	rock.physics stop
+  rock.throw at x1 power 10 
+  
+	do
+    if(x1 Collides with rock) {
+    	sys.print "xxx"
+    }
+    wait 0.04 seconds
+    rock_age=rock_age+0.04
+	while rock_age<8
+	
 }
 
-run axe_lookup
+Run xxx(s1,r1)
+

@@ -14,6 +14,8 @@ import org.json.JSONObject;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -21,6 +23,8 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class SceneMaxLanguageParser implements IParser {
 
@@ -36,6 +40,10 @@ public class SceneMaxLanguageParser implements IParser {
     public static List<String> filesUsed = new ArrayList<>();
     public static List<String> macroFilesUsed = new ArrayList<>();
     private static final HashMap<String, String> cinematicRigLocationCache = new HashMap<>();
+    private static final Logger PARSER_ERROR_LOGGER = Logger.getLogger(SceneMaxLanguageParser.class.getName());
+    private static final DateTimeFormatter PARSER_ERROR_TIMESTAMP_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final String PARSER_ERROR_LOG_FILE = "scenemax_parser_errors.log";
 
     private ProgramDef prg = null;
     private String codePath="";
@@ -255,7 +263,13 @@ public class SceneMaxLanguageParser implements IParser {
 
 
         ProgramVisitor v = new ProgramVisitor(this.prg, this.codePath);
-        ProgramDef prg = v.visit(parser.prog());
+        ProgramDef prg;
+        try {
+            prg = v.visit(parser.prog());
+        } catch (RuntimeException ex) {
+            logParserException(ex);
+            throw ex;
+        }
 
         if(errors.size()>0) {
             if(prg==null){
@@ -264,7 +278,79 @@ public class SceneMaxLanguageParser implements IParser {
             prg.syntaxErrors.addAll(errors);
         }
 
+        logParserErrors(prg);
+
         return prg;
+    }
+
+    private void logParserErrors(ProgramDef prg) {
+        if (prg == null || prg.syntaxErrors == null || prg.syntaxErrors.isEmpty()) {
+            return;
+        }
+
+        StringBuilder message = new StringBuilder();
+        message.append("[")
+                .append(LocalDateTime.now().format(PARSER_ERROR_TIMESTAMP_FORMAT))
+                .append("] SceneMax parser errors");
+        message.append(" source=").append(resolveParserLogSource());
+        if (isChildParser) {
+            message.append(" childParser=true");
+        }
+        message.append(System.lineSeparator());
+        for (String error : prg.syntaxErrors) {
+            message.append("  - ").append(error).append(System.lineSeparator());
+        }
+
+        String logMessage = message.toString();
+        PARSER_ERROR_LOGGER.log(Level.SEVERE, logMessage);
+        appendParserErrorLog(logMessage);
+    }
+
+    private void logParserException(RuntimeException ex) {
+        StringBuilder message = new StringBuilder();
+        message.append("[")
+                .append(LocalDateTime.now().format(PARSER_ERROR_TIMESTAMP_FORMAT))
+                .append("] SceneMax parser exception");
+        message.append(" source=").append(resolveParserLogSource());
+        if (isChildParser) {
+            message.append(" childParser=true");
+        }
+        message.append(System.lineSeparator());
+        message.append("  - ").append(ex.getClass().getName());
+        if (ex.getMessage() != null && !ex.getMessage().trim().isEmpty()) {
+            message.append(": ").append(ex.getMessage());
+        }
+        message.append(System.lineSeparator());
+        StringWriter stackTrace = new StringWriter();
+        ex.printStackTrace(new PrintWriter(stackTrace));
+        message.append(stackTrace);
+
+        String logMessage = message.toString();
+        PARSER_ERROR_LOGGER.log(Level.SEVERE, logMessage, ex);
+        appendParserErrorLog(logMessage);
+    }
+
+    private String resolveParserLogSource() {
+        if (_sourceFileName != null && !_sourceFileName.trim().isEmpty()) {
+            if (codePath != null && !codePath.trim().isEmpty()) {
+                return _sourceFileName + " (" + codePath + ")";
+            }
+            return _sourceFileName;
+        }
+        if (codePath != null && !codePath.trim().isEmpty()) {
+            return codePath;
+        }
+        return "<inline>";
+    }
+
+    private static void appendParserErrorLog(String message) {
+        try (Writer writer = new BufferedWriter(new OutputStreamWriter(
+                new FileOutputStream(PARSER_ERROR_LOG_FILE, true), StandardCharsets.UTF_8))) {
+            writer.write(message);
+            writer.write(System.lineSeparator());
+        } catch (IOException ex) {
+            PARSER_ERROR_LOGGER.log(Level.WARNING, "Failed to write SceneMax parser error log", ex);
+        }
     }
 
     public static void mergeExternalCode(ProgramDef prg, ProgramDef extPrg) {
@@ -2661,6 +2747,7 @@ public class SceneMaxLanguageParser implements IParser {
 
             public VariableAssignmentCommand visitModify_variable(SceneMaxParser.Modify_variableContext ctx) {
                 VariableAssignmentCommand cmd = new VariableAssignmentCommand();
+                cmd.varLineNum = ctx.start != null ? ctx.start.getLine() : 0;
                 ctx.variable_name_and_mandatory_assignemt().forEach(modify_variableContext -> {
                     String varName = modify_variableContext.res_var_decl().getText();
                     VariableDef variableDef = prg.getVar(varName);
@@ -3621,6 +3708,51 @@ public class SceneMaxLanguageParser implements IParser {
                 return cmd;
             }
 
+            public ActionStatementBase visitThrowPhysicsStatement(SceneMaxParser.ThrowPhysicsStatementContext ctx) {
+                SceneMaxParser.Throw_physicsContext throwCtx = ctx.throw_physics();
+                PhysicsMotionCommand cmd = new PhysicsMotionCommand();
+                cmd.action = PhysicsMotionCommand.ACTION_THROW;
+                cmd.targetVar = throwCtx.var_decl().getText();
+                cmd.varLineNum = throwCtx.var_decl().getStart().getLine();
+                cmd.powerExpr = throwCtx.logical_expression();
+                cmd.targetMode = throwCtx.throw_target_ref().throw_target_kind().At() != null
+                        ? PhysicsMotionCommand.TARGET_AT
+                        : PhysicsMotionCommand.TARGET_TOWARD;
+                applyPhysicsTarget(cmd, throwCtx.throw_target_ref().physics_target_ref());
+
+                for (SceneMaxParser.Throw_optionContext option : throwCtx.throw_option()) {
+                    if (option.Angle() != null) {
+                        cmd.angleExpr = option.logical_expression();
+                    } else if (option.Arc() != null) {
+                        applyPhysicsArc(cmd, option.physics_arc_value());
+                    } else if (option.Spin() != null) {
+                        applyVectorExpressions(cmd, option.pos_axes(), true);
+                    }
+                }
+
+                return cmd;
+            }
+
+            public ActionStatementBase visitPhysicsCommandStatement(SceneMaxParser.PhysicsCommandStatementContext ctx) {
+                SceneMaxParser.Physics_commandContext physicsCtx = ctx.physics_command();
+                PhysicsMotionCommand cmd = new PhysicsMotionCommand();
+                cmd.targetVar = physicsCtx.var_decl().getText();
+                cmd.varLineNum = physicsCtx.var_decl().getStart().getLine();
+
+                SceneMaxParser.Physics_operationContext operation = physicsCtx.physics_operation();
+                if (operation.physics_linear_action() != null) {
+                    applyPhysicsLinearAction(cmd, operation.physics_linear_action());
+                } else if (operation.physics_vector_action() != null) {
+                    applyPhysicsVectorAction(cmd, operation.physics_vector_action());
+                } else if (operation.physics_velocity_action() != null) {
+                    applyPhysicsVelocityAction(cmd, operation.physics_velocity_action());
+                } else if (operation.physics_stop_action() != null) {
+                    cmd.action = PhysicsMotionCommand.ACTION_STOP;
+                }
+
+                return cmd;
+            }
+
             public ActionStatementBase visitMassStatement(SceneMaxParser.MassStatementContext ctx) {
                 ChangeMassCommand cmd = new ChangeMassCommand();
                 cmd.varName = ctx.mass().var_decl().getText();
@@ -4234,6 +4366,96 @@ public class SceneMaxLanguageParser implements IParser {
 
     }
 
+
+    private void applyPhysicsLinearAction(PhysicsMotionCommand cmd, SceneMaxParser.Physics_linear_actionContext actionCtx) {
+        cmd.action = actionCtx.physics_linear_mode().Impulse() != null
+                ? PhysicsMotionCommand.ACTION_IMPULSE
+                : PhysicsMotionCommand.ACTION_FORCE;
+
+        SceneMaxParser.Physics_linear_targetContext targetCtx = actionCtx.physics_linear_target();
+        if (targetCtx.move_direction() != null) {
+            cmd.targetMode = PhysicsMotionCommand.TARGET_DIRECTION;
+            cmd.direction = parseMoveDirection(targetCtx.move_direction());
+        } else {
+            cmd.targetMode = PhysicsMotionCommand.TARGET_TOWARD;
+            applyPhysicsTarget(cmd, targetCtx.physics_target_ref());
+        }
+        cmd.powerExpr = targetCtx.logical_expression();
+
+        if (actionCtx.for_time_expr() != null) {
+            cmd.durationExpr = actionCtx.for_time_expr().logical_expression();
+        }
+    }
+
+    private void applyPhysicsVectorAction(PhysicsMotionCommand cmd, SceneMaxParser.Physics_vector_actionContext actionCtx) {
+        if (actionCtx.physics_vector_mode().Impulse() != null) {
+            cmd.action = PhysicsMotionCommand.ACTION_IMPULSE;
+        } else if (actionCtx.physics_vector_mode().Force() != null) {
+            cmd.action = PhysicsMotionCommand.ACTION_FORCE;
+        } else {
+            cmd.action = PhysicsMotionCommand.ACTION_TORQUE;
+        }
+        cmd.targetMode = PhysicsMotionCommand.TARGET_VECTOR;
+        applyVectorExpressions(cmd, actionCtx.pos_axes(), false);
+        cmd.impulseMode = actionCtx.physics_torque_impulse() != null;
+
+        if (actionCtx.for_time_expr() != null) {
+            cmd.durationExpr = actionCtx.for_time_expr().logical_expression();
+        }
+    }
+
+    private void applyPhysicsVelocityAction(PhysicsMotionCommand cmd, SceneMaxParser.Physics_velocity_actionContext actionCtx) {
+        cmd.action = actionCtx.Angular() != null
+                ? PhysicsMotionCommand.ACTION_ANGULAR_VELOCITY
+                : PhysicsMotionCommand.ACTION_VELOCITY;
+        cmd.targetMode = PhysicsMotionCommand.TARGET_VECTOR;
+        applyVectorExpressions(cmd, actionCtx.pos_axes(), false);
+    }
+
+    private void applyPhysicsTarget(PhysicsMotionCommand cmd, SceneMaxParser.Physics_target_refContext targetCtx) {
+        if (targetCtx.var_decl() != null) {
+            cmd.targetEntity = targetCtx.var_decl().getText();
+        } else if (targetCtx.position_statement() != null) {
+            cmd.targetPositionStatement = parsePositionStatement(targetCtx.position_statement());
+        } else if (targetCtx.pos_axes() != null) {
+            applyVectorExpressions(cmd, targetCtx.pos_axes(), false);
+        }
+    }
+
+    private void applyPhysicsArc(PhysicsMotionCommand cmd, SceneMaxParser.Physics_arc_valueContext arcCtx) {
+        if (arcCtx.Low() != null || arcCtx.Medium() != null || arcCtx.High() != null) {
+            cmd.arcMode = arcCtx.getText().toLowerCase();
+        } else {
+            cmd.arcExpr = arcCtx.logical_expression();
+        }
+    }
+
+    private void applyVectorExpressions(PhysicsMotionCommand cmd, SceneMaxParser.Pos_axesContext axes, boolean spin) {
+        if (spin) {
+            cmd.spinXExpr = axes.print_pos_x().logical_expression();
+            cmd.spinYExpr = axes.print_pos_y().logical_expression();
+            cmd.spinZExpr = axes.print_pos_z().logical_expression();
+        } else {
+            cmd.xExpr = axes.print_pos_x().logical_expression();
+            cmd.yExpr = axes.print_pos_y().logical_expression();
+            cmd.zExpr = axes.print_pos_z().logical_expression();
+        }
+    }
+
+    private int parseMoveDirection(SceneMaxParser.Move_directionContext directionCtx) {
+        if (directionCtx.Forward() != null) {
+            return DirectionVerb.FORWARD;
+        } else if (directionCtx.Backward() != null) {
+            return DirectionVerb.BACKWARD;
+        } else if (directionCtx.Left() != null) {
+            return DirectionVerb.LEFT;
+        } else if (directionCtx.Right() != null) {
+            return DirectionVerb.RIGHT;
+        } else if (directionCtx.Up() != null) {
+            return DirectionVerb.UP;
+        }
+        return DirectionVerb.DOWN;
+    }
 
     private List<DirectionVerb> parseDirectionVerbs(List<SceneMaxParser.Dir_statementContext> dirStatements) {
 

@@ -631,6 +631,7 @@ public class EditorTabPanel extends JPanel {
                 }
             }
             if (existing != null) {
+                closeUnusedPluginComponent(component);
                 switchToTab(existing);
                 return;
             }
@@ -911,6 +912,7 @@ public class EditorTabPanel extends JPanel {
             // No shared JME context to deactivate.
         } else if (tabData.isPluginViewTab) {
             // Plugin view tabs own their component lifecycle.
+            closePluginComponent(tabData.pluginViewComponent);
         } else {
             // Auto-save if dirty
             if (tabData.dirty) {
@@ -955,6 +957,20 @@ public class EditorTabPanel extends JPanel {
                 if (onTabChangedCallback != null) {
                     onTabChangedCallback.run();
                 }
+            }
+        }
+    }
+
+    private void closeUnusedPluginComponent(JComponent component) {
+        closePluginComponent(component);
+    }
+
+    private void closePluginComponent(JComponent component) {
+        if (component instanceof AutoCloseable) {
+            try {
+                ((AutoCloseable) component).close();
+            } catch (Exception ex) {
+                ex.printStackTrace();
             }
         }
     }

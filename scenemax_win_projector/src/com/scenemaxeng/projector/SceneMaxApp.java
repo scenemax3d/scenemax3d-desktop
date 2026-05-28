@@ -146,6 +146,13 @@ import java.util.regex.Pattern;
 
 
 public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiProxy, IApplicationChannel {
+    private static final com.jme3.bullet.collision.PhysicsCollisionListener PAIR_TEST_LISTENER =
+            new com.jme3.bullet.collision.PhysicsCollisionListener() {
+                @Override
+                public void collision(com.jme3.bullet.collision.PhysicsCollisionEvent event) {
+                }
+            };
+
 
     private static final float HP_TO_WATT = 746;
     private static final Pattern RUNTIME_LINE_NUMBER_PATTERN = Pattern.compile("(?i)^\\s*line\\s*[:]?\\s*(\\d+)\\s*[\\.,:]?\\s*");
@@ -1785,6 +1792,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             ChangeAngularVelocityController ctl = new ChangeAngularVelocityController(this,prg,scope,(ChangeAngularVelocityCommand)action);
             ctl.async=action.isAsync;
             scope.add(ctl);
+        } else if(action instanceof PhysicsMotionCommand) {
+            PhysicsMotionController ctl = new PhysicsMotionController(this, prg, scope, (PhysicsMotionCommand) action);
+            ctl.async=action.isAsync;
+            scope.add(ctl);
         } else if(action instanceof AnimateOptionsCommand) {
             AnimateOptionsController ctl = new AnimateOptionsController(this,prg,scope,(AnimateOptionsCommand)action);
             ctl.async=true;
@@ -1868,6 +1879,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             DoBlockController c = new DoBlockController(this,scope, cmd);
             c.app = this;
             c.goExpr = fDef.goExpr;
+            boolean snapshotParamsNow = fic.isAsync || cmd.isAsync || fic.intervalExpr != null;
             c.async = fic.isAsync || cmd.isAsync;
             if(fic.intervalExpr!=null) {
                 c.intervalExpr = new ActionLogicalExpressionVm(fic.intervalExpr, scope);
@@ -1877,7 +1889,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             if(fic.funcParam!=null) {
                 c.setFunctionScopeParam(fDef.doBlock.inParams, (EntityInstBase)fic.funcParam);
             } else {
-                c.setFunctionScopeParams(fDef.doBlock.inParams, fic.params);
+                c.setFunctionScopeParams(fDef.doBlock.inParams, fic.params, snapshotParamsNow);
             }
 
             return c;
@@ -5732,15 +5744,89 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         String var1 = obj1.getVarRunTimeName();
         String var2 = obj2.getVarRunTimeName();
 
+        if ((isColliderEntity(obj1) || isColliderEntity(obj2)) && checkPhysicsControlsCollision(var1, var2)) {
+            return true;
+        }
+
         Spatial s1 = getEntitySpatial(var1, obj1.varDef.varType);
         Spatial s2 = getEntitySpatial(var2, obj2.varDef.varType);
         if (s1 == null || s2 == null) {
             return false; // todo: throw exception
         }
+        s1.updateGeometricState();
+        s2.updateGeometricState();
+        if (s1.getWorldBound() == null || s2.getWorldBound() == null) {
+            return false;
+        }
         _tmpCollisionResults.clear();
         s1.collideWith(s2.getWorldBound(), _tmpCollisionResults);
+        if (_tmpCollisionResults.size() == 0) {
+            s2.collideWith(s1.getWorldBound(), _tmpCollisionResults);
+        }
 
         return _tmpCollisionResults.size() > 0;
+    }
+
+    private boolean checkPhysicsControlsCollision(String var1, String var2) {
+        List<java.lang.Object> controls1 = collisionControlsCache.get(var1);
+        List<java.lang.Object> controls2 = collisionControlsCache.get(var2);
+        if (controls1 == null || controls2 == null
+                || bulletAppState == null || bulletAppState.getPhysicsSpace() == null) {
+            return false;
+        }
+
+        for (java.lang.Object control1 : controls1) {
+            PhysicsCollisionObject pco1 = asPhysicsCollisionObject(control1);
+            if (pco1 == null) {
+                continue;
+            }
+
+            for (java.lang.Object control2 : controls2) {
+                PhysicsCollisionObject pco2 = asPhysicsCollisionObject(control2);
+                if (pco2 != null
+                        && bulletAppState.getPhysicsSpace().pairTest(pco1, pco2, PAIR_TEST_LISTENER) > 0) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private PhysicsCollisionObject asPhysicsCollisionObject(java.lang.Object control) {
+        return control instanceof PhysicsCollisionObject ? (PhysicsCollisionObject) control : null;
+    }
+
+    private boolean isColliderEntity(EntityInstBase obj) {
+        VariableDef varDef = obj == null ? null : obj.varDef;
+        if (varDef instanceof BoxVariableDef) {
+            return ((BoxVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof SphereVariableDef) {
+            return ((SphereVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof CylinderVariableDef) {
+            return ((CylinderVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof HollowCylinderVariableDef) {
+            return ((HollowCylinderVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof QuadVariableDef) {
+            return ((QuadVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof WedgeVariableDef) {
+            return ((WedgeVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof ConeVariableDef) {
+            return ((ConeVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof StairsVariableDef) {
+            return ((StairsVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof ArchVariableDef) {
+            return ((ArchVariableDef) varDef).isCollider;
+        }
+        return false;
     }
 
     public boolean checkCollision(String var1, String var2, String jointNameA, String jointNameB) {
