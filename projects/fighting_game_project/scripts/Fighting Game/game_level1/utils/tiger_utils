@@ -26,12 +26,20 @@ level1_dragon_rock_push_player2 = {
   player2.move backward 4.0 for 0.25 seconds
 }
 
-level1_dragon_rock_hit_players(r) = {
-  
-  if(r.data.hit_player1==1) {
-    r.data.hit_player1=0
-    sys.print "BOOM player1"
-    if(player1_ko==0 && game_status==GAME_STATE_START && level1_dragon_rock_player1_hit_guard==0) {
+level1_dragon_rock_hit_player2(r) = {
+	 if(enemy_ko==0 && game_status==GAME_STATE_START && level1_dragon_rock_player2_hit_guard==0) {
+      level1_dragon_rock_player2_hit_guard=1
+      run level1_dragon_rock_push_player2 Async
+      run shake_the_world2 async
+      do async
+        wait 0.85 seconds
+        level1_dragon_rock_player2_hit_guard=0
+      end do
+    }
+}
+
+level1_dragon_rock_hit_player1(r) = {
+	if(player1_ko==0 && game_status==GAME_STATE_START && level1_dragon_rock_player1_hit_guard==0) {
       level1_dragon_rock_player1_hit_guard=1
       run player1_head_hit Async
       run shake_the_world2 async
@@ -41,20 +49,6 @@ level1_dragon_rock_hit_players(r) = {
       end do
     }
   }
-
-  if(r.data.hit_player2==1) {
-    r.data.hit_player2=0
-    if(enemy_ko==0 && game_status==GAME_STATE_START && level1_dragon_rock_player2_hit_guard==0) {
-      level1_dragon_rock_player2_hit_guard=1
-      run level1_dragon_rock_push_player2 Async
-      run shake_the_world2 async
-      do async
-        wait 0.85 seconds
-        level1_dragon_rock_player2_hit_guard=0
-      end do
-    }
-  }
-}
 
 
 level1_dragon_rock_explode(r) = {
@@ -105,17 +99,22 @@ level1_fly_dragon_gate_rock_to_ground(r, slot_id) = {
       return
     }
 
-    if((player1_body_collider collides with r) || 
-       (player2_body_collider collides with r)) {
-      
-      run level1_dragon_rock_hit_players(r)
-      wait 0.04 seconds
+    if(player1_body_collider collides with r) {
+    	run level1_dragon_rock_hit_player1(r)
       level1_dragon_rock_slot[slot_id] = 0
       run level1_dragon_rock_explode(r)
       level1_dragon_rock_count=level1_dragon_rock_count-1
       return
     }
 
+    if(player2_body_collider collides with r) {
+    	run level1_dragon_rock_hit_player2(r)
+      level1_dragon_rock_slot[slot_id] = 0
+      run level1_dragon_rock_explode(r)
+      level1_dragon_rock_count=level1_dragon_rock_count-1
+      return
+    }
+    
     wait 0.04 seconds
     rock_age=rock_age+0.04
     
@@ -129,9 +128,6 @@ level1_fly_dragon_gate_rock_to_ground(r, slot_id) = {
     level1_dragon_rock_count=level1_dragon_rock_count-1
     return
   }
-
-  run level1_dragon_rock_hit_players(r)
-  wait 0.08 seconds
 
   level1_dragon_rock_slot[slot_id] = 0
   run level1_dragon_rock_explode(r)
