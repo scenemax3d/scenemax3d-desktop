@@ -477,7 +477,8 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
             if ("<=".equals(sign)) {
                 return OpCode.LE;
             }
-            if ("collides".equals(sign)) {
+            String normalizedSign = sign.replace(" ", "").toLowerCase(java.util.Locale.ROOT);
+            if ("collides".equals(normalizedSign) || "collideswith".equals(normalizedSign)) {
                 return OpCode.COLLIDES;
             }
             throw new IllegalArgumentException("Unsupported relational operator: " + sign);

@@ -5741,8 +5741,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         if (s1 == null || s2 == null) {
             return false; // todo: throw exception
         }
+        s1.updateGeometricState();
+        s2.updateGeometricState();
         _tmpCollisionResults.clear();
         s1.collideWith(s2.getWorldBound(), _tmpCollisionResults);
+        if (_tmpCollisionResults.size() == 0) {
+            s2.collideWith(s1.getWorldBound(), _tmpCollisionResults);
+        }
 
         return _tmpCollisionResults.size() > 0;
     }

@@ -99,6 +99,25 @@ public class ActionLogicalExpressionCompatibilityHarnessTest {
     }
 
     @Test
+    public void vmSupportsCollidesWithRelationalExpression() {
+        SceneMaxScope scope = createScope();
+
+        app.collisionResult = true;
+        assertVmValue("player collides with enemy", scope, "true");
+        assertEquals("Expected collision operator to delegate to app collision check", 1, app.collisionChecks);
+
+        app.collisionResult = false;
+        assertVmValue("player collides with enemy", scope, "false");
+        assertEquals("Expected collision operator to delegate to app collision check", 1, app.collisionChecks);
+
+        scope.funcScopeParams = new java.util.HashMap<String, Object>();
+        scope.funcScopeParams.put("target", entity(scope, "enemy"));
+        app.collisionResult = true;
+        assertVmValue("player collides with(target)", scope, "true");
+        assertEquals("Expected collision operator to resolve function-parameter entities", 1, app.collisionChecks);
+    }
+
+    @Test
     public void stringFormattingHelperTrimsOnlyWholeNumberFractions() {
         assertEquals("10", ActionLogicalExpressionVm.formatValueForStringContext(Double.valueOf(10.0)));
         assertEquals("10.5", ActionLogicalExpressionVm.formatValueForStringContext(Double.valueOf(10.5)));
@@ -481,9 +500,12 @@ public class ActionLogicalExpressionCompatibilityHarnessTest {
 
     private static class StubSceneMaxApp extends SceneMaxApp {
         String runTimeError;
+        boolean collisionResult;
+        int collisionChecks;
 
         void reset() {
             runTimeError = null;
+            collisionChecks = 0;
         }
 
         @Override
@@ -526,7 +548,8 @@ public class ActionLogicalExpressionCompatibilityHarnessTest {
 
         @Override
         public boolean checkCollision(EntityInstBase obj1, EntityInstBase obj2) {
-            return false;
+            collisionChecks++;
+            return collisionResult;
         }
 
         @Override

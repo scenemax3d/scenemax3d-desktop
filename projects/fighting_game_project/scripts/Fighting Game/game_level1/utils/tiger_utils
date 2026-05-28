@@ -19,27 +19,44 @@ level1_dragon_rock_push_player2 = {
   player2.move backward 4.0 for 0.25 seconds
 }
 
+[enemy_ko==0 && game_status==GAME_STATE_START]
+level1_dragon_rock_mark_player1_hit(r) = {
+  r.data.hit_player1=1
+}
+
+[enemy_ko==0 && game_status==GAME_STATE_START]
+level1_dragon_rock_mark_player2_hit(r) = {
+  r.data.hit_player2=1
+}
+
 level1_dragon_rock_hit_players(r) = {
-  if(distance(player1, r) < 10.0 && player1_ko==0 && game_status==GAME_STATE_START && level1_dragon_rock_player1_hit_guard==0) {
-    level1_dragon_rock_player1_hit_guard=1
-    run player1_head_hit Async
-    run shake_the_world2 async
-    do async
-      wait 0.85 seconds
-      level1_dragon_rock_player1_hit_guard=0
-    end do
+  if(r.data.hit_player1==1) {
+    r.data.hit_player1=0
+    if(player1_ko==0 && game_status==GAME_STATE_START && level1_dragon_rock_player1_hit_guard==0) {
+      level1_dragon_rock_player1_hit_guard=1
+      run player1_head_hit Async
+      run shake_the_world2 async
+      do async
+        wait 0.85 seconds
+        level1_dragon_rock_player1_hit_guard=0
+      end do
+    }
   }
 
-  if(distance(player2, r) < 10.0 && enemy_ko==0 && game_status==GAME_STATE_START && level1_dragon_rock_player2_hit_guard==0) {
-    level1_dragon_rock_player2_hit_guard=1
-    run level1_dragon_rock_push_player2 Async
-    run shake_the_world2 async
-    do async
-      wait 0.85 seconds
-      level1_dragon_rock_player2_hit_guard=0
-    end do
+  if(r.data.hit_player2==1) {
+    r.data.hit_player2=0
+    if(enemy_ko==0 && game_status==GAME_STATE_START && level1_dragon_rock_player2_hit_guard==0) {
+      level1_dragon_rock_player2_hit_guard=1
+      run level1_dragon_rock_push_player2 Async
+      run shake_the_world2 async
+      do async
+        wait 0.85 seconds
+        level1_dragon_rock_player2_hit_guard=0
+      end do
+    }
   }
 }
+
 
 level1_dragon_rock_explode(r) = {
   var rock_fx_x = r.x
@@ -94,6 +111,7 @@ level1_fly_dragon_gate_rock_to_ground(r, slot_id) = {
   var dist = distance(player1,dragons_gate)
   r.throw at player1 power dist*30/147 // apply power to the rocks according to distance
 
+  sys.print "start slot id" + slot_id    
   do
     if(game_status!=GAME_STATE_START || level1_dragon_rocks_started==0 || r.y < -125.0) {
       r.hide
@@ -103,7 +121,17 @@ level1_fly_dragon_gate_rock_to_ground(r, slot_id) = {
       return
     }
 
-    if((distance(player1, r) < 10.0 && player1_ko==0) || (distance(player2, r) < 10.0 && enemy_ko==0)) {
+    if(player1_body_collider collides with r) {
+    	sys.print "xxxxx"
+      run level1_dragon_rock_mark_player1_hit(r)
+    }
+
+    if(player2_body_collider collides with r) {
+    	sys.print "yyyyy"
+      run level1_dragon_rock_mark_player2_hit(r)
+    }
+
+    if(r.data.hit_player1==1 || r.data.hit_player2==1) {
       run level1_dragon_rock_hit_players(r)
       wait 0.04 seconds
       run level1_dragon_rock_clear_slot(slot_id)
@@ -114,8 +142,10 @@ level1_fly_dragon_gate_rock_to_ground(r, slot_id) = {
 
     wait 0.04 seconds
     rock_age=rock_age+0.04
-  while rock_age < 6.5
-
+    sys2.print "rock age: " + rock_age : pos (10,500,0)
+  while rock_age < 8
+  sys.print "end slot id" + slot_id
+  
   if(game_status!=GAME_STATE_START || level1_dragon_rocks_started==0) {
     r.hide
     r.delete
@@ -138,6 +168,9 @@ level1_launch_dragon_gate_rock_1 = {
 
   var level1_dragon_rock_1_scale = 1.56 + rnd(365) * 0.01
   dragon_gate_rock_1 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_1_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
+  dragon_gate_rock_1.data.hit_player1=0
+  dragon_gate_rock_1.data.hit_player2=0
+  
   run level1_fly_dragon_gate_rock_to_ground(dragon_gate_rock_1, 1)
 }
 
@@ -147,6 +180,9 @@ level1_launch_dragon_gate_rock_2 = {
 
   var level1_dragon_rock_2_scale = 1.44 + rnd(337) * 0.01
   dragon_gate_rock_2 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_2_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
+  dragon_gate_rock_2.data.hit_player1=0
+  dragon_gate_rock_2.data.hit_player2=0
+  
   run level1_fly_dragon_gate_rock_to_ground(dragon_gate_rock_2, 2)
 }
 
@@ -156,6 +192,9 @@ level1_launch_dragon_gate_rock_3 = {
 
   var level1_dragon_rock_3_scale = 1.68 + rnd(393) * 0.01
   dragon_gate_rock_3 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_3_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
+  dragon_gate_rock_3.data.hit_player1=0
+  dragon_gate_rock_3.data.hit_player2=0
+  
   run level1_fly_dragon_gate_rock_to_ground(dragon_gate_rock_3, 3)
 }
 
@@ -165,6 +204,8 @@ level1_launch_dragon_gate_rock_4 = {
 
   var level1_dragon_rock_4_scale = 1.5 + rnd(351) * 0.01
   dragon_gate_rock_4 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_4_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
+  dragon_gate_rock_4.data.hit_player1=0
+  dragon_gate_rock_4.data.hit_player2=0
   run level1_fly_dragon_gate_rock_to_ground(dragon_gate_rock_4, 4)
 }
 
@@ -174,6 +215,8 @@ level1_launch_dragon_gate_rock_5 = {
 
   var level1_dragon_rock_5_scale = 1.38 + rnd(323) * 0.01
   dragon_gate_rock_5 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_5_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 8.0
+  dragon_gate_rock_5.data.hit_player1=0
+  dragon_gate_rock_5.data.hit_player2=0
   run level1_fly_dragon_gate_rock_to_ground(dragon_gate_rock_5, 5)
 }
 
@@ -185,13 +228,13 @@ level1_spawn_dragon_gate_rock = {
   if(level1_dragon_rock_slot_1==0) {
     run level1_launch_dragon_gate_rock_1 Async
   } else if(level1_dragon_rock_slot_2==0) {
-    run level1_launch_dragon_gate_rock_2 Async
+    //run level1_launch_dragon_gate_rock_2 Async
   } else if(level1_dragon_rock_slot_3==0) {
-    run level1_launch_dragon_gate_rock_3 Async
+    //run level1_launch_dragon_gate_rock_3 Async
   } else if(level1_dragon_rock_slot_4==0) {
-    run level1_launch_dragon_gate_rock_4 Async
+    //run level1_launch_dragon_gate_rock_4 Async
   } else if(level1_dragon_rock_slot_5==0) {
-    run level1_launch_dragon_gate_rock_5 Async
+    //run level1_launch_dragon_gate_rock_5 Async
   }
 }
 
