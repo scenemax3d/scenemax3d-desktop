@@ -1879,6 +1879,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             DoBlockController c = new DoBlockController(this,scope, cmd);
             c.app = this;
             c.goExpr = fDef.goExpr;
+            boolean snapshotParamsNow = fic.isAsync || cmd.isAsync || fic.intervalExpr != null;
             c.async = fic.isAsync || cmd.isAsync;
             if(fic.intervalExpr!=null) {
                 c.intervalExpr = new ActionLogicalExpressionVm(fic.intervalExpr, scope);
@@ -1888,7 +1889,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             if(fic.funcParam!=null) {
                 c.setFunctionScopeParam(fDef.doBlock.inParams, (EntityInstBase)fic.funcParam);
             } else {
-                c.setFunctionScopeParams(fDef.doBlock.inParams, fic.params);
+                c.setFunctionScopeParams(fDef.doBlock.inParams, fic.params, snapshotParamsNow);
             }
 
             return c;

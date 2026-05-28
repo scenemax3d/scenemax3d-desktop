@@ -27,6 +27,7 @@ level1_dragon_rock_push_player2 = {
 }
 
 level1_dragon_rock_hit_players(r) = {
+  
   if(r.data.hit_player1==1) {
     r.data.hit_player1=0
     sys.print "BOOM player1"

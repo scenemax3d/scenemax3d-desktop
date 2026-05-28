@@ -234,43 +234,57 @@ public class DoBlockController extends SceneMaxBaseController {
 
     }
 
+    public void setFunctionScopeParams(List<String> paramsNames, List<SceneMaxParser.Logical_expressionContext> paramsExp,
+                                       boolean evaluateImmediately) {
+        setFunctionScopeParams(paramsNames, paramsExp);
+        if (evaluateImmediately) {
+            evalFunctionScopeParams();
+        }
+    }
+
     public void setFunctionScopeParam(List<String> paramsNames, EntityInstBase param) {
         funcScopeParams=new HashMap<>();
         this.funcScopeParams.put(paramsNames.get(0), param);
     }
 
-        private void evalFunctionScopeParams() {
+    private void evalFunctionScopeParams() {
         if(paramsNames!=null && paramsNames.size()>0) {
-            funcScopeParams=new HashMap<>();
+            funcScopeParams=new HashMap<>(Math.max(4, paramsNames.size() * 2));
             int index = 0;
             for (SceneMaxParser.Logical_expressionContext ctx : paramsExp) {
                 ActionLogicalExpressionVm exp = new ActionLogicalExpressionVm(ctx, this.parentScope);
                 Object obj = exp.evaluate();
 
-                if(obj instanceof String) {
-                    VariableDef vd = new VariableDef();
-                    vd.varType=VariableDef.VAR_TYPE_STRING;
-                    VarInst vi = new VarInst(vd,null);
-                    vi.varType=VariableDef.VAR_TYPE_STRING;
-                    vi.value=obj;
-                    this.funcScopeParams.put(paramsNames.get(index), vi);
-                } else if(obj instanceof Double) {
-                    VariableDef vd = new VariableDef();
-                    vd.varType=VariableDef.VAR_TYPE_NUMBER;
-                    VarInst vi = new VarInst(vd,null);
-                    vi.varType=VariableDef.VAR_TYPE_NUMBER;
-                    vi.value=obj;
-                    this.funcScopeParams.put(paramsNames.get(index), vi);
-                } else {
-                    this.funcScopeParams.put(paramsNames.get(index), obj);
-                }
+                this.funcScopeParams.put(paramsNames.get(index), wrapFunctionParam(obj));
                 index++;
                 if(index>=paramsNames.size()) {
                     break;
                 }
             }
+        } else if (funcScopeParams == null) {
+            funcScopeParams=new HashMap<>(0);
 
         }
 
+    }
+
+    private Object wrapFunctionParam(Object obj) {
+        if(obj instanceof String) {
+            VariableDef vd = new VariableDef();
+            vd.varType=VariableDef.VAR_TYPE_STRING;
+            VarInst vi = new VarInst(vd,null);
+            vi.varType=VariableDef.VAR_TYPE_STRING;
+            vi.value=obj;
+            return vi;
+        } else if(obj instanceof Double) {
+            VariableDef vd = new VariableDef();
+            vd.varType=VariableDef.VAR_TYPE_NUMBER;
+            VarInst vi = new VarInst(vd,null);
+            vi.varType=VariableDef.VAR_TYPE_NUMBER;
+            vi.value=obj;
+            return vi;
+        } else {
+            return obj;
+        }
     }
 }
