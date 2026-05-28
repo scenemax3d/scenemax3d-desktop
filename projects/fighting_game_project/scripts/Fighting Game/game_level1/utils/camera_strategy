@@ -1,13 +1,4 @@
-var level1_dragon_rocks_started=0,
-    level1_dragon_rock_count=0,
-    level1_dragon_rock_slot_1=0,
-    level1_dragon_rock_slot_2=0,
-    level1_dragon_rock_slot_3=0,
-    level1_dragon_rock_slot_4=0,
-    level1_dragon_rock_slot_5=0,
-    level1_dragon_rock_player1_hit_guard=0,
-    level1_dragon_rock_player2_hit_guard=0,
-    level1_camera_modifiers_paused=0
+var level1_camera_modifiers_paused=0
 
 hit_fx = camera.system.modifiers.hit_modifier
 bump_fx = camera.system.modifiers.bump_modifier

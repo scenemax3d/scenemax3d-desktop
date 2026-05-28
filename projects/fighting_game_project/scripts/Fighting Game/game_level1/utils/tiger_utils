@@ -1,3 +1,10 @@
+var level1_dragon_rock_slot=[0,0,0,0,0]
+
+var level1_dragon_rocks_started=0,
+    level1_dragon_rock_count=0,
+    level1_dragon_rock_player1_hit_guard=0,
+    level1_dragon_rock_player2_hit_guard=0
+
 tiger_roar(tm) = {
 	audio.play "monster_roar"
   tg.Howl async
@@ -19,19 +26,10 @@ level1_dragon_rock_push_player2 = {
   player2.move backward 4.0 for 0.25 seconds
 }
 
-[enemy_ko==0 && game_status==GAME_STATE_START]
-level1_dragon_rock_mark_player1_hit(r) = {
-  r.data.hit_player1=1
-}
-
-[enemy_ko==0 && game_status==GAME_STATE_START]
-level1_dragon_rock_mark_player2_hit(r) = {
-  r.data.hit_player2=1
-}
-
 level1_dragon_rock_hit_players(r) = {
   if(r.data.hit_player1==1) {
     r.data.hit_player1=0
+    sys.print "BOOM player1"
     if(player1_ko==0 && game_status==GAME_STATE_START && level1_dragon_rock_player1_hit_guard==0) {
       level1_dragon_rock_player1_hit_guard=1
       run player1_head_hit Async
@@ -90,51 +88,28 @@ level1_dragon_rock_explode(r) = {
   //Logger.info "DRAGON_ROCK effect delete done x=" + rock_fx_x + " y=" + rock_fx_y + " z=" + rock_fx_z
 }
 
-level1_dragon_rock_clear_slot(slot_id) = {
-  if(slot_id==1) {
-    level1_dragon_rock_slot_1=0
-  } else if(slot_id==2) {
-    level1_dragon_rock_slot_2=0
-  } else if(slot_id==3) {
-    level1_dragon_rock_slot_3=0
-  } else if(slot_id==4) {
-    level1_dragon_rock_slot_4=0
-  } else if(slot_id==5) {
-    level1_dragon_rock_slot_5=0
-  }
-}
-
 level1_fly_dragon_gate_rock_to_ground(r, slot_id) = {
   var rock_age = 0
 
   r.physics stop
   var dist = distance(player1,dragons_gate)
   r.throw at player1 power dist*30/147 // apply power to the rocks according to distance
-
-  sys.print "start slot id" + slot_id    
+ 
   do
     if(game_status!=GAME_STATE_START || level1_dragon_rocks_started==0 || r.y < -125.0) {
       r.hide
       r.delete
-      run level1_dragon_rock_clear_slot(slot_id)
+      level1_dragon_rock_slot[slot_id] = 0
       level1_dragon_rock_count=level1_dragon_rock_count-1
       return
     }
 
-    if(player1_body_collider collides with r) {
-    	sys.print "xxxxx"
-      run level1_dragon_rock_mark_player1_hit(r)
-    }
-
-    if(player2_body_collider collides with r) {
-    	sys.print "yyyyy"
-      run level1_dragon_rock_mark_player2_hit(r)
-    }
-
-    if(r.data.hit_player1==1 || r.data.hit_player2==1) {
+    if((player1_body_collider collides with r) || 
+       (player2_body_collider collides with r)) {
+      
       run level1_dragon_rock_hit_players(r)
       wait 0.04 seconds
-      run level1_dragon_rock_clear_slot(slot_id)
+      level1_dragon_rock_slot[slot_id] = 0
       run level1_dragon_rock_explode(r)
       level1_dragon_rock_count=level1_dragon_rock_count-1
       return
@@ -142,14 +117,14 @@ level1_fly_dragon_gate_rock_to_ground(r, slot_id) = {
 
     wait 0.04 seconds
     rock_age=rock_age+0.04
-    sys2.print "rock age: " + rock_age : pos (10,500,0)
+    
   while rock_age < 8
-  sys.print "end slot id" + slot_id
+  
   
   if(game_status!=GAME_STATE_START || level1_dragon_rocks_started==0) {
     r.hide
     r.delete
-    run level1_dragon_rock_clear_slot(slot_id)
+    level1_dragon_rock_slot[slot_id] = 0
     level1_dragon_rock_count=level1_dragon_rock_count-1
     return
   }
@@ -157,67 +132,19 @@ level1_fly_dragon_gate_rock_to_ground(r, slot_id) = {
   run level1_dragon_rock_hit_players(r)
   wait 0.08 seconds
 
-  run level1_dragon_rock_clear_slot(slot_id)
+  level1_dragon_rock_slot[slot_id] = 0
   run level1_dragon_rock_explode(r)
   level1_dragon_rock_count=level1_dragon_rock_count-1
 }
 
-level1_launch_dragon_gate_rock_1 = {
-  level1_dragon_rock_slot_1=1
-  level1_dragon_rock_count=level1_dragon_rock_count+1
-
-  var level1_dragon_rock_1_scale = 1.56 + rnd(365) * 0.01
-  dragon_gate_rock_1 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_1_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
-  dragon_gate_rock_1.data.hit_player1=0
-  dragon_gate_rock_1.data.hit_player2=0
-  
-  run level1_fly_dragon_gate_rock_to_ground(dragon_gate_rock_1, 1)
-}
-
-level1_launch_dragon_gate_rock_2 = {
-  level1_dragon_rock_slot_2=1
-  level1_dragon_rock_count=level1_dragon_rock_count+1
-
-  var level1_dragon_rock_2_scale = 1.44 + rnd(337) * 0.01
-  dragon_gate_rock_2 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_2_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
-  dragon_gate_rock_2.data.hit_player1=0
-  dragon_gate_rock_2.data.hit_player2=0
-  
-  run level1_fly_dragon_gate_rock_to_ground(dragon_gate_rock_2, 2)
-}
-
-level1_launch_dragon_gate_rock_3 = {
-  level1_dragon_rock_slot_3=1
-  level1_dragon_rock_count=level1_dragon_rock_count+1
-
-  var level1_dragon_rock_3_scale = 1.68 + rnd(393) * 0.01
-  dragon_gate_rock_3 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_3_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
-  dragon_gate_rock_3.data.hit_player1=0
-  dragon_gate_rock_3.data.hit_player2=0
-  
-  run level1_fly_dragon_gate_rock_to_ground(dragon_gate_rock_3, 3)
-}
-
-level1_launch_dragon_gate_rock_4 = {
-  level1_dragon_rock_slot_4=1
-  level1_dragon_rock_count=level1_dragon_rock_count+1
-
-  var level1_dragon_rock_4_scale = 1.5 + rnd(351) * 0.01
-  dragon_gate_rock_4 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_4_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
-  dragon_gate_rock_4.data.hit_player1=0
-  dragon_gate_rock_4.data.hit_player2=0
-  run level1_fly_dragon_gate_rock_to_ground(dragon_gate_rock_4, 4)
-}
-
-level1_launch_dragon_gate_rock_5 = {
-  level1_dragon_rock_slot_5=1
-  level1_dragon_rock_count=level1_dragon_rock_count+1
-
-  var level1_dragon_rock_5_scale = 1.38 + rnd(323) * 0.01
-  dragon_gate_rock_5 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_5_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 8.0
-  dragon_gate_rock_5.data.hit_player1=0
-  dragon_gate_rock_5.data.hit_player2=0
-  run level1_fly_dragon_gate_rock_to_ground(dragon_gate_rock_5, 5)
+level1_launch_dragon_gate_rock(index) = {
+	level1_dragon_rock_slot[index] = 1
+	level1_dragon_rock_count=level1_dragon_rock_count+1
+	var level1_dragon_rock_scale = 1.38 + rnd(323) * 0.01
+  rock => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 8.0
+  rock.data.hit_player1=0
+  rock.data.hit_player2=0
+  run level1_fly_dragon_gate_rock_to_ground(rock, index)
 }
 
 level1_spawn_dragon_gate_rock = {
@@ -225,17 +152,12 @@ level1_spawn_dragon_gate_rock = {
     return
   }
 
-  if(level1_dragon_rock_slot_1==0) {
-    run level1_launch_dragon_gate_rock_1 Async
-  } else if(level1_dragon_rock_slot_2==0) {
-    //run level1_launch_dragon_gate_rock_2 Async
-  } else if(level1_dragon_rock_slot_3==0) {
-    //run level1_launch_dragon_gate_rock_3 Async
-  } else if(level1_dragon_rock_slot_4==0) {
-    //run level1_launch_dragon_gate_rock_4 Async
-  } else if(level1_dragon_rock_slot_5==0) {
-    //run level1_launch_dragon_gate_rock_5 Async
+  for (var index=0;index<5;index=index+1) {
+  	if (level1_dragon_rock_slot[index]==0) {
+  		 run level1_launch_dragon_gate_rock(index) Async
+  	}
   }
+
 }
 
 level1_dragon_rocks_start = {

@@ -2747,6 +2747,7 @@ public class SceneMaxLanguageParser implements IParser {
 
             public VariableAssignmentCommand visitModify_variable(SceneMaxParser.Modify_variableContext ctx) {
                 VariableAssignmentCommand cmd = new VariableAssignmentCommand();
+                cmd.varLineNum = ctx.start != null ? ctx.start.getLine() : 0;
                 ctx.variable_name_and_mandatory_assignemt().forEach(modify_variableContext -> {
                     String varName = modify_variableContext.res_var_decl().getText();
                     VariableDef variableDef = prg.getVar(varName);

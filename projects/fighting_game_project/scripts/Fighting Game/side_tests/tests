@@ -1,5 +1,5 @@
 
-debug.on
+
 s1=>collider sphere : pos (-4,0,0)
 r1 => meshy_rock1 : pos (4,5,0), scale 3, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
 
