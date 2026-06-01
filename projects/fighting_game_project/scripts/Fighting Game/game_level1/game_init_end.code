@@ -16,3 +16,7 @@ player1.data.takedown_punches = 0
 player1.data.attack_legs = 0
 player1.data.head_hit = 0
 player1.data.body_hit = 0
+
+b=>box : size (5,5,0.5), rotate(0,0,0)
+vid=>videos.foggy_day1
+vid.play : target quad_1, start "00:00:00", end "00:01:00", loop

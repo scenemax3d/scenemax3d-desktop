@@ -13,7 +13,10 @@ import java.io.*;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 
@@ -78,6 +81,7 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
 
         SceneMaxLanguageParser.modelsUsed=new ArrayList<>();
         SceneMaxLanguageParser.effekseerUsed=new ArrayList<>();
+        SceneMaxLanguageParser.videoUsed=new ArrayList<>();
         SceneMaxLanguageParser.spriteSheetUsed=new ArrayList<>();
         SceneMaxLanguageParser.audioUsed=new ArrayList<>();
         SceneMaxLanguageParser.fontsUsed=new ArrayList<>();
@@ -92,7 +96,7 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
         DesignerDocumentResourceCollector.collectResources(getPackagedProjectRoot(), macroFilter);
         AssetsMapping assetsMapping = new AssetsMapping(Util.getResourcesFolder());
 
-        JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], animations:[] }");
+        JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], animations:[], videos:[] }");
         JSONObject config = new JSONObject("{ }");
         config.put("targetFolder",scriptFolder.getName());
         config.put("scriptFile",mainScriptFile.getName());
@@ -248,6 +252,7 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
             copyAnimationResourcesToExport(resources.getJSONArray("animations"));
             copyWeaponResourcesToExport();
             copyThrowMotionResourcesToExport();
+            copyVideoResourcesToExport(resources.getJSONArray("videos"), assetsMapping);
         }
 
 
@@ -512,6 +517,59 @@ public class ExportProgramToZipFileTask extends SwingWorker<Integer, String> {
         copyDirectoryContents(new File(projectResources, "Weapons"), exportWeaponsDir);
         copyStandaloneAssetFilesToExport(new File(projectResources, "weapons"), exportWeaponsDir, "smweapon", false);
         copyStandaloneAssetFilesToExport(new File(projectResources, "Weapons"), exportWeaponsDir, "smweapon", false);
+    }
+
+    private void copyVideoResourcesToExport(JSONArray targetArray, AssetsMapping assetsMapping) throws IOException {
+        if (targetArray == null || assetsMapping == null) {
+            return;
+        }
+        for (String videoName : normalizeVideoResourceNames()) {
+            ResourceVideo video = assetsMapping.getVideosIndex().get(videoName.toLowerCase(Locale.ROOT));
+            if (video == null || video.path == null || video.path.isBlank()) {
+                continue;
+            }
+            String resourcePath = Util.getResourcePath(video.path);
+            if (!includeDefaultResources && resourcePath.startsWith("./resources/")) {
+                continue;
+            }
+            File source = new File(resourcePath);
+            if (!source.isFile()) {
+                continue;
+            }
+            File target = new File("./" + targetFolderName + "/" + video.path);
+            File parent = target.getParentFile();
+            if (parent != null && !parent.exists()) {
+                parent.mkdirs();
+            }
+            Files.copy(source.toPath(), target.toPath());
+
+            JSONObject obj = new JSONObject();
+            obj.put("name", video.name);
+            obj.put("path", video.path);
+            obj.put("width", video.width);
+            obj.put("height", video.height);
+            obj.put("frameRate", video.frameRate);
+            obj.put("durationSeconds", video.durationSeconds);
+            obj.put("format", video.format);
+            targetArray.put(obj);
+        }
+    }
+
+    private Set<String> normalizeVideoResourceNames() {
+        Set<String> names = new LinkedHashSet<>();
+        for (String used : SceneMaxLanguageParser.videoUsed) {
+            if (used == null || used.isBlank()) {
+                continue;
+            }
+            String name = used.trim();
+            if (name.toLowerCase(Locale.ROOT).startsWith("videos.")) {
+                name = name.substring("videos.".length());
+            }
+            if (!name.isBlank()) {
+                names.add(name);
+            }
+        }
+        return names;
     }
 
     private void copyDirectoryContents(File source, File destination) {

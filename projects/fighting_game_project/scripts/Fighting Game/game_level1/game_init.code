@@ -110,6 +110,7 @@ when player1 collides with crystal do
 end do
 crystal_box => static meshy_wooden_box: pos (23.831593,-88.0,161.9128), scale 1.4, collision shape box async
 axe => meshy_axe : hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async
+quad_1 => quad : size (1.0,1.0), pos (13.409899,-88.97634,169.53584), scale 20.1
 
 // Write your finalization code here.
 // This code will be included at the end of the generated .code file.
@@ -129,3 +130,7 @@ player1.data.takedown_punches = 0
 player1.data.attack_legs = 0
 player1.data.head_hit = 0
 player1.data.body_hit = 0
+
+b=>box : size (5,5,0.5), rotate(0,0,0)
+vid=>videos.foggy_day1
+vid.play : target quad_1, start "00:00:00", end "00:01:00", loop

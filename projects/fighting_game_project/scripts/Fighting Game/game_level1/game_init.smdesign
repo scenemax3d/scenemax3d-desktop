@@ -1437,6 +1437,36 @@
         73.28616
       ],
       "cinematicRuntimeId": "cinematic_rig_axe"
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "none",
+      "quadWidth": 1,
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        20.1,
+        20.1,
+        20.1
+      ],
+      "colliderEntity": false,
+      "type": "QUAD",
+      "sceneMaxCode": "quad_1 => quad : size (1,1), pos (0,0.5,0)",
+      "material": "",
+      "name": "quad_1",
+      "staticEntity": false,
+      "id": "901f1a85-6133-49f9-8deb-2497cef8421f",
+      "position": [
+        13.409899,
+        -88.97634,
+        169.53584
+      ],
+      "quadHeight": 1
     }
   ],
   "gameCamera": {
@@ -1454,15 +1484,15 @@
   },
   "camera": {
     "rotation": [
-      -0.09904575,
-      0.8923991,
-      -0.2391176,
-      -0.36964384
+      0.10818815,
+      -0.12698363,
+      0.013934764,
+      0.9858886
     ],
     "position": [
-      9.185587,
-      7.5,
-      9.185586
+      28.623047,
+      -67.93029,
+      88.923035
     ]
   },
   "version": 1

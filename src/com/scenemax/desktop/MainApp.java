@@ -27,6 +27,7 @@ import com.scenemax.designer.shader.ShaderDesignerPanel;
 import com.scenemax.designer.shader.ShaderDocument;
 import com.scenemax.designer.shader.ShaderTemplatePreset;
 import com.scenemax.designer.ui.designer.UIDesignerPanel;
+import com.scenemax.designer.video.VideoImportPanel;
 import com.scenemax.designer.weapon.WeaponDesignerPanel;
 import com.scenemax.desktop.ai.SceneMaxAutomationBootstrap;
 import com.scenemax.desktop.ai.SceneMaxToolContext;
@@ -300,7 +301,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         || active.isWeaponDesignerTab
                         || active.isThrowMotionDesignerTab
                         || active.isIKDesignerTab
-                        || active.isAnimationImportTab;
+                        || active.isAnimationImportTab
+                        || active.isPluginViewTab;
                 textArea.setEnabled(!visualDesignerTab);
                 textAreaRTL.setEnabled(!visualDesignerTab);
                 // Run always launches the project root 'main', so don't gate on the active tab.
@@ -579,6 +581,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     openImport3DModelDocument();
                 } else if (cmd.equals("import_animation")) {
                     openImportAnimationDocument();
+                } else if (cmd.equals("import_video")) {
+                    openImportVideoDocument();
                 } else if (cmd.equals("import_effekseer")) {
                     importEffekseerEffect();
                 } else if (cmd.equals("project_inventory")) {
@@ -3454,6 +3458,30 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         });
 
         editorTabPanel.openAnimationImportFile(tabPath, panel);
+        btnRunScript.setEnabled(false);
+    }
+
+    private void openImportVideoDocument() {
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject == null) {
+            JOptionPane.showMessageDialog(this,
+                    "No active project. Please create or select a project first.",
+                    "Video Import",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        File tmpDir = new File(Util.getScriptsFolder() + "/tmp");
+        if (!tmpDir.exists()) {
+            tmpDir.mkdirs();
+        }
+        File tabFile = new File(tmpDir, "_import_video.smvideoimport");
+        String tabPath = tabFile.getAbsolutePath();
+
+        VideoImportPanel panel = new VideoImportPanel(new File(activeProject.getResourcesPath()));
+        panel.setOnImportedCallback(result -> refreshAssetsMenu());
+        panel.setOnCloseCallback(() -> editorTabPanel.closeTabByPath(tabPath));
+        editorTabPanel.openPluginView(tabPath, "Import Video", panel);
         btnRunScript.setEnabled(false);
     }
 

@@ -161,6 +161,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         normalizePackageRootAndProgram();
         SceneMaxLanguageParser.modelsUsed = new ArrayList<>();
         SceneMaxLanguageParser.effekseerUsed = new ArrayList<>();
+        SceneMaxLanguageParser.videoUsed = new ArrayList<>();
         SceneMaxLanguageParser.spriteSheetUsed = new ArrayList<>();
         SceneMaxLanguageParser.audioUsed = new ArrayList<>();
         SceneMaxLanguageParser.fontsUsed = new ArrayList<>();
@@ -188,7 +189,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         AssetsMapping assetsMapping = new AssetsMapping(Util.getResourcesFolder());
         collectReferencedAuxiliaryAssets(assetsMapping);
 
-        JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], shaders:[], environmentShaders:[], materials:[], cinematics:[], animations:[] }");
+        JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], shaders:[], environmentShaders:[], materials:[], cinematics:[], animations:[], videos:[] }");
 
         File deployFolder = new File("deploy");
         FileUtils.deleteDirectory(deployFolder);
@@ -373,6 +374,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         appendUsedShaderResources(assetsMapping, resources.getJSONArray("shaders"), resources.getJSONArray("environmentShaders"));
         appendUsedMaterialResources(assetsMapping, resources.getJSONArray("materials"));
+        appendUsedVideoResources(deployFolder, resources.getJSONArray("videos"));
 
         appendCinematicResources(resources.getJSONArray("cinematics"));
 
@@ -1395,6 +1397,32 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         }
     }
 
+    private void appendUsedVideoResources(File deployFolder, JSONArray targetArray) {
+        appendUsedIndexedResources(deployFolder,
+                "videos",
+                targetArray,
+                normalizeVideoResourceNames(),
+                new File("./resources/videos/videos.json"),
+                getProjectResourceIndexFile("videos/videos-ext.json"));
+    }
+
+    private Set<String> normalizeVideoResourceNames() {
+        Set<String> names = new LinkedHashSet<>();
+        for (String used : SceneMaxLanguageParser.videoUsed) {
+            if (used == null || used.isBlank()) {
+                continue;
+            }
+            String name = used.trim();
+            if (name.toLowerCase(Locale.ROOT).startsWith("videos.")) {
+                name = name.substring("videos.".length());
+            }
+            if (!name.isBlank()) {
+                names.add(name);
+            }
+        }
+        return names;
+    }
+
     private void appendUsedIndexedResources(File deployFolder, String arrayKey, JSONArray targetArray, Set<String> usedNames, File... indexFiles) {
         if (usedNames == null || usedNames.isEmpty()) {
             return;
@@ -1669,6 +1697,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         referenced.put("models", toSortedJsonArray(SceneMaxLanguageParser.modelsUsed));
         referenced.put("sprites", toSortedJsonArray(SceneMaxLanguageParser.spriteSheetUsed));
         referenced.put("effects", toSortedJsonArray(SceneMaxLanguageParser.effekseerUsed));
+        referenced.put("videos", toSortedJsonArray(SceneMaxLanguageParser.videoUsed));
         referenced.put("audio", toSortedJsonArray(SceneMaxLanguageParser.audioUsed));
         referenced.put("fonts", toSortedJsonArray(SceneMaxLanguageParser.fontsUsed));
         referenced.put("skyboxes", toSortedJsonArray(SceneMaxLanguageParser.skyboxUsed));
@@ -1689,6 +1718,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         missing.put("skyboxes", findMissingIndexedResources(SceneMaxLanguageParser.skyboxUsed, assetsMapping.getSkyboxesIndex()));
         missing.put("terrains", findMissingIndexedResources(SceneMaxLanguageParser.terrainsUsed, assetsMapping.getTerrainsIndex()));
         missing.put("effects", findMissingEffects(SceneMaxLanguageParser.effekseerUsed));
+        missing.put("videos", findMissingIndexedResources(normalizeVideoResourceNames(), assetsMapping.getVideosIndex()));
         missing.put("uiImages", findMissingUiImages(uiReferencedImagePaths));
         missing.put("animations", findMissingIndexedResources(animationNamesUsed, assetsMapping.getAnimationsIndex()));
         missing.put("shaders", findMissingIndexedResources(shaderNamesUsed, assetsMapping.getShadersIndex()));
