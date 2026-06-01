@@ -1,22 +1,5 @@
 
 
-s1=>collider sphere : pos (-4,0,0)
-r1 => meshy_rock1 : pos (4,5,0), scale 3, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 1.0
-
-xxx (x1, rock)={
-  var rock_age = 0
-	rock.physics stop
-  rock.throw at x1 power 10 
-  
-	do
-    if(x1 Collides with rock) {
-    	sys.print "xxx"
-    }
-    wait 0.04 seconds
-    rock_age=rock_age+0.04
-	while rock_age<8
-	
-}
-
-Run xxx(s1,r1)
-
+b=>box : size (5,5,0.5), rotate(0,0,0)
+vid=>videos.foggy_day1
+vid.play : target b, start "00:00:00", end "00:01:00", loop

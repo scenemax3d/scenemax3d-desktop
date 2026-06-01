@@ -76,6 +76,7 @@ class ProjectInventoryPanel extends JPanel {
     private static final String CATEGORY_ALL = "All";
     private static final String CATEGORY_MODELS = "Models";
     private static final String CATEGORY_AUDIO = "Audio";
+    private static final String CATEGORY_VIDEOS = "Videos";
     private static final String CATEGORY_SPRITES = "Sprites";
     private static final String CATEGORY_FONTS = "Fonts";
     private static final String CATEGORY_ANIMATIONS = "Animations";
@@ -91,7 +92,7 @@ class ProjectInventoryPanel extends JPanel {
     private static final String CATEGORY_TERRAIN = "Terrain";
 
     private static final String[] CATEGORY_ORDER = {
-            CATEGORY_ALL, CATEGORY_MODELS, CATEGORY_AUDIO, CATEGORY_SPRITES, CATEGORY_FONTS,
+            CATEGORY_ALL, CATEGORY_MODELS, CATEGORY_AUDIO, CATEGORY_VIDEOS, CATEGORY_SPRITES, CATEGORY_FONTS,
             CATEGORY_ANIMATIONS, CATEGORY_TEXTURES, CATEGORY_SHADERS, CATEGORY_MATERIALS,
             CATEGORY_WEAPONS, CATEGORY_THROW_MOTIONS, CATEGORY_EFFECTS, CATEGORY_SCENES, CATEGORY_UI, CATEGORY_SKYBOXES, CATEGORY_TERRAIN
     };
@@ -548,6 +549,7 @@ class ProjectInventoryPanel extends JPanel {
     private String topLevelFolder(String category) {
         if (CATEGORY_MODELS.equals(category)) return "Models";
         if (CATEGORY_ANIMATIONS.equals(category)) return "animations";
+        if (CATEGORY_VIDEOS.equals(category)) return "videos";
         if (CATEGORY_AUDIO.equals(category)) return "audio";
         if (CATEGORY_SPRITES.equals(category)) return "sprites";
         if (CATEGORY_FONTS.equals(category)) return "fonts";
@@ -1108,6 +1110,8 @@ class ProjectInventoryPanel extends JPanel {
             addFromIndex(root, source, "sprites/sprites-ext.json", "sprites", CATEGORY_SPRITES);
             addFromIndex(root, source, "audio/audio.json", "sounds", CATEGORY_AUDIO);
             addFromIndex(root, source, "audio/audio-ext.json", "sounds", CATEGORY_AUDIO);
+            addFromIndex(root, source, "videos/videos.json", "videos", CATEGORY_VIDEOS);
+            addFromIndex(root, source, "videos/videos-ext.json", "videos", CATEGORY_VIDEOS);
             addFromIndex(root, source, "fonts/fonts.json", "fonts", CATEGORY_FONTS);
             addFromIndex(root, source, "fonts/fonts-ext.json", "fonts", CATEGORY_FONTS);
             addFromIndex(root, source, "animations/animations.json", "animations", CATEGORY_ANIMATIONS);
@@ -1233,6 +1237,7 @@ class ProjectInventoryPanel extends JPanel {
 
         private void scanStandaloneFiles(File root, String source) {
             addStandaloneFiles(root, source, "animations", CATEGORY_ANIMATIONS, ".j3o", ".gltf", ".glb", ".anim");
+            addStandaloneFiles(root, source, "videos", CATEGORY_VIDEOS, ".mp4", ".mov", ".mkv", ".avi", ".webm", ".mpeg", ".mpg", ".m4v");
             addStandaloneFiles(root, source, "shaders", CATEGORY_SHADERS, ".j3md", ".j3m");
             addStandaloneFiles(root, source, "environment_shaders", CATEGORY_SHADERS, ".j3md", ".j3m");
             addStandaloneFiles(root, source, "material", CATEGORY_MATERIALS, ".mat", ".j3m");

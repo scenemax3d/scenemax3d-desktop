@@ -33,6 +33,7 @@ public class AssetsMapping {
     private HashMap<String,SkyBoxResource> _skyboxes=new HashMap<>();
     private HashMap<String, ResourceCinematicRig> _cinematics = new HashMap<>();
     private HashMap<String, ResourceAnimation> _animations = new HashMap<>();
+    private HashMap<String, ResourceVideo> _videos = new HashMap<>();
     private HashMap<String, WeaponDefinition> _weapons = new HashMap<>();
     private HashMap<String, ThrowMotionDefinition> _throwMotions = new HashMap<>();
     private HashMap<String, IKDefinition> _ikDefinitions = new HashMap<>();
@@ -91,6 +92,9 @@ public class AssetsMapping {
         res = getResourcesFolderIndex(extPath+"/animations/animations-ext.json");
         loadAnimationsFromJson(res);
 
+        res = getResourcesFolderIndex(extPath+"/videos/videos-ext.json");
+        loadVideosFromJson(res);
+
         addWeaponRoot(new File(extPath, "weapons"));
         addWeaponRoot(new File(extPath, "Weapons"));
         addThrowMotionRoot(new File(extPath, "throw_motions"));
@@ -138,6 +142,9 @@ public class AssetsMapping {
         res = getResourcesFolderIndex("./resources/animations/animations.json");
         loadAnimationsFromJson(res);
 
+        res = getResourcesFolderIndex("./resources/videos/videos.json");
+        loadVideosFromJson(res);
+
         addWeaponRoot(new File("./resources/weapons"));
         addWeaponRoot(new File("./resources/Weapons"));
         addThrowMotionRoot(new File("./resources/throw_motions"));
@@ -159,6 +166,7 @@ public class AssetsMapping {
             loadMaterialsFromJson(res);
             loadCinematicsFromJson(res);
             loadAnimationsFromJson(res);
+            loadVideosFromJson(res);
         }
     }
 
@@ -316,6 +324,34 @@ public class AssetsMapping {
         }
 
     }
+
+    private void loadVideosFromJson(JSONObject res) {
+        if (res == null || !res.has("videos")) {
+            return;
+        }
+        JSONArray videos = res.getJSONArray("videos");
+        for (int i = 0; i < videos.length(); i++) {
+            JSONObject video = videos.optJSONObject(i);
+            if (video == null) {
+                continue;
+            }
+            String name = video.optString("name", "").trim();
+            String path = video.optString("path", "").trim();
+            if (name.isEmpty() || path.isEmpty()) {
+                continue;
+            }
+            _videos.put(name.toLowerCase(Locale.ROOT), new ResourceVideo(
+                    name,
+                    path,
+                    video.optInt("width", 0),
+                    video.optInt("height", 0),
+                    video.optDouble("frameRate", 0d),
+                    video.optDouble("durationSeconds", 0d),
+                    video.optString("format", "")
+            ));
+        }
+    }
+
 
     private void loadSpritesFromJson(JSONObject res) {
 
@@ -586,6 +622,10 @@ public class AssetsMapping {
 
     public HashMap<String, ResourceAnimation> getAnimationsIndex() {
         return _animations;
+    }
+
+    public HashMap<String, ResourceVideo> getVideosIndex() {
+        return _videos;
     }
 
     public HashMap<String, WeaponDefinition> getWeaponsIndex() {

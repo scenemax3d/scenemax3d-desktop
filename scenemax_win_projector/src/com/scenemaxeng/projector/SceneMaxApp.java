@@ -1550,6 +1550,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             CinematicCameraController ctl = new CinematicCameraController(this, prg, scope, (CinematicCameraPlayCommand) action);
             ctl.async = action.isAsync;
             scope.add(ctl);
+        } else if(action instanceof VideoPlayCommand) {
+            VideoPlayController ctl = new VideoPlayController(this, prg, scope, (VideoPlayCommand) action);
+            ctl.async = action.isAsync || ((VideoPlayCommand) action).loop;
+            scope.add(ctl);
         } else if(action instanceof ActionCommandPlay) {
             ActionCommandPlay cmd = (ActionCommandPlay) action;
             SpritePlayFramesController c = new SpritePlayFramesController(this,scope,cmd);
@@ -10467,6 +10471,25 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
             File local = new File("./resources").getCanonicalFile();
             return local.isDirectory() ? local : null;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    public File resolveRuntimeResourceFile(String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) {
+            return null;
+        }
+        try {
+            File file = new File(relativePath);
+            if (file.isAbsolute()) {
+                return file.getCanonicalFile();
+            }
+            File resourcesFolder = resolveRuntimeResourcesFolder();
+            if (resourcesFolder != null) {
+                return new File(resourcesFolder, relativePath).getCanonicalFile();
+            }
+            return file.getCanonicalFile();
         } catch (Exception ex) {
             return null;
         }

@@ -35,6 +35,7 @@ public class SceneMaxLanguageParser implements IParser {
     public static List<String> spriteSheetUsed = new ArrayList<>();
     public static List<String> modelsUsed = new ArrayList<>();
     public static List<String> effekseerUsed = new ArrayList<>();
+    public static List<String> videoUsed = new ArrayList<>();
     public static List<String> audioUsed = new ArrayList<>();
     public static List<String> fontsUsed = new ArrayList<>();
     public static List<String> filesUsed = new ArrayList<>();
@@ -220,6 +221,7 @@ public class SceneMaxLanguageParser implements IParser {
             audioUsed.clear();
             modelsUsed.clear();
             effekseerUsed.clear();
+            videoUsed.clear();
             spriteSheetUsed.clear();
             cinematicRigLocationCache.clear();
         }
@@ -499,6 +501,9 @@ public class SceneMaxLanguageParser implements IParser {
                             prg.vars.add(var);
                             prg.vars_index.put(var.varName, var);
                             prg.actions.add(cmd);
+                        } else if (var.varType == VariableDef.VAR_TYPE_VIDEO) {
+                            prg.vars.add(var);
+                            prg.vars_index.put(var.varName, var);
                         } else if (var.varType == VariableDef.VAR_TYPE_CINEMATIC_CAMERA) {
                             if (isChildParser) {
                                 prg.vars.add(var);
@@ -2527,9 +2532,13 @@ public class SceneMaxLanguageParser implements IParser {
                 String resName = null;
                 SceneMaxParser.Logical_expressionContext resNameExpr = null;
                 boolean isCinematicCamera = false;
+                boolean isVideo = false;
                 if (ctx.dynamic_model_type().cinematic_resource_decl() != null) {
                     resName = "cinematic.camera." + ctx.dynamic_model_type().cinematic_resource_decl().res_var_decl().getText();
                     isCinematicCamera = true;
+                } else if (ctx.dynamic_model_type().video_resource_decl() != null) {
+                    resName = "videos." + ctx.dynamic_model_type().video_resource_decl().res_var_decl().getText();
+                    isVideo = true;
                 } else if (ctx.dynamic_model_type().effect_resource_decl() != null) {
                     resName = "effects.effekseer." + ctx.dynamic_model_type().effect_resource_decl().res_var_decl().getText();
                 } else if (ctx.dynamic_model_type().res_var_decl()!=null) {
@@ -2552,6 +2561,11 @@ public class SceneMaxLanguageParser implements IParser {
                     varDef.varType = VariableDef.VAR_TYPE_EFFEKSEER;
                     if (!effekseerUsed.contains(resName)) {
                         effekseerUsed.add(resName);
+                    }
+                } else if (isVideo) {
+                    varDef.varType = VariableDef.VAR_TYPE_VIDEO;
+                    if (!videoUsed.contains(resName)) {
+                        videoUsed.add(resName);
                     }
                 } else if (isCinematicCamera) {
                     varDef.varType = VariableDef.VAR_TYPE_CINEMATIC_CAMERA;
@@ -4194,8 +4208,29 @@ public class SceneMaxLanguageParser implements IParser {
 
                 try {
                     if (ctx.cinematic_play() != null) {
+                        String playVar = ctx.cinematic_play().var_decl().getText();
+                        VariableDef playVarDef = prg.getVar(playVar);
+                        if (playVarDef != null && playVarDef.varType == VariableDef.VAR_TYPE_VIDEO) {
+                            VideoPlayCommand cmd = new VideoPlayCommand();
+                            cmd.targetVar = playVar;
+                            cmd.varDef = playVarDef;
+                            cmd.varLineNum = ctx.cinematic_play().var_decl().getStart().getLine();
+
+                            for (SceneMaxParser.Cinematic_play_optionContext option : ctx.cinematic_play().cinematic_play_options().cinematic_play_option()) {
+                                if (option.cinematic_target_attr() != null
+                                        && option.cinematic_target_attr().camera_target_ref() != null
+                                        && option.cinematic_target_attr().camera_target_ref().var_decl() != null) {
+                                    cmd.targetObjectVar = option.cinematic_target_attr().camera_target_ref().var_decl().getText();
+                                } else if (option.cinematic_reverse_attr() != null) {
+                                    cmd.reverse = true;
+                                }
+                            }
+
+                            return cmd;
+                        }
+
                         CinematicCameraPlayCommand cmd = new CinematicCameraPlayCommand();
-                        cmd.targetVar = ctx.cinematic_play().var_decl().getText();
+                        cmd.targetVar = playVar;
                         cmd.varLineNum = ctx.cinematic_play().var_decl().getStart().getLine();
 
                         for (SceneMaxParser.Cinematic_play_optionContext option : ctx.cinematic_play().cinematic_play_options().cinematic_play_option()) {
@@ -4213,6 +4248,28 @@ public class SceneMaxLanguageParser implements IParser {
                                 cmd.speedExpr = option.cinematic_duration_attr().logical_expression();
                             } else if (option.cinematic_reverse_attr() != null) {
                                 cmd.reversePlayback = true;
+                            }
+                        }
+
+                        return cmd;
+                    } else if (ctx.video_play() != null) {
+                        String var = ctx.video_play().var_decl().getText();
+                        VideoPlayCommand cmd = new VideoPlayCommand();
+                        cmd.targetVar = var;
+                        cmd.varDef = prg.getVar(var);
+                        cmd.varLineNum = ctx.video_play().var_decl().getStart().getLine();
+
+                        for (SceneMaxParser.Video_play_optionContext option : ctx.video_play().video_play_options().video_play_option()) {
+                            if (option.video_target_attr() != null) {
+                                cmd.targetObjectVar = option.video_target_attr().var_decl().getText();
+                            } else if (option.video_start_attr() != null) {
+                                cmd.startTimestamp = stripQutes(option.video_start_attr().QUOTED_STRING().getText());
+                            } else if (option.video_end_attr() != null) {
+                                cmd.endTimestamp = stripQutes(option.video_end_attr().QUOTED_STRING().getText());
+                            } else if (option.video_reverse_attr() != null) {
+                                cmd.reverse = true;
+                            } else if (option.video_loop_attr() != null) {
+                                cmd.loop = true;
                             }
                         }
 
