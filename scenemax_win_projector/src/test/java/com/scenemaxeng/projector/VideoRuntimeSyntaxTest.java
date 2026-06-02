@@ -1,6 +1,7 @@
 package com.scenemaxeng.projector;
 
 import com.scenemaxeng.compiler.ProgramDef;
+import com.scenemaxeng.compiler.QuadVariableDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
 import com.scenemaxeng.compiler.VariableDef;
 import com.scenemaxeng.compiler.VideoPlayCommand;
@@ -48,5 +49,16 @@ public class VideoRuntimeSyntaxTest {
         VideoPlayCommand cmd = (VideoPlayCommand) prg.actions.get(1);
         assertEquals("vid", cmd.targetVar);
         assertEquals("b", cmd.targetObjectVar);
+    }
+
+    @Test
+    public void parsesQuadScaleAttribute() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "quad_1 => quad : size (1,1), pos (13,-88,169), scale 20.1");
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+        assertEquals(VariableDef.VAR_TYPE_QUAD, prg.getVar("quad_1").varType);
+        QuadVariableDef quad = (QuadVariableDef) prg.getVar("quad_1");
+        assertTrue(quad.scaleExpr != null);
     }
 }

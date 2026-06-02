@@ -110,7 +110,7 @@ when player1 collides with crystal do
 end do
 crystal_box => static meshy_wooden_box: pos (23.831593,-88.0,161.9128), scale 1.4, collision shape box async
 axe => meshy_axe : hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async
-quad_1 => quad : size (1.0,1.0), pos (13.409899,-88.97634,169.53584), scale 20.1
+quad_1 => quad : size (1.0,1.0), pos (-33.073235,-88.97634,115.0642), scale 34.2, rotate(0.0,-44.446686,0.0)
 
 // Write your finalization code here.
 // This code will be included at the end of the generated .code file.

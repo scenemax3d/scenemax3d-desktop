@@ -29,6 +29,8 @@ public class ChangeScaleController extends SceneMaxBaseController {
                 this.app.changeSphereScale(this.targetVar, scale);
             } else if (targetVarDef.varType == VariableDef.VAR_TYPE_BOX) {
                 this.app.changeBoxScale(this.targetVar, scale);
+            } else if (targetVarDef.varType == VariableDef.VAR_TYPE_QUAD) {
+                this.app.changeQuadScale(this.targetVar, scale);
             } else if (targetVarDef.varType == VariableDef.VAR_TYPE_EFFEKSEER) {
                 this.app.changeEffekseerScale(this.targetVar, scale);
             }

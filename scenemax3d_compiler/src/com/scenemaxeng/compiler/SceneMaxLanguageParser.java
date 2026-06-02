@@ -1481,6 +1481,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.entityRot = attr.model_attr().init_rotate_attr().rot_entity().getText();
                                 }
+                            } else if(attr.model_attr().init_scale_attr()!=null) {
+                                varDef.scaleExpr = attr.model_attr().init_scale_attr().logical_expression();
                             } else if(attr.model_attr().init_mass_attr()!=null) {
                                 varDef.massExpr = attr.model_attr().init_mass_attr().logical_expression();
                             } else if(attr.model_attr().init_static_attr()!=null) {

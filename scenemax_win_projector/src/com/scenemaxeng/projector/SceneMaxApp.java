@@ -3086,6 +3086,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
         }
 
+        if (inst.scaleExpr != null) {
+            float scale = Float.parseFloat(inst.scaleExpr.evaluate().toString());
+            quadNode.setLocalScale(scale);
+        }
+
         com.jme3.scene.shape.Quad quadMesh = new com.jme3.scene.shape.Quad(width, height);
         final Geometry quadGeo = new Geometry(quadName, quadMesh);
         quadNode.attachChild(quadGeo);
@@ -9127,6 +9132,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     public void changeBoxScale(String targetVar, Double scale) {
         Node g = boxes.get(targetVar);
         updateGeometryNodeScale(g,targetVar,scale,true);
+    }
+
+    public void changeQuadScale(String targetVar, Double scale) {
+        Node g = quads.get(targetVar);
+        updateGeometryNodeScale(g,targetVar,scale,false);
     }
 
     public void changeEffekseerScale(String targetVar, Double scale) {
