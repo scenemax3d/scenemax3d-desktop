@@ -25,6 +25,7 @@ statement
    | define_arch        # defArch
    | define_light       # defLight
    | define_group       # defineGroup
+   | define_object_pool # defineObjectPool
    | debug_statement    # debugStatement
    | logger_statement   # loggerStatement
    | process_statement  # processStatement
@@ -69,6 +70,7 @@ statement
    | http_statement # httpStatement
    | when_statement # whenStatement
    | switch_statement # switchStatement
+   | object_pool_release # objectPoolRelease
    ;
 
 // UI system commands
@@ -170,7 +172,7 @@ is_pressed_action : Is Pressed Once? ;
 on_entity : On res_var_decl ;
 
 
-return_statement : Return ;
+return_statement : Return logical_expression? ;
 stop_statement : Stop ;
 wait_statement : Wait logical_expression Seconds ;
 
@@ -322,6 +324,7 @@ value    :
     |    camera_system_expr
     |    camera_modifier_expr
     |    motion_expr
+    |    pool_acquire
     |    var_decl
     |    variable_field
     |    variable_data_field
@@ -357,6 +360,8 @@ field_name : var_decl ;
 
 variable_field : var_decl '.' var_field ;
 var_field : X | Y | Z | RX | RY | RZ | Hit | AnimPercent | ReplayIndex ;
+
+pool_acquire : var_decl '.' Acquire ;
 
 // THE LANGUAGE SYNTAX
 
@@ -406,6 +411,10 @@ end_do_block : (End Do | '}') | while_expr ;
 //define_terrain : res_var_decl isa_expr 'terrain' From file_var_decl ;
 define_group : res_var_decl Belongs To The group_name Group ;
 group_name : ID ;
+define_object_pool : Shared? res_var_decl isa_expr Object '.' Pool '(' pool_source ',' pool_size_attr ')' ;
+pool_source : res_var_decl ;
+pool_size_attr : Size Equals? logical_expression | logical_expression ;
+object_pool_release : var_decl '.' (Release | Free) var_decl ;
 define_sphere: Shared? res_var_decl isa_expr Collider? Static? Sphere (sphere_having_expr)? ;
 define_box: Shared? res_var_decl isa_expr Collider? Static? Box (box_having_expr)? ;
 define_cylinder: Shared? res_var_decl isa_expr Collider? Static? Cylinder (cylinder_having_expr)? ;
@@ -1011,7 +1020,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
     Effekseer | Attr | Cinematic | Videos | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Colliders | Posture | Empty | Event | IK |
     Weight | Blend |
-    Motion | Throw | Toward | Arc | Spin | Physics | Impulse | Force | Torque;
+    Motion | Throw | Toward | Arc | Spin | Physics | Impulse | Force | Torque | Object | Pool | Acquire | Release | Free;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
@@ -1312,6 +1321,11 @@ Physics : 'Physics' | 'physics' ;
 Impulse : 'Impulse' | 'impulse' ;
 Force : 'Force' | 'force' ;
 Torque : 'Torque' | 'torque' ;
+Object : 'Object' | 'object' ;
+Pool : 'Pool' | 'pool' ;
+Acquire : 'Acquire' | 'acquire' ;
+Release : 'Release' | 'release' ;
+Free : 'Free' | 'free' ;
 Plugins: 'plugins' | 'Plugins' ;
 Switch : 'Switch' | 'switch' ;
 //Car : 'Car' | 'car' ;

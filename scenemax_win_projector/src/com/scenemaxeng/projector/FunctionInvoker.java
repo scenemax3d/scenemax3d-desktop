@@ -45,7 +45,16 @@ class FunctionInvoker {
                 break;
         }
 
-        this.runtimeError = "Function '"+funcName+"' is not supported";
+        Object userReturnValue = app.invokeFunctionValueNow(funcName, ctx.logical_expression(), scope);
+        if (userReturnValue != null) {
+            retval = userReturnValue;
+            if (userReturnValue instanceof EntityInstBase) {
+                retvalType = ((EntityInstBase) userReturnValue).varDef.varType;
+            }
+            return true;
+        }
+
+        this.runtimeError = "Function '"+funcName+"' is not supported or did not return a value";
         return false;
     }
 

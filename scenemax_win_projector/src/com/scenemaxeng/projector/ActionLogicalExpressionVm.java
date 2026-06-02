@@ -107,6 +107,7 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
         LOAD_CAMERA_SYSTEM_VALUE,
         LOAD_CAMERA_MODIFIER_VALUE,
         LOAD_MOTION_VALUE,
+        LOAD_POOL_ACQUIRE,
         LOAD_EXPR_POINTER,
         LOAD_ARRAY_VALUE,
         LOAD_ARRAY_LENGTH,
@@ -392,6 +393,12 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                 return null;
             }
 
+            if (ctx.pool_acquire() != null) {
+                String poolName = ctx.pool_acquire().var_decl().getText();
+                code.add(new Instruction(OpCode.LOAD_POOL_ACQUIRE, poolName, line));
+                return null;
+            }
+
             if (ctx.logical_expression_pointer() != null) {
                 String varName = ctx.logical_expression_pointer().var_decl().getText();
                 code.add(new Instruction(OpCode.LOAD_EXPR_POINTER, varName, line));
@@ -533,6 +540,9 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                         break;
                     case LOAD_MOTION_VALUE:
                         pushValue(stack, loadMotionValue(scope, (SceneMaxParser.Motion_exprContext) ins.a, ins.line));
+                        break;
+                    case LOAD_POOL_ACQUIRE:
+                        pushValue(stack, loadPoolAcquire(scope, (String) ins.a, ins.line));
                         break;
                     case LOAD_EXPR_POINTER:
                         pushValue(stack, loadExpressionPointer(scope, (String) ins.a, ins.line));
@@ -1015,6 +1025,10 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                 return null;
             }
             return evaluateNested((ParserRuleContext) vi.value, scope);
+        }
+
+        private static Object loadPoolAcquire(SceneMaxScope scope, String poolName, int line) {
+            return app.acquireObjectFromPool(poolName, scope, line);
         }
 
         private Object loadArrayValue(SceneMaxScope scope, String varName, CompiledProgram indexProgram, int line) {

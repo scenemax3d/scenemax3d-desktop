@@ -545,10 +545,7 @@ public class SceneMaxLanguageParser implements IParser {
 
                     } else if(stDef instanceof VariableDeclarationCommand) {
 
-                        VariableDeclarationCommand varDecl = (VariableDeclarationCommand)stDef;
-                        VariableAssignmentCommand vac = varDecl.toVarAssignment(prg);
-                        vac.triggeredByDeclaration = true;
-                        prg.actions.add(vac);
+                        addVariableDeclarationActions(prg, (VariableDeclarationCommand) stDef);
 
                     } else {
                         ActionStatementBase base = (ActionStatementBase)stDef;
@@ -574,6 +571,69 @@ public class SceneMaxLanguageParser implements IParser {
                 }
                 return prg;
 
+            }
+
+            private void addVariableDeclarationActions(ProgramDef prg, VariableDeclarationCommand varDecl) {
+                VariableDeclarationCommand normalDecl = new VariableDeclarationCommand();
+                normalDecl.siblings = new ArrayList<>();
+
+                for (VariableDeclarationCommand var : varDecl.siblings) {
+                    SceneMaxParser.Pool_acquireContext acquireCtx = resolvePoolAcquireExpression(var.valExpr);
+                    if (acquireCtx == null) {
+                        normalDecl.siblings.add(var);
+                        continue;
+                    }
+
+                    flushNormalDeclaration(prg, normalDecl);
+                    normalDecl = new VariableDeclarationCommand();
+                    normalDecl.siblings = new ArrayList<>();
+
+                    VariableDef resultVar = prg.getVar(var.varName);
+                    if (resultVar == null) {
+                        resultVar = new VariableDef();
+                        resultVar.isShared = var.isShared;
+                        resultVar.declaration = var;
+                        resultVar.resName = "var";
+                        resultVar.varName = var.varName;
+                        resultVar.varType = VariableDef.VAR_TYPE_OBJECT;
+                        prg.vars.add(resultVar);
+                        prg.vars_index.put(resultVar.varName, resultVar);
+                    }
+
+                    ObjectPoolAcquireCommand acquire = new ObjectPoolAcquireCommand();
+                    acquire.varLineNum = acquireCtx.start != null ? acquireCtx.start.getLine() : 0;
+                    acquire.poolVarName = acquireCtx.var_decl().getText();
+                    acquire.poolVarDef = prg.getVar(acquire.poolVarName);
+                    acquire.resultVarName = var.varName;
+                    acquire.resultVarDef = resultVar;
+                    addActionOrError(prg, acquire, acquire.varLineNum);
+                }
+
+                flushNormalDeclaration(prg, normalDecl);
+            }
+
+            private void flushNormalDeclaration(ProgramDef prg, VariableDeclarationCommand normalDecl) {
+                if (normalDecl.siblings == null || normalDecl.siblings.isEmpty()) {
+                    return;
+                }
+                VariableAssignmentCommand vac = normalDecl.toVarAssignment(prg);
+                vac.triggeredByDeclaration = true;
+                prg.actions.add(vac);
+            }
+
+            private void addActionOrError(ProgramDef prg, ActionStatementBase base, int line) {
+                if (base.validate(prg)) {
+                    prg.actions.add(base);
+                    if (base.requireResource) {
+                        prg.requireResourceActions.add(base);
+                    }
+                } else {
+                    String err = "";
+                    if (_sourceFileName.length() > 0) {
+                        err = "Error: at file: " + _sourceFileName + ": ";
+                    }
+                    prg.syntaxErrors.add(err + base.lastError + " at line: " + line);
+                }
             }
         }
 
@@ -1078,6 +1138,42 @@ public class SceneMaxLanguageParser implements IParser {
                 if(!prg.groups.containsKey(cmd.targetGroup)) {
                     prg.groups.put(cmd.targetGroup,new GroupDef(cmd.targetGroup));
                 }
+                return cmd;
+            }
+
+            public ActionStatementBase visitDefineObjectPool(SceneMaxParser.DefineObjectPoolContext ctx) {
+                SceneMaxParser.Define_object_poolContext poolCtx = ctx.define_object_pool();
+                String poolName = poolCtx.res_var_decl().getText();
+
+                VariableDef poolVar = prg.getVar(poolName);
+                if (poolVar == null) {
+                    poolVar = new VariableDef();
+                    poolVar.isShared = poolCtx.Shared() != null;
+                    poolVar.resName = "object_pool";
+                    poolVar.varName = poolName;
+                    poolVar.varType = VariableDef.VAR_TYPE_OBJECT_POOL;
+                    prg.vars.add(poolVar);
+                    prg.vars_index.put(poolVar.varName, poolVar);
+                }
+
+                ObjectPoolCreateCommand cmd = new ObjectPoolCreateCommand();
+                cmd.varLineNum = poolCtx.start != null ? poolCtx.start.getLine() : 0;
+                cmd.poolVarName = poolName;
+                cmd.poolVarDef = poolVar;
+                cmd.sourceName = poolCtx.pool_source().getText();
+                cmd.sourceVarDef = resolveObjectPoolSource(prg, cmd.sourceName);
+                cmd.initialSizeExpr = poolCtx.pool_size_attr().logical_expression();
+                return cmd;
+            }
+
+            public ActionStatementBase visitObjectPoolRelease(SceneMaxParser.ObjectPoolReleaseContext ctx) {
+                SceneMaxParser.Object_pool_releaseContext releaseCtx = ctx.object_pool_release();
+                ObjectPoolReleaseCommand cmd = new ObjectPoolReleaseCommand();
+                cmd.varLineNum = releaseCtx.start != null ? releaseCtx.start.getLine() : 0;
+                cmd.poolVarName = releaseCtx.var_decl(0).getText();
+                cmd.poolVarDef = prg.getVar(cmd.poolVarName);
+                cmd.objectVarName = releaseCtx.var_decl(1).getText();
+                cmd.objectVarDef = prg.getVar(cmd.objectVarName);
                 return cmd;
             }
 
@@ -2185,6 +2281,9 @@ public class SceneMaxLanguageParser implements IParser {
             public ActionStatementBase visitReturnStatement(SceneMaxParser.ReturnStatementContext var1) {
                 StopBlockCommand cmd = new StopBlockCommand();
                 cmd.returnAction=true;
+                if (var1.return_statement().logical_expression() != null) {
+                    cmd.returnExpr = var1.return_statement().logical_expression();
+                }
                 return cmd;
             }
 
@@ -4706,6 +4805,36 @@ public class SceneMaxLanguageParser implements IParser {
     private boolean isMotionValueExpression(SceneMaxParser.Logical_expressionContext expr) {
         SceneMaxParser.ValueContext valueCtx = resolveSimpleValueExpression(expr);
         return valueCtx != null && valueCtx.motion_expr() != null;
+    }
+
+    private SceneMaxParser.Pool_acquireContext resolvePoolAcquireExpression(SceneMaxParser.Logical_expressionContext expr) {
+        SceneMaxParser.ValueContext valueCtx = resolveSimpleValueExpression(expr);
+        return valueCtx != null ? valueCtx.pool_acquire() : null;
+    }
+
+    private VariableDef resolveObjectPoolSource(ProgramDef program, String sourceName) {
+        VariableDef sourceVar = program.getVar(sourceName);
+        if (sourceVar != null) {
+            return sourceVar;
+        }
+
+        ModelDef md = program.getModel(sourceName);
+        if (md == null) {
+            md = new ModelDef();
+            md.name = sourceName;
+            md.from = "";
+            program.models.put(md.name, md);
+            if (!modelsUsed.contains(md.name)) {
+                modelsUsed.add(md.name);
+            }
+        }
+
+        VariableDef source = new VariableDef();
+        source.varName = sourceName;
+        source.resName = sourceName;
+        source.varType = VariableDef.VAR_TYPE_3D;
+        source.isVehicle = md.isVehicle;
+        return source;
     }
 
     private SceneMaxParser.ValueContext resolveSimpleValueExpression(SceneMaxParser.Logical_expressionContext expr) {

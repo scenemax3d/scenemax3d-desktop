@@ -24,13 +24,16 @@ class StopBlockController extends SceneMaxBaseController{
         if(cmd.returnAction) {
             SceneMaxScope t = scope.getFirstReturnPointScope();
             if(t!=null) {
+                setReturnValue(t);
                 t.forceStop();
             } else {
                 // didn't find any hosting procedure so stop this one
                 t = scope.getSecondLevelReturnPointScope();
                 if(t!=null) {
+                    setReturnValue(t);
                     t.forceStop();
                 } else {
+                    setReturnValue(scope);
                     scope.forceStop();
                 }
             }
@@ -68,6 +71,13 @@ class StopBlockController extends SceneMaxBaseController{
 //
 //        }
         return true;
+    }
+
+    private void setReturnValue(SceneMaxScope targetScope) {
+        if (cmd.returnExpr != null && targetScope != null) {
+            Object value = new ActionLogicalExpressionVm(cmd.returnExpr, scope).evaluate();
+            targetScope.setReturnValue(value);
+        }
     }
 
 }

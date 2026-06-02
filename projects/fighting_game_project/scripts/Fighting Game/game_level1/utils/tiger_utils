@@ -1,5 +1,13 @@
 var level1_dragon_rock_slot=[0,0,0,0,0]
 
+create_rock = {
+	var rock_scale = 1.38 + rnd(323) * 0.01
+  rock1 => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale rock_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 3.0
+  return rock1
+}
+rocks => Object.Pool(create_rock, size 5)
+
+
 var level1_dragon_rocks_started=0,
 level1_dragon_rock_count=0,
 level1_dragon_rock_player1_hit_guard=0,
@@ -58,12 +66,9 @@ level1_dragon_rock_explode(r) = {
   var rock_fx_y = r.y
   var rock_fx_z = r.z
 
-  //Logger.info "DRAGON_ROCK cleanup start x=" + rock_fx_x + " y=" + rock_fx_y + " z=" + rock_fx_z
   run level1_dragon_rock_hit_players(r)
   wait 0.12 seconds
-  r.hide
-  r.delete
-  //Logger.info "DRAGON_ROCK rock delete done x=" + rock_fx_x + " y=" + rock_fx_y + " z=" + rock_fx_z
+  rocks.release r  // return rock to the pool
 
   burst_fx => effects.effekseer.Simple_Distortion_2
   spark_fx => effects.effekseer.Simple_Sprite_BillBoard
@@ -142,8 +147,10 @@ level1_fly_dragon_gate_rock_to_ground(r, slot_id) = {
 level1_launch_dragon_gate_rock(index) = {
   level1_dragon_rock_slot[index] = 1
   level1_dragon_rock_count=level1_dragon_rock_count+1
-  var level1_dragon_rock_scale = 1.38 + rnd(323) * 0.01
-  rock => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 3.0
+  
+  //rock => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 3.0
+  var rock = rocks.acquire // get from rocks pool
+  
   rock.data.hit_player1=0
   rock.data.hit_player2=0
   run level1_fly_dragon_gate_rock_to_ground(rock, index)

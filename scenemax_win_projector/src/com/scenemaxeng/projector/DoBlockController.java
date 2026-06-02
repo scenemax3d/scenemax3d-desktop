@@ -28,6 +28,8 @@ public class DoBlockController extends SceneMaxBaseController {
     private boolean timerTicked;
     private boolean checkGoExpr = true;
     private int eventHandlersCount;
+    private boolean hasReturnValue;
+    private Object returnValue;
 
     // Cached to avoid per-frame allocation
     private ActionLogicalExpressionVm goExprCached;
@@ -158,6 +160,7 @@ public class DoBlockController extends SceneMaxBaseController {
 
             boolean finished = ctl.run(tpf);
             if(finished) {
+                captureReturnValue();
                 ctl.isRunning=false;
                 _controllers.remove(i);
             }
@@ -209,6 +212,21 @@ public class DoBlockController extends SceneMaxBaseController {
         }
 
         return loopFinished && !loopCondition;
+    }
+
+    private void captureReturnValue() {
+        if (!hasReturnValue && scope != null && scope.hasReturnValue()) {
+            returnValue = scope.getReturnValue();
+            hasReturnValue = true;
+        }
+    }
+
+    public boolean hasReturnValue() {
+        return hasReturnValue;
+    }
+
+    public Object getReturnValue() {
+        return returnValue;
     }
 
     private int registerController(SceneMaxBaseController c) {
