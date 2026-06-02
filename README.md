@@ -30,6 +30,8 @@ For throw motion authoring, projectile/return motion setup, and runtime examples
 
 For inverse-kinematics authoring, joint setup, preview simulation, and runtime IK commands, see [`docs/ik-designer.md`](docs/ik-designer.md).
 
+For Effekseer particle-effect scripting and runtime examples, see [`docs/effects.md`](docs/effects.md).
+
 For hands-on examples, see the demo projects guide in [`projects/readme.md`](projects/readme.md), which walks through the sample games and explains how they are structured.
 
 ## Ready-to-Use Binaries
@@ -42,6 +44,7 @@ If you want to try SceneMax3D without building from source, download the Windows
 - **Custom Scripting Language** -- purpose-built DSL (ANTLR4-based parser) for game logic and interactivity
 - **Code Editor** -- syntax-highlighted editor with code folding 
 - **Effekseer Particle Effects** -- create and play advanced real-time particle effects integrated into scenes and gameplay
+- **Video Rendering** -- import FFmpeg-supported video files and render them onto scene objects at runtime
 - **Physics Engine** -- integrated Minie / Bullet physics
 - **3D Model Import** -- load models into your scenes
 - **Cinematic Camera System** -- build dynamic camera moves, chase cameras, and dramatic gameplay cutaways
@@ -58,6 +61,7 @@ If you want to try SceneMax3D without building from source, download the Windows
 
 - Java 11 or later
 - Windows (primary platform)
+- No separate `ffmpeg.exe` install is required for normal builds; SceneMax uses the JavaCV / Bytedeco FFmpeg runtime libraries declared in Gradle.
 
 ## Building from Source
 
@@ -91,18 +95,105 @@ Copy `config.properties.example` to `config.properties` and fill in your values 
 
 See `config.properties.example` for all available settings.
 
+## Video Rendering
+
+SceneMax can import video files and render them directly inside a running scene. The feature is backed by JavaCV and FFmpeg: the designer uses FFmpeg to probe and preview video assets, and the runtime decodes frames on a background thread and applies them as a texture to a target object.
+
+Use this for in-world screens, animated billboards, cutscene panels, portal surfaces, UI-like scene props, or other places where a movie should appear on a 3D object.
+
+### Importing A Video
+
+1. Open or create a SceneMax project.
+2. Choose **Assets -> Import Video...**.
+3. Select an MP4, MOV, MKV, AVI, WebM, MPEG, or another FFmpeg-supported video file.
+4. Review the detected dimensions, duration, frame rate, format, and live preview.
+5. Optionally edit the asset name and choose a preview shape: `Pane`, `Box`, or `Sphere`.
+6. Click **Import Video**.
+
+Imported videos are copied into the active project under:
+
+```text
+resources/videos/<assetId>/
+```
+
+SceneMax also updates:
+
+```text
+resources/videos/videos-ext.json
+```
+
+That index stores the asset id, video path, original import path, preview shape, dimensions, duration, frame rate, and format metadata.
+
+### Rendering A Video In Code
+
+Declare a video resource with `videos.<assetId>`, create a renderable target object, then play the video on that target:
+
+```scenemax
+screen => quad : size (16,9), pos (0,3,8)
+intro_video => videos.intro_clip
+
+intro_video.play : target screen
+```
+
+The target can be any renderable scene object. At playback time, SceneMax replaces the target object's material with an unshaded video texture and updates that texture as FFmpeg decodes frames.
+
+You can also render only part of a clip, reverse it, or loop it:
+
+```scenemax
+screen => quad : size (16,9), pos (0,3,8)
+intro_video => videos.intro_clip
+
+intro_video.play : target screen, start "00:01:00", end "00:02:59", loop
+```
+
+```scenemax
+screen => quad : size (16,9), pos (0,3,8)
+countdown => videos.countdown_clip
+
+countdown.play : target screen, start "00:00:05", end "00:00:15", reverse
+```
+
+Supported play options:
+
+| Option | Meaning |
+|--------|---------|
+| `target <object>` | Required. The scene object that receives the video texture. |
+| `start "<time>"` | Optional start timestamp. Colon-separated values are supported, such as `"00:10"` or `"00:01:30"`. |
+| `end "<time>"` | Optional end timestamp. Playback stops when this point is reached. |
+| `reverse` | Plays frames from the end timestamp back toward the start timestamp. |
+| `loop` | Restarts playback when the selected range ends. |
+
+When a script declares `videos.<assetId>`, SceneMax marks that video as used so desktop packaging/export can include the referenced video file and metadata automatically.
+
+## Visual Effects With Effekseer
+
+SceneMax now includes an Effekseer-based visual-effects stack for imported particle systems. Effekseer assets stay in their native format, are stored under `resources/effects/<assetId>/`, and can be declared in scripts with `effects.effekseer.<assetId>`.
+
+Import effects from **Assets -> Import Effekseer Effect...**. SceneMax accepts `.efkefc`, `.efkproj`, and `.efk` files and copies related texture, model, sound, material, and curve assets into the project effect folder. If you work with `.efkproj` files, configure `effekseer_tool_path` in `config.properties` or choose the Effekseer executable from the effect designer so SceneMax can launch the external Effekseer tool and export runtime `.efkefc` files.
+
+Basic effect usage:
+
+```scenemax
+fire_burst => effects.effekseer.fire_burst
+fire_burst.play pos (0,0,0)
+```
+
+Effect objects support placement, show/hide/delete, attachment, look-at behavior, looping playback, and runtime attributes such as playback speed and Effekseer dynamic input channels. See [`docs/effects.md`](docs/effects.md) for complete examples.
+
 ## Project Structure
 
 ```
 scenemax_desktop/            -- Main desktop application (Swing UI)
 scenemax_designer/           -- 3D scene designer/editor module
 scenemax_win_projector/      -- 3D runtime/playback engine
+scenemax_effekseer_runtime/  -- Effekseer JNI/native runtime bridge
 scenemax3d_compiler/         -- Script compilation engine
 scenemax3d_parser/           -- ANTLR4 grammar & parser for SceneMax scripting language
 scenemax3d_common_types/     -- Shared type definitions across modules
 scenemax3d_plugins/          -- Plugin system with WebSocket support
 scenemax3d_plugins_ide/      -- IDE for plugin development
 assets/                      -- UI resources, images, code templates
+third_party/Effekseer/       -- Local Effekseer source/sample corpus used by the native bridge workflow
 ```
 
 ## Technology Stack
@@ -111,6 +202,8 @@ assets/                      -- UI resources, images, code templates
 |-----------|-----------|
 | Graphics Engine | JMonkeyEngine 3 |
 | Physics | Minie (Bullet) |
+| Visual Effects | Effekseer native runtime integration |
+| Video Decoding / Rendering | JavaCV with FFmpeg platform bindings |
 | UI Framework | Swing + FlatLaf (dark theme) |
 | Scripting | Custom DSL via ANTLR4 |
 | Build System | Gradle |
@@ -123,6 +216,8 @@ assets/                      -- UI resources, images, code templates
 - [Minie](https://github.com/stephengold/Minie) -- physics library
 - [JME-Vehicles](https://github.com/stephengold/jme-vehicles) -- vehicle physics
 - [ANTLR4](https://www.antlr.org/) -- parser generator
+- [Effekseer](https://effekseer.github.io/en/) -- native particle-effect authoring and runtime stack
+- [JavaCV](https://github.com/bytedeco/javacv) / [FFmpeg](https://ffmpeg.org/) -- video probing, preview, decoding, and runtime frame rendering
 - [FlatLaf](https://www.formdev.com/flatlaf/) -- modern Swing look-and-feel
 - [RSyntaxTextArea](https://github.com/bobbylight/RSyntaxTextArea) -- code editor component
 - [Socket.IO](https://github.com/socketio/socket.io) -- real-time communication
