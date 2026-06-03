@@ -6198,6 +6198,14 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             CharacterControl ctl = (CharacterControl)am.physicalControl;
             ctl.setPhysicsLocation(pos);
             model.setLocalTranslation(pos);
+        } else if(am.physicalControl instanceof RigidBodyControl) {
+            RigidBodyControl ctl = (RigidBodyControl)am.physicalControl;
+            ctl.clearForces();
+            ctl.setLinearVelocity(new Vector3f());
+            ctl.setAngularVelocity(new Vector3f());
+            ctl.setPhysicsLocation(pos);
+            ctl.activate();
+            model.setLocalTranslation(pos);
         } else {
             model.setLocalTranslation(pos);
         }
