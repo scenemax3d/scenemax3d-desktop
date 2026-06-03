@@ -345,6 +345,62 @@ var model_type="Sinbad"
 m => (model_type)
 ```
 
+## Object Pooling
+
+Use an object pool when the same heavy object is created and removed many times, such as rocks, bullets, debris, enemies, or short-lived props. A pool creates a number of inactive objects up front, reuses them at runtime, and grows automatically when there are no free objects left.
+
+Create a pool from a model/resource name:
+
+```scenemax
+rocks_pool => Object.Pool(meshy_rock, size 5)
+```
+
+Get an object from the pool:
+
+```scenemax
+var rock = rocks_pool.acquire
+rock.pos (22.532026,-51.0,148.68306)
+rock.show
+```
+
+Return the object to the pool:
+
+```scenemax
+rocks_pool.release rock
+```
+
+`free` is also accepted as an alias:
+
+```scenemax
+rocks_pool.free rock
+```
+
+If `rocks_pool.acquire` is called while all pooled objects are active, SceneMax creates one more object and adds it to the pool.
+
+### Pool Factory Functions
+
+For customized object creation, use a synchronous factory function that creates and returns the object. This lets the pool preserve load-time attributes such as position, scale, rotation, shadow mode, collision shape, mass, or any other setup commands.
+
+```scenemax
+create_rock = {
+  rock1 => meshy_rock : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_scale, rotate (0.0,0.0,0.0), shadow mode on, collision shape box, mass 3.0
+  return rock1
+}
+
+rocks_pool => Object.Pool(create_rock, size 5)
+```
+
+Acquire and release objects the same way:
+
+```scenemax
+var rock = rocks_pool.acquire
+rock.throw toward player power 35
+
+rocks_pool.release rock
+```
+
+Factory functions used by pools must return an object reference and should be declared before the pool definition. They should not use `async`, interval execution, or repeating `do` loops because the pool needs the created object immediately.
+
 ## Deleting Objects
 
 Remove an object from memory:

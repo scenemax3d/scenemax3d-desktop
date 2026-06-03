@@ -22,6 +22,8 @@ public class SceneMaxScope {
     private SceneMaxBaseController _creatorController;
     public boolean isReturnPoint=false; // mark scope as possible return point when using "return" command
     public boolean isSecondLevelReturnPoint = false;
+    private boolean hasReturnValue;
+    private Object returnValue;
 
     public SceneMaxScope() {
         mainController = new CompositeController();
@@ -216,6 +218,19 @@ public class SceneMaxScope {
         if(mainController!=null) {
             mainController.forceStop();
         }
+    }
+
+    public void setReturnValue(Object value) {
+        this.returnValue = value;
+        this.hasReturnValue = true;
+    }
+
+    public boolean hasReturnValue() {
+        return hasReturnValue;
+    }
+
+    public Object getReturnValue() {
+        return returnValue;
     }
 
     public SceneMaxBaseController getCreatorController() {

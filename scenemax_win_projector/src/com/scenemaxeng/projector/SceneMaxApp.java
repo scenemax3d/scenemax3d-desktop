@@ -1580,6 +1580,15 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             IfStatmentController ctl = new IfStatmentController(this, scope,ifCmd);
             scope.add(ctl);
 
+        } else if(action instanceof ObjectPoolCreateCommand) {
+            ObjectPoolCreateController ctl = new ObjectPoolCreateController(this, prg, scope, (ObjectPoolCreateCommand) action);
+            scope.add(ctl);
+        } else if(action instanceof ObjectPoolAcquireCommand) {
+            ObjectPoolAcquireController ctl = new ObjectPoolAcquireController(this, prg, scope, (ObjectPoolAcquireCommand) action);
+            scope.add(ctl);
+        } else if(action instanceof ObjectPoolReleaseCommand) {
+            ObjectPoolReleaseController ctl = new ObjectPoolReleaseController(this, prg, scope, (ObjectPoolReleaseCommand) action);
+            scope.add(ctl);
         } else if(action instanceof VariableAssignmentCommand) {
             VariableAssignmentCommand cmd= (VariableAssignmentCommand)action;
             VariableAssignmentController ctl = new VariableAssignmentController(this,scope,prg,cmd);
@@ -1930,6 +1939,44 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
         }
         return true;
+    }
+
+    public Object invokeFunctionValueNow(String funcName, List<SceneMaxParser.Logical_expressionContext> params,
+                                         SceneMaxScope parentScope) {
+        if (funcName == null || funcName.trim().isEmpty() || prg == null) {
+            return null;
+        }
+        FunctionBlockDef fDef = prg.getFunc(funcName.trim());
+        if (fDef == null) {
+            return null;
+        }
+        if (fDef.doBlock.isAsync || fDef.doBlock.amountExpr != null || fDef.doBlock.loopExpr != null) {
+            handleRuntimeError("Function '" + funcName.trim() + "' cannot be used as a value because it is asynchronous or repeating.");
+            return null;
+        }
+
+        SceneMaxScope callParentScope = parentScope != null ? parentScope : (mainScope != null ? mainScope : new SceneMaxScope());
+        DoBlockController c = new DoBlockController(this, callParentScope, fDef.doBlock);
+        c.app = this;
+        c.goExpr = fDef.goExpr;
+        c.async = false;
+        c.setFunctionScopeParams(fDef.doBlock.inParams, params != null ? params : Collections.emptyList(), true);
+        c.init();
+
+        int guard = 0;
+        while (!c.run(0f)) {
+            guard++;
+            if (guard > 2048) {
+                handleRuntimeError("Function '" + funcName.trim() + "' did not complete synchronously.");
+                return null;
+            }
+        }
+
+        if (!c.hasReturnValue()) {
+            handleRuntimeError("Function '" + funcName.trim() + "' did not return a value.");
+            return null;
+        }
+        return c.getReturnValue();
     }
 
 
@@ -4558,6 +4605,52 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
     }
 
+    public EntityInstBase acquireObjectFromPool(String poolVarName, SceneMaxScope scope, int line) {
+        RuntimeObjectPool pool = getRuntimeObjectPool(poolVarName, scope, line);
+        return pool == null ? null : pool.acquire();
+    }
+
+    public void releaseObjectToPool(String poolVarName, EntityInstBase inst, SceneMaxScope scope, int line) {
+        RuntimeObjectPool pool = getRuntimeObjectPool(poolVarName, scope, line);
+        if (pool == null) {
+            return;
+        }
+        if (inst == null) {
+            handleRuntimeError(formatRuntimeLocation(line) + "Object pool release target is undefined");
+            return;
+        }
+        pool.release(inst);
+    }
+
+    private RuntimeObjectPool getRuntimeObjectPool(String poolVarName, SceneMaxScope scope, int line) {
+        VarInst var = scope != null ? scope.getVar(poolVarName) : null;
+        if (var == null || !(var.value instanceof RuntimeObjectPool)) {
+            handleRuntimeError(formatRuntimeLocation(line) + "Object pool '" + poolVarName + "' is not initialized");
+            return null;
+        }
+        return (RuntimeObjectPool) var.value;
+    }
+
+    public void setPooledEntityActive(EntityInstBase inst, boolean active) {
+        if (inst == null || inst.varDef == null || inst.scope == null) {
+            return;
+        }
+        ActionCommandShowHide show = new ActionCommandShowHide();
+        show.show = active;
+        String runtimeName = inst.varDef.varName + "@" + inst.scope.scopeId;
+        if (inst.varDef.varType == VariableDef.VAR_TYPE_3D) {
+            showHideModel(runtimeName, show);
+        } else if (inst.varDef.varType == VariableDef.VAR_TYPE_2D) {
+            showHideSprite(runtimeName, show);
+        } else if (inst.varDef.varType == VariableDef.VAR_TYPE_SPHERE) {
+            showHideSphere(runtimeName, show);
+        } else if (inst.varDef.varType == VariableDef.VAR_TYPE_BOX) {
+            showHideBox(runtimeName, show);
+        } else if (inst.varDef.varType == VariableDef.VAR_TYPE_EFFEKSEER) {
+            showHideEffekseer(runtimeName, show);
+        }
+    }
+
 
     public void showHideModel(String varName, ActionCommandShowHide show) {
 
@@ -6104,6 +6197,14 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if(am.physicalControl instanceof CharacterControl) {
             CharacterControl ctl = (CharacterControl)am.physicalControl;
             ctl.setPhysicsLocation(pos);
+            model.setLocalTranslation(pos);
+        } else if(am.physicalControl instanceof RigidBodyControl) {
+            RigidBodyControl ctl = (RigidBodyControl)am.physicalControl;
+            ctl.clearForces();
+            ctl.setLinearVelocity(new Vector3f());
+            ctl.setAngularVelocity(new Vector3f());
+            ctl.setPhysicsLocation(pos);
+            ctl.activate();
             model.setLocalTranslation(pos);
         } else {
             model.setLocalTranslation(pos);
