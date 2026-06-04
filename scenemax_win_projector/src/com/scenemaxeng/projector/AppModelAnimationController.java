@@ -52,7 +52,9 @@ public class AppModelAnimationController implements AnimEventListener {
                 composer = m.getOrCreateAnimComposerForSkinningControl();
             }
             if (composer != null) {
-                boolean attachedExternal = m.attachExternalAnimation(hostController.app.getAssetManager(), hostController.app.getAssetsMapping(), animationName);
+                boolean hasLocalAnimation = composer.hasAction(animationName) || composer.hasAnimClip(animationName);
+                boolean attachedExternal = hasLocalAnimation
+                        || m.attachExternalAnimation(hostController.app.getAssetManager(), hostController.app.getAssetsMapping(), animationName);
                 Action ac = composer.getAction(animationName);
                 if (ac == null && !attachedExternal && !composer.hasAnimClip(animationName)) {
                     System.out.println("Animation not found on model or external animation resources: " + animationName);

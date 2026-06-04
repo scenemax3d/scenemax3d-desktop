@@ -23,6 +23,7 @@ public class EffekseerEffectDesignerPanel extends JPanel {
 
     private EffekseerEffectDocument document;
     private boolean dirty = false;
+    private boolean loadingDocumentIntoUi = false;
     private boolean discardEditorStateOnDeactivate = false;
     private Runnable onDirtyCallback;
     private Runnable onSavedCallback;
@@ -95,11 +96,11 @@ public class EffekseerEffectDesignerPanel extends JPanel {
         } else if (dirty) {
             saveDocument();
         }
-        disposePreview();
     }
 
     public void clearAndDeactivatePanel() {
         deactivatePanel();
+        disposePreview();
     }
 
     public void reloadFromDisk() {
@@ -370,7 +371,7 @@ public class EffekseerEffectDesignerPanel extends JPanel {
         content.add(motionSettings);
 
         JTextArea note = new JTextArea(
-                "Use the embedded preview for fast in-app iteration.\n" +
+                "Preview uses the native Effekseer runtime.\n" +
                 "The external Effekseer tool is still useful for parity checks against the original authoring environment.");
         note.setEditable(false);
         note.setLineWrap(true);
@@ -421,23 +422,28 @@ public class EffekseerEffectDesignerPanel extends JPanel {
     }
 
     private void loadDocumentIntoUi() {
-        txtName.setText(document.getName());
-        txtAssetId.setText(document.getAssetId());
-        txtImportedEffect.setText(document.getImportedEffectFile());
-        txtOriginalPath.setText(document.getOriginalImportPath());
-        txtImportedAt.setText(document.getImportedAt());
-        chkLoop.setSelected(document.isLoop());
-        chkShowGround.setSelected(document.isShowGround());
-        cboBackground.setSelectedItem(document.getBackgroundMode());
-        spnPlaybackSpeed.setValue(document.getPlaybackSpeed());
-        spnCameraDistance.setValue(document.getCameraDistance());
-        spnCameraYaw.setValue(document.getCameraYawDeg());
-        spnCameraPitch.setValue(document.getCameraPitchDeg());
-        spnMotionForceScale.setValue(document.getMotionForceScale());
-        spnMotionOrbitStrength.setValue(document.getMotionOrbitStrength());
-        spnMotionDamping.setValue(document.getMotionDamping());
-        refreshToolPath();
-        refreshEmbeddedPreview();
+        loadingDocumentIntoUi = true;
+        try {
+            txtName.setText(document.getName());
+            txtAssetId.setText(document.getAssetId());
+            txtImportedEffect.setText(document.getImportedEffectFile());
+            txtOriginalPath.setText(document.getOriginalImportPath());
+            txtImportedAt.setText(document.getImportedAt());
+            chkLoop.setSelected(document.isLoop());
+            chkShowGround.setSelected(document.isShowGround());
+            cboBackground.setSelectedItem(document.getBackgroundMode());
+            spnPlaybackSpeed.setValue(document.getPlaybackSpeed());
+            spnCameraDistance.setValue(document.getCameraDistance());
+            spnCameraYaw.setValue(document.getCameraYawDeg());
+            spnCameraPitch.setValue(document.getCameraPitchDeg());
+            spnMotionForceScale.setValue(document.getMotionForceScale());
+            spnMotionOrbitStrength.setValue(document.getMotionOrbitStrength());
+            spnMotionDamping.setValue(document.getMotionDamping());
+            refreshToolPath();
+            refreshEmbeddedPreview();
+        } finally {
+            loadingDocumentIntoUi = false;
+        }
     }
 
     private void applyUiToDocument() {
@@ -457,7 +463,7 @@ public class EffekseerEffectDesignerPanel extends JPanel {
     private void refreshToolPath() {
         txtToolPath.setText(EffekseerTooling.getConfiguredToolPath());
         if (!EffekseerTooling.isConfiguredToolAvailable()) {
-            lblPreviewStatus.setText("Embedded preview is active. Choose the Effekseer executable if you also want authoring-tool validation.");
+            lblPreviewStatus.setText("Native preview is active when the Effekseer runtime file and native bridge are available.");
         }
     }
 
@@ -617,6 +623,9 @@ public class EffekseerEffectDesignerPanel extends JPanel {
     }
 
     private void markDirty() {
+        if (loadingDocumentIntoUi) {
+            return;
+        }
         dirty = true;
         if (onDirtyCallback != null) {
             onDirtyCallback.run();
@@ -678,13 +687,14 @@ public class EffekseerEffectDesignerPanel extends JPanel {
     }
 
     private void disposePreview() {
-        if (previewApp != null) {
-            previewApp.stop();
-            previewApp = null;
-        }
         if (diagnosticsRefreshTimer != null) {
             diagnosticsRefreshTimer.stop();
             diagnosticsRefreshTimer = null;
+        }
+        if (previewApp != null) {
+            previewApp.prepareForClose();
+            previewApp.stop(true);
+            previewApp = null;
         }
         if (previewCanvas != null && previewContainer != null) {
             previewContainer.remove(previewCanvas);
@@ -719,11 +729,8 @@ public class EffekseerEffectDesignerPanel extends JPanel {
     }
 
     private void updateModifierAvailability() {
-        boolean nativeMode = previewApp != null && "native".equals(previewApp.getPreviewMode());
-        boolean enabled = !nativeMode;
-        String tooltip = nativeMode
-                ? "Custom motion tuning currently applies only to the embedded preview. Native Effekseer uses the authored effect behavior."
-                : null;
+        boolean enabled = false;
+        String tooltip = "Custom motion tuning is disabled because native Effekseer uses the authored effect behavior.";
         if (spnMotionForceScale != null) {
             spnMotionForceScale.setEnabled(enabled);
             spnMotionForceScale.setToolTipText(tooltip);
