@@ -35,6 +35,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 public class EffekseerPreviewApp extends SceneMaxApp {
@@ -77,6 +78,7 @@ public class EffekseerPreviewApp extends SceneMaxApp {
     private ByteBuffer nativePreviewPixels;
     private int nativePreviewWidth;
     private int nativePreviewHeight;
+    private volatile boolean shuttingDown = false;
     private volatile String lastCameraInteractionStatus = "idle";
 
     public void setStatusListener(Consumer<String> statusListener) {
@@ -153,6 +155,9 @@ public class EffekseerPreviewApp extends SceneMaxApp {
 
     @Override
     public void simpleUpdate(float tpf) {
+        if (shuttingDown) {
+            return;
+        }
         super.simpleUpdate(tpf);
         updateMouseCamera();
         float scaledTpf = (float) ((document != null ? document.getPlaybackSpeed() : 1.0) * tpf);
@@ -165,6 +170,10 @@ public class EffekseerPreviewApp extends SceneMaxApp {
 
     @Override
     public void simpleRender(com.jme3.renderer.RenderManager rm) {
+        if (shuttingDown) {
+            super.simpleRender(rm);
+            return;
+        }
         nativePreview.updateCamera(cam.getViewMatrix(), cam.getProjectionMatrix(), cam.getLocation());
         nativePreview.render(cam.getWidth(), cam.getHeight());
         refreshNativeOverlay();
@@ -199,6 +208,27 @@ public class EffekseerPreviewApp extends SceneMaxApp {
 
     public String getLastCameraInteractionStatus() {
         return lastCameraInteractionStatus;
+    }
+
+    public void prepareForClose() {
+        shuttingDown = true;
+        if (!previewReady) {
+            return;
+        }
+        try {
+            enqueue(() -> {
+                loadedNativeEffectPath = null;
+                loadedEffectPath = null;
+                pendingDocument = null;
+                pendingImportedEffectFile = null;
+                clearEmitters();
+                resetNativeOverlay();
+                nativePreview.dispose();
+                return null;
+            }).get(2, TimeUnit.SECONDS);
+        } catch (Exception ignored) {
+            // Best-effort cleanup. The shutdown flag already prevents further readback attempts.
+        }
     }
 
     public void orbitByDegrees(float yawDeg, float pitchDeg) {

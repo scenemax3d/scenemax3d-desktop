@@ -881,7 +881,7 @@ public class EditorTabPanel extends JPanel {
             }
         } else if (tabData.isEffekseerDesignerTab) {
             if (tabData.effekseerDesignerPanel != null) {
-                tabData.effekseerDesignerPanel.deactivatePanel();
+                tabData.effekseerDesignerPanel.clearAndDeactivatePanel();
             }
         } else if (tabData.isShaderDesignerTab) {
             if (tabData.shaderDesignerPanel != null) {

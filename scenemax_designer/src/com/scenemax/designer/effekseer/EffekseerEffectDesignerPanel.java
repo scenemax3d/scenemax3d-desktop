@@ -687,13 +687,14 @@ public class EffekseerEffectDesignerPanel extends JPanel {
     }
 
     private void disposePreview() {
-        if (previewApp != null) {
-            previewApp.stop();
-            previewApp = null;
-        }
         if (diagnosticsRefreshTimer != null) {
             diagnosticsRefreshTimer.stop();
             diagnosticsRefreshTimer = null;
+        }
+        if (previewApp != null) {
+            previewApp.prepareForClose();
+            previewApp.stop(true);
+            previewApp = null;
         }
         if (previewCanvas != null && previewContainer != null) {
             previewContainer.remove(previewCanvas);

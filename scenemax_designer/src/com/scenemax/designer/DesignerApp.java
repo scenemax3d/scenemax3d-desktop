@@ -838,6 +838,7 @@ public class DesignerApp extends SceneMaxApp {
                 ? designerFile.getParentFile().getAbsolutePath()
                 : designerProjectPath;
         initDesignerRuntime(runtimePath);
+        reloadProjectAssetsMapping(getProjectResourcesFolder());
         ensureDesignerFallbackLightingForPreviewScene();
         captureDesignerFallbackLighting();
 
@@ -4166,6 +4167,7 @@ public class DesignerApp extends SceneMaxApp {
                 ? designerFile.getParentFile().getAbsolutePath()
                 : designerProjectPath;
         initDesignerRuntime(runtimePath);
+        reloadProjectAssetsMapping(getProjectResourcesFolder());
         ensureDesignerFallbackLightingForPreviewScene();
         captureDesignerFallbackLighting();
 
@@ -4300,6 +4302,7 @@ public class DesignerApp extends SceneMaxApp {
                 ? designerFile.getParentFile().getAbsolutePath()
                 : designerProjectPath;
         initDesignerRuntime(runtimePath);
+        reloadProjectAssetsMapping(getProjectResourcesFolder());
         ensureDesignerFallbackLightingForPreviewScene();
         captureDesignerFallbackLighting();
 
