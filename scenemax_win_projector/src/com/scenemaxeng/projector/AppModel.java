@@ -320,7 +320,6 @@ public class AppModel {
 
         ResourceAnimation resourceAnimation = assetsMapping.getAnimationsIndex().get(animationName.toLowerCase());
         if (resourceAnimation == null) {
-            System.out.println("External animation resource not found: " + animationName);
             return false;
         }
 

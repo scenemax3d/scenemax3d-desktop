@@ -172,6 +172,12 @@ public class EffekseerPreviewApp extends SceneMaxApp {
     }
 
     @Override
+    public void destroy() {
+        nativePreview.dispose();
+        super.destroy();
+    }
+
+    @Override
     public void reshape(int width, int height) {
         super.reshape(width, height);
         resetNativeOverlay();
@@ -381,58 +387,21 @@ public class EffekseerPreviewApp extends SceneMaxApp {
         }
 
         File runtimeEffectFile = EffekseerNativeEffectResolver.resolveRuntimeEffect(importedEffectFile);
-        if (runtimeEffectFile != null && nativePreview.isAvailable()) {
-            if (nativePreview.loadEffect(runtimeEffectFile, document != null && document.isLoop(), document != null ? document.getPlaybackSpeed() : 1.0)) {
-                loadedNativeEffectPath = runtimeEffectFile.getAbsolutePath();
-                publishStatus("Native Effekseer preview active using " + runtimeEffectFile.getName() + ".");
-                return;
-            } else {
-                publishStatus("Native Effekseer preview failed: " + nativePreview.getStatus() + ". Falling back to embedded preview.");
-            }
-        }
-
-        if (!importedEffectFile.getName().toLowerCase(Locale.ROOT).endsWith(".efkproj")) {
-            publishStatus("Embedded preview currently supports imported .efkproj files. Native runtime bridge was not available for this effect.");
+        if (runtimeEffectFile == null) {
+            publishStatus("Native Effekseer preview requires a runtime .efkefc or .efk file next to the imported effect.");
             return;
         }
 
-        try {
-            registerAssetFolder(importedEffectFile.getParentFile());
-            EffekseerProject project = EffekseerProjectParser.parse(importedEffectFile);
-            projectTargetLocation.set(project.getTargetLocation());
-            updateEffectOrientation();
-            int usable = 0;
-            for (EffekseerSpriteEmitter emitter : project.getEmitters()) {
-                if (emitter.getTexturePath() == null || emitter.getTexturePath().isBlank()) {
-                    continue;
-                }
-                emitters.add(new EmitterRuntime(emitter, null));
-                usable++;
-            }
-            if (usable == 0) {
-                publishStatus("This Effekseer project was parsed, but no sprite emitters with textures were found to preview.");
-            } else {
-                String mode = document != null && document.isLoop() ? "looping" : "one-shot";
-                StringBuilder status = new StringBuilder();
-                status.append("Embedded preview loaded ")
-                        .append(usable)
-                        .append(" previewable emitter")
-                        .append(usable == 1 ? "" : "s")
-                        .append(" in ")
-                        .append(mode)
-                        .append(" mode");
-                if (project.getSkippedNodeCount() > 0) {
-                    status.append("; skipped ")
-                            .append(project.getSkippedNodeCount())
-                            .append(" unsupported or non-renderable node")
-                            .append(project.getSkippedNodeCount() == 1 ? "" : "s");
-                }
-                status.append(".");
-                publishStatus(status.toString());
-            }
-        } catch (Exception ex) {
-            ex.printStackTrace();
-            publishStatus("Embedded preview could not parse this Effekseer project: " + ex.getMessage());
+        if (!nativePreview.isAvailable()) {
+            publishStatus("Native Effekseer preview unavailable: " + nativePreview.getAvailabilityMessage());
+            return;
+        }
+
+        if (nativePreview.loadEffect(runtimeEffectFile, document != null && document.isLoop(), document != null ? document.getPlaybackSpeed() : 1.0)) {
+            loadedNativeEffectPath = runtimeEffectFile.getAbsolutePath();
+            publishStatus("Native Effekseer preview active using " + runtimeEffectFile.getName() + ".");
+        } else {
+            publishStatus("Native Effekseer preview failed: " + nativePreview.getStatus());
         }
     }
 
@@ -500,10 +469,20 @@ public class EffekseerPreviewApp extends SceneMaxApp {
             nativePreviewTexture.setMagFilter(Texture.MagFilter.Bilinear);
             nativePreviewPicture = new Picture("EffekseerNativePreviewPicture");
             nativePreviewPicture.setTexture(assetManager, nativePreviewTexture, true);
+            flipNativeOverlayTexCoords(nativePreviewPicture);
             nativePreviewPicture.setWidth(width);
             nativePreviewPicture.setHeight(height);
             nativePreviewPicture.setLocalTranslation(0f, 0f, 10f);
         }
+    }
+
+    private void flipNativeOverlayTexCoords(Picture picture) {
+        picture.getMesh().setBuffer(VertexBuffer.Type.TexCoord, 2, BufferUtils.createFloatBuffer(
+                0f, 1f,
+                1f, 1f,
+                1f, 0f,
+                0f, 0f
+        ));
     }
 
     private void hideNativeOverlay() {

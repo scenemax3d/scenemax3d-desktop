@@ -93,6 +93,8 @@ GlCheckFramebufferStatusProc g_glCheckFramebufferStatus = nullptr;
 
 void destroyOffscreenFramebuffer(PreviewContext* ctx);
 void captureLoadBinding(PreviewContext* ctx);
+bool hasCurrentGlContext();
+bool ownsCurrentGlContext(const PreviewContext* ctx);
 
 template <typename T>
 jlong toHandle(std::unique_ptr<T> context) {
@@ -242,6 +244,7 @@ bool initializeRendererObjects(PreviewContext* ctx) {
     if (ctx->renderer == nullptr || ctx->manager == nullptr) {
         return false;
     }
+    ctx->renderer->SetRestorationOfStatesFlag(false);
     setupModules(ctx);
     return true;
 }
@@ -467,8 +470,40 @@ void captureRenderBinding(PreviewContext* ctx) {
 #endif
 }
 
+bool hasCurrentGlContext() {
+#if _WIN32
+    return wglGetCurrentContext() != nullptr;
+#else
+    return true;
+#endif
+}
+
+bool ownsCurrentGlContext(const PreviewContext* ctx) {
+    if (ctx == nullptr) {
+        return false;
+    }
+#if _WIN32
+    void* current = wglGetCurrentContext();
+    if (current == nullptr) {
+        return false;
+    }
+    return (ctx->renderGlContext != nullptr && current == ctx->renderGlContext)
+            || (ctx->loadGlContext != nullptr && current == ctx->loadGlContext)
+            || (ctx->createGlContext != nullptr && current == ctx->createGlContext);
+#else
+    return true;
+#endif
+}
+
 void destroyOffscreenFramebuffer(PreviewContext* ctx) {
     if (ctx == nullptr) {
+        return;
+    }
+    if (!hasCurrentGlContext()) {
+        ctx->offscreenFramebuffer = 0;
+        ctx->offscreenColorTexture = 0;
+        ctx->offscreenWidth = 0;
+        ctx->offscreenHeight = 0;
         return;
     }
     if (ctx->offscreenColorTexture != 0) {
@@ -589,7 +624,15 @@ JNIEXPORT jlong JNICALL Java_com_scenemax_effekseer_runtime_EffekseerNativeBridg
 
 JNIEXPORT void JNICALL Java_com_scenemax_effekseer_runtime_EffekseerNativeBridge_nativeDestroyPreviewContext
   (JNIEnv*, jclass, jlong handle) {
-    std::unique_ptr<PreviewContext> context(fromHandle<PreviewContext>(handle));
+    auto* rawContext = fromHandle<PreviewContext>(handle);
+    if (rawContext == nullptr) {
+        return;
+    }
+    if (!ownsCurrentGlContext(rawContext)) {
+        OutputDebugStringA("SceneMax Effekseer JNI: deferred native context leak because destroy was called without the owning GL context.\n");
+        return;
+    }
+    std::unique_ptr<PreviewContext> context(rawContext);
     destroyOffscreenFramebuffer(context.get());
 }
 
@@ -810,9 +853,9 @@ JNIEXPORT void JNICALL Java_com_scenemax_effekseer_runtime_EffekseerNativeBridge
     if (context->effect != nullptr && context->loadGlContext != nullptr
             && context->renderGlContext != nullptr
             && context->loadGlContext != context->renderGlContext) {
-        clearRuntimeObjects(context);
         context->renderFailed = true;
         context->renderFailureCount += 1;
+        context->lastOffscreenStatus = "render skipped: GL context changed";
         return;
     }
     if (context->renderer == nullptr || context->manager == nullptr || context->effect == nullptr) {

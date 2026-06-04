@@ -200,6 +200,7 @@ public class MainWinApp implements IAppObserver {
     }
 
     public static void main(String[] args){
+        RuntimeLogConfig.configureRuntimeLogging();
         MainWinApp app = new MainWinApp(null,null,false);
 
     }

@@ -221,6 +221,7 @@ public class SceneMaxLauncher implements IAppObserver {
     }
 
     public static void main(String[] args) {
+        RuntimeLogConfig.configureRuntimeLogging();
         new SceneMaxLauncher();
     }
 
