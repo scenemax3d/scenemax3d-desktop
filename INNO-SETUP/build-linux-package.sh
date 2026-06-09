@@ -11,14 +11,14 @@ INPUT_DIR="${STAGE_DIR}/input"
 RESOURCE_DIR="${STAGE_DIR}/resources"
 OUTPUT_DIR="${SCRIPT_DIR}/Output/linux"
 MAIN_JAR_SOURCE="${REPO_ROOT}/build/libs/scenemax_desktop-1.0-SNAPSHOT-all.jar"
-PROJECTOR_JAR_SOURCE="${REPO_ROOT}/out/artifacts/scenemax_win_projector.jar"
+PROJECTOR_ARTIFACT_DIR="${REPO_ROOT}/out/artifacts"
 
 mkdir -p "${INPUT_DIR}/out/artifacts" "${INPUT_DIR}/data" "${INPUT_DIR}/export_targets" "${OUTPUT_DIR}" "${RESOURCE_DIR}"
 
 "${REPO_ROOT}/gradlew" build :scenemax_win_projector:publishProjectorArtifact
 
 cp "${MAIN_JAR_SOURCE}" "${INPUT_DIR}/scenemax_desktop.jar"
-cp "${PROJECTOR_JAR_SOURCE}" "${INPUT_DIR}/out/artifacts/scenemax_win_projector.jar"
+cp "${PROJECTOR_ARTIFACT_DIR}"/scenemax_projector-*.jar "${INPUT_DIR}/out/artifacts/"
 cp "${REPO_ROOT}/data/scenemax3d.db" "${INPUT_DIR}/data/scenemax3d.db"
 cp -R "${REPO_ROOT}/resources-basic/resources" "${INPUT_DIR}/resources"
 cp -R "${REPO_ROOT}/macro" "${INPUT_DIR}/macro"

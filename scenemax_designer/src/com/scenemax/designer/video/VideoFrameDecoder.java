@@ -1,10 +1,5 @@
 package com.scenemax.designer.video;
 
-import org.bytedeco.javacv.FFmpegFrameGrabber;
-import org.bytedeco.javacv.Frame;
-import org.bytedeco.javacv.Java2DFrameConverter;
-
-import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.concurrent.atomic.AtomicReference;
@@ -34,30 +29,15 @@ class VideoFrameDecoder implements AutoCloseable, Runnable {
 
     @Override
     public void run() {
-        while (running) {
-            try (FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(file);
-                 Java2DFrameConverter converter = new Java2DFrameConverter()) {
-                grabber.start();
-                double fps = grabber.getFrameRate();
-                long frameDelayMs = fps > 1d ? Math.max(8L, Math.round(1000d / fps)) : 33L;
-                publishStatus("Previewing " + file.getName());
+        if (file == null || !file.isFile()) {
+            publishStatus("Choose a video file to import.");
+            return;
+        }
 
-                while (running) {
-                    Frame frame = grabber.grabImage();
-                    if (frame == null) {
-                        break;
-                    }
-                    BufferedImage image = converter.convert(frame);
-                    if (image != null) {
-                        latestFrame.set(copy(image));
-                    }
-                    sleep(frameDelayMs);
-                }
-                grabber.stop();
-            } catch (Exception ex) {
-                publishStatus("Video preview failed: " + ex.getMessage());
-                sleep(1000L);
-            }
+        publishStatus("Video playback preview runs in the runtime projector.");
+
+        while (running) {
+            sleep(1000L);
         }
     }
 
@@ -74,14 +54,6 @@ class VideoFrameDecoder implements AutoCloseable, Runnable {
         if (statusCallback != null) {
             statusCallback.accept(status);
         }
-    }
-
-    private static BufferedImage copy(BufferedImage source) {
-        BufferedImage target = new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_4BYTE_ABGR);
-        Graphics2D g = target.createGraphics();
-        g.drawImage(source, 0, 0, null);
-        g.dispose();
-        return target;
     }
 
     private static void sleep(long millis) {

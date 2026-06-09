@@ -10,9 +10,9 @@
     },
     "loop": true,
     "camera": {
-      "pitchDeg": -15,
+      "pitchDeg": 17,
       "distance": 12,
-      "yawDeg": 35
+      "yawDeg": -38
     }
   },
   "assetId": "Simple_Distortion_2",

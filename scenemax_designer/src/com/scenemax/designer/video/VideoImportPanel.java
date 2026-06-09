@@ -30,7 +30,7 @@ public class VideoImportPanel extends JPanel implements AutoCloseable {
     private final JTextField durationField = readOnlyField();
     private final JTextField frameRateField = readOnlyField();
     private final JTextField formatField = readOnlyField();
-    private final JLabel statusLabel = new JLabel("Choose an MP4 or any FFmpeg-supported video file.");
+    private final JLabel statusLabel = new JLabel("Choose a video file to import. Runtime handles playback.");
     private final JButton importButton = new JButton("Import Video");
     private final JButton chooseButton = new JButton("Choose Video...");
     private final JButton closeButton = new JButton("Close");
@@ -153,7 +153,7 @@ public class VideoImportPanel extends JPanel implements AutoCloseable {
         frameRateField.setText("");
         formatField.setText("");
         setImportEnabled(false);
-        setBusy(true, "Testing video with FFmpeg...");
+        setBusy(true, "Reading video file info...");
 
         SwingWorker<VideoMetadata, Void> worker = new SwingWorker<>() {
             @Override
@@ -174,11 +174,11 @@ public class VideoImportPanel extends JPanel implements AutoCloseable {
                     formatField.setText(metadata.format == null || metadata.format.isBlank() ? "Unknown" : metadata.format);
                     previewPanel.setVideoFile(file, metadata);
                     setImportEnabled(true);
-                    setBusy(false, "Preview ready.");
+                    setBusy(false, "Ready to import. Playback preview runs in the runtime projector.");
                 } catch (Exception ex) {
-                    setBusy(false, "Video test failed.");
+                    setBusy(false, "Video info failed.");
                     JOptionPane.showMessageDialog(VideoImportPanel.this,
-                            "FFmpeg could not open this video:\n" + ex.getMessage(),
+                            "Could not read this video file:\n" + ex.getMessage(),
                             "Video Import",
                             JOptionPane.ERROR_MESSAGE);
                 }

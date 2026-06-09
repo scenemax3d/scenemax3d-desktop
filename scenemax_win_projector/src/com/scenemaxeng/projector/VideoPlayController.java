@@ -73,7 +73,7 @@ public class VideoPlayController extends SceneMaxBaseController {
 
         File videoFile = app.resolveRuntimeResourceFile(video.path);
         if (videoFile == null || !videoFile.isFile()) {
-            app.handleRuntimeError("Video file was not found: " + video.path);
+            app.handleRuntimeError("Video file was not found for resource '" + video.name + "': " + video.path);
             return false;
         }
 

@@ -34,9 +34,70 @@ sourceSets {
     }
 }
 
+def ffmpegVersion = '8.0.1-1.5.13'
+def javacppVersion = '1.5.13'
+def projectorTargets = [
+        [taskSuffix: 'Windows', platforms: ['windows-x86_64'], artifactName: 'scenemax_projector-windows.jar'],
+        [taskSuffix: 'Linux', platforms: ['linux-x86_64', 'linux-arm64'], artifactName: 'scenemax_projector-linux.jar'],
+        [taskSuffix: 'Macos', platforms: ['macosx-x86_64', 'macosx-arm64'], artifactName: 'scenemax_projector-macos.jar']
+]
+
+projectorTargets.each { target ->
+    configurations.create("projector${target.taskSuffix}Runtime")
+}
+
+def configureProjectorShadowJar = { task, target ->
+    task.group = 'build'
+    task.description = "Builds the SceneMax projector fat jar for ${target.taskSuffix}."
+    task.archiveFileName.set(target.artifactName)
+    task.from sourceSets.main.output
+    task.configurations = [
+            project.configurations.runtimeClasspath,
+            project.configurations["projector${target.taskSuffix}Runtime"]
+    ]
+    task.exclude('**/META-INF/*.SF')
+    task.exclude('**/META-INF/*.DSA')
+    task.exclude('**/META-INF/*.RSA')
+    task.exclude('probes/**')
+    task.exclude { details ->
+        def path = details.path.replace('\\', '/')
+        def isBulletNative = path == 'native/windows/x86_64/bulletjme.dll'
+                || path == 'native/linux/x86_64/libbulletjme.so'
+                || path == 'native/linux/arm64/libbulletjme.so'
+                || path == 'native/linux/arm32/libbulletjme.so'
+                || path == 'native/osx/x86_64/libbulletjme.dylib'
+                || path == 'native/osx/arm64/libbulletjme.dylib'
+                || path.startsWith('lib/') && path.endsWith('/libbulletjme.so')
+        if (!isBulletNative) {
+            return false
+        }
+        if (target.taskSuffix == 'Windows') {
+            return path != 'native/windows/x86_64/bulletjme.dll'
+        }
+        if (target.taskSuffix == 'Linux') {
+            return path != 'native/linux/x86_64/libbulletjme.so'
+                    && path != 'native/linux/arm64/libbulletjme.so'
+        }
+        if (target.taskSuffix == 'Macos') {
+            return path != 'native/osx/x86_64/libbulletjme.dylib'
+                    && path != 'native/osx/arm64/libbulletjme.dylib'
+        }
+        return true
+    }
+
+    task.manifest {
+        attributes(
+                'Implementation-Version': version,
+                'Built-By': System.getProperty('user.name'),
+                'Built-JDK': System.getProperty('java.version'),
+                'Main-Class': 'com.scenemaxeng.projector.MainWinApp',
+                'SceneMax-Projector-Platform': target.platforms.join(',')
+        )
+    }
+}
+
 shadowJar {
-    include '**/*'
-    include '*.jar'
+    configureProjectorShadowJar(delegate, projectorTargets[0])
     //minimize()
 }
 assemble.dependsOn shadowJar
@@ -54,15 +115,33 @@ tasks.named('shadowJar') {
 }
 
 def projectorArtifactDir = rootProject.file('out/artifacts')
-def projectorArtifactFile = new File(projectorArtifactDir, 'scenemax_win_projector.jar')
+
+def nonWindowsProjectorShadowTasks = projectorTargets.drop(1).collect { target ->
+    tasks.register("shadowJar${target.taskSuffix}", com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
+        configureProjectorShadowJar(delegate, target)
+    }
+}
 
 tasks.register('publishProjectorArtifact', Copy) {
     group = 'build'
-    description = 'Copies the projector fat jar to out/artifacts and removes stale launcher jars.'
+    description = 'Copies target-specific projector fat jars to out/artifacts and removes stale launcher jars.'
     dependsOn tasks.named('shadowJar')
-    from(tasks.named('shadowJar').flatMap { it.archiveFile })
+    dependsOn nonWindowsProjectorShadowTasks
     into(projectorArtifactDir)
-    rename { 'scenemax_win_projector.jar' }
+
+    from(tasks.named('shadowJar').flatMap { it.archiveFile }) {
+        rename { 'scenemax_projector-windows.jar' }
+    }
+    from(tasks.named('shadowJar').flatMap { it.archiveFile }) {
+        rename { 'scenemax_win_projector.jar' }
+    }
+    projectorTargets.drop(1).each { target ->
+        def targetTask = tasks.named("shadowJar${target.taskSuffix}")
+        def targetArtifactName = target.artifactName
+        from(targetTask.flatMap { it.archiveFile }) {
+            rename { targetArtifactName }
+        }
+    }
 }
 
 tasks.named('build') {
@@ -108,7 +187,14 @@ dependencies {
     implementation 'org.antlr:antlr4-runtime:4.5.3'
     implementation 'org.json:json:20210307'
     implementation 'org.bytedeco:javacv:1.5.13'
-    implementation 'org.bytedeco:ffmpeg-platform:8.0.1-1.5.13'
+    implementation "org.bytedeco:ffmpeg:${ffmpegVersion}"
+
+    projectorTargets.each { target ->
+        target.platforms.each { platform ->
+            add("projector${target.taskSuffix}Runtime", "org.bytedeco:ffmpeg:${ffmpegVersion}:${platform}")
+            add("projector${target.taskSuffix}Runtime", "org.bytedeco:javacpp:${javacppVersion}:${platform}")
+        }
+    }
 
     implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: [])
 

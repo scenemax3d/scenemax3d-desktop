@@ -5,7 +5,6 @@ import com.scenemaxeng.common.ui.model.UILayerDef;
 import com.scenemaxeng.common.ui.model.UIWidgetDef;
 import com.scenemaxeng.compiler.ApplyMacroResults;
 import com.scenemaxeng.compiler.MacroFilter;
-import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
 
 //import com.scenemaxeng.projector.*;
@@ -19,9 +18,12 @@ import javax.swing.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -31,7 +33,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -65,12 +66,14 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     private final Set<String> throwMotionAssetNamesUsed = new LinkedHashSet<>();
     private final List<String> scannedScriptFiles = new ArrayList<>();
     private final List<String> scannedDesignerFiles = new ArrayList<>();
+    private final List<String> reachableUiFiles = new ArrayList<>();
     private final PackageOptions options;
     private File outputFolder;
     private final StringBuilder completionNotes = new StringBuilder();
     private volatile String statusNote = "";
     private volatile String failureMessage = "";
     private String packagingInventoryJson = "";
+    private File packageLogFile;
 
     public enum PackageTarget {
         WINDOWS,
@@ -159,9 +162,16 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     protected Integer doInBackground() throws Exception {
 
         normalizePackageRootAndProgram();
+        String gameName = getGameName();
+        initializePackageOutput(gameName);
+        logPackage("Packaging started.");
+        logPackage("Script root: " + (scriptFolder == null ? "(none)" : scriptFolder.getAbsolutePath()));
+        logPackage("Targets: " + targets);
+        updateStatus("Preparing package...");
         SceneMaxLanguageParser.modelsUsed = new ArrayList<>();
         SceneMaxLanguageParser.effekseerUsed = new ArrayList<>();
         SceneMaxLanguageParser.videoUsed = new ArrayList<>();
+        SceneMaxLanguageParser.lightProbesUsed = new ArrayList<>();
         SceneMaxLanguageParser.spriteSheetUsed = new ArrayList<>();
         SceneMaxLanguageParser.audioUsed = new ArrayList<>();
         SceneMaxLanguageParser.fontsUsed = new ArrayList<>();
@@ -177,21 +187,32 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         throwMotionAssetNamesUsed.clear();
         scannedScriptFiles.clear();
         scannedDesignerFiles.clear();
+        reachableUiFiles.clear();
         packagingInventoryJson = "";
         SceneMaxLanguageParser.parseUsingResource = true; // look for manual resource declarations
-        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, this.scriptFolder.getAbsolutePath());
         MacroFilter macroFilter = new MacroFilter();
         macroFilter.loadMacroRulesFromMacroFolder(new File("macro"));
-        parser.setMacroFilter(macroFilter);
-        ProgramDef program = parser.parse(this.prg);
-        scannedScriptFiles.addAll(ScriptTreeResourceCollector.collectResources(this.scriptFolder, macroFilter));
-        scannedDesignerFiles.addAll(DesignerDocumentResourceCollector.collectResources(getPackagedProjectRoot(), macroFilter));
+        SceneMaxLanguageParser.setMacroFilter(macroFilter);
+        logPackage("Parsing main script.");
+        ScriptTreeResourceCollector.CollectionResult reachableSources =
+                ScriptTreeResourceCollector.collectReachableResources(this.scriptFolder, macroFilter);
+        scannedScriptFiles.addAll(reachableSources.scriptFiles);
+        scannedDesignerFiles.addAll(DesignerDocumentResourceCollector.collectResources(reachableSources.designerFiles, macroFilter));
+        reachableUiFiles.addAll(reachableSources.uiFiles);
+        logPackage("Collected script files: " + scannedScriptFiles.size());
+        logPackage("Collected designer files: " + scannedDesignerFiles.size());
+        logPackage("Collected UI files: " + reachableUiFiles.size());
         AssetsMapping assetsMapping = new AssetsMapping(Util.getResourcesFolder());
         collectReferencedAuxiliaryAssets(assetsMapping);
+        logPackage("Referenced models: " + SceneMaxLanguageParser.modelsUsed.size());
+        logPackage("Referenced effects: " + SceneMaxLanguageParser.effekseerUsed.size());
+        logPackage("Referenced sprites: " + SceneMaxLanguageParser.spriteSheetUsed.size());
+        logPackage("Referenced audio: " + SceneMaxLanguageParser.audioUsed.size());
 
         JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], shaders:[], environmentShaders:[], materials:[], cinematics:[], animations:[], videos:[] }");
 
         File deployFolder = new File("deploy");
+        logPackage("Resetting deploy folder: " + deployFolder.getAbsolutePath());
         FileUtils.deleteDirectory(deployFolder);
 
         File texDir = new File(deployFolder, "Textures");
@@ -271,19 +292,18 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                     models.put(model);
                 }
             } else {
-                // resource not exist - abort packaging
-                this.cancel(true);
-                return 0;
+                throw failPackaging("Missing 3D model resource '" + modelName + "'. Packaging cannot continue.");
             }
         }
 
         copyEffekseerResourcesToDeploy(deployFolder);
+        copyLightProbeResourcesToDeploy(deployFolder);
         copyAnimationResourcesToDeploy(deployFolder, resources.getJSONArray("animations"));
         copyWeaponResourcesToDeploy(deployFolder);
         copyThrowMotionResourcesToDeploy(deployFolder);
 
 
-        collectUiDocumentReferences(scriptFolder);
+        collectUiDocumentReferences(reachableUiFiles);
 
         for (String spriteName : uiReferencedSpriteNames) {
             if (!SceneMaxLanguageParser.spriteSheetUsed.contains(spriteName)) {
@@ -398,49 +418,28 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         }
 
 
-        Manifest manifest = new Manifest();
-        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
-        manifest.getMainAttributes().put(Attributes.Name.MAIN_CLASS, "com.scenemaxeng.projector.SceneMaxLauncher");//SceneMaxLauncher.class.getName()
-        JarOutputStream jarOutputStream = new JarOutputStream(new FileOutputStream(SCENE_JAR_NAME), manifest);
-
-        String projectorJarPath = Util.getWorkingDir() + "/out/artifacts/scenemax_win_projector.jar";
-        File projectorFile = new File(projectorJarPath);
-        JarUtils.addJar(jarOutputStream, "", projectorFile, new Runnable() {
-            @Override
-            public void run() {
-                globalCounter += 1;
-                Float progress = globalCounter / ESTIMATED_FILES_COUNT * 100;
-                if (progress > 100) {
-                    progress = 100f;
-                }
-                PackageProgramTask.this.setProgress(progress.intValue());
-            }
-        }, addedJarEntries);
-
-
-        for (File nestedFile : new File("deploy").listFiles()) {
-            add(nestedFile, jarOutputStream);
-        }
-
-        if (addedJarEntries.add("resources.json")) {
-            jarOutputStream.putNextEntry(new JarEntry("resources.json"));
-            jarOutputStream.write(resources.toString().getBytes());
-            jarOutputStream.closeEntry();
-        }
-
         packagingInventoryJson = buildPackagingInventory(resources, assetsMapping).toString(2);
         FileUtils.writeStringToFile(new File(deployFolder, "packaging-inventory.json"), packagingInventoryJson, StandardCharsets.UTF_8);
+        logPackage("Wrote deploy packaging inventory.");
 
         File scriptFolderCopy = copyAndApplyMacro(scriptFolder);
         FileUtils.moveDirectory(scriptFolderCopy, new File(deployFolder, "running")); // rename
-        scriptFolderCopy = new File(deployFolder, "running");
-        add(scriptFolderCopy, jarOutputStream);
-        // Close jar
-        jarOutputStream.close();
-        prepareTargetPackages();
+        logPackage("Copied packaged scripts into deploy/running.");
+        prepareTargetPackages(resources);
+        writeSizeReportAnalysis(resources);
         uploadToItchIfRequested();
+        logPackage("Packaging finished successfully.");
 
         return globalCounter;
+    }
+
+    private void initializePackageOutput(String gameName) throws IOException {
+        outputFolder = new File("build_games", gameName);
+        if (outputFolder.exists()) {
+            FileUtils.deleteDirectory(outputFolder);
+        }
+        FileUtils.forceMkdir(outputFolder);
+        packageLogFile = new File(outputFolder, "package.log");
     }
 
     private void normalizePackageRootAndProgram() throws IOException {
@@ -484,14 +483,27 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     private File copyAndApplyMacro(File folder) {
         try {
             File deployFolder = new File("deploy");
-            FileUtils.copyDirectoryToDirectory(folder, deployFolder);
             File createdFolder = new File(deployFolder, folder.getName());
-            Iterator<File> files = FileUtils.iterateFiles(createdFolder,null, true);
-            while (files.hasNext()) {
-                File curr = files.next();
-                String code = FileUtils.readFileToString(curr, StandardCharsets.UTF_8);
-                ApplyMacroResults mr = macroFilter.apply(code);
-                FileUtils.write(curr,mr.finalPrg,StandardCharsets.UTF_8);
+            if (createdFolder.exists()) {
+                FileUtils.deleteDirectory(createdFolder);
+            }
+            FileUtils.forceMkdir(createdFolder);
+
+            LinkedHashSet<String> filesToCopy = new LinkedHashSet<>();
+            filesToCopy.addAll(scannedScriptFiles);
+            filesToCopy.addAll(scannedDesignerFiles);
+            filesToCopy.addAll(reachableUiFiles);
+
+            if (filesToCopy.isEmpty()) {
+                FileUtils.copyDirectoryToDirectory(folder, deployFolder);
+                Iterator<File> files = FileUtils.iterateFiles(createdFolder,null, true);
+                while (files.hasNext()) {
+                    applyMacroIfScript(files.next());
+                }
+            } else {
+                for (String path : filesToCopy) {
+                    copyReachableSourceFile(folder, createdFolder, path);
+                }
             }
 
             return createdFolder;
@@ -501,49 +513,154 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         }
     }
 
-    private void prepareTargetPackages() throws IOException {
+    private void copyReachableSourceFile(File sourceRoot, File targetRoot, String sourcePath) throws IOException {
+        if (sourcePath == null || sourcePath.isBlank()) {
+            return;
+        }
+        File sourceFile = new File(sourcePath);
+        if (!sourceFile.isFile()) {
+            return;
+        }
+
+        File targetFile = new File(targetRoot, toRelativePath(sourceFile.getAbsolutePath(), sourceRoot));
+        File parent = targetFile.getParentFile();
+        if (parent != null) {
+            FileUtils.forceMkdir(parent);
+        }
+        FileUtils.copyFile(sourceFile, targetFile);
+        applyMacroIfScript(targetFile);
+    }
+
+    private void applyMacroIfScript(File file) throws IOException {
+        if (!ScriptTreeResourceCollector.isSceneMaxScriptFile(file)) {
+            return;
+        }
+        String code = FileUtils.readFileToString(file, StandardCharsets.UTF_8);
+        ApplyMacroResults mr = macroFilter.apply(code);
+        FileUtils.write(file, mr.finalPrg, StandardCharsets.UTF_8);
+    }
+
+    private void prepareTargetPackages(JSONObject resources) throws IOException {
         verifyEffekseerNativeResourcesForSelectedTargets();
         String gameName = getGameName();
-        outputFolder = new File("build_games", gameName);
-        if (outputFolder.exists()) {
-            FileUtils.deleteDirectory(outputFolder);
+        if (outputFolder == null) {
+            outputFolder = new File("build_games", gameName);
+            FileUtils.forceMkdir(outputFolder);
         }
-        FileUtils.forceMkdir(outputFolder);
         producedArtifacts.clear();
+        logPackage("Preparing target packages in: " + outputFolder.getAbsolutePath());
 
         if (targets.contains(PackageTarget.WINDOWS)) {
+            logPackage("Creating Windows scene JAR.");
+            writeSceneJarForTarget(PackageTarget.WINDOWS, resources);
             File windowsExe = prepareWindowsExecutable(gameName);
             if (windowsExe != null && windowsExe.exists()) {
                 producedArtifacts.add(windowsExe);
+                logPackage("Windows artifact: " + windowsExe.getAbsolutePath() + " (" + windowsExe.length() + " bytes)");
             }
         }
 
         if (targets.contains(PackageTarget.LINUX)) {
+            logPackage("Creating Linux scene JAR.");
+            writeSceneJarForTarget(PackageTarget.LINUX, resources);
             File linuxFolder = prepareScriptPackage(gameName, "linux", gameName + ".sh", false);
             File linuxZip = createPlatformZip(linuxFolder, gameName + "_linux.zip");
             if (linuxZip != null && linuxZip.exists()) {
                 producedArtifacts.add(linuxZip);
+                logPackage("Linux artifact: " + linuxZip.getAbsolutePath() + " (" + linuxZip.length() + " bytes)");
             }
             deletePlatformArtifactsExceptZip(linuxFolder, linuxZip);
         }
 
         if (targets.contains(PackageTarget.MAC_OSX)) {
+            logPackage("Creating macOS scene JAR.");
+            writeSceneJarForTarget(PackageTarget.MAC_OSX, resources);
             File macFolder = prepareScriptPackage(gameName, "macos", gameName + ".command", true);
             File macZip = createPlatformZip(macFolder, gameName + "_macos.zip");
             if (macZip != null && macZip.exists()) {
                 producedArtifacts.add(macZip);
+                logPackage("macOS artifact: " + macZip.getAbsolutePath() + " (" + macZip.length() + " bytes)");
             }
             deletePlatformArtifactsExceptZip(macFolder, macZip);
         }
 
         if (targets.contains(PackageTarget.WEB_START)) {
+            logPackage("Creating Web Start package.");
+            writeSceneJarForTarget(PackageTarget.WEB_START, resources);
             File webFolder = prepareWebStartPackage(gameName);
             if (webFolder != null && webFolder.exists()) {
                 producedArtifacts.add(webFolder);
+                logPackage("Web Start artifact folder: " + webFolder.getAbsolutePath());
             }
         }
 
         writePackagingInventoryArtifact();
+    }
+
+    private void writeSceneJarForTarget(PackageTarget target, JSONObject resources) throws IOException {
+        addedJarEntries.clear();
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        manifest.getMainAttributes().put(Attributes.Name.MAIN_CLASS, "com.scenemaxeng.projector.SceneMaxLauncher");//SceneMaxLauncher.class.getName()
+        manifest.getMainAttributes().put(new Attributes.Name("SceneMax-Package-Target"), target.name());
+
+        try (JarOutputStream jarOutputStream = new JarOutputStream(new FileOutputStream(SCENE_JAR_NAME), manifest)) {
+            File projectorFile = resolveProjectorJar(target);
+            logPackage("Using projector for " + target + ": " + projectorFile.getAbsolutePath() + " (" + projectorFile.length() + " bytes)");
+            JarUtils.addJar(jarOutputStream, "", projectorFile, new Runnable() {
+                @Override
+                public void run() {
+                    globalCounter += 1;
+                    Float progress = globalCounter / ESTIMATED_FILES_COUNT * 100;
+                    if (progress > 100) {
+                        progress = 100f;
+                    }
+                    PackageProgramTask.this.setProgress(progress.intValue());
+                }
+            }, addedJarEntries);
+
+            File deployRoot = new File("deploy");
+            File[] deployFiles = deployRoot.listFiles();
+            if (deployFiles != null) {
+                for (File nestedFile : deployFiles) {
+                    add(nestedFile, jarOutputStream);
+                }
+            }
+
+            if (addedJarEntries.add("resources.json")) {
+                jarOutputStream.putNextEntry(new JarEntry("resources.json"));
+                jarOutputStream.write(resources.toString().getBytes(StandardCharsets.UTF_8));
+                jarOutputStream.closeEntry();
+            }
+        }
+        File sceneJar = new File(SCENE_JAR_NAME);
+        logPackage("Created scene JAR for " + target + ": " + sceneJar.getAbsolutePath() + " (" + sceneJar.length() + " bytes)");
+    }
+
+    private File resolveProjectorJar(PackageTarget target) throws IOException {
+        String artifactName;
+        switch (target) {
+            case LINUX:
+                artifactName = "scenemax_projector-linux.jar";
+                break;
+            case MAC_OSX:
+                artifactName = "scenemax_projector-macos.jar";
+                break;
+            case WINDOWS:
+            case WEB_START:
+            default:
+                artifactName = "scenemax_projector-windows.jar";
+                break;
+        }
+
+        File projectorFile = new File(Util.getWorkingDir() + "/out/artifacts/" + artifactName);
+        if (!projectorFile.isFile() && target == PackageTarget.WINDOWS) {
+            projectorFile = new File(Util.getWorkingDir() + "/out/artifacts/scenemax_win_projector.jar");
+        }
+        if (!projectorFile.isFile()) {
+            throw new IOException("Missing projector artifact for " + target + ": " + projectorFile.getAbsolutePath());
+        }
+        return projectorFile;
     }
 
     private void uploadToItchIfRequested() throws IOException {
@@ -657,29 +774,10 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         File launch4jConfig = createLaunch4jConfig(gameName);
         command.add(launch4jConfig.getAbsolutePath());
 
-
-        ProcessBuilder processBuilder = new ProcessBuilder();
-        processBuilder.command(command);
-        File log = new File("package_log.txt");
-        if (log.exists()) {
-            log.delete();
-        }
-        processBuilder.redirectErrorStream(true);
-        processBuilder.redirectOutput(ProcessBuilder.Redirect.appendTo(log));
-        Process process = null;
         try {
-            process = processBuilder.start();
-            StreamGobbler sg = new StreamGobbler(process.getInputStream(), System.out::println);
-            Executors.newSingleThreadExecutor().submit(sg);
-            int exitCode = process.waitFor();
-            System.out.printf("Program ended with exitCode %d", exitCode);
-            if (exitCode != 0) {
-                throw new IOException("Launch4j failed with exit code " + exitCode);
-            }
-
+            runCommand(command, null, "Launch4j", Collections.emptyMap(), "launch4j:");
         } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException(e);
+            throw failPackaging("Launch4j failed while creating the Windows executable.", e);
         } finally {
             if (launch4jConfig.exists()) {
                 launch4jConfig.delete();
@@ -693,7 +791,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         File exePath = new File(windowsFolder, gameName + ".exe");
         if (!exePath.exists()) {
-            throw new RuntimeException("Windows executable was not created.");
+            throw failPackaging("Windows executable was not created: " + exePath.getAbsolutePath());
         }
 
         copyPlatformIcon(options.windowsIcon, windowsFolder, "icon");
@@ -707,9 +805,183 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         try {
             FileUtils.writeStringToFile(new File(outputFolder, "packaging-inventory.json"), packagingInventoryJson, StandardCharsets.UTF_8);
+            logPackage("Wrote packaging inventory: " + new File(outputFolder, "packaging-inventory.json").getAbsolutePath());
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private void writeSizeReportAnalysis(JSONObject packagedResources) {
+        if (outputFolder == null) {
+            return;
+        }
+
+        File deployRoot = new File("deploy");
+        if (!deployRoot.isDirectory()) {
+            return;
+        }
+
+        try {
+            List<SizeReportRow> categories = buildSizeReportCategories(deployRoot, packagedResources);
+            List<SizeReportRow> topFiles = collectTopContributors(deployRoot, 40);
+            long deployTotal = sizeOf(deployRoot);
+
+            JSONObject json = new JSONObject();
+            json.put("deployTotalBytes", deployTotal);
+            json.put("deployTotalMiB", roundMiB(deployTotal));
+            JSONArray categoryArray = new JSONArray();
+            for (SizeReportRow row : categories) {
+                categoryArray.put(row.toJson());
+            }
+            json.put("categories", categoryArray);
+            JSONArray topArray = new JSONArray();
+            for (SizeReportRow row : topFiles) {
+                topArray.put(row.toJson());
+            }
+            json.put("topContributors", topArray);
+
+            String text = buildSizeReportText(deployTotal, categories, topFiles);
+            File textFile = new File(outputFolder, "size-report-analysis.txt");
+            File jsonFile = new File(outputFolder, "size-report-analysis.json");
+            FileUtils.writeStringToFile(textFile, text, StandardCharsets.UTF_8);
+            FileUtils.writeStringToFile(jsonFile, json.toString(2), StandardCharsets.UTF_8);
+            logPackage("Wrote size report analysis: " + textFile.getAbsolutePath());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private List<SizeReportRow> buildSizeReportCategories(File deployRoot, JSONObject packagedResources) {
+        List<SizeReportRow> rows = new ArrayList<>();
+        addCategory(rows, deployRoot, "Models", "Models", resourceCount(packagedResources, "models"));
+        addCategory(rows, deployRoot, "audio", "audio", resourceCount(packagedResources, "sounds"));
+        addCategory(rows, deployRoot, "videos", "videos", resourceCount(packagedResources, "videos"));
+        addCategory(rows, deployRoot, "Textures / sprites", "Textures", resourceCount(packagedResources, "sprites"));
+        addCategory(rows, deployRoot, "Effekseer effects", "resources/effects", SceneMaxLanguageParser.effekseerUsed.size());
+        addCategory(rows, deployRoot, "materials", "material", resourceCount(packagedResources, "materials"));
+        addCategory(rows, deployRoot, "Materials", "Materials", 0);
+        addCategory(rows, deployRoot, "fonts", "fonts", resourceCount(packagedResources, "fonts"));
+        addCategory(rows, deployRoot, "animations", "animations", resourceCount(packagedResources, "animations"));
+        addCategory(rows, deployRoot, "light probes", "probes", SceneMaxLanguageParser.lightProbesUsed.size());
+        addCategory(rows, deployRoot, "runtime scripts", "running", scannedScriptFiles.size());
+        addCategory(rows, deployRoot, "shaders", "shaders", resourceCount(packagedResources, "shaders"));
+        addCategory(rows, deployRoot, "environment shaders", "environment_shaders", resourceCount(packagedResources, "environmentShaders"));
+        addCategory(rows, deployRoot, "skyboxes", "skyboxes", resourceCount(packagedResources, "skyboxes"));
+        addCategory(rows, deployRoot, "throw motions", "resources/throw_motions", throwMotionAssetNamesUsed.size());
+        addCategory(rows, deployRoot, "weapons", "resources/weapons", weaponAssetNamesUsed.size());
+
+        long resourceTotal = sizeOf(new File(deployRoot, "resources"));
+        long knownResourceTotal = sizeOf(new File(deployRoot, "resources/effects"))
+                + sizeOf(new File(deployRoot, "resources/throw_motions"))
+                + sizeOf(new File(deployRoot, "resources/weapons"));
+        long resourceOther = Math.max(0, resourceTotal - knownResourceTotal);
+        if (resourceOther > 0) {
+            rows.add(new SizeReportRow("resources / other", "resources", resourceOther, 0));
+        }
+
+        rows.sort(Comparator.comparingLong((SizeReportRow row) -> row.bytes).reversed());
+        return rows;
+    }
+
+    private void addCategory(List<SizeReportRow> rows, File deployRoot, String label, String relativePath, int count) {
+        long bytes = sizeOf(new File(deployRoot, relativePath));
+        if (bytes > 0 || count > 0) {
+            rows.add(new SizeReportRow(label, relativePath, bytes, count));
+        }
+    }
+
+    private int resourceCount(JSONObject packagedResources, String key) {
+        if (packagedResources == null) {
+            return 0;
+        }
+        JSONArray array = packagedResources.optJSONArray(key);
+        return array == null ? 0 : array.length();
+    }
+
+    private List<SizeReportRow> collectTopContributors(File root, int limit) throws IOException {
+        List<SizeReportRow> files = new ArrayList<>();
+        collectFileRows(root, root, files);
+        files.sort(Comparator.comparingLong((SizeReportRow row) -> row.bytes).reversed());
+        if (files.size() <= limit) {
+            return files;
+        }
+        return new ArrayList<>(files.subList(0, limit));
+    }
+
+    private void collectFileRows(File root, File current, List<SizeReportRow> rows) throws IOException {
+        File[] children = current.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File child : children) {
+            if (child.isDirectory()) {
+                collectFileRows(root, child, rows);
+            } else if (child.isFile()) {
+                rows.add(new SizeReportRow(
+                        child.getName(),
+                        toRelativePath(child.getAbsolutePath(), root),
+                        child.length(),
+                        0
+                ));
+            }
+        }
+    }
+
+    private long sizeOf(File file) {
+        if (file == null || !file.exists()) {
+            return 0L;
+        }
+        if (file.isFile()) {
+            return file.length();
+        }
+        long total = 0L;
+        File[] children = file.listFiles();
+        if (children == null) {
+            return 0L;
+        }
+        for (File child : children) {
+            total += sizeOf(child);
+        }
+        return total;
+    }
+
+    private String buildSizeReportText(long deployTotal, List<SizeReportRow> categories, List<SizeReportRow> topFiles) {
+        String lineBreak = System.lineSeparator();
+        StringBuilder sb = new StringBuilder();
+        sb.append("SceneMax Packaging Size Report").append(lineBreak);
+        sb.append("Generated: ").append(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)).append(lineBreak);
+        sb.append("Deploy content total: ").append(formatSize(deployTotal)).append(lineBreak).append(lineBreak);
+
+        sb.append("Asset Categories").append(lineBreak);
+        for (SizeReportRow row : categories) {
+            sb.append(String.format(Locale.ROOT, "%10s  %-24s  count=%-4d  %s",
+                    formatMiB(row.bytes), row.label, row.count, row.path)).append(lineBreak);
+        }
+
+        sb.append(lineBreak).append("Top Contributors").append(lineBreak);
+        for (SizeReportRow row : topFiles) {
+            sb.append(String.format(Locale.ROOT, "%10s  %s",
+                    formatMiB(row.bytes), row.path)).append(lineBreak);
+        }
+
+        sb.append(lineBreak)
+                .append("Notes").append(lineBreak)
+                .append("- This report measures the staged deploy folder before it is embedded into target packages.").append(lineBreak)
+                .append("- Large files here are the best candidates for asset compression, LOD reduction, or removal.").append(lineBreak)
+                .append("- The final executable or JAR also includes the SceneMax projector/runtime.").append(lineBreak);
+        return sb.toString();
+    }
+
+    private String formatSize(long bytes) {
+        return bytes + " bytes (" + formatMiB(bytes) + ")";
+    }
+
+    private String formatMiB(long bytes) {
+        return String.format(Locale.ROOT, "%.2f MiB", bytes / 1024.0 / 1024.0);
+    }
+
+    private double roundMiB(long bytes) {
+        return Math.round((bytes / 1024.0 / 1024.0) * 100.0) / 100.0;
     }
 
     private File prepareScriptPackage(String gameName, String platformFolderName, String launcherFileName, boolean macLauncher) throws IOException {
@@ -1063,6 +1335,10 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     }
 
     private void runCommand(List<String> command, File workingDir, String toolName, Map<String, String> extraEnvironment, String statusPrefix) throws IOException {
+        logPackage("Running " + toolName + ": " + String.join(" ", command));
+        if (workingDir != null) {
+            logPackage(toolName + " working directory: " + workingDir.getAbsolutePath());
+        }
         ProcessBuilder processBuilder = new ProcessBuilder(command);
         if (workingDir != null) {
             processBuilder.directory(workingDir);
@@ -1075,6 +1351,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         try {
             process = processBuilder.start();
         } catch (IOException e) {
+            logPackageException("Failed to start " + toolName + ".", e);
             throw new IOException("Failed to start " + toolName + ". Make sure it is available in PATH.", e);
         }
 
@@ -1083,6 +1360,9 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             String line;
             while ((line = reader.readLine()) != null) {
                 output.append(line).append('\n');
+                if (line.trim().length() > 0) {
+                    logPackage(toolName + ": " + line);
+                }
                 if (statusPrefix != null && line.trim().length() > 0) {
                     updateStatus(statusPrefix + " " + line.trim());
                 }
@@ -1091,6 +1371,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         try {
             int exitCode = process.waitFor();
+            logPackage(toolName + " exited with code " + exitCode + ".");
             if (exitCode != 0) {
                 String text = output.toString().trim();
                 throw new IOException(toolName + " failed with exit code " + exitCode + (text.length() == 0 ? "" : ": " + text));
@@ -1116,6 +1397,57 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         String oldValue = this.statusNote;
         this.statusNote = newValue;
         firePropertyChange("statusNote", oldValue, newValue);
+        if (newValue.length() > 0) {
+            logPackage("Status: " + newValue);
+        }
+    }
+
+    private IOException failPackaging(String message) {
+        return failPackaging(message, null);
+    }
+
+    private IOException failPackaging(String message, Throwable cause) {
+        String normalized = message == null || message.trim().length() == 0 ? "Packaging failed." : message.trim();
+        failureMessage = appendPackageLogPath(normalized);
+        if (cause == null) {
+            logPackage("ERROR: " + normalized);
+            return new IOException(normalized);
+        }
+        logPackageException("ERROR: " + normalized, cause);
+        return new IOException(normalized, cause);
+    }
+
+    private String appendPackageLogPath(String message) {
+        if (packageLogFile == null) {
+            return message;
+        }
+        return message + "\r\n\r\nPackage log:\r\n" + packageLogFile.getAbsolutePath();
+    }
+
+    private void logPackage(String message) {
+        String normalized = message == null ? "" : message;
+        String line = "[" + LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "] " + normalized + System.lineSeparator();
+        System.out.print("[package] " + normalized + System.lineSeparator());
+        if (packageLogFile == null) {
+            return;
+        }
+        try (Writer writer = new OutputStreamWriter(new FileOutputStream(packageLogFile, true), StandardCharsets.UTF_8)) {
+            writer.write(line);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void logPackageException(String message, Throwable throwable) {
+        logPackage(message);
+        if (throwable == null || packageLogFile == null) {
+            return;
+        }
+        try (PrintWriter writer = new PrintWriter(new OutputStreamWriter(new FileOutputStream(packageLogFile, true), StandardCharsets.UTF_8))) {
+            throwable.printStackTrace(writer);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     private String getGameName() {
@@ -1161,7 +1493,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         return activeResources == null ? null : new File(activeResources);
     }
 
-    private void copyEffekseerResourcesToDeploy(File deployFolder) {
+    private void copyEffekseerResourcesToDeploy(File deployFolder) throws IOException {
         File deployEffectsDir = new File(deployFolder, "resources/effects");
 
         for (String effectName : SceneMaxLanguageParser.effekseerUsed) {
@@ -1178,15 +1510,63 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
             File sourceDir = resolveEffekseerEffectSource(assetId);
             if (!sourceDir.isDirectory()) {
-                this.cancel(true);
-                return;
+                throw failPackaging(
+                        "Missing Effekseer effect resource '" + effectName + "'. Expected folder: " + sourceDir.getAbsolutePath()
+                );
             }
 
             try {
                 FileUtils.copyDirectory(sourceDir, targetDir);
+                logPackage("Copied Effekseer effect '" + effectName + "' from " + sourceDir.getAbsolutePath());
+            } catch (IOException e) {
+                throw failPackaging("Failed to copy Effekseer effect '" + effectName + "'.", e);
+            }
+        }
+    }
+
+    private void copyLightProbeResourcesToDeploy(File deployFolder) {
+        if (SceneMaxLanguageParser.lightProbesUsed.isEmpty()) {
+            return;
+        }
+
+        File deployProbeDir = new File(deployFolder, "probes");
+        for (String probeName : SceneMaxLanguageParser.lightProbesUsed) {
+            String fileName = resolveBuiltInProbeFileName(probeName);
+            if (fileName == null) {
+                continue;
+            }
+
+            File source = new File(Util.getResourcePath("probes/" + fileName));
+            if (!source.isFile()) {
+                throw new RuntimeException("Missing built-in light probe resource: " + source.getAbsolutePath());
+            }
+
+            try {
+                FileUtils.forceMkdir(deployProbeDir);
+                FileUtils.copyFile(source, new File(deployProbeDir, fileName));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
+        }
+    }
+
+    private String resolveBuiltInProbeFileName(String probeName) {
+        if (probeName == null) {
+            return null;
+        }
+        switch (probeName.trim()) {
+            case "1":
+                return "1.j3o";
+            case "2":
+                return "2.j3o";
+            case "3":
+                return "3.j3o";
+            case "4":
+                return "4.j3o";
+            case "5":
+                return "5.j3o";
+            default:
+                return null;
         }
     }
 
@@ -1645,6 +2025,30 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         }
     }
 
+    private static final class SizeReportRow {
+        private final String label;
+        private final String path;
+        private final long bytes;
+        private final int count;
+
+        private SizeReportRow(String label, String path, long bytes, int count) {
+            this.label = label == null ? "" : label;
+            this.path = path == null ? "" : path;
+            this.bytes = bytes;
+            this.count = count;
+        }
+
+        private JSONObject toJson() {
+            JSONObject json = new JSONObject();
+            json.put("label", label);
+            json.put("path", path);
+            json.put("bytes", bytes);
+            json.put("miB", Math.round((bytes / 1024.0 / 1024.0) * 100.0) / 100.0);
+            json.put("count", count);
+            return json;
+        }
+    }
+
     private void copyResourceDirectoryToDeploy(String relativePath) {
         File defaultDir = new File("./resources", relativePath);
         File projectResources = getPackagedProjectResourcesFolder();
@@ -1661,8 +2065,14 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             return;
         }
 
-        Collection<File> designerFiles = FileUtils.listFiles(projectRoot, new String[]{"smdesign"}, true);
-        for (File designerFile : designerFiles) {
+        for (String designerPath : scannedDesignerFiles) {
+            if (designerPath == null || designerPath.isBlank()) {
+                continue;
+            }
+            File designerFile = new File(designerPath);
+            if (!designerFile.isFile()) {
+                continue;
+            }
             String raw;
             try {
                 raw = FileUtils.readFileToString(designerFile, StandardCharsets.UTF_8);
@@ -1691,7 +2101,13 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         inventory.put("resourcesRoot", projectResources == null ? JSONObject.NULL : projectResources.getAbsolutePath());
         inventory.put("scannedScriptFiles", toRelativeJsonArray(scannedScriptFiles, scriptFolder));
         inventory.put("scannedDesignerFiles", toRelativeJsonArray(scannedDesignerFiles, projectRoot));
+        inventory.put("scannedUiFiles", toRelativeJsonArray(reachableUiFiles, scriptFolder));
         inventory.put("uiImagePaths", toSortedJsonArray(uiReferencedImagePaths));
+        List<String> packageTargets = new ArrayList<>();
+        for (PackageTarget target : targets) {
+            packageTargets.add(target.name());
+        }
+        inventory.put("packageTargets", toSortedJsonArray(packageTargets));
 
         JSONObject referenced = new JSONObject();
         referenced.put("models", toSortedJsonArray(SceneMaxLanguageParser.modelsUsed));
@@ -2011,14 +2427,19 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         targetArray.put(new JSONObject(resource.toString()));
     }
 
-    private void collectUiDocumentReferences(File folder) {
-        if (folder == null || !folder.exists()) {
+    private void collectUiDocumentReferences(List<String> uiFiles) {
+        if (uiFiles == null || uiFiles.isEmpty()) {
             return;
         }
 
-        Iterator<File> files = FileUtils.iterateFiles(folder, new String[]{"smui"}, true);
-        while (files.hasNext()) {
-            File uiFile = files.next();
+        for (String path : uiFiles) {
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            File uiFile = new File(path);
+            if (!uiFile.isFile()) {
+                continue;
+            }
             try {
                 UIDocument document = UIDocument.load(uiFile);
                 for (UILayerDef layer : document.getLayers()) {
@@ -2211,6 +2632,10 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     public void done() {
 
         if(this.isCancelled()) {
+            if (failureMessage == null || failureMessage.trim().length() == 0) {
+                failureMessage = appendPackageLogPath("Packaging was canceled before it completed.");
+            }
+            logPackage("Packaging canceled.");
             this.canceled.run();
         } else {
             try {
@@ -2218,13 +2643,17 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 finish.run();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                failureMessage = "Packaging was interrupted.";
+                failureMessage = appendPackageLogPath("Packaging was interrupted.");
+                logPackageException("Packaging was interrupted.", e);
                 this.canceled.run();
             } catch (ExecutionException e) {
                 e.printStackTrace();
                 Throwable cause = e.getCause() == null ? e : e.getCause();
                 String message = cause.getMessage();
-                failureMessage = message == null || message.trim().length() == 0 ? cause.toString() : message.trim();
+                if (failureMessage == null || failureMessage.trim().length() == 0) {
+                    failureMessage = appendPackageLogPath(message == null || message.trim().length() == 0 ? cause.toString() : message.trim());
+                }
+                logPackageException("Packaging failed.", cause);
                 this.canceled.run();
             }
         }
@@ -2248,6 +2677,10 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
     public String getFailureMessage() {
         return failureMessage;
+    }
+
+    public File getPackageLogFile() {
+        return packageLogFile;
     }
 
     private File createLaunch4jConfig(String gameName) throws IOException {

@@ -36,6 +36,7 @@ public class SceneMaxLanguageParser implements IParser {
     public static List<String> modelsUsed = new ArrayList<>();
     public static List<String> effekseerUsed = new ArrayList<>();
     public static List<String> videoUsed = new ArrayList<>();
+    public static List<String> lightProbesUsed = new ArrayList<>();
     public static List<String> audioUsed = new ArrayList<>();
     public static List<String> fontsUsed = new ArrayList<>();
     public static List<String> filesUsed = new ArrayList<>();
@@ -1984,6 +1985,12 @@ public class SceneMaxLanguageParser implements IParser {
                         }
                     }
                 }
+                if (LightVariableDef.TYPE_PROBE.equals(varDef.lightType)) {
+                    String probePreset = varDef.preset == null || varDef.preset.isBlank() ? "1" : varDef.preset;
+                    if (!lightProbesUsed.contains(probePreset)) {
+                        lightProbesUsed.add(probePreset);
+                    }
+                }
 
                 return varDef;
             }
@@ -1995,6 +2002,9 @@ public class SceneMaxLanguageParser implements IParser {
                 if(probe!=null) {
                     cmd.name = probe.QUOTED_STRING().getText();
                     cmd.name=cmd.name.substring(1,cmd.name.length()-1);
+                    if (!lightProbesUsed.contains(cmd.name)) {
+                        lightProbesUsed.add(cmd.name);
+                    }
                     if(probe.print_pos_attr()!=null) {
                         if( probe.print_pos_attr().pos_axes()!=null) {
 
@@ -4816,6 +4826,9 @@ public class SceneMaxLanguageParser implements IParser {
         VariableDef sourceVar = program.getVar(sourceName);
         if (sourceVar != null) {
             return sourceVar;
+        }
+        if (program.getFunc(sourceName) != null) {
+            return null;
         }
 
         ModelDef md = program.getModel(sourceName);

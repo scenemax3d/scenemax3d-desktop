@@ -26,22 +26,49 @@ final class DesignerDocumentResourceCollector {
 
         Collection<File> designerFiles = FileUtils.listFiles(projectRoot, new String[]{"smdesign"}, true);
         for (File designerFile : designerFiles) {
-            scannedFiles.add(designerFile.getAbsolutePath());
-            try {
-                String raw = FileUtils.readFileToString(designerFile, StandardCharsets.UTF_8);
-                if (raw == null || raw.isBlank()) {
-                    continue;
-                }
-
-                JSONObject root = new JSONObject(raw);
-                collectEntityResources(designerFile, root.optJSONArray("entities"), macroFilter);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            } catch (Exception ignored) {
-            }
+            collectDesignerFile(scannedFiles, designerFile, macroFilter);
         }
 
         return scannedFiles;
+    }
+
+    static List<String> collectResources(List<String> designerFilePaths, MacroFilter macroFilter) {
+        List<String> scannedFiles = new ArrayList<>();
+        if (designerFilePaths == null || designerFilePaths.isEmpty()) {
+            return scannedFiles;
+        }
+
+        for (String path : designerFilePaths) {
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            collectDesignerFile(scannedFiles, new File(path), macroFilter);
+        }
+
+        return scannedFiles;
+    }
+
+    private static void collectDesignerFile(List<String> scannedFiles, File designerFile, MacroFilter macroFilter) {
+        if (designerFile == null || !designerFile.isFile()) {
+            return;
+        }
+        try {
+            String canonicalPath = designerFile.getCanonicalPath();
+            if (!scannedFiles.contains(canonicalPath)) {
+                scannedFiles.add(canonicalPath);
+            }
+
+            String raw = FileUtils.readFileToString(designerFile, StandardCharsets.UTF_8);
+            if (raw == null || raw.isBlank()) {
+                return;
+            }
+
+            JSONObject root = new JSONObject(raw);
+            collectEntityResources(designerFile, root.optJSONArray("entities"), macroFilter);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        } catch (Exception ignored) {
+        }
     }
 
     private static void collectEntityResources(File designerFile, JSONArray entities, MacroFilter macroFilter) {
