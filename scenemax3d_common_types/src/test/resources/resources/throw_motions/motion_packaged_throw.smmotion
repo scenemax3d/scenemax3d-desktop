@@ -1,0 +1,13 @@
+{
+  "type": "SceneMaxThrowMotionDefinition",
+  "schemaVersion": "1.0",
+  "id": "motion_packaged_throw",
+  "displayName": "Packaged Throw",
+  "motionType": "target_arc",
+  "parameters": {
+    "duration": 1.6,
+    "arcHeight": 4.5,
+    "easingFunction": "ease_in_out"
+  },
+  "designerMetadata": {}
+}

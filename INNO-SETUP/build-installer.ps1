@@ -159,7 +159,12 @@ $launch4jCompiler = Join-Path $repoRoot "launch4j\launch4jc.exe"
 $innoCompiler = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 $installerScript = Join-Path $scriptRoot "scenemax-setup-project.iss"
 $desktopJar = Join-Path $repoRoot "build\libs\scenemax_desktop-1.0-SNAPSHOT-all.jar"
-$projectorJar = Join-Path $repoRoot "out\artifacts\scenemax_win_projector.jar"
+$projectorArtifactDir = Join-Path $repoRoot "out\artifacts"
+$projectorJars = @(
+    Join-Path $projectorArtifactDir "scenemax_projector-windows.jar"
+    Join-Path $projectorArtifactDir "scenemax_projector-linux.jar"
+    Join-Path $projectorArtifactDir "scenemax_projector-macos.jar"
+)
 $outputDir = Join-Path $scriptRoot "Output"
 $launch4jOutput = Join-Path $repoRoot "LAUNCH4J-PROJECT\scenemax3d.exe"
 $launch4jIcon = Join-Path $repoRoot "LAUNCH4J-PROJECT\scenemax.ico"
@@ -185,7 +190,9 @@ if (-not $SkipGradleBuild) {
 }
 
 Assert-FileExists -Path $desktopJar -Description "Desktop fat jar"
-Assert-FileExists -Path $projectorJar -Description "Projector jar"
+foreach ($projectorJar in $projectorJars) {
+    Assert-FileExists -Path $projectorJar -Description "Projector jar"
+}
 
 $launch4jConfig = Join-Path $env:TEMP "scenemax-launch4j-$PID.xml"
 @"

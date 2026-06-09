@@ -10,9 +10,11 @@ import com.scenemaxeng.compiler.VariableDef;
 import org.junit.Test;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.Collections;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -62,6 +64,7 @@ public class ObjectPoolParsingTest {
 
     @Test
     public void parsesFunctionFactoryPoolSource() {
+        SceneMaxLanguageParser.modelsUsed = new ArrayList<>();
         String code = "create_rock = do\n"
                 + "  rock1 => meshy_rock : pos (22.532026,-51.0,148.68306), scale 2, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 3.0\n"
                 + "  return rock1\n"
@@ -76,6 +79,8 @@ public class ObjectPoolParsingTest {
         ObjectPoolCreateCommand create = (ObjectPoolCreateCommand) prg.actions.get(0);
         assertEquals("create_rock", create.sourceName);
         assertTrue(create.sourceIsFunction);
+        assertTrue(SceneMaxLanguageParser.modelsUsed.contains("meshy_rock"));
+        assertFalse(SceneMaxLanguageParser.modelsUsed.contains("create_rock"));
     }
 
     @Test

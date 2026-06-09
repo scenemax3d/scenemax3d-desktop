@@ -260,7 +260,11 @@ dependencies {
     implementation project(':scenemax3d_compiler')
     implementation files('launch4j/lib/flatlaf.jar')
 
-    implementation project(':scenemax_designer')
+    implementation(project(':scenemax_designer')) {
+        // The desktop IDE should not bundle runtime-only video decoding natives.
+        // The packaged projector keeps FFmpeg for actual game playback.
+        exclude group: 'org.bytedeco'
+    }
 }
 
 

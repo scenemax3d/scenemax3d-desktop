@@ -159,6 +159,17 @@
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game",
             "itchMacChannel": "",
             "itchLinuxChannel": ""
+        },
+        {
+            "path": "projects/hello_dragon_tutorial",
+            "itchWindowsChannel": "",
+            "selectedNode": "main",
+            "itchGamePage": "",
+            "name": "hello_dragon_tutorial",
+            "itchButlerPath": "",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\hello_dragon_tutorial\\scripts\\dragon_scene",
+            "itchMacChannel": "",
+            "itchLinuxChannel": ""
         }
     ],
     "selectedProject": "fighting game project"

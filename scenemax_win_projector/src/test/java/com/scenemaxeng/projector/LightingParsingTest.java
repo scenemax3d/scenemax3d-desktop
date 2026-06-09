@@ -36,6 +36,19 @@ public class LightingParsingTest {
         assertEquals("#223344", sky.ambientColor);
     }
 
+    @Test
+    public void tracksBuiltInProbeAssetsUsedByLightDeclarations() {
+        SceneMaxLanguageParser.lightProbesUsed.clear();
+        String code = "defaultProbe => Lights.probe : pos (0,1,0)\n"
+                + "brightProbe => Lights.probe : preset \"3\", pos (2,1,0)";
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(code);
+
+        assertTrue(prg.syntaxErrors.isEmpty());
+        assertTrue(SceneMaxLanguageParser.lightProbesUsed.contains("1"));
+        assertTrue(SceneMaxLanguageParser.lightProbesUsed.contains("3"));
+    }
+
     private static void assertLight(ProgramDef prg, String name, String type) {
         assertNotNull(prg.getVar(name));
         assertTrue(prg.getVar(name) instanceof LightVariableDef);

@@ -68,9 +68,8 @@ dependencies {
     implementation 'org.json:json:20210307'
     implementation 'commons-io:commons-io:2.11.0'
 
-    // FFmpeg-backed video import and preview.
-    implementation 'org.bytedeco:javacv:1.5.13'
-    implementation 'org.bytedeco:ffmpeg-platform:8.0.1-1.5.13'
+    // Video decoding is owned by the runtime projector. The IDE imports/indexes
+    // video assets without bundling FFmpeg into the desktop editor payload.
 }
 
 def animationImporterLibsDir = layout.buildDirectory.dir("generated/animation-importer-libs")

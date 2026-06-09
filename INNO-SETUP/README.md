@@ -4,7 +4,7 @@
 
 Use [build-installer.ps1](/C:/dev/scenemax_desktop/INNO-SETUP/build-installer.ps1). It does four things in order:
 
-1. Builds the desktop fat JAR and projector artifact with Gradle.
+1. Builds the desktop fat JAR and target-specific projector artifacts with Gradle.
 2. Regenerates `LAUNCH4J-PROJECT\scenemax3d.exe` from the current fat JAR.
 3. Compiles [scenemax-setup-project.iss](/C:/dev/scenemax_desktop/INNO-SETUP/scenemax-setup-project.iss) with Inno Setup.
 4. Signs the generated app EXE and final setup EXE if you pass a PFX certificate.
@@ -52,10 +52,11 @@ Examples:
 ./INNO-SETUP/build-macos-package.sh dmg
 ```
 
-These scripts package the same app payload that Windows uses:
+These scripts package the equivalent app payload for jpackage. Windows uses the
+Launch4j-wrapped `scenemax3d.exe` instead of installing `scenemax_desktop.jar`
+as a separate file.
 
-- `scenemax_desktop.jar`
-- `out/artifacts/scenemax_win_projector.jar`
+- `scenemax_projector-windows.jar`, `scenemax_projector-linux.jar`, `scenemax_projector-macos.jar`
 - `Launch4j`
 - `resources`
 - `macro`

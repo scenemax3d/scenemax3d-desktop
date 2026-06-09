@@ -37,13 +37,18 @@ public class PrepareLauncherTask extends SwingWorker<Integer, String> {
             String projectorJarPath = null;
 
             if (scriptFolder == null) {
-                projectorJarPath = "./out/artifacts/scenemax_win_projector.jar";
+                projectorJarPath = "./out/artifacts/scenemax_projector-windows.jar";
             } else {
                 String workingDir = Util.getWorkingDir();
-                projectorJarPath = workingDir + "/out/artifacts/scenemax_win_projector.jar";
+                projectorJarPath = workingDir + "/out/artifacts/scenemax_projector-windows.jar";
             }
 
             File projectorFile = new File(projectorJarPath);
+            if (!projectorFile.isFile()) {
+                projectorFile = scriptFolder == null
+                        ? new File("./out/artifacts/scenemax_win_projector.jar")
+                        : new File(Util.getWorkingDir() + "/out/artifacts/scenemax_win_projector.jar");
+            }
             JarUtils.addJar(jarOutputStream, "", projectorFile, null);
 
             // Close jar

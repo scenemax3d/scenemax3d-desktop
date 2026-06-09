@@ -1,8 +1,7 @@
 package com.scenemax.designer.video;
 
-import org.bytedeco.javacv.FFmpegFrameGrabber;
-
 import java.io.File;
+import java.util.Locale;
 
 public class VideoMetadata {
     final int width;
@@ -25,24 +24,15 @@ public class VideoMetadata {
     }
 
     public static VideoMetadata probe(File file) throws Exception {
-        try (FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(file)) {
-            grabber.start();
-            VideoMetadata metadata = new VideoMetadata(
-                    grabber.getImageWidth(),
-                    grabber.getImageHeight(),
-                    grabber.getFrameRate(),
-                    grabber.getLengthInTime() > 0 ? grabber.getLengthInTime() / 1_000_000d : 0d,
-                    grabber.getLengthInFrames(),
-                    grabber.getAudioChannels(),
-                    safe(grabber.getFormat())
-            );
-            grabber.stop();
-            return metadata;
-        }
+        return new VideoMetadata(0, 0, 0d, 0d, 0, 0, extension(file));
     }
 
-    private static String safe(String value) {
-        return value == null ? "" : value;
+    private static String extension(File file) {
+        String name = file == null ? "" : file.getName();
+        int dot = name.lastIndexOf('.');
+        return dot >= 0 && dot < name.length() - 1
+                ? name.substring(dot + 1).toLowerCase(Locale.ROOT)
+                : "";
     }
 
     String dimensionsText() {

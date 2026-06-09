@@ -10598,9 +10598,72 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
             File resourcesFolder = resolveRuntimeResourcesFolder();
             if (resourcesFolder != null) {
-                return new File(resourcesFolder, relativePath).getCanonicalFile();
+                File resolved = new File(resourcesFolder, relativePath).getCanonicalFile();
+                if (resolved.isFile()) {
+                    return resolved;
+                }
+                File extracted = extractBundledRuntimeResourceFile(resourcesFolder, relativePath);
+                return extracted != null ? extracted : resolved;
+            }
+            File localResources = new File("./resources").getCanonicalFile();
+            File extracted = extractBundledRuntimeResourceFile(localResources, relativePath);
+            if (extracted != null) {
+                return extracted;
             }
             return file.getCanonicalFile();
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private File extractBundledRuntimeResourceFile(File resourcesFolder, String relativePath) {
+        if (resourcesFolder == null || relativePath == null || relativePath.isBlank()) {
+            return null;
+        }
+
+        String normalizedPath = relativePath.replace("\\", "/");
+        while (normalizedPath.startsWith("/")) {
+            normalizedPath = normalizedPath.substring(1);
+        }
+        if (normalizedPath.isBlank() || normalizedPath.contains("../") || normalizedPath.equals("..")) {
+            return null;
+        }
+
+        try {
+            File root = resourcesFolder.getCanonicalFile();
+            File target = new File(root, normalizedPath).getCanonicalFile();
+            String rootPath = root.getPath();
+            String targetPath = target.getPath();
+            if (!targetPath.equals(rootPath) && !targetPath.startsWith(rootPath + File.separator)) {
+                return null;
+            }
+            if (target.isFile()) {
+                return target;
+            }
+
+            File jarFile = resolveOwningJarFile();
+            if (jarFile == null || !jarFile.isFile()) {
+                return null;
+            }
+
+            try (JarFile jar = new JarFile(jarFile)) {
+                JarEntry entry = jar.getJarEntry(normalizedPath);
+                if (entry == null) {
+                    entry = jar.getJarEntry("resources/" + normalizedPath);
+                }
+                if (entry == null || entry.isDirectory()) {
+                    return null;
+                }
+
+                File parent = target.getParentFile();
+                if (parent != null && !parent.exists()) {
+                    parent.mkdirs();
+                }
+                try (InputStream in = jar.getInputStream(entry)) {
+                    Files.copy(in, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                }
+                return target.isFile() ? target : null;
+            }
         } catch (Exception ex) {
             return null;
         }
