@@ -1,5 +1,3 @@
-
-
-b=>box : size (5,5,0.5), rotate(0,0,0)
-vid=>videos.foggy_day1
-vid.play : target b, start "00:00:00", end "00:01:00", loop
+var object_types = ["Sinbad", "Ninja", "Dragon"]
+m => (object_types[rnd(3)])
+m.turn left 360 in 5 seconds

@@ -3,11 +3,11 @@
         {
             "path": "projects/fighting_game_project",
             "itchWindowsChannel": "windows",
-            "selectedNode": "main",
+            "selectedNode": "tests",
             "itchGamePage": "https://adi-barda.itch.io/fighting-game-concept",
             "name": "fighting game project",
             "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game\\side_tests",
             "itchMacChannel": "macos",
             "itchLinuxChannel": "linux"
         },
@@ -19,9 +19,14 @@
         },
         {
             "path": "projects/test1",
-            "selectedNode": "loading",
+            "itchWindowsChannel": "",
+            "selectedNode": "logic.java",
+            "itchGamePage": "",
             "name": "test1",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test1\\scripts\\4play"
+            "itchButlerPath": "",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test1\\scripts\\4play\\logic",
+            "itchMacChannel": "",
+            "itchLinuxChannel": ""
         },
         {
             "path": "projects/test2",
@@ -172,5 +177,5 @@
             "itchLinuxChannel": ""
         }
     ],
-    "selectedProject": "fighting game project"
+    "selectedProject": "test1"
 }

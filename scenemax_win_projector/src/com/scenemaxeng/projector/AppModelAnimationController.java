@@ -28,7 +28,7 @@ public class AppModelAnimationController implements AnimEventListener {
 
         if (animName.equals(animationName)) {
             animControl.removeListener(this);
-            animationFinished = true;
+            finishControllerAnimation();
         }
     }
 
@@ -36,7 +36,7 @@ public class AppModelAnimationController implements AnimEventListener {
     public void onAnimChange(AnimControl animControl, AnimChannel animChannel, String animName) {
         if (!animName.equals(animationName)) {
             animControl.removeListener(this);
-            animationFinished = true;
+            finishControllerAnimation();
         }
     }
 
@@ -80,6 +80,7 @@ public class AppModelAnimationController implements AnimEventListener {
 
                 if (m.currentAction == null) {
                     m.currentAction = (CharacterAction) ac;
+                    m.currentAnimationController = this;
                     composer.setCurrentAction(animationName);
                 } else {
                     if(ac!=m.currentAction) {
@@ -87,8 +88,10 @@ public class AppModelAnimationController implements AnimEventListener {
                             m.currentAction.finishAnimation();
                         }
                         m.currentAction = (CharacterAction)ac;
+                        m.currentAnimationController = this;
                         composer.setCurrentAction(animationName);
                     } else {
+                        m.currentAnimationController = this;
                         composer.setCurrentAction(animationName);
                     }
 
@@ -121,6 +124,7 @@ public class AppModelAnimationController implements AnimEventListener {
                 channel.setLoopMode(LoopMode.DontLoop);
                 Float animSpeed = Float.parseFloat(speed);
                 channel.setSpeed(animSpeed);
+                m.currentAnimationController = this;
 
             } else {
                 animationFinished = true;
@@ -165,11 +169,21 @@ public class AppModelAnimationController implements AnimEventListener {
             appModel.currentAction.finishAnimation();
             appModel.currentAction.isProtected = false;
         }
+        if (appModel != null && appModel.currentAnimationController == this) {
+            appModel.currentAnimationController = null;
+        }
         if (control != null) {
             control.removeListener(this);
         }
         if (channel != null) {
             channel.setSpeed(0);
+        }
+    }
+
+    public void finishControllerAnimation() {
+        animationFinished = true;
+        if (appModel != null && appModel.currentAnimationController == this) {
+            appModel.currentAnimationController = null;
         }
     }
 

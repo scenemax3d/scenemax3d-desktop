@@ -34,6 +34,156 @@ Important runtime rule:
 - assigning a new camera system automatically turns the previous one off
 - all systems are designed to move smoothly using damping/interpolation
 
+## Available Camera Systems
+
+SceneMax currently includes these built-in runtime camera systems:
+
+| System | Syntax | Targets | Use it for |
+| --- | --- | --- | --- |
+| Fighting | `camera.system.fighting(player, opponent, ...)` | two targets | fighting games, arena duels, boss encounters where two characters must stay visible |
+| Third-person | `camera.system.third_person(target, ...)` | one target | action-adventure, exploration, over-the-shoulder movement, general character-follow games |
+| First-person | `camera.system.first_person(target, ...)` | one target | FPS, immersive exploration, cockpit-style interaction, aim-heavy gameplay |
+| Racing | `camera.system.racing(vehicle, ...)` | one target | racing, driving, chase-camera vehicle games, fast forward movement |
+| Platformer | `camera.system.platformer(player, ...)` | one target | side-scrollers, 3D platformers, jump-heavy character games, precision movement |
+| RTS | `camera.system.rts(...)` or `camera.system.rts(target, ...)` | zero or one target | RTS, tactics, builders, management, top-down commander views |
+
+Use the camera system that matches the player's moment-to-moment job, not only the project genre.
+A fantasy game can use `third_person` while exploring, `fighting` during a locked duel, and `rts` for a tactical command mode.
+
+### Genre Selection Guide
+
+Use `fighting` for:
+
+- 2D or 3D versus fighting games
+- arena brawlers with two important characters
+- boss fights where the boss and player must remain readable
+
+Use `third_person` for:
+
+- character action games
+- adventure and exploration games
+- RPG movement and traversal
+- over-the-shoulder camera setups
+
+Use `first_person` for:
+
+- shooters
+- immersive sims
+- first-person puzzle or exploration games
+- cockpit, helmet, or body-mounted viewpoints
+
+Use `racing` for:
+
+- cars, bikes, hovercraft, or other fast vehicles
+- chase-camera driving
+- games where the player must read the road or track ahead
+
+Use `platformer` for:
+
+- side-scrollers
+- 2.5D platformers
+- 3D platformers with jumps, ledges, and hazards
+- movement games that need calm framing and a dead zone
+
+Use `rts` for:
+
+- strategy and tactics games
+- city builders and management games
+- tower defense overview cameras
+- top-down or angled map control
+
+### Sample Code
+
+Pick one system for the active gameplay mode, store it in a variable, then assign it to `camera.system`.
+
+```scenemax
+player1=>sinbad
+enemy1=>sinbad
+car1=>sports_car
+commander=>robot
+
+// Fighting / duel camera: keeps both combatants visible.
+fight_cam = camera.system.fighting(
+    player1,
+    enemy1,
+    depth 18,
+    height 5,
+    min distance 12,
+    max distance 28,
+    damping 8,
+    fov 48,
+    max fov 62
+)
+
+// Third-person adventure camera: follows one character from behind.
+adventure_cam = camera.system.third_person(
+    player1,
+    distance 9,
+    height 3,
+    side 1,
+    look ahead 2,
+    damping 7,
+    fov 55,
+    max fov 62
+)
+
+// First-person camera: places the view near eye height.
+fps_cam = camera.system.first_person(
+    player1,
+    height 1.7,
+    depth 0.15,
+    fov 72
+)
+
+// Racing camera: follows a fast vehicle and looks down the road.
+race_cam = camera.system.racing(
+    car1,
+    distance 14,
+    height 4,
+    look ahead 8,
+    zoom_factor 1.2,
+    min distance 10,
+    max distance 24,
+    damping 7,
+    fov 58,
+    max fov 68
+)
+
+// Platformer camera: gives jumps and lateral movement stable framing.
+platform_cam = camera.system.platformer(
+    player1,
+    distance 10,
+    height 3,
+    look ahead 3,
+    dead zone 2,
+    vertical bias 2.5,
+    damping 6,
+    fov 52
+)
+
+// RTS camera: high angled overview, optionally bounded to the map.
+strategy_cam = camera.system.rts(
+    distance 30,
+    angle 60,
+    height 4,
+    damping 5,
+    fov 50,
+    min x -50,
+    max x 50,
+    min z -50,
+    max z 50
+)
+
+// Activate the camera that matches the current gameplay mode.
+camera.system = adventure_cam
+
+// Later, switch modes by assigning a different system.
+camera.system = fight_cam
+
+// Reset back to default non-system camera behavior.
+camera.system = default
+```
+
 ## Camera Modifiers
 
 In engine/runtime terms these are **camera modifiers** or **camera shake modifiers**.

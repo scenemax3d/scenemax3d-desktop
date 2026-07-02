@@ -28,6 +28,7 @@ statement
    | define_object_pool # defineObjectPool
    | debug_statement    # debugStatement
    | logger_statement   # loggerStatement
+   | java_statement     # javaStatement
    | process_statement  # processStatement
    | define_variable	# defVar
    | animation_controller_assignment # animationControllerAssignment
@@ -116,6 +117,7 @@ debug_off : Off ;
 
 logger_statement : Logger '.' logger_level logical_expression ;
 logger_level : Info | Debug | Error ;
+java_statement : Java '.' Attach QUOTED_STRING ;
 process_statement : Process '.' End ;
 
 
@@ -1018,7 +1020,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
     Screen | Scene | Environment | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run | Rewind |
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
-    Effekseer | Attr | Cinematic | Videos | Target | Message | TextEffect | Ease | Logger | Error | Process | Weapon | Colliders | Posture | Empty | Event | IK |
+    Effekseer | Attr | Cinematic | Videos | Target | Message | TextEffect | Ease | Logger | Java | Error | Process | Weapon | Colliders | Posture | Empty | Event | IK |
     Weight | Blend |
     Motion | Throw | Toward | Arc | Spin | Physics | Impulse | Force | Torque | Object | Pool | Acquire | Release | Free;
 
@@ -1128,6 +1130,7 @@ Draw : 'Draw' | 'draw' ;
 
 Debug : 'debug' | 'Debug' ;
 Logger : 'Logger' | 'logger' ;
+Java : 'Java' | 'java' ;
 Error : 'Error' | 'error' ;
 Process : 'Process' | 'process' ;
 On : 'on' | 'On' ;

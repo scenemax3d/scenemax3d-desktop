@@ -533,7 +533,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         if (failureMessage.length() == 0) {
             failureMessage = "Program Packaging Failed";
         }
-        JOptionPane.showMessageDialog(
+        Util.showScrollableMessageDialog(
                 this,
                 failureMessage,
                 "Package Error",

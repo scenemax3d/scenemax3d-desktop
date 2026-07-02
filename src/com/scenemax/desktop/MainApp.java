@@ -1585,6 +1585,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     refreshProjectFilesTreeForAutomation(true, false);
                 } else if (cmd.equals("new")) {
                     createNewScript(filePath);
+                } else if (cmd.equals("new_java_extension")) {
+                    createNewJavaExtension(filePath);
                 } else if (cmd.equals("new_designer")) {
                     createNewDesignerDocument(filePath);
                 } else if (cmd.equals("new_ui_document")) {
@@ -1873,6 +1875,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         }
         addScriptsTreePopupMenuItem("Rename...", "rename", popup, popupActionListener, false, true, file);
         addScriptsTreePopupMenuItem("Create New Script", "new", popup, popupActionListener, true, false, file);
+        addScriptsTreePopupMenuItem("Create Java Extension...", "new_java_extension", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Designer Document", "new_designer", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create UI Document", "new_ui_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Material Document", "new_material_document", popup, popupActionListener, true, false, file);
@@ -2646,6 +2649,73 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         saveSelectedTreeNodePosition(f.getPath(), scriptName);
         loadScriptsFolder();
         openLastTreeNode();
+    }
+
+    private void createNewJavaExtension(String path) {
+        String extensionName = (String) JOptionPane.showInputDialog(
+                null,
+                "Type new Java extension class name",
+                "Java Extension",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                null,
+                "");
+
+        if (extensionName == null || extensionName.trim().length() == 0) {
+            return;
+        }
+
+        extensionName = extensionName.trim();
+        if (!JavaExtensionBuildTool.isValidJavaClassName(extensionName)) {
+            JOptionPane.showMessageDialog(
+                    null,
+                    "Use a valid Java class name, for example MyGameExtension.",
+                    "Java Extension",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        File parent = new File(path);
+        if (parent.isFile()) {
+            parent = parent.getParentFile();
+        }
+        if (parent == null || !parent.isDirectory()) {
+            JOptionPane.showMessageDialog(null, "Select a project folder first.", "Java Extension", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        File extensionFolder = new File(parent, extensionName);
+        if (extensionFolder.exists()) {
+            JOptionPane.showMessageDialog(
+                    null,
+                    "A file or folder named '" + extensionName + "' already exists.",
+                    "Java Extension",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        try {
+            FileUtils.forceMkdir(extensionFolder);
+            File marker = new File(extensionFolder, JavaExtensionBuildTool.MARKER_FILE_NAME);
+            FileUtils.writeStringToFile(marker, "SceneMax Java Extension\n", StandardCharsets.UTF_8);
+
+            File sourceFile = new File(extensionFolder, extensionName + ".java");
+            FileUtils.writeStringToFile(
+                    sourceFile,
+                    JavaExtensionBuildTool.createInitialJavaSource(extensionName),
+                    StandardCharsets.UTF_8);
+
+            saveSelectedTreeNodePosition(extensionFolder.getPath(), sourceFile.getName());
+            loadScriptsFolder();
+            openLastTreeNode();
+        } catch (IOException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(
+                    null,
+                    "Error creating Java extension:\r\n" + e.getMessage(),
+                    "Java Extension",
+                    JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private void createNewScriptFile(String dirPath, String fileName) {
@@ -4147,6 +4217,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
             String name = fileEntry.getName().toLowerCase();
             if (name.endsWith(".dll")) continue;
+            if (fileEntry.isFile() && JavaExtensionBuildTool.MARKER_FILE_NAME.equals(fileEntry.getName())) continue;
 
             // Skip .code files that are paired with a .smdesign file;
             // they will be added as children of the .smdesign node below.
@@ -4790,7 +4861,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 || name.endsWith(ThrowMotionDefinition.FILE_EXTENSION)
                 || isIKDesignerFile(name)
                 || name.endsWith(".json")
-                || name.endsWith(".cs"));
+                || name.endsWith(".cs")
+                || name.endsWith(".java"));
     }
 
     private static boolean isIKDesignerFile(String name) {

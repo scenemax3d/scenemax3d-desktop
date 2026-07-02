@@ -663,6 +663,13 @@ public class SceneMaxLanguageParser implements IParser {
 
             }
 
+            public ActionStatementBase visitJavaStatement(SceneMaxParser.JavaStatementContext ctx) {
+                JavaAttachCommand cmd = new JavaAttachCommand();
+                cmd.appStateName = stripQutes(ctx.java_statement().QUOTED_STRING().getText());
+                cmd.varLineNum = ctx.start != null ? ctx.start.getLine() : 0;
+                return cmd;
+            }
+
             public ActionStatementBase visitSwitchStatement(SceneMaxParser.SwitchStatementContext ctx) {
                 SwitchStateCommand cmd = new SwitchStateCommand();
                 cmd.pathExpr = ctx.switch_statement().logical_expression();

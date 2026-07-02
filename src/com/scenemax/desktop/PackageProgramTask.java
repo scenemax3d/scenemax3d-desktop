@@ -74,6 +74,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     private volatile String failureMessage = "";
     private String packagingInventoryJson = "";
     private File packageLogFile;
+    private JavaExtensionBuildTool.BuildResult javaExtensionBuildResult = new JavaExtensionBuildTool.BuildResult();
 
     public enum PackageTarget {
         WINDOWS,
@@ -425,12 +426,35 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         File scriptFolderCopy = copyAndApplyMacro(scriptFolder);
         FileUtils.moveDirectory(scriptFolderCopy, new File(deployFolder, "running")); // rename
         logPackage("Copied packaged scripts into deploy/running.");
+        try {
+            javaExtensionBuildResult = JavaExtensionBuildTool.buildExtensions(
+                    scriptFolder,
+                    new File(deployFolder, JavaExtensionBuildTool.EXTENSIONS_FOLDER_NAME),
+                    this::logPackage);
+        } catch (IOException e) {
+            String logText = formatExceptionMessage(e);
+            File javaLog = new File(outputFolder == null ? new File("build_games") : outputFolder,
+                    JavaExtensionBuildTool.COMPILE_LOG_NAME);
+            FileUtils.writeStringToFile(javaLog, logText, StandardCharsets.UTF_8);
+            failureMessage = appendPackageLogPath(logText + System.lineSeparator()
+                    + System.lineSeparator()
+                    + "Java compile log: " + javaLog.getAbsolutePath());
+            throw e;
+        }
+        if (javaExtensionBuildResult.hasExtensions()) {
+            logPackage("Built Java extensions: " + javaExtensionBuildResult.extensions.size());
+        }
         prepareTargetPackages(resources);
         writeSizeReportAnalysis(resources);
         uploadToItchIfRequested();
         logPackage("Packaging finished successfully.");
 
         return globalCounter;
+    }
+
+    private static String formatExceptionMessage(Throwable e) {
+        String message = e.getMessage();
+        return message == null || message.isBlank() ? e.toString() : message;
     }
 
     private void initializePackageOutput(String gameName) throws IOException {
@@ -627,6 +651,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 }
             }
 
+            addJavaExtensionClasses(jarOutputStream);
+
             if (addedJarEntries.add("resources.json")) {
                 jarOutputStream.putNextEntry(new JarEntry("resources.json"));
                 jarOutputStream.write(resources.toString().getBytes(StandardCharsets.UTF_8));
@@ -635,6 +661,19 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         }
         File sceneJar = new File(SCENE_JAR_NAME);
         logPackage("Created scene JAR for " + target + ": " + sceneJar.getAbsolutePath() + " (" + sceneJar.length() + " bytes)");
+    }
+
+    private void addJavaExtensionClasses(JarOutputStream jarOutputStream) {
+        if (javaExtensionBuildResult == null || !javaExtensionBuildResult.hasExtensions()) {
+            return;
+        }
+        for (JavaExtensionBuildTool.ExtensionBuild extension : javaExtensionBuildResult.extensions) {
+            if (extension.jarFile == null || !extension.jarFile.isFile()) {
+                continue;
+            }
+            logPackage("Merging Java extension classes: " + extension.name);
+            JarUtils.addJar(jarOutputStream, "", extension.jarFile, null, addedJarEntries);
+        }
     }
 
     private File resolveProjectorJar(PackageTarget target) throws IOException {

@@ -48,10 +48,13 @@ public class AnimateCompositeController extends CompositeController{
             }
             // Remove the old animation sequence if this action came from one.
             // Runtime preview animations may have a plain host controller with no parent.
-            if(m.currentAction!=null) {
-                if (m.currentAction.isProtected) {
+            if(m.currentAction!=null || m.currentAnimationController!=null) {
+                if (m.hasProtectedAnimationInProgress(null)) {
                     return true;
                 }
+            }
+
+            if(m.currentAction!=null) {
                 SceneMaxBaseController hostController = m.currentAction.controller != null
                         ? m.currentAction.getHostController()
                         : null;
