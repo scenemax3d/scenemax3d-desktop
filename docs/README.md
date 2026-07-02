@@ -9,6 +9,7 @@
 - [Built-in MCP Server and AI Assistants](built-in-mcp-server.md)
 - [SceneMax MCP Tool Reference](mcp-tools-reference.md)
 - [Enhanced Plugin System](plugin-system.md)
+- [Java Extensions](java-extensions.md)
 - [Meshy AI Plugin](meshy-ai-plugin.md)
 - [Screen & Canvas](screen-and-canvas.md)
 - [Camera](camera.md)

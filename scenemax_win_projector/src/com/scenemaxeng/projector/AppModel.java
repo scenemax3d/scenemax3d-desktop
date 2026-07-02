@@ -50,6 +50,7 @@ public class AppModel {
     public ResourceSetup resource;
     public Spatial skinningControlNode;
     public CharacterAction currentAction;
+    public AppModelAnimationController currentAnimationController;
     public boolean isStatic;
     public EntityInstBase entityInst;
     private AnimChannel channel;
@@ -62,6 +63,19 @@ public class AppModel {
 
     public AppModel(Node m) {
         model=m;
+    }
+
+    public boolean hasProtectedAnimationInProgress(AppModelAnimationController incomingController) {
+        if (currentAction != null
+                && currentAction.isProtected
+                && currentAction.controller != incomingController) {
+            return true;
+        }
+
+        return currentAnimationController != null
+                && currentAnimationController != incomingController
+                && currentAnimationController.isProtected
+                && !currentAnimationController.animationFinished;
     }
 
     public AnimChannel getChannel() {

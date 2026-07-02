@@ -11,6 +11,11 @@ import javax.swing.text.BadLocationException;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.List;
@@ -36,6 +41,10 @@ public class SceneMaxAutoComplete {
     private static final int TYPE_MODEL = 11;
     private static final int TYPE_SPRITE = 12;
     private static final int TYPE_PARAMETER = 13;
+    private static final int TYPE_JAVA_METHOD = 14;
+    private static final int TYPE_JAVA_FIELD = 15;
+    private static final int TYPE_JAVA_CLASS = 16;
+    private static final int TYPE_JAVA_SNIPPET = 17;
 
     private final RSyntaxTextArea textArea;
     private JWindow popupWindow;
@@ -129,6 +138,7 @@ public class SceneMaxAutoComplete {
         "Each", "Where",
         "Http", "Get", "Post", "Put",
         "UI", "Load", "Message", "TextEffect", "Ease",
+        "Java", "Attach",
         "Plugins",
         "Animation",
         "Rows", "Cols",
@@ -168,6 +178,36 @@ public class SceneMaxAutoComplete {
         "Key 6", "Key 7", "Key 8", "Key 9",
         "Mouse Left", "Mouse Right",
     };
+
+    private static final String[] JAVA_KEYWORDS = {
+            "abstract", "assert", "boolean", "break", "case", "catch", "class", "continue",
+            "default", "do", "double", "else", "enum", "extends", "final", "finally",
+            "float", "for", "if", "implements", "import", "instanceof", "int", "interface",
+            "new", "private", "protected", "public", "return", "static", "super", "switch",
+            "this", "throw", "throws", "try", "void", "while", "true", "false", "null"
+    };
+
+    private static final String[] JAVA_CORE_COMPLETION_CLASS_NAMES = {
+            "com.scenemaxeng.projector.SceneMaxApp",
+            "com.scenemaxeng.projector.SceneMaxBaseAppState",
+            "com.scenemaxeng.projector.SceneMaxScope",
+            "com.scenemaxeng.projector.EntityInstBase",
+            "com.scenemaxeng.projector.AppModel",
+            "com.jme3.scene.Spatial",
+            "com.jme3.scene.Node",
+            "com.jme3.scene.Geometry",
+            "com.jme3.math.Vector3f",
+            "com.jme3.math.Quaternion",
+            "com.jme3.material.Material",
+            "com.jme3.scene.control.Control",
+            "com.jme3.app.state.BaseAppState",
+            "com.jme3.app.Application",
+            "com.jme3.asset.AssetManager",
+            "com.jme3.app.state.AppStateManager"
+    };
+
+    private static final Map<String, Class<?>> JAVA_TYPE_CACHE = new HashMap<>();
+    private static ClassLoader javaReflectionClassLoader;
 
     public SceneMaxAutoComplete(RSyntaxTextArea textArea, ActiveFileProvider activeFileProvider) {
         this.textArea = textArea;
@@ -416,9 +456,11 @@ public class SceneMaxAutoComplete {
     private void onTextChanged() {
         localParseDirty = true;
         String prefix = getCurrentPrefix();
-        if (prefix.length() >= AUTO_TRIGGER_LENGTH) {
+        if (isJavaFile() && isAfterMemberDot()) {
+            showCompletions(true);
+        } else if (prefix.length() >= AUTO_TRIGGER_LENGTH) {
             // Ensure we have a parse result (use cached if fresh enough)
-            if (cachedProgram == null) {
+            if (!isJavaFile() && cachedProgram == null) {
                 triggerParse();
             }
             showCompletions(false);
@@ -549,6 +591,10 @@ public class SceneMaxAutoComplete {
     // ---- Building completion list from ProgramDef ----
 
     private List<CompletionItem> getCompletions(String prefix) {
+        if (isJavaFile()) {
+            return getJavaCompletions(prefix);
+        }
+
         List<CompletionItem> results = new ArrayList<>();
         String lowerPrefix = prefix.toLowerCase();
         boolean isExprPointer = prefix.startsWith("@");
@@ -619,6 +665,433 @@ public class SceneMaxAutoComplete {
         });
 
         return results;
+    }
+
+    private boolean isJavaFile() {
+        String activeFilePath = activeFileProvider != null ? activeFileProvider.getActiveFilePath() : null;
+        return activeFilePath != null && activeFilePath.toLowerCase(Locale.ROOT).endsWith(".java");
+    }
+
+    private boolean isAfterMemberDot() {
+        int caretPos = textArea.getCaretPosition();
+        String prefix = getCurrentPrefix();
+        int dotIndex = caretPos - prefix.length() - 1;
+        if (dotIndex < 0) {
+            return false;
+        }
+        try {
+            return ".".equals(textArea.getText(dotIndex, 1));
+        } catch (BadLocationException e) {
+            return false;
+        }
+    }
+
+    private List<CompletionItem> getJavaCompletions(String prefix) {
+        List<CompletionItem> results = new ArrayList<>();
+        Set<String> added = new HashSet<>();
+        String lowerPrefix = prefix.toLowerCase(Locale.ROOT);
+
+        String receiver = getJavaMemberReceiver(prefix);
+        if (receiver != null && !receiver.isBlank()) {
+            Class<?> receiverType = inferJavaExpressionType(receiver, collectJavaVariables());
+            if (receiverType != null) {
+                collectJavaMembers(receiverType, lowerPrefix, results, added);
+                results.sort(this::compareJavaCompletionItems);
+                return results;
+            }
+        }
+
+        collectJavaLocalVariables(lowerPrefix, results, added);
+        collectJavaSnippets(lowerPrefix, results, added);
+        collectJavaClasses(lowerPrefix, results, added);
+        for (String keyword : JAVA_KEYWORDS) {
+            if (keyword.startsWith(lowerPrefix) && added.add(keyword + ":kw")) {
+                results.add(new CompletionItem(keyword, keyword, TYPE_KEYWORD, "Java Keyword"));
+            }
+        }
+
+        results.sort(this::compareJavaCompletionItems);
+        return results;
+    }
+
+    private String getJavaMemberReceiver(String prefix) {
+        int caretPos = textArea.getCaretPosition();
+        int dotIndex = caretPos - prefix.length() - 1;
+        if (dotIndex < 0) {
+            return null;
+        }
+        try {
+            if (!".".equals(textArea.getText(dotIndex, 1))) {
+                return null;
+            }
+            String beforeDot = textArea.getText(0, dotIndex);
+            int start = beforeDot.length() - 1;
+            int parenDepth = 0;
+            while (start >= 0) {
+                char c = beforeDot.charAt(start);
+                if (c == ')') {
+                    parenDepth++;
+                } else if (c == '(') {
+                    parenDepth--;
+                }
+
+                if (parenDepth == 0 && !(Character.isLetterOrDigit(c) || c == '_' || c == '.' || c == ')')) {
+                    break;
+                }
+                start--;
+            }
+            return beforeDot.substring(start + 1).trim();
+        } catch (BadLocationException e) {
+            return null;
+        }
+    }
+
+    private Map<String, Class<?>> collectJavaVariables() {
+        Map<String, Class<?>> vars = new HashMap<>();
+        putJavaVar(vars, "app", "com.scenemaxeng.projector.SceneMaxApp");
+        putJavaVar(vars, "sceneMaxApp", "com.scenemaxeng.projector.SceneMaxApp");
+        putJavaVar(vars, "scope", "com.scenemaxeng.projector.SceneMaxScope");
+        putJavaVar(vars, "sceneMaxScope", "com.scenemaxeng.projector.SceneMaxScope");
+        putJavaVar(vars, "entity", "com.scenemaxeng.projector.EntityInstBase");
+        putJavaVar(vars, "spatial", "com.jme3.scene.Spatial");
+        putJavaVar(vars, "node", "com.jme3.scene.Node");
+        putJavaVar(vars, "rootNode", "com.jme3.scene.Node");
+        putJavaVar(vars, "assetManager", "com.jme3.asset.AssetManager");
+        putJavaVar(vars, "stateManager", "com.jme3.app.state.AppStateManager");
+
+        String code = textArea.getText();
+        for (Class<?> type : getJavaCoreCompletionTypes()) {
+            String simpleName = type.getSimpleName();
+            java.util.regex.Pattern declaration = java.util.regex.Pattern.compile(
+                    "\\b" + java.util.regex.Pattern.quote(simpleName) + "\\s+([A-Za-z_][A-Za-z0-9_]*)\\b");
+            java.util.regex.Matcher matcher = declaration.matcher(code);
+            while (matcher.find()) {
+                vars.put(matcher.group(1), type);
+            }
+        }
+        return vars;
+    }
+
+    private void putJavaVar(Map<String, Class<?>> vars, String name, String className) {
+        Class<?> type = resolveJavaType(className);
+        if (type != null) {
+            vars.put(name, type);
+        }
+    }
+
+    private void collectJavaLocalVariables(String lowerPrefix, List<CompletionItem> results, Set<String> added) {
+        for (Map.Entry<String, Class<?>> entry : collectJavaVariables().entrySet()) {
+            String name = entry.getKey();
+            if (!name.toLowerCase(Locale.ROOT).startsWith(lowerPrefix)) {
+                continue;
+            }
+            if (added.add(name + ":java-var")) {
+                results.add(new CompletionItem(
+                        name + " : " + entry.getValue().getSimpleName(),
+                        name,
+                        TYPE_VARIABLE,
+                        "Java Variable"));
+            }
+        }
+    }
+
+    private void collectJavaSnippets(String lowerPrefix, List<CompletionItem> results, Set<String> added) {
+        addJavaSnippet(results, added, lowerPrefix,
+                "getSceneMaxApp() : SceneMaxApp",
+                "getSceneMaxApp()",
+                "Extension Helper");
+        addJavaSnippet(results, added, lowerPrefix,
+                "getSceneMaxScope() : SceneMaxScope",
+                "getSceneMaxScope()",
+                "Extension Helper");
+        addJavaSnippet(results, added, lowerPrefix,
+                "onSceneMaxInitialize(SceneMaxApp app)",
+                "@Override\nprotected void onSceneMaxInitialize(SceneMaxApp app) {\n    \n}",
+                "Lifecycle");
+        addJavaSnippet(results, added, lowerPrefix,
+                "update(float tpf)",
+                "@Override\npublic void update(float tpf) {\n    \n}",
+                "Lifecycle");
+        addJavaSnippet(results, added, lowerPrefix,
+                "Spatial lookup by SceneMax name",
+                "Spatial spatial = getEntitySpatial(\"\");",
+                "SceneMax Native");
+        addJavaSnippet(results, added, lowerPrefix,
+                "Entity lookup by SceneMax name",
+                "EntityInstBase entity = getEntity(\"\");",
+                "SceneMax Native");
+    }
+
+    private void addJavaSnippet(List<CompletionItem> results, Set<String> added, String lowerPrefix,
+                                String display, String insert, String category) {
+        String searchable = display.toLowerCase(Locale.ROOT);
+        int paren = searchable.indexOf('(');
+        String nameOnly = paren >= 0 ? searchable.substring(0, paren) : searchable;
+        if ((searchable.startsWith(lowerPrefix) || nameOnly.startsWith(lowerPrefix)) && added.add(display + ":snippet")) {
+            results.add(new CompletionItem(display, insert, TYPE_JAVA_SNIPPET, category));
+        }
+    }
+
+    private void collectJavaClasses(String lowerPrefix, List<CompletionItem> results, Set<String> added) {
+        for (Class<?> type : getJavaCoreCompletionTypes()) {
+            String simpleName = type.getSimpleName();
+            if (simpleName.toLowerCase(Locale.ROOT).startsWith(lowerPrefix) && added.add(simpleName + ":class")) {
+                results.add(new CompletionItem(
+                        simpleName + "    " + type.getName(),
+                        simpleName,
+                        TYPE_JAVA_CLASS,
+                        "Java Type"));
+            }
+        }
+    }
+
+    private List<Class<?>> getJavaCoreCompletionTypes() {
+        List<Class<?>> types = new ArrayList<>();
+        for (String className : JAVA_CORE_COMPLETION_CLASS_NAMES) {
+            Class<?> type = resolveJavaType(className);
+            if (type != null) {
+                types.add(type);
+            }
+        }
+        return types;
+    }
+
+    private Class<?> resolveJavaType(String className) {
+        synchronized (JAVA_TYPE_CACHE) {
+            if (JAVA_TYPE_CACHE.containsKey(className)) {
+                return JAVA_TYPE_CACHE.get(className);
+            }
+            Class<?> type = loadJavaType(className);
+            JAVA_TYPE_CACHE.put(className, type);
+            return type;
+        }
+    }
+
+    private Class<?> loadJavaType(String className) {
+        try {
+            return Class.forName(className);
+        } catch (Throwable ignored) {
+        }
+
+        try {
+            return Class.forName(className, false, getJavaReflectionClassLoader());
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private ClassLoader getJavaReflectionClassLoader() {
+        synchronized (JAVA_TYPE_CACHE) {
+            if (javaReflectionClassLoader != null) {
+                return javaReflectionClassLoader;
+            }
+
+            List<URL> urls = new ArrayList<>();
+            addReflectionPath(urls, new File("out/artifacts/scenemax_projector-windows.jar"));
+            addReflectionPath(urls, new File("out/artifacts/scenemax_win_projector.jar"));
+            addReflectionPath(urls, new File("scenemax_win_projector/build/classes/java/main"));
+            addReflectionPath(urls, new File("scenemax3d_common_types/build/classes/java/main"));
+            addReflectionPath(urls, new File("scenemax3d_compiler/build/classes/java/main"));
+            addReflectionPath(urls, new File("scenemax_effekseer_runtime/build/classes/java/main"));
+
+            javaReflectionClassLoader = new URLClassLoader(
+                    urls.toArray(new URL[0]),
+                    SceneMaxAutoComplete.class.getClassLoader());
+            return javaReflectionClassLoader;
+        }
+    }
+
+    private void addReflectionPath(List<URL> urls, File file) {
+        if (file == null || !file.exists()) {
+            return;
+        }
+        try {
+            urls.add(file.toURI().toURL());
+        } catch (Exception ignored) {
+        }
+    }
+
+    private Class<?> inferJavaExpressionType(String expression, Map<String, Class<?>> vars) {
+        if (expression == null || expression.isBlank()) {
+            return null;
+        }
+
+        List<String> chain = splitJavaExpressionChain(expression.trim());
+        Class<?> currentType = null;
+        for (int i = 0; i < chain.size(); i++) {
+            String part = chain.get(i);
+            if (part.endsWith("()")) {
+                String methodName = part.substring(0, part.length() - 2);
+                if (currentType == null) {
+                    if ("getSceneMaxApp".equals(methodName)) {
+                        currentType = resolveJavaType("com.scenemaxeng.projector.SceneMaxApp");
+                    } else if ("getSceneMaxScope".equals(methodName)) {
+                        currentType = resolveJavaType("com.scenemaxeng.projector.SceneMaxScope");
+                    } else {
+                        return null;
+                    }
+                } else {
+                    Method method = findNoArgMethod(currentType, methodName);
+                    if (method == null) {
+                        return null;
+                    }
+                    currentType = method.getReturnType();
+                }
+            } else if (part.startsWith("getEntitySpatial(") && part.endsWith(")")) {
+                currentType = resolveJavaType("com.jme3.scene.Spatial");
+            } else if (part.startsWith("getEntity(") && part.endsWith(")")) {
+                currentType = resolveJavaType("com.scenemaxeng.projector.EntityInstBase");
+            } else {
+                if (i == 0) {
+                    if ("this".equals(part)) {
+                        currentType = resolveJavaType("com.scenemaxeng.projector.SceneMaxBaseAppState");
+                    } else {
+                        currentType = vars.get(part);
+                    }
+                } else {
+                    Field field = findField(currentType, part);
+                    if (field == null) {
+                        return null;
+                    }
+                    currentType = field.getType();
+                }
+            }
+        }
+        return currentType;
+    }
+
+    private List<String> splitJavaExpressionChain(String expression) {
+        List<String> parts = new ArrayList<>();
+        int start = 0;
+        int depth = 0;
+        for (int i = 0; i < expression.length(); i++) {
+            char c = expression.charAt(i);
+            if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth--;
+            } else if (c == '.' && depth == 0) {
+                parts.add(expression.substring(start, i));
+                start = i + 1;
+            }
+        }
+        parts.add(expression.substring(start));
+        return parts;
+    }
+
+    private Method findNoArgMethod(Class<?> type, String methodName) {
+        if (type == null) {
+            return null;
+        }
+        for (Method method : type.getMethods()) {
+            if (method.getName().equals(methodName) && method.getParameterCount() == 0) {
+                return method;
+            }
+        }
+        return null;
+    }
+
+    private Field findField(Class<?> type, String fieldName) {
+        if (type == null) {
+            return null;
+        }
+        for (Field field : type.getFields()) {
+            if (field.getName().equals(fieldName)) {
+                return field;
+            }
+        }
+        return null;
+    }
+
+    private void collectJavaMembers(Class<?> type, String lowerPrefix, List<CompletionItem> results, Set<String> added) {
+        for (Method method : type.getMethods()) {
+            if (!Modifier.isPublic(method.getModifiers())) {
+                continue;
+            }
+            String name = method.getName();
+            if (!name.toLowerCase(Locale.ROOT).startsWith(lowerPrefix)) {
+                continue;
+            }
+            String signature = javaMethodSignature(method);
+            String key = signature + ":method";
+            if (added.add(key)) {
+                String insert = method.getParameterCount() == 0 ? name + "()" : name + "(";
+                results.add(new CompletionItem(signature, insert, TYPE_JAVA_METHOD, declaringCategory(method)));
+            }
+        }
+
+        for (Field field : type.getFields()) {
+            if (!Modifier.isPublic(field.getModifiers())) {
+                continue;
+            }
+            String name = field.getName();
+            if (!name.toLowerCase(Locale.ROOT).startsWith(lowerPrefix)) {
+                continue;
+            }
+            if (added.add(name + ":field")) {
+                results.add(new CompletionItem(
+                        name + " : " + shortTypeName(field.getType()),
+                        name,
+                        TYPE_JAVA_FIELD,
+                        field.getDeclaringClass().getSimpleName() + " Field"));
+            }
+        }
+    }
+
+    private String javaMethodSignature(Method method) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(method.getName()).append("(");
+        Class<?>[] params = method.getParameterTypes();
+        for (int i = 0; i < params.length; i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(shortTypeName(params[i]));
+        }
+        sb.append(") : ").append(shortTypeName(method.getReturnType()));
+        return sb.toString();
+    }
+
+    private String declaringCategory(Method method) {
+        Class<?> owner = method.getDeclaringClass();
+        if (owner == Object.class) {
+            return "Object Method";
+        }
+        return owner.getSimpleName() + " Method";
+    }
+
+    private String shortTypeName(Class<?> type) {
+        if (type == null) {
+            return "";
+        }
+        if (type == Void.TYPE) {
+            return "void";
+        }
+        if (type.isArray()) {
+            return shortTypeName(type.getComponentType()) + "[]";
+        }
+        return type.getSimpleName();
+    }
+
+    private int compareJavaCompletionItems(CompletionItem a, CompletionItem b) {
+        int pa = javaPriority(a);
+        int pb = javaPriority(b);
+        if (pa != pb) {
+            return Integer.compare(pa, pb);
+        }
+        return a.displayText.compareToIgnoreCase(b.displayText);
+    }
+
+    private int javaPriority(CompletionItem item) {
+        if (item.category.startsWith("SceneMaxApp")) return 0;
+        if (item.type == TYPE_JAVA_SNIPPET) return 1;
+        if (item.type == TYPE_VARIABLE) return 2;
+        if (item.category.startsWith("Spatial") || item.category.startsWith("Node")) return 3;
+        if (item.type == TYPE_JAVA_METHOD) return 4;
+        if (item.type == TYPE_JAVA_FIELD) return 5;
+        if (item.type == TYPE_JAVA_CLASS) return 6;
+        if (item.category.startsWith("Object")) return 9;
+        return 7;
     }
 
     /**
@@ -811,6 +1284,10 @@ public class SceneMaxAutoComplete {
         private static final Color MODEL_COLOR = new Color(106, 135, 89);
         private static final Color SPRITE_COLOR = new Color(86, 156, 214);
         private static final Color PARAM_COLOR = new Color(190, 140, 190);
+        private static final Color JAVA_METHOD_COLOR = new Color(255, 198, 109);
+        private static final Color JAVA_FIELD_COLOR = new Color(152, 118, 170);
+        private static final Color JAVA_CLASS_COLOR = new Color(86, 156, 214);
+        private static final Color JAVA_SNIPPET_COLOR = new Color(78, 201, 176);
 
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index,
@@ -848,6 +1325,10 @@ public class SceneMaxAutoComplete {
                 case TYPE_MODEL:        return "M";
                 case TYPE_SPRITE:       return "S";
                 case TYPE_PARAMETER:    return "P";
+                case TYPE_JAVA_METHOD:  return "m";
+                case TYPE_JAVA_FIELD:   return "v";
+                case TYPE_JAVA_CLASS:   return "J";
+                case TYPE_JAVA_SNIPPET: return "{}";
                 default:                return " ";
             }
         }
@@ -868,6 +1349,10 @@ public class SceneMaxAutoComplete {
                 case TYPE_MODEL:        return MODEL_COLOR;
                 case TYPE_SPRITE:       return SPRITE_COLOR;
                 case TYPE_PARAMETER:    return PARAM_COLOR;
+                case TYPE_JAVA_METHOD:  return JAVA_METHOD_COLOR;
+                case TYPE_JAVA_FIELD:   return JAVA_FIELD_COLOR;
+                case TYPE_JAVA_CLASS:   return JAVA_CLASS_COLOR;
+                case TYPE_JAVA_SNIPPET: return JAVA_SNIPPET_COLOR;
                 default:                return Color.WHITE;
             }
         }

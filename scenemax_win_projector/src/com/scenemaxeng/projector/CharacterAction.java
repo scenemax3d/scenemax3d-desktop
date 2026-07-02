@@ -22,14 +22,14 @@ public class CharacterAction extends BaseAction {
         boolean running = super.interpolate(t);
         if (!running) {
             this.setSpeed(0);
-            this.controller.animationFinished = true;
+            this.controller.finishControllerAnimation();
             this.isProtected = false;
         }
         return running;
     }
 
     public void finishAnimation() {
-        this.controller.animationFinished = true;
+        this.controller.finishControllerAnimation();
     }
 
     public void setController(AppModelAnimationController ctl) {

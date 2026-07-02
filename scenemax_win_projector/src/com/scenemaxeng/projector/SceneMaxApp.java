@@ -1861,6 +1861,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if (action instanceof PluginActionCommand) {
             PluginActionController ctl = new PluginActionController(this, prg, scope, (PluginActionCommand) action);
             scope.add(ctl);
+        } else if (action instanceof JavaAttachCommand) {
+            JavaAttachController ctl = new JavaAttachController(this, prg, scope, (JavaAttachCommand) action);
+            scope.add(ctl);
         } else if (action instanceof com.scenemaxeng.compiler.UILoadCommand) {
             UILoadController ctl = new UILoadController(this, prg, scope, (com.scenemaxeng.compiler.UILoadCommand) action);
             scope.add(ctl);
@@ -5203,6 +5206,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         AppModel m = models.get(targetVar);
         if(m!=null) {
+            if (m.hasProtectedAnimationInProgress(controller)) {
+                controller.animationFinished = true;
+                return;
+            }
             controller.animate(m, animationName, speed);
         }
 
@@ -5238,6 +5245,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         SceneMaxBaseController host = new SceneMaxBaseController();
         host.app = this;
         AppModelAnimationController controller = new AppModelAnimationController(host);
+        if (model.hasProtectedAnimationInProgress(controller)) {
+            return;
+        }
         controller.animate(model, animationName.trim(), Double.toString(speed > 0 ? speed : 1.0));
     }
 

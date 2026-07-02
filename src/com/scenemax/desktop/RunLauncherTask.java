@@ -68,7 +68,18 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
     @Override
     public void done() {
         if(!waitForLauncherCreation) {
-            if(exitCode!=0) {
+            int workerResult = 0;
+            try {
+                workerResult = get();
+            } catch (Exception e) {
+                workerResult = -1;
+                try {
+                    FileUtils.writeStringToFile(new File("log"), formatExceptionMessage(e), StandardCharsets.UTF_8);
+                } catch (IOException ioException) {
+                    ioException.printStackTrace();
+                }
+            }
+            if(exitCode!=0 || workerResult!=0) {
                 String msg = "";
                 try {
                     msg = FileUtils.readFileToString(new File("log"), StandardCharsets.UTF_8);
@@ -152,7 +163,31 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
 
             } catch (Exception e) {
               e.printStackTrace();
+              exitCode = -1;
+              FileUtils.writeStringToFile(new File("log"), formatExceptionMessage(e), StandardCharsets.UTF_8);
               return -1;
+            }
+
+            try {
+                JavaExtensionBuildTool.BuildResult extensions = JavaExtensionBuildTool.buildExtensions(
+                        scriptFolder,
+                        new File(this.runningFolder, JavaExtensionBuildTool.EXTENSIONS_FOLDER_NAME),
+                        System.out::println);
+                if (extensions.hasExtensions()) {
+                    System.out.println("Built Java extensions: " + extensions.extensions.size());
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+                exitCode = -1;
+                String logText = formatExceptionMessage(e);
+                FileUtils.writeStringToFile(new File("log"), logText, StandardCharsets.UTF_8);
+                if (this.runningFolder != null) {
+                    File javaLog = new File(
+                            new File(this.runningFolder, JavaExtensionBuildTool.EXTENSIONS_FOLDER_NAME),
+                            JavaExtensionBuildTool.COMPILE_LOG_NAME);
+                    FileUtils.writeStringToFile(javaLog, logText, StandardCharsets.UTF_8);
+                }
+                return -1;
             }
         }
 
@@ -174,6 +209,11 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
         }
 
         return 0;
+    }
+
+    private static String formatExceptionMessage(Throwable e) {
+        String message = e.getMessage();
+        return message == null || message.isBlank() ? e.toString() : message;
     }
 
     private void writeScriptFile(File f) {

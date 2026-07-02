@@ -7,6 +7,7 @@ import com.scenemaxeng.compiler.AnimationControllerEventCommand;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
 import com.scenemaxeng.compiler.VariableDef;
+import com.jme3.scene.Node;
 import org.apache.commons.io.FileUtils;
 import org.junit.Test;
 
@@ -140,6 +141,48 @@ public class AnimationControllerParsingTest {
         assertEquals("zombie_punch1", punch.animationName);
         assertNotNull(punch.speedExpr);
         assertEquals("Idle2", idle.animationName);
+    }
+
+    @Test
+    public void parsesProtectedAsyncShortAnimation() {
+        String code = "player=>phoenix\n"
+                + "player.fly at speed of 0.1 : protected Async\n"
+                + "wait 0.5 second\n"
+                + "player.fly";
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(code);
+
+        assertTrue(prg.syntaxErrors.toString(), prg.syntaxErrors.isEmpty());
+        assertTrue(prg.actions.get(1) instanceof ActionCommandAnimate);
+
+        ActionCommandAnimate animate = (ActionCommandAnimate) prg.actions.get(1);
+        assertTrue(animate.isAsync);
+        assertTrue(animate.isProtected);
+        assertEquals(1, animate.statements.size());
+
+        ActionCommandAnimate fly = (ActionCommandAnimate) animate.statements.get(0);
+        assertEquals("fly", fly.animationName);
+        assertTrue(fly.isProtected);
+        assertNotNull(fly.speedExpr);
+    }
+
+    @Test
+    public void protectedLegacyAnimationBlocksIncomingControllerUntilFinished() {
+        AppModel model = new AppModel(new Node("model"));
+        AppModelAnimationController protectedController =
+                new AppModelAnimationController(new SceneMaxBaseController());
+        protectedController.isProtected = true;
+        protectedController.animationFinished = false;
+        model.currentAnimationController = protectedController;
+
+        AppModelAnimationController incomingController =
+                new AppModelAnimationController(new SceneMaxBaseController());
+
+        assertTrue(model.hasProtectedAnimationInProgress(incomingController));
+
+        protectedController.finishControllerAnimation();
+
+        assertFalse(model.hasProtectedAnimationInProgress(incomingController));
     }
 
     @Test

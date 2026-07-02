@@ -11,6 +11,7 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
 
     private static final ImageIcon ICON_FOLDER   = MainApp.loadImageIcon("/images/folder_button2_24x24.png");
     private static final ImageIcon ICON_CSHARP   = MainApp.loadImageIcon("/images/c_sharp_1_24x24.png");
+    private static final ImageIcon ICON_JAVA     = createJavaIcon();
     private static final ImageIcon ICON_MAIN     = MainApp.loadImageIcon("/images/3d_script_2_24x24_blue.png");
     private static final ImageIcon ICON_SCRIPT   = MainApp.loadImageIcon("/images/3d_script_2_24x24.png");
     private static final ImageIcon ICON_DESIGNER = createDesignerIcon();
@@ -64,6 +65,8 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
             label.setIcon(ICON_IK_DESIGNER);
         } else if (name.endsWith(".cs")) {
             label.setIcon(ICON_CSHARP);
+        } else if (name.endsWith(".java")) {
+            label.setIcon(ICON_JAVA);
         } else if (name.equals("main")) {
             label.setIcon(ICON_MAIN);
         } else if (leaf) {
@@ -71,6 +74,22 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
         }
 
         return label;
+    }
+
+    private static ImageIcon createJavaIcon() {
+        BufferedImage img = new BufferedImage(24, 24, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setColor(new Color(232, 238, 244));
+        g.fillRoundRect(4, 3, 16, 18, 3, 3);
+        g.setColor(new Color(42, 48, 56));
+        g.fillRect(7, 7, 10, 2);
+        g.fillRect(7, 11, 8, 2);
+        g.setColor(new Color(235, 88, 72));
+        g.setFont(g.getFont().deriveFont(Font.BOLD, 8f));
+        g.drawString("J", 9, 19);
+        g.dispose();
+        return new ImageIcon(img);
     }
 
     private static ImageIcon createWeaponDesignerIcon() {
