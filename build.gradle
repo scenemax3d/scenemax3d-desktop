@@ -258,7 +258,7 @@ dependencies {
 
     implementation project(':scenemax3d_common_types')
     implementation project(':scenemax3d_compiler')
-    implementation files('launch4j/lib/flatlaf.jar')
+    implementation 'com.formdev:flatlaf:1.0'
 
     implementation(project(':scenemax_designer')) {
         // The desktop IDE should not bundle runtime-only video decoding natives.

@@ -5,7 +5,7 @@
 Use [build-installer.ps1](/C:/dev/scenemax_desktop/INNO-SETUP/build-installer.ps1). It does four things in order:
 
 1. Builds the desktop fat JAR and target-specific projector artifacts with Gradle.
-2. Regenerates `LAUNCH4J-PROJECT\scenemax3d.exe` from the current fat JAR.
+2. Regenerates `build\native-launcher\scenemax3d.exe` from the native launcher stub and current fat JAR.
 3. Compiles [scenemax-setup-project.iss](/C:/dev/scenemax_desktop/INNO-SETUP/scenemax-setup-project.iss) with Inno Setup.
 4. Signs the generated app EXE and final setup EXE if you pass a PFX certificate.
 
@@ -32,7 +32,7 @@ The generated installer is written to `INNO-SETUP\Output`.
 
 [create-dev-code-signing-cert.ps1](/C:/dev/scenemax_desktop/INNO-SETUP/create-dev-code-signing-cert.ps1) creates a self-signed development certificate for local testing. It proves the signing pipeline works, but it is not a production-trusted certificate.
 
-The Windows build script signs with the bundled `jsign` tool and a PKCS#12/PFX certificate. That works well for local/dev certificates and also supports production certificates when you replace the PFX and alias.
+The Windows build script signs with `signtool.exe` and a PKCS#12/PFX certificate. That works well for local/dev certificates and also supports production certificates when you replace the PFX.
 
 For production releases you should replace it with a real code-signing certificate from a trusted CA. Otherwise Windows SmartScreen and other machines will still warn users.
 
@@ -53,18 +53,16 @@ Examples:
 ```
 
 These scripts package the equivalent app payload for jpackage. Windows uses the
-Launch4j-wrapped `scenemax3d.exe` instead of installing `scenemax_desktop.jar`
+native `scenemax3d.exe` launcher instead of installing `scenemax_desktop.jar`
 as a separate file.
 
 - `scenemax_projector-windows.jar`, `scenemax_projector-linux.jar`, `scenemax_projector-macos.jar`
-- `Launch4j`
 - `resources`
 - `macro`
 - `export_targets/android_native.zip`
 
 ## Notable installer changes
 
-- The Windows installer keeps the bundled `Launch4j` toolchain because the IDE uses it later to generate EXE files.
 - The installer does not seed `data\scenemax3d.db`; the app creates it on first run.
 - It installs per-user under `%LOCALAPPDATA%\Programs\SceneMax3D` instead of writing into `Program Files`.
 - It keeps the app working directory as `{app}`, which matches the current runtime's use of `launcher*.jar`, `build_games`, and other relative paths.

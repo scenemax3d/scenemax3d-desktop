@@ -208,7 +208,7 @@ third_party/Effekseer/       -- Local Effekseer source/sample corpus used by the
 | Scripting | Custom DSL via ANTLR4 |
 | Build System | Gradle |
 | Code Editor | RSyntaxTextArea |
-| Packaging | Shadow JAR, Launch4J, Web Start bundle generation |
+| Packaging | Shadow JAR, native Zig launcher, Web Start bundle generation |
 
 ## Third-Party Libraries
 
