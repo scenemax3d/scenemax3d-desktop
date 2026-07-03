@@ -1,3 +1,2 @@
-var object_types = ["Sinbad", "Ninja", "Dragon"]
-m => (object_types[rnd(3)])
-m.turn left 360 in 5 seconds
+
+

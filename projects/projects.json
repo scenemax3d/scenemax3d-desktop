@@ -20,11 +20,11 @@
         {
             "path": "projects/test1",
             "itchWindowsChannel": "",
-            "selectedNode": "logic.java",
+            "selectedNode": "main",
             "itchGamePage": "",
             "name": "test1",
             "itchButlerPath": "",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test1\\scripts\\4play\\logic",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test1\\scripts\\4play",
             "itchMacChannel": "",
             "itchLinuxChannel": ""
         },
@@ -177,5 +177,5 @@
             "itchLinuxChannel": ""
         }
     ],
-    "selectedProject": "test1"
+    "selectedProject": "fighting game project"
 }
