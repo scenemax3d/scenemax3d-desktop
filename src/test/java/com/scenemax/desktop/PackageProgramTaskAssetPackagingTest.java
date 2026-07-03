@@ -5,9 +5,12 @@ import org.junit.Test;
 import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
@@ -123,6 +126,66 @@ public class PackageProgramTaskAssetPackagingTest {
         assertFalse(Files.exists(deployRoot.resolve("animations/idle/idle.j3o")));
         assertEquals(1, packaged.length());
         assertEquals("kick", packaged.getJSONObject(0).getString("name"));
+
+        deleteDirectory(tempDir.toFile());
+    }
+
+    @Test
+    public void runtimeModuleSetKeepsJdepsModulesAndSceneMaxDesktopGuards() {
+        LinkedHashSet<String> modules = PackageProgramTask.buildRuntimeModuleSet(
+                "Warning: ignored optional dependency\njava.base,java.xml,java.naming\n");
+
+        assertTrue(modules.contains("java.base"));
+        assertTrue(modules.contains("java.xml"));
+        assertTrue(modules.contains("java.naming"));
+        assertTrue(modules.contains("java.desktop"));
+        assertTrue(modules.contains("java.logging"));
+        assertTrue(modules.contains("jdk.charsets"));
+        assertTrue(modules.contains("jdk.unsupported"));
+    }
+
+    @Test
+    public void embeddedRuntimeLauncherUsesBundledJava() throws Exception {
+        PackageProgramTask.PackageOptions options = new PackageProgramTask.PackageOptions(
+                null, null, null,
+                "", "", "", "",
+                false, false, false,
+                null, "", "", "",
+                false, true,
+                "", "", "", "", "", ""
+        );
+        PackageProgramTask task = new PackageProgramTask("", "", null, options, () -> {}, () -> {});
+
+        Method method = PackageProgramTask.class.getDeclaredMethod("createLauncherScript", String.class, boolean.class);
+        method.setAccessible(true);
+        String launcher = (String) method.invoke(task, "MyGame", false);
+
+        assertTrue(launcher.contains("runtime/bin/java"));
+        assertTrue(launcher.contains("-jar \"MyGame.jar\""));
+        assertFalse(launcher.contains("\njava -XX:MaxDirectMemorySize"));
+    }
+
+    @Test
+    public void writesSelfExtractPayloadWithLittleEndianEntryTable() throws Exception {
+        Path tempDir = Files.createTempDirectory("self-extract-payload");
+        Path payloadRoot = tempDir.resolve("payload");
+        Files.createDirectories(payloadRoot.resolve("runtime/bin"));
+        Files.writeString(payloadRoot.resolve("scenemax3d_scene.jar"), "jar-data", StandardCharsets.UTF_8);
+        Files.writeString(payloadRoot.resolve("runtime/bin/java.exe"), "java-data", StandardCharsets.UTF_8);
+
+        PackageProgramTask task = new PackageProgramTask("", "", null, null, () -> {}, () -> {});
+        Method method = PackageProgramTask.class.getDeclaredMethod("writeSelfExtractPayload", File.class, File.class);
+        method.setAccessible(true);
+        File payloadFile = tempDir.resolve("payload.smxp").toFile();
+        method.invoke(task, payloadRoot.toFile(), payloadFile);
+
+        byte[] bytes = Files.readAllBytes(payloadFile.toPath());
+        assertEquals("SMXPKG1", new String(bytes, 0, 7, StandardCharsets.US_ASCII));
+        int entryCount = ByteBuffer.wrap(bytes, 7, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
+        assertTrue(entryCount >= 4);
+        String payloadText = new String(bytes, StandardCharsets.ISO_8859_1);
+        assertTrue(payloadText.contains("scenemax3d_scene.jar"));
+        assertTrue(payloadText.contains("runtime/bin/java.exe"));
 
         deleteDirectory(tempDir.toFile());
     }

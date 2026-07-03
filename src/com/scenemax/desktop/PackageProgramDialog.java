@@ -31,6 +31,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
     private final JCheckBox chkGenerateSelfSigned = new JCheckBox("Generate free self-signed certificate if missing", false);
     private final JCheckBox chkShowAdvancedWebOptions = new JCheckBox("Show advanced signing options", false);
     private final JCheckBox chkUploadToItch = new JCheckBox("Automatically upload desktop builds to itch.io with butler", false);
+    private final JCheckBox chkEmbedMinimalJavaRuntime = new JCheckBox("Embed minimal Java runtime with desktop packages", false);
     private final JTextField txtKeystorePath = new JTextField();
     private final JTextField txtKeystoreAlias = new JTextField();
     private final JPasswordField txtKeystorePassword = new JPasswordField();
@@ -83,6 +84,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         chkLinux.addActionListener(e -> updatePlatformSections());
         chkMac.addActionListener(e -> updatePlatformSections());
         chkWebStart.addActionListener(e -> updatePlatformSections());
+        chkEmbedMinimalJavaRuntime.addActionListener(e -> updatePlatformSections());
         chkSignWebStart.addActionListener(e -> updatePlatformSections());
         chkShowAdvancedWebOptions.addActionListener(e -> updatePlatformSections());
         addWindowListener(new java.awt.event.WindowAdapter() {
@@ -123,6 +125,11 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         targetPanel.add(chkLinux);
         targetPanel.add(chkMac);
         targetPanel.add(chkWebStart);
+        targetPanel.add(chkEmbedMinimalJavaRuntime);
+        JLabel runtimeHint = new JLabel("<html>Uses jdeps + jlink to build the smallest Java image needed by the packaged SceneMax/JME runtime. Requires a JDK with jlink for each embedded desktop target.</html>");
+        runtimeHint.setForeground(new Color(92, 92, 92));
+        runtimeHint.setBorder(BorderFactory.createEmptyBorder(2, 20, 0, 0));
+        targetPanel.add(runtimeHint);
         center.add(targetPanel);
         center.add(Box.createVerticalStrut(8));
 
@@ -323,6 +330,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         buttonCancel.setText("Cancel");
         loadWebStartDefaults();
         loadItchDefaults();
+        loadRuntimeDefaults();
         updatePlatformSections();
     }
 
@@ -342,6 +350,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         chkSignWebStart.setEnabled(enabled);
         chkGenerateSelfSigned.setEnabled(enabled);
         chkUploadToItch.setEnabled(enabled);
+        chkEmbedMinimalJavaRuntime.setEnabled(enabled);
         txtKeystorePath.setEnabled(enabled);
         txtKeystoreAlias.setEnabled(enabled);
         txtKeystorePassword.setEnabled(enabled);
@@ -480,6 +489,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
             AppDB.getInstance().setParam("webstart_remote_folder", webRemoteFolder);
             AppDB.getInstance().setParam("webstart_keystore_path", keystorePath);
             AppDB.getInstance().setParam("webstart_keystore_alias", keystoreAlias);
+            AppDB.getInstance().setParam("package_embed_minimal_java_runtime", chkEmbedMinimalJavaRuntime.isSelected() ? "1" : "0");
 
             setTargetsEnabled(false);
             buttonPackage.setEnabled(false);
@@ -507,6 +517,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
                             storePassword,
                             keyPassword,
                             chkUploadToItch.isSelected(),
+                            chkEmbedMinimalJavaRuntime.isSelected(),
                             butlerPath,
                             itchTarget,
                             itchApiKey,
@@ -632,6 +643,8 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         windowsPanel.setVisible(chkWindows.isSelected());
         linuxPanel.setVisible(chkLinux.isSelected());
         macPanel.setVisible(chkMac.isSelected());
+        chkEmbedMinimalJavaRuntime.setEnabled(chkWindows.isEnabled()
+                && (chkWindows.isSelected() || chkLinux.isSelected() || chkMac.isSelected()));
         boolean showWeb = chkWebStart.isSelected();
         webPanel.setVisible(showWeb);
         signingPanel.setVisible(showWeb && chkShowAdvancedWebOptions.isSelected() && chkSignWebStart.isSelected());
@@ -687,6 +700,11 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
 
         String authMode = Util.getProjectItchApiKey(project).length() > 0 ? "project API key saved" : (ItchIoHelper.hasLocalCredentials() ? "using local butler login" : "authentication still needed");
         lblItchInfo.setText("<html>Configured target: <b>" + savedTarget + "</b> (" + authMode + ").</html>");
+    }
+
+    private void loadRuntimeDefaults() {
+        String saved = AppDB.getInstance().getParam("package_embed_minimal_java_runtime");
+        chkEmbedMinimalJavaRuntime.setSelected("1".equals(saved) || "true".equalsIgnoreCase(saved));
     }
 
     private String readSavedOrConfig(String key, String fallback) {

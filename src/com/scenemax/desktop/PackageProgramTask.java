@@ -18,6 +18,9 @@ import javax.swing.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -47,6 +50,19 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
     private static final float ESTIMATED_FILES_COUNT = 6610;// total files packed in an executable scene
     private static final String SCENE_JAR_NAME = "scenemax3d_scene.jar";
+    private static final String EMBEDDED_RUNTIME_DIR_NAME = "runtime";
+    private static final String SELF_EXTRACT_PAYLOAD_JAR_NAME = "scenemax3d_scene.jar";
+    private static final byte[] SELF_EXTRACT_PAYLOAD_MAGIC = "SMXPKG1".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] SELF_EXTRACT_FOOTER_MAGIC = "SCENEMAX_PAYLOAD".getBytes(StandardCharsets.US_ASCII);
+    private static final Set<String> SCENEMAX_RUNTIME_GUARD_MODULES = new LinkedHashSet<>();
+
+    static {
+        SCENEMAX_RUNTIME_GUARD_MODULES.add("java.desktop");
+        SCENEMAX_RUNTIME_GUARD_MODULES.add("java.logging");
+        SCENEMAX_RUNTIME_GUARD_MODULES.add("jdk.charsets");
+        SCENEMAX_RUNTIME_GUARD_MODULES.add("jdk.unsupported");
+    }
+
     private File scriptFolder=null;
     private String prg;
     private Runnable finish;
@@ -99,6 +115,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         public final String keystorePassword;
         public final String keyPassword;
         public final boolean uploadToItch;
+        public final boolean embedMinimalJavaRuntime;
         public final String itchButlerPath;
         public final String itchGameTarget;
         public final String itchApiKey;
@@ -111,7 +128,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                               String webRemoteFolder, boolean uploadWebStart, boolean signWebStart,
                               boolean generateSelfSignedCertificate, File keystoreFile,
                               String keystoreAlias, String keystorePassword, String keyPassword,
-                              boolean uploadToItch, String itchButlerPath, String itchGameTarget,
+                              boolean uploadToItch, boolean embedMinimalJavaRuntime,
+                              String itchButlerPath, String itchGameTarget,
                               String itchApiKey, String itchWindowsChannel, String itchLinuxChannel,
                               String itchMacChannel) {
             this.windowsIcon = windowsIcon;
@@ -129,6 +147,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             this.keystorePassword = keystorePassword == null ? "" : keystorePassword;
             this.keyPassword = keyPassword == null || keyPassword.trim().length() == 0 ? this.keystorePassword : keyPassword;
             this.uploadToItch = uploadToItch;
+            this.embedMinimalJavaRuntime = embedMinimalJavaRuntime;
             this.itchButlerPath = itchButlerPath == null ? "" : itchButlerPath.trim();
             this.itchGameTarget = itchGameTarget == null ? "" : itchGameTarget.trim();
             this.itchApiKey = itchApiKey == null ? "" : itchApiKey.trim();
@@ -142,7 +161,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         this.prg=prg;
         this.finish=finish;
         this.canceled=canceled;
-        this.options = options == null ? new PackageOptions(null, null, null, "", "", "", "", false, false, false, null, "", "", "", false, "", "", "", "", "", "") : options;
+        this.options = options == null ? new PackageOptions(null, null, null, "", "", "", "", false, false, false, null, "", "", "", false, false, "", "", "", "", "", "") : options;
         this.targets = targets == null || targets.isEmpty()
                 ? EnumSet.of(PackageTarget.WINDOWS)
                 : EnumSet.copyOf(targets);
@@ -577,35 +596,51 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         if (targets.contains(PackageTarget.WINDOWS)) {
             logPackage("Creating Windows scene JAR.");
             writeSceneJarForTarget(PackageTarget.WINDOWS, resources);
-            File windowsExe = prepareWindowsExecutable(gameName);
-            if (windowsExe != null && windowsExe.exists()) {
-                producedArtifacts.add(windowsExe);
-                logPackage("Windows artifact: " + windowsExe.getAbsolutePath() + " (" + windowsExe.length() + " bytes)");
+            File windowsArtifact = prepareWindowsExecutable(gameName);
+            if (windowsArtifact != null && windowsArtifact.exists()) {
+                producedArtifacts.add(windowsArtifact);
+                logPackage("Windows artifact: " + windowsArtifact.getAbsolutePath() + " (" + windowsArtifact.length() + " bytes)");
             }
         }
 
         if (targets.contains(PackageTarget.LINUX)) {
             logPackage("Creating Linux scene JAR.");
             writeSceneJarForTarget(PackageTarget.LINUX, resources);
-            File linuxFolder = prepareScriptPackage(gameName, "linux", gameName + ".sh", false);
-            File linuxZip = createPlatformZip(linuxFolder, gameName + "_linux.zip");
-            if (linuxZip != null && linuxZip.exists()) {
-                producedArtifacts.add(linuxZip);
-                logPackage("Linux artifact: " + linuxZip.getAbsolutePath() + " (" + linuxZip.length() + " bytes)");
+            if (options.embedMinimalJavaRuntime) {
+                File linuxArtifact = prepareSelfExtractingPackage(PackageTarget.LINUX, gameName, "linux", gameName, true);
+                if (linuxArtifact != null && linuxArtifact.exists()) {
+                    producedArtifacts.add(linuxArtifact);
+                    logPackage("Linux artifact: " + linuxArtifact.getAbsolutePath() + " (" + linuxArtifact.length() + " bytes)");
+                }
+            } else {
+                File linuxFolder = prepareScriptPackage(PackageTarget.LINUX, gameName, "linux", gameName + ".sh", false);
+                File linuxZip = createPlatformZip(linuxFolder, gameName + "_linux.zip");
+                if (linuxZip != null && linuxZip.exists()) {
+                    producedArtifacts.add(linuxZip);
+                    logPackage("Linux artifact: " + linuxZip.getAbsolutePath() + " (" + linuxZip.length() + " bytes)");
+                }
+                deletePlatformArtifactsExceptZip(linuxFolder, linuxZip);
             }
-            deletePlatformArtifactsExceptZip(linuxFolder, linuxZip);
         }
 
         if (targets.contains(PackageTarget.MAC_OSX)) {
             logPackage("Creating macOS scene JAR.");
             writeSceneJarForTarget(PackageTarget.MAC_OSX, resources);
-            File macFolder = prepareScriptPackage(gameName, "macos", gameName + ".command", true);
-            File macZip = createPlatformZip(macFolder, gameName + "_macos.zip");
-            if (macZip != null && macZip.exists()) {
-                producedArtifacts.add(macZip);
-                logPackage("macOS artifact: " + macZip.getAbsolutePath() + " (" + macZip.length() + " bytes)");
+            if (options.embedMinimalJavaRuntime) {
+                File macArtifact = prepareSelfExtractingPackage(PackageTarget.MAC_OSX, gameName, "macos", gameName, true);
+                if (macArtifact != null && macArtifact.exists()) {
+                    producedArtifacts.add(macArtifact);
+                    logPackage("macOS artifact: " + macArtifact.getAbsolutePath() + " (" + macArtifact.length() + " bytes)");
+                }
+            } else {
+                File macFolder = prepareScriptPackage(PackageTarget.MAC_OSX, gameName, "macos", gameName + ".command", true);
+                File macZip = createPlatformZip(macFolder, gameName + "_macos.zip");
+                if (macZip != null && macZip.exists()) {
+                    producedArtifacts.add(macZip);
+                    logPackage("macOS artifact: " + macZip.getAbsolutePath() + " (" + macZip.length() + " bytes)");
+                }
+                deletePlatformArtifactsExceptZip(macFolder, macZip);
             }
-            deletePlatformArtifactsExceptZip(macFolder, macZip);
         }
 
         if (targets.contains(PackageTarget.WEB_START)) {
@@ -714,19 +749,24 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         String gameName = getGameName();
 
         if (targets.contains(PackageTarget.WINDOWS)) {
-            File windowsArtifact = new File(new File(outputFolder, "windows"), gameName + ".exe");
+            File windowsFolder = new File(outputFolder, "windows");
+            File windowsArtifact = new File(windowsFolder, gameName + ".exe");
             uploadArtifactToItch(butlerCommand, windowsArtifact, ItchIoHelper.defaultChannel("windows", options.itchWindowsChannel), "Windows");
             uploadedAny = true;
         }
 
         if (targets.contains(PackageTarget.LINUX)) {
-            File linuxArtifact = new File(new File(outputFolder, "linux"), gameName + "_linux.zip");
+            File linuxArtifact = options.embedMinimalJavaRuntime
+                    ? new File(new File(outputFolder, "linux"), gameName)
+                    : new File(new File(outputFolder, "linux"), gameName + "_linux.zip");
             uploadArtifactToItch(butlerCommand, linuxArtifact, ItchIoHelper.defaultChannel("linux", options.itchLinuxChannel), "Linux");
             uploadedAny = true;
         }
 
         if (targets.contains(PackageTarget.MAC_OSX)) {
-            File macArtifact = new File(new File(outputFolder, "macos"), gameName + "_macos.zip");
+            File macArtifact = options.embedMinimalJavaRuntime
+                    ? new File(new File(outputFolder, "macos"), gameName)
+                    : new File(new File(outputFolder, "macos"), gameName + "_macos.zip");
             uploadArtifactToItch(butlerCommand, macArtifact, ItchIoHelper.defaultChannel("macos", options.itchMacChannel), "macOS");
             uploadedAny = true;
         }
@@ -792,47 +832,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     }
 
     private File prepareWindowsExecutable(String gameName) throws IOException {
-        File buildFolder = new File("build_games");
-        if(!buildFolder.exists()) {
-            buildFolder.mkdir();
-        }
-
-        List<String> command = new ArrayList<>();
-        command.add("java");
-        command.add("-XX:MaxDirectMemorySize=1024m");
-
-        String jvmArch = AppDB.getInstance().getParam("projector_jvm_arch");
-        if (jvmArch != null && (jvmArch.equals("64") || jvmArch.equals("32"))) {
-            command.add("-d" + jvmArch);
-        }
-
-        command.add("-jar");
-
-        String launcherName = "Launch4j\\launch4j.jar";
-        command.add(launcherName);
-        File launch4jConfig = createLaunch4jConfig(gameName);
-        command.add(launch4jConfig.getAbsolutePath());
-
-        try {
-            runCommand(command, null, "Launch4j", Collections.emptyMap(), "launch4j:");
-        } catch (Exception e) {
-            throw failPackaging("Launch4j failed while creating the Windows executable.", e);
-        } finally {
-            if (launch4jConfig.exists()) {
-                launch4jConfig.delete();
-            }
-        }
-
-        File windowsFolder = new File(outputFolder, "windows");
-        if (!windowsFolder.exists()) {
-            windowsFolder.mkdirs();
-        }
-
-        File exePath = new File(windowsFolder, gameName + ".exe");
-        if (!exePath.exists()) {
-            throw failPackaging("Windows executable was not created: " + exePath.getAbsolutePath());
-        }
-
+        File exePath = prepareSelfExtractingPackage(PackageTarget.WINDOWS, gameName, "windows", gameName + ".exe", options.embedMinimalJavaRuntime);
+        File windowsFolder = exePath.getParentFile();
         copyPlatformIcon(options.windowsIcon, windowsFolder, "icon");
         return exePath;
     }
@@ -1023,12 +1024,16 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         return Math.round((bytes / 1024.0 / 1024.0) * 100.0) / 100.0;
     }
 
-    private File prepareScriptPackage(String gameName, String platformFolderName, String launcherFileName, boolean macLauncher) throws IOException {
+    private File prepareScriptPackage(PackageTarget target, String gameName, String platformFolderName, String launcherFileName, boolean macLauncher) throws IOException {
         File platformFolder = new File(outputFolder, platformFolderName);
         FileUtils.forceMkdir(platformFolder);
 
         File targetJar = new File(platformFolder, gameName + ".jar");
         FileUtils.copyFile(new File(SCENE_JAR_NAME), targetJar);
+
+        if (options.embedMinimalJavaRuntime) {
+            createMinimalJavaRuntime(target, targetJar, new File(platformFolder, EMBEDDED_RUNTIME_DIR_NAME));
+        }
 
         File launcherFile = new File(platformFolder, launcherFileName);
         String launcherText = createLauncherScript(gameName, macLauncher);
@@ -1053,7 +1058,12 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         sb.append("#!/bin/sh").append(lineBreak);
         sb.append("SCRIPT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"").append(lineBreak);
         sb.append("cd \"$SCRIPT_DIR\"").append(lineBreak);
-        sb.append("java -XX:MaxDirectMemorySize=1024m -jar \"").append(gameName).append(".jar\"").append(lineBreak);
+        if (options.embedMinimalJavaRuntime) {
+            sb.append("JAVA_CMD=\"$SCRIPT_DIR/").append(EMBEDDED_RUNTIME_DIR_NAME).append("/bin/java\"").append(lineBreak);
+            sb.append("\"$JAVA_CMD\" -XX:MaxDirectMemorySize=1024m -jar \"").append(gameName).append(".jar\"").append(lineBreak);
+        } else {
+            sb.append("java -XX:MaxDirectMemorySize=1024m -jar \"").append(gameName).append(".jar\"").append(lineBreak);
+        }
         if (macLauncher) {
             sb.append("exit $?").append(lineBreak);
         }
@@ -1063,7 +1073,16 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     private String createLauncherReadme(String launcherFileName, boolean macLauncher) {
         StringBuilder sb = new StringBuilder();
         sb.append("SceneMax packaged game").append("\n\n");
-        sb.append("Requirements: Java 11 or newer installed on the target machine.").append("\n\n");
+        if (options.embedMinimalJavaRuntime) {
+            sb.append("Requirements: none. This package includes a minimal Java runtime generated with jlink.").append("\n\n");
+        } else {
+            sb.append("Requirements: Java 11 or newer installed on the target machine.").append("\n\n");
+        }
+        if (launcherFileName.toLowerCase(Locale.ROOT).endsWith(".exe")) {
+            sb.append("Run: ").append(launcherFileName).append("\n");
+            sb.append("Keep the runtime folder beside the executable when sharing this package.\n");
+            return sb.toString();
+        }
         if (macLauncher) {
             sb.append("Run: ./").append(launcherFileName).append("\n");
             sb.append("If needed, make it executable first with: chmod +x ").append(launcherFileName).append("\n");
@@ -1072,6 +1091,482 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             sb.append("If needed, make it executable first with: chmod +x ").append(launcherFileName).append("\n");
         }
         return sb.toString();
+    }
+
+    private File prepareSelfExtractingPackage(PackageTarget target, String gameName, String platformFolderName, String outputFileName, boolean includeRuntime) throws IOException {
+        File platformFolder = new File(outputFolder, platformFolderName);
+        FileUtils.forceMkdir(platformFolder);
+
+        File payloadRoot = new File(platformFolder, "selfextract-payload");
+        if (payloadRoot.exists()) {
+            FileUtils.deleteDirectory(payloadRoot);
+        }
+        FileUtils.forceMkdir(payloadRoot);
+
+        File payloadSceneJar = new File(payloadRoot, SELF_EXTRACT_PAYLOAD_JAR_NAME);
+        FileUtils.copyFile(new File(SCENE_JAR_NAME), payloadSceneJar);
+        if (includeRuntime) {
+            createMinimalJavaRuntime(target, payloadSceneJar, new File(payloadRoot, EMBEDDED_RUNTIME_DIR_NAME));
+        }
+
+        File outputFile = new File(platformFolder, outputFileName);
+        createSelfExtractingExecutable(target, payloadRoot, outputFile);
+        if (target != PackageTarget.WINDOWS) {
+            outputFile.setExecutable(true, false);
+        }
+
+        FileUtils.deleteDirectory(payloadRoot);
+        appendCompletionNote("Created single-file " + target + " executable: " + outputFile.getAbsolutePath()
+                + (includeRuntime ? "." : " (requires Java 11 or newer on the target machine)."));
+        return outputFile;
+    }
+
+    private void createSelfExtractingExecutable(PackageTarget target, File payloadRoot, File outputFile) throws IOException {
+        File stub = resolveSelfExtractingLauncherStub(target);
+        File payloadFile = File.createTempFile("scenemax-selfextract-", ".smxp", outputFolder == null ? new File("build_games") : outputFolder);
+        try {
+            writeSelfExtractPayload(payloadRoot, payloadFile);
+            byte[] payloadHash = sha256(payloadFile);
+            File parent = outputFile.getParentFile();
+            if (parent != null) {
+                FileUtils.forceMkdir(parent);
+            }
+            try (OutputStream out = new BufferedOutputStream(new FileOutputStream(outputFile))) {
+                copyFileToStream(stub, out);
+                copyFileToStream(payloadFile, out);
+                writeLongLE(out, payloadFile.length());
+                out.write(payloadHash);
+                out.write(SELF_EXTRACT_FOOTER_MAGIC);
+            }
+            logPackage("Self-extracting launcher: " + outputFile.getAbsolutePath()
+                    + " (stub=" + stub.length() + " bytes, payload=" + payloadFile.length() + " bytes)");
+        } finally {
+            if (payloadFile.exists()) {
+                payloadFile.delete();
+            }
+        }
+    }
+
+    private File resolveSelfExtractingLauncherStub(PackageTarget target) throws IOException {
+        File stub = configuredSelfExtractingStub(target);
+        if (stub.isFile()) {
+            return stub;
+        }
+
+        File generated = new File("build/native-launcher/" + nativeLauncherStubName(target));
+        if (generated.isFile()) {
+            return generated;
+        }
+
+        File zigSource = new File("tools/native-launcher/zig/scenemax_launcher.zig");
+        if (!zigSource.isFile()) {
+            throw failPackaging("Missing SceneMax native launcher source: " + zigSource.getAbsolutePath());
+        }
+
+        File zig = findToolOnPath("zig" + (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win") ? ".exe" : ""));
+        if (zig == null) {
+            throw failPackaging("Missing native launcher stub for " + target + ": " + stub.getAbsolutePath()
+                    + ". Install Zig or bundle a prebuilt stub in tools/native-launcher/bin.");
+        }
+
+        File parent = generated.getParentFile();
+        if (parent != null) {
+            FileUtils.forceMkdir(parent);
+        }
+        List<String> command = new ArrayList<>();
+        command.add(zig.getAbsolutePath());
+        command.add("build-exe");
+        command.add("-O");
+        command.add("ReleaseSmall");
+        command.add("-target");
+        command.add(zigTarget(target));
+        if (target == PackageTarget.WINDOWS) {
+            command.add("--subsystem");
+            command.add("windows");
+        }
+        command.add("-femit-bin=" + generated.getAbsolutePath());
+        command.add(zigSource.getAbsolutePath());
+        runCommand(command, null, "zig", Collections.emptyMap(), "zig:");
+        if (!generated.isFile()) {
+            throw failPackaging("Zig did not create native launcher stub: " + generated.getAbsolutePath());
+        }
+        return generated;
+    }
+
+    private File configuredSelfExtractingStub(PackageTarget target) {
+        String configured = AppConfig.get(nativeLauncherConfigKey(target), "").trim();
+        if (configured.length() > 0) {
+            return new File(configured);
+        }
+        return new File("tools/native-launcher/bin/" + nativeLauncherStubName(target));
+    }
+
+    private String nativeLauncherConfigKey(PackageTarget target) {
+        switch (target) {
+            case WINDOWS:
+                return "package_native_launcher_stub_windows";
+            case LINUX:
+                return "package_native_launcher_stub_linux";
+            case MAC_OSX:
+                return "package_native_launcher_stub_macos";
+            case WEB_START:
+            default:
+                return "package_native_launcher_stub_windows";
+        }
+    }
+
+    private String nativeLauncherStubName(PackageTarget target) {
+        switch (target) {
+            case WINDOWS:
+                return "windows-x64/scenemax-selfextract.exe";
+            case LINUX:
+                return "linux-x64/scenemax-selfextract";
+            case MAC_OSX:
+                return "macos-x64/scenemax-selfextract";
+            case WEB_START:
+            default:
+                return "windows-x64/scenemax-selfextract.exe";
+        }
+    }
+
+    private String zigTarget(PackageTarget target) {
+        switch (target) {
+            case WINDOWS:
+                return "x86_64-windows";
+            case LINUX:
+                return "x86_64-linux";
+            case MAC_OSX:
+                return "x86_64-macos";
+            case WEB_START:
+            default:
+                return "x86_64-windows";
+        }
+    }
+
+    private void writeSelfExtractPayload(File payloadRoot, File payloadFile) throws IOException {
+        List<PayloadEntry> entries = collectPayloadEntries(payloadRoot);
+        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(payloadFile))) {
+            out.write(SELF_EXTRACT_PAYLOAD_MAGIC);
+            writeIntLE(out, entries.size());
+            for (PayloadEntry entry : entries) {
+                byte[] pathBytes = entry.relativePath.getBytes(StandardCharsets.UTF_8);
+                out.write(entry.directory ? 1 : 0);
+                out.write(entry.executable ? 1 : 0);
+                writeIntLE(out, pathBytes.length);
+                writeLongLE(out, entry.directory ? 0L : entry.file.length());
+                out.write(pathBytes);
+                if (!entry.directory) {
+                    copyFileToStream(entry.file, out);
+                }
+            }
+        }
+    }
+
+    private List<PayloadEntry> collectPayloadEntries(File root) throws IOException {
+        List<PayloadEntry> entries = new ArrayList<>();
+        collectPayloadEntries(root, root, entries);
+        entries.sort(Comparator.comparing((PayloadEntry entry) -> entry.relativePath));
+        return entries;
+    }
+
+    private void collectPayloadEntries(File root, File current, List<PayloadEntry> entries) throws IOException {
+        File[] children = current.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File child : children) {
+            String relativePath = toRelativePath(child.getCanonicalPath(), root.getCanonicalFile()).replace('\\', '/');
+            if (relativePath.length() == 0) {
+                continue;
+            }
+            if (child.isDirectory()) {
+                entries.add(new PayloadEntry(child, relativePath, true, false));
+                collectPayloadEntries(root, child, entries);
+            } else if (child.isFile()) {
+                boolean executable = child.canExecute()
+                        || relativePath.endsWith("/bin/java")
+                        || relativePath.endsWith("/bin/java.exe")
+                        || relativePath.endsWith("/bin/javaw.exe");
+                entries.add(new PayloadEntry(child, relativePath, false, executable));
+            }
+        }
+    }
+
+    private byte[] sha256(File file) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (InputStream in = new DigestInputStream(new BufferedInputStream(new FileInputStream(file)), digest)) {
+                byte[] buffer = new byte[64 * 1024];
+                while (in.read(buffer) != -1) {
+                    // DigestInputStream updates the digest.
+                }
+            }
+            return digest.digest();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IOException("SHA-256 is not available in this Java runtime.", e);
+        }
+    }
+
+    private void copyFileToStream(File file, OutputStream out) throws IOException {
+        try (InputStream in = new BufferedInputStream(new FileInputStream(file))) {
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+        }
+    }
+
+    private void writeIntLE(OutputStream out, int value) throws IOException {
+        out.write(value & 0xff);
+        out.write((value >>> 8) & 0xff);
+        out.write((value >>> 16) & 0xff);
+        out.write((value >>> 24) & 0xff);
+    }
+
+    private void writeLongLE(OutputStream out, long value) throws IOException {
+        for (int i = 0; i < 8; i++) {
+            out.write((int) ((value >>> (i * 8)) & 0xff));
+        }
+    }
+
+    private static final class PayloadEntry {
+        final File file;
+        final String relativePath;
+        final boolean directory;
+        final boolean executable;
+
+        PayloadEntry(File file, String relativePath, boolean directory, boolean executable) {
+            this.file = file;
+            this.relativePath = relativePath;
+            this.directory = directory;
+            this.executable = executable;
+        }
+    }
+
+    private File createMinimalJavaRuntime(PackageTarget target, File appJar, File runtimeDir) throws IOException {
+        if (appJar == null || !appJar.isFile()) {
+            throw failPackaging("Cannot build a minimal Java runtime because the packaged JAR is missing.");
+        }
+
+        File jdkHome = resolveJdkHomeForTarget(target);
+        File jmodsDir = new File(jdkHome, "jmods");
+        if (!jmodsDir.isDirectory()) {
+            throw failPackaging("Cannot build a minimal Java runtime for " + target + ". The configured JDK has no jmods folder: " + jdkHome.getAbsolutePath());
+        }
+
+        File jlink = resolveCurrentJdkTool("jlink");
+        if (jlink == null) {
+            throw failPackaging("Cannot build a minimal Java runtime because jlink was not found. Run SceneMax with a JDK, not a JRE.");
+        }
+
+        if (runtimeDir.exists()) {
+            FileUtils.deleteDirectory(runtimeDir);
+        }
+        File parent = runtimeDir.getParentFile();
+        if (parent != null) {
+            FileUtils.forceMkdir(parent);
+        }
+
+        updateStatus("Analyzing Java runtime modules for " + target + "...");
+        LinkedHashSet<String> modules = inferRuntimeModules(appJar);
+        String moduleCsv = String.join(",", modules);
+        logPackage("Minimal Java modules for " + target + ": " + moduleCsv);
+
+        updateStatus("Building minimal Java runtime for " + target + "...");
+        List<String> command = new ArrayList<>();
+        command.add(jlink.getAbsolutePath());
+        command.add("--module-path");
+        command.add(jmodsDir.getAbsolutePath());
+        command.add("--add-modules");
+        command.add(moduleCsv);
+        command.add("--output");
+        command.add(runtimeDir.getAbsolutePath());
+        command.add("--strip-debug");
+        command.add("--no-header-files");
+        command.add("--no-man-pages");
+        command.add("--compress=2");
+        runCommand(command, null, "jlink", Collections.emptyMap(), "jlink:");
+
+        File javaLauncher = new File(runtimeDir, "bin/java" + windowsExecutableSuffix(target));
+        if (!javaLauncher.isFile()) {
+            throw failPackaging("jlink finished, but the embedded runtime is missing " + javaLauncher.getAbsolutePath());
+        }
+        if (target == PackageTarget.WINDOWS) {
+            File javawLauncher = new File(runtimeDir, "bin/javaw.exe");
+            if (!javawLauncher.isFile()) {
+                throw failPackaging("jlink finished, but the embedded runtime is missing " + javawLauncher.getAbsolutePath());
+            }
+        }
+
+        appendCompletionNote("Embedded minimal Java runtime for " + target + ": "
+                + runtimeDir.getAbsolutePath() + " (" + formatSize(sizeOf(runtimeDir)) + ").");
+        return runtimeDir;
+    }
+
+    private LinkedHashSet<String> inferRuntimeModules(File appJar) throws IOException {
+        File jdeps = resolveCurrentJdkTool("jdeps");
+        if (jdeps == null) {
+            throw failPackaging("Cannot infer Java runtime modules because jdeps was not found. Run SceneMax with a JDK, not a JRE.");
+        }
+
+        List<String> command = new ArrayList<>();
+        command.add(jdeps.getAbsolutePath());
+        command.add("--multi-release");
+        command.add("11");
+        command.add("--ignore-missing-deps");
+        command.add("--print-module-deps");
+        command.add(appJar.getAbsolutePath());
+
+        String output = runCommandCapture(command, null, "jdeps");
+        LinkedHashSet<String> modules = buildRuntimeModuleSet(output);
+        if (modules.isEmpty()) {
+            throw failPackaging("jdeps did not report any Java modules for " + appJar.getAbsolutePath());
+        }
+        return modules;
+    }
+
+    static LinkedHashSet<String> buildRuntimeModuleSet(String jdepsOutput) {
+        LinkedHashSet<String> modules = new LinkedHashSet<>();
+        String detected = extractJdepsModuleCsv(jdepsOutput);
+        if (detected.length() > 0) {
+            for (String module : detected.split(",")) {
+                String trimmed = module.trim();
+                if (trimmed.length() > 0) {
+                    modules.add(trimmed);
+                }
+            }
+        }
+        modules.addAll(SCENEMAX_RUNTIME_GUARD_MODULES);
+        modules.add("java.base");
+        return modules;
+    }
+
+    static String extractJdepsModuleCsv(String jdepsOutput) {
+        if (jdepsOutput == null) {
+            return "";
+        }
+        String[] lines = jdepsOutput.split("\\R");
+        for (int i = lines.length - 1; i >= 0; i--) {
+            String line = lines[i].trim();
+            if (line.length() == 0 || line.startsWith("Warning:") || line.startsWith("Error:")) {
+                continue;
+            }
+            if (line.matches("[A-Za-z0-9_.]+(,[A-Za-z0-9_.]+)*")) {
+                return line;
+            }
+        }
+        return "";
+    }
+
+    private File resolveJdkHomeForTarget(PackageTarget target) throws IOException {
+        String configured = readTargetJdkHome(target);
+        if (configured.length() > 0) {
+            return validateJdkHome(new File(configured), target);
+        }
+
+        File current = resolveCurrentJdkHome();
+        if (target == getCurrentDesktopTarget()) {
+            return validateJdkHome(current, target);
+        }
+
+        throw failPackaging("Embedding a Java runtime for " + target + " requires a matching JDK home. "
+                + "Set " + jdkHomeConfigKey(target) + " in config.properties to a JDK for that platform, or package this target on that OS.");
+    }
+
+    private String readTargetJdkHome(PackageTarget target) {
+        String envName = "SCENEMAX_JLINK_JDK_HOME_" + target.name();
+        String envValue = System.getenv(envName);
+        if (envValue != null && envValue.trim().length() > 0) {
+            return envValue.trim();
+        }
+        return AppConfig.get(jdkHomeConfigKey(target), "").trim();
+    }
+
+    private String jdkHomeConfigKey(PackageTarget target) {
+        switch (target) {
+            case WINDOWS:
+                return "package_jlink_jdk_home_windows";
+            case LINUX:
+                return "package_jlink_jdk_home_linux";
+            case MAC_OSX:
+                return "package_jlink_jdk_home_macos";
+            case WEB_START:
+            default:
+                return "package_jlink_jdk_home_windows";
+        }
+    }
+
+    private File validateJdkHome(File jdkHome, PackageTarget target) throws IOException {
+        if (jdkHome == null || !jdkHome.isDirectory()) {
+            throw failPackaging("Configured JDK home for " + target + " was not found: " + (jdkHome == null ? "(none)" : jdkHome.getAbsolutePath()));
+        }
+        if (!new File(jdkHome, "jmods").isDirectory()) {
+            throw failPackaging("Configured JDK home for " + target + " does not contain jmods: " + jdkHome.getAbsolutePath());
+        }
+        return jdkHome;
+    }
+
+    private File resolveCurrentJdkHome() {
+        File javaHome = new File(System.getProperty("java.home", ""));
+        if (new File(javaHome, "jmods").isDirectory()) {
+            return javaHome;
+        }
+        File parent = javaHome.getParentFile();
+        if (parent != null && new File(parent, "jmods").isDirectory()) {
+            return parent;
+        }
+        return javaHome;
+    }
+
+    private File resolveCurrentJdkTool(String toolName) {
+        String executable = toolName + (isWindowsHost() ? ".exe" : "");
+        File jdkHome = resolveCurrentJdkHome();
+        File tool = new File(new File(jdkHome, "bin"), executable);
+        if (tool.isFile()) {
+            return tool;
+        }
+        File javaHomeTool = new File(new File(System.getProperty("java.home", ""), "bin"), executable);
+        if (javaHomeTool.isFile()) {
+            return javaHomeTool;
+        }
+        return findToolOnPath(executable);
+    }
+
+    private File findToolOnPath(String executable) {
+        String path = System.getenv("PATH");
+        if (path == null || path.trim().length() == 0) {
+            return null;
+        }
+        for (String entry : path.split(Pattern.quote(File.pathSeparator))) {
+            if (entry == null || entry.trim().length() == 0) {
+                continue;
+            }
+            File candidate = new File(entry.trim(), executable);
+            if (candidate.isFile()) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private PackageTarget getCurrentDesktopTarget() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (os.contains("win")) {
+            return PackageTarget.WINDOWS;
+        }
+        if (os.contains("mac")) {
+            return PackageTarget.MAC_OSX;
+        }
+        return PackageTarget.LINUX;
+    }
+
+    private boolean isWindowsHost() {
+        return getCurrentDesktopTarget() == PackageTarget.WINDOWS;
+    }
+
+    private String windowsExecutableSuffix(PackageTarget target) {
+        return target == PackageTarget.WINDOWS ? ".exe" : "";
     }
 
     private File prepareWebStartPackage(String gameName) throws IOException {
@@ -1415,6 +1910,49 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 String text = output.toString().trim();
                 throw new IOException(toolName + " failed with exit code " + exitCode + (text.length() == 0 ? "" : ": " + text));
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException(toolName + " was interrupted.", e);
+        }
+    }
+
+    private String runCommandCapture(List<String> command, File workingDir, String toolName) throws IOException {
+        logPackage("Running " + toolName + ": " + String.join(" ", command));
+        if (workingDir != null) {
+            logPackage(toolName + " working directory: " + workingDir.getAbsolutePath());
+        }
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
+        if (workingDir != null) {
+            processBuilder.directory(workingDir);
+        }
+        processBuilder.redirectErrorStream(true);
+        Process process;
+        try {
+            process = processBuilder.start();
+        } catch (IOException e) {
+            logPackageException("Failed to start " + toolName + ".", e);
+            throw new IOException("Failed to start " + toolName + ". Make sure it is available in PATH.", e);
+        }
+
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line).append('\n');
+                if (line.trim().length() > 0) {
+                    logPackage(toolName + ": " + line);
+                }
+            }
+        }
+
+        try {
+            int exitCode = process.waitFor();
+            logPackage(toolName + " exited with code " + exitCode + ".");
+            if (exitCode != 0) {
+                String text = output.toString().trim();
+                throw new IOException(toolName + " failed with exit code " + exitCode + (text.length() == 0 ? "" : ": " + text));
+            }
+            return output.toString();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException(toolName + " was interrupted.", e);
@@ -2720,64 +3258,6 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
     public File getPackageLogFile() {
         return packageLogFile;
-    }
-
-    private File createLaunch4jConfig(String gameName) throws IOException {
-        File windowsFolder = new File(outputFolder, "windows");
-        if (!windowsFolder.exists()) {
-            windowsFolder.mkdirs();
-        }
-
-        File configFile = File.createTempFile(gameName + "_launch4j_", ".xml");
-        String iconPath = resolveWindowsIconPath();
-        String xml =
-                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-                "<launch4jConfig>\n" +
-                "  <dontWrapJar>false</dontWrapJar>\n" +
-                "  <headerType>gui</headerType>\n" +
-                "  <jar>" + escapeXml(new File(SCENE_JAR_NAME).getAbsolutePath()) + "</jar>\n" +
-                "  <outfile>" + escapeXml(new File(windowsFolder, gameName + ".exe").getAbsolutePath()) + "</outfile>\n" +
-                "  <errTitle></errTitle>\n" +
-                "  <cmdLine></cmdLine>\n" +
-                "  <chdir>.</chdir>\n" +
-                "  <priority>normal</priority>\n" +
-                "  <downloadUrl>https://scenemax3d.com/java-run-time-install/</downloadUrl>\n" +
-                "  <supportUrl>https://www.scenemax3d.com</supportUrl>\n" +
-                "  <stayAlive>false</stayAlive>\n" +
-                "  <restartOnCrash>false</restartOnCrash>\n" +
-                "  <manifest></manifest>\n" +
-                "  <icon>" + escapeXml(iconPath) + "</icon>\n" +
-                "  <jre>\n" +
-                "    <path>%JAVA_HOME%;%PATH%</path>\n" +
-                "    <requiresJdk>false</requiresJdk>\n" +
-                "    <requires64Bit>true</requires64Bit>\n" +
-                "    <minVersion>11.0.21</minVersion>\n" +
-                "    <maxVersion></maxVersion>\n" +
-                "    <opt>-XX:MaxDirectMemorySize=1024m</opt>\n" +
-                "  </jre>\n" +
-                "</launch4jConfig>\n";
-        FileUtils.writeStringToFile(configFile, xml, StandardCharsets.UTF_8);
-        return configFile;
-    }
-
-    private String resolveWindowsIconPath() {
-        if (options.windowsIcon != null && options.windowsIcon.exists() && options.windowsIcon.isFile()) {
-            String name = options.windowsIcon.getName().toLowerCase();
-            if (name.endsWith(".ico")) {
-                return options.windowsIcon.getAbsolutePath();
-            }
-        }
-        if (options.windowsIcon != null && options.windowsIcon.exists()) {
-            System.out.println("Windows packaging icon must be a .ico file. Falling back to default application icon.");
-        }
-        File defaultIco = new File("scenemax.ico");
-        if (defaultIco.exists()) {
-            return defaultIco.getAbsolutePath();
-        }
-        if (options.windowsIcon != null && options.windowsIcon.exists()) {
-            return options.windowsIcon.getAbsolutePath();
-        }
-        return defaultIco.getAbsolutePath();
     }
 
     private String escapeXml(String value) {
