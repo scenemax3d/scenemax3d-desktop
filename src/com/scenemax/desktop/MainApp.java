@@ -18,6 +18,7 @@ import com.scenemax.designer.ik.IKDesignerPanel;
 import com.scenemax.designer.material.MaterialDesignerPanel;
 import com.scenemax.designer.material.MaterialDocument;
 import com.scenemax.designer.material.MaterialTemplatePreset;
+import com.scenemax.designer.modelanalyzer.ModelAnalyzerPanel;
 import com.scenemax.designer.motion.ThrowMotionDesignerPanel;
 import com.scenemax.designer.physics.PhysicsSimulationPanel;
 import com.scenemax.designer.shader.EnvironmentShaderDesignerPanel;
@@ -602,6 +603,9 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
                 } else if (cmd.equals("physics_simulation")) {
                     openPluginView("physics-simulation", "Physics Simulation", new PhysicsSimulationPanel());
+
+                } else if (cmd.equals("model_analyzer")) {
+                    openPluginView("model-analyzer", "3D Model Analyzer", new ModelAnalyzerPanel(new File(Util.getResourcesFolder())));
 
                 } else if (cmd.equals("open_assets_folder")) {
                     try {

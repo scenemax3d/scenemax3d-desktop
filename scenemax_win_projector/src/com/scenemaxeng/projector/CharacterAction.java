@@ -19,6 +19,13 @@ public class CharacterAction extends BaseAction {
 
     @Override
     public boolean interpolate(double t) {
+        if (this.controller.hasReachedFrameRangeEnd(t)) {
+            super.interpolate(this.controller.clampToFrameRangeEnd(t));
+            this.setSpeed(0);
+            this.controller.finishControllerAnimation();
+            this.isProtected = false;
+            return false;
+        }
         boolean running = super.interpolate(t);
         if (!running) {
             this.setSpeed(0);

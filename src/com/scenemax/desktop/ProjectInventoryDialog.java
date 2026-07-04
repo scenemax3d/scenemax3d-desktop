@@ -488,11 +488,9 @@ class ProjectInventoryPanel extends JPanel {
 
         try {
             stopAudio();
-            if (previewApp != null) {
-                previewApp.clearPreview();
-            }
+            releasePreviewBeforeDelete(asset);
             removeIndexedAsset(asset);
-            deleteAssetFiles(deleteTarget);
+            deleteAssetFilesWithRetries(deleteTarget);
             File thumbnail = getCachedThumbnailFile(asset);
             if (thumbnail.isFile()) {
                 Files.deleteIfExists(thumbnail.toPath());
@@ -501,6 +499,17 @@ class ProjectInventoryPanel extends JPanel {
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Could not delete asset:\n" + ex.getMessage(),
                     "Delete Asset", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void releasePreviewBeforeDelete(InventoryAsset asset) {
+        if (previewApp == null) {
+            return;
+        }
+        if (asset != null && CATEGORY_MODELS.equals(asset.category)) {
+            previewApp.releaseModel(asset.path);
+        } else {
+            previewApp.clearPreview();
         }
     }
 
@@ -649,6 +658,29 @@ class ProjectInventoryPanel extends JPanel {
             }
         } else {
             Files.deleteIfExists(target.toPath());
+        }
+    }
+
+    private void deleteAssetFilesWithRetries(File target) throws IOException {
+        IOException lastError = null;
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            try {
+                deleteAssetFiles(target);
+                return;
+            } catch (IOException ex) {
+                lastError = ex;
+                System.gc();
+                sleepQuietly(120L * attempt);
+            }
+        }
+        throw lastError == null ? new IOException("Could not delete asset files.") : lastError;
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
         }
     }
 
