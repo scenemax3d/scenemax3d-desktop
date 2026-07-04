@@ -232,6 +232,7 @@ public class AnimationRuntimeController {
             animationCommand.goExpr = sourceCommand.goExpr;
             animationCommand.loop = sourceCommand.loop;
             animationCommand.isProtected = sourceCommand.isProtected;
+            animationCommand.copyFrameRangeFrom(sourceCommand);
             commands.add(animationCommand);
         }
         return commands;

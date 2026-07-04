@@ -167,6 +167,54 @@ public class AnimationControllerParsingTest {
     }
 
     @Test
+    public void parsesShortAnimationFrameRange() {
+        String code = "horse=>fighter\n"
+                + "horse.\"Take 001\"[0-50] at speed of 2 loop";
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(code);
+
+        assertTrue(prg.syntaxErrors.toString(), prg.syntaxErrors.isEmpty());
+        assertTrue(prg.actions.get(1) instanceof ActionCommandAnimate);
+
+        ActionCommandAnimate animate = (ActionCommandAnimate) prg.actions.get(1);
+        ActionCommandAnimate take = (ActionCommandAnimate) animate.statements.get(0);
+        assertEquals("Take 001", take.animationName);
+        assertEquals("0", take.frameRangeStart);
+        assertFalse(take.frameRangeStartPercent);
+        assertEquals("50", take.frameRangeEnd);
+        assertFalse(take.frameRangeEndPercent);
+        assertNotNull(take.speedExpr);
+        assertTrue(animate.loop);
+    }
+
+    @Test
+    public void parsesAnimationControllerPercentFrameRange() {
+        String code = "horse=>fighter\n"
+                + "anim = animation horse.long_animation[0%-50%] then \"Take 001\"[25-75%]";
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(code);
+
+        assertTrue(prg.syntaxErrors.toString(), prg.syntaxErrors.isEmpty());
+        AnimationControllerAssignmentCommand assignment =
+                (AnimationControllerAssignmentCommand) prg.actions.get(1);
+        assertEquals("long_animation", assignment.animationName);
+        assertEquals(2, assignment.statements.size());
+
+        ActionCommandAnimate first = (ActionCommandAnimate) assignment.statements.get(0);
+        assertEquals("0", first.frameRangeStart);
+        assertTrue(first.frameRangeStartPercent);
+        assertEquals("50", first.frameRangeEnd);
+        assertTrue(first.frameRangeEndPercent);
+
+        ActionCommandAnimate second = (ActionCommandAnimate) assignment.statements.get(1);
+        assertEquals("Take 001", second.animationName);
+        assertEquals("25", second.frameRangeStart);
+        assertFalse(second.frameRangeStartPercent);
+        assertEquals("75", second.frameRangeEnd);
+        assertTrue(second.frameRangeEndPercent);
+    }
+
+    @Test
     public void protectedLegacyAnimationBlocksIncomingControllerUntilFinished() {
         AppModel model = new AppModel(new Node("model"));
         AppModelAnimationController protectedController =

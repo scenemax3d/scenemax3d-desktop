@@ -46,6 +46,23 @@ Use quotes for animation names that contain spaces:
 s."Take 001"
 ```
 
+## Animation Frame Ranges
+
+Play only part of an animation by adding a frame range immediately after the animation name:
+
+```scenemax
+horse."Take 001"[804-828] at speed of 2 loop
+```
+
+Frame ranges can also use percentages. If either endpoint has `%`, that endpoint is resolved as a percentage of the animation length at runtime:
+
+```scenemax
+horse.long_animation[0%-50%] loop
+horse.long_animation[120-75%]
+```
+
+Out-of-range values are clamped to the animation's valid frame range. If the end resolves before the start, playback is clamped to the start frame instead of crashing.
+
 ## Animation Speed Control (mid-animation)
 
 Slow down the current animation to 1/100th speed for 0.5 seconds:

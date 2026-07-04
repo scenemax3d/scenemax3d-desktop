@@ -41,6 +41,7 @@
 
     {"name": "Tools", "items": [
       {"name": "Font Generator...","command": "font_generator"},
+      {"name": "3D Model Analyzer","command": "model_analyzer"},
       {"name": "Physics Simulation","command": "physics_simulation"}
     ]},
 

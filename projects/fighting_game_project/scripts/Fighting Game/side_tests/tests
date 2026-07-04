@@ -1,2 +1,6 @@
 
-
+skybox.show "lagoon"
+s => horse1
+camera.chase s
+lights.add probe "1"
+s.show info

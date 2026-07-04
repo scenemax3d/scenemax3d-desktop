@@ -1,6 +1,7 @@
 package com.scenemax.designer.inventory;
 
 import com.jme3.asset.plugins.FileLocator;
+import com.jme3.asset.ModelKey;
 import com.jme3.bounding.BoundingBox;
 import com.jme3.bounding.BoundingSphere;
 import com.jme3.bounding.BoundingVolume;
@@ -45,6 +46,7 @@ import java.awt.event.FocusEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
+import java.util.concurrent.ExecutionException;
 import java.util.Map;
 
 public class InventoryModelPreview {
@@ -124,6 +126,11 @@ public class InventoryModelPreview {
     public void clearPreview() {
         releaseMouseCapture();
         app.clearPreview();
+    }
+
+    public void releaseModel(String path) {
+        releaseMouseCapture();
+        app.releaseModel(path);
     }
 
     public void releaseMouseCapture() {
@@ -251,6 +258,24 @@ public class InventoryModelPreview {
                 showFallbackBox();
                 return null;
             });
+        }
+
+        void releaseModel(String path) {
+            try {
+                enqueue(() -> {
+                    releaseMouseCaptureNow();
+                    previewRoot.detachAllChildren();
+                    previewSpatial = null;
+                    if (path != null && !path.isBlank()) {
+                        assetManager.deleteFromCache(new ModelKey(path));
+                    }
+                    showFallbackBox();
+                    return null;
+                }).get();
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            } catch (ExecutionException | IllegalStateException ignored) {
+            }
         }
 
         void releaseMouseCapture() {

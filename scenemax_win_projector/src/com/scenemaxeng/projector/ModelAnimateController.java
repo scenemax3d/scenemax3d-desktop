@@ -52,8 +52,7 @@ public class ModelAnimateController extends SceneMaxBaseController {
             }
 
             animationStarted=true;
-            controller=new AppModelAnimationController(this);
-            controller.isProtected = this.cmdAnim.isProtected;
+            controller=createAnimationController();
             speed=speedExpr==null?"1":speedExpr.evaluate().toString();
 
             if(cmd.varDef==null) {
@@ -78,6 +77,9 @@ public class ModelAnimateController extends SceneMaxBaseController {
             }
         }
 
+        if (controller != null) {
+            controller.updateFrameRangeState();
+        }
         return controller.animationFinished;
     }
 
@@ -105,6 +107,19 @@ public class ModelAnimateController extends SceneMaxBaseController {
 
     public AppModelAnimationController getAnimationController() {
         return controller;
+    }
+
+    private AppModelAnimationController createAnimationController() {
+        AppModelAnimationController result = new AppModelAnimationController(this);
+        result.isProtected = this.cmdAnim.isProtected;
+        if (this.cmdAnim.hasFrameRange()) {
+            result.setFrameRange(
+                    this.cmdAnim.frameRangeStart,
+                    this.cmdAnim.frameRangeStartPercent,
+                    this.cmdAnim.frameRangeEnd,
+                    this.cmdAnim.frameRangeEndPercent);
+        }
+        return result;
     }
 
     public String getAnimationName() {

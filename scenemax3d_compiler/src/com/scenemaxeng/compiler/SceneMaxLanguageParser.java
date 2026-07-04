@@ -2375,6 +2375,7 @@ public class SceneMaxLanguageParser implements IParser {
                     animCmd.targetVar = sourceVar;
                     animCmd.varDef = cmd.sourceVarDef;
                     animCmd.varLineNum = cmd.varLineNum;
+                    applyAnimationFrameRange(animCmd, animExpr.anim_frame_range());
                     animCmd.speedExpr = animExpr.speed_of_expr() == null
                             ? null
                             : animExpr.speed_of_expr().logical_expression();
@@ -4527,6 +4528,7 @@ public class SceneMaxLanguageParser implements IParser {
                     cmd.varDef=vd;
                     cmd.targetVar = var;
                     cmd.varLineNum=varLineNum;
+                    applyAnimationFrameRange(cmd, actx.anim_frame_range());
                     cmd.speedExpr=actx.speed_of_expr()==null?null:actx.speed_of_expr().logical_expression();//speedExpr;
                     cmd.goExpr = animate.goExpr;
                     animate.statements.add(cmd);
@@ -4787,6 +4789,19 @@ public class SceneMaxLanguageParser implements IParser {
         } else {
             return "";
         }
+    }
+
+    private void applyAnimationFrameRange(ActionCommandAnimate cmd, SceneMaxParser.Anim_frame_rangeContext range) {
+        if (cmd == null || range == null || range.anim_frame_value().size() < 2) {
+            return;
+        }
+
+        SceneMaxParser.Anim_frame_valueContext start = range.anim_frame_value(0);
+        SceneMaxParser.Anim_frame_valueContext end = range.anim_frame_value(1);
+        cmd.frameRangeStart = start.number_expr().getText();
+        cmd.frameRangeStartPercent = start.MOD() != null;
+        cmd.frameRangeEnd = end.number_expr().getText();
+        cmd.frameRangeEndPercent = end.MOD() != null;
     }
 
     private String readLightColor(SceneMaxParser.Light_color_valueContext colorValue) {
