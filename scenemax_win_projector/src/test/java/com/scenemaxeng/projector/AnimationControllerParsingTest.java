@@ -9,6 +9,8 @@ import com.scenemaxeng.compiler.SceneMaxLanguageParser;
 import com.scenemaxeng.compiler.VariableDef;
 import com.jme3.scene.Node;
 import org.apache.commons.io.FileUtils;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.junit.Test;
 
 import java.io.File;
@@ -188,6 +190,27 @@ public class AnimationControllerParsingTest {
     }
 
     @Test
+    public void parsesShortAnimationNamedFrameRange() throws Exception {
+        String code = "horse=>fighter\n"
+                + "horse.long_animation[\"walk\"] loop";
+
+        ProgramDef prg = parseWithModelAnimationRanges(code);
+
+        assertTrue(prg.syntaxErrors.toString(), prg.syntaxErrors.isEmpty());
+        assertTrue(prg.actions.get(1) instanceof ActionCommandAnimate);
+
+        ActionCommandAnimate animate = (ActionCommandAnimate) prg.actions.get(1);
+        ActionCommandAnimate walk = (ActionCommandAnimate) animate.statements.get(0);
+        assertEquals("long_animation", walk.animationName);
+        assertEquals("24", walk.frameRangeStart);
+        assertFalse(walk.frameRangeStartPercent);
+        assertEquals("48", walk.frameRangeEnd);
+        assertFalse(walk.frameRangeEndPercent);
+        assertTrue(walk.hasFrameRange());
+        assertTrue(animate.loop);
+    }
+
+    @Test
     public void parsesAnimationControllerPercentFrameRange() {
         String code = "horse=>fighter\n"
                 + "anim = animation horse.long_animation[0%-50%] then \"Take 001\"[25-75%]";
@@ -213,6 +236,41 @@ public class AnimationControllerParsingTest {
         assertEquals("75", second.frameRangeEnd);
         assertTrue(second.frameRangeEndPercent);
     }
+
+    @Test
+    public void parsesAnimationControllerNamedFrameRange() throws Exception {
+        String code = "horse=>fighter\n"
+                + "anim = animation horse.long_animation[\"walk\"] then \"Take 001\"[\"attack\"]";
+
+        ProgramDef prg = parseWithModelAnimationRanges(code);
+
+        assertTrue(prg.syntaxErrors.toString(), prg.syntaxErrors.isEmpty());
+        AnimationControllerAssignmentCommand assignment =
+                (AnimationControllerAssignmentCommand) prg.actions.get(1);
+        assertEquals("long_animation", assignment.animationName);
+        assertEquals(2, assignment.statements.size());
+
+        ActionCommandAnimate first = (ActionCommandAnimate) assignment.statements.get(0);
+        assertEquals("24", first.frameRangeStart);
+        assertEquals("48", first.frameRangeEnd);
+
+        ActionCommandAnimate second = (ActionCommandAnimate) assignment.statements.get(1);
+        assertEquals("Take 001", second.animationName);
+        assertEquals("60", second.frameRangeStart);
+        assertEquals("90", second.frameRangeEnd);
+    }
+
+    @Test
+    public void reportsMissingNamedFrameRangeAtParseTime() throws Exception {
+        String code = "horse=>fighter\n"
+                + "horse.long_animation[\"missing\"] loop";
+
+        ProgramDef prg = parseWithModelAnimationRanges(code);
+
+        assertFalse(prg.syntaxErrors.toString(), prg.syntaxErrors.isEmpty());
+        assertTrue(prg.syntaxErrors.toString(), prg.syntaxErrors.get(0).contains("animation frame range 'missing' was not found"));
+    }
+
 
     @Test
     public void protectedLegacyAnimationBlocksIncomingControllerUntilFinished() {
@@ -342,6 +400,67 @@ public class AnimationControllerParsingTest {
         ProgramDef prg = new SceneMaxLanguageParser(null, repro.getAbsolutePath()).parse(code);
 
         assertTrue(prg.syntaxErrors.toString(), prg.syntaxErrors.isEmpty());
+    }
+
+    @Test
+    public void parsesFightingGameHorseNamedRangeFromRunningContext() throws Exception {
+        File source = resolveRepoFile("projects/fighting_game_project/scripts/Fighting Game/side_tests/tests");
+        File runningScript = resolveRepoFile("running/side_tests/tests");
+        File resources = resolveRepoFile("projects/fighting_game_project/resources");
+        String code = FileUtils.readFileToString(source, StandardCharsets.UTF_8);
+
+        ProgramDef prg = new SceneMaxLanguageParser(
+                null,
+                runningScript.getAbsolutePath(),
+                resources.getAbsolutePath()).parse(code);
+
+        assertTrue(prg.syntaxErrors.toString(), prg.syntaxErrors.isEmpty());
+
+        ActionCommandAnimate take = null;
+        for (Object action : prg.actions) {
+            if (action instanceof ActionCommandAnimate) {
+                ActionCommandAnimate animate = (ActionCommandAnimate) action;
+                for (Object child : animate.statements) {
+                    ActionCommandAnimate childAnimate = (ActionCommandAnimate) child;
+                    if ("Take 001".equals(childAnimate.animationName)) {
+                        take = childAnimate;
+                    }
+                }
+            }
+        }
+
+        assertNotNull(take);
+        assertEquals("720", take.frameRangeStart);
+        assertEquals("751", take.frameRangeEnd);
+    }
+
+    private ProgramDef parseWithModelAnimationRanges(String code) throws Exception {
+        File testRoot = new File(System.getProperty("java.io.tmpdir"),
+                "scenemax-animation-range-test-" + System.nanoTime());
+        File project = new File(testRoot, "project");
+        File running = new File(testRoot, "running");
+        File modelsDir = new File(project, "resources/Models");
+        File scriptsDir = new File(running, "side_tests");
+        FileUtils.forceMkdir(modelsDir);
+        FileUtils.forceMkdir(scriptsDir);
+
+        JSONObject modelJson = new JSONObject();
+        modelJson.put("name", "fighter");
+        modelJson.put("path", "Models/fighter/fighter.j3o");
+        modelJson.put("animationFrameRanges", new JSONArray()
+                .put(new JSONObject().put("name", "walk").put("start", 24).put("end", 48))
+                .put(new JSONObject().put("name", "attack").put("start", 60).put("end", 90)));
+
+        JSONObject modelsIndex = new JSONObject();
+        modelsIndex.put("models", new JSONArray().put(modelJson));
+        FileUtils.writeStringToFile(new File(modelsDir, "models-ext.json"),
+                modelsIndex.toString(), StandardCharsets.UTF_8);
+
+        File script = new File(scriptsDir, "test.sm");
+        return new SceneMaxLanguageParser(
+                null,
+                script.getAbsolutePath(),
+                new File(project, "resources").getAbsolutePath()).parse(code);
     }
 
     private static class FakeAnimationRuntimeController extends AnimationRuntimeController {

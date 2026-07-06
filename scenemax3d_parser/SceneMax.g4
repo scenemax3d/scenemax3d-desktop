@@ -978,7 +978,9 @@ billboard_attr : Billboard Equals? True ;
 
 anim_expr : animation_name anim_frame_range? (speed_of_expr)? ;
 
-anim_frame_range : '[' anim_frame_value MINUS anim_frame_value ']' ;
+anim_frame_range : '[' (anim_frame_numeric_range | anim_frame_alias) ']' ;
+anim_frame_numeric_range : anim_frame_value MINUS anim_frame_value ;
+anim_frame_alias : QUOTED_STRING ;
 anim_frame_value : number_expr MOD? ;
 
 speed_of_expr : (At Speed Of logical_expression) ;

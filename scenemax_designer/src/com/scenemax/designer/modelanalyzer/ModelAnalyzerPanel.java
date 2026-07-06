@@ -13,7 +13,6 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
-import javax.swing.event.TableModelEvent;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableModel;
 import java.awt.*;
@@ -40,7 +39,6 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
     private final JComboBox<String> animationCombo = new JComboBox<>();
     private final RangeSlider frameRangeSlider = new RangeSlider(0, 1);
     private final Timer rangeSliderPlaybackTimer;
-    private final Timer rangeTableSaveTimer;
     private final JSlider speedSlider = new JSlider(1, 200, 100);
     private final JLabel speedValue = new JLabel("100%");
     private final JSpinner startFrameSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
@@ -78,8 +76,6 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         setBorder(new EmptyBorder(12, 12, 12, 12));
         rangeSliderPlaybackTimer = new Timer(100, e -> playCurrentFrameRange());
         rangeSliderPlaybackTimer.setRepeats(false);
-        rangeTableSaveTimer = new Timer(300, e -> saveRangesForModel(currentRangeModel.isEmpty() ? selectedModel() : currentRangeModel));
-        rangeTableSaveTimer.setRepeats(false);
 
         app = new ModelAnalyzerPreviewApp(resourcesRoot);
         AppSettings settings = new AppSettings(true);
@@ -267,7 +263,7 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         rangeTable.putClientProperty("terminateEditOnFocusLost", Boolean.TRUE);
         JTextField tableEditorField = new JTextField();
         DefaultCellEditor tableEditor = new DefaultCellEditor(tableEditorField);
-        tableEditor.setClickCountToStart(1);
+        tableEditor.setClickCountToStart(2);
         rangeTable.setDefaultEditor(Object.class, tableEditor);
         rangeTable.setDefaultEditor(String.class, tableEditor);
         rangeTable.getColumnModel().getColumn(0).setPreferredWidth(140);
@@ -278,9 +274,9 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
                 applySelectedRangeToFrameControls();
             }
         });
-        rangeTableModel.addTableModelListener(e -> {
-            if (!updatingRangeTable && e.getType() != TableModelEvent.DELETE) {
-                scheduleRangeTableSave();
+        rangeTable.addPropertyChangeListener("tableCellEditor", e -> {
+            if (rangeTable.isEditing()) {
+                rangeSliderPlaybackTimer.stop();
             }
         });
         panel.add(new JScrollPane(rangeTable), BorderLayout.CENTER);
@@ -344,10 +340,6 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
     private void loadSelectedModel() {
         commitRangeTableEdit();
         String model = selectedModel();
-        if (!currentRangeModel.isEmpty() && !currentRangeModel.equalsIgnoreCase(model)) {
-            rangeTableSaveTimer.stop();
-            saveRangesForModel(currentRangeModel);
-        }
         loadRangesForModel(model);
         app.loadModel(model);
         app.setAnimationSpeedPercent(speedSlider.getValue());
@@ -480,10 +472,14 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         startFrameSpinner.setValue(frameRangeSlider.getLowerValue());
         endFrameSpinner.setValue(frameRangeSlider.getUpperValue());
         updatingFrameControls = false;
+        updateSelectedRangeRow(frameRangeSlider.getLowerValue(), frameRangeSlider.getUpperValue());
         rangeSliderPlaybackTimer.restart();
     }
 
     private void playCurrentFrameRange() {
+        if (rangeTable.isEditing()) {
+            return;
+        }
         if (selectedAnimation().isEmpty()) {
             return;
         }
@@ -510,7 +506,6 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         int row = rangeTableModel.getRowCount() - 1;
         updatingRangeTable = false;
         rangeTable.getSelectionModel().setSelectionInterval(row, row);
-        saveRangesForSelectedModel();
     }
 
     private void deleteSelectedRangeRow() {
@@ -523,7 +518,6 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         updatingRangeTable = true;
         rangeTableModel.removeRow(modelRow);
         updatingRangeTable = false;
-        saveRangesForSelectedModel();
     }
 
     private void applySelectedRangeToFrameControls() {
@@ -543,6 +537,25 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         frameRangeSlider.setCursorValue(frameValue(startFrameSpinner));
         updatingRangeSlider = false;
         updatingFrameControls = false;
+        rangeSliderPlaybackTimer.restart();
+    }
+
+    private void updateSelectedRangeRow(int start, int end) {
+        if (updatingRangeTable) {
+            return;
+        }
+        int row = rangeTable.getSelectedRow();
+        if (row < 0) {
+            return;
+        }
+        int modelRow = rangeTable.convertRowIndexToModel(row);
+        updatingRangeTable = true;
+        try {
+            rangeTableModel.setValueAt(String.valueOf(start), modelRow, 1);
+            rangeTableModel.setValueAt(String.valueOf(end), modelRow, 2);
+        } finally {
+            updatingRangeTable = false;
+        }
     }
 
     private void loadRangesForModel(String modelName) {
@@ -671,10 +684,6 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         }
     }
 
-    private void scheduleRangeTableSave() {
-        rangeTableSaveTimer.restart();
-    }
-
     private int parseInt(Object value, int fallback) {
         if (value instanceof Number) {
             return ((Number) value).intValue();
@@ -730,8 +739,6 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
     @Override
     public void close() {
         rangeSliderPlaybackTimer.stop();
-        rangeTableSaveTimer.stop();
-        saveRangesForSelectedModel();
         releaseMouseCapture();
         app.stop();
     }

@@ -149,8 +149,15 @@ public class MainWinApp implements IAppObserver {
         if (entryScriptFileName != null && !entryScriptFileName.isBlank()) {
             parserPath = new File(workingFolder, entryScriptFileName).getAbsolutePath();
         }
-        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, parserPath);
+        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, parserPath, resolveParserResourcesRootPath());
         return parser.parse(prg);
+    }
+
+    private String resolveParserResourcesRootPath() {
+        if (projectName == null || projectName.isBlank()) {
+            return null;
+        }
+        return new File("./projects/" + projectName + "/resources").getAbsolutePath();
     }
 
     private String setCanvasSize(AppSettings settings, String prg) {
