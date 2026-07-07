@@ -13,6 +13,8 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableModel;
 import java.awt.*;
@@ -29,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EventObject;
 import java.util.List;
+import java.util.Locale;
 
 public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
     private final File resourcesRoot;
@@ -62,6 +65,7 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
     private final JTable rangeTable = new EditableRangeTable(rangeTableModel);
 
     private boolean updatingModels;
+    private boolean filteringModels;
     private boolean updatingAnimations;
     private boolean updatingFrameControls;
     private boolean updatingRangeSlider;
@@ -69,6 +73,7 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
     private boolean playbackRunning;
     private boolean playbackPaused;
     private String currentRangeModel = "";
+    private List<String> availableModels = new ArrayList<>();
 
     public ModelAnalyzerPanel(File resourcesRoot) {
         super(new BorderLayout(0, 8));
@@ -149,11 +154,13 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         JPanel modelRow = new JPanel(new BorderLayout(8, 3));
         modelRow.add(new JLabel("Model"), BorderLayout.WEST);
         modelCombo.setPrototypeDisplayValue("MMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+        modelCombo.setEditable(true);
         modelCombo.addActionListener(e -> {
-            if (!updatingModels) {
+            if (!updatingModels && !filteringModels && isKnownModel(selectedModel())) {
                 loadSelectedModel();
             }
         });
+        installModelFilter();
         modelRow.add(modelCombo, BorderLayout.CENTER);
         JButton refresh = new JButton("Refresh");
         refresh.addActionListener(e -> loadModelOptions());
@@ -304,18 +311,92 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
 
     private void loadModelOptions() {
         String current = selectedModel();
+        availableModels = listProjectModels();
         updatingModels = true;
         modelCombo.removeAllItems();
-        for (String model : listProjectModels()) {
+        for (String model : availableModels) {
             modelCombo.addItem(model);
         }
-        if (!current.isEmpty()) {
+        if (!current.isEmpty() && isKnownModel(current)) {
             modelCombo.setSelectedItem(current);
         } else if (modelCombo.getItemCount() > 0) {
             modelCombo.setSelectedIndex(0);
         }
         updatingModels = false;
         loadSelectedModel();
+    }
+
+    private void installModelFilter() {
+        Component editor = modelCombo.getEditor().getEditorComponent();
+        if (!(editor instanceof JTextField)) {
+            return;
+        }
+        JTextField editorField = (JTextField) editor;
+        editorField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                scheduleModelFilter(editorField);
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                scheduleModelFilter(editorField);
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                scheduleModelFilter(editorField);
+            }
+        });
+    }
+
+    private void scheduleModelFilter(JTextField editorField) {
+        if (updatingModels || filteringModels) {
+            return;
+        }
+        SwingUtilities.invokeLater(() -> filterModelCombo(editorField.getText()));
+    }
+
+    private void filterModelCombo(String filterText) {
+        if (updatingModels) {
+            return;
+        }
+        filteringModels = true;
+        try {
+            String text = filterText == null ? "" : filterText;
+            String needle = text.trim().toLowerCase(Locale.ROOT);
+            modelCombo.removeAllItems();
+            for (String model : availableModels) {
+                if (needle.isEmpty() || model.toLowerCase(Locale.ROOT).contains(needle)) {
+                    modelCombo.addItem(model);
+                }
+            }
+            modelCombo.getEditor().setItem(text);
+            Component editor = modelCombo.getEditor().getEditorComponent();
+            if (editor instanceof JTextField) {
+                JTextField field = (JTextField) editor;
+                field.setCaretPosition(Math.min(text.length(), field.getText().length()));
+            }
+            boolean editorFocused = editor != null && editor.isFocusOwner();
+            if (modelCombo.isDisplayable() && editorFocused && modelCombo.getItemCount() > 0) {
+                modelCombo.showPopup();
+            }
+        } catch (Exception ignored) {
+        } finally {
+            filteringModels = false;
+        }
+    }
+
+    private boolean isKnownModel(String modelName) {
+        if (modelName == null || modelName.isBlank()) {
+            return false;
+        }
+        for (String model : availableModels) {
+            if (modelName.equalsIgnoreCase(model)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private List<String> listProjectModels() {
@@ -450,6 +531,7 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         frameRangeSlider.setCursorValue(Math.max(start, Math.min(frameRangeSlider.getCursorValue(), end)));
         updatingRangeSlider = false;
         updatingFrameControls = false;
+        updateSelectedRangeRow(start, end);
         if (playbackRunning) {
             app.updateRunningRange(start, end);
         }

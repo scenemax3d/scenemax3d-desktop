@@ -30,6 +30,8 @@ For throw motion authoring, projectile/return motion setup, and runtime examples
 
 For inverse-kinematics authoring, joint setup, preview simulation, and runtime IK commands, see [`docs/ik-designer.md`](docs/ik-designer.md).
 
+For analyzing bundled 3D model animations and saving named frame ranges, see [`docs/model-animation-analyzer.md`](docs/model-animation-analyzer.md).
+
 For Effekseer particle-effect scripting and runtime examples, see [`docs/effects.md`](docs/effects.md).
 
 For hands-on examples, see the demo projects guide in [`projects/readme.md`](projects/readme.md), which walks through the sample games and explains how they are structured.

@@ -72,6 +72,10 @@ player.long_animation["attack"] at speed of 1.5
 
 At parse time SceneMax looks up the selected model resource's `animationFrameRanges` entry with the matching `name` and stores its numeric `start` and `end` frame values in the compiled animation command. Runtime playback only receives numeric frame ranges.
 
+Use the [3D Model Animation Analyzer](model-animation-analyzer.md) to preview long clips, find frame ranges, and save named ranges into the model JSON.
+
+This lets one large source animation, such as `Take 001`, behave like several smaller clips in scripts without modifying the model file.
+
 ## Animation Speed Control (mid-animation)
 
 Slow down the current animation to 1/100th speed for 0.5 seconds:
