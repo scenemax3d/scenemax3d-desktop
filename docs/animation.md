@@ -63,6 +63,19 @@ horse.long_animation[120-75%]
 
 Out-of-range values are clamped to the animation's valid frame range. If the end resolves before the start, playback is clamped to the start frame instead of crashing.
 
+Frame ranges can also be referenced by name when the model's JSON contains an `animationFrameRanges` table, such as ranges authored with the 3D Model Analyzer:
+
+```scenemax
+player.long_animation["walk"] loop
+player.long_animation["attack"] at speed of 1.5
+```
+
+At parse time SceneMax looks up the selected model resource's `animationFrameRanges` entry with the matching `name` and stores its numeric `start` and `end` frame values in the compiled animation command. Runtime playback only receives numeric frame ranges.
+
+Use the [3D Model Animation Analyzer](model-animation-analyzer.md) to preview long clips, find frame ranges, and save named ranges into the model JSON.
+
+This lets one large source animation, such as `Take 001`, behave like several smaller clips in scripts without modifying the model file.
+
 ## Animation Speed Control (mid-animation)
 
 Slow down the current animation to 1/100th speed for 0.5 seconds:

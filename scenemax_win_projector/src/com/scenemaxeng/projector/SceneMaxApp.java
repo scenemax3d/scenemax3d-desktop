@@ -1202,7 +1202,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         // parse & compile the source code
         SceneMaxLanguageParser.parseUsingResource=false; // do not look for manual resource declarations
-        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, resolveCurrentScriptContextPath());
+        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(
+                null,
+                resolveCurrentScriptContextPath(),
+                resolveParserResourcesRootPath());
         if (this.prg != null) {
             parser.setCurrentProgramState(this.prg);
         }
@@ -1260,7 +1263,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         // parse & compile the source code
-        final ProgramDef prg = new SceneMaxLanguageParser(this.prg, resolveCurrentScriptContextPath()).parse(code);
+        final ProgramDef prg = new SceneMaxLanguageParser(
+                this.prg,
+                resolveCurrentScriptContextPath(),
+                resolveParserResourcesRootPath()).parse(code);
         if(prg==null){
             onEndCode();
             return;
@@ -10595,6 +10601,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } catch (Exception ex) {
             return null;
         }
+    }
+
+    private String resolveParserResourcesRootPath() {
+        File resources = resolveRuntimeResourcesFolder();
+        return resources == null ? null : resources.getAbsolutePath();
     }
 
     public File resolveRuntimeResourceFile(String relativePath) {

@@ -605,7 +605,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     openPluginView("physics-simulation", "Physics Simulation", new PhysicsSimulationPanel());
 
                 } else if (cmd.equals("model_analyzer")) {
-                    openPluginView("model-analyzer", "3D Model Analyzer", new ModelAnalyzerPanel(new File(Util.getResourcesFolder())));
+                    openPluginView("model-analyzer", "Model Animation Analyzer", new ModelAnalyzerPanel(new File(Util.getResourcesFolder())));
 
                 } else if (cmd.equals("open_assets_folder")) {
                     try {

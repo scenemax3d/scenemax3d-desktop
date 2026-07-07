@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -49,6 +50,9 @@ public class SceneMaxLanguageParser implements IParser {
 
     private ProgramDef prg = null;
     private String codePath="";
+    private String animationFrameRangeResourcesRootPath="";
+    private final HashMap<String, JSONObject> animationFrameRangeModelJsonByName = new HashMap<>();
+    private boolean animationFrameRangeModelsLoaded;
 
     private boolean isChildParser=false;
     private String _sourceFileName="";
@@ -197,6 +201,13 @@ public class SceneMaxLanguageParser implements IParser {
         super();
         this.prg = prg;
         this.codePath=codePath;
+    }
+
+    public SceneMaxLanguageParser(ProgramDef prg, String codePath, String resourcesRootPath) {
+        super();
+        this.prg = prg;
+        this.codePath=codePath;
+        this.animationFrameRangeResourcesRootPath = resourcesRootPath == null ? "" : resourcesRootPath;
     }
 
     public SceneMaxLanguageParser(ProgramDef prg) {
@@ -1051,7 +1062,10 @@ public class SceneMaxLanguageParser implements IParser {
                     String code = getExternalCode(file, resolvedFile);
                     if(code!=null) {
                         String childCodePath = resolvedFile != null ? resolvedFile.getAbsolutePath() : this.codePath;
-                        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(this.prg, childCodePath);
+                        SceneMaxLanguageParser parser = new SceneMaxLanguageParser(
+                                this.prg,
+                                childCodePath,
+                                SceneMaxLanguageParser.this.animationFrameRangeResourcesRootPath);
                         parser.setParserSourceFileName(file);
                         parser.enableChildParserMode(true);
                         //parser.setMacroFilter(SceneMaxLanguageParser.getMacroFilter());
@@ -2375,7 +2389,7 @@ public class SceneMaxLanguageParser implements IParser {
                     animCmd.targetVar = sourceVar;
                     animCmd.varDef = cmd.sourceVarDef;
                     animCmd.varLineNum = cmd.varLineNum;
-                    applyAnimationFrameRange(animCmd, animExpr.anim_frame_range());
+                    applyAnimationFrameRange(prg, animCmd, animExpr.anim_frame_range());
                     animCmd.speedExpr = animExpr.speed_of_expr() == null
                             ? null
                             : animExpr.speed_of_expr().logical_expression();
@@ -4528,7 +4542,7 @@ public class SceneMaxLanguageParser implements IParser {
                     cmd.varDef=vd;
                     cmd.targetVar = var;
                     cmd.varLineNum=varLineNum;
-                    applyAnimationFrameRange(cmd, actx.anim_frame_range());
+                    applyAnimationFrameRange(prg, cmd, actx.anim_frame_range());
                     cmd.speedExpr=actx.speed_of_expr()==null?null:actx.speed_of_expr().logical_expression();//speedExpr;
                     cmd.goExpr = animate.goExpr;
                     animate.statements.add(cmd);
@@ -4791,17 +4805,185 @@ public class SceneMaxLanguageParser implements IParser {
         }
     }
 
-    private void applyAnimationFrameRange(ActionCommandAnimate cmd, SceneMaxParser.Anim_frame_rangeContext range) {
-        if (cmd == null || range == null || range.anim_frame_value().size() < 2) {
+    private void applyAnimationFrameRange(ProgramDef program, ActionCommandAnimate cmd, SceneMaxParser.Anim_frame_rangeContext range) {
+        if (cmd == null || range == null) {
             return;
         }
 
-        SceneMaxParser.Anim_frame_valueContext start = range.anim_frame_value(0);
-        SceneMaxParser.Anim_frame_valueContext end = range.anim_frame_value(1);
+        if (range.anim_frame_alias() != null && range.anim_frame_alias().QUOTED_STRING() != null) {
+            String rangeName = stripQutes(range.anim_frame_alias().QUOTED_STRING().getText());
+            AnimationFrameRangeDef resolved = resolveAnimationFrameRangeAlias(cmd, rangeName);
+            if (resolved == null) {
+                addAnimationFrameRangeError(program, range, cmd, rangeName);
+                return;
+            }
+            cmd.frameRangeStart = formatFrameRangeNumber(resolved.start);
+            cmd.frameRangeStartPercent = false;
+            cmd.frameRangeEnd = formatFrameRangeNumber(resolved.end);
+            cmd.frameRangeEndPercent = false;
+            return;
+        }
+
+        if (range.anim_frame_numeric_range() == null
+                || range.anim_frame_numeric_range().anim_frame_value().size() < 2) {
+            return;
+        }
+
+        SceneMaxParser.Anim_frame_valueContext start = range.anim_frame_numeric_range().anim_frame_value(0);
+        SceneMaxParser.Anim_frame_valueContext end = range.anim_frame_numeric_range().anim_frame_value(1);
         cmd.frameRangeStart = start.number_expr().getText();
         cmd.frameRangeStartPercent = start.MOD() != null;
         cmd.frameRangeEnd = end.number_expr().getText();
         cmd.frameRangeEndPercent = end.MOD() != null;
+    }
+
+    private AnimationFrameRangeDef resolveAnimationFrameRangeAlias(ActionCommandAnimate cmd, String rangeName) {
+        if (rangeName == null || rangeName.isBlank()) {
+            return null;
+        }
+        String modelName = resolveAnimationFrameRangeModelName(cmd);
+        if (modelName == null || modelName.isBlank()) {
+            return null;
+        }
+        JSONObject modelJson = findModelJsonForAnimationFrameRange(modelName);
+        if (modelJson == null) {
+            return null;
+        }
+        JSONArray ranges = modelJson.optJSONArray("animationFrameRanges");
+        if (ranges == null) {
+            return null;
+        }
+        for (int i = 0; i < ranges.length(); i++) {
+            JSONObject range = ranges.optJSONObject(i);
+            if (range == null) {
+                continue;
+            }
+            if (rangeName.equalsIgnoreCase(range.optString("name", "").trim())) {
+                return new AnimationFrameRangeDef(range.optDouble("start", 0), range.optDouble("end", 0));
+            }
+        }
+        return null;
+    }
+
+    private String resolveAnimationFrameRangeModelName(ActionCommandAnimate cmd) {
+        if (cmd == null) {
+            return null;
+        }
+        if (cmd.varDef != null && cmd.varDef.resName != null && !cmd.varDef.resName.isBlank()) {
+            return cmd.varDef.resName;
+        }
+        if (cmd.targetVar != null && prg != null) {
+            VariableDef varDef = prg.getVar(cmd.targetVar);
+            if (varDef != null) {
+                return varDef.resName;
+            }
+        }
+        return null;
+    }
+
+    private JSONObject findModelJsonForAnimationFrameRange(String modelName) {
+        loadAnimationFrameRangeModels();
+        return animationFrameRangeModelJsonByName.get(modelName.toLowerCase(Locale.ROOT));
+    }
+
+    private void loadAnimationFrameRangeModels() {
+        if (animationFrameRangeModelsLoaded) {
+            return;
+        }
+        animationFrameRangeModelsLoaded = true;
+
+        for (File indexFile : findAnimationFrameRangeModelIndexFiles()) {
+            try {
+                JSONObject root = new JSONObject(FileUtils.readFileToString(indexFile, StandardCharsets.UTF_8));
+                JSONArray models = root.optJSONArray("models");
+                if (models == null) {
+                    continue;
+                }
+                for (int i = 0; i < models.length(); i++) {
+                    JSONObject model = models.optJSONObject(i);
+                    if (model == null) {
+                        continue;
+                    }
+                    String name = model.optString("name", "").trim();
+                    if (!name.isEmpty()) {
+                        animationFrameRangeModelJsonByName.put(name.toLowerCase(Locale.ROOT), model);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private List<File> findAnimationFrameRangeModelIndexFiles() {
+        LinkedHashSet<File> files = new LinkedHashSet<>();
+        addExplicitAnimationFrameRangeResourceRoot(files);
+        File current = resolveCodeDirectory(codePath);
+        while (current != null) {
+            addAnimationFrameRangeModelIndexFiles(files, new File(current, "resources"));
+            addAnimationFrameRangeModelIndexFiles(files, current);
+            current = current.getParentFile();
+        }
+        return new ArrayList<>(files);
+    }
+
+    private void addExplicitAnimationFrameRangeResourceRoot(LinkedHashSet<File> files) {
+        if (animationFrameRangeResourcesRootPath == null || animationFrameRangeResourcesRootPath.isBlank()) {
+            return;
+        }
+        File root = new File(animationFrameRangeResourcesRootPath);
+        addAnimationFrameRangeModelIndexFiles(files, root);
+        addAnimationFrameRangeModelIndexFiles(files, new File(root, "resources"));
+    }
+
+    private void addAnimationFrameRangeModelIndexFiles(LinkedHashSet<File> files, File resourcesRoot) {
+        if (resourcesRoot == null) {
+            return;
+        }
+        addExistingFile(files, new File(resourcesRoot, "Models/models-ext.json"));
+        addExistingFile(files, new File(resourcesRoot, "Models/models.json"));
+        addExistingFile(files, new File(resourcesRoot, "models/models-ext.json"));
+        addExistingFile(files, new File(resourcesRoot, "models/models.json"));
+    }
+
+    private void addExistingFile(LinkedHashSet<File> files, File file) {
+        if (file != null && file.isFile()) {
+            try {
+                files.add(file.getCanonicalFile());
+            } catch (IOException ignored) {
+                files.add(file.getAbsoluteFile());
+            }
+        }
+    }
+
+    private void addAnimationFrameRangeError(ProgramDef program,
+                                             SceneMaxParser.Anim_frame_rangeContext range,
+                                             ActionCommandAnimate cmd,
+                                             String rangeName) {
+        if (program == null || program.syntaxErrors == null) {
+            return;
+        }
+        String modelName = resolveAnimationFrameRangeModelName(cmd);
+        String target = cmd == null || cmd.targetVar == null ? "" : " for '" + cmd.targetVar + "'";
+        String model = modelName == null || modelName.isBlank() ? "" : " on model '" + modelName + "'";
+        program.syntaxErrors.add(_sourceFileName + ": line " + range.start.getLine()
+                + ", animation frame range '" + rangeName + "' was not found" + target + model);
+    }
+
+    private String formatFrameRangeNumber(double value) {
+        if (Math.rint(value) == value) {
+            return Long.toString(Math.round(value));
+        }
+        return Double.toString(value);
+    }
+
+    private static class AnimationFrameRangeDef {
+        final double start;
+        final double end;
+
+        AnimationFrameRangeDef(double start, double end) {
+            this.start = start;
+            this.end = end;
+        }
     }
 
     private String readLightColor(SceneMaxParser.Light_color_valueContext colorValue) {

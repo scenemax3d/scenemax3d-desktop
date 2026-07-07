@@ -18,6 +18,7 @@
 - [3D Objects & Models](objects-and-models.md)
 - [Sprites](sprites.md)
 - [Animation](animation.md)
+- [3D Model Animation Analyzer](model-animation-analyzer.md)
 - [Weapons Designer](weapons-designer.md)
 - [Throw Motion Designer](throw-motion.md)
 - [IK Designer](ik-designer.md)
