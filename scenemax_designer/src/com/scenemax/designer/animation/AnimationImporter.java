@@ -513,8 +513,11 @@ public class AnimationImporter {
         File targetTexture = new File(texturesDir, targetName);
         Files.copy(sourceTexture.toPath(), targetTexture.toPath(), StandardCopyOption.REPLACE_EXISTING);
 
-        TextureKey runtimeKey = new TextureKey(textureAssetPrefix + "/" + targetName, true);
-        runtimeKey.setGenerateMips(true);
+        TextureKey sourceKey = (TextureKey) texture.getKey();
+        TextureKey runtimeKey = new TextureKey(textureAssetPrefix + "/" + targetName, sourceKey.isFlipY());
+        runtimeKey.setGenerateMips(sourceKey.isGenerateMips());
+        runtimeKey.setAnisotropy(sourceKey.getAnisotropy());
+        runtimeKey.setTextureTypeHint(sourceKey.getTextureTypeHint());
         texture.setKey(runtimeKey);
     }
 

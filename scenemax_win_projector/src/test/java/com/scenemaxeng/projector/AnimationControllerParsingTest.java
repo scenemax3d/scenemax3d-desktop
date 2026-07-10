@@ -404,10 +404,10 @@ public class AnimationControllerParsingTest {
 
     @Test
     public void parsesFightingGameHorseNamedRangeFromRunningContext() throws Exception {
-        File source = resolveRepoFile("projects/fighting_game_project/scripts/Fighting Game/side_tests/tests");
         File runningScript = resolveRepoFile("running/side_tests/tests");
         File resources = resolveRepoFile("projects/fighting_game_project/resources");
-        String code = FileUtils.readFileToString(source, StandardCharsets.UTF_8);
+        String code = "s => horse1\n"
+                + "s.\"Take 001\"[\"Walk\"] loop";
 
         ProgramDef prg = new SceneMaxLanguageParser(
                 null,

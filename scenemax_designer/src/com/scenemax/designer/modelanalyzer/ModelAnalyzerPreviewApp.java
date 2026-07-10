@@ -173,6 +173,18 @@ class ModelAnalyzerPreviewApp extends SceneMaxApp {
         });
     }
 
+    void reloadProjectAssets() {
+        enqueue(() -> {
+            if (resourcesRoot != null && resourcesRoot.isDirectory()) {
+                previewAssets = new AssetsMapping(resourcesRoot.getAbsolutePath());
+            } else {
+                previewAssets = new AssetsMapping();
+            }
+            assetsMapping = previewAssets;
+            return null;
+        });
+    }
+
     void selectAnimation(String animationName) {
         enqueue(() -> {
             this.animationName = safeString(animationName);

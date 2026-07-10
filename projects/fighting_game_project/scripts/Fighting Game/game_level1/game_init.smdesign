@@ -273,7 +273,7 @@
           "colliderEntity": true,
           "type": "BOX",
           "sizeX": 0.5,
-          "sceneMaxCode": "player1_body_collider => box : size (1.0,1.0,1.0), pos (0.0,0.5,2.7905798)",
+          "sceneMaxCode": "player1_body_collider => box : size (1.0,1.0,1.0), pos (0.0,0.5,2.88586)",
           "material": "",
           "name": "player1_body_collider",
           "staticEntity": false,
@@ -1334,7 +1334,7 @@
       "vehicleModel": false,
       "id": "22817967-626c-4039-8b9a-03d53481c5df",
       "position": [
-        23.831593,
+        23.732,
         -88,
         161.9128
       ]
@@ -1484,15 +1484,15 @@
   },
   "camera": {
     "rotation": [
-      -0.09904575,
-      0.8923991,
-      -0.2391176,
-      -0.36964384
+      -0.1040122,
+      0.88346875,
+      -0.23435915,
+      -0.3920971
     ],
     "position": [
-      9.185587,
-      7.5,
-      9.185586
+      107.869804,
+      -0.8113022,
+      225.88701
     ]
   },
   "version": 1
