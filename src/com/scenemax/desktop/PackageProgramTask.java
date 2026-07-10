@@ -38,6 +38,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 import java.util.regex.Pattern;
@@ -48,7 +49,6 @@ import static com.scenemaxeng.compiler.SceneMaxLanguageParser.macroFilter;
 
 public class PackageProgramTask extends SwingWorker<Integer, String> {
 
-    private static final float ESTIMATED_FILES_COUNT = 6610;// total files packed in an executable scene
     private static final String SCENE_JAR_NAME = "scenemax3d_scene.jar";
     private static final String EMBEDDED_RUNTIME_DIR_NAME = "runtime";
     private static final String SELF_EXTRACT_PAYLOAD_JAR_NAME = "scenemax3d_scene.jar";
@@ -68,6 +68,10 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     private Runnable finish;
     private Runnable canceled;
     private int globalCounter=0;
+    private int progressPhaseBase = 0;
+    private int progressPhaseSpan = 1;
+    private int progressPhaseDone = 0;
+    private int progressPhaseTotal = 1;
     private final EnumSet<PackageTarget> targets;
     private final List<File> producedArtifacts = new ArrayList<>();
     private final Set<String> addedJarEntries = new LinkedHashSet<>();
@@ -178,9 +182,43 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     }
 
 
+    private void setPackageProgress(int progress) {
+        setProgress(Math.max(0, Math.min(100, progress)));
+    }
+
+    private void setRunningProgress(int progress) {
+        setPackageProgress(Math.min(99, progress));
+    }
+
+    private void beginProgressPhase(int base, int span, int totalWork) {
+        progressPhaseBase = Math.max(0, Math.min(99, base));
+        progressPhaseSpan = Math.max(1, Math.min(99 - progressPhaseBase, span));
+        progressPhaseDone = 0;
+        progressPhaseTotal = Math.max(1, totalWork);
+        setRunningProgress(progressPhaseBase);
+    }
+
+    private void finishProgressPhase() {
+        setRunningProgress(progressPhaseBase + progressPhaseSpan);
+    }
+
+    private void advanceProgressUnit() {
+        globalCounter += 1;
+        progressPhaseDone += 1;
+        int phaseProgress = Math.min(progressPhaseSpan,
+                Math.round(progressPhaseDone * progressPhaseSpan / (float) progressPhaseTotal));
+        setRunningProgress(progressPhaseBase + phaseProgress);
+    }
+
+    private int scaledProgress(int base, int span, int percent) {
+        int boundedPercent = Math.max(0, Math.min(100, percent));
+        return base + Math.round(span * boundedPercent / 100f);
+    }
+
     @Override
     protected Integer doInBackground() throws Exception {
 
+        setPackageProgress(0);
         normalizePackageRootAndProgram();
         String gameName = getGameName();
         initializePackageOutput(gameName);
@@ -214,6 +252,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         macroFilter.loadMacroRulesFromMacroFolder(new File("macro"));
         SceneMaxLanguageParser.setMacroFilter(macroFilter);
         logPackage("Parsing main script.");
+        setRunningProgress(3);
         ScriptTreeResourceCollector.CollectionResult reachableSources =
                 ScriptTreeResourceCollector.collectReachableResources(this.scriptFolder, macroFilter);
         scannedScriptFiles.addAll(reachableSources.scriptFiles);
@@ -228,6 +267,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         logPackage("Referenced effects: " + SceneMaxLanguageParser.effekseerUsed.size());
         logPackage("Referenced sprites: " + SceneMaxLanguageParser.spriteSheetUsed.size());
         logPackage("Referenced audio: " + SceneMaxLanguageParser.audioUsed.size());
+        setRunningProgress(12);
 
         JSONObject resources = new JSONObject("{ skyboxes:[], terrains:[], sprites:[],models:[],sounds:[], fonts:[], shaders:[], environmentShaders:[], materials:[], cinematics:[], animations:[], videos:[] }");
 
@@ -278,15 +318,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             if (res != null) {
 
                 if (res.path.startsWith("Models/")) {
-                    File src = new File(Util.getResourcePath(res.path));
-                    File srcDir = src.getParentFile();
-                    File destDir = new File(getModelDestPath(src));
-                    destDir.mkdirs();
-                    try {
-                        FileUtils.copyDirectory(srcDir, destDir);
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
+                    copyModelResourceToDeploy(new File("./deploy"), res);
 
                     // for vehicles , we need to copy the wheel model as well
                     if (res.isVehicle) {
@@ -294,14 +326,14 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                         // add engine audio file
                         List<String> soundFiles = getSoundFiles(Integer.parseInt(res.engine.audio));
                         for (String f : soundFiles) {
-                            src = new File(Util.getResourcePath(f));
+                            File src = new File(Util.getResourcePath(f));
                             File dest = new File("./deploy/" + f);
                             Files.copy(src.toPath(), dest.toPath());
 
                         }
 
                         // add horn audio file
-                        src = new File(Util.getResourcePath(res.horn));
+                        File src = new File(Util.getResourcePath(res.horn));
                         File dest = new File("./deploy/" + res.horn);
                         Files.copy(src.toPath(), dest.toPath());
 
@@ -441,6 +473,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         packagingInventoryJson = buildPackagingInventory(resources, assetsMapping).toString(2);
         FileUtils.writeStringToFile(new File(deployFolder, "packaging-inventory.json"), packagingInventoryJson, StandardCharsets.UTF_8);
         logPackage("Wrote deploy packaging inventory.");
+        setRunningProgress(18);
 
         File scriptFolderCopy = copyAndApplyMacro(scriptFolder);
         FileUtils.moveDirectory(scriptFolderCopy, new File(deployFolder, "running")); // rename
@@ -463,10 +496,13 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         if (javaExtensionBuildResult.hasExtensions()) {
             logPackage("Built Java extensions: " + javaExtensionBuildResult.extensions.size());
         }
+        setRunningProgress(24);
         prepareTargetPackages(resources);
         writeSizeReportAnalysis(resources);
+        setRunningProgress(92);
         uploadToItchIfRequested();
         logPackage("Packaging finished successfully.");
+        setPackageProgress(100);
 
         return globalCounter;
     }
@@ -592,20 +628,38 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         }
         producedArtifacts.clear();
         logPackage("Preparing target packages in: " + outputFolder.getAbsolutePath());
+        int targetCount = Math.max(1, targets.size());
+        int targetIndex = 0;
 
         if (targets.contains(PackageTarget.WINDOWS)) {
+            int phaseBase = targetProgressBase(targetIndex, targetCount);
+            int phaseEnd = targetProgressBase(targetIndex + 1, targetCount);
+            int archiveSpan = targetArchiveSpan(phaseEnd - phaseBase);
             logPackage("Creating Windows scene JAR.");
+            updateStatus("Creating Windows game archive...");
+            beginProgressPhase(phaseBase, archiveSpan, estimateSceneJarWorkUnits(PackageTarget.WINDOWS));
             writeSceneJarForTarget(PackageTarget.WINDOWS, resources);
+            finishProgressPhase();
+            updateStatus("Creating Windows package...");
             File windowsArtifact = prepareWindowsExecutable(gameName);
             if (windowsArtifact != null && windowsArtifact.exists()) {
                 producedArtifacts.add(windowsArtifact);
                 logPackage("Windows artifact: " + windowsArtifact.getAbsolutePath() + " (" + windowsArtifact.length() + " bytes)");
             }
+            setRunningProgress(phaseEnd);
+            targetIndex += 1;
         }
 
         if (targets.contains(PackageTarget.LINUX)) {
+            int phaseBase = targetProgressBase(targetIndex, targetCount);
+            int phaseEnd = targetProgressBase(targetIndex + 1, targetCount);
+            int archiveSpan = targetArchiveSpan(phaseEnd - phaseBase);
             logPackage("Creating Linux scene JAR.");
+            updateStatus("Creating Linux game archive...");
+            beginProgressPhase(phaseBase, archiveSpan, estimateSceneJarWorkUnits(PackageTarget.LINUX));
             writeSceneJarForTarget(PackageTarget.LINUX, resources);
+            finishProgressPhase();
+            updateStatus("Creating Linux package...");
             if (options.embedMinimalJavaRuntime) {
                 File linuxArtifact = prepareSelfExtractingPackage(PackageTarget.LINUX, gameName, "linux", gameName, true);
                 if (linuxArtifact != null && linuxArtifact.exists()) {
@@ -621,11 +675,20 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 }
                 deletePlatformArtifactsExceptZip(linuxFolder, linuxZip);
             }
+            setRunningProgress(phaseEnd);
+            targetIndex += 1;
         }
 
         if (targets.contains(PackageTarget.MAC_OSX)) {
+            int phaseBase = targetProgressBase(targetIndex, targetCount);
+            int phaseEnd = targetProgressBase(targetIndex + 1, targetCount);
+            int archiveSpan = targetArchiveSpan(phaseEnd - phaseBase);
             logPackage("Creating macOS scene JAR.");
+            updateStatus("Creating macOS game archive...");
+            beginProgressPhase(phaseBase, archiveSpan, estimateSceneJarWorkUnits(PackageTarget.MAC_OSX));
             writeSceneJarForTarget(PackageTarget.MAC_OSX, resources);
+            finishProgressPhase();
+            updateStatus("Creating macOS package...");
             if (options.embedMinimalJavaRuntime) {
                 File macArtifact = prepareSelfExtractingPackage(PackageTarget.MAC_OSX, gameName, "macos", gameName, true);
                 if (macArtifact != null && macArtifact.exists()) {
@@ -641,19 +704,37 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 }
                 deletePlatformArtifactsExceptZip(macFolder, macZip);
             }
+            setRunningProgress(phaseEnd);
+            targetIndex += 1;
         }
 
         if (targets.contains(PackageTarget.WEB_START)) {
+            int phaseBase = targetProgressBase(targetIndex, targetCount);
+            int phaseEnd = targetProgressBase(targetIndex + 1, targetCount);
+            int archiveSpan = targetArchiveSpan(phaseEnd - phaseBase);
             logPackage("Creating Web Start package.");
+            updateStatus("Creating Web Start game archive...");
+            beginProgressPhase(phaseBase, archiveSpan, estimateSceneJarWorkUnits(PackageTarget.WEB_START));
             writeSceneJarForTarget(PackageTarget.WEB_START, resources);
+            finishProgressPhase();
+            updateStatus("Creating Web Start package...");
             File webFolder = prepareWebStartPackage(gameName);
             if (webFolder != null && webFolder.exists()) {
                 producedArtifacts.add(webFolder);
                 logPackage("Web Start artifact folder: " + webFolder.getAbsolutePath());
             }
+            setRunningProgress(phaseEnd);
         }
 
         writePackagingInventoryArtifact();
+    }
+
+    private int targetProgressBase(int targetIndex, int targetCount) {
+        return 25 + Math.round(targetIndex * 65f / Math.max(1, targetCount));
+    }
+
+    private int targetArchiveSpan(int targetSpan) {
+        return Math.max(1, Math.round(Math.max(1, targetSpan) * 0.70f));
     }
 
     private void writeSceneJarForTarget(PackageTarget target, JSONObject resources) throws IOException {
@@ -669,12 +750,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             JarUtils.addJar(jarOutputStream, "", projectorFile, new Runnable() {
                 @Override
                 public void run() {
-                    globalCounter += 1;
-                    Float progress = globalCounter / ESTIMATED_FILES_COUNT * 100;
-                    if (progress > 100) {
-                        progress = 100f;
-                    }
-                    PackageProgramTask.this.setProgress(progress.intValue());
+                    advanceProgressUnit();
                 }
             }, addedJarEntries);
 
@@ -692,10 +768,60 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 jarOutputStream.putNextEntry(new JarEntry("resources.json"));
                 jarOutputStream.write(resources.toString().getBytes(StandardCharsets.UTF_8));
                 jarOutputStream.closeEntry();
+                advanceProgressUnit();
             }
         }
         File sceneJar = new File(SCENE_JAR_NAME);
         logPackage("Created scene JAR for " + target + ": " + sceneJar.getAbsolutePath() + " (" + sceneJar.length() + " bytes)");
+    }
+
+    private int estimateSceneJarWorkUnits(PackageTarget target) throws IOException {
+        int total = 1; // resources.json
+        total += countJarFileEntries(resolveProjectorJar(target));
+        total += countRegularFiles(new File("deploy"));
+        if (javaExtensionBuildResult != null && javaExtensionBuildResult.hasExtensions()) {
+            for (JavaExtensionBuildTool.ExtensionBuild extension : javaExtensionBuildResult.extensions) {
+                if (extension.jarFile != null && extension.jarFile.isFile()) {
+                    total += countJarFileEntries(extension.jarFile);
+                }
+            }
+        }
+        return Math.max(1, total);
+    }
+
+    private int countJarFileEntries(File jarFile) throws IOException {
+        if (jarFile == null || !jarFile.isFile()) {
+            return 0;
+        }
+        int count = 0;
+        try (JarFile jar = new JarFile(jarFile)) {
+            java.util.Enumeration<JarEntry> entries = jar.entries();
+            while (entries.hasMoreElements()) {
+                JarEntry entry = entries.nextElement();
+                if (!entry.isDirectory()) {
+                    count += 1;
+                }
+            }
+        }
+        return count;
+    }
+
+    private int countRegularFiles(File folder) {
+        if (folder == null || !folder.exists()) {
+            return 0;
+        }
+        if (folder.isFile()) {
+            return 1;
+        }
+        File[] children = folder.listFiles();
+        if (children == null) {
+            return 0;
+        }
+        int count = 0;
+        for (File child : children) {
+            count += countRegularFiles(child);
+        }
+        return count;
     }
 
     private void addJavaExtensionClasses(JarOutputStream jarOutputStream) {
@@ -707,7 +833,12 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 continue;
             }
             logPackage("Merging Java extension classes: " + extension.name);
-            JarUtils.addJar(jarOutputStream, "", extension.jarFile, null, addedJarEntries);
+            JarUtils.addJar(jarOutputStream, "", extension.jarFile, new Runnable() {
+                @Override
+                public void run() {
+                    advanceProgressUnit();
+                }
+            }, addedJarEntries);
         }
     }
 
@@ -742,17 +873,32 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             return;
         }
 
+        setRunningProgress(93);
+        updateStatus("Preparing itch.io upload...");
         List<String> butlerCommand = resolveButlerCommand();
         ensureButlerAvailable(butlerCommand);
 
         boolean uploadedAny = false;
         String gameName = getGameName();
+        int uploadableTargets = 0;
+        if (targets.contains(PackageTarget.WINDOWS)) {
+            uploadableTargets += 1;
+        }
+        if (targets.contains(PackageTarget.LINUX)) {
+            uploadableTargets += 1;
+        }
+        if (targets.contains(PackageTarget.MAC_OSX)) {
+            uploadableTargets += 1;
+        }
+        int uploadedTargets = 0;
 
         if (targets.contains(PackageTarget.WINDOWS)) {
             File windowsFolder = new File(outputFolder, "windows");
             File windowsArtifact = new File(windowsFolder, gameName + ".exe");
             uploadArtifactToItch(butlerCommand, windowsArtifact, ItchIoHelper.defaultChannel("windows", options.itchWindowsChannel), "Windows");
             uploadedAny = true;
+            uploadedTargets += 1;
+            setRunningProgress(scaledProgress(93, 6, uploadableTargets == 0 ? 100 : uploadedTargets * 100 / uploadableTargets));
         }
 
         if (targets.contains(PackageTarget.LINUX)) {
@@ -761,6 +907,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                     : new File(new File(outputFolder, "linux"), gameName + "_linux.zip");
             uploadArtifactToItch(butlerCommand, linuxArtifact, ItchIoHelper.defaultChannel("linux", options.itchLinuxChannel), "Linux");
             uploadedAny = true;
+            uploadedTargets += 1;
+            setRunningProgress(scaledProgress(93, 6, uploadableTargets == 0 ? 100 : uploadedTargets * 100 / uploadableTargets));
         }
 
         if (targets.contains(PackageTarget.MAC_OSX)) {
@@ -769,6 +917,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                     : new File(new File(outputFolder, "macos"), gameName + "_macos.zip");
             uploadArtifactToItch(butlerCommand, macArtifact, ItchIoHelper.defaultChannel("macos", options.itchMacChannel), "macOS");
             uploadedAny = true;
+            uploadedTargets += 1;
+            setRunningProgress(scaledProgress(93, 6, uploadableTargets == 0 ? 100 : uploadedTargets * 100 / uploadableTargets));
         }
 
         if (targets.contains(PackageTarget.WEB_START)) {
@@ -1821,7 +1971,9 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             }
         }
         updateStatus("Preparing upload...");
-        setProgress(0);
+        final int uploadBase = Math.max(getProgress(), progressPhaseBase);
+        final int uploadSpan = Math.max(1, Math.min(99, progressPhaseBase + progressPhaseSpan) - uploadBase);
+        setRunningProgress(uploadBase);
         try {
             Util.ftpUploadFiles(files, options.webRemoteFolder, new IMonitor() {
                 @Override
@@ -1831,12 +1983,13 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
                 @Override
                 public void setProgress(int progress) {
-                    PackageProgramTask.this.setProgress(progress);
+                    PackageProgramTask.this.setRunningProgress(scaledProgress(uploadBase, uploadSpan, progress));
                 }
 
                 @Override
                 public void onEnd() {
                     updateStatus("Upload completed.");
+                    PackageProgramTask.this.setRunningProgress(uploadBase + uploadSpan);
                 }
             });
         } catch (Exception e) {
@@ -2477,6 +2630,105 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         File activeFile = new File(Util.getResourcePath(normalizedPath));
         return activeFile.exists() ? activeFile : null;
+    }
+
+    void copyModelResourceToDeploy(File deployFolder, ResourceSetup res) {
+        if (deployFolder == null || res == null || res.path == null || res.path.isBlank()) {
+            return;
+        }
+
+        String normalizedPath = res.path.replace("\\", "/");
+        File sourceFile = resolveResourceFile(normalizedPath);
+        if (sourceFile == null || !sourceFile.isFile()) {
+            throw new RuntimeException("Missing model file for resource '" + res.name + "': " + normalizedPath);
+        }
+
+        File targetFile = new File(deployFolder, normalizedPath);
+        copyFileIfNeeded(sourceFile, targetFile);
+
+        String lowerName = sourceFile.getName().toLowerCase(Locale.ROOT);
+        if (lowerName.endsWith(".gltf")) {
+            copyGltfExternalDependencies(sourceFile, targetFile);
+        } else if (lowerName.endsWith(".j3o")) {
+            copyJ3oSidecars(sourceFile, targetFile);
+        }
+    }
+
+    private void copyGltfExternalDependencies(File sourceGltf, File targetGltf) {
+        try {
+            JSONObject gltf = new JSONObject(FileUtils.readFileToString(sourceGltf, StandardCharsets.UTF_8));
+            copyGltfUriArray(sourceGltf, targetGltf, gltf.optJSONArray("buffers"));
+            copyGltfUriArray(sourceGltf, targetGltf, gltf.optJSONArray("images"));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to copy GLTF dependencies for " + sourceGltf.getAbsolutePath(), e);
+        }
+    }
+
+    private void copyGltfUriArray(File sourceGltf, File targetGltf, JSONArray array) {
+        if (array == null) {
+            return;
+        }
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject entry = array.optJSONObject(i);
+            if (entry == null) {
+                continue;
+            }
+            String uri = entry.optString("uri", "").trim();
+            if (uri.isEmpty() || uri.startsWith("data:") || uri.contains("://")) {
+                continue;
+            }
+            File source = new File(sourceGltf.getParentFile(), uri.replace('/', File.separatorChar));
+            if (!source.isFile()) {
+                continue;
+            }
+            File target = new File(targetGltf.getParentFile(), uri.replace('/', File.separatorChar));
+            copyFileIfNeeded(source, target);
+        }
+    }
+
+    private void copyJ3oSidecars(File sourceJ3o, File targetJ3o) {
+        File texturesRoot = new File(sourceJ3o.getParentFile(), "textures");
+        if (!texturesRoot.isDirectory()) {
+            return;
+        }
+
+        String baseName = stripExtension(sourceJ3o.getName());
+        File matchingTextureDir = new File(texturesRoot, baseName);
+        if (matchingTextureDir.isDirectory()) {
+            copyDirectoryIfNeeded(matchingTextureDir, new File(new File(targetJ3o.getParentFile(), "textures"), baseName));
+            return;
+        }
+
+        File[] rootFiles = texturesRoot.listFiles(File::isFile);
+        if (rootFiles == null) {
+            return;
+        }
+        File targetTexturesRoot = new File(targetJ3o.getParentFile(), "textures");
+        for (File rootFile : rootFiles) {
+            copyFileIfNeeded(rootFile, new File(targetTexturesRoot, rootFile.getName()));
+        }
+    }
+
+    private void copyFileIfNeeded(File source, File target) {
+        try {
+            File parent = target.getParentFile();
+            if (parent != null) {
+                FileUtils.forceMkdir(parent);
+            }
+            if (!target.exists() || source.length() != target.length()) {
+                Files.copy(source.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to copy " + source.getAbsolutePath() + " to " + target.getAbsolutePath(), e);
+        }
+    }
+
+    private void copyDirectoryIfNeeded(File sourceDir, File targetDir) {
+        try {
+            FileUtils.copyDirectory(sourceDir, targetDir);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to copy " + sourceDir.getAbsolutePath() + " to " + targetDir.getAbsolutePath(), e);
+        }
     }
 
     private Set<String> collectStandaloneAssetCandidateNames(String extension, String... folderNames) {
@@ -3385,12 +3637,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             }
             target.closeEntry();
 
-            globalCounter+=1;
-            Float progress=globalCounter/ESTIMATED_FILES_COUNT*100;
-            if(progress>100) {
-                progress=100f;
-            }
-            this.setProgress(progress.intValue());
+            advanceProgressUnit();
 
         } catch(Exception e) {
             e.printStackTrace();
@@ -3454,12 +3701,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             }
             target.closeEntry();
 
-            globalCounter+=1;
-            Float progress=globalCounter/ESTIMATED_FILES_COUNT*100;
-            if(progress>100) {
-                progress=100f;
-            }
-            this.setProgress(progress.intValue());
+            advanceProgressUnit();
 
         } catch(Exception e) {
             e.printStackTrace();

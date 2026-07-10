@@ -1,5 +1,6 @@
 package com.scenemax.desktop;
 
+import com.scenemaxeng.common.types.ResourceSetup;
 import org.junit.Test;
 
 import java.io.File;
@@ -126,6 +127,72 @@ public class PackageProgramTaskAssetPackagingTest {
         assertFalse(Files.exists(deployRoot.resolve("animations/idle/idle.j3o")));
         assertEquals(1, packaged.length());
         assertEquals("kick", packaged.getJSONObject(0).getString("name"));
+
+        deleteDirectory(tempDir.toFile());
+    }
+
+    @Test
+    public void copiesOnlySelectedNativeJ3oModelAndMatchingTextureSidecars() throws Exception {
+        Path tempDir = Files.createTempDirectory("package-native-j3o");
+        Path projectRoot = tempDir.resolve("project");
+        Path scriptRoot = projectRoot.resolve("scripts/Game");
+        Path modelDir = projectRoot.resolve("resources/Models/old_fighter");
+        Path nativeTextures = modelDir.resolve("textures/old_fighter_native");
+        Path deployRoot = tempDir.resolve("deploy");
+
+        Files.createDirectories(scriptRoot);
+        Files.createDirectories(nativeTextures);
+        Files.createDirectories(modelDir.resolve("textures"));
+        Files.writeString(modelDir.resolve("old_fighter.glb"), "large source glb", StandardCharsets.UTF_8);
+        Files.writeString(modelDir.resolve("old_fighter_j3o.j3o"), "unused generated j3o", StandardCharsets.UTF_8);
+        Files.writeString(modelDir.resolve("old_fighter_native.j3o"), "used native j3o", StandardCharsets.UTF_8);
+        Files.writeString(modelDir.resolve("textures/Ch39_1001_Normal.png"), "source normal", StandardCharsets.UTF_8);
+        Files.writeString(nativeTextures.resolve("Ch39_1001_Normal.png"), "native normal", StandardCharsets.UTF_8);
+
+        PackageProgramTask task = new PackageProgramTask(scriptRoot.toString(), "", null, null, () -> {}, () -> {});
+        ResourceSetup resource = new ResourceSetup("old_fighter2_native",
+                "Models/old_fighter/old_fighter_native.j3o", 1, 1, 1, 0, 0, 0, 0);
+
+        task.copyModelResourceToDeploy(deployRoot.toFile(), resource);
+
+        assertTrue(Files.isRegularFile(deployRoot.resolve("Models/old_fighter/old_fighter_native.j3o")));
+        assertTrue(Files.isRegularFile(deployRoot.resolve("Models/old_fighter/textures/old_fighter_native/Ch39_1001_Normal.png")));
+        assertFalse(Files.exists(deployRoot.resolve("Models/old_fighter/old_fighter.glb")));
+        assertFalse(Files.exists(deployRoot.resolve("Models/old_fighter/old_fighter_j3o.j3o")));
+        assertFalse(Files.exists(deployRoot.resolve("Models/old_fighter/textures/Ch39_1001_Normal.png")));
+
+        deleteDirectory(tempDir.toFile());
+    }
+
+    @Test
+    public void copiesOnlyReferencedGltfModelDependencies() throws Exception {
+        Path tempDir = Files.createTempDirectory("package-gltf");
+        Path projectRoot = tempDir.resolve("project");
+        Path scriptRoot = projectRoot.resolve("scripts/Game");
+        Path modelDir = projectRoot.resolve("resources/Models/arena");
+        Path textures = modelDir.resolve("textures");
+        Path deployRoot = tempDir.resolve("deploy");
+
+        Files.createDirectories(scriptRoot);
+        Files.createDirectories(textures);
+        Files.writeString(modelDir.resolve("scene.gltf"),
+                "{\"buffers\":[{\"uri\":\"scene.bin\"}],\"images\":[{\"uri\":\"textures/diffuse.png\"},{\"uri\":\"data:image/png;base64,AAAA\"}]}",
+                StandardCharsets.UTF_8);
+        Files.writeString(modelDir.resolve("scene.bin"), "bin-data", StandardCharsets.UTF_8);
+        Files.writeString(textures.resolve("diffuse.png"), "diffuse-data", StandardCharsets.UTF_8);
+        Files.writeString(modelDir.resolve("unused.glb"), "unused", StandardCharsets.UTF_8);
+        Files.writeString(textures.resolve("unused.png"), "unused texture", StandardCharsets.UTF_8);
+
+        PackageProgramTask task = new PackageProgramTask(scriptRoot.toString(), "", null, null, () -> {}, () -> {});
+        ResourceSetup resource = new ResourceSetup("arena", "Models/arena/scene.gltf", 1, 1, 1, 0, 0, 0, 0);
+
+        task.copyModelResourceToDeploy(deployRoot.toFile(), resource);
+
+        assertTrue(Files.isRegularFile(deployRoot.resolve("Models/arena/scene.gltf")));
+        assertTrue(Files.isRegularFile(deployRoot.resolve("Models/arena/scene.bin")));
+        assertTrue(Files.isRegularFile(deployRoot.resolve("Models/arena/textures/diffuse.png")));
+        assertFalse(Files.exists(deployRoot.resolve("Models/arena/unused.glb")));
+        assertFalse(Files.exists(deployRoot.resolve("Models/arena/textures/unused.png")));
 
         deleteDirectory(tempDir.toFile());
     }

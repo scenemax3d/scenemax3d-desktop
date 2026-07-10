@@ -1105,6 +1105,25 @@ public class DesignerApp extends SceneMaxApp {
         return name;
     }
 
+    public boolean replaceModelResource(DesignerEntity entity, String resourceName) {
+        if (entity == null || entity.getType() != DesignerEntityType.MODEL
+                || resourceName == null || resourceName.trim().isEmpty()) {
+            return false;
+        }
+        String replacement = resourceName.trim();
+        if (replacement.equals(entity.getResourcePath())) {
+            return false;
+        }
+        if (!getAvailableModelNames().contains(replacement)) {
+            System.err.println("Cannot replace model resource; model not found: " + replacement);
+            return false;
+        }
+
+        entity.setResourcePath(replacement);
+        recreateEntity(entity, entity.isStaticEntity(), entity.isColliderEntity());
+        return true;
+    }
+
     private void addDesignerNativePrimitive(DesignerEntity entity, Vector3f initialPos,
                                             List<DesignerEntity> targetList, int insertIndex) {
         Node node = new Node(entity.getName() + "_designer");
@@ -3955,6 +3974,13 @@ public class DesignerApp extends SceneMaxApp {
         String shader = entity.getShader();
         boolean hidden = entity.isHidden();
         String shadowMode = entity.getShadowMode();
+        String resourcePath = entity.getResourcePath();
+        boolean staticModel = entity.isStaticModel();
+        boolean dynamicModel = entity.isDynamicModel();
+        boolean vehicleModel = entity.isVehicleModel();
+        String modelCollisionShape = entity.getModelCollisionShape();
+        String jointMapping = entity.getJointMapping();
+        String existingNodeName = entity.getSceneNode() != null ? entity.getSceneNode().getName() : "";
 
         // Find the entity's location (top-level or inside a section)
         List<DesignerEntity> ownerList = null;
@@ -3982,6 +4008,9 @@ public class DesignerApp extends SceneMaxApp {
             selectionManager.deselect();
         }
         outlineEffect.removeOutline();
+        if (type == DesignerEntityType.MODEL && existingNodeName != null && !existingNodeName.isEmpty()) {
+            killModel(existingNodeName);
+        }
         if (entity.getSceneNode() != null) {
             entity.getSceneNode().removeFromParent();
         }
@@ -4053,6 +4082,13 @@ public class DesignerApp extends SceneMaxApp {
                        ", segments " + archSegments +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
                 break;
+            case MODEL:
+                String modelPrefix = staticModel ? "static " : dynamicModel ? "dynamic " : "";
+                String vehicleSuffix = vehicleModel ? " vehicle" : "";
+                code = name + " => " + modelPrefix + resourcePath + vehicleSuffix +
+                        ":" + hiddenAttr + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" +
+                        shadowSuffix + buildModelCollisionShapeSuffix(modelCollisionShape) + " async";
+                break;
             default:
                 return;
         }
@@ -4094,6 +4130,12 @@ public class DesignerApp extends SceneMaxApp {
         pending.archDepth = archDepth;
         pending.archThickness = archThickness;
         pending.archSegments = archSegments;
+        pending.resourcePath = resourcePath;
+        pending.staticModel = staticModel;
+        pending.dynamicModel = dynamicModel;
+        pending.vehicleModel = vehicleModel;
+        pending.modelCollisionShape = modelCollisionShape;
+        pending.jointMapping = jointMapping;
         pending.staticEntity = isStatic;
         pending.colliderEntity = isCollider;
         pending.material = material;
@@ -4107,6 +4149,13 @@ public class DesignerApp extends SceneMaxApp {
         pending.savedScale = scale;
         pending.targetList = ownerList;
         pending.insertIndex = ownerIndex;
+        if (type == DesignerEntityType.MODEL) {
+            attachLoadingGizmo(pending);
+            if (pending.loadingGizmo != null) {
+                float gizmoY = pos.y + (vehicleModel ? 6f : 1f);
+                pending.loadingGizmo.setLocalTranslation(pos.x, gizmoY, pos.z);
+            }
+        }
         pendingEntities.add(pending);
     }
 
@@ -4973,7 +5022,7 @@ public class DesignerApp extends SceneMaxApp {
             case LIGHT:
                 return buildLightCode(entity, pos);
             case MODEL:
-                String staticPfx = entity.isStaticModel() ? "static " : "";
+                String staticPfx = entity.isStaticModel() ? "static " : entity.isDynamicModel() ? "dynamic " : "";
                 String vehicleSfx = entity.isVehicleModel() ? " vehicle" : "";
                 String collisionSuffix = buildModelCollisionShapeSuffix(entity.getModelCollisionShape());
                 return name + " => " + staticPfx + entity.getResourcePath() + vehicleSfx +

@@ -295,16 +295,17 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         center.add(itchPanel);
         center.add(Box.createVerticalStrut(8));
 
-        lblStatus.setAlignmentX(Component.LEFT_ALIGNMENT);
-        center.add(lblStatus);
-        center.add(Box.createVerticalStrut(6));
-        progressBar1.setAlignmentX(Component.LEFT_ALIGNMENT);
-        progressBar1.setMaximumSize(new Dimension(Integer.MAX_VALUE, progressBar1.getPreferredSize().height));
-        center.add(progressBar1);
+        JPanel footer = new JPanel(new BorderLayout(0, 8));
+        footer.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
+        lblStatus.setPreferredSize(new Dimension(760, lblStatus.getPreferredSize().height));
+        progressBar1.setPreferredSize(new Dimension(760, Math.max(22, progressBar1.getPreferredSize().height)));
+        footer.add(lblStatus, BorderLayout.NORTH);
+        footer.add(progressBar1, BorderLayout.CENTER);
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         buttons.add(buttonCancel);
         buttons.add(buttonPackage);
+        footer.add(buttons, BorderLayout.SOUTH);
 
         JScrollPane scrollPane = new JScrollPane(center) {
             @Override
@@ -318,7 +319,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         center.setAlignmentX(Component.LEFT_ALIGNMENT);
         root.add(scrollPane, BorderLayout.CENTER);
-        root.add(buttons, BorderLayout.SOUTH);
+        root.add(footer, BorderLayout.SOUTH);
         return root;
     }
 

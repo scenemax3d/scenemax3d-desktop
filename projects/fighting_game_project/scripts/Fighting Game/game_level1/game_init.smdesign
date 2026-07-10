@@ -167,7 +167,7 @@
       ],
       "modelCollisionShape": "default",
       "type": "MODEL",
-      "sceneMaxCode": "boss => boss: hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast async",
+      "sceneMaxCode": "boss => dynamic boss: hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast async",
       "staticModel": false,
       "name": "boss",
       "vehicleModel": false,
@@ -235,7 +235,7 @@
             0,
             -0.05878162
           ],
-          "resourcePath": "fighter1",
+          "resourcePath": "fighter1_native",
           "jointMapping": "mixamorig:Head,mixamorig:LeftShoulder,mixamorig:LeftArm,mixamorig:LeftForeArm,mixamorig:LeftHand,mixamorig:RightShoulder,mixamorig:RightArm,mixamorig:RightForeArm,mixamorig:RightHand,mixamorig:LeftUpLeg,mixamorig:LeftLeg,mixamorig:LeftFoot,mixamorig:RightUpLeg,mixamorig:RightLeg,mixamorig:RightFoot",
           "scale": [
             3,
@@ -244,7 +244,7 @@
           ],
           "modelCollisionShape": "default",
           "type": "MODEL",
-          "sceneMaxCode": "player1 => fighter1: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast async",
+          "sceneMaxCode": "player1 => dynamic fighter1_native: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast async",
           "staticModel": false,
           "name": "player1",
           "vehicleModel": false,
@@ -597,7 +597,7 @@
             0,
             1
           ],
-          "resourcePath": "old_fighter2",
+          "resourcePath": "old_fighter2_native",
           "jointMapping": "mixamorig:Head,mixamorig:LeftShoulder,mixamorig:LeftArm,mixamorig:LeftForeArm,mixamorig:LeftHand,mixamorig:RightShoulder,mixamorig:RightArm,mixamorig:RightForeArm,mixamorig:RightHand,mixamorig:LeftUpLeg,mixamorig:LeftLeg,mixamorig:LeftFoot,mixamorig:RightUpLeg,mixamorig:RightLeg,mixamorig:RightFoot",
           "scale": [
             3,
@@ -606,7 +606,7 @@
           ],
           "modelCollisionShape": "default",
           "type": "MODEL",
-          "sceneMaxCode": "player2 => old_fighter2: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on async",
+          "sceneMaxCode": "player2 => dynamic old_fighter2_native: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on async",
           "staticModel": false,
           "name": "player2",
           "vehicleModel": false,
@@ -1235,7 +1235,7 @@
         0,
         1
       ],
-      "resourcePath": "meshy_ai_dragon_gate_0504202330_texture",
+      "resourcePath": "meshy_ai_dragon_gate_0504202330_texture_native",
       "jointMapping": "",
       "scale": [
         30,
@@ -1244,7 +1244,7 @@
       ],
       "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "dragons_gate => static meshy_ai_dragon_gate_0504202330_texture: pos (22.532026,-66.486755,148.68306), scale 30.0, collision shape none async",
+      "sceneMaxCode": "dragons_gate => static meshy_ai_dragon_gate_0504202330_texture_native: pos (22.532026,-66.486755,148.68306), scale 30.0, collision shape none async",
       "staticModel": true,
       "name": "dragons_gate",
       "vehicleModel": false,
@@ -1266,7 +1266,7 @@
         0,
         1
       ],
-      "resourcePath": "meshy_crystal1",
+      "resourcePath": "meshy_crystal1_native",
       "jointMapping": "",
       "scale": [
         1,
@@ -1275,7 +1275,7 @@
       ],
       "modelCollisionShape": "box",
       "type": "MODEL",
-      "sceneMaxCode": "crystal => static meshy_crystal1: hidden, pos (23.844534,-88.28118,161.98776), collision shape box async",
+      "sceneMaxCode": "crystal => static meshy_crystal1_native: hidden, pos (23.844534,-88.28118,161.98776), collision shape box async",
       "staticModel": true,
       "name": "crystal",
       "vehicleModel": false,
@@ -1328,7 +1328,7 @@
       ],
       "modelCollisionShape": "box",
       "type": "MODEL",
-      "sceneMaxCode": "crystal_box => static meshy_wooden_box: pos (23.831593,-88.0,161.9128), scale 1.4, collision shape box async",
+      "sceneMaxCode": "crystal_box => static meshy_wooden_box: pos (23.732,-88.0,161.9128), scale 1.4, collision shape box async",
       "staticModel": true,
       "name": "crystal_box",
       "vehicleModel": false,
@@ -1350,7 +1350,7 @@
         0,
         1
       ],
-      "resourcePath": "meshy_axe",
+      "resourcePath": "meshy_axe_native",
       "jointMapping": "",
       "scale": [
         2,
@@ -1359,7 +1359,7 @@
       ],
       "modelCollisionShape": "box",
       "type": "MODEL",
-      "sceneMaxCode": "axe => meshy_axe: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async",
+      "sceneMaxCode": "axe => meshy_axe_native: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async",
       "staticModel": false,
       "name": "axe",
       "vehicleModel": false,
@@ -1484,15 +1484,15 @@
   },
   "camera": {
     "rotation": [
-      -0.1040122,
-      0.88346875,
-      -0.23435915,
-      -0.3920971
+      -0.09904575,
+      0.8923991,
+      -0.23911761,
+      -0.3696438
     ],
     "position": [
-      107.869804,
-      -0.8113022,
-      225.88701
+      104.915115,
+      -20.872337,
+      228.78844
     ]
   },
   "version": 1
