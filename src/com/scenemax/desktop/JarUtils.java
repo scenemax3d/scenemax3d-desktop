@@ -34,10 +34,6 @@ public class JarUtils {
             JarEntry entry = jis.getNextJarEntry();
             while (entry != null) {
 
-                if (progress != null) {
-                    progress.run();
-                }
-
                 if (entry.isDirectory() == false) {
                     String entryName = prefix + entry.getName();
                     if (existingEntries != null && !existingEntries.add(entryName)) {
@@ -46,6 +42,9 @@ public class JarUtils {
                     }
                     tmp.add(entryName);
                     addJarEntry(outputStream, entryName, jis);
+                    if (progress != null) {
+                        progress.run();
+                    }
                 }
                 entry = jis.getNextJarEntry();
             }

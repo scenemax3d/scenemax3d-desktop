@@ -206,6 +206,8 @@ public class DesignerPanel extends JPanel {
     private JPanel sceneShaderPanel;
     private JComboBox<String> cboShadowMode;
     private JPanel shadowModePanel;
+    private JComboBox<String> cboModelAsset;
+    private JPanel modelAssetPanel;
     private JComboBox<String> cboModelCollisionShape;
     private JPanel modelCollisionShapePanel;
     private JCheckBox chkJointMapping;
@@ -1098,6 +1100,43 @@ public class DesignerPanel extends JPanel {
         shadowModePanel.add(shadowModeRow);
         shadowModePanel.setVisible(false);
         propertiesForm.add(shadowModePanel);
+
+        // Model Asset combo (MODEL only)
+        modelAssetPanel = new JPanel();
+        modelAssetPanel.setLayout(new BoxLayout(modelAssetPanel, BoxLayout.Y_AXIS));
+        modelAssetPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        modelAssetPanel.add(Box.createVerticalStrut(8));
+        JLabel lblModelAsset = new JLabel("Model Asset:");
+        lblModelAsset.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblModelAsset.setFont(lblModelAsset.getFont().deriveFont(Font.BOLD));
+        modelAssetPanel.add(lblModelAsset);
+        cboModelAsset = new JComboBox<>();
+        cboModelAsset.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+        cboModelAsset.setAlignmentX(Component.LEFT_ALIGNMENT);
+        cboModelAsset.setToolTipText("The model resource used by this object");
+        cboModelAsset.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                          boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof String && app != null) {
+                    String name = (String) value;
+                    String label = name;
+                    if (app.isModelVehicle(name)) {
+                        label += "  (vehicle)";
+                    }
+                    if (app.isModelStatic(name)) {
+                        label += "  (static)";
+                    }
+                    setText(label);
+                }
+                return this;
+            }
+        });
+        cboModelAsset.addActionListener(e -> applyModelResourceChange());
+        modelAssetPanel.add(cboModelAsset);
+        modelAssetPanel.setVisible(false);
+        propertiesForm.add(modelAssetPanel);
 
         // Collision Shape combo (MODEL only)
         modelCollisionShapePanel = new JPanel();
@@ -2753,6 +2792,7 @@ public class DesignerPanel extends JPanel {
                 shaderPanel.setVisible(false);
                 sceneShaderPanel.setVisible(false);
                 shadowModePanel.setVisible(false);
+                modelAssetPanel.setVisible(false);
                 modelCollisionShapePanel.setVisible(false);
                 jointMappingPanel.setVisible(false);
                 pathPropertiesPanel.setVisible(false);
@@ -2913,6 +2953,8 @@ public class DesignerPanel extends JPanel {
                 shadowModePanel.setVisible(true);
 
                 if (entity.getType() == DesignerEntityType.MODEL) {
+                    refreshModelAssetChoices(entity.getResourcePath());
+                    modelAssetPanel.setVisible(true);
                     cboModelCollisionShape.setSelectedItem(modelCollisionShapeLabel(entity.getModelCollisionShape()));
                     modelCollisionShapePanel.setVisible(true);
                     String jm = entity.getJointMapping();
@@ -2921,6 +2963,7 @@ public class DesignerPanel extends JPanel {
                     btnEditJointMapping.setEnabled(hasJoints);
                     jointMappingPanel.setVisible(true);
                 } else {
+                    modelAssetPanel.setVisible(false);
                     modelCollisionShapePanel.setVisible(false);
                     jointMappingPanel.setVisible(false);
                 }
@@ -2928,6 +2971,7 @@ public class DesignerPanel extends JPanel {
                 hiddenPanel.setVisible(false);
                 shaderPanel.setVisible(false);
                 shadowModePanel.setVisible(false);
+                modelAssetPanel.setVisible(false);
                 modelCollisionShapePanel.setVisible(false);
                 jointMappingPanel.setVisible(false);
             }
@@ -3037,6 +3081,7 @@ public class DesignerPanel extends JPanel {
             hiddenPanel.setVisible(false);
             shaderPanel.setVisible(false);
             shadowModePanel.setVisible(false);
+            modelAssetPanel.setVisible(false);
             modelCollisionShapePanel.setVisible(false);
             jointMappingPanel.setVisible(false);
             pathPropertiesPanel.setVisible(false);
@@ -3405,6 +3450,24 @@ public class DesignerPanel extends JPanel {
                 app.recreateEntity(sel, sel.isStaticEntity(), sel.isColliderEntity());
             }
             app.markDocumentDirty();
+            return null;
+        });
+    }
+
+    private void applyModelResourceChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.MODEL) return;
+
+        String modelAsset = selectedComboValue(cboModelAsset);
+        if (modelAsset == null || modelAsset.trim().isEmpty()
+                || modelAsset.equals(sel.getResourcePath())) {
+            return;
+        }
+
+        String replacement = modelAsset.trim();
+        app.enqueue(() -> {
+            app.replaceModelResource(sel, replacement);
             return null;
         });
     }
@@ -3936,6 +3999,32 @@ public class DesignerPanel extends JPanel {
 
         cboSceneShader.setModel(model);
         cboSceneShader.setSelectedItem(selectedShader != null && !selectedShader.isBlank() ? selectedShader : "None");
+    }
+
+    private void refreshModelAssetChoices(String selectedModelAsset) {
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+
+        if (app != null) {
+            for (String modelName : app.getAvailableModelNames()) {
+                model.addElement(modelName);
+            }
+        }
+
+        if (selectedModelAsset != null && !selectedModelAsset.isBlank()) {
+            boolean exists = false;
+            for (int i = 0; i < model.getSize(); i++) {
+                if (selectedModelAsset.equals(model.getElementAt(i))) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                model.addElement(selectedModelAsset);
+            }
+        }
+
+        cboModelAsset.setModel(model);
+        cboModelAsset.setSelectedItem(selectedModelAsset != null ? selectedModelAsset : "");
     }
 
     private void refreshLightColorChoices(String selectedColor) {
