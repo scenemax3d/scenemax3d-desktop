@@ -102,6 +102,9 @@ public class DesignerEntity {
     // Shadow mode: "none", "cast", "receive", "both"
     private String shadowMode = "none";
 
+    // Optional SceneMax attach target. Examples: "player1" or "player1.\"mixamorig:Head\"".
+    private String attachTo = "";
+
     // Joint mapping for 3D models (comma-separated joint names, empty = disabled)
     private String jointMapping = "";
 
@@ -262,6 +265,9 @@ public class DesignerEntity {
     public String getShadowMode() { return shadowMode; }
     public void setShadowMode(String shadowMode) { this.shadowMode = shadowMode != null ? shadowMode : "none"; }
 
+    public String getAttachTo() { return attachTo != null ? attachTo : ""; }
+    public void setAttachTo(String attachTo) { this.attachTo = attachTo != null ? attachTo.trim() : ""; }
+
     public String getJointMapping() { return jointMapping; }
     public void setJointMapping(String jointMapping) { this.jointMapping = jointMapping != null ? jointMapping : ""; }
 
@@ -355,6 +361,9 @@ public class DesignerEntity {
 
         if (sceneMaxCode != null) {
             json.put("sceneMaxCode", sceneMaxCode);
+        }
+        if (attachTo != null && !attachTo.isBlank()) {
+            json.put("attachTo", attachTo);
         }
 
         switch (type) {
@@ -532,6 +541,7 @@ public class DesignerEntity {
         DesignerEntityType type = DesignerEntityType.valueOf(typeName);
 
         DesignerEntity entity = new DesignerEntity(id, name, type);
+        entity.attachTo = json.optString("attachTo", "");
 
         switch (type) {
             case SPHERE:

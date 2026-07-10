@@ -122,6 +122,7 @@ public class DesignerApp extends SceneMaxApp {
         boolean hidden;
         String shadowMode;
         String jointMapping;
+        String attachTo;
         String nodeName;
         int framesWaited;
         boolean selectAfterCreation;
@@ -3423,6 +3424,7 @@ public class DesignerApp extends SceneMaxApp {
                 }
                 entity.setSceneMaxCode(pe.code);
                 entity.setSceneNode(node);
+                entity.setAttachTo(pe.attachTo);
 
                 // Store type-specific properties
                 switch (pe.type) {
@@ -3558,6 +3560,7 @@ public class DesignerApp extends SceneMaxApp {
                 } else {
                     target.add(entity);
                 }
+                applyAllEntityAttachments();
                 System.out.println("[TRACE] After add: target.size()=" + target.size()
                         + ", entities.size()=" + entities.size());
 
@@ -3620,6 +3623,7 @@ public class DesignerApp extends SceneMaxApp {
         // the Swing thread would try to read it.  A single definitive refresh
         // happens below once ALL entities have been resolved.
         if (anyResolved && !loadingDocument) {
+            applyAllEntityAttachments();
             notifySceneChanged();
         }
 
@@ -3634,6 +3638,7 @@ public class DesignerApp extends SceneMaxApp {
                 sortEntitiesByLoadOrder(entities, loadingEntityOrder);
                 loadingEntityOrder = null;
             }
+            applyAllEntityAttachments();
 
             // Now that all entities are in and sorted, refresh the tree once
             System.out.println("[JME] Loading complete. entities.size()=" + entities.size()
@@ -3837,6 +3842,107 @@ public class DesignerApp extends SceneMaxApp {
         markDocumentDirty();
     }
 
+    public boolean applyEntityAttachment(DesignerEntity entity, String attachTo) {
+        if (entity == null || entity.getSceneNode() == null || !isAttachableEntity(entity)) {
+            return false;
+        }
+        String target = attachTo != null ? attachTo.trim() : "";
+        if (target.isEmpty()) {
+            entity.setAttachTo("");
+            if (entity.getSceneNode().getParent() != rootNode) {
+                rootNode.attachChild(entity.getSceneNode());
+            }
+            markDocumentDirty();
+            notifySceneChanged();
+            return true;
+        }
+
+        DesignerEntity targetEntity = findEntityByName(extractAttachTargetEntityName(target), entities);
+        if (targetEntity == null || targetEntity == entity || targetEntity.getSceneNode() == null
+                || isSceneNodeDescendant(targetEntity.getSceneNode(), entity.getSceneNode())) {
+            return false;
+        }
+
+        entity.setAttachTo(target);
+        targetEntity.getSceneNode().attachChild(entity.getSceneNode());
+        markDocumentDirty();
+        notifySceneChanged();
+        return true;
+    }
+
+    private void applyAllEntityAttachments() {
+        applyAllEntityAttachments(entities);
+    }
+
+    private void applyAllEntityAttachments(List<DesignerEntity> source) {
+        if (source == null) {
+            return;
+        }
+        for (DesignerEntity entity : source) {
+            if (entity == null) {
+                continue;
+            }
+            if (entity.getType() == DesignerEntityType.SECTION
+                    || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                applyAllEntityAttachments(entity.getChildren());
+                continue;
+            }
+            String attachTo = entity.getAttachTo();
+            if (attachTo == null || attachTo.isBlank() || entity.getSceneNode() == null) {
+                continue;
+            }
+            DesignerEntity target = findEntityByName(extractAttachTargetEntityName(attachTo), entities);
+            if (target != null && target != entity && target.getSceneNode() != null
+                    && !isSceneNodeDescendant(target.getSceneNode(), entity.getSceneNode())) {
+                target.getSceneNode().attachChild(entity.getSceneNode());
+            }
+        }
+    }
+
+    private static String extractAttachTargetEntityName(String attachTo) {
+        if (attachTo == null) {
+            return "";
+        }
+        String value = attachTo.trim();
+        int jointDot = value.indexOf(".\"");
+        if (jointDot >= 0) {
+            return value.substring(0, jointDot).trim();
+        }
+        return value;
+    }
+
+    private static boolean isSceneNodeDescendant(Spatial candidate, Spatial possibleAncestor) {
+        Spatial current = candidate;
+        while (current != null) {
+            if (current == possibleAncestor) {
+                return true;
+            }
+            current = current.getParent();
+        }
+        return false;
+    }
+
+    private static boolean isAttachableEntity(DesignerEntity entity) {
+        if (entity == null) {
+            return false;
+        }
+        switch (entity.getType()) {
+            case SPHERE:
+            case BOX:
+            case WEDGE:
+            case CYLINDER:
+            case CONE:
+            case HOLLOW_CYLINDER:
+            case QUAD:
+            case STAIRS:
+            case ARCH:
+            case MODEL:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     public void removeEntity(DesignerEntity entity) {
         if (entity == null) return;
         if (entity.getType() == DesignerEntityType.CAMERA) return; // Camera cannot be deleted
@@ -3980,6 +4086,7 @@ public class DesignerApp extends SceneMaxApp {
         boolean vehicleModel = entity.isVehicleModel();
         String modelCollisionShape = entity.getModelCollisionShape();
         String jointMapping = entity.getJointMapping();
+        String attachTo = entity.getAttachTo();
         String existingNodeName = entity.getSceneNode() != null ? entity.getSceneNode().getName() : "";
 
         // Find the entity's location (top-level or inside a section)
@@ -4142,6 +4249,7 @@ public class DesignerApp extends SceneMaxApp {
         pending.shader = shader;
         pending.hidden = hidden;
         pending.shadowMode = shadowMode;
+        pending.attachTo = attachTo;
         pending.nodeName = nodeName;
         pending.framesWaited = 0;
         pending.selectAfterCreation = true;
@@ -4433,6 +4541,9 @@ public class DesignerApp extends SceneMaxApp {
         collectEntityIdsRecursive(document.getEntityDefs(), loadingEntityOrder);
 
         loadEntityDefs(document.getEntityDefs(), entities, null);
+        if (pendingEntities.isEmpty()) {
+            applyAllEntityAttachments();
+        }
     }
 
     private void clearDesignerVisualState() {
@@ -4748,6 +4859,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.shader = entityTemplate.getShader();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
+                    pending.attachTo = entityTemplate.getAttachTo();
                     break;
                 case BOX:
                     pending.sizeX = entityTemplate.getSizeX();
@@ -4759,6 +4871,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.shader = entityTemplate.getShader();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
+                    pending.attachTo = entityTemplate.getAttachTo();
                     break;
                 case WEDGE:
                     pending.wedgeWidth = entityTemplate.getWedgeWidth();
@@ -4770,6 +4883,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.shader = entityTemplate.getShader();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
+                    pending.attachTo = entityTemplate.getAttachTo();
                     break;
                 case CYLINDER:
                 case CONE:
@@ -4782,6 +4896,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.shader = entityTemplate.getShader();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
+                    pending.attachTo = entityTemplate.getAttachTo();
                     break;
                 case HOLLOW_CYLINDER:
                     pending.radiusTop = entityTemplate.getRadiusTop();
@@ -4795,6 +4910,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.shader = entityTemplate.getShader();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
+                    pending.attachTo = entityTemplate.getAttachTo();
                     break;
                 case QUAD:
                     pending.quadWidth = entityTemplate.getQuadWidth();
@@ -4805,6 +4921,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.shader = entityTemplate.getShader();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
+                    pending.attachTo = entityTemplate.getAttachTo();
                     break;
                 case STAIRS:
                     pending.stairsWidth = entityTemplate.getStairsWidth();
@@ -4817,6 +4934,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.shader = entityTemplate.getShader();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
+                    pending.attachTo = entityTemplate.getAttachTo();
                     break;
                 case ARCH:
                     pending.archWidth = entityTemplate.getArchWidth();
@@ -4830,6 +4948,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.shader = entityTemplate.getShader();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shadowMode = entityTemplate.getShadowMode();
+                    pending.attachTo = entityTemplate.getAttachTo();
                     break;
                 case MODEL:
                     pending.resourcePath = entityTemplate.getResourcePath();
@@ -4841,6 +4960,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.shader = entityTemplate.getShader();
                     pending.shadowMode = entityTemplate.getShadowMode();
                     pending.jointMapping = entityTemplate.getJointMapping();
+                    pending.attachTo = entityTemplate.getAttachTo();
                     break;
             }
 

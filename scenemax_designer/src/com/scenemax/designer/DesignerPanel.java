@@ -172,6 +172,7 @@ public class DesignerPanel extends JPanel {
 
     // Properties panel
     private JTextField txtName;
+    private JComboBox<String> cboAttachTo;
     private JSpinner spnPosX, spnPosY, spnPosZ;
     private JSpinner spnRotX, spnRotY, spnRotZ;
     private JSpinner spnScaleX, spnScaleY, spnScaleZ;
@@ -543,6 +544,13 @@ public class DesignerPanel extends JPanel {
         txtName = new JTextField(15);
         txtName.addActionListener(e -> applyNameChange());
         addFormRow("Name:", txtName);
+
+        cboAttachTo = new JComboBox<>();
+        cboAttachTo.setEditable(true);
+        cboAttachTo.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+        cboAttachTo.setToolTipText("Attach this object to another object, or to a model bone like player.\"mixamorig:Head\".");
+        cboAttachTo.addActionListener(e -> applyAttachmentChange());
+        addFormRow("Attach to:", cboAttachTo);
 
         propertiesForm.add(Box.createVerticalStrut(8));
         propertiesForm.add(createLabel("Position:"));
@@ -2777,6 +2785,7 @@ public class DesignerPanel extends JPanel {
             if (entity == null) {
                 txtName.setText("");
                 lblType.setText("Type: -");
+                setAttachToRowVisible(false);
                 clearSpinners();
                 sizeFieldsPanel.setVisible(false);
                 wedgePanel.setVisible(false);
@@ -2803,6 +2812,11 @@ public class DesignerPanel extends JPanel {
 
             txtName.setText(entity.getName());
             lblType.setText("Type: " + entity.getType().name());
+            boolean attachable = isAttachableEntity(entity);
+            if (attachable) {
+                refreshAttachToChoices(entity);
+            }
+            setAttachToRowVisible(attachable);
 
             Vector3f pos = entity.getPosition();
             spnPosX.setValue((double) pos.x);
@@ -3066,6 +3080,7 @@ public class DesignerPanel extends JPanel {
         try {
             txtName.setText("Scene");
             lblType.setText("Type: Scene");
+            setAttachToRowVisible(false);
             clearSpinners();
 
             sizeFieldsPanel.setVisible(false);
@@ -3147,6 +3162,21 @@ public class DesignerPanel extends JPanel {
                 refreshSceneTree();
             }
         }
+    }
+
+    private void applyAttachmentChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || !isAttachableEntity(sel)) return;
+
+        String attachTo = selectedComboValue(cboAttachTo).trim();
+        app.enqueue(() -> {
+            boolean changed = app.applyEntityAttachment(sel, attachTo);
+            if (!changed) {
+                SwingUtilities.invokeLater(() -> updatePropertiesPanel(sel));
+            }
+            return null;
+        });
     }
 
     private void applyTransformChange() {
@@ -4057,6 +4087,53 @@ public class DesignerPanel extends JPanel {
         cboLightLookAt.setSelectedItem(selectedLight != null ? selectedLight.getLightLookAtTarget() : "");
     }
 
+    private void refreshAttachToChoices(DesignerEntity selectedEntity) {
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+        model.addElement("");
+        if (app != null) {
+            addAttachToChoices(model, app.getEntities(), selectedEntity);
+        }
+        addComboValueIfMissing(model, selectedEntity != null ? selectedEntity.getAttachTo() : "");
+        cboAttachTo.setModel(model);
+        cboAttachTo.setSelectedItem(selectedEntity != null ? selectedEntity.getAttachTo() : "");
+    }
+
+    private void addAttachToChoices(DefaultComboBoxModel<String> model, List<DesignerEntity> source,
+                                    DesignerEntity selectedEntity) {
+        if (source == null) {
+            return;
+        }
+        for (DesignerEntity entity : source) {
+            if (entity == null) {
+                continue;
+            }
+            if (isAttachTarget(entity, selectedEntity)) {
+                addComboValueIfMissing(model, entity.getName());
+                if (entity.getType() == DesignerEntityType.MODEL) {
+                    addModelJointAttachChoices(model, entity);
+                }
+            }
+            addAttachToChoices(model, entity.getChildren(), selectedEntity);
+        }
+    }
+
+    private void addModelJointAttachChoices(DefaultComboBoxModel<String> model, DesignerEntity modelEntity) {
+        if (modelEntity == null || modelEntity.getName() == null || modelEntity.getName().isBlank()) {
+            return;
+        }
+        String mapping = modelEntity.getJointMapping();
+        if (mapping == null || mapping.isBlank()) {
+            return;
+        }
+        for (String rawJoint : mapping.split(",")) {
+            String joint = rawJoint.trim();
+            if (joint.isEmpty()) {
+                continue;
+            }
+            addComboValueIfMissing(model, modelEntity.getName() + ".\"" + joint + "\"");
+        }
+    }
+
     private void addLightLookAtChoices(DefaultComboBoxModel<String> model, List<DesignerEntity> source,
                                        DesignerEntity selectedLight) {
         if (source == null) {
@@ -4071,6 +4148,11 @@ public class DesignerPanel extends JPanel {
             }
             addLightLookAtChoices(model, entity.getChildren(), selectedLight);
         }
+    }
+
+    private boolean isAttachTarget(DesignerEntity entity, DesignerEntity selectedEntity) {
+        return entity != selectedEntity && isAttachableEntity(entity)
+                && entity.getName() != null && !entity.getName().isBlank();
     }
 
     private boolean isLightLookAtTarget(DesignerEntity entity, DesignerEntity selectedLight) {
@@ -4094,6 +4176,33 @@ public class DesignerPanel extends JPanel {
         }
     }
 
+    private boolean isAttachableEntity(DesignerEntity entity) {
+        if (entity == null) {
+            return false;
+        }
+        switch (entity.getType()) {
+            case BOX:
+            case SPHERE:
+            case WEDGE:
+            case CYLINDER:
+            case HOLLOW_CYLINDER:
+            case QUAD:
+            case CONE:
+            case STAIRS:
+            case ARCH:
+            case MODEL:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void setAttachToRowVisible(boolean visible) {
+        if (cboAttachTo != null && cboAttachTo.getParent() != null) {
+            cboAttachTo.getParent().setVisible(visible);
+        }
+    }
+
     private void addComboValueIfMissing(DefaultComboBoxModel<String> model, String value) {
         if (model == null || value == null || value.isBlank()) {
             return;
@@ -4107,7 +4216,9 @@ public class DesignerPanel extends JPanel {
     }
 
     private String selectedComboValue(JComboBox<String> combo) {
-        Object selected = combo != null ? combo.getSelectedItem() : null;
+        Object selected = combo != null && combo.isEditable() && combo.getEditor() != null
+                ? combo.getEditor().getItem()
+                : combo != null ? combo.getSelectedItem() : null;
         return selected != null ? selected.toString() : "";
     }
 

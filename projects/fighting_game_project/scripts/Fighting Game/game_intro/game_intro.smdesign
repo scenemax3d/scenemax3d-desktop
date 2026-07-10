@@ -14,7 +14,7 @@
         1,
         1
       ],
-      "codeText": "// cache_objects\ntg => tiger3: hidden, pos (13.0,-14.0,43.0), scale 0.04, rotate(0.0,-179.99998,0.0), shadow mode on async\nboss => dynamic boss : hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast async\nplayer1 => dynamic fighter1 : hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast\n, joints (\"mixamorig:Head\",\"mixamorig:LeftShoulder\",\"mixamorig:LeftArm\",\"mixamorig:LeftForeArm\",\"mixamorig:LeftHand\",\"mixamorig:RightShoulder\",\"mixamorig:RightArm\",\"mixamorig:RightForeArm\",\"mixamorig:RightHand\",\"mixamorig:LeftUpLeg\",\"mixamorig:LeftLeg\",\"mixamorig:LeftFoot\",\"mixamorig:RightUpLeg\",\"mixamorig:RightLeg\",\"mixamorig:RightFoot\") async\nplayer2 => dynamic old_fighter2 : hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on\n, joints (\"mixamorig:Head\",\"mixamorig:LeftShoulder\",\"mixamorig:LeftArm\",\"mixamorig:LeftForeArm\",\"mixamorig:LeftHand\",\"mixamorig:RightShoulder\",\"mixamorig:RightArm\",\"mixamorig:RightForeArm\",\"mixamorig:RightHand\",\"mixamorig:LeftUpLeg\",\"mixamorig:LeftLeg\",\"mixamorig:LeftFoot\",\"mixamorig:RightUpLeg\",\"mixamorig:RightLeg\",\"mixamorig:RightFoot\") async\n",
+      "codeText": "// cache_objects\ntg => tiger3: hidden, pos (13.0,-14.0,43.0), scale 0.04, rotate(0.0,-179.99998,0.0), shadow mode on async\nboss => dynamic boss : hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast async\nplayer1 => dynamic fighter1_native : hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast\n, joints (\"mixamorig:Head\",\"mixamorig:LeftShoulder\",\"mixamorig:LeftArm\",\"mixamorig:LeftForeArm\",\"mixamorig:LeftHand\",\"mixamorig:RightShoulder\",\"mixamorig:RightArm\",\"mixamorig:RightForeArm\",\"mixamorig:RightHand\",\"mixamorig:LeftUpLeg\",\"mixamorig:LeftLeg\",\"mixamorig:LeftFoot\",\"mixamorig:RightUpLeg\",\"mixamorig:RightLeg\",\"mixamorig:RightFoot\") async\nplayer2 => dynamic old_fighter2_native : hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on\n, joints (\"mixamorig:Head\",\"mixamorig:LeftShoulder\",\"mixamorig:LeftArm\",\"mixamorig:LeftForeArm\",\"mixamorig:LeftHand\",\"mixamorig:RightShoulder\",\"mixamorig:RightArm\",\"mixamorig:RightForeArm\",\"mixamorig:RightHand\",\"mixamorig:LeftUpLeg\",\"mixamorig:LeftLeg\",\"mixamorig:LeftFoot\",\"mixamorig:RightUpLeg\",\"mixamorig:RightLeg\",\"mixamorig:RightFoot\") async\n",
       "id": "35a4eaf0-af72-4b42-ae59-912064803ec5",
       "position": [
         0,
@@ -34,15 +34,16 @@
         0,
         0.70710677
       ],
-      "resourcePath": "mountain_low_poly",
+      "resourcePath": "mountain_low_poly_native",
       "jointMapping": "",
       "scale": [
         0.1,
         0.1,
         0.1
       ],
+      "modelCollisionShape": "default",
       "type": "MODEL",
-      "sceneMaxCode": "model_1 => static mountain_low_poly: pos (0.0,-9.6,-50.0), scale 0.1, rotate(0.0,-90.0,0.0) async",
+      "sceneMaxCode": "model_1 => static mountain_low_poly_native: pos (0.0,-9.6,-50.0) async",
       "staticModel": true,
       "name": "model_1",
       "vehicleModel": false,
@@ -167,15 +168,15 @@
   },
   "camera": {
     "rotation": [
-      -6.8524394E-5,
-      0.9396125,
-      -0.34224007,
-      -1.8813221E-4
+      -0.09904575,
+      0.8923991,
+      -0.23911761,
+      -0.3696438
     ],
     "position": [
-      0.061327837,
-      128.62923,
-      153.14868
+      105.83368,
+      -20.122337,
+      229.707
     ]
   },
   "version": 1

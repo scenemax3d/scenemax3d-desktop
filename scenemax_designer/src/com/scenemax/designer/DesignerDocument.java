@@ -212,6 +212,7 @@ public class DesignerDocument {
         sb.append("\n");
 
         appendEntitiesCode(sb, entities);
+        appendAttachmentCommands(sb, entities);
 
         // Include user's end code at the very end
         File endFile = getEndCodeFile(smdesignFile);
@@ -286,6 +287,39 @@ public class DesignerDocument {
             if (!code.isEmpty()) {
                 sb.append(code).append("\n");
             }
+        }
+    }
+
+    private static void appendAttachmentCommands(StringBuilder sb, List<DesignerEntity> entities) {
+        if (entities == null) {
+            return;
+        }
+        for (DesignerEntity entity : entities) {
+            if (entity == null) {
+                continue;
+            }
+            if (entity.getType() == DesignerEntityType.SECTION
+                    || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                appendAttachmentCommands(sb, entity.getChildren());
+                continue;
+            }
+            String attachTo = entity.getAttachTo();
+            if (attachTo == null || attachTo.trim().isEmpty()
+                    || entity.getType() == DesignerEntityType.CODE
+                    || entity.getType() == DesignerEntityType.PATH
+                    || entity.getType() == DesignerEntityType.CINEMATIC_TRACK
+                    || entity.getType() == DesignerEntityType.CAMERA
+                    || entity.getType() == DesignerEntityType.LIGHT) {
+                continue;
+            }
+            Vector3f pos = entity.getPosition();
+            sb.append(entity.getName())
+                    .append(".attach to ")
+                    .append(attachTo.trim())
+                    .append(": pos (")
+                    .append(pos.x).append(",")
+                    .append(pos.y).append(",")
+                    .append(pos.z).append(")\n");
         }
     }
 
