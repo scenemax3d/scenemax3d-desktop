@@ -2,6 +2,7 @@ package com.scenemax.designer.modelanalyzer;
 
 import com.jme3.system.AppSettings;
 import com.jme3.system.JmeCanvasContext;
+import com.scenemax.designer.animation.ModelJ3oClipExporter;
 import com.scenemax.designer.gizmo.GizmoMode;
 import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.types.ResourceSetup;
@@ -25,13 +26,16 @@ import java.awt.event.FocusEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EventObject;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
     private final File resourcesRoot;
@@ -51,6 +55,7 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
     private final JLabel frameRangeValue = new JLabel("Frames: --");
     private final JLabel statusLabel = new JLabel("Choose a model to analyze.");
     private final JButton pauseResumeButton = new JButton("Pause");
+    private final JButton saveAsNativeModelButton = new JButton("Save As Native Model");
     private final DefaultTableModel rangeTableModel = new DefaultTableModel(new Object[]{"Name", "Start", "End"}, 0) {
         @Override
         public boolean isCellEditable(int row, int column) {
@@ -135,7 +140,7 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         app.setStatusChangedCallback(status -> SwingUtilities.invokeLater(() -> statusLabel.setText(status)));
 
         add(buildToolbar(), BorderLayout.NORTH);
-        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildRangeTablePanel(), canvas);
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildRangeTablePanel(), buildPreviewPanel());
         split.setContinuousLayout(true);
         split.setResizeWeight(0.24);
         split.setDividerLocation(300);
@@ -252,6 +257,18 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         toolbar.add(infoRow);
 
         return toolbar;
+    }
+
+    private JPanel buildPreviewPanel() {
+        JPanel panel = new JPanel(new BorderLayout(0, 6));
+        panel.add(canvas, BorderLayout.CENTER);
+
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        saveAsNativeModelButton.addActionListener(e -> saveSelectedModelAsNativeModel());
+        actions.add(saveAsNativeModelButton);
+        panel.add(actions, BorderLayout.SOUTH);
+
+        return panel;
     }
 
     private JPanel buildRangeTablePanel() {
@@ -422,6 +439,7 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         commitRangeTableEdit();
         String model = selectedModel();
         loadRangesForModel(model);
+        updateSaveAsNativeModelButtonVisibility();
         app.loadModel(model);
         app.setAnimationSpeedPercent(speedSlider.getValue());
     }
@@ -687,12 +705,354 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
                 return;
             }
             target.put("animationFrameRanges", rangesToJson());
+            String sourceAnimation = selectedAnimation();
+            if (!sourceAnimation.isEmpty()) {
+                target.put("animationFrameRangesSourceAnimation", sourceAnimation);
+            }
             Files.write(indexFile.toPath(), root.toString(2).getBytes(StandardCharsets.UTF_8));
             statusLabel.setText("Saved frame ranges for " + modelName + ".");
         } catch (Exception ex) {
             ex.printStackTrace();
             statusLabel.setText("Could not save frame ranges: " + rootMessage(ex));
         }
+    }
+
+    private void saveSelectedModelAsNativeModel() {
+        commitRangeTableEdit();
+        String modelName = currentRangeModel.isEmpty() ? selectedModel() : currentRangeModel;
+        String sourceAnimation = selectedAnimation();
+        File indexFile = findModelsExtJson();
+        if (modelName.isEmpty() || indexFile == null || !indexFile.isFile()) {
+            statusLabel.setText("Native model export can be saved only for project models in models-ext.json.");
+            return;
+        }
+
+        JSONArray rangeMetadata = rangesToJson();
+        ModelJ3oClipExporter.TextureOptimizationOptions textureOptions = chooseTextureOptimizationOptions();
+        if (textureOptions == null) {
+            return;
+        }
+
+        saveAsNativeModelButton.setEnabled(false);
+        statusLabel.setText("Saving native model...");
+        SwingWorker<J3oExportResult, Void> worker = new SwingWorker<>() {
+            @Override
+            protected J3oExportResult doInBackground() throws Exception {
+                return exportSelectedModelAsNativeModel(indexFile, modelName, sourceAnimation, rangeMetadata, textureOptions);
+            }
+
+            @Override
+            protected void done() {
+                saveAsNativeModelButton.setEnabled(true);
+                try {
+                    J3oExportResult result = get();
+                    app.reloadProjectAssets();
+                    loadModelOptions();
+                    modelCombo.setSelectedItem(result.modelName);
+                    loadSelectedModel();
+                    String splitNote = result.splitClips ? " with split clips" : "";
+                    statusLabel.setText("Saved native model" + splitNote + ": "
+                            + result.modelName + " (" + result.relativePath + ").");
+                    showJ3oOptimizationTips(result);
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    statusLabel.setText("Could not save native model: " + rootMessage(ex));
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private J3oExportResult exportSelectedModelAsNativeModel(File indexFile, String modelName, String sourceAnimation,
+                                                             JSONArray rangeMetadata,
+                                                             ModelJ3oClipExporter.TextureOptimizationOptions textureOptions) throws Exception {
+        JSONObject root = readJsonObject(indexFile);
+        JSONArray models = root.optJSONArray("models");
+        if (models == null) {
+            models = new JSONArray();
+            root.put("models", models);
+        }
+        JSONObject sourceModel = findModelObject(models, modelName);
+        if (sourceModel == null) {
+            throw new IOException("Model entry was not found in models-ext.json: " + modelName);
+        }
+        String sourcePath = sourceModel.optString("path", "").trim();
+        if (sourcePath.isEmpty()) {
+            throw new IOException("Model entry has no path: " + modelName);
+        }
+        if (!isNativeSaveSupportedPath(sourcePath)) {
+            throw new IOException("Save As Native Model supports GLB, GLTF, FBX, and J3O source models.");
+        }
+        String splitSourceAnimation = resolveSplitSourceAnimation(sourceAnimation, sourceModel);
+        List<ModelJ3oClipExporter.AnimationFrameRange> frameRanges =
+                splitSourceAnimation.isEmpty() ? new ArrayList<>() : rangesForJ3oExport();
+
+        File sourceFile = resolveResourceFile(sourcePath);
+        if (!sourceFile.isFile()) {
+            throw new IOException("Model file was not found: " + sourceFile.getAbsolutePath());
+        }
+
+        String nativeModelName = nativeModelName(modelName);
+        String nativeRelativePath = nativeRelativePath(sourcePath);
+        File outputFile = resolveResourceFile(nativeRelativePath);
+        ModelJ3oClipExporter.export(sourceFile, outputFile, splitSourceAnimation, frameRanges, textureOptions);
+        File textureFolder = nativeTextureFolder(outputFile);
+        long textureBytes = folderSize(textureFolder);
+        int textureCount = fileCount(textureFolder);
+
+        sourceModel.put("animationFrameRanges", new JSONArray(rangeMetadata.toString()));
+        if (!splitSourceAnimation.isEmpty()) {
+            sourceModel.put("animationFrameRangesSourceAnimation", splitSourceAnimation);
+        }
+
+        JSONObject j3oModel = new JSONObject(sourceModel.toString());
+        j3oModel.put("name", nativeModelName);
+        j3oModel.put("path", nativeRelativePath);
+        j3oModel.put("sourceModel", modelName);
+        j3oModel.put("animationFrameRanges", new JSONArray(rangeMetadata.toString()));
+        if (splitSourceAnimation.isEmpty()) {
+            j3oModel.remove("sourceAnimation");
+        } else {
+            j3oModel.put("sourceAnimation", splitSourceAnimation);
+            j3oModel.put("animationFrameRangesSourceAnimation", splitSourceAnimation);
+        }
+
+        for (int i = 0; i < models.length(); i++) {
+            JSONObject existing = models.optJSONObject(i);
+            if (existing != null && nativeModelName.equalsIgnoreCase(existing.optString("name", ""))) {
+                models.remove(i);
+                break;
+            }
+        }
+        models.put(j3oModel);
+        Files.write(indexFile.toPath(), root.toString(2).getBytes(StandardCharsets.UTF_8));
+        return new J3oExportResult(nativeModelName, nativeRelativePath, !frameRanges.isEmpty(),
+                sourceFile.length(), outputFile.length(), textureBytes, textureCount,
+                textureOptions == null ? "off" : textureOptions.summary());
+    }
+
+    private String nativeModelName(String modelName) {
+        String trimmed = modelName == null ? "" : modelName.trim();
+        return trimmed.toLowerCase(Locale.ROOT).endsWith("_native") ? trimmed : trimmed + "_native";
+    }
+
+    private ModelJ3oClipExporter.TextureOptimizationOptions chooseTextureOptimizationOptions() {
+        JCheckBox enable = new JCheckBox("Optimize exported textures");
+        enable.setSelected(false);
+
+        JComboBox<String> maxSize = new JComboBox<>(new String[]{
+                "Keep dimensions", "4096 px", "2048 px", "1024 px", "512 px"
+        });
+        maxSize.setSelectedItem("2048 px");
+
+        JSlider quality = new JSlider(50, 95, 82);
+        quality.setMajorTickSpacing(15);
+        quality.setPaintTicks(true);
+        quality.setPaintLabels(true);
+
+        JCheckBox convertColorPng = new JCheckBox("Convert color/gloss/roughness PNG textures to JPEG");
+        convertColorPng.setSelected(true);
+
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.gridwidth = 2;
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.insets = new Insets(0, 0, 8, 0);
+        panel.add(enable, gbc);
+
+        gbc.gridy++;
+        gbc.gridwidth = 1;
+        gbc.insets = new Insets(0, 0, 6, 10);
+        panel.add(new JLabel("Max texture size:"), gbc);
+        gbc.gridx = 1;
+        gbc.insets = new Insets(0, 0, 6, 0);
+        panel.add(maxSize, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.gridwidth = 2;
+        panel.add(new JLabel("JPEG quality:"), gbc);
+        gbc.gridy++;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        panel.add(quality, gbc);
+
+        gbc.gridy++;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.insets = new Insets(6, 0, 0, 0);
+        panel.add(convertColorPng, gbc);
+
+        JLabel note = new JLabel("<html>Normal, bump, height, alpha, opacity, and mask maps stay lossless.</html>");
+        gbc.gridy++;
+        gbc.insets = new Insets(8, 0, 0, 0);
+        panel.add(note, gbc);
+
+        int answer = JOptionPane.showConfirmDialog(this, panel, "Native Model Texture Optimization",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (answer != JOptionPane.OK_OPTION) {
+            return null;
+        }
+        if (!enable.isSelected()) {
+            return ModelJ3oClipExporter.TextureOptimizationOptions.disabled();
+        }
+        return ModelJ3oClipExporter.TextureOptimizationOptions.enabled(
+                selectedMaxTextureSize(String.valueOf(maxSize.getSelectedItem())),
+                quality.getValue(),
+                convertColorPng.isSelected());
+    }
+
+    private int selectedMaxTextureSize(String value) {
+        if (value == null || value.startsWith("Keep")) {
+            return 0;
+        }
+        String digits = value.replaceAll("[^0-9]", "");
+        return parseInt(digits, 0);
+    }
+
+    private List<ModelJ3oClipExporter.AnimationFrameRange> rangesForJ3oExport() throws IOException {
+        List<ModelJ3oClipExporter.AnimationFrameRange> ranges = new ArrayList<>();
+        Set<String> names = new HashSet<>();
+        for (int row = 0; row < rangeTableModel.getRowCount(); row++) {
+            String name = String.valueOf(rangeTableModel.getValueAt(row, 0)).trim();
+            if (name.isEmpty()) {
+                throw new IOException("Every J3O clip row must have a name.");
+            }
+            if (!names.add(name.toLowerCase(Locale.ROOT))) {
+                throw new IOException("Duplicate J3O clip name: " + name);
+            }
+            int start = Math.max(0, parseInt(rangeTableModel.getValueAt(row, 1), 0));
+            int end = Math.max(0, parseInt(rangeTableModel.getValueAt(row, 2), start));
+            if (end <= start) {
+                throw new IOException("J3O clip '" + name + "' must have an end frame after its start frame.");
+            }
+            ranges.add(new ModelJ3oClipExporter.AnimationFrameRange(name, start, end));
+        }
+        return ranges;
+    }
+
+    private String resolveSplitSourceAnimation(String selectedSourceAnimation, JSONObject sourceModel) {
+        String selected = selectedSourceAnimation == null ? "" : selectedSourceAnimation.trim();
+        if (!selected.isEmpty()) {
+            return selected;
+        }
+        if (sourceModel == null) {
+            return "";
+        }
+        String saved = sourceModel.optString("animationFrameRangesSourceAnimation", "").trim();
+        if (!saved.isEmpty()) {
+            return saved;
+        }
+        return sourceModel.optString("sourceAnimation", "").trim();
+    }
+
+    private void updateSaveAsNativeModelButtonVisibility() {
+        JSONObject model = findEditableModelJson(currentRangeModel.isEmpty() ? selectedModel() : currentRangeModel);
+        boolean visible = model != null && isNativeSaveSupportedPath(model.optString("path", ""));
+        saveAsNativeModelButton.setVisible(visible);
+        saveAsNativeModelButton.setEnabled(visible);
+        Container parent = saveAsNativeModelButton.getParent();
+        if (parent != null) {
+            parent.revalidate();
+            parent.repaint();
+        }
+    }
+
+    private File resolveResourceFile(String resourcePath) {
+        File file = new File(resourcePath);
+        if (file.isAbsolute()) {
+            return file;
+        }
+        return new File(resourcesRoot, resourcePath.replace('/', File.separatorChar));
+    }
+
+    private String nativeRelativePath(String sourcePath) {
+        String normalized = sourcePath.replace('\\', '/');
+        int slash = normalized.lastIndexOf('/');
+        String folder = slash >= 0 ? normalized.substring(0, slash + 1) : "";
+        String fileName = slash >= 0 ? normalized.substring(slash + 1) : normalized;
+        return folder + nativeModelFileBase(fileName) + ".j3o";
+    }
+
+    private String nativeModelFileBase(String fileName) {
+        String base = stripModelExtension(fileName);
+        return base.toLowerCase(Locale.ROOT).endsWith("_native") ? base : base + "_native";
+    }
+
+    private File nativeTextureFolder(File outputFile) {
+        return new File(new File(outputFile.getParentFile(), "textures"), stripModelExtension(outputFile.getName()));
+    }
+
+    private String stripModelExtension(String fileName) {
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".mesh.xml")) {
+            return fileName.substring(0, fileName.length() - ".mesh.xml".length());
+        }
+        int dot = fileName.lastIndexOf('.');
+        return dot > 0 ? fileName.substring(0, dot) : fileName;
+    }
+
+    private boolean isNativeSaveSupportedPath(String path) {
+        if (path == null) {
+            return false;
+        }
+        String lower = path.toLowerCase(Locale.ROOT);
+        return lower.endsWith(".glb") || lower.endsWith(".gltf") || lower.endsWith(".fbx") || lower.endsWith(".j3o");
+    }
+
+    private void showJ3oOptimizationTips(J3oExportResult result) {
+        if (result == null) {
+            return;
+        }
+        long exportedBytes = result.j3oBytes + result.externalTextureBytes;
+        if (exportedBytes < 10L * 1024L * 1024L && exportedBytes <= result.sourceBytes * 1.25) {
+            return;
+        }
+        String message = "Native model export summary:\n"
+                + "Source model: " + formatBytes(result.sourceBytes) + "\n"
+                + "J3O file: " + formatBytes(result.j3oBytes) + "\n"
+                + "External textures: " + result.externalTextureCount + " file(s), "
+                + formatBytes(result.externalTextureBytes) + "\n"
+                + "Total exported package: " + formatBytes(exportedBytes) + "\n\n"
+                + "Texture optimization: " + result.textureOptimizationSummary + "\n\n"
+                + "The J3O references external texture files so it stays small and loads quickly.\n\n"
+                + "To make the exported model smaller:\n"
+                + "- Downscale large texture maps before export.\n"
+                + "- Use JPEG for color/gloss/roughness maps that do not need alpha.\n"
+                + "- Keep normal maps higher quality when artifacts are visible.\n"
+                + "- Remove unused material maps from the source model.";
+        JOptionPane.showMessageDialog(this, message, "Native Model Optimization Tips", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private String formatBytes(long bytes) {
+        if (bytes < 1024L * 1024L) {
+            return String.format(Locale.ROOT, "%.1f KB", bytes / 1024.0);
+        }
+        return String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0));
+    }
+
+    private long folderSize(File folder) {
+        File[] files = folder == null ? null : folder.listFiles();
+        if (files == null) {
+            return 0;
+        }
+        long total = 0;
+        for (File file : files) {
+            total += file.isDirectory() ? folderSize(file) : file.length();
+        }
+        return total;
+    }
+
+    private int fileCount(File folder) {
+        File[] files = folder == null ? null : folder.listFiles();
+        if (files == null) {
+            return 0;
+        }
+        int total = 0;
+        for (File file : files) {
+            total += file.isDirectory() ? fileCount(file) : 1;
+        }
+        return total;
     }
 
     private JSONArray rangesToJson() {
@@ -783,6 +1143,30 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
             current = current.getCause();
         }
         return current.getMessage() == null ? current.toString() : current.getMessage();
+    }
+
+    private static class J3oExportResult {
+        final String modelName;
+        final String relativePath;
+        final boolean splitClips;
+        final long sourceBytes;
+        final long j3oBytes;
+        final long externalTextureBytes;
+        final int externalTextureCount;
+        final String textureOptimizationSummary;
+
+        J3oExportResult(String modelName, String relativePath, boolean splitClips,
+                        long sourceBytes, long j3oBytes, long externalTextureBytes, int externalTextureCount,
+                        String textureOptimizationSummary) {
+            this.modelName = modelName;
+            this.relativePath = relativePath;
+            this.splitClips = splitClips;
+            this.sourceBytes = sourceBytes;
+            this.j3oBytes = j3oBytes;
+            this.externalTextureBytes = externalTextureBytes;
+            this.externalTextureCount = externalTextureCount;
+            this.textureOptimizationSummary = textureOptimizationSummary;
+        }
     }
 
     private static class EditableRangeTable extends JTable {

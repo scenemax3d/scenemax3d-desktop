@@ -8451,12 +8451,20 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         Node attachedNode = (Node)attachedSpatial;
         if(attachedEntityJointName!=null && attachedEntity.varDef.varType==VariableDef.VAR_TYPE_3D) {
-            attachedNode = getAttachJointNode(attachedEntity, attachedEntityJointName);
+            Node jointNode = getAttachJointNode(attachedEntity, attachedEntityJointName);
+            if (jointNode == null) {
+                return;
+            }
+            attachedNode = jointNode;
         }
 
         Node attachToNode = (Node)attachToSpatial;
         if(attachToEntityJointName!=null && attachToEntity.varDef.varType==VariableDef.VAR_TYPE_3D) {
-            attachToNode = getAttachJointNode(attachToEntity, attachToEntityJointName);
+            Node jointNode = getAttachJointNode(attachToEntity, attachToEntityJointName);
+            if (jointNode == null) {
+                return;
+            }
+            attachToNode = jointNode;
         }
 
         Node scaleNode = new Node(); // we need this node to preserve scaling of the attached spatial

@@ -47,6 +47,7 @@ dependencies {
     implementation "${jme3.g}:jme3-effects:${jme3.v}"
     implementation "${jme3.g}:jme3-plugins:${jme3.v}"
     implementation "com.github.stephengold:Minie:9.0.3"
+    implementation "com.github.stephengold:Wes:0.8.1"
 
     // Design-time importer for FBX/DAE/BVH/etc. Models and animation files are converted to J3O in a worker JVM.
     compileOnly 'com.github.stephengold:MonkeyWrench:1.0.0'

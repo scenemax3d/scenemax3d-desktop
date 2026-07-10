@@ -33,9 +33,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public class AppModel {
 
@@ -190,31 +192,32 @@ public class AppModel {
     }
 
     public SkinningControl getSkinningControl() {
-        if (this.skinningControlNode == null) {
-            return null;
+        SkinningControl control = this.skinningControlNode == null ? null : this.skinningControlNode.getControl(SkinningControl.class);
+        if (control != null) {
+            return control;
         }
-        return this.skinningControlNode.getControl(SkinningControl.class);
+        Spatial root = model == null || model.getQuantity() == 0 ? model : model.getChild(0);
+        control = findSkinningControl(root);
+        if (control != null) {
+            this.skinningControlNode = control.getSpatial();
+        }
+        return control;
     }
 
     public Node getJointAttachementNode(String jointName) {
 
-        if (this.resource.isJ3O()) {
-            SkeletonControl sc = findSkeletonControl(model);
-            if(sc!=null) {
-                Node n= sc.getAttachmentsNode(jointName);
-                return n;
-            }
-
-        } else {
-
-            SkinningControl skinningControl = this.skinningControlNode.getControl(SkinningControl.class);
-            if (skinningControl != null) {
-                Node n= skinningControl.getAttachmentsNode(jointName);
-                return n;
-
-            }
-
+        SkinningControl skinningControl = getSkinningControl();
+        if (skinningControl != null && skinningControl.getArmature() != null) {
+            Joint joint = findMatchingJoint(buildJointMap(skinningControl.getArmature()), jointName);
+            return joint == null ? null : skinningControl.getAttachmentsNode(joint.getName());
         }
+
+        SkeletonControl sc = findSkeletonControl(model);
+        if(sc!=null) {
+            Bone bone = findMatchingBone(sc.getSkeleton(), jointName);
+            return bone == null ? null : sc.getAttachmentsNode(bone.getName());
+        }
+
 
         return null;
     }
@@ -222,28 +225,20 @@ public class AppModel {
 
     public Vector3f getJointPosition(String jointName) {
 
-        if(this.resource.isJ3O()) {
-
-            Skeleton sk = findSkeleton(model);
-            if(sk!=null) {
-
-                Bone b = sk.getBone(jointName);
-                if(b!=null) {
-                    return b.getLocalPosition();
-                }
+        SkinningControl skinningControl = getSkinningControl();
+        if(skinningControl != null && skinningControl.getArmature() != null) {
+            Joint j = findMatchingJoint(buildJointMap(skinningControl.getArmature()), jointName);
+            if(j!=null) {
+                return j.getLocalTranslation();
             }
+        }
 
-        } else {
-
-            Spatial sp = model.getChild(0);
-            SkinningControl skinningControl = sp.getControl(SkinningControl.class);
-            if(skinningControl!=null) {
-                Joint j = skinningControl.getArmature().getJoint(jointName);
-                if(j!=null) {
-                    return j.getLocalTranslation();
-                }
+        Skeleton sk = findSkeleton(model);
+        if(sk!=null) {
+            Bone b = findMatchingBone(sk, jointName);
+            if(b!=null) {
+                return b.getLocalPosition();
             }
-
         }
 
         return null;
@@ -254,29 +249,22 @@ public class AppModel {
 
         String joints = "";
 
-        if(this.resource.isJ3O()) {
-
-            Skeleton sk = findSkeleton(model);
-            if(sk!=null) {
-                int cnt = sk.getBoneCount();
-                for(int i=0;i<cnt;++i) {
-                    joints += sk.getBone(i).getName() +",";
-
-                }
+        SkinningControl skinningControl = getSkinningControl();
+        if (skinningControl != null && skinningControl.getArmature() != null) {
+            List<Joint> jts = skinningControl.getArmature().getJointList();
+            for (Joint j : jts) {
+                joints += j.getName() + ",";
             }
+            return joints;
+        }
 
-        } else {
+        Skeleton sk = findSkeleton(model);
+        if(sk!=null) {
+            int cnt = sk.getBoneCount();
+            for(int i=0;i<cnt;++i) {
+                joints += sk.getBone(i).getName() +",";
 
-            if(this.skinningControlNode!=null) {
-                SkinningControl skinningControl = this.skinningControlNode.getControl(SkinningControl.class);
-                if (skinningControl != null) {
-                    List<Joint> jts = skinningControl.getArmature().getJointList();
-                    for (Joint j : jts) {
-                        joints += j.getName() + ",";
-                    }
-                }
             }
-
         }
 
         return joints;
@@ -286,36 +274,32 @@ public class AppModel {
 
     public String getAnimationsList() {
 
-        String animations = "";
+        Set<String> animationNames = new LinkedHashSet<>();
 
-        if(this.resource.isJ3O()) {
-
-            AnimControl ctl = this.getAnimControl();
-            if(ctl!=null) {
-                Collection<String> anims = ctl.getAnimationNames();
-                for (String s : anims) {
-                    animations += s + ", ";
+        AnimComposer composer = this.getAnimComposer();
+        if (composer != null) {
+            for (AnimClip ac : composer.getAnimClips()) {
+                if (ac != null && ac.getName() != null && !ac.getName().isBlank()) {
+                    animationNames.add(ac.getName());
                 }
             }
+        }
 
-        } else {
-
-            AnimComposer ctl = this.getAnimComposer();
-            if (ctl != null) {
-
-                for (AnimClip ac : ctl.getAnimClips()) {
-                    animations += ac.getName() + ", ";
+        AnimControl ctl = this.getAnimControl();
+        if (ctl != null) {
+            Collection<String> anims = ctl.getAnimationNames();
+            for (String s : anims) {
+                if (s != null && !s.isBlank()) {
+                    animationNames.add(s);
                 }
-
             }
-
         }
 
-        if(animations.length()==0) {
-            animations = "No animations found for this model";
+        if(animationNames.isEmpty()) {
+            return "No animations found for this model";
         }
 
-        return animations;
+        return String.join(", ", animationNames);
 
     }
 
@@ -1142,6 +1126,32 @@ public class AppModel {
         }
 
         return jointsByName.get(normalizeJointName(targetName));
+    }
+
+    private Bone findMatchingBone(Skeleton skeleton, String targetName) {
+        if (skeleton == null || targetName == null) {
+            return null;
+        }
+        Bone exact = skeleton.getBone(targetName);
+        if (exact != null) {
+            return exact;
+        }
+        String targetLower = targetName.toLowerCase(Locale.ROOT);
+        String targetWithoutNamespace = stripJointNamespace(targetName);
+        String targetNormalized = normalizeJointName(targetName);
+        for (int i = 0; i < skeleton.getBoneCount(); i++) {
+            Bone bone = skeleton.getBone(i);
+            String name = bone == null ? null : bone.getName();
+            if (name == null) {
+                continue;
+            }
+            if (name.equalsIgnoreCase(targetLower)
+                    || stripJointNamespace(name).equalsIgnoreCase(targetWithoutNamespace)
+                    || normalizeJointName(name).equals(targetNormalized)) {
+                return bone;
+            }
+        }
+        return null;
     }
 
     private Map<String, HasLocalTransform> getTargetJointMap() {

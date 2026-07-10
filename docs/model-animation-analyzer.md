@@ -85,8 +85,29 @@ Use:
 - `Add` to create a row from the current animation name and current start/end values
 - `Delete` to remove the selected row from the table draft
 - `Save` to write the current table to the selected model JSON
+- `Save As Native Model` to save a sibling JME-native `.j3o` model
 
 The table is not auto-saved. Edits, Add, Delete, row selection, slider changes, spinner changes, model changes, and closing the analyzer do not write the file. Press `Save` when the table is ready.
+
+`Save As Native Model` is shown for `.glb`, `.gltf`, `.fbx`, and `.j3o` project models. It saves a JME-native sibling model with the original model's embedded animations preserved. For example, a `horse1` model loaded from `Models/horse/horse.glb` is saved as a new model named `horse1_native` at `Models/horse/horse_native.j3o`. A selected `.j3o` model can also be saved this way to create an optimized native copy.
+
+When the source is a GLB with embedded textures, the exporter extracts those textures beside the J3O and makes the J3O reference them instead of embedding decoded image data. Existing J3O models that contain embedded keyless image data are also externalized into texture files when saved as native models. Shared texture references are copied once. Each saved native model gets its own texture subfolder under `textures/<native-model-file-name>/`, so optimizing one native export does not overwrite another model's textures.
+
+Before exporting, the analyzer opens a texture optimization dialog. Leave optimization off to preserve the original texture files exactly. Turn it on to create a smaller game-ready model package:
+
+- choose a maximum texture size, such as `2048 px` or `1024 px`
+- choose JPEG quality for textures written as JPEG
+- optionally convert color/gloss/roughness PNG textures to JPEG
+
+Normal, bump, height, alpha, opacity, and mask texture names are treated as lossless maps and stay PNG. PNG textures with an alpha channel also stay PNG. The optimizer uses Java image encoding inside the IDE instead of FFmpeg because the desktop editor intentionally does not bundle FFmpeg native runtime libraries.
+
+If a source animation is selected, such as `Take 001`, and the table has valid rows, `Save As Native Model` also creates one real JME animation clip per table row. If no source animation is selected, the exporter looks for the saved `animationFrameRangesSourceAnimation` metadata. If neither is available, it performs a plain native save without creating split clips.
+
+The generated J3O model keeps the frame range metadata in its JSON entry, but it also contains real clips named after the table rows. That means you can either continue using named ranges on the original long clip, or use the converted J3O model's real generated clips directly where that is more convenient.
+
+When split clips are created, `Save As Native Model` validates the table more strictly than `Save`: every row must have a name, names must be unique, and each range must contain at least two frames.
+
+For medium or large exports, the analyzer shows an export summary with the J3O size, external texture size, total package size, selected texture optimization settings, and optimization tips. Good follow-up options are to downscale large texture maps, use JPEG for color/gloss/roughness maps that do not need alpha, keep normal maps higher quality when artifacts are visible, and remove unused material maps from the source model.
 
 ## Saved JSON
 
@@ -102,6 +123,7 @@ The analyzer writes an `animationFrameRanges` array:
 {
   "name": "horse1",
   "path": "Models/horse/scene.gltf",
+  "animationFrameRangesSourceAnimation": "Take 001",
   "animationFrameRanges": [
     {
       "name": "Walk",
@@ -131,6 +153,15 @@ horse."Take 001"["Gallop"]
 ```
 
 The original animation clip is still `Take 001`. SceneMax just plays the saved frame range inside that clip. This makes one large bundled animation usable as many named runtime clips without modifying or splitting the model file.
+
+If you used `Save As Native Model`, the generated J3O model also has real clips named from the table rows, so those clips can be played directly on the `_native` model:
+
+```scenemax
+horse => horse1_native
+horse.Idle1
+horse.Walk
+horse.Gallop
+```
 
 You can also play an arbitrary numeric frame range directly:
 
@@ -169,3 +200,5 @@ animation frame range 'Walk' was not found for 'horse' on model 'horse1'
 6. Adjust the slider or spinners until the selected row has the exact `Start` and `End`.
 7. Press `Save`.
 8. Use the saved name in SceneMax scripts with `model.animation["RangeName"]`.
+
+For a real-clips workflow, choose the source long animation and press `Save As Native Model` after the table is ready. The analyzer creates the `_native` model entry and selects it automatically.
