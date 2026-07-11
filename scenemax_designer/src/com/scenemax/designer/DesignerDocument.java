@@ -213,6 +213,7 @@ public class DesignerDocument {
 
         appendEntitiesCode(sb, entities);
         appendAttachmentCommands(sb, entities);
+        appendIKCommands(sb, entities);
 
         // Include user's end code at the very end
         File endFile = getEndCodeFile(smdesignFile);
@@ -321,6 +322,52 @@ public class DesignerDocument {
                     .append(pos.y).append(",")
                     .append(pos.z).append(")\n");
         }
+    }
+
+    private static void appendIKCommands(StringBuilder sb, List<DesignerEntity> entities) {
+        if (entities == null) {
+            return;
+        }
+        for (DesignerEntity entity : entities) {
+            if (entity == null) {
+                continue;
+            }
+            if (entity.getType() == DesignerEntityType.SECTION
+                    || entity.getType() == DesignerEntityType.CINEMATIC_RIG) {
+                appendIKCommands(sb, entity.getChildren());
+                continue;
+            }
+            if (entity.getType() != DesignerEntityType.MODEL
+                    || entity.getIkAsset() == null
+                    || entity.getIkAsset().trim().isEmpty()) {
+                continue;
+            }
+            sb.append(entity.getName())
+                    .append(".ik = ")
+                    .append(quote(entity.getIkAsset().trim()))
+                    .append("\n");
+            for (DesignerEntity.IKLayerPlayback layer : entity.getIkLayerPlaybacks()) {
+                if (layer == null || !layer.isEnabled() || layer.getLayerId().isBlank()) {
+                    continue;
+                }
+                List<String> options = new ArrayList<>();
+                if (!layer.getTarget().isBlank()) {
+                    options.add("target " + layer.getTarget().trim());
+                }
+                options.add("blend " + layer.getBlend());
+                options.add("weight " + layer.getWeight());
+                sb.append(entity.getName())
+                        .append(".ik.")
+                        .append(layer.getLayerId().trim())
+                        .append(".play : ")
+                        .append(String.join(", ", options))
+                        .append("\n");
+            }
+        }
+    }
+
+    private static String quote(String value) {
+        return "\"" + (value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"")) + "\"";
     }
 
     /**

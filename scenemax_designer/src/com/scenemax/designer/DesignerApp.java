@@ -3,6 +3,8 @@ package com.scenemax.designer;
 import com.jme3.bounding.BoundingBox;
 import com.jme3.bounding.BoundingSphere;
 import com.jme3.bounding.BoundingVolume;
+import com.jme3.anim.Joint;
+import com.jme3.anim.SkinningControl;
 import com.jme3.asset.ModelKey;
 import com.jme3.input.KeyInput;
 import com.jme3.input.MouseInput;
@@ -37,11 +39,15 @@ import com.scenemax.designer.grid.GridPlane;
 import com.scenemax.designer.path.*;
 import com.scenemax.designer.selection.OutlineEffect;
 import com.scenemax.designer.selection.SelectionManager;
+import com.scenemaxeng.common.ik.IKDefinition;
+import com.scenemaxeng.common.ik.IKLayerDefinition;
 import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.types.ResourceSetup;
 import com.scenemaxeng.projector.AppModel;
 import com.scenemaxeng.projector.SceneMaxApp;
 import com.scenemaxeng.projector.SceneMaxScope;
+import com.scenemaxeng.projector.ik.IKControlComponent;
+import org.apache.commons.io.FileUtils;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -54,6 +60,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -123,6 +130,8 @@ public class DesignerApp extends SceneMaxApp {
         String shadowMode;
         String jointMapping;
         String attachTo;
+        String ikAsset;
+        List<DesignerEntity.IKLayerPlayback> ikLayerPlaybacks = new ArrayList<>();
         String nodeName;
         int framesWaited;
         boolean selectAfterCreation;
@@ -179,6 +188,7 @@ public class DesignerApp extends SceneMaxApp {
     // Map from PATH entity ID to its PathVisual node
     private final java.util.Map<String, PathVisual> pathVisuals = new java.util.HashMap<>();
     private final java.util.Map<String, Light> designerPreviewLights = new java.util.HashMap<>();
+    private final Map<String, Map<String, Transform>> ikPreviewBaseTransforms = new HashMap<>();
     private final List<Light> designerFallbackLights = new ArrayList<>();
     private boolean designerFallbackLightingEnabled = true;
     private int cinematicTrackCounter = 0;
@@ -264,6 +274,7 @@ public class DesignerApp extends SceneMaxApp {
 
     /** Max frames to wait for an async model (much longer than primitives) */
     private static final int MAX_PENDING_FRAMES_ASYNC = 600;
+    private static final String DESIGNER_ATTACH_WRAPPER_KEY = "DesignerAttachWrapper";
 
     public DesignerApp() {
         super();
@@ -3011,6 +3022,246 @@ public class DesignerApp extends SceneMaxApp {
         return res != null && res.isStatic;
     }
 
+    public List<String> getAvailableIKNames() {
+        TreeSet<String> names = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        String resourcesFolder = getProjectResourcesFolder();
+        if (resourcesFolder != null && !resourcesFolder.isBlank()) {
+            collectIKNames(new File(resourcesFolder, "ik"), names);
+            collectIKNames(new File(resourcesFolder, "IK"), names);
+        }
+        collectIKNames(new File("./resources/ik"), names);
+        collectIKNames(new File("./resources/IK"), names);
+        return new ArrayList<>(names);
+    }
+
+    public IKDefinition getIKDefinition(String ikNameOrId) {
+        if (ikNameOrId == null || ikNameOrId.trim().isEmpty()) {
+            return null;
+        }
+        return createFullAssetsMapping().getIKDefinition(ikNameOrId.trim());
+    }
+
+    public void applyEntityIKAsset(DesignerEntity entity, String ikAsset) {
+        if (entity == null || entity.getType() != DesignerEntityType.MODEL) {
+            return;
+        }
+        String value = ikAsset != null ? ikAsset.trim() : "";
+        entity.setIkAsset(value);
+        syncEntityIKLayers(entity);
+        refreshEntityIKPreview(entity);
+        markDocumentDirty();
+    }
+
+    public void syncEntityIKLayers(DesignerEntity entity) {
+        if (entity == null || entity.getType() != DesignerEntityType.MODEL || entity.getIkAsset().isBlank()) {
+            if (entity != null) {
+                entity.getIkLayerPlaybacks().clear();
+            }
+            return;
+        }
+        IKDefinition definition = getIKDefinition(entity.getIkAsset());
+        if (definition == null) {
+            return;
+        }
+        syncEntityIKLayers(entity, definition);
+    }
+
+    private void syncEntityIKLayers(DesignerEntity entity, IKDefinition definition) {
+        Set<String> validLayerIds = new HashSet<>();
+        for (IKLayerDefinition layer : definition.getLayers()) {
+            if (layer == null || layer.getId() == null || layer.getId().trim().isEmpty()) {
+                continue;
+            }
+            String layerId = layer.getId().trim();
+            validLayerIds.add(layerId);
+            DesignerEntity.IKLayerPlayback playback = entity.getOrCreateIKLayerPlayback(layerId, layer.getName());
+            if (playback.getTarget().isBlank() && layer.getTarget() != null && !layer.getTarget().isBlank()) {
+                playback.setTarget(layer.getTarget());
+            }
+            if (playback.getWeight() <= 0f) {
+                playback.setWeight(layer.getWeight());
+            }
+        }
+        entity.getIkLayerPlaybacks().removeIf(playback -> playback == null
+                || playback.getLayerId().isBlank()
+                || !validLayerIds.contains(playback.getLayerId()));
+    }
+
+    private void collectIKNames(File root, Set<String> names) {
+        if (root == null || !root.isDirectory()) {
+            return;
+        }
+        Collection<File> files = FileUtils.listFiles(root, new String[]{"smik", "json"}, true);
+        for (File file : files) {
+            if (file == null || !isIKFile(file)) {
+                continue;
+            }
+            String fileName = stripIKExtension(file.getName());
+            if (!fileName.isBlank()) {
+                names.add(fileName);
+            }
+            try {
+                IKDefinition definition = IKDefinition.load(file);
+                if (definition.getId() != null && !definition.getId().isBlank()) {
+                    names.add(definition.getId());
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private static boolean isIKFile(File file) {
+        String lower = file.getName().toLowerCase(Locale.ROOT);
+        return lower.endsWith(IKDefinition.FILE_EXTENSION)
+                || lower.endsWith(IKDefinition.LEGACY_FILE_EXTENSION);
+    }
+
+    private static String stripIKExtension(String name) {
+        if (name == null) {
+            return "";
+        }
+        String lower = name.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(IKDefinition.FILE_EXTENSION)) {
+            return name.substring(0, name.length() - IKDefinition.FILE_EXTENSION.length());
+        }
+        if (lower.endsWith(IKDefinition.LEGACY_FILE_EXTENSION)) {
+            return name.substring(0, name.length() - IKDefinition.LEGACY_FILE_EXTENSION.length());
+        }
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) : name;
+    }
+
+    public void refreshEntityIKPreview(DesignerEntity entity) {
+        if (entity == null || entity.getType() != DesignerEntityType.MODEL) {
+            return;
+        }
+        String modelRuntimeName = modelRuntimeName(entity);
+        if (modelRuntimeName.isBlank()) {
+            return;
+        }
+        AppModel model = getAppModel(modelRuntimeName);
+        if (model == null) {
+            return;
+        }
+        if (entity.getIkAsset().isBlank()) {
+            getIKRuntimeSystem().remove(modelRuntimeName);
+            restoreIKPreviewBasePose(modelRuntimeName, model);
+            return;
+        }
+
+        IKDefinition definition = getIKDefinition(entity.getIkAsset());
+        if (definition == null) {
+            getIKRuntimeSystem().remove(modelRuntimeName);
+            restoreIKPreviewBasePose(modelRuntimeName, model);
+            return;
+        }
+        restoreIKPreviewBasePose(modelRuntimeName, model);
+        IKControlComponent control = getIKRuntimeSystem().apply(modelRuntimeName, model, definition);
+        if (control == null) {
+            return;
+        }
+        for (DesignerEntity.IKLayerPlayback layer : entity.getIkLayerPlaybacks()) {
+            if (layer == null || layer.getLayerId().isBlank()) {
+                continue;
+            }
+            if (!layer.getTarget().isBlank()) {
+                control.setLayerTarget(layer.getLayerId(), layer.getTarget(), resolveDesignerTargetSpatial(layer.getTarget()));
+            }
+            if (layer.isEnabled()) {
+                control.playLayer(layer.getLayerId(), layer.getWeight(), layer.getBlend());
+            } else {
+                control.stopLayer(layer.getLayerId(), layer.getBlend());
+            }
+        }
+    }
+
+    private void restoreIKPreviewBasePose(String modelRuntimeName, AppModel model) {
+        SkinningControl skinning = model == null ? null : model.getSkinningControl();
+        if (modelRuntimeName == null || modelRuntimeName.isBlank()
+                || skinning == null || skinning.getArmature() == null) {
+            return;
+        }
+
+        Map<String, Transform> transforms = ikPreviewBaseTransforms.get(modelRuntimeName);
+        if (transforms == null) {
+            transforms = new HashMap<>();
+            for (Joint joint : skinning.getArmature().getJointList()) {
+                if (joint != null && joint.getName() != null) {
+                    transforms.put(joint.getName(), joint.getLocalTransform().clone());
+                }
+            }
+            ikPreviewBaseTransforms.put(modelRuntimeName, transforms);
+            return;
+        }
+
+        for (Joint joint : skinning.getArmature().getJointList()) {
+            Transform transform = joint == null || joint.getName() == null ? null : transforms.get(joint.getName());
+            if (transform != null) {
+                joint.setLocalTransform(transform.clone());
+            }
+        }
+        skinning.getArmature().update();
+        rootNode.updateLogicalState(0f);
+        rootNode.updateGeometricState();
+    }
+
+    private void refreshAllEntityIKPreviews() {
+        refreshAllEntityIKPreviews(entities);
+    }
+
+    private void refreshAllEntityIKPreviews(List<DesignerEntity> source) {
+        if (source == null) {
+            return;
+        }
+        for (DesignerEntity entity : source) {
+            if (entity == null) {
+                continue;
+            }
+            if (entity.getType() == DesignerEntityType.MODEL && !entity.getIkAsset().isBlank()) {
+                refreshEntityIKPreview(entity);
+            }
+            refreshAllEntityIKPreviews(entity.getChildren());
+        }
+    }
+
+    private String modelRuntimeName(DesignerEntity entity) {
+        if (entity == null) {
+            return "";
+        }
+        if (entity.getSceneNode() != null && entity.getSceneNode().getName() != null
+                && getAppModel(entity.getSceneNode().getName()) != null) {
+            return entity.getSceneNode().getName();
+        }
+        SceneMaxScope scope = getMainScope();
+        if (scope != null && entity.getName() != null) {
+            String scopedName = entity.getName() + "@" + scope.scopeId;
+            if (getAppModel(scopedName) != null) {
+                return scopedName;
+            }
+        }
+        if (entity.getName() != null && getAppModel(entity.getName()) != null) {
+            return entity.getName();
+        }
+        return "";
+    }
+
+    private Spatial resolveDesignerTargetSpatial(String targetName) {
+        if (targetName == null || targetName.trim().isEmpty()) {
+            return null;
+        }
+        String name = targetName.trim();
+        DesignerEntity target = findEntityByName(name, entities);
+        if (target != null && target.getSceneNode() != null) {
+            return target.getSceneNode();
+        }
+        Spatial direct = getEntitySpatial(name);
+        if (direct != null) {
+            return direct;
+        }
+        SceneMaxScope scope = getMainScope();
+        return scope == null ? null : getEntitySpatial(name + "@" + scope.scopeId);
+    }
+
     /** Returns sorted list of project shader names from resources/shaders/shaders-ext.json. */
     public List<String> getAvailableProjectShaderNames() {
         TreeSet<String> names = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
@@ -3425,6 +3676,8 @@ public class DesignerApp extends SceneMaxApp {
                 entity.setSceneMaxCode(pe.code);
                 entity.setSceneNode(node);
                 entity.setAttachTo(pe.attachTo);
+                entity.setIkAsset(pe.ikAsset);
+                copyIKLayerPlaybacks(pe.ikLayerPlaybacks, entity.getIkLayerPlaybacks());
 
                 // Store type-specific properties
                 switch (pe.type) {
@@ -3560,7 +3813,11 @@ public class DesignerApp extends SceneMaxApp {
                 } else {
                     target.add(entity);
                 }
+                if (pe.type == DesignerEntityType.MODEL) {
+                    ikPreviewBaseTransforms.remove(pe.nodeName);
+                }
                 applyAllEntityAttachments();
+                refreshAllEntityIKPreviews();
                 System.out.println("[TRACE] After add: target.size()=" + target.size()
                         + ", entities.size()=" + entities.size());
 
@@ -3849,9 +4106,7 @@ public class DesignerApp extends SceneMaxApp {
         String target = attachTo != null ? attachTo.trim() : "";
         if (target.isEmpty()) {
             entity.setAttachTo("");
-            if (entity.getSceneNode().getParent() != rootNode) {
-                rootNode.attachChild(entity.getSceneNode());
-            }
+            detachDesignerAttachmentWrapper(entity.getSceneNode(), rootNode);
             markDocumentDirty();
             notifySceneChanged();
             return true;
@@ -3864,7 +4119,7 @@ public class DesignerApp extends SceneMaxApp {
         }
 
         entity.setAttachTo(target);
-        targetEntity.getSceneNode().attachChild(entity.getSceneNode());
+        attachEntityForRuntimePreview(entity, targetEntity, target);
         markDocumentDirty();
         notifySceneChanged();
         return true;
@@ -3894,9 +4149,81 @@ public class DesignerApp extends SceneMaxApp {
             DesignerEntity target = findEntityByName(extractAttachTargetEntityName(attachTo), entities);
             if (target != null && target != entity && target.getSceneNode() != null
                     && !isSceneNodeDescendant(target.getSceneNode(), entity.getSceneNode())) {
-                target.getSceneNode().attachChild(entity.getSceneNode());
+                attachEntityForRuntimePreview(entity, target, attachTo);
             }
         }
+    }
+
+    private void attachEntityForRuntimePreview(DesignerEntity entity, DesignerEntity targetEntity, String attachTo) {
+        if (entity == null || targetEntity == null || entity.getSceneNode() == null || targetEntity.getSceneNode() == null) {
+            return;
+        }
+        Node attachedNode = entity.getSceneNode();
+        Vector3f localTranslation = attachedNode.getLocalTranslation().clone();
+        Quaternion localRotation = attachedNode.getLocalRotation().clone();
+        Vector3f localScale = attachedNode.getLocalScale().clone();
+
+        Node attachToNode = resolveDesignerAttachTargetNode(targetEntity, attachTo);
+        if (attachToNode == null || attachToNode == attachedNode || isSceneNodeDescendant(attachToNode, attachedNode)) {
+            return;
+        }
+
+        detachDesignerAttachmentWrapper(attachedNode, null);
+
+        Node scaleNode = new Node("__designer_attach_" + entity.getId());
+        scaleNode.setUserData(DESIGNER_ATTACH_WRAPPER_KEY, Boolean.TRUE);
+        float targetScale = attachToNode.getWorldScale().getX();
+        scaleNode.setLocalScale(Math.abs(targetScale) < 0.0001f ? 1f : 1f / targetScale);
+        attachToNode.attachChild(scaleNode);
+        scaleNode.attachChild(attachedNode);
+        attachedNode.setLocalTranslation(localTranslation);
+        attachedNode.setLocalRotation(localRotation);
+        attachedNode.setLocalScale(localScale);
+    }
+
+    private void detachDesignerAttachmentWrapper(Node attachedNode, Node fallbackParent) {
+        if (attachedNode == null) {
+            return;
+        }
+        Vector3f localTranslation = attachedNode.getLocalTranslation().clone();
+        Quaternion localRotation = attachedNode.getLocalRotation().clone();
+        Vector3f localScale = attachedNode.getLocalScale().clone();
+        Spatial parent = attachedNode.getParent();
+        if (isDesignerAttachmentWrapper(parent)) {
+            Node wrapper = (Node) parent;
+            wrapper.detachChild(attachedNode);
+            wrapper.removeFromParent();
+        }
+        if (fallbackParent != null && attachedNode.getParent() != fallbackParent) {
+            fallbackParent.attachChild(attachedNode);
+        }
+        attachedNode.setLocalTranslation(localTranslation);
+        attachedNode.setLocalRotation(localRotation);
+        attachedNode.setLocalScale(localScale);
+    }
+
+    private boolean isDesignerAttachmentWrapper(Spatial spatial) {
+        return spatial instanceof Node
+                && Boolean.TRUE.equals(spatial.getUserData(DESIGNER_ATTACH_WRAPPER_KEY));
+    }
+
+    private Node resolveDesignerAttachTargetNode(DesignerEntity targetEntity, String attachTo) {
+        String jointName = extractAttachTargetJointName(attachTo);
+        if (!jointName.isBlank() && targetEntity.getType() == DesignerEntityType.MODEL) {
+            String runtimeName = modelRuntimeName(targetEntity);
+            AppModel model = runtimeName.isBlank() ? null : getAppModel(runtimeName);
+            if (model != null) {
+                try {
+                    Node jointNode = model.getJointAttachementNode(jointName);
+                    if (jointNode != null) {
+                        return jointNode;
+                    }
+                } catch (RuntimeException ex) {
+                    ex.printStackTrace();
+                }
+            }
+        }
+        return targetEntity.getSceneNode();
     }
 
     private static String extractAttachTargetEntityName(String attachTo) {
@@ -3909,6 +4236,22 @@ public class DesignerApp extends SceneMaxApp {
             return value.substring(0, jointDot).trim();
         }
         return value;
+    }
+
+    private static String extractAttachTargetJointName(String attachTo) {
+        if (attachTo == null) {
+            return "";
+        }
+        String value = attachTo.trim();
+        int start = value.indexOf(".\"");
+        if (start < 0) {
+            return "";
+        }
+        int end = value.indexOf('"', start + 2);
+        if (end < 0) {
+            return "";
+        }
+        return value.substring(start + 2, end).trim();
     }
 
     private static boolean isSceneNodeDescendant(Spatial candidate, Spatial possibleAncestor) {
@@ -3940,6 +4283,36 @@ public class DesignerApp extends SceneMaxApp {
                 return true;
             default:
                 return false;
+        }
+    }
+
+    private static List<DesignerEntity.IKLayerPlayback> copyIKLayerPlaybacks(List<DesignerEntity.IKLayerPlayback> source) {
+        List<DesignerEntity.IKLayerPlayback> copy = new ArrayList<>();
+        copyIKLayerPlaybacks(source, copy);
+        return copy;
+    }
+
+    private static void copyIKLayerPlaybacks(List<DesignerEntity.IKLayerPlayback> source,
+                                             List<DesignerEntity.IKLayerPlayback> target) {
+        if (target == null) {
+            return;
+        }
+        target.clear();
+        if (source == null) {
+            return;
+        }
+        for (DesignerEntity.IKLayerPlayback layer : source) {
+            if (layer == null) {
+                continue;
+            }
+            DesignerEntity.IKLayerPlayback copy = new DesignerEntity.IKLayerPlayback();
+            copy.setLayerId(layer.getLayerId());
+            copy.setLayerName(layer.getLayerName());
+            copy.setEnabled(layer.isEnabled());
+            copy.setTarget(layer.getTarget());
+            copy.setBlend(layer.getBlend());
+            copy.setWeight(layer.getWeight());
+            target.add(copy);
         }
     }
 
@@ -4087,6 +4460,8 @@ public class DesignerApp extends SceneMaxApp {
         String modelCollisionShape = entity.getModelCollisionShape();
         String jointMapping = entity.getJointMapping();
         String attachTo = entity.getAttachTo();
+        String ikAsset = entity.getIkAsset();
+        List<DesignerEntity.IKLayerPlayback> ikLayerPlaybacks = copyIKLayerPlaybacks(entity.getIkLayerPlaybacks());
         String existingNodeName = entity.getSceneNode() != null ? entity.getSceneNode().getName() : "";
 
         // Find the entity's location (top-level or inside a section)
@@ -4250,6 +4625,8 @@ public class DesignerApp extends SceneMaxApp {
         pending.hidden = hidden;
         pending.shadowMode = shadowMode;
         pending.attachTo = attachTo;
+        pending.ikAsset = ikAsset;
+        pending.ikLayerPlaybacks = ikLayerPlaybacks;
         pending.nodeName = nodeName;
         pending.framesWaited = 0;
         pending.selectAfterCreation = true;
@@ -4961,6 +5338,8 @@ public class DesignerApp extends SceneMaxApp {
                     pending.shadowMode = entityTemplate.getShadowMode();
                     pending.jointMapping = entityTemplate.getJointMapping();
                     pending.attachTo = entityTemplate.getAttachTo();
+                    pending.ikAsset = entityTemplate.getIkAsset();
+                    pending.ikLayerPlaybacks = copyIKLayerPlaybacks(entityTemplate.getIkLayerPlaybacks());
                     break;
             }
 

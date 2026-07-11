@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 public class DesignerAttachmentCodeGenerationTest {
@@ -43,5 +44,83 @@ public class DesignerAttachmentCodeGenerationTest {
         int attachIndex = code.indexOf("player1_head_collider.attach to player1.\"mixamorig:Head\": pos (0.0,0.5,0.0)");
         assertTrue("child creation command should be present", createIndex >= 0);
         assertTrue("attach command should be emitted after creation", attachIndex > createIndex);
+    }
+
+    @Test
+    public void designerAttachmentPreviewCompensatesForParentScaleLikeRuntime() {
+        DesignerApp app = new DesignerApp();
+
+        DesignerEntity parent = new DesignerEntity("model_1", DesignerEntityType.MODEL);
+        Node parentNode = new Node("model_1");
+        parentNode.setLocalTranslation(0.48224258f, 0f, 1.1645527f);
+        parentNode.setLocalScale(3.7f);
+        parent.setSceneNode(parentNode);
+
+        DesignerEntity child = new DesignerEntity("right_sit_collider", DesignerEntityType.SPHERE);
+        Node childNode = new Node("right_sit_collider");
+        childNode.setLocalTranslation(-0.34946012f, 0.8668041f, 0.28968692f);
+        childNode.setLocalScale(0.3f);
+        child.setSceneNode(childNode);
+
+        app.getEntities().add(parent);
+        app.getEntities().add(child);
+
+        assertTrue(app.applyEntityAttachment(child, "model_1"));
+        parentNode.updateLogicalState(0f);
+        parentNode.updateGeometricState();
+
+        Vector3f worldDelta = childNode.getWorldTranslation().subtract(parentNode.getWorldTranslation());
+        assertEquals(-0.34946012f, worldDelta.x, 0.0001f);
+        assertEquals(0.8668041f, worldDelta.y, 0.0001f);
+        assertEquals(0.28968692f, worldDelta.z, 0.0001f);
+        assertEquals(0.3f, childNode.getWorldScale().x, 0.0001f);
+    }
+
+    @Test
+    public void emitsIKAttachmentAndEnabledLayerPlaybackCommands() throws Exception {
+        Path tempDir = Files.createTempDirectory("designer-ik-code");
+        File smdesign = tempDir.resolve("scene.smdesign").toFile();
+
+        DesignerEntity player = new DesignerEntity("player1", DesignerEntityType.MODEL);
+        player.setResourcePath("fighter1_native");
+        player.setSceneNode(new Node("player1"));
+        player.setIkAsset("ik_sit_on_horse");
+
+        DesignerEntity.IKLayerPlayback leftFoot = player.getOrCreateIKLayerPlayback(
+                "horse_sit_left_foot", "horse_sit_left_foot");
+        leftFoot.setEnabled(true);
+        leftFoot.setTarget("left_sit_collider");
+        leftFoot.setBlend(0.2f);
+        leftFoot.setWeight(1f);
+
+        DesignerEntity.IKLayerPlayback rightFoot = player.getOrCreateIKLayerPlayback(
+                "horse_sit_right_foot", "horse_sit_right_foot");
+        rightFoot.setEnabled(true);
+        rightFoot.setTarget("right_sit_collider");
+        rightFoot.setBlend(0.2f);
+        rightFoot.setWeight(1f);
+
+        DesignerEntity leftTarget = new DesignerEntity("left_sit_collider", DesignerEntityType.SPHERE);
+        leftTarget.setSceneNode(new Node("left_sit_collider"));
+        DesignerEntity rightTarget = new DesignerEntity("right_sit_collider", DesignerEntityType.SPHERE);
+        rightTarget.setSceneNode(new Node("right_sit_collider"));
+
+        DesignerDocument.saveCodeFile(
+                smdesign,
+                Arrays.asList(player, leftTarget, rightTarget),
+                new Vector3f(0, 2, 10),
+                new Quaternion(0, 1, 0, 0),
+                "");
+
+        String code = Files.readString(DesignerDocument.getCodeFile(smdesign).toPath(), StandardCharsets.UTF_8);
+        int attachIndex = code.indexOf("player1.ik = \"ik_sit_on_horse\"");
+        int leftPlayIndex = code.indexOf(
+                "player1.ik.horse_sit_left_foot.play : target left_sit_collider, blend 0.2, weight 1.0");
+        int rightPlayIndex = code.indexOf(
+                "player1.ik.horse_sit_right_foot.play : target right_sit_collider, blend 0.2, weight 1.0");
+
+        assertTrue("IK assignment should be emitted", attachIndex >= 0);
+        assertTrue("left foot layer play should be emitted after IK assignment", leftPlayIndex > attachIndex);
+        assertTrue("right foot layer play should be emitted after IK assignment", rightPlayIndex > attachIndex);
     }
 }
