@@ -541,7 +541,7 @@
             0,
             -0.05878162
           ],
-          "resourcePath": "fighter1",
+          "resourcePath": "fighter1_native",
           "jointMapping": "mixamorig:Head,mixamorig:LeftShoulder,mixamorig:LeftArm,mixamorig:LeftForeArm,mixamorig:LeftHand,mixamorig:RightShoulder,mixamorig:RightArm,mixamorig:RightForeArm,mixamorig:RightHand,mixamorig:LeftUpLeg,mixamorig:LeftLeg,mixamorig:LeftFoot,mixamorig:RightUpLeg,mixamorig:RightLeg,mixamorig:RightFoot",
           "scale": [
             3,
@@ -550,7 +550,7 @@
           ],
           "modelCollisionShape": "none",
           "type": "MODEL",
-          "sceneMaxCode": "player1 => fighter1: hidden, pos (39.98954,-84.78974,30.700623), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast, collision shape none async",
+          "sceneMaxCode": "player1 => dynamic fighter1_native: hidden, pos (39.98954,-84.78974,30.700623), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast, collision shape none async",
           "staticModel": false,
           "name": "player1",
           "vehicleModel": false,
@@ -903,7 +903,7 @@
             0,
             1
           ],
-          "resourcePath": "old_fighter2",
+          "resourcePath": "old_fighter2_native",
           "jointMapping": "mixamorig:Head,mixamorig:LeftShoulder,mixamorig:LeftArm,mixamorig:LeftForeArm,mixamorig:LeftHand,mixamorig:RightShoulder,mixamorig:RightArm,mixamorig:RightForeArm,mixamorig:RightHand,mixamorig:LeftUpLeg,mixamorig:LeftLeg,mixamorig:LeftFoot,mixamorig:RightUpLeg,mixamorig:RightLeg,mixamorig:RightFoot",
           "scale": [
             3,
@@ -912,7 +912,7 @@
           ],
           "modelCollisionShape": "none",
           "type": "MODEL",
-          "sceneMaxCode": "player2 => old_fighter2: hidden, pos (40.0,-83.8349,11.373871), scale 3.0, shadow mode on, collision shape none async",
+          "sceneMaxCode": "player2 => dynamic old_fighter2_native: hidden, pos (40.0,-83.8349,11.373871), scale 3.0, shadow mode on, collision shape none async",
           "staticModel": false,
           "name": "player2",
           "vehicleModel": false,
@@ -1809,7 +1809,7 @@
         0,
         0.70710677
       ],
-      "resourcePath": "mountain_low_poly",
+      "resourcePath": "mountain_low_poly_native",
       "jointMapping": "",
       "scale": [
         0.31,
@@ -1818,7 +1818,7 @@
       ],
       "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "ambient_mountains_front => static mountain_low_poly: pos (40.0,-94.0,-315.8551), scale 0.31, rotate(0.0,-90.0,0.0), collision shape none async",
+      "sceneMaxCode": "ambient_mountains_front => static mountain_low_poly_native: pos (40.0,-94.0,-315.8551), scale 0.31, rotate(0.0,-90.0,0.0), collision shape none async",
       "staticModel": true,
       "name": "ambient_mountains_front",
       "vehicleModel": false,
@@ -1840,7 +1840,7 @@
         0,
         0.90630776
       ],
-      "resourcePath": "mountain_low_poly",
+      "resourcePath": "mountain_low_poly_native",
       "jointMapping": "",
       "scale": [
         0.01,
@@ -1849,7 +1849,7 @@
       ],
       "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "ambient_mountains_left => static mountain_low_poly: pos (-28.0,-95.0,-20.0), scale 0.01, rotate(0.0,-50.000008,0.0), collision shape none async",
+      "sceneMaxCode": "ambient_mountains_left => static mountain_low_poly_native: pos (-28.0,-95.0,-20.0), scale 0.01, rotate(0.0,-50.000008,0.0), collision shape none async",
       "staticModel": true,
       "name": "ambient_mountains_left",
       "vehicleModel": false,
@@ -1871,7 +1871,7 @@
         0,
         0.008613198
       ],
-      "resourcePath": "mountain_low_poly",
+      "resourcePath": "mountain_low_poly_native",
       "jointMapping": "",
       "scale": [
         0.31,
@@ -1880,7 +1880,7 @@
       ],
       "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "ambient_mountains_right => static mountain_low_poly: pos (300.0,-94.0,-59.041), scale 0.31, rotate(0.0,179.01299,0.0), collision shape none async",
+      "sceneMaxCode": "ambient_mountains_right => static mountain_low_poly_native: pos (300.0,-94.0,-59.041), scale 0.31, rotate(0.0,179.01299,0.0), collision shape none async",
       "staticModel": true,
       "name": "ambient_mountains_right",
       "vehicleModel": false,
@@ -1902,7 +1902,7 @@
         0,
         0.70710677
       ],
-      "resourcePath": "mountain_low_poly",
+      "resourcePath": "mountain_low_poly_native",
       "jointMapping": "",
       "scale": [
         0.01,
@@ -1911,7 +1911,7 @@
       ],
       "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "ambient_mountains_rear => static mountain_low_poly: pos (40.0,-96.0,116.0), scale 0.01, rotate(0.0,90.0,0.0), collision shape none async",
+      "sceneMaxCode": "ambient_mountains_rear => static mountain_low_poly_native: pos (40.0,-96.0,116.0), scale 0.01, rotate(0.0,90.0,0.0), collision shape none async",
       "staticModel": true,
       "name": "ambient_mountains_rear",
       "vehicleModel": false,

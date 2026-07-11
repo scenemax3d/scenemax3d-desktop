@@ -102,8 +102,15 @@ public class DesignerEntity {
     // Shadow mode: "none", "cast", "receive", "both"
     private String shadowMode = "none";
 
+    // Optional SceneMax attach target. Examples: "player1" or "player1.\"mixamorig:Head\"".
+    private String attachTo = "";
+
     // Joint mapping for 3D models (comma-separated joint names, empty = disabled)
     private String jointMapping = "";
+
+    // IK runtime setup for MODEL entities
+    private String ikAsset = "";
+    private final List<IKLayerPlayback> ikLayerPlaybacks = new ArrayList<>();
 
     // Path data (for PATH type only)
     private BezierPath bezierPath;
@@ -262,8 +269,30 @@ public class DesignerEntity {
     public String getShadowMode() { return shadowMode; }
     public void setShadowMode(String shadowMode) { this.shadowMode = shadowMode != null ? shadowMode : "none"; }
 
+    public String getAttachTo() { return attachTo != null ? attachTo : ""; }
+    public void setAttachTo(String attachTo) { this.attachTo = attachTo != null ? attachTo.trim() : ""; }
+
     public String getJointMapping() { return jointMapping; }
     public void setJointMapping(String jointMapping) { this.jointMapping = jointMapping != null ? jointMapping : ""; }
+
+    public String getIkAsset() { return ikAsset != null ? ikAsset : ""; }
+    public void setIkAsset(String ikAsset) { this.ikAsset = ikAsset != null ? ikAsset.trim() : ""; }
+    public List<IKLayerPlayback> getIkLayerPlaybacks() { return ikLayerPlaybacks; }
+
+    public IKLayerPlayback getOrCreateIKLayerPlayback(String layerId, String layerName) {
+        String id = layerId != null ? layerId.trim() : "";
+        for (IKLayerPlayback playback : ikLayerPlaybacks) {
+            if (playback != null && playback.getLayerId().equals(id)) {
+                playback.setLayerName(layerName);
+                return playback;
+            }
+        }
+        IKLayerPlayback playback = new IKLayerPlayback();
+        playback.setLayerId(id);
+        playback.setLayerName(layerName);
+        ikLayerPlaybacks.add(playback);
+        return playback;
+    }
 
     public BezierPath getBezierPath() { return bezierPath; }
     public void setBezierPath(BezierPath bezierPath) { this.bezierPath = bezierPath; }
@@ -355,6 +384,19 @@ public class DesignerEntity {
 
         if (sceneMaxCode != null) {
             json.put("sceneMaxCode", sceneMaxCode);
+        }
+        if (attachTo != null && !attachTo.isBlank()) {
+            json.put("attachTo", attachTo);
+        }
+        if (ikAsset != null && !ikAsset.isBlank()) {
+            json.put("ikAsset", ikAsset);
+            JSONArray layers = new JSONArray();
+            for (IKLayerPlayback playback : ikLayerPlaybacks) {
+                if (playback != null) {
+                    layers.put(playback.toJSON());
+                }
+            }
+            json.put("ikLayers", layers);
         }
 
         switch (type) {
@@ -532,6 +574,17 @@ public class DesignerEntity {
         DesignerEntityType type = DesignerEntityType.valueOf(typeName);
 
         DesignerEntity entity = new DesignerEntity(id, name, type);
+        entity.attachTo = json.optString("attachTo", "");
+        entity.ikAsset = json.optString("ikAsset", "");
+        JSONArray ikLayers = json.optJSONArray("ikLayers");
+        if (ikLayers != null) {
+            for (int i = 0; i < ikLayers.length(); i++) {
+                JSONObject layer = ikLayers.optJSONObject(i);
+                if (layer != null) {
+                    entity.ikLayerPlaybacks.add(IKLayerPlayback.fromJSON(layer));
+                }
+            }
+        }
 
         switch (type) {
             case SPHERE:
@@ -749,6 +802,52 @@ public class DesignerEntity {
                 return normalized;
             default:
                 return "default";
+        }
+    }
+
+    public static class IKLayerPlayback {
+        private String layerId = "";
+        private String layerName = "";
+        private boolean enabled;
+        private String target = "";
+        private float blend = 0.2f;
+        private float weight = 1.0f;
+
+        public String getLayerId() { return layerId != null ? layerId : ""; }
+        public void setLayerId(String layerId) { this.layerId = layerId != null ? layerId.trim() : ""; }
+        public String getLayerName() { return layerName != null ? layerName : ""; }
+        public void setLayerName(String layerName) { this.layerName = layerName != null ? layerName.trim() : ""; }
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getTarget() { return target != null ? target : ""; }
+        public void setTarget(String target) { this.target = target != null ? target.trim() : ""; }
+        public float getBlend() { return blend; }
+        public void setBlend(float blend) { this.blend = Math.max(0f, blend); }
+        public float getWeight() { return weight; }
+        public void setWeight(float weight) { this.weight = Math.max(0f, weight); }
+
+        JSONObject toJSON() {
+            return new JSONObject()
+                    .put("layerId", getLayerId())
+                    .put("layerName", getLayerName())
+                    .put("enabled", enabled)
+                    .put("target", getTarget())
+                    .put("blend", blend)
+                    .put("weight", weight);
+        }
+
+        static IKLayerPlayback fromJSON(JSONObject json) {
+            IKLayerPlayback playback = new IKLayerPlayback();
+            if (json == null) {
+                return playback;
+            }
+            playback.layerId = json.optString("layerId", "");
+            playback.layerName = json.optString("layerName", "");
+            playback.enabled = json.optBoolean("enabled", false);
+            playback.target = json.optString("target", "");
+            playback.blend = (float) json.optDouble("blend", 0.2);
+            playback.weight = (float) json.optDouble("weight", 1.0);
+            return playback;
         }
     }
 }

@@ -10,12 +10,14 @@ import com.scenemax.designer.gizmo.GizmoMode;
 import com.scenemax.designer.path.BezierPath;
 import com.scenemax.designer.path.PathSample;
 import com.scenemax.designer.selection.SelectionManager;
+import com.scenemaxeng.common.ik.IKDefinition;
 import org.apache.commons.io.FileUtils;
 import org.json.JSONObject;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.event.TreeSelectionEvent;
+import javax.swing.table.AbstractTableModel;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeCellRenderer;
 import javax.swing.tree.DefaultTreeModel;
@@ -147,6 +149,106 @@ public class DesignerPanel extends JPanel {
         }
     }
 
+    private class IKLayerTableModel extends AbstractTableModel {
+        private final String[] columns = {"Play", "Layer", "Target", "Blend", "Weight"};
+
+        @Override
+        public int getRowCount() {
+            DesignerEntity model = getSelectedTreeEntity();
+            return model != null && model.getType() == DesignerEntityType.MODEL
+                    ? model.getIkLayerPlaybacks().size()
+                    : 0;
+        }
+
+        @Override
+        public int getColumnCount() {
+            return columns.length;
+        }
+
+        @Override
+        public String getColumnName(int column) {
+            return columns[column];
+        }
+
+        @Override
+        public Class<?> getColumnClass(int columnIndex) {
+            if (columnIndex == 0) return Boolean.class;
+            if (columnIndex == 3 || columnIndex == 4) return Double.class;
+            return String.class;
+        }
+
+        @Override
+        public boolean isCellEditable(int rowIndex, int columnIndex) {
+            return columnIndex != 1;
+        }
+
+        @Override
+        public Object getValueAt(int rowIndex, int columnIndex) {
+            DesignerEntity.IKLayerPlayback layer = layerAt(rowIndex);
+            if (layer == null) {
+                return null;
+            }
+            switch (columnIndex) {
+                case 0:
+                    return layer.isEnabled();
+                case 1:
+                    return layer.getLayerName().isBlank() ? layer.getLayerId() : layer.getLayerName();
+                case 2:
+                    return layer.getTarget();
+                case 3:
+                    return (double) layer.getBlend();
+                case 4:
+                    return (double) layer.getWeight();
+                default:
+                    return null;
+            }
+        }
+
+        @Override
+        public void setValueAt(Object value, int rowIndex, int columnIndex) {
+            if (updatingProperties || app == null) return;
+            DesignerEntity.IKLayerPlayback layer = layerAt(rowIndex);
+            if (layer == null) {
+                return;
+            }
+            try {
+                switch (columnIndex) {
+                    case 0:
+                        layer.setEnabled(Boolean.TRUE.equals(value));
+                        break;
+                    case 2:
+                        layer.setTarget(value == null ? "" : String.valueOf(value));
+                        break;
+                    case 3:
+                        layer.setBlend(Float.parseFloat(String.valueOf(value)));
+                        break;
+                    case 4:
+                        layer.setWeight(Float.parseFloat(String.valueOf(value)));
+                        break;
+                    default:
+                        return;
+                }
+                DesignerEntity model = getSelectedTreeEntity();
+                app.enqueue(() -> {
+                    app.markDocumentDirty();
+                    app.refreshEntityIKPreview(model);
+                    return null;
+                });
+                fireTableRowsUpdated(rowIndex, rowIndex);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
+        private DesignerEntity.IKLayerPlayback layerAt(int rowIndex) {
+            DesignerEntity model = getSelectedTreeEntity();
+            if (model == null || model.getType() != DesignerEntityType.MODEL
+                    || rowIndex < 0 || rowIndex >= model.getIkLayerPlaybacks().size()) {
+                return null;
+            }
+            return model.getIkLayerPlaybacks().get(rowIndex);
+        }
+    }
+
     // --- Shared JME3 canvas (singleton across all designer documents) ---
     private static DesignerApp sharedApp;
     private static Canvas sharedCanvas;
@@ -172,6 +274,7 @@ public class DesignerPanel extends JPanel {
 
     // Properties panel
     private JTextField txtName;
+    private JComboBox<String> cboAttachTo;
     private JSpinner spnPosX, spnPosY, spnPosZ;
     private JSpinner spnRotX, spnRotY, spnRotZ;
     private JSpinner spnScaleX, spnScaleY, spnScaleZ;
@@ -213,6 +316,10 @@ public class DesignerPanel extends JPanel {
     private JCheckBox chkJointMapping;
     private JButton btnEditJointMapping;
     private JPanel jointMappingPanel;
+    private JPanel ikPanel;
+    private JComboBox<String> cboIKAsset;
+    private JTable ikLayersTable;
+    private IKLayerTableModel ikLayerTableModel;
     private JPanel pathPropertiesPanel;
     private JLabel lblPathPointCount;
     private JSpinner spnPathSubdivisions;
@@ -543,6 +650,13 @@ public class DesignerPanel extends JPanel {
         txtName = new JTextField(15);
         txtName.addActionListener(e -> applyNameChange());
         addFormRow("Name:", txtName);
+
+        cboAttachTo = new JComboBox<>();
+        cboAttachTo.setEditable(true);
+        cboAttachTo.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+        cboAttachTo.setToolTipText("Attach this object to another object, or to a model bone like player.\"mixamorig:Head\".");
+        cboAttachTo.addActionListener(e -> applyAttachmentChange());
+        addFormRow("Attach to:", cboAttachTo);
 
         propertiesForm.add(Box.createVerticalStrut(8));
         propertiesForm.add(createLabel("Position:"));
@@ -1173,6 +1287,39 @@ public class DesignerPanel extends JPanel {
         jointMappingPanel.add(jointMappingRow);
         jointMappingPanel.setVisible(false);
         propertiesForm.add(jointMappingPanel);
+
+        ikPanel = new JPanel();
+        ikPanel.setLayout(new BoxLayout(ikPanel, BoxLayout.Y_AXIS));
+        ikPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        ikPanel.add(Box.createVerticalStrut(8));
+        JLabel lblIK = new JLabel("Inverse Kinematics:");
+        lblIK.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblIK.setFont(lblIK.getFont().deriveFont(Font.BOLD));
+        ikPanel.add(lblIK);
+
+        JPanel ikAssetRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        ikAssetRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        ikAssetRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        ikAssetRow.add(new JLabel("IK:"));
+        cboIKAsset = new JComboBox<>();
+        cboIKAsset.setPreferredSize(new Dimension(170, 24));
+        cboIKAsset.addActionListener(e -> applyIKAssetChange());
+        ikAssetRow.add(cboIKAsset);
+        ikPanel.add(ikAssetRow);
+
+        ikLayerTableModel = new IKLayerTableModel();
+        ikLayersTable = new JTable(ikLayerTableModel);
+        ikLayersTable.setFillsViewportHeight(true);
+        ikLayersTable.setRowHeight(24);
+        ikLayersTable.putClientProperty("terminateEditOnFocusLost", Boolean.TRUE);
+        JScrollPane ikScroll = new JScrollPane(ikLayersTable);
+        ikScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
+        ikScroll.setPreferredSize(new Dimension(360, 130));
+        ikScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 140));
+        ikPanel.add(ikScroll);
+
+        ikPanel.setVisible(false);
+        propertiesForm.add(ikPanel);
 
         // Path properties panel (PATH type only)
         pathPropertiesPanel = new JPanel();
@@ -2777,6 +2924,7 @@ public class DesignerPanel extends JPanel {
             if (entity == null) {
                 txtName.setText("");
                 lblType.setText("Type: -");
+                setAttachToRowVisible(false);
                 clearSpinners();
                 sizeFieldsPanel.setVisible(false);
                 wedgePanel.setVisible(false);
@@ -2795,6 +2943,7 @@ public class DesignerPanel extends JPanel {
                 modelAssetPanel.setVisible(false);
                 modelCollisionShapePanel.setVisible(false);
                 jointMappingPanel.setVisible(false);
+                ikPanel.setVisible(false);
                 pathPropertiesPanel.setVisible(false);
                 cinematicTrackPanel.setVisible(false);
                 cinematicRigPanel.setVisible(false);
@@ -2803,6 +2952,11 @@ public class DesignerPanel extends JPanel {
 
             txtName.setText(entity.getName());
             lblType.setText("Type: " + entity.getType().name());
+            boolean attachable = isAttachableEntity(entity);
+            if (attachable) {
+                refreshAttachToChoices(entity);
+            }
+            setAttachToRowVisible(attachable);
 
             Vector3f pos = entity.getPosition();
             spnPosX.setValue((double) pos.x);
@@ -2962,10 +3116,18 @@ public class DesignerPanel extends JPanel {
                     chkJointMapping.setSelected(hasJoints);
                     btnEditJointMapping.setEnabled(hasJoints);
                     jointMappingPanel.setVisible(true);
+                    refreshIKChoices(entity.getIkAsset());
+                    if (!entity.getIkAsset().isBlank() && app != null) {
+                        app.syncEntityIKLayers(entity);
+                    }
+                    refreshIKTargetEditor(entity);
+                    ikLayerTableModel.fireTableDataChanged();
+                    ikPanel.setVisible(true);
                 } else {
                     modelAssetPanel.setVisible(false);
                     modelCollisionShapePanel.setVisible(false);
                     jointMappingPanel.setVisible(false);
+                    ikPanel.setVisible(false);
                 }
             } else {
                 hiddenPanel.setVisible(false);
@@ -2974,6 +3136,7 @@ public class DesignerPanel extends JPanel {
                 modelAssetPanel.setVisible(false);
                 modelCollisionShapePanel.setVisible(false);
                 jointMappingPanel.setVisible(false);
+                ikPanel.setVisible(false);
             }
 
             sceneShaderPanel.setVisible(false);
@@ -3066,6 +3229,7 @@ public class DesignerPanel extends JPanel {
         try {
             txtName.setText("Scene");
             lblType.setText("Type: Scene");
+            setAttachToRowVisible(false);
             clearSpinners();
 
             sizeFieldsPanel.setVisible(false);
@@ -3084,6 +3248,7 @@ public class DesignerPanel extends JPanel {
             modelAssetPanel.setVisible(false);
             modelCollisionShapePanel.setVisible(false);
             jointMappingPanel.setVisible(false);
+            ikPanel.setVisible(false);
             pathPropertiesPanel.setVisible(false);
             cinematicTrackPanel.setVisible(false);
             if (txtCinematicRuntimeId != null) {
@@ -3147,6 +3312,21 @@ public class DesignerPanel extends JPanel {
                 refreshSceneTree();
             }
         }
+    }
+
+    private void applyAttachmentChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || !isAttachableEntity(sel)) return;
+
+        String attachTo = selectedComboValue(cboAttachTo).trim();
+        app.enqueue(() -> {
+            boolean changed = app.applyEntityAttachment(sel, attachTo);
+            if (!changed) {
+                SwingUtilities.invokeLater(() -> updatePropertiesPanel(sel));
+            }
+            return null;
+        });
     }
 
     private void applyTransformChange() {
@@ -3481,6 +3661,24 @@ public class DesignerPanel extends JPanel {
         app.enqueue(() -> {
             sel.setModelCollisionShape(shape);
             app.markDocumentDirty();
+            return null;
+        });
+    }
+
+    private void applyIKAssetChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || sel.getType() != DesignerEntityType.MODEL) return;
+
+        String ikAsset = selectedComboValue(cboIKAsset).trim();
+        app.enqueue(() -> {
+            app.applyEntityIKAsset(sel, ikAsset);
+            SwingUtilities.invokeLater(() -> {
+                if (app != null && app.getSelectionManager().getSelected() == sel) {
+                    refreshIKTargetEditor(sel);
+                    ikLayerTableModel.fireTableDataChanged();
+                }
+            });
             return null;
         });
     }
@@ -4027,6 +4225,58 @@ public class DesignerPanel extends JPanel {
         cboModelAsset.setSelectedItem(selectedModelAsset != null ? selectedModelAsset : "");
     }
 
+    private void refreshIKChoices(String selectedIK) {
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+        model.addElement("");
+
+        if (app != null) {
+            for (String ikName : app.getAvailableIKNames()) {
+                model.addElement(ikName);
+            }
+        }
+
+        if (selectedIK != null && !selectedIK.isBlank()) {
+            addComboValueIfMissing(model, selectedIK);
+        }
+
+        cboIKAsset.setModel(model);
+        cboIKAsset.setSelectedItem(selectedIK != null ? selectedIK : "");
+    }
+
+    private void refreshIKTargetEditor(DesignerEntity selectedModel) {
+        if (ikLayersTable == null || ikLayersTable.getColumnModel().getColumnCount() < 3) {
+            return;
+        }
+        JComboBox<String> targets = new JComboBox<>();
+        targets.setEditable(true);
+        targets.addItem("");
+        if (app != null) {
+            addIKTargetChoices(targets, app.getEntities(), selectedModel);
+        }
+        ikLayersTable.getColumnModel().getColumn(2).setCellEditor(new DefaultCellEditor(targets));
+        ikLayersTable.getColumnModel().getColumn(0).setPreferredWidth(44);
+        ikLayersTable.getColumnModel().getColumn(1).setPreferredWidth(125);
+        ikLayersTable.getColumnModel().getColumn(2).setPreferredWidth(140);
+        ikLayersTable.getColumnModel().getColumn(3).setPreferredWidth(55);
+        ikLayersTable.getColumnModel().getColumn(4).setPreferredWidth(55);
+    }
+
+    private void addIKTargetChoices(JComboBox<String> combo, List<DesignerEntity> source, DesignerEntity selectedModel) {
+        if (source == null) {
+            return;
+        }
+        for (DesignerEntity entity : source) {
+            if (entity == null) {
+                continue;
+            }
+            if (entity != selectedModel && isAttachableEntity(entity)
+                    && entity.getName() != null && !entity.getName().isBlank()) {
+                addComboItemIfMissing(combo, entity.getName());
+            }
+            addIKTargetChoices(combo, entity.getChildren(), selectedModel);
+        }
+    }
+
     private void refreshLightColorChoices(String selectedColor) {
         DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[]{
                 "warm", "cool", "white", "red", "green", "blue", "yellow",
@@ -4057,6 +4307,53 @@ public class DesignerPanel extends JPanel {
         cboLightLookAt.setSelectedItem(selectedLight != null ? selectedLight.getLightLookAtTarget() : "");
     }
 
+    private void refreshAttachToChoices(DesignerEntity selectedEntity) {
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+        model.addElement("");
+        if (app != null) {
+            addAttachToChoices(model, app.getEntities(), selectedEntity);
+        }
+        addComboValueIfMissing(model, selectedEntity != null ? selectedEntity.getAttachTo() : "");
+        cboAttachTo.setModel(model);
+        cboAttachTo.setSelectedItem(selectedEntity != null ? selectedEntity.getAttachTo() : "");
+    }
+
+    private void addAttachToChoices(DefaultComboBoxModel<String> model, List<DesignerEntity> source,
+                                    DesignerEntity selectedEntity) {
+        if (source == null) {
+            return;
+        }
+        for (DesignerEntity entity : source) {
+            if (entity == null) {
+                continue;
+            }
+            if (isAttachTarget(entity, selectedEntity)) {
+                addComboValueIfMissing(model, entity.getName());
+                if (entity.getType() == DesignerEntityType.MODEL) {
+                    addModelJointAttachChoices(model, entity);
+                }
+            }
+            addAttachToChoices(model, entity.getChildren(), selectedEntity);
+        }
+    }
+
+    private void addModelJointAttachChoices(DefaultComboBoxModel<String> model, DesignerEntity modelEntity) {
+        if (modelEntity == null || modelEntity.getName() == null || modelEntity.getName().isBlank()) {
+            return;
+        }
+        String mapping = modelEntity.getJointMapping();
+        if (mapping == null || mapping.isBlank()) {
+            return;
+        }
+        for (String rawJoint : mapping.split(",")) {
+            String joint = rawJoint.trim();
+            if (joint.isEmpty()) {
+                continue;
+            }
+            addComboValueIfMissing(model, modelEntity.getName() + ".\"" + joint + "\"");
+        }
+    }
+
     private void addLightLookAtChoices(DefaultComboBoxModel<String> model, List<DesignerEntity> source,
                                        DesignerEntity selectedLight) {
         if (source == null) {
@@ -4071,6 +4368,11 @@ public class DesignerPanel extends JPanel {
             }
             addLightLookAtChoices(model, entity.getChildren(), selectedLight);
         }
+    }
+
+    private boolean isAttachTarget(DesignerEntity entity, DesignerEntity selectedEntity) {
+        return entity != selectedEntity && isAttachableEntity(entity)
+                && entity.getName() != null && !entity.getName().isBlank();
     }
 
     private boolean isLightLookAtTarget(DesignerEntity entity, DesignerEntity selectedLight) {
@@ -4094,6 +4396,33 @@ public class DesignerPanel extends JPanel {
         }
     }
 
+    private boolean isAttachableEntity(DesignerEntity entity) {
+        if (entity == null) {
+            return false;
+        }
+        switch (entity.getType()) {
+            case BOX:
+            case SPHERE:
+            case WEDGE:
+            case CYLINDER:
+            case HOLLOW_CYLINDER:
+            case QUAD:
+            case CONE:
+            case STAIRS:
+            case ARCH:
+            case MODEL:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void setAttachToRowVisible(boolean visible) {
+        if (cboAttachTo != null && cboAttachTo.getParent() != null) {
+            cboAttachTo.getParent().setVisible(visible);
+        }
+    }
+
     private void addComboValueIfMissing(DefaultComboBoxModel<String> model, String value) {
         if (model == null || value == null || value.isBlank()) {
             return;
@@ -4106,8 +4435,22 @@ public class DesignerPanel extends JPanel {
         model.addElement(value);
     }
 
+    private void addComboItemIfMissing(JComboBox<String> combo, String value) {
+        if (combo == null || value == null || value.isBlank()) {
+            return;
+        }
+        for (int i = 0; i < combo.getItemCount(); i++) {
+            if (value.equals(combo.getItemAt(i))) {
+                return;
+            }
+        }
+        combo.addItem(value);
+    }
+
     private String selectedComboValue(JComboBox<String> combo) {
-        Object selected = combo != null ? combo.getSelectedItem() : null;
+        Object selected = combo != null && combo.isEditable() && combo.getEditor() != null
+                ? combo.getEditor().getItem()
+                : combo != null ? combo.getSelectedItem() : null;
         return selected != null ? selected.toString() : "";
     }
 

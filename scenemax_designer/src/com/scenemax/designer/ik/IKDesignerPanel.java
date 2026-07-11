@@ -214,8 +214,13 @@ public class IKDesignerPanel extends JPanel {
             if (index < 0 || index == selectedLayerIndex) {
                 return;
             }
-            applySelectedLayerFromUi();
+            IKLayerDefinition previousLayer = layerAt(selectedLayerIndex);
+            if (previousLayer != null) {
+                applyLayerFieldsToLayer(previousLayer);
+            }
             selectedLayerIndex = index;
+            rebuildLayerListAndSelect(selectedLayerIndex);
+            refreshValidation();
             refreshLayerFields();
         });
         panel.add(new JScrollPane(layerList), BorderLayout.CENTER);
@@ -283,7 +288,7 @@ public class IKDesignerPanel extends JPanel {
         txtId.setText(document.getId());
         txtName.setText(document.getName());
         setModelComboSelection(document.getTargetModelId());
-        rebuildLayerList();
+        rebuildLayerListAndSelect(selectedLayerIndex);
         selectedLayerIndex = Math.min(selectedLayerIndex, Math.max(0, document.getLayers().size() - 1));
         if (!document.getLayers().isEmpty()) {
             layerList.setSelectedIndex(selectedLayerIndex);
@@ -300,6 +305,18 @@ public class IKDesignerPanel extends JPanel {
             String name = layer.getName() == null || layer.getName().trim().isEmpty() ? layer.getSolverType() : layer.getName();
             layerListModel.addElement(name + "  [" + layer.getSolverType() + "]");
         }
+    }
+
+    private void rebuildLayerListAndSelect(int selectionIndex) {
+        boolean wasUpdatingUi = updatingUi;
+        updatingUi = true;
+        rebuildLayerList();
+        if (document == null || document.getLayers().isEmpty()) {
+            layerList.clearSelection();
+        } else {
+            layerList.setSelectedIndex(Math.min(Math.max(0, selectionIndex), document.getLayers().size() - 1));
+        }
+        updatingUi = wasUpdatingUi;
     }
 
     private void refreshLayerFields() {
@@ -565,6 +582,13 @@ public class IKDesignerPanel extends JPanel {
         if (layer == null) {
             return;
         }
+        applyLayerFieldsToLayer(layer);
+        rebuildLayerListAndSelect(selectedLayerIndex);
+        refreshValidation();
+        updatePreviewHighlights();
+    }
+
+    private void applyLayerFieldsToLayer(IKLayerDefinition layer) {
         layer.setId(txtLayerId.getText().trim());
         layer.setName(txtLayerName.getText().trim());
         layer.setSolverType(String.valueOf(cboSolver.getSelectedItem()));
@@ -589,12 +613,6 @@ public class IKDesignerPanel extends JPanel {
         layer.setMaxStretch(floatValue(spnMaxStretch));
         layer.setMaxAngle(floatValue(spnMaxAngle));
         layer.setIterations(intValue(spnIterations));
-        rebuildLayerList();
-        if (!document.getLayers().isEmpty()) {
-            layerList.setSelectedIndex(Math.min(selectedLayerIndex, document.getLayers().size() - 1));
-        }
-        refreshValidation();
-        updatePreviewHighlights();
     }
 
     private void addLayer() {
@@ -654,11 +672,15 @@ public class IKDesignerPanel extends JPanel {
     }
 
     private IKLayerDefinition selectedLayer() {
-        if (document == null || document.getLayers().isEmpty() || selectedLayerIndex < 0
-                || selectedLayerIndex >= document.getLayers().size()) {
+        return layerAt(selectedLayerIndex);
+    }
+
+    private IKLayerDefinition layerAt(int index) {
+        if (document == null || document.getLayers().isEmpty()
+                || index < 0 || index >= document.getLayers().size()) {
             return null;
         }
-        return document.getLayers().get(selectedLayerIndex);
+        return document.getLayers().get(index);
     }
 
     private void refreshValidation() {
