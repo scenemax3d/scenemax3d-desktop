@@ -11,8 +11,8 @@ loading3.draw powered_by_scenemax3d : pos (100,700),size(200,200)
 lights.add probe "4"
 
 Scene.environment.shader = "ambient1"
-camera.pos(11.08251,-13.236266,49.527325)
-camera.rotate(-20.211672,131.23729,-0.051869337)
+camera.pos(10.723396,-13.462794,48.529358)
+camera.rotate(-20.211674,112.98417,-0.051868483)
 
 floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material "wall", shadow mode cast
 level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on async
@@ -33,7 +33,7 @@ boss.switch to character mode
 // focus camera on tiger
 intro.draw clear
 tg."Idle_Lie Prone" loop
-camera.attach to tg : pos (0,1,-12)
+//camera.attach to tg : pos (0,1,-12)
 //effects.flame.show : pos (13,-20,50), radius = 17, duration 4 async
 skybox.show solar system
 wait 1 seconds

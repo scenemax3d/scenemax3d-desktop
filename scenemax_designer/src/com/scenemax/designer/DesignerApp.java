@@ -193,6 +193,7 @@ public class DesignerApp extends SceneMaxApp {
     private final List<Light> designerFallbackLights = new ArrayList<>();
     private boolean designTimeLightingEnabled = false;
     private boolean designerFallbackLightingEnabled = true;
+    private boolean designerFallbackLightingDesignTimeRig = false;
     private int cinematicTrackCounter = 0;
     private int cinematicRigCounter = 0;
     private final java.util.Map<String, CinematicTrackVisual> cinematicTrackVisuals = new java.util.HashMap<>();
@@ -1455,7 +1456,6 @@ public class DesignerApp extends SceneMaxApp {
             restoreDesignerFallbackLighting();
             return;
         }
-        disableDesignerFallbackLightingForCustomScene();
 
         String type = entity.getLightType().toLowerCase(Locale.ROOT);
         ColorRGBA color = parseDesignerLightColor(entity.getLightColor());
@@ -1521,17 +1521,7 @@ public class DesignerApp extends SceneMaxApp {
     private void captureDesignerFallbackLighting() {
         removeDesignerFallbackLightingRig();
         removeAllDesignerRootLights();
-        installDesignerFallbackLightingRig();
-    }
-
-    private void disableDesignerFallbackLightingForCustomScene() {
-        if (!designerFallbackLightingEnabled) {
-            return;
-        }
-        for (Light light : new ArrayList<>(designerFallbackLights)) {
-            rootNode.removeLight(light);
-        }
-        designerFallbackLightingEnabled = false;
+        installDesignerFallbackLightingRig(designTimeLightingEnabled);
     }
 
     private void refreshDesignerFallbackLighting() {
@@ -1541,11 +1531,11 @@ public class DesignerApp extends SceneMaxApp {
     private void applyDesignerLightingMode() {
         if (designTimeLightingEnabled) {
             removeAllDesignerPreviewLights();
-            ensureDesignerFallbackLightingForPreviewScene();
+            ensureDesignerFallbackLightingForPreviewScene(true);
             restoreDesignerFallbackLighting();
             return;
         }
-        disableDesignerFallbackLightingForCustomScene();
+        ensureDesignerFallbackLightingForPreviewScene(false);
         syncAllDesignerPreviewLights(entities);
     }
 
@@ -1569,7 +1559,7 @@ public class DesignerApp extends SceneMaxApp {
             return;
         }
         if (designerFallbackLights.isEmpty()) {
-            installDesignerFallbackLightingRig();
+            installDesignerFallbackLightingRig(designTimeLightingEnabled);
             return;
         }
         for (Light light : designerFallbackLights) {
@@ -1581,16 +1571,26 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     private void ensureDesignerFallbackLightingForPreviewScene() {
-        if (!designerFallbackLights.isEmpty()) {
+        ensureDesignerFallbackLightingForPreviewScene(designTimeLightingEnabled);
+    }
+
+    private void ensureDesignerFallbackLightingForPreviewScene(boolean designTimeRig) {
+        if (!designerFallbackLights.isEmpty() && designerFallbackLightingDesignTimeRig == designTimeRig) {
             designerFallbackLightingEnabled = false;
             restoreDesignerFallbackLighting();
             return;
         }
 
-        installDesignerFallbackLightingRig();
+        removeDesignerFallbackLightingRig();
+        installDesignerFallbackLightingRig(designTimeRig);
     }
 
-    private void installDesignerFallbackLightingRig() {
+    private void installDesignerFallbackLightingRig(boolean designTimeRig) {
+        if (!designTimeRig) {
+            installNormalDesignerFallbackLightingRig();
+            return;
+        }
+
         AmbientLight ambient = new AmbientLight();
         ambient.setColor(ColorRGBA.White.mult(1.35f));
         addDesignerFallbackLight(ambient);
@@ -1621,6 +1621,21 @@ public class DesignerApp extends SceneMaxApp {
         addDesignerFallbackProbe();
 
         designerFallbackLightingEnabled = true;
+        designerFallbackLightingDesignTimeRig = true;
+    }
+
+    private void installNormalDesignerFallbackLightingRig() {
+        DirectionalLight key = new DirectionalLight();
+        key.setDirection(new Vector3f(-0.35f, -0.75f, -0.45f).normalizeLocal());
+        key.setColor(ColorRGBA.White.mult(1.6f));
+        addDesignerFallbackLight(key);
+
+        AmbientLight ambient = new AmbientLight();
+        ambient.setColor(ColorRGBA.White.mult(0.65f));
+        addDesignerFallbackLight(ambient);
+
+        designerFallbackLightingEnabled = true;
+        designerFallbackLightingDesignTimeRig = false;
     }
 
     private void addDesignerFallbackLight(Light light) {
@@ -1654,6 +1669,7 @@ public class DesignerApp extends SceneMaxApp {
         }
         designerFallbackLights.clear();
         designerFallbackLightingEnabled = false;
+        designerFallbackLightingDesignTimeRig = false;
     }
 
     private void removeAllDesignerRootLights() {
