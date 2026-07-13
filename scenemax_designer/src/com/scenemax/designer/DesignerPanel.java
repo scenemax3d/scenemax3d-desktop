@@ -275,6 +275,7 @@ public class DesignerPanel extends JPanel {
     // Properties panel
     private JTextField txtName;
     private JComboBox<String> cboAttachTo;
+    private JComboBox<String> cboAttachBone;
     private JSpinner spnPosX, spnPosY, spnPosZ;
     private JSpinner spnRotX, spnRotY, spnRotZ;
     private JSpinner spnScaleX, spnScaleY, spnScaleZ;
@@ -357,6 +358,7 @@ public class DesignerPanel extends JPanel {
 
     // Toolbar buttons
     private JToggleButton btnTranslate, btnRotate;
+    private JToggleButton btnDesignTimeLights;
 
     protected boolean updatingProperties = false;
     private boolean updatingTreeSelection = false;
@@ -552,6 +554,23 @@ public class DesignerPanel extends JPanel {
         toolbar.add(btnOrbit);
         toolbar.add(btnPan);
 
+        toolbar.addSeparator();
+        toolbar.add(new JLabel("  Lights: "));
+        btnDesignTimeLights = new JToggleButton(createDesignerToolbarIcon("designlights"));
+        btnDesignTimeLights.setSelected(false);
+        updateDesignTimeLightsTooltip();
+        btnDesignTimeLights.addActionListener(e -> {
+            boolean enabled = btnDesignTimeLights.isSelected();
+            updateDesignTimeLightsTooltip();
+            if (app != null) {
+                app.enqueue(() -> {
+                    app.setDesignTimeLightingEnabled(enabled);
+                    return null;
+                });
+            }
+        });
+        toolbar.add(btnDesignTimeLights);
+
         add(toolbar, BorderLayout.NORTH);
 
         // --- Left Panel (Scene Tree + Properties) ---
@@ -620,6 +639,23 @@ public class DesignerPanel extends JPanel {
         add(mainSplit, BorderLayout.CENTER);
     }
 
+    private void syncDesignTimeLightsButton() {
+        if (btnDesignTimeLights == null || app == null) {
+            return;
+        }
+        btnDesignTimeLights.setSelected(app.isDesignTimeLightingEnabled());
+        updateDesignTimeLightsTooltip();
+    }
+
+    private void updateDesignTimeLightsTooltip() {
+        if (btnDesignTimeLights == null) {
+            return;
+        }
+        btnDesignTimeLights.setToolTipText(btnDesignTimeLights.isSelected()
+                ? "Design-time lights on (show helper lighting instead of scene lights)"
+                : "Design-time lights off (show real scene lights)");
+    }
+
     private void buildLoadingBar() {
         loadingOverlay = new JPanel(new BorderLayout());
         loadingOverlay.setVisible(false);
@@ -654,9 +690,16 @@ public class DesignerPanel extends JPanel {
         cboAttachTo = new JComboBox<>();
         cboAttachTo.setEditable(true);
         cboAttachTo.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
-        cboAttachTo.setToolTipText("Attach this object to another object, or to a model bone like player.\"mixamorig:Head\".");
-        cboAttachTo.addActionListener(e -> applyAttachmentChange());
+        cboAttachTo.setToolTipText("Attach this object to another object.");
+        cboAttachTo.addActionListener(e -> applyAttachTargetChange());
         addFormRow("Attach to:", cboAttachTo);
+
+        cboAttachBone = new JComboBox<>();
+        cboAttachBone.setEditable(true);
+        cboAttachBone.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+        cboAttachBone.setToolTipText("Optional model bone/joint to attach to.");
+        cboAttachBone.addActionListener(e -> applyAttachmentChange());
+        addFormRow("Bone:", cboAttachBone);
 
         propertiesForm.add(Box.createVerticalStrut(8));
         propertiesForm.add(createLabel("Position:"));
@@ -1900,6 +1943,7 @@ public class DesignerPanel extends JPanel {
 
         // Set up callbacks pointing to this panel
         setupAppCallbacks();
+        syncDesignTimeLightsButton();
     }
 
     /**
@@ -2038,6 +2082,7 @@ public class DesignerPanel extends JPanel {
 
         // Wire callbacks to this panel
         setupAppCallbacks();
+        syncDesignTimeLightsButton();
 
         // Switch the JME app to this panel's document
         final boolean restoreCamera = hasSavedCameraState;
@@ -3314,12 +3359,29 @@ public class DesignerPanel extends JPanel {
         }
     }
 
+    private void applyAttachTargetChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || !isAttachableEntity(sel)) return;
+
+        String rawAttachTo = selectedComboValue(cboAttachTo).trim();
+        String targetName = extractAttachTargetEntityName(rawAttachTo);
+        String jointName = extractAttachTargetJointName(rawAttachTo);
+        if (!rawAttachTo.equals(targetName)) {
+            cboAttachTo.setSelectedItem(targetName);
+        }
+        refreshAttachBoneChoices(sel, targetName, jointName);
+        applyAttachmentChange();
+    }
+
     private void applyAttachmentChange() {
         if (updatingProperties || app == null) return;
         DesignerEntity sel = app.getSelectionManager().getSelected();
         if (sel == null || !isAttachableEntity(sel)) return;
 
-        String attachTo = selectedComboValue(cboAttachTo).trim();
+        String attachTo = buildAttachToValue(
+                selectedComboValue(cboAttachTo).trim(),
+                selectedComboValue(cboAttachBone).trim());
         app.enqueue(() -> {
             boolean changed = app.applyEntityAttachment(sel, attachTo);
             if (!changed) {
@@ -4313,9 +4375,13 @@ public class DesignerPanel extends JPanel {
         if (app != null) {
             addAttachToChoices(model, app.getEntities(), selectedEntity);
         }
-        addComboValueIfMissing(model, selectedEntity != null ? selectedEntity.getAttachTo() : "");
+        String attachTo = selectedEntity != null ? selectedEntity.getAttachTo() : "";
+        String targetName = extractAttachTargetEntityName(attachTo);
+        String jointName = extractAttachTargetJointName(attachTo);
+        addComboValueIfMissing(model, targetName);
         cboAttachTo.setModel(model);
-        cboAttachTo.setSelectedItem(selectedEntity != null ? selectedEntity.getAttachTo() : "");
+        cboAttachTo.setSelectedItem(targetName);
+        refreshAttachBoneChoices(selectedEntity, targetName, jointName);
     }
 
     private void addAttachToChoices(DefaultComboBoxModel<String> model, List<DesignerEntity> source,
@@ -4329,29 +4395,29 @@ public class DesignerPanel extends JPanel {
             }
             if (isAttachTarget(entity, selectedEntity)) {
                 addComboValueIfMissing(model, entity.getName());
-                if (entity.getType() == DesignerEntityType.MODEL) {
-                    addModelJointAttachChoices(model, entity);
-                }
             }
             addAttachToChoices(model, entity.getChildren(), selectedEntity);
         }
     }
 
-    private void addModelJointAttachChoices(DefaultComboBoxModel<String> model, DesignerEntity modelEntity) {
-        if (modelEntity == null || modelEntity.getName() == null || modelEntity.getName().isBlank()) {
+    private void refreshAttachBoneChoices(DesignerEntity selectedEntity, String targetName, String selectedJoint) {
+        if (cboAttachBone == null) {
             return;
         }
-        String mapping = modelEntity.getJointMapping();
-        if (mapping == null || mapping.isBlank()) {
-            return;
-        }
-        for (String rawJoint : mapping.split(",")) {
-            String joint = rawJoint.trim();
-            if (joint.isEmpty()) {
-                continue;
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+        model.addElement("");
+        DesignerEntity targetEntity = app == null ? null : findEntityByName(targetName, app.getEntities());
+        if (targetEntity != null && targetEntity.getType() == DesignerEntityType.MODEL && app != null) {
+            for (String joint : app.getModelJointNames(targetEntity)) {
+                addComboValueIfMissing(model, joint);
             }
-            addComboValueIfMissing(model, modelEntity.getName() + ".\"" + joint + "\"");
         }
+        addComboValueIfMissing(model, selectedJoint);
+        cboAttachBone.setModel(model);
+        cboAttachBone.setSelectedItem(selectedJoint != null ? selectedJoint : "");
+        boolean visible = selectedEntity != null && isAttachableEntity(selectedEntity)
+                && targetEntity != null && targetEntity.getType() == DesignerEntityType.MODEL;
+        setAttachBoneRowVisible(visible);
     }
 
     private void addLightLookAtChoices(DefaultComboBoxModel<String> model, List<DesignerEntity> source,
@@ -4421,6 +4487,74 @@ public class DesignerPanel extends JPanel {
         if (cboAttachTo != null && cboAttachTo.getParent() != null) {
             cboAttachTo.getParent().setVisible(visible);
         }
+        if (!visible) {
+            setAttachBoneRowVisible(false);
+        }
+    }
+
+    private void setAttachBoneRowVisible(boolean visible) {
+        if (cboAttachBone != null && cboAttachBone.getParent() != null) {
+            cboAttachBone.getParent().setVisible(visible);
+        }
+    }
+
+    private String buildAttachToValue(String targetName, String jointName) {
+        String target = extractAttachTargetEntityName(targetName);
+        if (target.isBlank()) {
+            return "";
+        }
+        String joint = jointName != null ? jointName.trim() : "";
+        if (joint.isBlank()) {
+            return target;
+        }
+        return target + ".\"" + joint.replace("\"", "\\\"") + "\"";
+    }
+
+    private static String extractAttachTargetEntityName(String attachTo) {
+        if (attachTo == null) {
+            return "";
+        }
+        String value = attachTo.trim();
+        int jointDot = value.indexOf(".\"");
+        if (jointDot >= 0) {
+            return value.substring(0, jointDot).trim();
+        }
+        return value;
+    }
+
+    private static String extractAttachTargetJointName(String attachTo) {
+        if (attachTo == null) {
+            return "";
+        }
+        String value = attachTo.trim();
+        int start = value.indexOf(".\"");
+        if (start < 0) {
+            return "";
+        }
+        int end = value.indexOf('"', start + 2);
+        if (end < 0) {
+            return "";
+        }
+        return value.substring(start + 2, end).trim();
+    }
+
+    private DesignerEntity findEntityByName(String name, List<DesignerEntity> source) {
+        if (name == null || source == null) {
+            return null;
+        }
+        for (DesignerEntity entity : source) {
+            if (entity == null) {
+                continue;
+            }
+            if (name.equals(entity.getName())) {
+                return entity;
+            }
+            DesignerEntity child = findEntityByName(name, entity.getChildren());
+            if (child != null) {
+                return child;
+            }
+        }
+        return null;
     }
 
     private void addComboValueIfMissing(DefaultComboBoxModel<String> model, String value) {
@@ -4933,6 +5067,7 @@ public class DesignerPanel extends JPanel {
             case "stairs":          drawToolbarStairs(g);          break;
             case "arch":            drawToolbarArch(g);            break;
             case "light":           drawToolbarLight(g);           break;
+            case "designlights":    drawToolbarDesignLights(g);    break;
             case "model":     drawToolbarModel(g);     break;
             case "delete":    drawToolbarDelete(g);    break;
             case "copy":      drawToolbarCopy(g);      break;
@@ -5079,6 +5214,15 @@ public class DesignerPanel extends JPanel {
         g.draw(new Line2D.Float(16, 4, 14.5f, 5.5f));
         g.draw(new Line2D.Float(2, 9, 4, 9));
         g.draw(new Line2D.Float(16, 9, 18, 9));
+    }
+
+    private static void drawToolbarDesignLights(Graphics2D g) {
+        drawToolbarLight(g);
+        g.setColor(DT_HIGHLIGHT);
+        g.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.draw(new Ellipse2D.Float(3, 2, 14, 14));
+        g.draw(new Line2D.Float(14, 3, 17, 1));
+        g.draw(new Line2D.Float(15, 5, 18, 4));
     }
 
     /** 3D Model: diamond/gem shape */

@@ -12,6 +12,7 @@ import com.jme3.input.controls.*;
 import com.jme3.light.AmbientLight;
 import com.jme3.light.DirectionalLight;
 import com.jme3.light.Light;
+import com.jme3.light.LightProbe;
 import com.jme3.light.PointLight;
 import com.jme3.light.SpotLight;
 import com.jme3.math.*;
@@ -190,6 +191,7 @@ public class DesignerApp extends SceneMaxApp {
     private final java.util.Map<String, Light> designerPreviewLights = new java.util.HashMap<>();
     private final Map<String, Map<String, Transform>> ikPreviewBaseTransforms = new HashMap<>();
     private final List<Light> designerFallbackLights = new ArrayList<>();
+    private boolean designTimeLightingEnabled = false;
     private boolean designerFallbackLightingEnabled = true;
     private int cinematicTrackCounter = 0;
     private int cinematicRigCounter = 0;
@@ -788,6 +790,18 @@ public class DesignerApp extends SceneMaxApp {
         this.cameraMode = mode;
     }
 
+    public boolean isDesignTimeLightingEnabled() {
+        return designTimeLightingEnabled;
+    }
+
+    public void setDesignTimeLightingEnabled(boolean enabled) {
+        if (designTimeLightingEnabled == enabled) {
+            return;
+        }
+        designTimeLightingEnabled = enabled;
+        applyDesignerLightingMode();
+    }
+
     // --- Override SceneMaxApp lifecycle to prevent clearing scene on parse errors ---
 
     @Override
@@ -821,6 +835,7 @@ public class DesignerApp extends SceneMaxApp {
         super.simpleInitApp();
         ensureDesignerFallbackLightingForPreviewScene();
         captureDesignerFallbackLighting();
+        applyDesignerLightingMode();
 
         // Reload AssetsMapping with the project's resources folder so that
         // ext models (models-ext.json) are included, same as MainApp does.
@@ -853,6 +868,7 @@ public class DesignerApp extends SceneMaxApp {
         reloadProjectAssetsMapping(getProjectResourcesFolder());
         ensureDesignerFallbackLightingForPreviewScene();
         captureDesignerFallbackLighting();
+        applyDesignerLightingMode();
 
         // --- Designer extras ---
 
@@ -1435,6 +1451,10 @@ public class DesignerApp extends SceneMaxApp {
         if (entity == null || entity.getType() != DesignerEntityType.LIGHT || entity.getSceneNode() == null) {
             return;
         }
+        if (designTimeLightingEnabled) {
+            restoreDesignerFallbackLighting();
+            return;
+        }
         disableDesignerFallbackLightingForCustomScene();
 
         String type = entity.getLightType().toLowerCase(Locale.ROOT);
@@ -1499,11 +1519,9 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     private void captureDesignerFallbackLighting() {
-        designerFallbackLights.clear();
-        for (Light light : rootNode.getLocalLightList()) {
-            designerFallbackLights.add(light);
-        }
-        designerFallbackLightingEnabled = !designerFallbackLights.isEmpty();
+        removeDesignerFallbackLightingRig();
+        removeAllDesignerRootLights();
+        installDesignerFallbackLightingRig();
     }
 
     private void disableDesignerFallbackLightingForCustomScene() {
@@ -1517,15 +1535,41 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     private void refreshDesignerFallbackLighting() {
-        if (hasLightEntities(entities)) {
-            disableDesignerFallbackLightingForCustomScene();
+        applyDesignerLightingMode();
+    }
+
+    private void applyDesignerLightingMode() {
+        if (designTimeLightingEnabled) {
+            removeAllDesignerPreviewLights();
+            ensureDesignerFallbackLightingForPreviewScene();
+            restoreDesignerFallbackLighting();
             return;
         }
-        restoreDesignerFallbackLighting();
+        disableDesignerFallbackLightingForCustomScene();
+        syncAllDesignerPreviewLights(entities);
+    }
+
+    private void syncAllDesignerPreviewLights(List<DesignerEntity> source) {
+        if (source == null) {
+            return;
+        }
+        for (DesignerEntity entity : source) {
+            if (entity == null) {
+                continue;
+            }
+            if (entity.getType() == DesignerEntityType.LIGHT) {
+                syncDesignerPreviewLight(entity);
+            }
+            syncAllDesignerPreviewLights(entity.getChildren());
+        }
     }
 
     private void restoreDesignerFallbackLighting() {
         if (designerFallbackLightingEnabled) {
+            return;
+        }
+        if (designerFallbackLights.isEmpty()) {
+            installDesignerFallbackLightingRig();
             return;
         }
         for (Light light : designerFallbackLights) {
@@ -1537,50 +1581,89 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     private void ensureDesignerFallbackLightingForPreviewScene() {
-        if (rootNode.getLocalLightList().size() > 0) {
-            ensureDesignerFallbackAmbientLight();
-            return;
-        }
-
         if (!designerFallbackLights.isEmpty()) {
             designerFallbackLightingEnabled = false;
             restoreDesignerFallbackLighting();
-            ensureDesignerFallbackAmbientLight();
             return;
         }
+
+        installDesignerFallbackLightingRig();
+    }
+
+    private void installDesignerFallbackLightingRig() {
+        AmbientLight ambient = new AmbientLight();
+        ambient.setColor(ColorRGBA.White.mult(1.35f));
+        addDesignerFallbackLight(ambient);
 
         DirectionalLight key = new DirectionalLight();
-        key.setDirection(new Vector3f(-0.35f, -0.75f, -0.45f).normalizeLocal());
-        key.setColor(ColorRGBA.White.mult(1.6f));
-        rootNode.addLight(key);
-        designerFallbackLights.add(key);
+        key.setDirection(new Vector3f(-0.45f, -0.8f, -0.35f).normalizeLocal());
+        key.setColor(ColorRGBA.White.mult(3.2f));
+        addDesignerFallbackLight(key);
 
-        AmbientLight ambient = new AmbientLight();
-        ambient.setColor(ColorRGBA.White.mult(0.65f));
-        rootNode.addLight(ambient);
-        designerFallbackLights.add(ambient);
+        DirectionalLight fill = new DirectionalLight();
+        fill.setDirection(new Vector3f(0.7f, -0.35f, 0.55f).normalizeLocal());
+        fill.setColor(new ColorRGBA(0.75f, 0.86f, 1f, 1f).mult(1.8f));
+        addDesignerFallbackLight(fill);
+
+        DirectionalLight rim = new DirectionalLight();
+        rim.setDirection(new Vector3f(0.25f, -0.45f, 0.95f).normalizeLocal());
+        rim.setColor(new ColorRGBA(1f, 0.9f, 0.75f, 1f).mult(1.3f));
+        addDesignerFallbackLight(rim);
+
+        DirectionalLight top = new DirectionalLight();
+        top.setDirection(new Vector3f(0f, -1f, 0f).normalizeLocal());
+        top.setColor(ColorRGBA.White.mult(1.15f));
+        addDesignerFallbackLight(top);
+
+        addDesignerFallbackPointLight(new Vector3f(0f, 6f, 8f), ColorRGBA.White.mult(2.4f), 80f);
+        addDesignerFallbackPointLight(new Vector3f(-8f, 5f, -4f), new ColorRGBA(0.7f, 0.85f, 1f, 1f).mult(1.8f), 90f);
+        addDesignerFallbackPointLight(new Vector3f(8f, 4f, -6f), new ColorRGBA(1f, 0.82f, 0.6f, 1f).mult(1.5f), 90f);
+        addDesignerFallbackProbe();
 
         designerFallbackLightingEnabled = true;
     }
 
-    private void ensureDesignerFallbackAmbientLight() {
-        if (hasLocalAmbientLight()) {
-            return;
-        }
-        AmbientLight ambient = new AmbientLight();
-        ambient.setColor(ColorRGBA.White.mult(0.65f));
-        rootNode.addLight(ambient);
-        designerFallbackLights.add(ambient);
-        designerFallbackLightingEnabled = true;
+    private void addDesignerFallbackLight(Light light) {
+        rootNode.addLight(light);
+        designerFallbackLights.add(light);
     }
 
-    private boolean hasLocalAmbientLight() {
-        for (Light light : rootNode.getLocalLightList()) {
-            if (light instanceof AmbientLight) {
-                return true;
+    private void addDesignerFallbackPointLight(Vector3f position, ColorRGBA color, float radius) {
+        PointLight light = new PointLight();
+        light.setPosition(position);
+        light.setColor(color);
+        light.setRadius(radius);
+        addDesignerFallbackLight(light);
+    }
+
+    private void addDesignerFallbackProbe() {
+        try {
+            LightProbe probe = addLightProbe("4", 0f, 0f, 0f);
+            if (probe != null) {
+                probe.getArea().setRadius(1000f);
+                designerFallbackLights.add(probe);
             }
+        } catch (Exception ex) {
+            System.err.println("[Designer] Failed to install design-time light probe: " + ex.getMessage());
         }
-        return false;
+    }
+
+    private void removeDesignerFallbackLightingRig() {
+        for (Light light : new ArrayList<>(designerFallbackLights)) {
+            rootNode.removeLight(light);
+        }
+        designerFallbackLights.clear();
+        designerFallbackLightingEnabled = false;
+    }
+
+    private void removeAllDesignerRootLights() {
+        List<Light> localLights = new ArrayList<>();
+        for (Light light : rootNode.getLocalLightList()) {
+            localLights.add(light);
+        }
+        for (Light light : localLights) {
+            rootNode.removeLight(light);
+        }
     }
 
     private boolean isLocalLightAttached(Light light) {
@@ -3020,6 +3103,33 @@ public class DesignerApp extends SceneMaxApp {
         if (mapping.get3DModelsIndex() == null) return false;
         ResourceSetup res = mapping.get3DModelsIndex().get(modelName.toLowerCase());
         return res != null && res.isStatic;
+    }
+
+    public List<String> getModelJointNames(DesignerEntity modelEntity) {
+        List<String> names = new ArrayList<>();
+        if (modelEntity == null || modelEntity.getType() != DesignerEntityType.MODEL) {
+            return names;
+        }
+        String runtimeName = modelRuntimeName(modelEntity);
+        AppModel model = runtimeName.isBlank() ? null : getAppModel(runtimeName);
+        if (model != null) {
+            String joints = model.getJointsList();
+            addJointNames(names, joints);
+        }
+        addJointNames(names, modelEntity.getJointMapping());
+        return names;
+    }
+
+    private void addJointNames(List<String> names, String csv) {
+        if (names == null || csv == null || csv.isBlank()) {
+            return;
+        }
+        for (String raw : csv.split(",")) {
+            String joint = raw == null ? "" : raw.trim();
+            if (!joint.isEmpty() && !names.contains(joint)) {
+                names.add(joint);
+            }
+        }
     }
 
     public List<String> getAvailableIKNames() {
@@ -4704,6 +4814,7 @@ public class DesignerApp extends SceneMaxApp {
         reloadProjectAssetsMapping(getProjectResourcesFolder());
         ensureDesignerFallbackLightingForPreviewScene();
         captureDesignerFallbackLighting();
+        applyDesignerLightingMode();
 
         // Restore camera (clearScene resets it to default)
         cam.setLocation(savedCamPos);
@@ -4782,6 +4893,7 @@ public class DesignerApp extends SceneMaxApp {
         clearSceneAll();
         ensureDesignerFallbackLightingForPreviewScene();
         captureDesignerFallbackLighting();
+        applyDesignerLightingMode();
         document = null;
         designerFile = null;
         loadingDocument = false;
@@ -4839,6 +4951,7 @@ public class DesignerApp extends SceneMaxApp {
         reloadProjectAssetsMapping(getProjectResourcesFolder());
         ensureDesignerFallbackLightingForPreviewScene();
         captureDesignerFallbackLighting();
+        applyDesignerLightingMode();
 
         // Re-attach grid and gizmos if they were detached
         if (gridPlane != null && gridPlane.getParent() == null) {
