@@ -18,4 +18,5 @@ public class ChannelDrawCommand extends ActionStatementBase {
     public int heightVal;
     public int widthVal;
     public int frameNumVal;
+    public boolean stretch;
 }

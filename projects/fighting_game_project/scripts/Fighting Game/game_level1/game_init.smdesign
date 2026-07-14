@@ -213,7 +213,7 @@
         1,
         1
       ],
-      "codeText": "// focus camera on tiger\nintro.draw clear\ntg.\"Idle_Lie Prone\" loop\ncamera.attach to tg : pos (0,1,-12)\n//effects.flame.show : pos (13,-20,50), radius = 17, duration 4 async\nskybox.show solar system\nwait 1 seconds",
+      "codeText": "// focus camera on tiger\nintro.draw clear\ntg.\"Idle_Lie Prone\" loop\n//camera.attach to tg : pos (0,1,-12)\n//effects.flame.show : pos (13,-20,50), radius = 17, duration 4 async\nskybox.show solar system\nwait 1 seconds",
       "id": "df559889-baec-4728-99f0-da8f2c50bd86",
       "position": [
         0,
@@ -1471,28 +1471,28 @@
   ],
   "gameCamera": {
     "rotation": [
-      0.072840065,
-      -0.8967195,
-      -0.15963452,
-      -0.4063311
+      0.09723848,
+      -0.8209169,
+      -0.14606002,
+      -0.5434209
     ],
     "position": [
-      11.08251,
-      -13.236266,
-      49.527325
+      10.723396,
+      -13.462794,
+      48.529358
     ]
   },
   "camera": {
     "rotation": [
-      -0.09904575,
-      0.8923991,
-      -0.2391176,
-      -0.36964384
+      0.11968726,
+      0.7952268,
+      -0.16683757,
+      0.5704862
     ],
     "position": [
-      9.185587,
-      7.5,
-      9.185586
+      -9.610165,
+      -3.648322,
+      56.52722
     ]
   },
   "version": 1
