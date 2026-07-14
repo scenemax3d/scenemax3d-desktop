@@ -254,10 +254,11 @@ resource_declaration : res_var_decl (',' res_var_decl)* (Sprite | Model | Audio)
 
 channel_draw_statement : res_var_decl '.' Draw sprite_name (Having channel_draw_attrs)? ;
 channel_draw_attrs : channel_draw_attr (and_expr channel_draw_attr)* ;
-channel_draw_attr : pos_2d_attr | frame_attr | size_2d_attr;
+channel_draw_attr : pos_2d_attr | frame_attr | size_2d_attr | stretch_attr;
 sprite_name : res_var_decl | Clear ;
 frame_attr : Frames logical_expression ;
 size_2d_attr : Size '(' width_size ',' height_size ')' ;
+stretch_attr : Stretch ;
 
 print_statement : res_var_decl '.' Print print_text_expr (Having print_attr (and_expr print_attr)*)? ;
 print_text_expr : logical_expression ;
@@ -1304,6 +1305,7 @@ Check : 'Check' | 'check' ;
 
 Pos : 'Pos' | 'pos' ;
 Size : 'Size' | 'size' ;
+Stretch : 'Stretch' | 'stretch' ;
 Height : 'Height' | 'height' ;
 Follow : 'Follow' | 'follow' ;
 Dungeon : 'Dungeon' | 'dungeon' ;

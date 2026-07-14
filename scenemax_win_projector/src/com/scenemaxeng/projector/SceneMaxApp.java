@@ -9543,7 +9543,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         int targetWidth = pic.width;
         int targetHeight = pic.height;
 
-        if(cmd.heightExpr!=null) {
+        if(cmd.stretch) {
+            targetWidth = settings.getWidth();
+            targetHeight = settings.getHeight();
+        } else if(cmd.heightExpr!=null) {
             targetHeight = cmd.heightVal;
             targetWidth = cmd.widthVal;
         }

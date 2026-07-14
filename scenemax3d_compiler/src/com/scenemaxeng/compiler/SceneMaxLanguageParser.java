@@ -1024,6 +1024,8 @@ public class SceneMaxLanguageParser implements IParser {
                         } else if(attr.size_2d_attr()!=null) {
                             cmd.widthExpr = attr.size_2d_attr().width_size().logical_expression();
                             cmd.heightExpr = attr.size_2d_attr().height_size().logical_expression();
+                        } else if(attr.stretch_attr()!=null) {
+                            cmd.stretch = true;
                         }
                     }
                 }
