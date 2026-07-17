@@ -27,8 +27,13 @@ public class MainWinApp implements IAppObserver {
     private int windowPosY = 0;
     private String projectName = null;
     private boolean disableAudio = false;
+    private Canvas canvas;
 
     public MainWinApp(File entryScriptFile, String prg, boolean showCodeChangeButton) {
+        this(entryScriptFile, prg, showCodeChangeButton, false);
+    }
+
+    public MainWinApp(File entryScriptFile, String prg, boolean showCodeChangeButton, boolean standaloneDisplay) {
 
         String workingFolder=null;
         String entryScriptFileName=null;
@@ -62,6 +67,7 @@ public class MainWinApp implements IAppObserver {
         ProgramDef startupProgram = parseStartupProgram(prg, workingFolder, entryScriptFileName);
         prg = setCanvasSize(settings,prg);
         applyWindowMode(settings, startupProgram);
+        applyWindowPositionOverrides();
 
         settings.setTitle("");
         if (disableAudio) {
@@ -69,16 +75,20 @@ public class MainWinApp implements IAppObserver {
         }
 
         sceneMaxApp.setSettings(settings);
-        sceneMaxApp.createCanvas(); // create canvas!
+        if (standaloneDisplay) {
+            sceneMaxApp.start();
+        } else {
+            sceneMaxApp.createCanvas(); // create canvas!
 
-        JmeCanvasContext ctx = (JmeCanvasContext) sceneMaxApp.getContext();
-        ctx.setSystemListener(sceneMaxApp);
-        Canvas canvas = ctx.getCanvas();
-        canvas.setPreferredSize(new Dimension(this.customWidth, this.customHeight));
-        canvas.setSize(this.customWidth, this.customHeight);
-        canvas.setBounds(windowPosX, windowPosY, this.customWidth, this.customHeight);
+            JmeCanvasContext ctx = (JmeCanvasContext) sceneMaxApp.getContext();
+            ctx.setSystemListener(sceneMaxApp);
+            canvas = ctx.getCanvas();
+            canvas.setPreferredSize(new Dimension(this.customWidth, this.customHeight));
+            canvas.setSize(this.customWidth, this.customHeight);
+            canvas.setBounds(windowPosX, windowPosY, this.customWidth, this.customHeight);
 
-        sceneMaxApp.start();
+            sceneMaxApp.start();
+        }
 
         final String finalPrg = prg;
         runScript(finalPrg);
@@ -183,6 +193,29 @@ public class MainWinApp implements IAppObserver {
         return prg;
     }
 
+    private void applyWindowPositionOverrides() {
+        Integer x = readIntegerSystemProperty("scenemax.window.x");
+        Integer y = readIntegerSystemProperty("scenemax.window.y");
+        if (x != null) {
+            this.windowPosX = x;
+        }
+        if (y != null) {
+            this.windowPosY = y;
+        }
+    }
+
+    private Integer readIntegerSystemProperty(String property) {
+        String value = System.getProperty(property);
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
 
     private String loadAppScript() {
 
@@ -208,7 +241,7 @@ public class MainWinApp implements IAppObserver {
 
     public static void main(String[] args){
         RuntimeLogConfig.configureRuntimeLogging();
-        MainWinApp app = new MainWinApp(null,null,false);
+        new MainWinApp(null,null,false,true);
 
     }
 
@@ -277,6 +310,10 @@ public class MainWinApp implements IAppObserver {
 
     public CanvasRect getRect() {
         return sceneMaxApp.getCanvasRect();
+    }
+
+    public Canvas getCanvas() {
+        return canvas;
     }
 
 

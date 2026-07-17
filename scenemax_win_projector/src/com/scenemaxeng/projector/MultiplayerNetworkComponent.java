@@ -31,18 +31,23 @@ public class MultiplayerNetworkComponent {
     private static final byte JOIN_SCENE = 5;
     private static final byte CREATE_ENTITY_REQUEST = 10;
     private static final byte CREATE_ENTITY_ACCEPTED = 11;
+    private static final byte DESTROY_ENTITY = 12;
     private static final byte COMMAND_DISPATCH = 20;
     private static final byte TRANSFORM_CORRECTION = 21;
     private static final byte SNAPSHOT = 30;
+    private static final byte DISCONNECT = 40;
     private static final int MAX_PACKET_SIZE = 1200;
+    private static final int SNAPSHOT_ENTITY_SIZE = 228;
 
     private final SceneMaxApp app;
     private final Logger logger = Logger.getLogger(MultiplayerNetworkComponent.class.getName());
     private final ByteBuffer receiveBuffer = ByteBuffer.allocateDirect(MAX_PACKET_SIZE).order(ByteOrder.LITTLE_ENDIAN);
     private final Map<String, RegisteredEntity> localEntities = new HashMap<>();
+    private final Map<Integer, RemoteEntity> remoteEntities = new HashMap<>();
+    private final Map<Integer, TransformState> pendingTransforms = new HashMap<>();
     private final Queue<String> pendingCreateAcks = new ArrayDeque<>();
     private DatagramChannel channel;
-    private int stationId;
+    private int clientId;
     private long sessionId;
     private String sessionName = "";
     private String activeSceneId = "main";
@@ -91,7 +96,7 @@ public class MultiplayerNetworkComponent {
         entity.varDef = varDef;
         entity.archetypeName = archetypeName == null ? "" : archetypeName;
         localEntities.put(runtimeName, entity);
-        if (stationId != 0) {
+        if (clientId != 0) {
             sendCreateEntity(entity);
         }
     }
@@ -101,7 +106,8 @@ public class MultiplayerNetworkComponent {
             return;
         }
         readPackets();
-        if (stationId == 0) {
+        applyPendingTransforms();
+        if (clientId == 0) {
             return;
         }
         heartbeatTimer += tpf;
@@ -117,7 +123,7 @@ public class MultiplayerNetworkComponent {
     }
 
     public void sendCommand(int networkEntityId, String commandText) {
-        if (!isActive() || stationId == 0 || commandText == null) {
+        if (!isActive() || clientId == 0 || commandText == null) {
             return;
         }
         byte[] commandBytes = commandText.getBytes(StandardCharsets.UTF_8);
@@ -130,20 +136,29 @@ public class MultiplayerNetworkComponent {
     public void close() {
         if (channel != null) {
             try {
+                if (channel.isOpen() && clientId != 0) {
+                    ByteBuffer packet = packet(DISCONNECT, 0);
+                    packet.flip();
+                    channel.write(packet);
+                }
                 channel.close();
             } catch (IOException ignored) {
             }
         }
         channel = null;
-        stationId = 0;
+        clientId = 0;
         pendingCreateAcks.clear();
+        removeRemoteEntities();
+        pendingTransforms.clear();
     }
 
     public void joinScene(String sceneId) {
         activeSceneId = normalizeSceneId(sceneId);
+        removeRemoteEntities();
+        pendingTransforms.clear();
         localEntities.clear();
         pendingCreateAcks.clear();
-        if (isActive() && stationId != 0) {
+        if (isActive() && clientId != 0) {
             ByteBuffer packet = packet(JOIN_SCENE, 128);
             putFixedString(packet, activeSceneId, 128);
             send(packet);
@@ -205,8 +220,8 @@ public class MultiplayerNetworkComponent {
                     continue;
                 }
                 byte type = receiveBuffer.get();
-                int senderStationId = Short.toUnsignedInt(receiveBuffer.getShort());
-                handlePacket(type, senderStationId, receiveBuffer);
+                int senderClientId = Short.toUnsignedInt(receiveBuffer.getShort());
+                handlePacket(type, senderClientId, receiveBuffer);
             }
         } catch (IOException ex) {
             logger.log(Level.WARNING, "SceneMax multiplayer receive failed", ex);
@@ -214,9 +229,9 @@ public class MultiplayerNetworkComponent {
         }
     }
 
-    private void handlePacket(byte type, int senderStationId, ByteBuffer payload) {
+    private void handlePacket(byte type, int senderClientId, ByteBuffer payload) {
         if (type == LOGIN_ACCEPTED && payload.remaining() >= 70) {
-            stationId = Short.toUnsignedInt(payload.getShort());
+            clientId = Short.toUnsignedInt(payload.getShort());
             sessionId = Integer.toUnsignedLong(payload.getInt());
             sessionName = readFixedString(payload, 64);
             logger.info("SceneMax multiplayer joined session " + sessionId + " (" + sessionName + "), scene " + activeSceneId);
@@ -228,24 +243,168 @@ public class MultiplayerNetworkComponent {
             close();
         } else if (type == CREATE_ENTITY_ACCEPTED && payload.remaining() >= 4) {
             int networkId = payload.getInt();
-            String runtimeName = pendingCreateAcks.poll();
-            RegisteredEntity entity = runtimeName == null ? null : localEntities.get(runtimeName);
-            if (entity != null) {
-                entity.networkEntityId = networkId;
+            if (senderClientId == clientId) {
+                String runtimeName = pendingCreateAcks.poll();
+                RegisteredEntity entity = runtimeName == null ? null : localEntities.get(runtimeName);
+                if (entity != null) {
+                    entity.networkEntityId = networkId;
+                }
+            } else if (payload.remaining() >= 128) {
+                String archetype = readFixedString(payload, 64);
+                String remotePlayerName = readFixedString(payload, 64);
+                createOrUpdateRemoteEntity(networkId, archetype, remotePlayerName, null, 0, "");
             }
+        } else if (type == DESTROY_ENTITY && payload.remaining() >= 4) {
+            removeRemoteEntity(payload.getInt());
         } else if (type == COMMAND_DISPATCH && payload.remaining() > 4) {
-            payload.getInt();
+            int networkId = payload.getInt();
             byte[] bytes = new byte[payload.remaining()];
             payload.get(bytes);
             String command = new String(bytes, StandardCharsets.UTF_8).trim();
             if (!command.isEmpty()) {
+                command = resolveRemoteCommandTarget(networkId, command);
                 app.runPartialCode(command, null, false);
             }
-        } else if (type == TRANSFORM_CORRECTION) {
-            logger.fine("Received multiplayer transform correction from station " + senderStationId + ".");
+        } else if (type == TRANSFORM_CORRECTION && payload.remaining() >= 32) {
+            handleTransformCorrection(payload);
         } else if (type == SNAPSHOT) {
-            logger.fine("Received multiplayer snapshot from station " + senderStationId + " with " + payload.remaining() + " bytes.");
+            handleSnapshot(payload);
         }
+    }
+
+    private void handleSnapshot(ByteBuffer payload) {
+        if (payload.remaining() < 2) {
+            return;
+        }
+        int count = Short.toUnsignedInt(payload.getShort());
+        for (int i = 0; i < count && payload.remaining() >= SNAPSHOT_ENTITY_SIZE; i++) {
+            int networkId = payload.getInt();
+            int ownerClientId = Short.toUnsignedInt(payload.getShort());
+            String archetype = readFixedString(payload, 64);
+            String remotePlayerName = readFixedString(payload, 64);
+            TransformState transform = readTransformState(payload);
+            int animationIndex = Short.toUnsignedInt(payload.getShort());
+            String animation = readFixedString(payload, 64);
+            if (ownerClientId == clientId || isLocalNetworkEntity(networkId)) {
+                continue;
+            }
+            createOrUpdateRemoteEntity(networkId, archetype, remotePlayerName, transform, animationIndex, animation);
+        }
+    }
+
+    private void handleTransformCorrection(ByteBuffer payload) {
+        int networkId = payload.getInt();
+        TransformState transform = readTransformState(payload);
+        if (isLocalNetworkEntity(networkId)) {
+            return;
+        }
+        if (!applyRemoteTransform(networkId, transform)) {
+            pendingTransforms.put(networkId, transform);
+        }
+    }
+
+    private TransformState readTransformState(ByteBuffer payload) {
+        TransformState transform = new TransformState();
+        transform.position = new Vector3f(payload.getFloat(), payload.getFloat(), payload.getFloat());
+        transform.rotation = new Quaternion(payload.getFloat(), payload.getFloat(), payload.getFloat(), payload.getFloat());
+        return transform;
+    }
+
+    private void createOrUpdateRemoteEntity(int networkId, String archetype, String remotePlayerName,
+                                            TransformState transform, int animationIndex, String animation) {
+        if (networkId == 0 || archetype == null || archetype.trim().isEmpty()) {
+            return;
+        }
+        RemoteEntity entity = remoteEntities.get(networkId);
+        if (entity == null) {
+            entity = new RemoteEntity();
+            entity.networkEntityId = networkId;
+            entity.sourceName = "mp_remote_" + networkId;
+            entity.archetypeName = sanitizeIdentifier(archetype);
+            entity.playerName = remotePlayerName == null ? "" : remotePlayerName;
+            createRemoteModel(entity, transform);
+            remoteEntities.put(networkId, entity);
+        }
+        entity.animationIndex = animationIndex;
+        entity.animation = animation == null ? "" : animation;
+        if (transform != null && !applyRemoteTransform(networkId, transform)) {
+            pendingTransforms.put(networkId, transform);
+        }
+    }
+
+    private void createRemoteModel(RemoteEntity entity, TransformState transform) {
+        if (entity.archetypeName.isEmpty()) {
+            return;
+        }
+        Vector3f position = transform == null ? Vector3f.ZERO : transform.position;
+        String code = entity.sourceName + " => " + entity.archetypeName
+                + ": pos (" + position.x + "," + position.y + "," + position.z + ");";
+        app.runPartialCode(code, null, false);
+        int scopeId = app.getMainScopeIdForNetwork();
+        entity.runtimeName = entity.sourceName + "@" + scopeId;
+    }
+
+    private boolean applyRemoteTransform(int networkId, TransformState transform) {
+        RemoteEntity entity = remoteEntities.get(networkId);
+        if (entity == null || entity.runtimeName == null || transform == null) {
+            return false;
+        }
+        Spatial spatial = app.getEntitySpatial(entity.runtimeName);
+        if (spatial == null) {
+            return false;
+        }
+        spatial.setLocalTranslation(transform.position);
+        spatial.setLocalRotation(transform.rotation);
+        return true;
+    }
+
+    private void applyPendingTransforms() {
+        for (Map.Entry<Integer, TransformState> entry : new HashMap<>(pendingTransforms).entrySet()) {
+            if (applyRemoteTransform(entry.getKey(), entry.getValue())) {
+                pendingTransforms.remove(entry.getKey());
+            }
+        }
+    }
+
+    private void removeRemoteEntities() {
+        for (RemoteEntity entity : remoteEntities.values()) {
+            if (entity.runtimeName != null) {
+                app.killModel(entity.runtimeName);
+            }
+        }
+        remoteEntities.clear();
+    }
+
+    private void removeRemoteEntity(int networkId) {
+        RemoteEntity entity = remoteEntities.remove(networkId);
+        pendingTransforms.remove(networkId);
+        if (entity != null && entity.runtimeName != null) {
+            app.killModel(entity.runtimeName);
+        }
+    }
+
+    private boolean isLocalNetworkEntity(int networkId) {
+        if (networkId == 0) {
+            return false;
+        }
+        for (RegisteredEntity entity : localEntities.values()) {
+            if (entity.networkEntityId == networkId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String resolveRemoteCommandTarget(int networkId, String command) {
+        RemoteEntity entity = remoteEntities.get(networkId);
+        if (entity == null || entity.sourceName == null) {
+            return command;
+        }
+        return command
+                .replace("{network_entity}", entity.sourceName)
+                .replace("{networkEntity}", entity.sourceName)
+                .replace("$network_entity", entity.sourceName)
+                .replace("$networkEntity", entity.sourceName);
     }
 
     private void sendHeaderOnly(byte type) {
@@ -257,7 +416,7 @@ public class MultiplayerNetworkComponent {
         packet.putInt(MAGIC);
         packet.put(VERSION);
         packet.put(type);
-        packet.putShort((short) stationId);
+        packet.putShort((short) clientId);
         return packet;
     }
 
@@ -341,10 +500,43 @@ public class MultiplayerNetworkComponent {
         return new String(bytes, 0, count, StandardCharsets.UTF_8);
     }
 
+    private String sanitizeIdentifier(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(trimmed.length());
+        for (int i = 0; i < trimmed.length(); i++) {
+            char ch = trimmed.charAt(i);
+            if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_') {
+                builder.append(ch);
+            }
+        }
+        return builder.toString();
+    }
+
     private static class RegisteredEntity {
         String runtimeName;
         VariableDef varDef;
         String archetypeName;
         int networkEntityId;
+    }
+
+    private static class RemoteEntity {
+        int networkEntityId;
+        String sourceName;
+        String runtimeName;
+        String archetypeName;
+        String playerName;
+        int animationIndex;
+        String animation;
+    }
+
+    private static class TransformState {
+        Vector3f position;
+        Quaternion rotation;
     }
 }

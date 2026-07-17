@@ -1319,6 +1319,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     }
 
+    public int getMainScopeIdForNetwork() {
+        return mainScope == null ? 0 : mainScope.scopeId;
+    }
+
     private void showFloatingMessage(String msg) {
         showFloatingMessage(msg,"OK",0);
     }
@@ -5316,6 +5320,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     @Override
     public void destroy(){
+        if (this.multiplayerNetwork != null) {
+            this.multiplayerNetwork.close();
+            this.multiplayerNetwork = null;
+        }
         if (this.pluginsCommunicationChannel != null) {
             this.pluginsCommunicationChannel.stop(); // call all subscribed clients to stop
         }
