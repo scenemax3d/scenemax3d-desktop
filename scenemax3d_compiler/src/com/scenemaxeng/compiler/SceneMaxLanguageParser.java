@@ -1399,6 +1399,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -1470,6 +1472,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -1541,6 +1545,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -1618,6 +1624,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -1686,6 +1694,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -1755,6 +1765,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -1826,6 +1838,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -1898,6 +1912,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 

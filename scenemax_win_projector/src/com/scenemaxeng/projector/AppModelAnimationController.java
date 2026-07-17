@@ -295,6 +295,37 @@ public class AppModelAnimationController implements AnimEventListener {
         return 0;
     }
 
+    public double getPlaybackDurationSeconds() {
+        double speed = Math.abs(getPlaybackSpeed());
+        if (speed <= 0) {
+            return 0;
+        }
+        double playableLength = getPlayableLength();
+        return playableLength <= 0 ? 0 : playableLength / speed;
+    }
+
+    public void applyMultiplayerResumeElapsed(float elapsedSeconds) {
+        if (elapsedSeconds <= 0) {
+            return;
+        }
+        double speed = getPlaybackSpeed();
+        double absSpeed = Math.abs(speed);
+        if (absSpeed <= 0) {
+            return;
+        }
+        double playableLength = getPlayableLength();
+        if (playableLength <= 0) {
+            return;
+        }
+        double localElapsed = Math.min(playableLength, elapsedSeconds * absSpeed);
+        double startTime = activeRange == null ? 0 : activeRange.startTime;
+        double endTime = activeRange == null ? getLength() : activeRange.endTime;
+        double targetTime = speed < 0
+                ? endTime - localElapsed
+                : startTime + localElapsed;
+        setCurrentTime(targetTime);
+    }
+
     public void setPlaybackSpeed(double speed) {
         if (appModel != null && appModel.currentAction != null && appModel.currentAction.controller == this) {
             appModel.currentAction.setSpeed(speed);
@@ -334,6 +365,13 @@ public class AppModelAnimationController implements AnimEventListener {
 
     private boolean hasRequestedFrameRange() {
         return frameRangeStart != null && frameRangeEnd != null;
+    }
+
+    private double getPlayableLength() {
+        if (activeRange != null) {
+            return Math.max(0, activeRange.endTime - activeRange.startTime);
+        }
+        return getLength();
     }
 
     private void applyRangeStart(AnimComposer composer) {

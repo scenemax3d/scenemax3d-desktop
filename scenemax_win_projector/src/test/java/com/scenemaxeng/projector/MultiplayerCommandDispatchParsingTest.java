@@ -25,6 +25,8 @@ public class MultiplayerCommandDispatchParsingTest {
         assertParses("mp_remote_1 => sinbad\nmp_remote_1.rotate (y - 45) in 0.2 seconds");
         assertParses("mp_remote_1 => sinbad\nmp_remote_1.rotate to (y 90) in 0.2 seconds");
         assertParses("mp_remote_1 => sinbad\nmp_remote_1.rotate (0,90,0)");
+        assertParses("mp_remote_1 => sinbad\nmp_remote_1.\"Run\" at speed of 1");
+        assertParses("mp_remote_1 => sinbad\nmp_remote_1.\"Take 001\"[0-50] at speed of 1.5");
     }
 
     @Test

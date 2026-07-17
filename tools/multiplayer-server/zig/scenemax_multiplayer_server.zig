@@ -12,7 +12,7 @@ const max_entities = 2048;
 const max_sessions = 256;
 const spawn_command_size = 128;
 const active_action_command_size = 192;
-const snapshot_action_record_size = 8 + active_action_command_size;
+const snapshot_action_record_size = 12 + active_action_command_size;
 const max_active_actions = 4;
 const snapshot_entity_size = 228 + spawn_command_size;
 const active_action_grace_ms = 1000;
@@ -707,7 +707,8 @@ fn writeSnapshotActions(packet: []u8, start_cursor: usize, entity: Entity, now: 
         packet[cursor + 1] = 0;
         std.mem.writeInt(u16, packet[cursor + 2 ..][0..2], action.sequence, .little);
         std.mem.writeInt(u32, packet[cursor + 4 ..][0..4], remaining_ms, .little);
-        @memcpy(packet[cursor + 8 .. cursor + 8 + active_action_command_size], &action.command);
+        std.mem.writeInt(u32, packet[cursor + 8 ..][0..4], action.duration_ms, .little);
+        @memcpy(packet[cursor + 12 .. cursor + 12 + active_action_command_size], &action.command);
         cursor += snapshot_action_record_size;
     }
     return cursor;

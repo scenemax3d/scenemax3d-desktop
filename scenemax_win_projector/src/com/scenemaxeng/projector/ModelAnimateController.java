@@ -11,6 +11,8 @@ public class ModelAnimateController extends SceneMaxBaseController {
     private ActionLogicalExpressionVm speedExpr;
     private boolean reused;
     private ActionCommandAnimate cmdAnim = null;
+    private boolean multiplayerCommandDispatched = false;
+    private int multiplayerActionSequence = 0;
 
     public ModelAnimateController(SceneMaxApp app, ProgramDef prg, ActionCommandAnimate cmd, SceneMaxScope scope) {
         super(app, prg, scope, cmd);
@@ -69,18 +71,27 @@ public class ModelAnimateController extends SceneMaxBaseController {
             }
 
             app.animateModel(this.targetVar, ((ActionCommandAnimate)this.cmd).animationName, speed, controller);
+            applyMultiplayerResumeState();
+            dispatchMultiplayerAnimationCommand();
 
         } else {
             if(reused) {
                 this.reused=false;
                 app.animateModel(this.targetVar, ((ActionCommandAnimate)this.cmd).animationName, speed, controller);
+                applyMultiplayerResumeState();
+                dispatchMultiplayerAnimationCommand();
             }
         }
 
         if (controller != null) {
             controller.updateFrameRangeState();
         }
-        return controller.animationFinished;
+        boolean finished = controller.animationFinished;
+        if (finished) {
+            endMultiplayerTimedAction(MULTIPLAYER_ACTION_SLOT_ANIMATE, multiplayerActionSequence);
+            multiplayerActionSequence = 0;
+        }
+        return finished;
     }
 
     public boolean checkGoExpr() {
@@ -101,6 +112,8 @@ public class ModelAnimateController extends SceneMaxBaseController {
         if(controller!=null) {
             controller.animationFinished = false;
             this.reused = true;
+            this.multiplayerCommandDispatched = false;
+            this.multiplayerActionSequence = 0;
         }
 
     }
@@ -124,6 +137,61 @@ public class ModelAnimateController extends SceneMaxBaseController {
 
     public String getAnimationName() {
         return cmdAnim.animationName;
+    }
+
+    private void applyMultiplayerResumeState() {
+        MultiplayerControllerResumeState resumeState = consumeMultiplayerResumeState(MULTIPLAYER_ACTION_SLOT_ANIMATE);
+        if (resumeState != null && controller != null) {
+            controller.applyMultiplayerResumeElapsed(resumeState.elapsedSeconds);
+        }
+    }
+
+    private void dispatchMultiplayerAnimationCommand() {
+        if (multiplayerCommandDispatched || controller == null || controller.animationFinished) {
+            return;
+        }
+        multiplayerCommandDispatched = true;
+        String command = buildMultiplayerAnimationCommand();
+        dispatchMultiplayerCommand(command);
+
+        double durationSeconds = controller.getPlaybackDurationSeconds();
+        if (durationSeconds > 0) {
+            multiplayerActionSequence = startMultiplayerTimedAction(
+                    MULTIPLAYER_ACTION_SLOT_ANIMATE,
+                    (float) durationSeconds,
+                    command);
+        }
+    }
+
+    private String buildMultiplayerAnimationCommand() {
+        StringBuilder result = new StringBuilder();
+        result.append("{network_entity}.")
+                .append(animationNameLiteral(cmdAnim.animationName));
+        if (cmdAnim.hasFrameRange()) {
+            result.append("[")
+                    .append(cmdAnim.frameRangeStart)
+                    .append(cmdAnim.frameRangeStartPercent ? "%" : "")
+                    .append("-")
+                    .append(cmdAnim.frameRangeEnd)
+                    .append(cmdAnim.frameRangeEndPercent ? "%" : "")
+                    .append("]");
+        }
+        result.append(" at speed of ")
+                .append(networkNumber(parseSpeed(speed)));
+        return result.toString();
+    }
+
+    private String animationNameLiteral(String name) {
+        String safeName = name == null ? "" : name;
+        return "\"" + safeName.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
+    private double parseSpeed(String value) {
+        try {
+            return Double.parseDouble(value);
+        } catch (Exception ex) {
+            return 1.0d;
+        }
     }
 
 }

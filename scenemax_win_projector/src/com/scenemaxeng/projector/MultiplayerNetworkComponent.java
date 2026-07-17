@@ -571,12 +571,13 @@ public class MultiplayerNetworkComponent {
             return actions;
         }
         int count = Byte.toUnsignedInt(payload.get());
-        for (int i = 0; i < count && payload.remaining() >= ACTIVE_ACTION_RECORD_SIZE - 4; i++) {
+        for (int i = 0; i < count && payload.remaining() >= ACTIVE_ACTION_RECORD_SIZE; i++) {
             SnapshotAction action = new SnapshotAction();
             action.slot = Byte.toUnsignedInt(payload.get());
             payload.get();
             action.sequence = Short.toUnsignedInt(payload.getShort());
             action.remainingMs = payload.getInt();
+            action.durationMs = payload.getInt();
             action.command = readFixedString(payload, ACTIVE_ACTION_COMMAND_SIZE);
             actions.add(action);
         }
@@ -698,6 +699,16 @@ public class MultiplayerNetworkComponent {
     }
 
     private MultiplayerControllerResumeState resumeStateForSnapshotAction(SnapshotAction action) {
+        if (action.slot == SceneMaxBaseController.MULTIPLAYER_ACTION_SLOT_ANIMATE) {
+            if (action.durationMs <= 0 || action.remainingMs <= 0) {
+                return null;
+            }
+            float remainingSeconds = Math.max(0.001f, action.remainingMs / 1000.0f);
+            float originalSeconds = Math.max(remainingSeconds, action.durationMs / 1000.0f);
+            float elapsedSeconds = Math.max(0f, originalSeconds - remainingSeconds);
+            return new MultiplayerControllerResumeState(action.slot, elapsedSeconds, remainingSeconds, originalSeconds);
+        }
+
         Matcher matcher = TIMED_COMMAND_PATTERN.matcher(action.command == null ? "" : action.command.trim());
         if (!matcher.matches()) {
             return null;
@@ -711,7 +722,9 @@ public class MultiplayerNetworkComponent {
             return null;
         }
         float remainingSeconds = Math.max(0.001f, action.remainingMs / 1000.0f);
-        float originalSeconds = parsePositiveFloat(matcher.group(3), remainingSeconds);
+        float originalSeconds = action.durationMs > 0
+                ? action.durationMs / 1000.0f
+                : parsePositiveFloat(matcher.group(3), remainingSeconds);
         float elapsedSeconds = Math.max(0f, originalSeconds - remainingSeconds);
         return new MultiplayerControllerResumeState(action.slot, elapsedSeconds, remainingSeconds, originalSeconds);
     }
@@ -1069,6 +1082,7 @@ public class MultiplayerNetworkComponent {
         int slot;
         int sequence;
         int remainingMs;
+        int durationMs;
         String command;
     }
 

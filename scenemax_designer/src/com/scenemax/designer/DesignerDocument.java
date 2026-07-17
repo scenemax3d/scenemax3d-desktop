@@ -382,55 +382,55 @@ public class DesignerDocument {
         String materialSuffix = buildMaterialSuffix(entity.getMaterial());
         String shadowSuffix = buildShadowModeSuffix(entity.getShadowMode());
         String shaderAssignment = buildShaderAssignment(entity);
-        String hiddenAttr = entity.isHidden() ? " hidden," : "";
+        String entityAttrs = buildEntityLeadingAttributes(entity);
         switch (entity.getType()) {
             case SPHERE:
                 String spherePrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
-                return name + " => " + spherePrefix + "sphere :" + hiddenAttr + " pos (" + pos.x + "," + pos.y + "," + pos.z +
+                return name + " => " + spherePrefix + "sphere " + entityAttrs + " pos (" + pos.x + "," + pos.y + "," + pos.z +
                        "), radius " + entity.getRadius() + materialSuffix + scaleSuffix + rotateSuffix + shadowSuffix + shaderAssignment;
             case BOX:
                 String boxPrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
-                return name + " => " + boxPrefix + "box :" + hiddenAttr + " size (" +
+                return name + " => " + boxPrefix + "box " + entityAttrs + " size (" +
                        (entity.getSizeX() * 2) + "," + (entity.getSizeY() * 2) + "," + (entity.getSizeZ() * 2) +
                        "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + scaleSuffix + rotateSuffix + shadowSuffix + shaderAssignment;
             case WEDGE:
                 String wedgePrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
-                return name + " => " + wedgePrefix + "wedge :" + hiddenAttr + " size (" +
+                return name + " => " + wedgePrefix + "wedge " + entityAttrs + " size (" +
                        entity.getWedgeWidth() + "," + entity.getWedgeHeight() + "," + entity.getWedgeDepth() +
                        "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + scaleSuffix + rotateSuffix + shadowSuffix + shaderAssignment;
             case CYLINDER:
                 String cylPrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
-                return name + " => " + cylPrefix + "cylinder :" + hiddenAttr + " radius (" +
+                return name + " => " + cylPrefix + "cylinder " + entityAttrs + " radius (" +
                        entity.getRadiusTop() + "," + entity.getRadiusBottom() +
                        "), height " + entity.getHeight() +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + scaleSuffix + rotateSuffix + shadowSuffix + shaderAssignment;
             case CONE:
                 String conePrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
-                return name + " => " + conePrefix + "cone :" + hiddenAttr + " radius (" +
+                return name + " => " + conePrefix + "cone " + entityAttrs + " radius (" +
                        entity.getRadiusTop() + "," + entity.getRadiusBottom() +
                        "), height " + entity.getHeight() +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + scaleSuffix + rotateSuffix + shadowSuffix + shaderAssignment;
             case HOLLOW_CYLINDER:
                 String hcPrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
-                return name + " => " + hcPrefix + "hollow cylinder :" + hiddenAttr + " radius (" +
+                return name + " => " + hcPrefix + "hollow cylinder " + entityAttrs + " radius (" +
                        entity.getRadiusTop() + "," + entity.getRadiusBottom() +
                        "), inner radius (" + entity.getInnerRadiusTop() + "," + entity.getInnerRadiusBottom() +
                        "), height " + entity.getHeight() +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + scaleSuffix + rotateSuffix + shadowSuffix + shaderAssignment;
             case QUAD:
                 String quadPrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
-                return name + " => " + quadPrefix + "quad :" + hiddenAttr + " size (" +
+                return name + " => " + quadPrefix + "quad " + entityAttrs + " size (" +
                        entity.getQuadWidth() + "," + entity.getQuadHeight() +
                        "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + scaleSuffix + rotateSuffix + shadowSuffix + shaderAssignment;
             case STAIRS:
                 String stairsPrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
-                return name + " => " + stairsPrefix + "stairs :" + hiddenAttr + " size (" +
+                return name + " => " + stairsPrefix + "stairs " + entityAttrs + " size (" +
                        entity.getStairsWidth() + "," + entity.getStairsStepHeight() + "," + entity.getStairsStepDepth() +
                        "), steps " + entity.getStairsStepCount() +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + scaleSuffix + rotateSuffix + shadowSuffix + shaderAssignment;
             case ARCH:
                 String archPrefix = (entity.isStaticEntity() ? "static " : "") + (entity.isColliderEntity() ? "collider " : "");
-                return name + " => " + archPrefix + "arch :" + hiddenAttr + " size (" +
+                return name + " => " + archPrefix + "arch " + entityAttrs + " size (" +
                        entity.getArchWidth() + "," + entity.getArchHeight() + "," + entity.getArchDepth() +
                        "), thickness " + entity.getArchThickness() +
                        ", segments " + entity.getArchSegments() +
@@ -440,14 +440,24 @@ public class DesignerDocument {
             case MODEL:
                 String modelPrefix = entity.isStaticModel() ? "static " : entity.isDynamicModel() ? "dynamic " : "";
                 String vehicleSuffix = entity.isVehicleModel() ? " vehicle" : "";
-                String modelHidden = entity.isHidden() ? " : hidden," : ":";
                 String jointsSuffix = buildJointsMappingSuffix(entity.getJointMapping());
                 String collisionSuffix = buildModelCollisionShapeSuffix(entity.getModelCollisionShape());
                 return name + " => " + modelPrefix + entity.getResourcePath() + vehicleSuffix +
-                       modelHidden + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + scaleSuffix + rotateSuffix + shadowSuffix + collisionSuffix + jointsSuffix + " async" + shaderAssignment;
+                       entityAttrs + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + scaleSuffix + rotateSuffix + shadowSuffix + collisionSuffix + jointsSuffix + " async" + shaderAssignment;
             default:
                 return "";
         }
+    }
+
+    private static String buildEntityLeadingAttributes(DesignerEntity entity) {
+        List<String> attrs = new ArrayList<>();
+        if (entity.isHidden()) {
+            attrs.add("hidden");
+        }
+        if (entity.isMultiplayerEntity()) {
+            attrs.add("multiplayer");
+        }
+        return attrs.isEmpty() ? ":" : ": " + String.join(", ", attrs) + ",";
     }
 
     private static String buildModelCollisionShapeSuffix(String value) {
