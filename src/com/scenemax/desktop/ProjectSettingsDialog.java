@@ -4,13 +4,11 @@ import org.apache.commons.lang3.StringUtils;
 
 import javax.swing.*;
 import java.awt.*;
-import java.io.File;
 
 public class ProjectSettingsDialog extends JDialog {
 
     private final SceneMaxProject project;
     private final JTextField txtGamePage = new JTextField();
-    private final JTextField txtButlerPath = new JTextField();
     private final JTextField txtWindowsChannel = new JTextField("windows");
     private final JTextField txtLinuxChannel = new JTextField("linux");
     private final JTextField txtMacChannel = new JTextField("macos");
@@ -46,20 +44,10 @@ public class ProjectSettingsDialog extends JDialog {
 
         addField(form, gbc, "itch.io Game Page", txtGamePage);
 
-        JPanel butlerRow = new JPanel(new BorderLayout(6, 0));
-        JButton btnBrowseButler = new JButton("Browse...");
-        JButton btnDetectButler = new JButton("Detect");
-        JPanel butlerButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        butlerButtons.add(btnDetectButler);
-        butlerButtons.add(btnBrowseButler);
-        butlerRow.add(txtButlerPath, BorderLayout.CENTER);
-        butlerRow.add(butlerButtons, BorderLayout.EAST);
-        addField(form, gbc, "Butler Executable", butlerRow);
-
         addField(form, gbc, "Windows Channel", txtWindowsChannel);
         addField(form, gbc, "Linux Channel", txtLinuxChannel);
         addField(form, gbc, "macOS Channel", txtMacChannel);
-        addField(form, gbc, "Butler API Key", txtApiKey);
+        addField(form, gbc, "itch.io API Key", txtApiKey);
 
         gbc.gridx = 1;
         gbc.weightx = 1;
@@ -71,7 +59,7 @@ public class ProjectSettingsDialog extends JDialog {
         JTextArea hint = new JTextArea(
                 "Game page accepts either an itch.io URL such as https://user.itch.io/game or a target like user/game.\n" +
                 "Leave the API key blank to keep the currently saved key. If no API key is saved, SceneMax will use your local butler login session if one exists.\n" +
-                "If butler is not on PATH, browse to either butler.exe or the downloaded butler zip. SceneMax can also detect the copy bundled with the itch desktop app."
+                "Configure the Butler executable and login once in File > Settings > Butler."
         );
         hint.setEditable(false);
         hint.setLineWrap(true);
@@ -84,19 +72,14 @@ public class ProjectSettingsDialog extends JDialog {
         root.add(form, BorderLayout.CENTER);
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        JButton btnButlerLogin = new JButton("Butler Login...");
         JButton btnClearApiKey = new JButton("Clear Saved API Key");
         JButton btnCancel = new JButton("Cancel");
         JButton btnSave = new JButton("Save");
-        buttons.add(btnButlerLogin);
         buttons.add(btnClearApiKey);
         buttons.add(btnCancel);
         buttons.add(btnSave);
         root.add(buttons, BorderLayout.SOUTH);
 
-        btnBrowseButler.addActionListener(e -> browseForButler());
-        btnDetectButler.addActionListener(e -> detectButler());
-        btnButlerLogin.addActionListener(e -> startButlerLogin());
         btnClearApiKey.addActionListener(e -> clearSavedApiKey());
         btnCancel.addActionListener(e -> dispose());
         btnSave.addActionListener(e -> onSave());
@@ -117,7 +100,6 @@ public class ProjectSettingsDialog extends JDialog {
 
     private void loadValues() {
         txtGamePage.setText(StringUtils.defaultString(project.itchGamePage));
-        txtButlerPath.setText(StringUtils.defaultString(project.itchButlerPath));
         txtWindowsChannel.setText(StringUtils.defaultIfBlank(project.itchWindowsChannel, "windows"));
         txtLinuxChannel.setText(StringUtils.defaultIfBlank(project.itchLinuxChannel, "linux"));
         txtMacChannel.setText(StringUtils.defaultIfBlank(project.itchMacChannel, "macos"));
@@ -128,101 +110,6 @@ public class ProjectSettingsDialog extends JDialog {
         } else {
             lblApiKeyStatus.setText("No project-scoped API key is saved. SceneMax will rely on butler login unless you paste one here.");
         }
-    }
-
-    private void browseForButler() {
-        JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Choose butler executable or downloaded zip");
-        if (txtButlerPath.getText() != null && txtButlerPath.getText().trim().length() > 0) {
-            chooser.setSelectedFile(new File(txtButlerPath.getText().trim()));
-        }
-        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            File selectedFile = chooser.getSelectedFile();
-            if (selectedFile.getName().toLowerCase().endsWith(".zip")) {
-                installButlerFromZip(selectedFile);
-            } else {
-                txtButlerPath.setText(selectedFile.getAbsolutePath());
-            }
-        }
-    }
-
-    private void installButlerFromZip(File zipFile) {
-        try {
-            String butlerPath = ItchIoHelper.installButlerFromZip(zipFile);
-            txtButlerPath.setText(butlerPath);
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Butler was extracted into SceneMax's tools folder and the executable path was saved:\n" + butlerPath,
-                    "Butler Installed",
-                    JOptionPane.INFORMATION_MESSAGE
-            );
-        } catch (Exception ex) {
-            JOptionPane.showMessageDialog(
-                    this,
-                    ex.getMessage(),
-                    "Butler Install Failed",
-                    JOptionPane.ERROR_MESSAGE
-            );
-        }
-    }
-
-    private void detectButler() {
-        String bundledButler = ItchIoHelper.findBundledButlerExecutable();
-        if (bundledButler == null || bundledButler.trim().length() == 0) {
-            JOptionPane.showMessageDialog(
-                    this,
-                    "SceneMax could not detect butler in its local tools folder or in the itch desktop app installation.\n\n" + ItchIoHelper.buildButlerInstallInstructions(),
-                    "Butler Not Found",
-                    JOptionPane.INFORMATION_MESSAGE
-            );
-            return;
-        }
-
-        txtButlerPath.setText(bundledButler);
-        JOptionPane.showMessageDialog(
-                this,
-                buildButlerDetectionMessage(bundledButler),
-                "Butler Detected",
-                JOptionPane.INFORMATION_MESSAGE
-        );
-    }
-
-    private String buildButlerDetectionMessage(String butlerPath) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("SceneMax found butler successfully.\n\n");
-        sb.append("Location: ").append(butlerPath).append("\n");
-        sb.append("Source: ").append(describeButlerSource(butlerPath)).append("\n\n");
-        if (ItchIoHelper.hasLocalCredentials()) {
-            sb.append("Login status: A previous butler login session was found on this machine.");
-        } else {
-            sb.append("Login status: No previous butler login session was found yet.\n");
-            sb.append("You can click \"Butler Login...\" to sign in now, or paste an API key for this project.");
-        }
-        return sb.toString();
-    }
-
-    private String describeButlerSource(String butlerPath) {
-        String normalizedPath = butlerPath == null ? "" : butlerPath.toLowerCase();
-        String toolsPath = new File(Util.getWorkingDir(), "tools\\butler").getAbsolutePath().toLowerCase();
-        if (normalizedPath.startsWith(toolsPath)) {
-            return "SceneMax tools folder";
-        }
-        if (normalizedPath.contains("\\itch\\broth\\butler\\")) {
-            return "itch desktop app installation";
-        }
-        return "custom location";
-    }
-
-    private void startButlerLogin() {
-        String usedButlerPath = ItchIoHelper.promptAndRunButlerLogin(this, safeText(txtButlerPath));
-        if (usedButlerPath == null) {
-            return;
-        }
-
-        if (!"butler".equalsIgnoreCase(usedButlerPath)) {
-            txtButlerPath.setText(usedButlerPath);
-        }
-        lblApiKeyStatus.setText("Butler login completed. SceneMax can now use your local butler session for this project.");
     }
 
     private void clearSavedApiKey() {
@@ -244,7 +131,6 @@ public class ProjectSettingsDialog extends JDialog {
         }
 
         project.itchGamePage = gamePage;
-        project.itchButlerPath = safeText(txtButlerPath);
         project.itchWindowsChannel = safeText(txtWindowsChannel);
         project.itchLinuxChannel = safeText(txtLinuxChannel);
         project.itchMacChannel = safeText(txtMacChannel);

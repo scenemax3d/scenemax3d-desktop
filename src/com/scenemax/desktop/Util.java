@@ -38,6 +38,7 @@ public class Util {
     private static final int DIALOG_TEXT_MAX_CHARS = 32000;
     private static final int DIALOG_TEXT_AREA_WIDTH = 900;
     private static final int DIALOG_TEXT_AREA_HEIGHT = 520;
+    private static final String ITCH_BUTLER_PATH_PARAM = "itch_butler_path";
 
     /**
      * Applies the Monokai dark theme to an RSyntaxTextArea so it matches FlatDarkLaf.
@@ -401,7 +402,6 @@ public class Util {
                 obj.put("selectedParent",p.selectedParent);
                 obj.put("selectedNode",p.selectedNode);
                 obj.put("itchGamePage", safeProjectValue(p.itchGamePage));
-                obj.put("itchButlerPath", safeProjectValue(p.itchButlerPath));
                 obj.put("itchWindowsChannel", safeProjectValue(p.itchWindowsChannel));
                 obj.put("itchLinuxChannel", safeProjectValue(p.itchLinuxChannel));
                 obj.put("itchMacChannel", safeProjectValue(p.itchMacChannel));
@@ -430,6 +430,28 @@ public class Util {
 
     private static String safeProjectValue(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    public static String getItchButlerPath() {
+        String path = AppDB.getInstance().getParam(ITCH_BUTLER_PATH_PARAM);
+        return safeProjectValue(path);
+    }
+
+    public static String getItchButlerPath(SceneMaxProject fallbackProject) {
+        String path = getItchButlerPath();
+        if (path.length() > 0 || fallbackProject == null) {
+            return path;
+        }
+
+        String legacyProjectPath = safeProjectValue(fallbackProject.itchButlerPath);
+        if (legacyProjectPath.length() > 0) {
+            setItchButlerPath(legacyProjectPath);
+        }
+        return legacyProjectPath;
+    }
+
+    public static void setItchButlerPath(String path) {
+        AppDB.getInstance().setParam(ITCH_BUTLER_PATH_PARAM, safeProjectValue(path));
     }
 
     private static String getProjectScopedKey(SceneMaxProject project, String suffix) {

@@ -214,7 +214,7 @@ public final class ItchIoHelper {
         sb.append("butler was not found. Install it once, then package again.\r\n\r\n");
         sb.append("Windows setup:\r\n");
         sb.append("1. Download butler from https://itchio.itch.io/butler\r\n");
-        sb.append("2. In SceneMax Project Settings, browse to the downloaded butler zip file\r\n");
+        sb.append("2. In SceneMax Settings > Butler, browse to the downloaded butler zip file\r\n");
         sb.append("3. SceneMax will extract it into the installation tools folder and save the butler.exe path for you\r\n");
         sb.append("4. Verify it with: butler version\r\n");
         sb.append("5. Authenticate once with: butler login\r\n\r\n");
