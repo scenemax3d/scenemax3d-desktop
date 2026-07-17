@@ -230,6 +230,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private String entryScriptFileName;
     private ProgramDef prg;
     private MultiplayerNetworkComponent multiplayerNetwork;
+    private boolean suppressMultiplayerCommandDispatch;
     private float runtimeShaderElapsedTime = 0f;
     private SceneMaxBaseController lastWaitController;
     private SkyControl skyControl;
@@ -1255,6 +1256,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     public void runPartialCode(String code, SceneMaxScope scope, boolean closeOnError) {
+        runPartialCode(code, scope, closeOnError, false);
+    }
+
+    private void runPartialCode(String code, SceneMaxScope scope, boolean closeOnError, boolean fromMultiplayerNetwork) {
 
         if (this.prg == null) {
             this.prg = new ProgramDef();
@@ -1283,6 +1288,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 showFloatingMessage(prg.syntaxErrors, "OK", 10);
             }
             return;
+        }
+        if (fromMultiplayerNetwork) {
+            markMultiplayerNetworkActions(prg);
         }
 
         if(scope==null) {
@@ -1318,6 +1326,36 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             scope.mainController.add(this.lastWaitController);
         }
 
+    }
+
+    public void runNetworkMultiplayerCommand(String code) {
+        runPartialCode(code, null, false, true);
+    }
+
+    private void markMultiplayerNetworkActions(ProgramDef program) {
+        if (program == null || program.actions == null) {
+            return;
+        }
+        for (StatementDef statement : program.actions) {
+            if (statement instanceof ActionStatementBase) {
+                markMultiplayerNetworkAction((ActionStatementBase) statement);
+            }
+        }
+    }
+
+    private void markMultiplayerNetworkAction(ActionStatementBase action) {
+        if (action == null) {
+            return;
+        }
+        action.fromMultiplayerNetwork = true;
+        if (!(action instanceof GraphicEntityCreationCommand)) {
+            action.isAsync = true;
+        }
+        if (action.statements != null) {
+            for (ActionStatementBase child : action.statements) {
+                markMultiplayerNetworkAction(child);
+            }
+        }
     }
 
     public int getMainScopeIdForNetwork() {
@@ -2695,6 +2733,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         SphereVariableDef varDef = (SphereVariableDef)inst.varDef;
         float radius = inst.radiusExpr==null?1f:((Double)inst.radiusExpr.evaluate()).floatValue();
+        String materialName = null;
         String sphereName = inst.varDef.varName+"@"+inst.scope.scopeId;
         Node sphereNode = new Node(sphereName);
         sphereNode.setUserData("key",sphereName);
@@ -2761,7 +2800,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
 
             if (inst.materialExpr != null) {
-                String materialName = inst.materialExpr.evaluate().toString();
+                materialName = inst.materialExpr.evaluate().toString();
                 if (!setGeometryMaterial(sphereGeo, materialName)) {
                     handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
                     return;
@@ -2809,6 +2848,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         spheres.put(sphereName,sphereNode);
         geoName2ModelName.put(sphereName,sphereName);
         geoName2EntityInst.put(sphereName,inst);
+        registerMultiplayerEntity(inst, sphereName, "sphere", sphereSpawnCommand(sphereNode, radius, materialName));
 
         List<java.lang.Object> ctls = new ArrayList<>();
         if(modelCtl!=null) {
@@ -4410,20 +4450,95 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     private void registerMultiplayerEntity(ModelInst modelInst, String runtimeName, ResourceSetup resource) {
+        String archetype = modelInst != null && modelInst.modelDef != null && modelInst.modelDef.name != null
+                ? modelInst.modelDef.name
+                : resource != null && resource.name != null ? resource.name : "";
+        registerMultiplayerEntity(modelInst, runtimeName, archetype);
+    }
+
+    private void registerMultiplayerEntity(ModelInst modelInst, String runtimeName, String archetype) {
+        registerMultiplayerEntity(modelInst, runtimeName, archetype, "");
+    }
+
+    private void registerMultiplayerEntity(ModelInst modelInst, String runtimeName, String archetype, String spawnCommand) {
         if (modelInst == null || modelInst.varDef == null || !modelInst.varDef.isMultiplayer) {
+            logMultiplayerRegistrationSkip(modelInst, runtimeName, archetype);
             return;
         }
         if (multiplayerNetwork == null) {
             multiplayerNetwork = new MultiplayerNetworkComponent(this);
             multiplayerNetwork.startFromSystemProperties();
         }
-        String archetype = modelInst.modelDef != null && modelInst.modelDef.name != null
-                ? modelInst.modelDef.name
-                : resource != null && resource.name != null ? resource.name : "";
-        multiplayerNetwork.registerEntity(runtimeName, modelInst.varDef, archetype);
+        multiplayerNetwork.registerEntity(runtimeName, modelInst.varDef, archetype, spawnCommand);
+    }
+
+    private void logMultiplayerRegistrationSkip(ModelInst modelInst, String runtimeName, String archetype) {
+        if (modelInst == null || modelInst.varDef == null) {
+            writeMultiplayerClientLog("skip register runtime=" + runtimeName
+                    + " archetype=" + archetype
+                    + " reason=no-var-def");
+            return;
+        }
+        writeMultiplayerClientLog("skip register runtime=" + runtimeName
+                + " type=" + modelInst.varDef.varType
+                + " archetype=" + archetype
+                + " isMultiplayer=" + modelInst.varDef.isMultiplayer);
+    }
+
+    private void writeMultiplayerClientLog(String message) {
+        String line = "[SceneMax MP] " + message;
+        System.err.println(line);
+        try {
+            Files.writeString(Paths.get("scenemax-multiplayer-client.log"),
+                    line + System.lineSeparator(),
+                    StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND);
+        } catch (IOException ignored) {
+        }
+    }
+
+    private String sphereSpawnCommand(Node sphereNode, float radius, String materialName) {
+        Vector3f position = sphereNode == null ? Vector3f.ZERO : sphereNode.getLocalTranslation();
+        StringBuilder command = new StringBuilder();
+        command.append("{network_entity} => sphere: pos (")
+                .append(networkNumber(position.x)).append(",")
+                .append(networkNumber(position.y)).append(",")
+                .append(networkNumber(position.z)).append(")");
+        command.append(", radius ").append(networkNumber(radius));
+        if (materialName != null && !materialName.trim().isEmpty()) {
+            command.append(", material=\"").append(escapeSceneMaxString(materialName.trim())).append("\"");
+        }
+        return command.toString();
+    }
+
+    private String networkNumber(double value) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            return "0";
+        }
+        if (Math.abs(value - Math.rint(value)) < 0.000001d) {
+            return Long.toString(Math.round(value));
+        }
+        return String.format(Locale.ROOT, "%.6f", value)
+                .replaceAll("0+$", "")
+                .replaceAll("\\.$", "");
+    }
+
+    private String escapeSceneMaxString(String value) {
+        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    public void destroyMultiplayerEntity(String runtimeName) {
+        if (multiplayerNetwork == null || runtimeName == null || runtimeName.trim().isEmpty()) {
+            return;
+        }
+        multiplayerNetwork.destroyEntity(runtimeName);
     }
 
     public void dispatchMultiplayerCommand(String runtimeName, String commandText) {
+        if (suppressMultiplayerCommandDispatch) {
+            return;
+        }
         if (multiplayerNetwork == null || runtimeName == null || commandText == null || commandText.trim().isEmpty()) {
             return;
         }

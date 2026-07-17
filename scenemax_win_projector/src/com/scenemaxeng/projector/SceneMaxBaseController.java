@@ -132,6 +132,14 @@ public class SceneMaxBaseController implements ISceneMaxController {
         }
 
         VarInst vi = scope.getVar(cmd.varDef.varName);
+        String runtimeEntityName = cmd.targetVar != null ? cmd.targetVar : varDef.varName;
+        EntityInstBase runtimeEntity = runtimeEntityName == null ? null : scope.getEntityInst(runtimeEntityName);
+        if (runtimeEntity != null && runtimeEntity.varDef != null && runtimeEntity.scope != null) {
+            targetVarDef = runtimeEntity.varDef;
+            this.targetVar = runtimeEntity.varDef.varName + "@" + runtimeEntity.scope.scopeId;
+            return 0;
+        }
+
         if (vi != null && vi.value instanceof EntityInstBase) {
             varDef = ((EntityInstBase) vi.value).varDef;
             targetVarDef = varDef;
@@ -193,6 +201,9 @@ public class SceneMaxBaseController implements ISceneMaxController {
     }
 
     protected void dispatchMultiplayerCommand(String commandText) {
+        if (cmd != null && cmd.fromMultiplayerNetwork) {
+            return;
+        }
         if (app == null || targetVar == null || commandText == null || commandText.trim().isEmpty()) {
             return;
         }

@@ -2645,6 +2645,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
 
                         } else if(attr.sphere_specific_attr()!=null) {

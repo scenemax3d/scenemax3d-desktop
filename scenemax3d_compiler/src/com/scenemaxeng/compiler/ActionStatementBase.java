@@ -11,6 +11,7 @@ public class ActionStatementBase extends StatementDef{
     public VariableDef varDef = null;
 
     public boolean isAsync = false;
+    public boolean fromMultiplayerNetwork = false;
     public ArrayList<ActionStatementBase> statements = new ArrayList<>();
 
 

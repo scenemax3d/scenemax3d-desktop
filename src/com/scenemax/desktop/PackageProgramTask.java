@@ -82,6 +82,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     private final Set<String> shaderNamesUsed = new LinkedHashSet<>();
     private final Set<String> environmentShaderNamesUsed = new LinkedHashSet<>();
     private final Set<String> materialNamesUsed = new LinkedHashSet<>();
+    private final Set<String> builtInMaterialNamesUsed = new LinkedHashSet<>();
     private final Set<String> weaponAssetNamesUsed = new LinkedHashSet<>();
     private final Set<String> throwMotionAssetNamesUsed = new LinkedHashSet<>();
     private final List<String> scannedScriptFiles = new ArrayList<>();
@@ -241,6 +242,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         shaderNamesUsed.clear();
         environmentShaderNamesUsed.clear();
         materialNamesUsed.clear();
+        builtInMaterialNamesUsed.clear();
         weaponAssetNamesUsed.clear();
         throwMotionAssetNamesUsed.clear();
         scannedScriptFiles.clear();
@@ -446,6 +448,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         appendUsedShaderResources(assetsMapping, resources.getJSONArray("shaders"), resources.getJSONArray("environmentShaders"));
         appendUsedMaterialResources(assetsMapping, resources.getJSONArray("materials"));
+        copyUsedBuiltInMaterialTextures();
         appendUsedVideoResources(deployFolder, resources.getJSONArray("videos"));
 
         appendCinematicResources(resources.getJSONArray("cinematics"));
@@ -2471,6 +2474,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         collectNamedReferences(sourceText, assetsMapping.getAnimationsIndex().keySet(), animationNamesUsed);
         collectNamedReferences(sourceText, assetsMapping.getMaterialsIndex().keySet(), materialNamesUsed);
+        collectNamedReferences(sourceText, builtInMaterialTexturePaths().keySet(), builtInMaterialNamesUsed);
 
         for (ResourceShader shader : assetsMapping.getShadersIndex().values()) {
             if (shader == null || shader.name == null || !containsAssetName(sourceText, shader.name)) {
@@ -2592,6 +2596,33 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             }
             upsertIndexedResource(targetArray, resource);
         }
+    }
+
+    private void copyUsedBuiltInMaterialTextures() {
+        Map<String, String[]> textures = builtInMaterialTexturePaths();
+        for (String materialName : builtInMaterialNamesUsed) {
+            String[] paths = textures.get(materialName.toLowerCase(Locale.ROOT));
+            if (paths == null) {
+                continue;
+            }
+            for (String path : paths) {
+                copyResourceFileToDeploy(new File("./deploy"), path);
+            }
+        }
+    }
+
+    private Map<String, String[]> builtInMaterialTexturePaths() {
+        Map<String, String[]> textures = new LinkedHashMap<>();
+        textures.put("pond", new String[]{"Textures/Terrain/Pond/Pond.jpg", "Textures/Terrain/Pond/Pond_normal.png"});
+        textures.put("rock", new String[]{"Textures/Terrain/Rock/rock.png", "Textures/Terrain/Rock/rock_normal.png"});
+        textures.put("rock2", new String[]{"Textures/Terrain/Rock/rock2.jpg", "Textures/Terrain/Rock/rock_normal.png"});
+        textures.put("brickwall", new String[]{"Textures/Terrain/BrickWall/brickwall.jpg", "Textures/Terrain/BrickWall/brickwall_normal.jpg"});
+        textures.put("dirt", new String[]{"Textures/Terrain/Splat/dirt.jpg", "Textures/Terrain/Splat/dirt_normal.png"});
+        textures.put("grass", new String[]{"Textures/Terrain/Splat/grass.jpg", "Textures/Terrain/Splat/grass_normal.jpg"});
+        textures.put("road", new String[]{"Textures/Terrain/Splat/road.jpg", "Textures/Terrain/Splat/road_normal.png"});
+        textures.put("alpha", new String[]{"Textures/Terrain/Splat/alpha1.png", "Textures/Terrain/Splat/alphamap.png"});
+        textures.put("alpha2", new String[]{"Textures/Terrain/Splat/alpha2.png", "Textures/Terrain/Splat/alphamap2.png"});
+        return textures;
     }
 
     private void appendUsedVideoResources(File deployFolder, JSONArray targetArray) {
@@ -2796,6 +2827,17 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         for (File rootFile : rootFiles) {
             copyFileIfNeeded(rootFile, new File(targetTexturesRoot, rootFile.getName()));
         }
+    }
+
+    private void copyResourceFileToDeploy(File deployFolder, String resourcePath) {
+        if (resourcePath == null || resourcePath.isBlank()) {
+            return;
+        }
+        File sourceFile = resolveResourceFile(resourcePath);
+        if (sourceFile == null || !sourceFile.isFile()) {
+            return;
+        }
+        copyFileIfNeeded(sourceFile, new File(deployFolder, resourcePath.replace("\\", "/")));
     }
 
     private void copySiblingModelSidecars(File sourceModel, File targetModel) {
@@ -3077,6 +3119,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         referenced.put("shaders", toSortedJsonArray(shaderNamesUsed));
         referenced.put("environmentShaders", toSortedJsonArray(environmentShaderNamesUsed));
         referenced.put("materials", toSortedJsonArray(materialNamesUsed));
+        referenced.put("builtInMaterials", toSortedJsonArray(builtInMaterialNamesUsed));
         referenced.put("weapons", toSortedJsonArray(weaponAssetNamesUsed));
         referenced.put("throwMotions", toSortedJsonArray(throwMotionAssetNamesUsed));
         inventory.put("referencedResources", referenced);

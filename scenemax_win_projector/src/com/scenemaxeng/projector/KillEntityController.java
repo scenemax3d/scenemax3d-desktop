@@ -15,6 +15,7 @@ public class KillEntityController extends SceneMaxBaseController{
         if (forceStop) return true;
 
         findTargetVar();
+        app.destroyMultiplayerEntity(targetVar);
 
         if(targetVarDef.varType== VariableDef.VAR_TYPE_3D) {
             app.killModel(targetVar);

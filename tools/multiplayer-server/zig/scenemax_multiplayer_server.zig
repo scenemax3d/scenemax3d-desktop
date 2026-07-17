@@ -10,7 +10,8 @@ const max_packet_size = 1200;
 const max_clients = 256;
 const max_entities = 2048;
 const max_sessions = 256;
-const snapshot_entity_size = 228;
+const spawn_command_size = 128;
+const snapshot_entity_size = 228 + spawn_command_size;
 
 const PacketType = enum(u8) {
     login_request = 1,
@@ -63,6 +64,7 @@ const Entity = struct {
     rotation: [4]f32 = .{ 0, 0, 0, 1 },
     animation_index: u16 = 0,
     animation: [64]u8 = [_]u8{0} ** 64,
+    spawn_command: [spawn_command_size]u8 = [_]u8{0} ** spawn_command_size,
 };
 
 export var scenemax_mp_config_block: [config_begin.len + config_payload_size + config_end.len]u8 =
@@ -74,6 +76,11 @@ pub fn main(init: std.process.Init) !void {
     var bind_addr = try net.IpAddress.parseIp4("0.0.0.0", config.port);
     const sock = try bind_addr.bind(io, .{ .mode = .dgram, .protocol = .udp });
     defer sock.close(io);
+    std.debug.print("[SceneMax MP] server listening port={d} game=\"{s}\" projectGuid=\"{s}\"\n", .{
+        config.port,
+        fixedText(&config.game_name),
+        fixedText(&config.project_guid),
+    });
 
     var clients = [_]Client{.{}} ** max_clients;
     var sessions = [_]Session{.{}} ** max_sessions;
@@ -101,11 +108,16 @@ pub fn main(init: std.process.Init) !void {
             .login_request => {
                 const password_ok = verifyPassword(payload, config.password_hash);
                 if (!password_ok) {
+                    std.debug.print("[SceneMax MP] login rejected: password mismatch from={any}\n", .{message.from});
                     try sendReject(sock, io, message.from);
                     continue;
                 }
                 const login = decodeLoginRequest(payload) orelse continue;
                 if (!verifyProjectGuid(login.project_guid, config.project_guid)) {
+                    std.debug.print("[SceneMax MP] login rejected: project GUID mismatch actual=\"{s}\" expected=\"{s}\"\n", .{
+                        fixedText(&login.project_guid),
+                        fixedText(&config.project_guid),
+                    });
                     try sendReject(sock, io, message.from);
                     continue;
                 }
@@ -123,6 +135,12 @@ pub fn main(init: std.process.Init) !void {
                     .address = message.from,
                     .last_seen_ms = now,
                 };
+                std.debug.print("[SceneMax MP] login accepted client={d} session={d} scene=\"{s}\" player=\"{s}\"\n", .{
+                    assigned,
+                    session.id,
+                    fixedText(&login.scene_id),
+                    fixedText(&login.player_name),
+                });
                 try sendLoginAccepted(sock, io, message.from, assigned, session.id, session.name);
                 try sendSnapshot(sock, io, message.from, &entities, session.id, login.scene_id);
             },
@@ -138,6 +156,11 @@ pub fn main(init: std.process.Init) !void {
                     client.address = message.from;
                     zero(&client.scene_id);
                     copyFixed(&client.scene_id, payload, 0);
+                    std.debug.print("[SceneMax MP] join scene client={d} session={d} scene=\"{s}\"\n", .{
+                        client.id,
+                        client.session_id,
+                        fixedText(&client.scene_id),
+                    });
                     clearClientEntitiesInOtherScenes(&entities, client.id, client.session_id, client.scene_id);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id);
                 }
@@ -149,18 +172,48 @@ pub fn main(init: std.process.Init) !void {
                 if (next_entity_id == 0) next_entity_id = 1;
                 const slot = entity_id % max_entities;
                 entities[slot] = decodeEntityCreate(payload, entity_id, client.*);
+                std.debug.print("[SceneMax MP] create entity client={d} entity={d} session={d} scene=\"{s}\" archetype=\"{s}\" spawn=\"{s}\"\n", .{
+                    client.id,
+                    entity_id,
+                    client.session_id,
+                    fixedText(&client.scene_id),
+                    fixedText(&entities[slot].archetype),
+                    fixedText(&entities[slot].spawn_command),
+                });
                 try sendEntityAccepted(sock, io, message.from, client_id, entity_id);
                 try dispatchEntityCreated(sock, io, &clients, client_id, entity_id, payload);
             },
             .command_dispatch, .transform_correction => {
                 if (findClient(&clients, client_id) == null) continue;
+                logRelayPacket(packet_type, client_id, payload);
                 if (packet_type == .transform_correction) {
                     updateEntityTransform(&entities, payload);
                 }
                 try dispatch(sock, io, &clients, client_id, packet_type, client_id, payload);
             },
+            .destroy_entity => {
+                const client = findClient(&clients, client_id) orelse continue;
+                if (payload.len < 4) continue;
+                const entity_id = std.mem.readInt(u32, payload[0..][0..4], .little);
+                if (destroyOwnedEntity(&entities, client.id, client.session_id, client.scene_id, entity_id)) {
+                    std.debug.print("[SceneMax MP] destroy entity client={d} entity={d} session={d} scene=\"{s}\"\n", .{
+                        client.id,
+                        entity_id,
+                        client.session_id,
+                        fixedText(&client.scene_id),
+                    });
+                    try dispatchEntityDestroyed(sock, io, &clients, client.id, client.session_id, client.scene_id, entity_id);
+                } else {
+                    std.debug.print("[SceneMax MP] destroy ignored client={d} entity={d}\n", .{ client.id, entity_id });
+                }
+            },
             .disconnect => {
                 if (findClient(&clients, client_id)) |client| {
+                    std.debug.print("[SceneMax MP] disconnect client={d} session={d} scene=\"{s}\"\n", .{
+                        client.id,
+                        client.session_id,
+                        fixedText(&client.scene_id),
+                    });
                     try destroyClientEntities(sock, io, &clients, &entities, client.id, client.session_id, client.scene_id);
                     client.active = false;
                 }
@@ -289,6 +342,7 @@ fn decodeEntityCreate(payload: []const u8, entity_id: u32, client: Client) Entit
     };
     copyFixed(&entity.archetype, payload, 0);
     copyFixed(&entity.player_name, payload, 64);
+    copyFixed(&entity.spawn_command, payload, 128);
     return entity;
 }
 
@@ -351,6 +405,18 @@ fn destroyClientEntities(sock: net.Socket, io: std.Io, clients: *[max_clients]Cl
     }
 }
 
+fn destroyOwnedEntity(entities: *[max_entities]Entity, client_id: u16, session_id: u32, scene_id: [128]u8, entity_id: u32) bool {
+    for (entities) |*entity| {
+        if (!entity.active or entity.network_id != entity_id) continue;
+        if (entity.owner_client != client_id or entity.session_id != session_id or !sameScene(entity.scene_id, scene_id)) {
+            return false;
+        }
+        entity.active = false;
+        return true;
+    }
+    return false;
+}
+
 fn readF32(bytes: []const u8) f32 {
     return @bitCast(std.mem.readInt(u32, bytes[0..][0..4], .little));
 }
@@ -406,9 +472,16 @@ fn sendSnapshot(sock: net.Socket, io: std.Io, address: net.IpAddress, entities: 
         cursor += 2;
         @memcpy(packet[cursor .. cursor + 64], &entity.animation);
         cursor += 64;
+        @memcpy(packet[cursor .. cursor + spawn_command_size], &entity.spawn_command);
+        cursor += spawn_command_size;
         count += 1;
     }
     std.mem.writeInt(u16, packet[8..][0..2], count, .little);
+    std.debug.print("[SceneMax MP] snapshot session={d} scene=\"{s}\" entities={d}\n", .{
+        session_id,
+        fixedText(&scene_id),
+        count,
+    });
     try sock.send(io, &address, packet[0..cursor]);
 }
 
@@ -419,22 +492,28 @@ fn dispatchEntityCreated(sock: net.Socket, io: std.Io, clients: *[max_clients]Cl
     const payload_len = @min(payload.len, packet.len - 12);
     @memcpy(packet[12 .. 12 + payload_len], payload[0..payload_len]);
     const sender = findClient(clients, sender_client_id) orelse return;
+    var sent: usize = 0;
     for (clients) |client| {
         if (!client.active or client.id == sender_client_id) continue;
         if (client.session_id != sender.session_id or !sameScene(client.scene_id, sender.scene_id)) continue;
         try sock.send(io, &client.address, packet[0 .. 12 + payload_len]);
+        sent += 1;
     }
+    std.debug.print("[SceneMax MP] dispatched create entity={d} from={d} recipients={d}\n", .{ entity_id, sender_client_id, sent });
 }
 
 fn dispatchEntityDestroyed(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, sender_client_id: u16, session_id: u32, scene_id: [128]u8, entity_id: u32) !void {
     var packet: [12]u8 = undefined;
     writeHeader(packet[0..], .destroy_entity, sender_client_id);
     std.mem.writeInt(u32, packet[8..][0..4], entity_id, .little);
+    var sent: usize = 0;
     for (clients) |client| {
         if (!client.active or client.id == sender_client_id) continue;
         if (client.session_id != session_id or !sameScene(client.scene_id, scene_id)) continue;
         try sock.send(io, &client.address, packet[0..]);
+        sent += 1;
     }
+    std.debug.print("[SceneMax MP] dispatched destroy entity={d} from={d} recipients={d}\n", .{ entity_id, sender_client_id, sent });
 }
 
 fn dispatch(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, sender_client_id: u16, packet_type: PacketType, client_id: u16, payload: []const u8) !void {
@@ -443,10 +522,20 @@ fn dispatch(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, sender_
     const payload_len = @min(payload.len, packet.len - 8);
     @memcpy(packet[8 .. 8 + payload_len], payload[0..payload_len]);
     const sender = findClient(clients, sender_client_id) orelse return;
+    var sent: usize = 0;
     for (clients) |client| {
         if (!client.active or client.id == sender_client_id) continue;
         if (client.session_id != sender.session_id or !sameScene(client.scene_id, sender.scene_id)) continue;
         try sock.send(io, &client.address, packet[0 .. 8 + payload_len]);
+        sent += 1;
+    }
+    if (packet_type != .transform_correction) {
+        std.debug.print("[SceneMax MP] dispatched {s} from={d} recipients={d} bytes={d}\n", .{
+            packetTypeName(packet_type),
+            sender_client_id,
+            sent,
+            payload_len,
+        });
     }
 }
 
@@ -483,4 +572,53 @@ fn writeHeader(packet: []u8, packet_type: PacketType, client_id: u16) void {
     packet[4] = protocol_version;
     packet[5] = @intFromEnum(packet_type);
     std.mem.writeInt(u16, packet[6..][0..2], client_id, .little);
+}
+
+fn fixedText(bytes: []const u8) []const u8 {
+    var count: usize = 0;
+    while (count < bytes.len and bytes[count] != 0) {
+        count += 1;
+    }
+    return bytes[0..count];
+}
+
+fn packetTypeName(packet_type: PacketType) []const u8 {
+    return switch (packet_type) {
+        .login_request => "login",
+        .login_accepted => "login_accepted",
+        .login_rejected => "login_rejected",
+        .heartbeat => "heartbeat",
+        .join_scene => "join_scene",
+        .create_entity_request => "create",
+        .create_entity_accepted => "create_accepted",
+        .destroy_entity => "destroy",
+        .command_dispatch => "command",
+        .transform_correction => "transform",
+        .snapshot => "snapshot",
+        .disconnect => "disconnect",
+    };
+}
+
+fn logRelayPacket(packet_type: PacketType, client_id: u16, payload: []const u8) void {
+    if (payload.len < 4) {
+        std.debug.print("[SceneMax MP] receive {s} client={d} bytes={d}\n", .{ packetTypeName(packet_type), client_id, payload.len });
+        return;
+    }
+    const entity_id = std.mem.readInt(u32, payload[0..][0..4], .little);
+    if (packet_type == .command_dispatch) {
+        std.debug.print("[SceneMax MP] receive command client={d} entity={d} text=\"{s}\"\n", .{
+            client_id,
+            entity_id,
+            payload[4..],
+        });
+    } else if (packet_type == .transform_correction) {
+        return;
+    } else {
+        std.debug.print("[SceneMax MP] receive {s} client={d} entity={d} bytes={d}\n", .{
+            packetTypeName(packet_type),
+            client_id,
+            entity_id,
+            payload.len,
+        });
+    }
 }
