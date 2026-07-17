@@ -27,6 +27,7 @@ public class MoveController extends SceneMaxBaseController{
     private ActionCommandMove cmd;
     private MotionEase.MotionEaseSpec motionEase;
     private boolean multiplayerCommandDispatched = false;
+    private int multiplayerActionSequence = 0;
 
     public MoveController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope, ActionCommandMove cmd) {
         super(app, prg, scope, cmd);
@@ -84,6 +85,10 @@ public class MoveController extends SceneMaxBaseController{
 
             this.enableEntity(targetVar);// enable this entity
             motionEase = MotionEase.fromCommand(cmd, scope);
+            MultiplayerControllerResumeState resumeState = consumeMultiplayerResumeState(MULTIPLAYER_ACTION_SLOT_MOVE);
+            if (resumeState != null && targetTime > 0f) {
+                passedTime = Math.min(targetTime, resumeState.elapsedSeconds);
+            }
             targetCalculated=true;
             dispatchMultiplayerMoveCommand();
         }
@@ -156,6 +161,10 @@ public class MoveController extends SceneMaxBaseController{
             }
         }
 
+        if (finished) {
+            endMultiplayerTimedAction(MULTIPLAYER_ACTION_SLOT_MOVE, multiplayerActionSequence);
+            multiplayerActionSequence = 0;
+        }
         return finished;
     }
 
@@ -182,6 +191,9 @@ public class MoveController extends SceneMaxBaseController{
                     + ") in " + networkNumber(targetTime) + " seconds";
         }
         dispatchMultiplayerCommand(command);
+        if (targetTime > 0f) {
+            multiplayerActionSequence = startMultiplayerTimedAction(MULTIPLAYER_ACTION_SLOT_MOVE, targetTime, command);
+        }
     }
 
     private String verbalDirectionName(int verbalCommand) {

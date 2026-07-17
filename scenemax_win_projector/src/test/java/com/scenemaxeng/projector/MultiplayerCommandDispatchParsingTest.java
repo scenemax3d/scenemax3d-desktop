@@ -8,6 +8,9 @@ import com.scenemaxeng.compiler.StatementDef;
 import com.scenemaxeng.compiler.VariableDef;
 import org.junit.Test;
 
+import java.lang.reflect.Method;
+
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -47,6 +50,23 @@ public class MultiplayerCommandDispatchParsingTest {
         }
 
         assertTrue("Expected inner sphere to keep the multiplayer flag", sphere != null && sphere.isMultiplayer);
+    }
+
+    @Test
+    public void preparesSnapshotResumeCommands() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        Method method = MultiplayerNetworkComponent.class.getDeclaredMethod(
+                "commandForSnapshotAction", String.class, int.class);
+        method.setAccessible(true);
+
+        assertEquals("{network_entity}.move right 4 in 10 seconds",
+                method.invoke(component, "{network_entity}.move right 4 in 10 seconds", 5000));
+        assertEquals("{network_entity}.move (x - 6) in 12 seconds",
+                method.invoke(component, "{network_entity}.move (x - 6) in 12 seconds", 3000));
+        assertEquals("{network_entity}.rotate (y + 90) in 10 seconds",
+                method.invoke(component, "{network_entity}.rotate (y + 90) in 10 seconds", 5000));
+        assertEquals("{network_entity}.move to (4,0,0) in 5 seconds",
+                method.invoke(component, "{network_entity}.move to (4,0,0) in 10 seconds", 5000));
     }
 
     private void assertParses(String code) {

@@ -25,6 +25,7 @@ public class RotateController extends SceneMaxBaseController{
     private ActionLogicalExpressionVm loopExprCached;
     private MotionEase.MotionEaseSpec motionEase;
     private boolean multiplayerCommandDispatched = false;
+    private int multiplayerActionSequence = 0;
     //private VariableDef targetVarDef;
 
 
@@ -63,6 +64,10 @@ public class RotateController extends SceneMaxBaseController{
 
             this.enableEntity(targetVar);// enable this entity
             motionEase = MotionEase.fromCommand(rotateCmd, scope);
+            MultiplayerControllerResumeState resumeState = consumeMultiplayerResumeState(MULTIPLAYER_ACTION_SLOT_ROTATE);
+            if (resumeState != null && targetTime > 0f) {
+                passedTime = Math.min(targetTime, resumeState.elapsedSeconds);
+            }
             targetCalculated=true;
             dispatchMultiplayerRotateCommand();
         }
@@ -113,6 +118,10 @@ public class RotateController extends SceneMaxBaseController{
             }
         }
 
+        if (finished) {
+            endMultiplayerTimedAction(MULTIPLAYER_ACTION_SLOT_ROTATE, multiplayerActionSequence);
+            multiplayerActionSequence = 0;
+        }
         return finished;
     }
 
@@ -129,7 +138,11 @@ public class RotateController extends SceneMaxBaseController{
         }
         multiplayerCommandDispatched = true;
         String sign = direction < 0 ? "-" : "+";
-        dispatchMultiplayerCommand("{network_entity}.rotate (" + axis + " " + sign + " "
-                + networkNumber(targetVal) + ") in " + networkNumber(targetTime) + " seconds");
+        String command = "{network_entity}.rotate (" + axis + " " + sign + " "
+                + networkNumber(targetVal) + ") in " + networkNumber(targetTime) + " seconds";
+        dispatchMultiplayerCommand(command);
+        if (targetTime > 0f) {
+            multiplayerActionSequence = startMultiplayerTimedAction(MULTIPLAYER_ACTION_SLOT_ROTATE, targetTime, command);
+        }
     }
 }

@@ -15,6 +15,7 @@ public class RotateToController extends SceneMaxBaseController {
     private float requestedTargetVal=0;
     private MotionEase.MotionEaseSpec motionEase;
     private boolean multiplayerCommandDispatched = false;
+    private int multiplayerActionSequence = 0;
 
 
     public RotateToController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope, ActionCommandRotateTo cmd) {
@@ -116,6 +117,10 @@ public class RotateToController extends SceneMaxBaseController {
             this.app.rotateModel(targetVar, axisNum, direction, rotateVal);
         }
 
+        if (finished) {
+            endMultiplayerTimedAction(MULTIPLAYER_ACTION_SLOT_ROTATE, multiplayerActionSequence);
+            multiplayerActionSequence = 0;
+        }
         return finished;
 
 
@@ -126,8 +131,12 @@ public class RotateToController extends SceneMaxBaseController {
             return;
         }
         multiplayerCommandDispatched = true;
-        dispatchMultiplayerCommand("{network_entity}.rotate to (" + cmd.axis + " "
-                + networkNumber(requestedTargetVal) + ") in " + networkNumber(targetTime) + " seconds");
+        String command = "{network_entity}.rotate to (" + cmd.axis + " "
+                + networkNumber(requestedTargetVal) + ") in " + networkNumber(targetTime) + " seconds";
+        dispatchMultiplayerCommand(command);
+        if (targetTime > 0f) {
+            multiplayerActionSequence = startMultiplayerTimedAction(MULTIPLAYER_ACTION_SLOT_ROTATE, targetTime, command);
+        }
     }
 
 }

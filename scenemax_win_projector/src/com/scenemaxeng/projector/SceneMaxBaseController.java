@@ -8,6 +8,10 @@ import java.util.Locale;
 
 public class SceneMaxBaseController implements ISceneMaxController {
 
+    protected static final int MULTIPLAYER_ACTION_SLOT_MOVE = 1;
+    protected static final int MULTIPLAYER_ACTION_SLOT_ROTATE = 2;
+    protected static final int MULTIPLAYER_ACTION_SLOT_ANIMATE = 3;
+
     public boolean adhereToPauseStatus = true;
     protected boolean targetCalculated = false;
     public boolean isInitiated = false;
@@ -208,6 +212,33 @@ public class SceneMaxBaseController implements ISceneMaxController {
             return;
         }
         app.dispatchMultiplayerCommand(targetVar, commandText);
+    }
+
+    protected int startMultiplayerTimedAction(int slot, float durationSeconds, String commandText) {
+        if (cmd != null && cmd.fromMultiplayerNetwork) {
+            return 0;
+        }
+        if (app == null || targetVar == null || commandText == null || commandText.trim().isEmpty()) {
+            return 0;
+        }
+        return app.startMultiplayerTimedAction(targetVar, slot, durationSeconds, commandText);
+    }
+
+    protected void endMultiplayerTimedAction(int slot, int sequence) {
+        if (cmd != null && cmd.fromMultiplayerNetwork) {
+            return;
+        }
+        if (app == null || targetVar == null || sequence <= 0) {
+            return;
+        }
+        app.endMultiplayerTimedAction(targetVar, slot, sequence);
+    }
+
+    protected MultiplayerControllerResumeState consumeMultiplayerResumeState(int slot) {
+        if (cmd == null || !cmd.fromMultiplayerNetwork || app == null || targetVar == null) {
+            return null;
+        }
+        return app.consumeMultiplayerResumeState(targetVar, slot);
     }
 
     protected String networkNumber(double value) {
