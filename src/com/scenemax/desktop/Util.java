@@ -242,6 +242,10 @@ public class Util {
             p.itchWindowsChannel = o.optString("itchWindowsChannel", "");
             p.itchLinuxChannel = o.optString("itchLinuxChannel", "");
             p.itchMacChannel = o.optString("itchMacChannel", "");
+            p.multiplayerServerIp = o.optString("multiplayerServerIp", "127.0.0.1");
+            p.multiplayerServerPort = o.optInt("multiplayerServerPort", SceneMaxProject.DEFAULT_MULTIPLAYER_PORT);
+            p.multiplayerDeployOs = o.optString("multiplayerDeployOs", "Windows");
+            p.multiplayerPassword = o.optString("multiplayerPassword", "");
 
             projects.add(p);
         }
@@ -405,6 +409,10 @@ public class Util {
                 obj.put("itchWindowsChannel", safeProjectValue(p.itchWindowsChannel));
                 obj.put("itchLinuxChannel", safeProjectValue(p.itchLinuxChannel));
                 obj.put("itchMacChannel", safeProjectValue(p.itchMacChannel));
+                obj.put("multiplayerServerIp", safeProjectValue(p.multiplayerServerIp));
+                obj.put("multiplayerServerPort", p.multiplayerServerPort <= 0 ? SceneMaxProject.DEFAULT_MULTIPLAYER_PORT : p.multiplayerServerPort);
+                obj.put("multiplayerDeployOs", safeProjectValue(p.multiplayerDeployOs).isEmpty() ? "Windows" : safeProjectValue(p.multiplayerDeployOs));
+                obj.put("multiplayerPassword", p.multiplayerPassword == null ? "" : p.multiplayerPassword);
 
                 try {
                     File f = new File("projects/projects.json");

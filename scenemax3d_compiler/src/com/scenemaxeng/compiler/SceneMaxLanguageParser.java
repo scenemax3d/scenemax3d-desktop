@@ -2798,6 +2798,8 @@ public class SceneMaxLanguageParser implements IParser {
                             } else if(shapeType.equals("none")) {
                                 varDef.collisionShape = VariableDef.COLLISION_SHAPE_NONE;
                             }
+                        } else if(attr.init_multiplayer_attr()!=null) {
+                            varDef.isMultiplayer = true;
                         }
                     }
                 }

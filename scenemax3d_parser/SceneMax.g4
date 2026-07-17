@@ -440,8 +440,9 @@ model_attributes : model_attr (and_expr model_attr)* ;
 and_expr: And | ',';
 model_attr : print_pos_attr | init_rotate_attr | init_joints_attr |
              init_turn_attr | init_scale_attr | init_mass_attr | init_static_attr | init_hidden_attr | shadow_mode_attr | calibration_attr |
-             collision_shape_attr;
+             collision_shape_attr | init_multiplayer_attr;
 
+init_multiplayer_attr : Multiplayer ;
 collision_shape_attr : Collision Shape collision_shape_options ;
 collision_shape_options : Box | Boxes | Mesh | None;
 calibration_attr : Calibrate '(' pos_axes ')' ;
@@ -1085,6 +1086,7 @@ Boxes : 'Boxes' | 'boxes' ;
 None : 'None' | 'none' ;
 Collision : 'Collision' | 'collision' ;
 Shape : 'Shape' | 'shape' ;
+Multiplayer : 'Multiplayer' | 'multiplayer' ;
 
 Effects : 'Effects' | 'effects' ;
 Cinematic : 'Cinematic' | 'cinematic' ;

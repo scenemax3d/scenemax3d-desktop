@@ -4,6 +4,8 @@ import org.json.JSONObject;
 
 public class SceneMaxProject {
 
+    public static final int DEFAULT_MULTIPLAYER_PORT = 9001;
+
     public String selectedParent;
     public String selectedNode;
     public String itchGamePage;
@@ -11,6 +13,10 @@ public class SceneMaxProject {
     public String itchWindowsChannel;
     public String itchLinuxChannel;
     public String itchMacChannel;
+    public String multiplayerServerIp = "127.0.0.1";
+    public int multiplayerServerPort = DEFAULT_MULTIPLAYER_PORT;
+    public String multiplayerDeployOs = "Windows";
+    public String multiplayerPassword = "";
     String name;
     String path;
 
@@ -32,6 +38,9 @@ public class SceneMaxProject {
         obj.put("itch_windows_channel", this.itchWindowsChannel == null ? "" : this.itchWindowsChannel);
         obj.put("itch_linux_channel", this.itchLinuxChannel == null ? "" : this.itchLinuxChannel);
         obj.put("itch_mac_channel", this.itchMacChannel == null ? "" : this.itchMacChannel);
+        obj.put("multiplayer_server_ip", this.multiplayerServerIp == null ? "" : this.multiplayerServerIp);
+        obj.put("multiplayer_server_port", this.multiplayerServerPort <= 0 ? DEFAULT_MULTIPLAYER_PORT : this.multiplayerServerPort);
+        obj.put("multiplayer_deploy_os", this.multiplayerDeployOs == null ? "Windows" : this.multiplayerDeployOs);
 
         return obj;
     }

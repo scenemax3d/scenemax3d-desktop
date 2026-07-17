@@ -229,6 +229,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private String currentLevel = "";
     private String entryScriptFileName;
     private ProgramDef prg;
+    private MultiplayerNetworkComponent multiplayerNetwork;
     private float runtimeShaderElapsedTime = 0f;
     private SceneMaxBaseController lastWaitController;
     private SkyControl skyControl;
@@ -516,6 +517,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         // You must add a light to make the model visible
         addLighting();
         ensureEffekseerRenderProcessor();
+        multiplayerNetwork = new MultiplayerNetworkComponent(this);
+        multiplayerNetwork.startFromSystemProperties();
 
         if(_appObserver!=null) {
             _appObserver.init();
@@ -4038,6 +4041,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         am.resource = resource;
         models.put(modelName, am);
         parentNode.setName(modelName);
+        registerMultiplayerEntity(modelInst, modelName, resource);
 
         final Vector3f scale = resolveInitialModelScale(modelInst, resource);
         parentNode.setLocalScale(scale);
@@ -4389,6 +4393,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         am.resource = resource;
         models.put(modelName, am);
         c.getNode().setName(modelName);
+        registerMultiplayerEntity(modelInst, modelName, resource);
         c.getNode().setUserData("key",modelName);
 
         geoName2ModelName.put(modelName, modelName);
@@ -4397,6 +4402,20 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         am.physicalControl = c;
 
         return c;
+    }
+
+    private void registerMultiplayerEntity(ModelInst modelInst, String runtimeName, ResourceSetup resource) {
+        if (modelInst == null || modelInst.varDef == null || !modelInst.varDef.isMultiplayer) {
+            return;
+        }
+        if (multiplayerNetwork == null) {
+            multiplayerNetwork = new MultiplayerNetworkComponent(this);
+            multiplayerNetwork.startFromSystemProperties();
+        }
+        String archetype = modelInst.modelDef != null && modelInst.modelDef.name != null
+                ? modelInst.modelDef.name
+                : resource != null && resource.name != null ? resource.name : "";
+        multiplayerNetwork.registerEntity(runtimeName, modelInst.varDef, archetype);
     }
 
     @Override
@@ -5328,6 +5347,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     @Override
     public void simpleUpdate(float tpf) {
         effekseerFrameTpf = tpf;
+        if (multiplayerNetwork != null) {
+            multiplayerNetwork.update(tpf);
+        }
         runtimeShaderElapsedTime += tpf;
         updateRuntimeShaderMaterials();
         updateEnvironmentShaderOverlaySize();
@@ -10980,6 +11002,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     public void prepareToSwitchState(String code, String level) {
         this.currentLevel = level;
+        if (multiplayerNetwork != null) {
+            multiplayerNetwork.joinScene(level);
+        }
         this.switchStateCode = code;
     }
 
