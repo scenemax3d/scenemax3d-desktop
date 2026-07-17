@@ -92,7 +92,7 @@
               </grid>
             </constraints>
             <properties>
-              <text value="The following 3rd party software are used:&#10;ANTLR4 - https://www.antlr.org/&#10;JMonkeyEngine3 - https://github.com/jMonkeyEngine/jmonkeyengine&#10;Minie physics library by Stephen Gold - https://github.com/stephengold/Minie&#10;JME-Vehicles library by Stephen Gold - https://github.com/stephengold/jme-vehicles&#10;Socket.IO - https://github.com/socketio/socket.io&#10;Zig - https://ziglang.org/&#10;JDK, InnoSetup, SQLite, FFMPEG, DotNet Framework &#10;JNI4Net - https://github.com/jni4net/jni4net/&#10;https://sketchfab.com/3d-models/killarney-raceway-e5e0e679b28b464b90adff7a37d9dfb3&#10;Particle Monkey - https://jmonkeystore.com/189b56af-a1be-4036-8ac7-2b62a94935ff&#10;Customizeable Minimap - https://jmonkeystore.com/32ac86d0-3857-442f-853e-f78ce90f3b36&#10;Select Object Outliner - https://jmonkeystore.com/5246c9ac-3f4c-4a5d-9fb0-470eb4026246&#10;&#10;"/>
+              <text value=""/>
             </properties>
           </component>
           <component id="fdd50" class="javax.swing.JLabel" binding="webSite">

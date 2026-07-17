@@ -57,6 +57,10 @@ public class HelpAboutDialog extends JDialog {
             }
         }, KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
 
+        installCreditsArea();
+        txt3rdPartySoftware.setText(buildThirdPartyCredits());
+        txt3rdPartySoftware.setCaretPosition(0);
+
         if (licenseExists) {
 
             topPanel.remove(title);
@@ -82,6 +86,135 @@ public class HelpAboutDialog extends JDialog {
 
         String stationId = Util.getStationId();
         txt3rdPartySoftware.append("\nStation ID: " + stationId);
+    }
+
+    private void installCreditsArea() {
+        txt3rdPartySoftware.setEditable(false);
+        txt3rdPartySoftware.setLineWrap(true);
+        txt3rdPartySoftware.setWrapStyleWord(true);
+        txt3rdPartySoftware.setCaretPosition(0);
+
+        topPanel.remove(txt3rdPartySoftware);
+        JScrollPane scrollPane = new JScrollPane(txt3rdPartySoftware);
+        topPanel.add(scrollPane, new GridConstraints(
+                4, 0, 1, 2,
+                GridConstraints.ANCHOR_CENTER,
+                GridConstraints.FILL_BOTH,
+                GridConstraints.SIZEPOLICY_WANT_GROW,
+                GridConstraints.SIZEPOLICY_WANT_GROW,
+                null,
+                new Dimension(250, 180),
+                null,
+                0,
+                false
+        ));
+    }
+
+    private String buildThirdPartyCredits() {
+        return String.join("\n",
+                "The following third-party software, libraries, tools, and assets are used by SceneMax3D:",
+                "",
+                "Core IDE and Java libraries:",
+                "- Java / OpenJDK runtime - https://openjdk.org/",
+                "- Gradle build system and Gradle Wrapper - https://gradle.org/",
+                "- Shadow Gradle plugin - https://github.com/johnrengelman/shadow",
+                "- IntelliJ IDEA UI Designer runtime (forms_rt) - https://www.jetbrains.com/idea/",
+                "- FlatLaf look and feel - https://www.formdev.com/flatlaf/",
+                "- RSyntaxTextArea - https://github.com/bobbylight/RSyntaxTextArea",
+                "- JGoodies Forms - https://www.jgoodies.com/freeware/libraries/forms/",
+                "- JDOM and JDOM2 - http://www.jdom.org/",
+                "- ASM bytecode libraries - https://asm.ow2.io/",
+                "",
+                "Parsing, data, networking, and persistence:",
+                "- ANTLR 4 - https://www.antlr.org/",
+                "- JSON-java (org.json) - https://github.com/stleary/JSON-java",
+                "- Apache Commons IO - https://commons.apache.org/proper/commons-io/",
+                "- Apache Commons Lang - https://commons.apache.org/proper/commons-lang/",
+                "- SQLite JDBC - https://github.com/xerial/sqlite-jdbc",
+                "- Zip4j - https://github.com/srikanth-lingala/zip4j",
+                "- ftp4j - http://www.sauronsoftware.it/projects/ftp4j/",
+                "- JSch - http://www.jcraft.com/jsch/",
+                "- OkHttp - https://square.github.io/okhttp/",
+                "- Okio - https://square.github.io/okio/",
+                "- Socket.IO Java client and Engine.IO client - https://github.com/socketio/socket.io-client-java",
+                "- NanoHTTPD - https://github.com/NanoHttpd/nanohttpd",
+                "- SLF4J - https://www.slf4j.org/",
+                "- Kotlin standard library - https://kotlinlang.org/",
+                "- JAXB API - https://projects.eclipse.org/projects/ee4j.jaxb",
+                "- Guava - https://github.com/google/guava",
+                "- Gson - https://github.com/google/gson",
+                "",
+                "3D engine, rendering, input, UI, and game runtime:",
+                "- jMonkeyEngine 3 - https://github.com/jMonkeyEngine/jmonkeyengine",
+                "- LWJGL and LWJGL Assimp - https://www.lwjgl.org/",
+                "- JInput and JUtils - https://github.com/jinput/jinput",
+                "- OpenAL - https://openal.org/",
+                "- Nifty GUI - https://github.com/nifty-gui/nifty-gui",
+                "- Lemur GUI library - https://github.com/jMonkeyEngine-Contributions/Lemur",
+                "- XPP3 XML pull parser - http://www.extreme.indiana.edu/xgws/xsoap/xpp/",
+                "- Particle Monkey - https://jmonkeystore.com/189b56af-a1be-4036-8ac7-2b62a94935ff",
+                "- Customizable Minimap - https://jmonkeystore.com/32ac86d0-3857-442f-853e-f78ce90f3b36",
+                "- Select Object Outliner - https://jmonkeystore.com/5246c9ac-3f4c-4a5d-9fb0-470eb4026246",
+                "",
+                "Physics, vehicles, animation, and scene utilities:",
+                "- Minie physics library by Stephen Gold - https://github.com/stephengold/Minie",
+                "- Libbulletjme / Bullet Physics native runtime - https://github.com/stephengold/Libbulletjme",
+                "- Heart library by Stephen Gold - https://github.com/stephengold/Heart",
+                "- MaVehicles / JME vehicle libraries by Stephen Gold - https://github.com/stephengold/MaVehicles",
+                "- Garrett by Stephen Gold - https://github.com/stephengold/Garrett",
+                "- Wes by Stephen Gold - https://github.com/stephengold/Wes",
+                "- SkyControl by Stephen Gold - https://github.com/stephengold/SkyControl",
+                "- jme-ttf and sfntly font tooling - https://github.com/stephengold/jme-ttf",
+                "- Sim-math - https://github.com/Simsilica/SimMath",
+                "- j-ogg-vorbis - https://github.com/stephengold/j-ogg-vorbis",
+                "",
+                "Model, animation, video, and audio tooling:",
+                "- JavaCV - https://github.com/bytedeco/javacv",
+                "- JavaCPP - https://github.com/bytedeco/javacpp",
+                "- FFmpeg - https://ffmpeg.org/",
+                "- MonkeyWrench model importer by Stephen Gold - https://github.com/stephengold/MonkeyWrench",
+                "- FBX2glTF - https://github.com/godotengine/FBX2glTF",
+                "- Sketchfab asset services - https://sketchfab.com/",
+                "- Killarney Raceway model - https://sketchfab.com/3d-models/killarney-raceway-e5e0e679b28b464b90adff7a37d9dfb3",
+                "- FreeTTS - https://freetts.sourceforge.io/",
+                "- AssemblyAI Java SDK - https://github.com/AssemblyAI/assemblyai-java-sdk",
+                "",
+                "Effekseer and bundled native/runtime components:",
+                "- Effekseer - https://effekseer.github.io/",
+                "- LLGI graphics abstraction library - https://github.com/effekseer/LLGI",
+                "- ufbx - https://github.com/ufbx/ufbx",
+                "- tinygltf - https://github.com/syoyo/tinygltf",
+                "- nlohmann/json - https://github.com/nlohmann/json",
+                "- Dear ImGui - https://github.com/ocornut/imgui",
+                "- imgui-node-editor - https://github.com/thedmd/imgui-node-editor",
+                "- GLFW - https://www.glfw.org/",
+                "- FlatBuffers - https://github.com/google/flatbuffers",
+                "- SPIRV-Cross - https://github.com/KhronosGroup/SPIRV-Cross",
+                "- glslang - https://github.com/KhronosGroup/glslang",
+                "- libpng - http://www.libpng.org/pub/png/libpng.html",
+                "- zlib - https://zlib.net/",
+                "- spdlog - https://github.com/gabime/spdlog",
+                "- easy_profiler - https://github.com/yse/easy_profiler",
+                "- Native File Dialog - https://github.com/mlabbe/nativefiledialog",
+                "- OpenSoundMixer - https://github.com/effekseer/OpenSoundMixer",
+                "",
+                "Packaging, installers, launchers, and platform integration:",
+                "- Zig native launcher toolchain - https://ziglang.org/",
+                "- Launch4j - https://launch4j.sourceforge.net/",
+                "- Inno Setup - https://jrsoftware.org/isinfo.php",
+                "- NSIS - https://nsis.sourceforge.io/",
+                "- JNI4Net - https://github.com/jni4net/jni4net/",
+                "- .NET Framework - https://dotnet.microsoft.com/",
+                "- itch.io butler uploader - https://itch.io/docs/butler/",
+                "",
+                "Testing and supporting build-time libraries:",
+                "- JUnit - https://junit.org/",
+                "- Hamcrest - http://hamcrest.org/JavaHamcrest/",
+                "- Apache Ant - https://ant.apache.org/",
+                "- Log4j - https://logging.apache.org/log4j/",
+                "- Plexus Utils - https://codehaus-plexus.github.io/plexus-utils/",
+                ""
+        );
     }
 
     private void onOK() {
@@ -147,7 +280,7 @@ public class HelpAboutDialog extends JDialog {
         copyright.setText(" (c) 2021 All rights reserved");
         topPanel.add(copyright, new GridConstraints(2, 0, 1, 2, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
         txt3rdPartySoftware = new JTextArea();
-        txt3rdPartySoftware.setText("The following 3rd party software are used:\nANTLR4 - https://www.antlr.org/\nJMonkeyEngine3 - https://github.com/jMonkeyEngine/jmonkeyengine\nMinie physics library by Stephen Gold - https://github.com/stephengold/Minie\nJME-Vehicles library by Stephen Gold - https://github.com/stephengold/jme-vehicles\nSocket.IO - https://github.com/socketio/socket.io\nZig - https://ziglang.org/\nJDK, InnoSetup, SQLite, FFMPEG, DotNet Framework \nJNI4Net - https://github.com/jni4net/jni4net/\nhttps://sketchfab.com/3d-models/killarney-raceway-e5e0e679b28b464b90adff7a37d9dfb3\nParticle Monkey - https://jmonkeystore.com/189b56af-a1be-4036-8ac7-2b62a94935ff\nCustomizeable Minimap - https://jmonkeystore.com/32ac86d0-3857-442f-853e-f78ce90f3b36\nSelect Object Outliner - https://jmonkeystore.com/5246c9ac-3f4c-4a5d-9fb0-470eb4026246\n\n");
+        txt3rdPartySoftware.setText("");
         topPanel.add(txt3rdPartySoftware, new GridConstraints(4, 0, 1, 2, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_WANT_GROW, null, new Dimension(250, 50), null, 0, false));
         webSite = new JLabel();
         webSite.setText("www.scenemax3d.com ");
