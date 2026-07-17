@@ -14,6 +14,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.UUID;
 
 public class MultiplayerServerBuilder {
 
@@ -122,16 +123,32 @@ public class MultiplayerServerBuilder {
     }
 
     private byte[] createConfigPayload(SceneMaxProject project) throws IOException {
+        ensureProjectGuid(project);
         ByteBuffer buffer = ByteBuffer.allocate(CONFIG_PAYLOAD_SIZE);
         buffer.order(ByteOrder.LITTLE_ENDIAN);
         buffer.put(new byte[]{'S', 'M', 'X', 'M', 'P', 'C', 'F', 'G'});
-        buffer.putShort((short) 2);
+        buffer.putShort((short) 3);
         buffer.putShort((short) 0);
         buffer.putInt(project.multiplayerServerPort <= 0 ? SceneMaxProject.DEFAULT_MULTIPLAYER_PORT : project.multiplayerServerPort);
         putFixedString(buffer, project.name, 128);
         putFixedString(buffer, project.path, 256);
-        buffer.put(passwordHash(project.multiplayerPassword));
+        buffer.put(passwordHashOrDisabled(project.multiplayerPassword));
+        putFixedString(buffer, project.projectGuid, 64);
         return buffer.array();
+    }
+
+    private void ensureProjectGuid(SceneMaxProject project) {
+        if (project.projectGuid == null || project.projectGuid.trim().isEmpty()) {
+            project.projectGuid = UUID.randomUUID().toString();
+            Util.saveProjectSettings(project);
+        }
+    }
+
+    private byte[] passwordHashOrDisabled(String password) throws IOException {
+        if (password == null || password.trim().isEmpty()) {
+            return new byte[32];
+        }
+        return passwordHash(password);
     }
 
     private byte[] passwordHash(String password) throws IOException {

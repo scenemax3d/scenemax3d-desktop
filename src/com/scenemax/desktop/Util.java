@@ -246,8 +246,19 @@ public class Util {
             p.multiplayerServerPort = o.optInt("multiplayerServerPort", SceneMaxProject.DEFAULT_MULTIPLAYER_PORT);
             p.multiplayerDeployOs = o.optString("multiplayerDeployOs", "Windows");
             p.multiplayerPassword = o.optString("multiplayerPassword", "");
+            p.projectGuid = o.optString("projectGuid", "");
+            if (p.projectGuid == null || p.projectGuid.trim().isEmpty()) {
+                p.projectGuid = UUID.randomUUID().toString();
+                o.put("projectGuid", p.projectGuid);
+            }
 
             projects.add(p);
+        }
+
+        try {
+            FileUtils.write(new File("projects/projects.json"), obj.toString(4), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            e.printStackTrace();
         }
 
         return projects;
@@ -329,6 +340,7 @@ public class Util {
         pr.put("path","projects/"+folderName);
         pr.put("selectedParent",defaultFolderName);
         pr.put("selectedNode","main");
+        pr.put("projectGuid", UUID.randomUUID().toString());
         arr.put(pr);
 
         obj.put("selectedProject",name);
@@ -413,6 +425,7 @@ public class Util {
                 obj.put("multiplayerServerPort", p.multiplayerServerPort <= 0 ? SceneMaxProject.DEFAULT_MULTIPLAYER_PORT : p.multiplayerServerPort);
                 obj.put("multiplayerDeployOs", safeProjectValue(p.multiplayerDeployOs).isEmpty() ? "Windows" : safeProjectValue(p.multiplayerDeployOs));
                 obj.put("multiplayerPassword", p.multiplayerPassword == null ? "" : p.multiplayerPassword);
+                obj.put("projectGuid", safeProjectValue(p.projectGuid).isEmpty() ? UUID.randomUUID().toString() : safeProjectValue(p.projectGuid));
 
                 try {
                     File f = new File("projects/projects.json");

@@ -1,15 +1,19 @@
 {
     "projects": [
         {
-            "path": "projects/fighting_game_project",
             "itchWindowsChannel": "windows",
-            "selectedNode": "tests",
             "itchGamePage": "https://adi-barda.itch.io/fighting-game-concept",
+            "multiplayerDeployOs": "Windows",
+            "itchMacChannel": "macos",
+            "itchLinuxChannel": "linux",
+            "path": "projects/fighting_game_project",
+            "multiplayerPassword": "",
+            "multiplayerServerIp": "127.0.0.1",
+            "selectedNode": "tests",
             "name": "fighting game project",
             "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game\\side_tests",
-            "itchMacChannel": "macos",
-            "itchLinuxChannel": "linux"
+            "multiplayerServerPort": 9001
         },
         {
             "path": "projects/default_project",

@@ -253,6 +253,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private HashMap<String, EntityInstBase> archInstances = new HashMap<>();
     private HashMap<String, EntityInstBase> effekseerInstances = new HashMap<>();
     private String projectName = null;
+    private String projectGuid = "";
     private DungeonCameraAppState dungeonCameraState = null;
     private FollowCameraAppState followCameraState = null;
     private FightingCameraAppState fightingCameraState = null;
@@ -10454,6 +10455,52 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     public void setProjectName(String projectName) {
         this.logger.info("setProjectName: "+projectName);
         this.projectName=projectName;
+    }
+
+    public void setProjectGuid(String projectGuid) {
+        this.projectGuid = projectGuid == null ? "" : projectGuid.trim();
+    }
+
+    public String getProjectGuidForNetwork() {
+        String configured = System.getProperty("scenemax.multiplayer.projectGuid");
+        if (configured != null && !configured.trim().isEmpty()) {
+            return configured.trim();
+        }
+        configured = System.getenv("SCENEMAX_MULTIPLAYER_PROJECT_GUID");
+        if (configured != null && !configured.trim().isEmpty()) {
+            return configured.trim();
+        }
+        if (projectGuid != null && !projectGuid.trim().isEmpty()) {
+            return projectGuid.trim();
+        }
+        return resolveProjectGuidFromProjectsFile();
+    }
+
+    private String resolveProjectGuidFromProjectsFile() {
+        if (projectName == null || projectName.trim().isEmpty()) {
+            return "";
+        }
+        File configFile = new File("projects/projects.json");
+        if (!configFile.isFile()) {
+            return "";
+        }
+        try {
+            String text = FileUtils.readFileToString(configFile, StandardCharsets.UTF_8);
+            JSONObject config = new JSONObject(text);
+            JSONArray projects = config.optJSONArray("projects");
+            if (projects == null) {
+                return "";
+            }
+            for (int i = 0; i < projects.length(); i++) {
+                JSONObject project = projects.optJSONObject(i);
+                if (project != null && projectName.equals(project.optString("name", ""))) {
+                    return project.optString("projectGuid", "").trim();
+                }
+            }
+        } catch (Exception ex) {
+            logger.log(Level.WARNING, "Failed to resolve SceneMax multiplayer project GUID.", ex);
+        }
+        return "";
     }
 
 

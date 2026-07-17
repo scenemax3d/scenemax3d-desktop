@@ -52,6 +52,7 @@ public class MultiplayerNetworkComponent {
     private String sessionName = "";
     private String activeSceneId = "main";
     private String playerName = "";
+    private String projectGuid = "";
     private float heartbeatTimer;
     private float correctionTimer;
 
@@ -74,6 +75,7 @@ public class MultiplayerNetworkComponent {
         String requestedSessionName = readSetting("scenemax.multiplayer.sessionName", "SCENEMAX_MULTIPLAYER_SESSION_NAME");
         boolean createSession = requestedSessionId == 0 || Boolean.parseBoolean(readSetting("scenemax.multiplayer.createSession", "SCENEMAX_MULTIPLAYER_CREATE_SESSION"));
         playerName = readSetting("scenemax.multiplayer.player", "SCENEMAX_MULTIPLAYER_PLAYER");
+        projectGuid = resolveProjectGuid();
         activeSceneId = normalizeSceneId(readSetting("scenemax.multiplayer.scene", "SCENEMAX_MULTIPLAYER_SCENE"));
         try {
             channel = DatagramChannel.open();
@@ -166,14 +168,23 @@ public class MultiplayerNetworkComponent {
     }
 
     private void sendLogin(String password, boolean createSession, long requestedSessionId, String requestedSessionName) {
-        ByteBuffer packet = packet(LOGIN_REQUEST, 293);
+        ByteBuffer packet = packet(LOGIN_REQUEST, 357);
         packet.put(sha256(password == null ? "" : password));
+        putFixedString(packet, projectGuid, 64);
         packet.put((byte) (createSession ? 1 : 0));
         packet.putInt((int) requestedSessionId);
         putFixedString(packet, requestedSessionName, 64);
         putFixedString(packet, activeSceneId, 128);
         putFixedString(packet, playerName, 64);
         send(packet);
+    }
+
+    private String resolveProjectGuid() {
+        String guid = readSetting("scenemax.multiplayer.projectGuid", "SCENEMAX_MULTIPLAYER_PROJECT_GUID");
+        if (guid != null && !guid.trim().isEmpty()) {
+            return guid.trim();
+        }
+        return app == null ? "" : app.getProjectGuidForNetwork();
     }
 
     private void sendCreateEntity(RegisteredEntity entity) {

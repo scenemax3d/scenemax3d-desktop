@@ -100,6 +100,10 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
         if(projectName != null && !projectName.isBlank()) {
             prg = "//$[project]=" + projectName + ";" + prg;
         }
+        String projectGuid = resolveProjectGuid(projectName);
+        if(projectGuid != null && !projectGuid.isBlank()) {
+            prg = "//$[project_guid]=" + projectGuid + ";" + prg;
+        }
         if(sourceScriptRelativePath!=null && !sourceScriptRelativePath.isBlank()) {
             prg = "//$[source_rel]=" + sourceScriptRelativePath + ";" + prg;
         }
@@ -128,6 +132,21 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             return scriptFolder.getParentFile().getParentFile().getName();
         }
         return null;
+    }
+
+    private String resolveProjectGuid(String projectName) {
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject == null) {
+            return "";
+        }
+        if (projectName != null && !projectName.isBlank() && !projectName.equals(activeProject.name)) {
+            return "";
+        }
+        if (activeProject.projectGuid == null || activeProject.projectGuid.trim().isEmpty()) {
+            activeProject.projectGuid = java.util.UUID.randomUUID().toString();
+            Util.saveProjectSettings(activeProject);
+        }
+        return activeProject.projectGuid.trim();
     }
 
 

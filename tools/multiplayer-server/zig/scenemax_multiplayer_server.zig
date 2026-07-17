@@ -32,6 +32,7 @@ const ServerConfig = struct {
     game_name: [128]u8 = [_]u8{0} ** 128,
     project_path: [256]u8 = [_]u8{0} ** 256,
     password_hash: [32]u8 = [_]u8{0} ** 32,
+    project_guid: [64]u8 = [_]u8{0} ** 64,
 };
 
 const Session = struct {
@@ -104,6 +105,10 @@ pub fn main(init: std.process.Init) !void {
                     continue;
                 }
                 const login = decodeLoginRequest(payload) orelse continue;
+                if (!verifyProjectGuid(login.project_guid, config.project_guid)) {
+                    try sendReject(sock, io, message.from);
+                    continue;
+                }
                 const session = resolveSession(&sessions, &next_session_id, login.requested_session_id, login.create_session, login.session_name);
                 const assigned = next_client_id;
                 next_client_id +%= 1;
@@ -185,6 +190,7 @@ fn readConfig() ServerConfig {
     @memcpy(&config.game_name, payload[16..144]);
     @memcpy(&config.project_path, payload[144..400]);
     @memcpy(&config.password_hash, payload[400..432]);
+    @memcpy(&config.project_guid, payload[432..496]);
     return config;
 }
 
@@ -201,7 +207,13 @@ fn isZeroHash(hash: [32]u8) bool {
     return true;
 }
 
+fn verifyProjectGuid(actual_guid: [64]u8, expected_guid: [64]u8) bool {
+    if (isEmpty(&expected_guid)) return true;
+    return std.mem.eql(u8, &actual_guid, &expected_guid);
+}
+
 const LoginRequest = struct {
+    project_guid: [64]u8 = [_]u8{0} ** 64,
     create_session: bool = false,
     requested_session_id: u32 = 0,
     session_name: [64]u8 = [_]u8{0} ** 64,
@@ -210,13 +222,14 @@ const LoginRequest = struct {
 };
 
 fn decodeLoginRequest(payload: []const u8) ?LoginRequest {
-    if (payload.len < 293) return null;
+    if (payload.len < 357) return null;
     var login = LoginRequest{};
-    login.create_session = payload[32] != 0;
-    login.requested_session_id = std.mem.readInt(u32, payload[33..][0..4], .little);
-    copyFixed(&login.session_name, payload, 37);
-    copyFixed(&login.scene_id, payload, 101);
-    copyFixed(&login.player_name, payload, 229);
+    copyFixed(&login.project_guid, payload, 32);
+    login.create_session = payload[96] != 0;
+    login.requested_session_id = std.mem.readInt(u32, payload[97..][0..4], .little);
+    copyFixed(&login.session_name, payload, 101);
+    copyFixed(&login.scene_id, payload, 165);
+    copyFixed(&login.player_name, payload, 293);
     if (isEmpty(&login.scene_id)) {
         writeAscii(&login.scene_id, "main");
     }

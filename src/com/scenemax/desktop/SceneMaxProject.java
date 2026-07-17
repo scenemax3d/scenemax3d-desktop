@@ -17,6 +17,7 @@ public class SceneMaxProject {
     public int multiplayerServerPort = DEFAULT_MULTIPLAYER_PORT;
     public String multiplayerDeployOs = "Windows";
     public String multiplayerPassword = "";
+    public String projectGuid = "";
     String name;
     String path;
 
@@ -41,6 +42,8 @@ public class SceneMaxProject {
         obj.put("multiplayer_server_ip", this.multiplayerServerIp == null ? "" : this.multiplayerServerIp);
         obj.put("multiplayer_server_port", this.multiplayerServerPort <= 0 ? DEFAULT_MULTIPLAYER_PORT : this.multiplayerServerPort);
         obj.put("multiplayer_deploy_os", this.multiplayerDeployOs == null ? "Windows" : this.multiplayerDeployOs);
+        obj.put("project_guid", this.projectGuid == null ? "" : this.projectGuid);
+        obj.put("projectGuid", this.projectGuid == null ? "" : this.projectGuid);
 
         return obj;
     }

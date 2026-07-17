@@ -477,6 +477,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         File scriptFolderCopy = copyAndApplyMacro(scriptFolder);
         FileUtils.moveDirectory(scriptFolderCopy, new File(deployFolder, "running")); // rename
+        injectProjectGuidMetadata(new File(deployFolder, "running"));
         logPackage("Copied packaged scripts into deploy/running.");
         try {
             javaExtensionBuildResult = JavaExtensionBuildTool.buildExtensions(
@@ -617,6 +618,37 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         String code = FileUtils.readFileToString(file, StandardCharsets.UTF_8);
         ApplyMacroResults mr = macroFilter.apply(code);
         FileUtils.write(file, mr.finalPrg, StandardCharsets.UTF_8);
+    }
+
+    private void injectProjectGuidMetadata(File runningFolder) throws IOException {
+        if (runningFolder == null) {
+            return;
+        }
+        File mainFile = new File(runningFolder, "main");
+        if (!mainFile.isFile()) {
+            return;
+        }
+        String guid = resolveActiveProjectGuid();
+        if (guid.isBlank()) {
+            return;
+        }
+        String code = FileUtils.readFileToString(mainFile, StandardCharsets.UTF_8);
+        if (code.contains("//$[project_guid]=")) {
+            return;
+        }
+        FileUtils.write(mainFile, "//$[project_guid]=" + guid + ";" + code, StandardCharsets.UTF_8);
+    }
+
+    private String resolveActiveProjectGuid() {
+        SceneMaxProject project = Util.getActiveProject();
+        if (project == null) {
+            return "";
+        }
+        if (project.projectGuid == null || project.projectGuid.trim().isEmpty()) {
+            project.projectGuid = java.util.UUID.randomUUID().toString();
+            Util.saveProjectSettings(project);
+        }
+        return project.projectGuid == null ? "" : project.projectGuid.trim();
     }
 
     private void prepareTargetPackages(JSONObject resources) throws IOException {
