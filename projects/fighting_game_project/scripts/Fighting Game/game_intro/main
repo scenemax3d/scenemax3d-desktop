@@ -1,4 +1,4 @@
-intro.draw intro_page
+intro.draw intro_page: stretch
 audio.play "drums_music1" loop
 add "game_intro.code", "game_intro_ui_fx.code" code
 intro.draw Clear

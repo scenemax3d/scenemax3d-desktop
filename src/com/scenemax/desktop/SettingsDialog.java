@@ -62,6 +62,8 @@ public class SettingsDialog extends JDialog {
     private JButton btnStartGemma;
     private JButton btnInstallVcRuntime;
     private JLabel lblGemmaInstallInfo;
+    private JTextField txtButlerPath;
+    private JLabel lblButlerStatus;
 
     public SettingsDialog() {
         this(null);
@@ -91,8 +93,11 @@ public class SettingsDialog extends JDialog {
         txtGemmaTimeout = new JTextField(defaultValue(AppDB.getInstance().getParam("local_gemma_timeout_seconds"), String.valueOf(LocalGemmaBridgeConfig.DEFAULT_TIMEOUT_SECONDS)));
         cboGemmaVariant = new JComboBox<>(GemmaModelVariant.values());
         cboGemmaVariant.setSelectedItem(resolveVariant(defaultValue(AppDB.getInstance().getParam("local_gemma_model"), LocalGemmaBridgeConfig.DEFAULT_MODEL)));
+        txtButlerPath = new JTextField(Util.getItchButlerPath(Util.getActiveProject()));
+        tabbedPane1.addTab("Butler", createButlerPanel());
         tabbedPane1.addTab("MCP", createMcpPanel());
         tabbedPane1.addTab("Local Gemma", createGemmaPanel());
+        refreshButlerPanelState();
         refreshMcpPanelState();
         refreshGemmaPanelState();
 
@@ -199,6 +204,7 @@ public class SettingsDialog extends JDialog {
         }
         AppDB.getInstance().setParam("mcp_claude_cli_path", normalizeOptionalPath(txtClaudeCliPath.getText()));
         AppDB.getInstance().setParam("mcp_codex_cli_path", normalizeOptionalPath(txtCodexCliPath.getText()));
+        Util.setItchButlerPath(normalizeOptionalPath(txtButlerPath.getText()));
         try {
             updateLocalGemmaSettings();
         } catch (NumberFormatException ex) {
@@ -377,6 +383,64 @@ public class SettingsDialog extends JDialog {
         return panel;
     }
 
+    private JPanel createButlerPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(6, 6, 6, 6);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.gridwidth = 2;
+        panel.add(new JLabel("Butler Executable:"), gbc);
+
+        gbc.gridy = 1;
+        gbc.gridwidth = 1;
+        gbc.weightx = 1;
+        panel.add(txtButlerPath, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 0;
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        JButton btnDetectButler = new JButton("Detect");
+        btnDetectButler.addActionListener(e -> detectButler());
+        JButton btnBrowseButler = new JButton("Browse...");
+        btnBrowseButler.addActionListener(e -> browseForButler());
+        JButton btnButlerLogin = new JButton("Butler Login...");
+        btnButlerLogin.addActionListener(e -> startButlerLogin());
+        actions.add(btnDetectButler);
+        actions.add(btnBrowseButler);
+        actions.add(btnButlerLogin);
+        panel.add(actions, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.gridwidth = 2;
+        lblButlerStatus = new JLabel("Status unavailable");
+        panel.add(lblButlerStatus, gbc);
+
+        gbc.gridy = 3;
+        JTextArea hint = new JTextArea(
+                "Butler is itch.io's uploader. Configure it once for this SceneMax installation.\n" +
+                "Browse can select either butler.exe or a downloaded butler zip. Project game pages, channels, and API keys stay in Project Settings."
+        );
+        hint.setEditable(false);
+        hint.setLineWrap(true);
+        hint.setWrapStyleWord(true);
+        hint.setOpaque(false);
+        hint.setFocusable(false);
+        hint.setBorder(null);
+        panel.add(hint, gbc);
+
+        gbc.gridy = 4;
+        gbc.weighty = 1;
+        gbc.fill = GridBagConstraints.BOTH;
+        panel.add(new JPanel(), gbc);
+
+        return panel;
+    }
+
     private JPanel createGemmaPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
@@ -481,6 +545,25 @@ public class SettingsDialog extends JDialog {
         return panel;
     }
 
+    private void refreshButlerPanelState() {
+        if (lblButlerStatus == null) {
+            return;
+        }
+
+        String configuredPath = normalizeOptionalPath(txtButlerPath.getText());
+        String executable;
+        try {
+            executable = ItchIoHelper.resolveButlerExecutablePath(configuredPath);
+        } catch (IOException ex) {
+            lblButlerStatus.setText("Not ready: " + ex.getMessage());
+            return;
+        }
+
+        String source = "butler".equalsIgnoreCase(executable) ? "PATH" : describeButlerSource(executable);
+        String login = ItchIoHelper.hasLocalCredentials() ? "logged in" : "not logged in";
+        lblButlerStatus.setText("Resolved: " + executable + " | " + source + " | " + login);
+    }
+
     private void refreshMcpPanelState() {
         if (lblMcpEndpoint == null) {
             return;
@@ -538,6 +621,107 @@ public class SettingsDialog extends JDialog {
             }
         }
         lblGemmaStatus.setText(state);
+    }
+
+    private void browseForButler() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Choose butler executable or downloaded zip");
+        String currentPath = normalizeOptionalPath(txtButlerPath.getText());
+        if (currentPath.length() > 0) {
+            chooser.setSelectedFile(new File(currentPath));
+        }
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            File selectedFile = chooser.getSelectedFile();
+            if (selectedFile.getName().toLowerCase(Locale.ROOT).endsWith(".zip")) {
+                installButlerFromZip(selectedFile);
+            } else {
+                txtButlerPath.setText(selectedFile.getAbsolutePath());
+                refreshButlerPanelState();
+            }
+        }
+    }
+
+    private void installButlerFromZip(File zipFile) {
+        try {
+            String butlerPath = ItchIoHelper.installButlerFromZip(zipFile);
+            txtButlerPath.setText(butlerPath);
+            refreshButlerPanelState();
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Butler was extracted into SceneMax's tools folder and the executable path is ready to save:\n" + butlerPath,
+                    "Butler Installed",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    ex.getMessage(),
+                    "Butler Install Failed",
+                    JOptionPane.ERROR_MESSAGE
+            );
+        }
+    }
+
+    private void detectButler() {
+        String bundledButler = ItchIoHelper.findBundledButlerExecutable();
+        if (bundledButler == null || bundledButler.trim().length() == 0) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "SceneMax could not detect butler in its local tools folder or in the itch desktop app installation.\n\n" + ItchIoHelper.buildButlerInstallInstructions(),
+                    "Butler Not Found",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+            refreshButlerPanelState();
+            return;
+        }
+
+        txtButlerPath.setText(bundledButler);
+        refreshButlerPanelState();
+        JOptionPane.showMessageDialog(
+                this,
+                buildButlerDetectionMessage(bundledButler),
+                "Butler Detected",
+                JOptionPane.INFORMATION_MESSAGE
+        );
+    }
+
+    private String buildButlerDetectionMessage(String butlerPath) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("SceneMax found butler successfully.\n\n");
+        sb.append("Location: ").append(butlerPath).append("\n");
+        sb.append("Source: ").append(describeButlerSource(butlerPath)).append("\n\n");
+        if (ItchIoHelper.hasLocalCredentials()) {
+            sb.append("Login status: A previous butler login session was found on this machine.");
+        } else {
+            sb.append("Login status: No previous butler login session was found yet.\n");
+            sb.append("You can click \"Butler Login...\" to sign in now, or paste a project API key in Project Settings.");
+        }
+        return sb.toString();
+    }
+
+    private String describeButlerSource(String butlerPath) {
+        String normalizedPath = butlerPath == null ? "" : butlerPath.toLowerCase(Locale.ROOT);
+        String toolsPath = new File(Util.getWorkingDir(), "tools\\butler").getAbsolutePath().toLowerCase(Locale.ROOT);
+        if (normalizedPath.startsWith(toolsPath)) {
+            return "SceneMax tools folder";
+        }
+        if (normalizedPath.contains("\\itch\\broth\\butler\\")) {
+            return "itch desktop app installation";
+        }
+        return "custom location";
+    }
+
+    private void startButlerLogin() {
+        String usedButlerPath = ItchIoHelper.promptAndRunButlerLogin(this, normalizeOptionalPath(txtButlerPath.getText()));
+        if (usedButlerPath == null) {
+            refreshButlerPanelState();
+            return;
+        }
+
+        if (!"butler".equalsIgnoreCase(usedButlerPath)) {
+            txtButlerPath.setText(usedButlerPath);
+        }
+        refreshButlerPanelState();
     }
 
     private String resolveCurrentEndpoint() {

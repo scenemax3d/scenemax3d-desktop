@@ -446,7 +446,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
                 return;
             }
 
-            butlerPath = valueOrBlank(activeProject.itchButlerPath);
+            butlerPath = Util.getItchButlerPath(activeProject);
             itchApiKey = Util.getProjectItchApiKey(activeProject);
             if (itchApiKey.length() == 0 && !ItchIoHelper.hasLocalCredentials()) {
                 int loginChoice = JOptionPane.showConfirmDialog(
@@ -466,7 +466,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
                     JOptionPane.showMessageDialog(
                             this,
                             "Butler login did not complete, so SceneMax cannot upload to itch.io yet.\r\n\r\n" +
-                                    "You can try again, or open File > Projects > Project Settings... to paste an API key instead.",
+                                    "You can try again in File > Settings > Butler, or open File > Projects > Project Settings... to paste an API key instead.",
                             "Package Error",
                             JOptionPane.INFORMATION_MESSAGE
                     );
@@ -475,10 +475,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
 
                 if (!"butler".equalsIgnoreCase(usedButlerPath)) {
                     butlerPath = usedButlerPath;
-                    if (!usedButlerPath.equals(valueOrBlank(activeProject.itchButlerPath))) {
-                        activeProject.itchButlerPath = usedButlerPath;
-                        Util.saveProjectSettings(activeProject);
-                    }
+                    Util.setItchButlerPath(usedButlerPath);
                 }
             }
         }
