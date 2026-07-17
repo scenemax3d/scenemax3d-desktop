@@ -16,6 +16,7 @@ const snapshot_action_record_size = 8 + active_action_command_size;
 const max_active_actions = 4;
 const snapshot_entity_size = 228 + spawn_command_size;
 const active_action_grace_ms = 1000;
+const verbose_packet_logs = false;
 
 const PacketType = enum(u8) {
     login_request = 1,
@@ -108,7 +109,10 @@ pub fn main(init: std.process.Init) !void {
     var buffer: [max_packet_size]u8 = undefined;
 
     while (true) {
-        const message = try sock.receive(io, &buffer);
+        const message = sock.receive(io, &buffer) catch |err| {
+            logUdpError("receive", err, null);
+            continue;
+        };
         const received = message.data.len;
         if (received < 8) continue;
 
@@ -151,12 +155,6 @@ pub fn main(init: std.process.Init) !void {
                     .address = message.from,
                     .last_seen_ms = now,
                 };
-                std.debug.print("[SceneMax MP] login accepted client={d} session={d} scene=\"{s}\" player=\"{s}\"\n", .{
-                    assigned,
-                    session.id,
-                    fixedText(&login.scene_id),
-                    fixedText(&login.player_name),
-                });
                 try sendLoginAccepted(sock, io, message.from, assigned, session.id, session.name);
                 try sendSnapshot(sock, io, message.from, &entities, session.id, login.scene_id, now);
             },
@@ -173,11 +171,13 @@ pub fn main(init: std.process.Init) !void {
                     const old_scene_id = client.scene_id;
                     zero(&client.scene_id);
                     copyFixed(&client.scene_id, payload, 0);
-                    std.debug.print("[SceneMax MP] join scene client={d} session={d} scene=\"{s}\"\n", .{
-                        client.id,
-                        client.session_id,
-                        fixedText(&client.scene_id),
-                    });
+                    if (verbose_packet_logs) {
+                        std.debug.print("[SceneMax MP] join scene client={d} session={d} scene=\"{s}\"\n", .{
+                            client.id,
+                            client.session_id,
+                            fixedText(&client.scene_id),
+                        });
+                    }
                     try destroyClientEntities(sock, io, &clients, &entities, client.id, client.session_id, old_scene_id);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
                 }
@@ -196,14 +196,16 @@ pub fn main(init: std.process.Init) !void {
                 if (next_entity_id == 0) next_entity_id = 1;
                 const slot = entity_id % max_entities;
                 entities[slot] = decodeEntityCreate(payload, entity_id, client.*);
-                std.debug.print("[SceneMax MP] create entity client={d} entity={d} session={d} scene=\"{s}\" archetype=\"{s}\" spawn=\"{s}\"\n", .{
-                    client.id,
-                    entity_id,
-                    client.session_id,
-                    fixedText(&client.scene_id),
-                    fixedText(&entities[slot].archetype),
-                    fixedText(&entities[slot].spawn_command),
-                });
+                if (verbose_packet_logs) {
+                    std.debug.print("[SceneMax MP] create entity client={d} entity={d} session={d} scene=\"{s}\" archetype=\"{s}\" spawn=\"{s}\"\n", .{
+                        client.id,
+                        entity_id,
+                        client.session_id,
+                        fixedText(&client.scene_id),
+                        fixedText(&entities[slot].archetype),
+                        fixedText(&entities[slot].spawn_command),
+                    });
+                }
                 try sendEntityAccepted(sock, io, message.from, client_id, entity_id, entities[slot].client_create_id);
                 try dispatchEntityCreated(sock, io, &clients, client_id, entity_id, payload);
             },
@@ -212,7 +214,9 @@ pub fn main(init: std.process.Init) !void {
                 if (!isOwnedActiveEntity(&entities, client.id, client.session_id, client.scene_id, payload)) {
                     continue;
                 }
-                logRelayPacket(packet_type, client_id, payload);
+                if (verbose_packet_logs) {
+                    logRelayPacket(packet_type, client_id, payload);
+                }
                 if (packet_type == .transform_correction) {
                     updateEntityTransform(&entities, payload);
                 }
@@ -233,24 +237,30 @@ pub fn main(init: std.process.Init) !void {
                 if (payload.len < 4) continue;
                 const entity_id = std.mem.readInt(u32, payload[0..][0..4], .little);
                 if (destroyOwnedEntity(&entities, client.id, client.session_id, client.scene_id, entity_id)) {
-                    std.debug.print("[SceneMax MP] destroy entity client={d} entity={d} session={d} scene=\"{s}\"\n", .{
-                        client.id,
-                        entity_id,
-                        client.session_id,
-                        fixedText(&client.scene_id),
-                    });
+                    if (verbose_packet_logs) {
+                        std.debug.print("[SceneMax MP] destroy entity client={d} entity={d} session={d} scene=\"{s}\"\n", .{
+                            client.id,
+                            entity_id,
+                            client.session_id,
+                            fixedText(&client.scene_id),
+                        });
+                    }
                     try dispatchEntityDestroyed(sock, io, &clients, client.id, client.session_id, client.scene_id, entity_id);
                 } else {
-                    std.debug.print("[SceneMax MP] destroy ignored client={d} entity={d}\n", .{ client.id, entity_id });
+                    if (verbose_packet_logs) {
+                        std.debug.print("[SceneMax MP] destroy ignored client={d} entity={d}\n", .{ client.id, entity_id });
+                    }
                 }
             },
             .disconnect => {
                 if (findClient(&clients, client_id)) |client| {
-                    std.debug.print("[SceneMax MP] disconnect client={d} session={d} scene=\"{s}\"\n", .{
-                        client.id,
-                        client.session_id,
-                        fixedText(&client.scene_id),
-                    });
+                    if (verbose_packet_logs) {
+                        std.debug.print("[SceneMax MP] disconnect client={d} session={d} scene=\"{s}\"\n", .{
+                            client.id,
+                            client.session_id,
+                            fixedText(&client.scene_id),
+                        });
+                    }
                     try destroyClientEntities(sock, io, &clients, &entities, client.id, client.session_id, client.scene_id);
                     client.active = false;
                 }
@@ -445,13 +455,15 @@ fn storeActiveAction(entity: *Entity, payload: []const u8, now: i64) void {
         .duration_ms = duration_ms,
     };
     copyFixed(&action.command, payload, 12);
-    std.debug.print("[SceneMax MP] active action start entity={d} slot={d} seq={d} durationMs={d} command=\"{s}\"\n", .{
-        entity.network_id,
-        slot,
-        sequence,
-        duration_ms,
-        fixedText(&action.command),
-    });
+    if (verbose_packet_logs) {
+        std.debug.print("[SceneMax MP] active action start entity={d} slot={d} seq={d} durationMs={d} command=\"{s}\"\n", .{
+            entity.network_id,
+            slot,
+            sequence,
+            duration_ms,
+            fixedText(&action.command),
+        });
+    }
 }
 
 fn clearActiveAction(entity: *Entity, payload: []const u8) void {
@@ -461,11 +473,13 @@ fn clearActiveAction(entity: *Entity, payload: []const u8) void {
     for (&entity.active_actions) |*action| {
         if (action.active and action.slot == slot and action.sequence == sequence) {
             action.active = false;
-            std.debug.print("[SceneMax MP] active action end entity={d} slot={d} seq={d}\n", .{
-                entity.network_id,
-                slot,
-                sequence,
-            });
+            if (verbose_packet_logs) {
+                std.debug.print("[SceneMax MP] active action end entity={d} slot={d} seq={d}\n", .{
+                    entity.network_id,
+                    slot,
+                    sequence,
+                });
+            }
             return;
         }
     }
@@ -568,10 +582,27 @@ fn readF32(bytes: []const u8) f32 {
     return @bitCast(std.mem.readInt(u32, bytes[0..][0..4], .little));
 }
 
+fn sendUdp(sock: net.Socket, io: std.Io, address: net.IpAddress, bytes: []const u8) void {
+    sock.send(io, &address, bytes) catch |err| {
+        logUdpError("send", err, address);
+    };
+}
+
+fn logUdpError(operation: []const u8, err: anyerror, address: ?net.IpAddress) void {
+    if (err == error.PortUnreachable) {
+        return;
+    }
+    if (address) |target| {
+        std.debug.print("[SceneMax MP] udp {s} ignored error={any} to={any}\n", .{ operation, err, target });
+    } else {
+        std.debug.print("[SceneMax MP] udp {s} ignored error={any}\n", .{ operation, err });
+    }
+}
+
 fn sendReject(sock: net.Socket, io: std.Io, address: net.IpAddress) !void {
     var packet: [8]u8 = undefined;
     writeHeader(packet[0..], .login_rejected, 0);
-    try sock.send(io, &address, &packet);
+    sendUdp(sock, io, address, &packet);
 }
 
 fn sendLoginAccepted(sock: net.Socket, io: std.Io, address: net.IpAddress, client_id: u16, session_id: u32, session_name: [64]u8) !void {
@@ -580,7 +611,7 @@ fn sendLoginAccepted(sock: net.Socket, io: std.Io, address: net.IpAddress, clien
     std.mem.writeInt(u16, packet[8..][0..2], client_id, .little);
     std.mem.writeInt(u32, packet[10..][0..4], session_id, .little);
     @memcpy(packet[14..78], &session_name);
-    try sock.send(io, &address, &packet);
+    sendUdp(sock, io, address, &packet);
 }
 
 fn sendEntityAccepted(sock: net.Socket, io: std.Io, address: net.IpAddress, client_id: u16, entity_id: u32, client_create_id: u32) !void {
@@ -588,7 +619,7 @@ fn sendEntityAccepted(sock: net.Socket, io: std.Io, address: net.IpAddress, clie
     writeHeader(packet[0..], .create_entity_accepted, client_id);
     std.mem.writeInt(u32, packet[8..][0..4], entity_id, .little);
     std.mem.writeInt(u32, packet[12..][0..4], client_create_id, .little);
-    try sock.send(io, &address, &packet);
+    sendUdp(sock, io, address, &packet);
 }
 
 fn sendSnapshot(sock: net.Socket, io: std.Io, address: net.IpAddress, entities: *[max_entities]Entity, session_id: u32, scene_id: [128]u8, now: i64) !void {
@@ -606,7 +637,7 @@ fn sendSnapshot(sock: net.Socket, io: std.Io, address: net.IpAddress, entities: 
         if (required > packet.len - 10) continue;
         if (cursor + required > packet.len) {
             std.mem.writeInt(u16, packet[8..][0..2], count, .little);
-            try sock.send(io, &address, packet[0..cursor]);
+            sendUdp(sock, io, address, packet[0..cursor]);
             packet_count += 1;
             writeHeader(packet[0..], .snapshot, 0);
             cursor = 10;
@@ -640,15 +671,17 @@ fn sendSnapshot(sock: net.Socket, io: std.Io, address: net.IpAddress, entities: 
     }
     if (count > 0 or total_count == 0) {
         std.mem.writeInt(u16, packet[8..][0..2], count, .little);
-        try sock.send(io, &address, packet[0..cursor]);
+        sendUdp(sock, io, address, packet[0..cursor]);
         packet_count += 1;
     }
-    std.debug.print("[SceneMax MP] snapshot session={d} scene=\"{s}\" entities={d} packets={d}\n", .{
-        session_id,
-        fixedText(&scene_id),
-        total_count,
-        packet_count,
-    });
+    if (verbose_packet_logs) {
+        std.debug.print("[SceneMax MP] snapshot session={d} scene=\"{s}\" entities={d} packets={d}\n", .{
+            session_id,
+            fixedText(&scene_id),
+            total_count,
+            packet_count,
+        });
+    }
 }
 
 fn activeActionCount(entity: Entity, now: i64) usize {
@@ -703,10 +736,12 @@ fn dispatchEntityCreated(sock: net.Socket, io: std.Io, clients: *[max_clients]Cl
     for (clients) |client| {
         if (!client.active or client.id == sender_client_id) continue;
         if (client.session_id != sender.session_id or !sameScene(client.scene_id, sender.scene_id)) continue;
-        try sock.send(io, &client.address, packet[0 .. 12 + payload_len]);
+        sendUdp(sock, io, client.address, packet[0 .. 12 + payload_len]);
         sent += 1;
     }
-    std.debug.print("[SceneMax MP] dispatched create entity={d} from={d} recipients={d}\n", .{ entity_id, sender_client_id, sent });
+    if (verbose_packet_logs) {
+        std.debug.print("[SceneMax MP] dispatched create entity={d} from={d} recipients={d}\n", .{ entity_id, sender_client_id, sent });
+    }
 }
 
 fn dispatchEntityDestroyed(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, sender_client_id: u16, session_id: u32, scene_id: [128]u8, entity_id: u32) !void {
@@ -717,10 +752,12 @@ fn dispatchEntityDestroyed(sock: net.Socket, io: std.Io, clients: *[max_clients]
     for (clients) |client| {
         if (!client.active or client.id == sender_client_id) continue;
         if (client.session_id != session_id or !sameScene(client.scene_id, scene_id)) continue;
-        try sock.send(io, &client.address, packet[0..]);
+        sendUdp(sock, io, client.address, packet[0..]);
         sent += 1;
     }
-    std.debug.print("[SceneMax MP] dispatched destroy entity={d} from={d} recipients={d}\n", .{ entity_id, sender_client_id, sent });
+    if (verbose_packet_logs) {
+        std.debug.print("[SceneMax MP] dispatched destroy entity={d} from={d} recipients={d}\n", .{ entity_id, sender_client_id, sent });
+    }
 }
 
 fn dispatch(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, sender_client_id: u16, packet_type: PacketType, client_id: u16, payload: []const u8) !void {
@@ -733,10 +770,10 @@ fn dispatch(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, sender_
     for (clients) |client| {
         if (!client.active or client.id == sender_client_id) continue;
         if (client.session_id != sender.session_id or !sameScene(client.scene_id, sender.scene_id)) continue;
-        try sock.send(io, &client.address, packet[0 .. 8 + payload_len]);
+        sendUdp(sock, io, client.address, packet[0 .. 8 + payload_len]);
         sent += 1;
     }
-    if (packet_type != .transform_correction) {
+    if (verbose_packet_logs and packet_type != .transform_correction) {
         std.debug.print("[SceneMax MP] dispatched {s} from={d} recipients={d} bytes={d}\n", .{
             packetTypeName(packet_type),
             sender_client_id,
