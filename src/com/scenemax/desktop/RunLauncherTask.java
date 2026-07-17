@@ -9,6 +9,7 @@ import org.apache.commons.io.FileUtils;
 
 import javax.swing.*;
 import java.io.*;
+import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -350,8 +351,9 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
                 command.add("-d"+jvmArch);
             }
 
-            command.add("-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005");
+            command.add("-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=" + nextAvailableDebugPort());
             command.add("-Dname=SceneMax3dProjector");
+            addLocalMultiplayerProperties(command);
             command.add("-jar");
             command.add(launcherName);
 
@@ -374,6 +376,60 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             e.printStackTrace();
         }
 
+    }
+
+    private int nextAvailableDebugPort() {
+        for (int port = 5005; port < 5025; port++) {
+            try (ServerSocket ignored = new ServerSocket(port)) {
+                return port;
+            } catch (IOException ignored) {
+            }
+        }
+        return 5005;
+    }
+
+    private void addLocalMultiplayerProperties(List<String> command) {
+        if (!programUsesMultiplayer()) {
+            return;
+        }
+
+        SceneMaxProject project = Util.getActiveProject();
+        String serverIp = project != null && project.multiplayerServerIp != null && !project.multiplayerServerIp.isBlank()
+                ? project.multiplayerServerIp.trim()
+                : "127.0.0.1";
+        int serverPort = project != null && project.multiplayerServerPort > 0
+                ? project.multiplayerServerPort
+                : 9001;
+        String sessionName = project != null && project.name != null && !project.name.isBlank()
+                ? project.name.trim()
+                : "local";
+
+        command.add("-Dscenemax.multiplayer.server=" + serverIp);
+        command.add("-Dscenemax.multiplayer.port=" + serverPort);
+        if (project != null && project.multiplayerPassword != null && !project.multiplayerPassword.isBlank()) {
+            command.add("-Dscenemax.multiplayer.password=" + project.multiplayerPassword);
+        }
+        command.add("-Dscenemax.multiplayer.sessionId=1000");
+        command.add("-Dscenemax.multiplayer.createSession=false");
+        command.add("-Dscenemax.multiplayer.sessionName=" + sessionName);
+        command.add("-Dscenemax.multiplayer.scene=main");
+        command.add("-Dscenemax.multiplayer.player=" + localPlayerName());
+    }
+
+    private boolean programUsesMultiplayer() {
+        if (prg == null || prg.isBlank()) {
+            return false;
+        }
+        return Pattern.compile("\\bmultiplayer\\b", Pattern.CASE_INSENSITIVE).matcher(prg).find();
+    }
+
+    private String localPlayerName() {
+        String userName = System.getProperty("user.name", "player");
+        if (userName == null || userName.trim().isEmpty()) {
+            userName = "player";
+        }
+        userName = userName.trim().replaceAll("\\s+", "_");
+        return userName + "_" + (System.currentTimeMillis() % 100000);
     }
 
     private void cleanScriptFiles() {

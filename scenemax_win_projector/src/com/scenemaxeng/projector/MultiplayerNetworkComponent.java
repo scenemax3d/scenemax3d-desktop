@@ -14,7 +14,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.logging.Level;
@@ -133,6 +135,21 @@ public class MultiplayerNetworkComponent {
         packet.putInt(networkEntityId);
         packet.put(commandBytes, 0, Math.min(commandBytes.length, MAX_PACKET_SIZE - 12));
         send(packet);
+    }
+
+    public void dispatchCommand(String runtimeName, String commandText) {
+        if (runtimeName == null || commandText == null || commandText.trim().isEmpty()) {
+            return;
+        }
+        RegisteredEntity entity = localEntities.get(runtimeName);
+        if (entity == null) {
+            return;
+        }
+        if (entity.networkEntityId == 0) {
+            entity.pendingCommands.add(commandText);
+            return;
+        }
+        sendCommand(entity.networkEntityId, commandText);
     }
 
     public void close() {
@@ -259,6 +276,7 @@ public class MultiplayerNetworkComponent {
                 RegisteredEntity entity = runtimeName == null ? null : localEntities.get(runtimeName);
                 if (entity != null) {
                     entity.networkEntityId = networkId;
+                    flushPendingCommands(entity);
                 }
             } else if (payload.remaining() >= 128) {
                 String archetype = readFixedString(payload, 64);
@@ -281,6 +299,16 @@ public class MultiplayerNetworkComponent {
         } else if (type == SNAPSHOT) {
             handleSnapshot(payload);
         }
+    }
+
+    private void flushPendingCommands(RegisteredEntity entity) {
+        if (entity == null || entity.networkEntityId == 0 || entity.pendingCommands.isEmpty()) {
+            return;
+        }
+        for (String command : new ArrayList<>(entity.pendingCommands)) {
+            sendCommand(entity.networkEntityId, command);
+        }
+        entity.pendingCommands.clear();
     }
 
     private void handleSnapshot(ByteBuffer payload) {
@@ -534,6 +562,7 @@ public class MultiplayerNetworkComponent {
         VariableDef varDef;
         String archetypeName;
         int networkEntityId;
+        List<String> pendingCommands = new ArrayList<>();
     }
 
     private static class RemoteEntity {

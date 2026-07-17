@@ -12,7 +12,9 @@ public class RotateToController extends SceneMaxBaseController {
     private float passedTime = 0;
     private float targetTime=0;
     private float targetVal=0;
+    private float requestedTargetVal=0;
     private MotionEase.MotionEaseSpec motionEase;
+    private boolean multiplayerCommandDispatched = false;
 
 
     public RotateToController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope, ActionCommandRotateTo cmd) {
@@ -45,6 +47,7 @@ public class RotateToController extends SceneMaxBaseController {
 
             findTargetVar();
             targetVal = this.cmd.rotateValExpr==null?1.0f:((Double)new ActionLogicalExpressionVm(this.cmd.rotateValExpr,this.scope).evaluate()).floatValue();
+            requestedTargetVal = targetVal;
             targetTime = this.cmd.speedExpr==null?1.0f:((Double)new ActionLogicalExpressionVm(this.cmd.speedExpr,this.scope).evaluate()).floatValue();
 
             float curr=0;
@@ -73,6 +76,7 @@ public class RotateToController extends SceneMaxBaseController {
 
             targetCalculated = true;
             motionEase = MotionEase.fromCommand(cmd, scope);
+            dispatchMultiplayerRotateToCommand();
 
         }
 
@@ -115,6 +119,15 @@ public class RotateToController extends SceneMaxBaseController {
         return finished;
 
 
+    }
+
+    private void dispatchMultiplayerRotateToCommand() {
+        if (multiplayerCommandDispatched) {
+            return;
+        }
+        multiplayerCommandDispatched = true;
+        dispatchMultiplayerCommand("{network_entity}.rotate to (" + cmd.axis + " "
+                + networkNumber(requestedTargetVal) + ") in " + networkNumber(targetTime) + " seconds");
     }
 
 }

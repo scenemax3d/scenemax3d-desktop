@@ -477,7 +477,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         File scriptFolderCopy = copyAndApplyMacro(scriptFolder);
         FileUtils.moveDirectory(scriptFolderCopy, new File(deployFolder, "running")); // rename
-        injectProjectGuidMetadata(new File(deployFolder, "running"));
+        injectProjectMetadata(new File(deployFolder, "running"));
         logPackage("Copied packaged scripts into deploy/running.");
         try {
             javaExtensionBuildResult = JavaExtensionBuildTool.buildExtensions(
@@ -620,7 +620,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         FileUtils.write(file, mr.finalPrg, StandardCharsets.UTF_8);
     }
 
-    private void injectProjectGuidMetadata(File runningFolder) throws IOException {
+    private void injectProjectMetadata(File runningFolder) throws IOException {
         if (runningFolder == null) {
             return;
         }
@@ -628,15 +628,70 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         if (!mainFile.isFile()) {
             return;
         }
-        String guid = resolveActiveProjectGuid();
-        if (guid.isBlank()) {
-            return;
-        }
         String code = FileUtils.readFileToString(mainFile, StandardCharsets.UTF_8);
-        if (code.contains("//$[project_guid]=")) {
+        StringBuilder metadata = new StringBuilder();
+        SceneMaxProject project = Util.getActiveProject();
+
+        if (project != null && project.name != null && !project.name.isBlank() && !code.contains("//$[project]=")) {
+            metadata.append("//$[project]=").append(sanitizeMetadataValue(project.name)).append(";");
+        }
+
+        String guid = resolveActiveProjectGuid();
+        if (!guid.isBlank() && !code.contains("//$[project_guid]=")) {
+            metadata.append("//$[project_guid]=").append(sanitizeMetadataValue(guid)).append(";");
+        }
+
+        if (programUsesMultiplayer(code)) {
+            appendMultiplayerMetadata(metadata, code, project);
+        }
+
+        if (metadata.length() == 0) {
             return;
         }
-        FileUtils.write(mainFile, "//$[project_guid]=" + guid + ";" + code, StandardCharsets.UTF_8);
+        FileUtils.write(mainFile, metadata + code, StandardCharsets.UTF_8);
+    }
+
+    private void appendMultiplayerMetadata(StringBuilder metadata, String code, SceneMaxProject project) {
+        String serverIp = project != null && project.multiplayerServerIp != null && !project.multiplayerServerIp.isBlank()
+                ? project.multiplayerServerIp.trim()
+                : "127.0.0.1";
+        int serverPort = project != null && project.multiplayerServerPort > 0
+                ? project.multiplayerServerPort
+                : SceneMaxProject.DEFAULT_MULTIPLAYER_PORT;
+        String sessionName = project != null && project.name != null && !project.name.isBlank()
+                ? project.name.trim()
+                : "local";
+
+        appendMetadataIfMissing(metadata, code, "multiplayer_server", serverIp);
+        appendMetadataIfMissing(metadata, code, "multiplayer_port", Integer.toString(serverPort));
+        if (project != null && project.multiplayerPassword != null && !project.multiplayerPassword.isBlank()) {
+            appendMetadataIfMissing(metadata, code, "multiplayer_password", project.multiplayerPassword);
+        }
+        appendMetadataIfMissing(metadata, code, "multiplayer_session_id", "1000");
+        appendMetadataIfMissing(metadata, code, "multiplayer_create_session", "false");
+        appendMetadataIfMissing(metadata, code, "multiplayer_session_name", sessionName);
+        appendMetadataIfMissing(metadata, code, "multiplayer_scene", "main");
+    }
+
+    private void appendMetadataIfMissing(StringBuilder metadata, String code, String key, String value) {
+        if (value == null || value.isBlank() || code.contains("//$[" + key + "]=")) {
+            return;
+        }
+        metadata.append("//$[").append(key).append("]=").append(sanitizeMetadataValue(value)).append(";");
+    }
+
+    private boolean programUsesMultiplayer(String code) {
+        return code != null && Pattern.compile("\\bmultiplayer\\b", Pattern.CASE_INSENSITIVE).matcher(code).find();
+    }
+
+    private String sanitizeMetadataValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace('\r', ' ')
+                .replace('\n', ' ')
+                .replace(';', ' ')
+                .trim();
     }
 
     private String resolveActiveProjectGuid() {
@@ -2719,6 +2774,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     }
 
     private void copyJ3oSidecars(File sourceJ3o, File targetJ3o) {
+        copySiblingModelSidecars(sourceJ3o, targetJ3o);
+
         File texturesRoot = new File(sourceJ3o.getParentFile(), "textures");
         if (!texturesRoot.isDirectory()) {
             return;
@@ -2739,6 +2796,43 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         for (File rootFile : rootFiles) {
             copyFileIfNeeded(rootFile, new File(targetTexturesRoot, rootFile.getName()));
         }
+    }
+
+    private void copySiblingModelSidecars(File sourceModel, File targetModel) {
+        File sourceFolder = sourceModel.getParentFile();
+        File targetFolder = targetModel.getParentFile();
+        if (sourceFolder == null || targetFolder == null || !sourceFolder.isDirectory()) {
+            return;
+        }
+
+        File[] sidecars = sourceFolder.listFiles(File::isFile);
+        if (sidecars == null) {
+            return;
+        }
+
+        String sourceName = sourceModel.getName();
+        for (File sidecar : sidecars) {
+            if (sourceName.equals(sidecar.getName()) || !isModelSidecarFile(sidecar)) {
+                continue;
+            }
+            copyFileIfNeeded(sidecar, new File(targetFolder, sidecar.getName()));
+        }
+    }
+
+    private boolean isModelSidecarFile(File file) {
+        String name = file.getName().toLowerCase(Locale.ROOT);
+        return name.endsWith(".material")
+                || name.endsWith(".j3m")
+                || name.endsWith(".j3md")
+                || name.endsWith(".j3odata")
+                || name.endsWith(".jpg")
+                || name.endsWith(".jpeg")
+                || name.endsWith(".png")
+                || name.endsWith(".dds")
+                || name.endsWith(".tga")
+                || name.endsWith(".bmp")
+                || name.endsWith(".gif")
+                || name.endsWith(".webp");
     }
 
     private void copyFileIfNeeded(File source, File target) {

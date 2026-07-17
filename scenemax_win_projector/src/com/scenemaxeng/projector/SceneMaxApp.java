@@ -4423,6 +4423,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         multiplayerNetwork.registerEntity(runtimeName, modelInst.varDef, archetype);
     }
 
+    public void dispatchMultiplayerCommand(String runtimeName, String commandText) {
+        if (multiplayerNetwork == null || runtimeName == null || commandText == null || commandText.trim().isEmpty()) {
+            return;
+        }
+        multiplayerNetwork.dispatchCommand(runtimeName, commandText);
+    }
+
     @Override
     public int loadSprite(SpriteInst spriteInst) {
 

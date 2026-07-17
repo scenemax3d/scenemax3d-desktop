@@ -4,6 +4,8 @@ import com.scenemaxeng.compiler.ActionStatementBase;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.VariableDef;
 
+import java.util.Locale;
+
 public class SceneMaxBaseController implements ISceneMaxController {
 
     public boolean adhereToPauseStatus = true;
@@ -188,5 +190,24 @@ public class SceneMaxBaseController implements ISceneMaxController {
 
     protected void setScope(SceneMaxScope scope) {
         this.scope = scope;
+    }
+
+    protected void dispatchMultiplayerCommand(String commandText) {
+        if (app == null || targetVar == null || commandText == null || commandText.trim().isEmpty()) {
+            return;
+        }
+        app.dispatchMultiplayerCommand(targetVar, commandText);
+    }
+
+    protected String networkNumber(double value) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            return "0";
+        }
+        if (Math.abs(value - Math.rint(value)) < 0.000001d) {
+            return Long.toString(Math.round(value));
+        }
+        return String.format(Locale.ROOT, "%.6f", value)
+                .replaceAll("0+$", "")
+                .replaceAll("\\.$", "");
     }
 }

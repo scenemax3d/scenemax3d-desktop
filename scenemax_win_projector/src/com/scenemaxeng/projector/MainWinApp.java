@@ -126,7 +126,49 @@ public class MainWinApp implements IAppObserver {
             prg=prg.replaceFirst("//\\$\\[disable_audio\\]=(.+?);","");
         }
 
+        prg = applyMultiplayerProperty(prg, "multiplayer_server", "scenemax.multiplayer.server");
+        prg = applyMultiplayerProperty(prg, "multiplayer_port", "scenemax.multiplayer.port");
+        prg = applyMultiplayerProperty(prg, "multiplayer_password", "scenemax.multiplayer.password");
+        prg = applyMultiplayerProperty(prg, "multiplayer_session_id", "scenemax.multiplayer.sessionId");
+        prg = applyMultiplayerProperty(prg, "multiplayer_create_session", "scenemax.multiplayer.createSession");
+        prg = applyMultiplayerProperty(prg, "multiplayer_session_name", "scenemax.multiplayer.sessionName");
+        prg = applyMultiplayerProperty(prg, "multiplayer_scene", "scenemax.multiplayer.scene");
+        if (hasConfiguredMultiplayerServer() && isSettingBlank("scenemax.multiplayer.player", "SCENEMAX_MULTIPLAYER_PLAYER")) {
+            System.setProperty("scenemax.multiplayer.player", "player_" + (System.currentTimeMillis() % 100000));
+        }
+
         return prg;
+    }
+
+    private String applyMultiplayerProperty(String prg, String metadataKey, String propertyName) {
+        Pattern p = Pattern.compile("//\\$\\[" + Pattern.quote(metadataKey) + "\\]=(.+?);", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
+        Matcher m = p.matcher(prg);
+
+        while (m.find()) {
+            if (isSettingBlank(propertyName, null)) {
+                System.setProperty(propertyName, m.group(1).trim());
+            }
+            prg = p.matcher(prg).replaceFirst("");
+            m = p.matcher(prg);
+        }
+
+        return prg;
+    }
+
+    private boolean hasConfiguredMultiplayerServer() {
+        return !isSettingBlank("scenemax.multiplayer.server", "SCENEMAX_MULTIPLAYER_SERVER");
+    }
+
+    private boolean isSettingBlank(String propertyName, String envName) {
+        String value = System.getProperty(propertyName);
+        if (value != null && !value.trim().isEmpty()) {
+            return false;
+        }
+        if (envName == null || envName.isBlank()) {
+            return true;
+        }
+        value = System.getenv(envName);
+        return value == null || value.trim().isEmpty();
     }
 
     private void applyWindowMode(AppSettings settings, ProgramDef startupProgram) {

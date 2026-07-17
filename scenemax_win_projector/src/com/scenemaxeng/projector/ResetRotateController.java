@@ -6,6 +6,7 @@ import com.scenemaxeng.compiler.VariableDef;
 
 public class ResetRotateController extends SceneMaxBaseController {
 
+    private boolean multiplayerCommandDispatched = false;
 
     public ResetRotateController(SceneMaxApp app, ProgramDef prg, SceneMaxScope thread, RotateResetCommand cmd) {
         super(app, prg, thread, cmd);
@@ -25,6 +26,7 @@ public class ResetRotateController extends SceneMaxBaseController {
             float x = ((Double) new ActionLogicalExpressionVm(cmd.xExpr, this.scope).evaluate()).floatValue();
             float y = ((Double) new ActionLogicalExpressionVm(cmd.yExpr, this.scope).evaluate()).floatValue();
             float z = ((Double) new ActionLogicalExpressionVm(cmd.zExpr, this.scope).evaluate()).floatValue();
+            dispatchMultiplayerRotateResetCommand(x, y, z);
 
             if (targetVarDef.varType == VariableDef.VAR_TYPE_CAMERA) {
                 this.app.rotateResetCamera(x,y,z);
@@ -40,6 +42,15 @@ public class ResetRotateController extends SceneMaxBaseController {
         }
 
         return true;
+    }
+
+    private void dispatchMultiplayerRotateResetCommand(float x, float y, float z) {
+        if (multiplayerCommandDispatched) {
+            return;
+        }
+        multiplayerCommandDispatched = true;
+        dispatchMultiplayerCommand("{network_entity}.rotate ("
+                + networkNumber(x) + "," + networkNumber(y) + "," + networkNumber(z) + ")");
     }
 
 }

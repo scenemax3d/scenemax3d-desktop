@@ -25,6 +25,7 @@ public class MoveToController extends SceneMaxBaseController {
     private PositionStatement lookingAtPosStatement;
     private final Vector3f frameOffset = new Vector3f();
     private MotionEase.MotionEaseSpec motionEase;
+    private boolean multiplayerCommandDispatched = false;
 
     //private static HashMap<String,MoveToController> activeMoveControllers = new HashMap<>();
 
@@ -114,6 +115,7 @@ public class MoveToController extends SceneMaxBaseController {
 
             totalDist = targetPos.distance(startPos);
             motionEase = MotionEase.fromCommand(cmd, scope);
+            dispatchMultiplayerMoveToCommand();
 
         }
 
@@ -195,6 +197,18 @@ public class MoveToController extends SceneMaxBaseController {
 
         return red; // OK continue
 
+    }
+
+    private void dispatchMultiplayerMoveToCommand() {
+        if (multiplayerCommandDispatched || targetPos == null) {
+            return;
+        }
+        multiplayerCommandDispatched = true;
+        dispatchMultiplayerCommand("{network_entity}.move to ("
+                + networkNumber(targetPos.x) + ","
+                + networkNumber(targetPos.y) + ","
+                + networkNumber(targetPos.z) + ") in "
+                + networkNumber(targetTime) + " seconds");
     }
 
 

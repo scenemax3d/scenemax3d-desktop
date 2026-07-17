@@ -26,6 +26,7 @@ public class MoveController extends SceneMaxBaseController{
 
     private ActionCommandMove cmd;
     private MotionEase.MotionEaseSpec motionEase;
+    private boolean multiplayerCommandDispatched = false;
 
     public MoveController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope, ActionCommandMove cmd) {
         super(app, prg, scope, cmd);
@@ -84,6 +85,7 @@ public class MoveController extends SceneMaxBaseController{
             this.enableEntity(targetVar);// enable this entity
             motionEase = MotionEase.fromCommand(cmd, scope);
             targetCalculated=true;
+            dispatchMultiplayerMoveCommand();
         }
 
         if(StopModelController.forceStopCommands.get(targetVar)!=null) {
@@ -162,5 +164,42 @@ public class MoveController extends SceneMaxBaseController{
             return 1f;
         }
         return time/duration;
+    }
+
+    private void dispatchMultiplayerMoveCommand() {
+        if (multiplayerCommandDispatched) {
+            return;
+        }
+        multiplayerCommandDispatched = true;
+        String command;
+        if (cmd.verbalCommand > 0) {
+            command = "{network_entity}.move " + verbalDirectionName(cmd.verbalCommand)
+                    + " " + networkNumber(targetVal)
+                    + " in " + networkNumber(targetTime) + " seconds";
+        } else {
+            String sign = direction < 0 ? "-" : "+";
+            command = "{network_entity}.move (" + axis + " " + sign + " " + networkNumber(targetVal)
+                    + ") in " + networkNumber(targetTime) + " seconds";
+        }
+        dispatchMultiplayerCommand(command);
+    }
+
+    private String verbalDirectionName(int verbalCommand) {
+        switch (verbalCommand) {
+            case ActionCommandMove.VERBAL_MOVE_LEFT:
+                return "left";
+            case ActionCommandMove.VERBAL_MOVE_RIGHT:
+                return "right";
+            case ActionCommandMove.VERBAL_MOVE_UP:
+                return "up";
+            case ActionCommandMove.VERBAL_MOVE_DOWN:
+                return "down";
+            case ActionCommandMove.VERBAL_MOVE_FORWARD:
+                return "forward";
+            case ActionCommandMove.VERBAL_MOVE_BACKWARD:
+                return "backward";
+            default:
+                return "forward";
+        }
     }
 }

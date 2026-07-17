@@ -24,6 +24,7 @@ public class RotateController extends SceneMaxBaseController{
     // Cached to avoid per-frame allocation
     private ActionLogicalExpressionVm loopExprCached;
     private MotionEase.MotionEaseSpec motionEase;
+    private boolean multiplayerCommandDispatched = false;
     //private VariableDef targetVarDef;
 
 
@@ -63,6 +64,7 @@ public class RotateController extends SceneMaxBaseController{
             this.enableEntity(targetVar);// enable this entity
             motionEase = MotionEase.fromCommand(rotateCmd, scope);
             targetCalculated=true;
+            dispatchMultiplayerRotateCommand();
         }
 
         if(StopModelController.forceStopCommands.get(targetVar)!=null) {
@@ -119,5 +121,15 @@ public class RotateController extends SceneMaxBaseController{
             return 1f;
         }
         return time/duration;
+    }
+
+    private void dispatchMultiplayerRotateCommand() {
+        if (multiplayerCommandDispatched) {
+            return;
+        }
+        multiplayerCommandDispatched = true;
+        String sign = direction < 0 ? "-" : "+";
+        dispatchMultiplayerCommand("{network_entity}.rotate (" + axis + " " + sign + " "
+                + networkNumber(targetVal) + ") in " + networkNumber(targetTime) + " seconds");
     }
 }

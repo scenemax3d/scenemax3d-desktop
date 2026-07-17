@@ -162,12 +162,36 @@ public class ProjectSettingsDialog extends JDialog {
         try {
             File server = new MultiplayerServerBuilder().build(project);
             Util.saveProjectSettings(project);
-            JOptionPane.showMessageDialog(this,
+            int choice = JOptionPane.showOptionDialog(this,
                     "Multiplayer server built:\n" + server.getAbsolutePath(),
                     "Multiplayer Server",
-                    JOptionPane.INFORMATION_MESSAGE);
+                    JOptionPane.DEFAULT_OPTION,
+                    JOptionPane.INFORMATION_MESSAGE,
+                    null,
+                    new Object[]{"Open Folder", "Close"},
+                    "Open Folder");
+            if (choice == 0) {
+                openServerFolder(server);
+            }
         } catch (Exception ex) {
             Util.showScrollableMessageDialog(this, ex.getMessage(), "Multiplayer Server Build Failed", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void openServerFolder(File server) {
+        File folder = server == null ? null : server.getParentFile();
+        if (folder == null || !folder.isDirectory()) {
+            JOptionPane.showMessageDialog(this, "The multiplayer server folder could not be found.",
+                    "Multiplayer Server", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        try {
+            Desktop.getDesktop().open(folder);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Could not open folder:\n" + folder.getAbsolutePath() + "\n\n" + ex.getMessage(),
+                    "Multiplayer Server",
+                    JOptionPane.ERROR_MESSAGE);
         }
     }
 
