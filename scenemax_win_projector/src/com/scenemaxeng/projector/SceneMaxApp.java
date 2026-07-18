@@ -473,11 +473,19 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
             if(this.projectName!=null) {
                 this.logger.log(Level.INFO, "SimpleInitApp projectName = "+this.projectName);
-                String projFolder = "./projects/"+this.projectName;
-                assetsMapping = new AssetsMapping(projFolder+"/resources");
-                assetsMapping.loadCinematicsFromProject(projFolder);
-                assetsMapping.loadWeaponsFromProject(projFolder);
-                assetManager.registerLocator(new File(projFolder+"/resources").getCanonicalPath(), FileLocator.class);
+                File projectRoot = new File("./projects/" + this.projectName).getCanonicalFile();
+                File resourcesFolder = new File(projectRoot, "resources").getCanonicalFile();
+                if (resourcesFolder.isDirectory()) {
+                    assetsMapping = new AssetsMapping(resourcesFolder.getAbsolutePath());
+                    assetsMapping.loadCinematicsFromProject(projectRoot.getAbsolutePath());
+                    assetsMapping.loadWeaponsFromProject(projectRoot.getAbsolutePath());
+                    assetManager.registerLocator(resourcesFolder.getCanonicalPath(), FileLocator.class);
+                } else {
+                    this.logger.log(Level.INFO,
+                            "Project resources folder not found at {0}; using packaged classpath assets.",
+                            resourcesFolder.getAbsolutePath());
+                    assetsMapping = new AssetsMapping();
+                }
             } else if(workingFolder!=null) {
                 this.logger.log(Level.INFO, "SimpleInitApp workingFolder = "+this.workingFolder);
                 File projectRoot = resolveRuntimeProjectRoot();
@@ -9420,7 +9428,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             float cloudiness = cmd.cloudinessVal != null ? cmd.cloudinessVal.floatValue() : 0.5f;
             skyControl = new SkyControl(assetManager, cam, cloudFlattening, StarsOption.Cube, true);
             skyControl.setCloudiness(cloudiness);
-            if (cmd.hourOfDayVal != null) {
+            if (cmd.hourOfDayVal != null && skyControl.getSunAndStars() != null) {
                 skyControl.getSunAndStars().setHour(cmd.hourOfDayVal.floatValue());
             }
             rootNode.addControl(skyControl);
@@ -9428,7 +9436,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } catch (Throwable t) {
             skyControl = null;
             logger.log(Level.SEVERE, "Failed to show solar system skybox.", t);
-            handleRuntimeError("Error: Solar system skybox failed to load: " + firstNonBlank(t.getMessage(), t.toString()));
+            String message = "Solar system skybox skipped: " + firstNonBlank(t.getMessage(), t.toString());
+            recordRuntimeIssue(message, "skybox");
+            logRuntimeMessage(LoggerCommand.ERROR, message);
         }
 
 
@@ -9447,7 +9457,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
             if(skyControl!=null) {
 
-            if(cmd.hourOfDayVal!=null) {
+            if(cmd.hourOfDayVal!=null && skyControl.getSunAndStars()!=null) {
                 skyControl.getSunAndStars().setHour(cmd.hourOfDayVal.floatValue());
             }
 
