@@ -30,6 +30,23 @@ public class MultiplayerCommandDispatchParsingTest {
     }
 
     @Test
+    public void parsesGeneratedAttachAndIkDispatchCommands() {
+        assertParses("mp_remote_1 => sinbad\n"
+                + "mp_remote_2 => sinbad\n"
+                + "mp_remote_1.attach to mp_remote_2.\"Bip01 Spine1_04\": pos (-0.12,-1.23,1.03)");
+        assertParses("mp_remote_1 => sinbad\n"
+                + "mp_remote_3 => sphere\n"
+                + "mp_remote_1.ik = \"ik_sit_on_horse\"\n"
+                + "mp_remote_1.ik.horse_sit_right_foot.play : target mp_remote_3, blend 0.2, weight 1");
+    }
+
+    @Test
+    public void parsesGeneratedMultiplayerSpawnCommandsWithScaleAndColliders() {
+        assertParses("mp_remote_1 => horse1_native: pos (0.482243,0,1.164553), scale 3.7, collision shape none");
+        assertParses("mp_remote_2 => collider sphere: pos (-5.174184,1.964885,4.311819), radius 0.5, scale 0.3");
+    }
+
+    @Test
     public void keepsMultiplayerFlagOnSphereCreatedInsideDoBlock() {
         ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
                 "do async\n"

@@ -18,9 +18,12 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Iterator;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -45,7 +48,7 @@ public class MultiplayerNetworkComponent {
     private static final byte SNAPSHOT = 30;
     private static final byte DISCONNECT = 40;
     private static final int MAX_PACKET_SIZE = 1200;
-    private static final int SPAWN_COMMAND_SIZE = 128;
+    private static final int SPAWN_COMMAND_SIZE = 256;
     private static final int ACTIVE_ACTION_COMMAND_SIZE = 192;
     private static final int ACTIVE_ACTION_RECORD_SIZE = 12 + ACTIVE_ACTION_COMMAND_SIZE;
     private static final int SNAPSHOT_ENTITY_SIZE = 228 + SPAWN_COMMAND_SIZE;
@@ -60,6 +63,10 @@ public class MultiplayerNetworkComponent {
     private static final Pattern VERBAL_MOVE_ACTION_PATTERN = Pattern.compile(
             "(?i)(\\.move\\s+(?:left|right|up|down|forward|backward)\\s+)([+-]?[0-9]+(?:\\.[0-9]+)?)");
     private static final Pattern TARGET_ACTION_PATTERN = Pattern.compile("(?i)\\.(?:move|rotate)\\s+to\\b");
+    private static final Pattern LOCAL_ENTITY_PLACEHOLDER_PATTERN = Pattern.compile(
+            "\\{(?:network_entity|networkEntity):([^}]+)}");
+    private static final Pattern REMOTE_ENTITY_ID_PLACEHOLDER_PATTERN = Pattern.compile(
+            "\\{(?:network_entity_id|networkEntityId):(\\d+)}");
 
     private final SceneMaxApp app;
     private final Logger logger = Logger.getLogger(MultiplayerNetworkComponent.class.getName());
@@ -70,6 +77,7 @@ public class MultiplayerNetworkComponent {
     private final Map<Integer, List<PendingRemoteCommand>> pendingRemoteCommands = new HashMap<>();
     private final Map<String, TransformState> lastSentCorrections = new HashMap<>();
     private final Map<Integer, String> pendingCreateAcks = new LinkedHashMap<>();
+    private final Set<String> appliedRemoteStructuralCommands = new HashSet<>();
     private DatagramChannel channel;
     private int clientId;
     private long sessionId;
@@ -188,7 +196,35 @@ public class MultiplayerNetworkComponent {
             entity.pendingCommands.add(commandText);
             return;
         }
-        sendCommand(entity.networkEntityId, commandText);
+        if (!sendCommandIfResolved(entity, commandText)) {
+            logNet("queue command until referenced entities have ids runtime=" + runtimeName
+                    + " command=\"" + commandText + "\"");
+            entity.pendingCommands.add(commandText);
+        }
+    }
+
+    public int startPersistentCommand(String runtimeName, int slot, String commandText) {
+        if (runtimeName == null || slot <= 0 || commandText == null || commandText.trim().isEmpty()) {
+            return 0;
+        }
+        RegisteredEntity entity = localEntities.get(runtimeName);
+        if (entity == null) {
+            return 0;
+        }
+        int sequence = entity.nextActionSequence++;
+        if (entity.nextActionSequence == 0) {
+            entity.nextActionSequence = 1;
+        }
+        ActiveAction action = new ActiveAction();
+        action.slot = slot;
+        action.sequence = sequence;
+        action.durationMs = Integer.MAX_VALUE;
+        action.command = commandText;
+        entity.activeActions.put(slot, action);
+        if (entity.networkEntityId != 0) {
+            action.startSent = sendActiveActionStartIfResolved(entity, action);
+        }
+        return sequence;
     }
 
     public int startActiveAction(String runtimeName, int slot, float durationSeconds, String commandText) {
@@ -213,7 +249,7 @@ public class MultiplayerNetworkComponent {
             logNet("queue active action runtime=" + runtimeName + " slot=" + slot + " seq=" + sequence);
             return sequence;
         }
-        sendActiveActionStart(entity.networkEntityId, action);
+        action.startSent = sendActiveActionStartIfResolved(entity, action);
         return sequence;
     }
 
@@ -274,6 +310,7 @@ public class MultiplayerNetworkComponent {
         pendingTransforms.clear();
         pendingRemoteCommands.clear();
         lastSentCorrections.clear();
+        appliedRemoteStructuralCommands.clear();
     }
 
     public void joinScene(String sceneId) {
@@ -282,6 +319,7 @@ public class MultiplayerNetworkComponent {
         pendingTransforms.clear();
         pendingRemoteCommands.clear();
         lastSentCorrections.clear();
+        appliedRemoteStructuralCommands.clear();
         localEntities.clear();
         pendingCreateAcks.clear();
         if (isActive() && clientId != 0) {
@@ -443,6 +481,8 @@ public class MultiplayerNetworkComponent {
                     }
                     flushPendingCommands(entity);
                     flushPendingActiveActions(entity);
+                    flushAllPendingLocalCommands();
+                    flushAllPendingLocalActiveActions();
                 }
             } else if (payload.remaining() >= 128) {
                 String archetype = readFixedString(payload, 64);
@@ -466,6 +506,8 @@ public class MultiplayerNetworkComponent {
             if (!command.isEmpty()) {
                 handleRemoteCommand(networkId, command);
             }
+        } else if (type == ACTIVE_ACTION_START && payload.remaining() >= ACTIVE_ACTION_RECORD_SIZE) {
+            handleActiveActionStart(payload);
         } else if (type == TRANSFORM_CORRECTION && payload.remaining() >= 32) {
             handleTransformCorrection(payload);
         } else if (type == SNAPSHOT) {
@@ -485,10 +527,19 @@ public class MultiplayerNetworkComponent {
         if (entity == null || entity.networkEntityId == 0 || entity.pendingCommands.isEmpty()) {
             return;
         }
-        for (String command : new ArrayList<>(entity.pendingCommands)) {
-            sendCommand(entity.networkEntityId, command);
+        Iterator<String> iterator = entity.pendingCommands.iterator();
+        while (iterator.hasNext()) {
+            String command = iterator.next();
+            if (sendCommandIfResolved(entity, command)) {
+                iterator.remove();
+            }
         }
-        entity.pendingCommands.clear();
+    }
+
+    private void flushAllPendingLocalCommands() {
+        for (RegisteredEntity entity : localEntities.values()) {
+            flushPendingCommands(entity);
+        }
     }
 
     private void flushPendingActiveActions(RegisteredEntity entity) {
@@ -496,7 +547,15 @@ public class MultiplayerNetworkComponent {
             return;
         }
         for (ActiveAction action : new ArrayList<>(entity.activeActions.values())) {
-            sendActiveActionStart(entity.networkEntityId, action);
+            if (!action.startSent && sendActiveActionStartIfResolved(entity, action)) {
+                action.startSent = true;
+            }
+        }
+    }
+
+    private void flushAllPendingLocalActiveActions() {
+        for (RegisteredEntity entity : localEntities.values()) {
+            flushPendingActiveActions(entity);
         }
     }
 
@@ -527,6 +586,39 @@ public class MultiplayerNetworkComponent {
                 + " durationMs=" + action.durationMs
                 + " command=\"" + action.command + "\"");
         send(packet);
+    }
+
+    private boolean sendCommandIfResolved(RegisteredEntity entity, String commandText) {
+        if (entity == null || entity.networkEntityId == 0) {
+            return false;
+        }
+        String resolved = resolveOutgoingCommand(commandText);
+        if (resolved == null) {
+            return false;
+        }
+        sendCommand(entity.networkEntityId, resolved);
+        return true;
+    }
+
+    private boolean sendActiveActionStartIfResolved(RegisteredEntity entity, ActiveAction action) {
+        if (entity == null || entity.networkEntityId == 0 || action == null) {
+            return false;
+        }
+        String resolved = resolveOutgoingCommand(action.command);
+        if (resolved == null) {
+            return false;
+        }
+        ActiveAction resolvedAction = action;
+        if (!resolved.equals(action.command)) {
+            resolvedAction = new ActiveAction();
+            resolvedAction.slot = action.slot;
+            resolvedAction.sequence = action.sequence;
+            resolvedAction.durationMs = action.durationMs;
+            resolvedAction.command = resolved;
+            resolvedAction.startSent = action.startSent;
+        }
+        sendActiveActionStart(entity.networkEntityId, resolvedAction);
+        return true;
     }
 
     private void sendActiveActionEnd(int networkEntityId, int slot, int sequence) {
@@ -608,7 +700,7 @@ public class MultiplayerNetworkComponent {
             return;
         }
         RemoteEntity entity = remoteEntities.get(networkId);
-        if (entity == null || !isRemoteEntityReady(entity)) {
+        if (entity == null || !isRemoteEntityReady(entity) || !canResolveRemoteCommand(command)) {
             pendingRemoteCommands.computeIfAbsent(networkId, id -> new ArrayList<>())
                     .add(new PendingRemoteCommand(command, resumeState));
             logNet("queue remote command networkId=" + networkId + " command=\"" + command + "\"");
@@ -617,11 +709,29 @@ public class MultiplayerNetworkComponent {
         runRemoteCommand(networkId, command, resumeState);
     }
 
+    private void handleActiveActionStart(ByteBuffer payload) {
+        int networkId = payload.getInt();
+        int slot = Byte.toUnsignedInt(payload.get());
+        payload.get();
+        payload.getShort();
+        payload.getInt();
+        String command = readFixedString(payload, ACTIVE_ACTION_COMMAND_SIZE);
+        if (slot < SceneMaxBaseController.MULTIPLAYER_ACTION_SLOT_STRUCTURAL_BASE
+                || command == null || command.trim().isEmpty()) {
+            return;
+        }
+        handleRemoteCommand(networkId, command.trim());
+    }
+
     private void runRemoteCommand(int networkId, String command) {
         runRemoteCommand(networkId, command, null);
     }
 
     private void runRemoteCommand(int networkId, String command, MultiplayerControllerResumeState resumeState) {
+        if (isStructuralCommand(command) && !markRemoteStructuralCommandApplied(networkId, command)) {
+            logNet("skip duplicate structural command networkId=" + networkId + " command=\"" + command + "\"");
+            return;
+        }
         String resolved = resolveRemoteCommandTarget(networkId, command);
         logNet("receive command networkId=" + networkId + " command=\"" + resolved + "\"");
         RemoteEntity entity = remoteEntities.get(networkId);
@@ -630,6 +740,18 @@ public class MultiplayerNetworkComponent {
         } else {
             app.runNetworkMultiplayerCommand(resolved);
         }
+    }
+
+    private boolean isStructuralCommand(String command) {
+        if (command == null) {
+            return false;
+        }
+        String normalized = command.toLowerCase(java.util.Locale.ROOT);
+        return normalized.contains(".attach to ") || normalized.contains(".ik");
+    }
+
+    private boolean markRemoteStructuralCommandApplied(int networkId, String command) {
+        return appliedRemoteStructuralCommands.add(networkId + "\n" + command);
     }
 
     private TransformState readTransformState(ByteBuffer payload) {
@@ -784,16 +906,23 @@ public class MultiplayerNetworkComponent {
         for (Map.Entry<Integer, List<PendingRemoteCommand>> entry : new HashMap<>(pendingRemoteCommands).entrySet()) {
             RemoteEntity entity = remoteEntities.get(entry.getKey());
             if (entity == null) {
-                pendingRemoteCommands.remove(entry.getKey());
                 continue;
             }
             if (entity.destroyPending || !isRemoteEntityReady(entity)) {
                 continue;
             }
-            for (PendingRemoteCommand command : new ArrayList<>(entry.getValue())) {
+            Iterator<PendingRemoteCommand> iterator = entry.getValue().iterator();
+            while (iterator.hasNext()) {
+                PendingRemoteCommand command = iterator.next();
+                if (!canResolveRemoteCommand(command.command)) {
+                    continue;
+                }
                 runRemoteCommand(entry.getKey(), command.command, command.resumeState);
+                iterator.remove();
             }
-            pendingRemoteCommands.remove(entry.getKey());
+            if (entry.getValue().isEmpty()) {
+                pendingRemoteCommands.remove(entry.getKey());
+            }
         }
     }
 
@@ -818,6 +947,7 @@ public class MultiplayerNetworkComponent {
         RemoteEntity entity = remoteEntities.remove(networkId);
         pendingTransforms.remove(networkId);
         pendingRemoteCommands.remove(networkId);
+        removeAppliedRemoteStructuralCommands(networkId);
         removeRemoteRuntimeEntity(entity);
     }
 
@@ -855,6 +985,11 @@ public class MultiplayerNetworkComponent {
         }
     }
 
+    private void removeAppliedRemoteStructuralCommands(int networkId) {
+        String prefix = networkId + "\n";
+        appliedRemoteStructuralCommands.removeIf(key -> key.startsWith(prefix));
+    }
+
     private boolean isLocalNetworkEntity(int networkId) {
         if (networkId == 0) {
             return false;
@@ -872,11 +1007,56 @@ public class MultiplayerNetworkComponent {
         if (entity == null || entity.sourceName == null) {
             return command;
         }
-        return command
+        String resolved = command
                 .replace("{network_entity}", entity.sourceName)
                 .replace("{networkEntity}", entity.sourceName)
                 .replace("$network_entity", entity.sourceName)
                 .replace("$networkEntity", entity.sourceName);
+        Matcher matcher = REMOTE_ENTITY_ID_PLACEHOLDER_PATTERN.matcher(resolved);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            int referencedNetworkId = parseInt(matcher.group(1), 0);
+            RemoteEntity referenced = remoteEntities.get(referencedNetworkId);
+            String replacement = referenced == null || referenced.sourceName == null
+                    ? matcher.group(0)
+                    : referenced.sourceName;
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
+    }
+
+    private boolean canResolveRemoteCommand(String command) {
+        if (command == null) {
+            return false;
+        }
+        Matcher matcher = REMOTE_ENTITY_ID_PLACEHOLDER_PATTERN.matcher(command);
+        while (matcher.find()) {
+            int referencedNetworkId = parseInt(matcher.group(1), 0);
+            RemoteEntity referenced = remoteEntities.get(referencedNetworkId);
+            if (!isRemoteEntityReady(referenced)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private String resolveOutgoingCommand(String command) {
+        if (command == null) {
+            return null;
+        }
+        Matcher matcher = LOCAL_ENTITY_PLACEHOLDER_PATTERN.matcher(command);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            RegisteredEntity referenced = localEntities.get(matcher.group(1));
+            if (referenced == null || referenced.networkEntityId == 0) {
+                return null;
+            }
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(
+                    "{network_entity_id:" + referenced.networkEntityId + "}"));
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
     }
 
     private void sendHeaderOnly(byte type) {
@@ -1050,7 +1230,7 @@ public class MultiplayerNetworkComponent {
         boolean destroyAfterCreateAck;
         int nextActionSequence = 1;
         List<String> pendingCommands = new ArrayList<>();
-        Map<Integer, ActiveAction> activeActions = new HashMap<>();
+        Map<Integer, ActiveAction> activeActions = new LinkedHashMap<>();
     }
 
     private static class RemoteEntity {
@@ -1076,6 +1256,7 @@ public class MultiplayerNetworkComponent {
         int sequence;
         int durationMs;
         String command;
+        boolean startSent;
     }
 
     private static class SnapshotAction {

@@ -15,6 +15,19 @@ import static org.junit.Assert.assertTrue;
 public class ScriptTreeResourceCollectorTest {
 
     @Test
+    public void mainParseClearsSkyboxAndTerrainResourceTrackers() {
+        SceneMaxLanguageParser.skyboxUsed = new ArrayList<>();
+        SceneMaxLanguageParser.terrainsUsed = new ArrayList<>();
+        SceneMaxLanguageParser.skyboxUsed.add("stale_skybox");
+        SceneMaxLanguageParser.terrainsUsed.add("stale_terrain");
+
+        new SceneMaxLanguageParser(null, "").parse("skybox.show solar system");
+
+        assertTrue(SceneMaxLanguageParser.skyboxUsed.isEmpty());
+        assertTrue(SceneMaxLanguageParser.terrainsUsed.isEmpty());
+    }
+
+    @Test
     public void collectsResourcesFromReachableScenesOnly() throws Exception {
         Path tempDir = Files.createTempDirectory("script-tree-resource-collector");
         Path scriptRoot = tempDir.resolve("running");

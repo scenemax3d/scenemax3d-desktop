@@ -2873,7 +2873,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         spheres.put(sphereName,sphereNode);
         geoName2ModelName.put(sphereName,sphereName);
         geoName2EntityInst.put(sphereName,inst);
-        registerMultiplayerEntity(inst, sphereName, "sphere", sphereSpawnCommand(sphereNode, radius, materialName));
+        registerMultiplayerEntity(inst, sphereName, "sphere", sphereSpawnCommand(inst, sphereNode, radius, materialName));
 
         List<java.lang.Object> ctls = new ArrayList<>();
         if(modelCtl!=null) {
@@ -4478,7 +4478,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         String archetype = modelInst != null && modelInst.modelDef != null && modelInst.modelDef.name != null
                 ? modelInst.modelDef.name
                 : resource != null && resource.name != null ? resource.name : "";
-        registerMultiplayerEntity(modelInst, runtimeName, archetype);
+        registerMultiplayerEntity(modelInst, runtimeName, archetype, modelSpawnCommand(modelInst, archetype, resource));
     }
 
     private void registerMultiplayerEntity(ModelInst modelInst, String runtimeName, String archetype) {
@@ -4523,14 +4523,115 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
     }
 
-    private String sphereSpawnCommand(Node sphereNode, float radius, String materialName) {
+    private String modelSpawnCommand(ModelInst modelInst, String archetype, ResourceSetup resource) {
+        if (modelInst == null || modelInst.varDef == null || archetype == null || archetype.trim().isEmpty()) {
+            return "";
+        }
+        StringBuilder command = new StringBuilder();
+        command.append("{network_entity} => ")
+                .append(archetype.trim())
+                .append(": ");
+        List<String> attrs = new ArrayList<>();
+
+        Vector3f position = initialModelPosition(modelInst, resource);
+        attrs.add("pos (" + networkNumber(position.x) + ","
+                + networkNumber(position.y) + ","
+                + networkNumber(position.z) + ")");
+
+        if (modelInst.scaleExpr != null) {
+            float scale = Float.parseFloat(modelInst.scaleExpr.evaluate().toString());
+            attrs.add("scale " + networkNumber(scale));
+        }
+
+        Vector3f rotation = initialModelRotationDegrees(modelInst);
+        if (rotation != null) {
+            attrs.add("rotate(" + networkNumber(rotation.x) + ","
+                    + networkNumber(rotation.y) + ","
+                    + networkNumber(rotation.z) + ")");
+        }
+
+        String collisionShape = collisionShapeAttribute(modelInst.varDef.collisionShape);
+        if (collisionShape != null) {
+            attrs.add(collisionShape);
+        }
+
+        command.append(String.join(", ", attrs));
+        return command.toString();
+    }
+
+    private Vector3f initialModelPosition(ModelInst modelInst, ResourceSetup resource) {
+        if (modelInst != null && modelInst.xExpr != null) {
+            return new Vector3f(
+                    Float.parseFloat(modelInst.xExpr.evaluate().toString()),
+                    Float.parseFloat(modelInst.yExpr.evaluate().toString()),
+                    Float.parseFloat(modelInst.zExpr.evaluate().toString()));
+        }
+        if (resource != null) {
+            return new Vector3f(resource.localTranslationX, resource.localTranslationY, resource.localTranslationZ);
+        }
+        return Vector3f.ZERO;
+    }
+
+    private Vector3f initialModelRotationDegrees(ModelInst modelInst) {
+        if (modelInst == null || modelInst.varDef == null) {
+            return null;
+        }
+        if (modelInst.varDef.useVerbalTurn) {
+            float rotateX = 0f;
+            float rotateY = 0f;
+            float rotateZ = 0f;
+            if (modelInst.rxExpr != null) {
+                rotateX = Float.parseFloat(modelInst.rxExpr.evaluate().toString()) * modelInst.varDef.rotDir;
+            } else if (modelInst.ryExpr != null) {
+                rotateY = Float.parseFloat(modelInst.ryExpr.evaluate().toString()) * modelInst.varDef.rotDir;
+            } else if (modelInst.rzExpr != null) {
+                rotateZ = Float.parseFloat(modelInst.rzExpr.evaluate().toString()) * modelInst.varDef.rotDir;
+            } else {
+                return null;
+            }
+            return new Vector3f(rotateX, rotateY, rotateZ);
+        }
+        if (modelInst.rxExpr == null) {
+            return null;
+        }
+        return new Vector3f(
+                Float.parseFloat(modelInst.rxExpr.evaluate().toString()),
+                Float.parseFloat(modelInst.ryExpr.evaluate().toString()),
+                Float.parseFloat(modelInst.rzExpr.evaluate().toString()));
+    }
+
+    private String collisionShapeAttribute(int collisionShape) {
+        if (collisionShape == VariableDef.COLLISION_SHAPE_NONE) {
+            return "collision shape none";
+        }
+        if (collisionShape == VariableDef.COLLISION_SHAPE_BOX) {
+            return "collision shape box";
+        }
+        if (collisionShape == VariableDef.COLLISION_SHAPE_BOXES) {
+            return "collision shape boxes";
+        }
+        if (collisionShape == VariableDef.COLLISION_SHAPE_MESH) {
+            return "collision shape mesh";
+        }
+        return null;
+    }
+
+    private String sphereSpawnCommand(SphereInst inst, Node sphereNode, float radius, String materialName) {
         Vector3f position = sphereNode == null ? Vector3f.ZERO : sphereNode.getLocalTranslation();
         StringBuilder command = new StringBuilder();
-        command.append("{network_entity} => sphere: pos (")
+        boolean collider = inst != null && inst.varDef instanceof SphereVariableDef
+                && ((SphereVariableDef) inst.varDef).isCollider;
+        command.append("{network_entity} => ")
+                .append(collider ? "collider sphere" : "sphere")
+                .append(": pos (")
                 .append(networkNumber(position.x)).append(",")
                 .append(networkNumber(position.y)).append(",")
                 .append(networkNumber(position.z)).append(")");
         command.append(", radius ").append(networkNumber(radius));
+        if (inst != null && inst.scaleExpr != null) {
+            float scale = Float.parseFloat(inst.scaleExpr.evaluate().toString());
+            command.append(", scale ").append(networkNumber(scale));
+        }
         if (materialName != null && !materialName.trim().isEmpty()) {
             command.append(", material=\"").append(escapeSceneMaxString(materialName.trim())).append("\"");
         }
@@ -4568,6 +4669,16 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return;
         }
         multiplayerNetwork.dispatchCommand(runtimeName, commandText);
+    }
+
+    public int startPersistentMultiplayerCommand(String runtimeName, int slot, String commandText) {
+        if (suppressMultiplayerCommandDispatch) {
+            return 0;
+        }
+        if (multiplayerNetwork == null || runtimeName == null || commandText == null || commandText.trim().isEmpty()) {
+            return 0;
+        }
+        return multiplayerNetwork.startPersistentCommand(runtimeName, slot, commandText);
     }
 
     public int startMultiplayerTimedAction(String runtimeName, int slot, float durationSeconds, String commandText) {
@@ -9304,15 +9415,21 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     public void showSolarSystemSkyBox(SkyBoxCommand cmd) {
 
-        float cloudFlattening = cmd.cloudFlatteningVal!=null?cmd.cloudFlatteningVal.floatValue():0.9f;
-        float cloudiness = cmd.cloudinessVal!=null?cmd.cloudinessVal.floatValue():0.5f;
-        skyControl = new SkyControl(assetManager, cam, cloudFlattening, StarsOption.Cube, true);
-        skyControl.setCloudiness(cloudiness);
-        if(cmd.hourOfDayVal!=null) {
-            skyControl.getSunAndStars().setHour(cmd.hourOfDayVal.floatValue());
+        try {
+            float cloudFlattening = cmd.cloudFlatteningVal != null ? cmd.cloudFlatteningVal.floatValue() : 0.9f;
+            float cloudiness = cmd.cloudinessVal != null ? cmd.cloudinessVal.floatValue() : 0.5f;
+            skyControl = new SkyControl(assetManager, cam, cloudFlattening, StarsOption.Cube, true);
+            skyControl.setCloudiness(cloudiness);
+            if (cmd.hourOfDayVal != null) {
+                skyControl.getSunAndStars().setHour(cmd.hourOfDayVal.floatValue());
+            }
+            rootNode.addControl(skyControl);
+            skyControl.setEnabled(true);
+        } catch (Throwable t) {
+            skyControl = null;
+            logger.log(Level.SEVERE, "Failed to show solar system skybox.", t);
+            handleRuntimeError("Error: Solar system skybox failed to load: " + firstNonBlank(t.getMessage(), t.toString()));
         }
-        rootNode.addControl(skyControl);
-        skyControl.setEnabled(true);
 
 
 //        for (Light light : rootNode.getLocalLightList()) {

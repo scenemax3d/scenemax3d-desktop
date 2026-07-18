@@ -235,6 +235,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         SceneMaxLanguageParser.spriteSheetUsed = new ArrayList<>();
         SceneMaxLanguageParser.audioUsed = new ArrayList<>();
         SceneMaxLanguageParser.fontsUsed = new ArrayList<>();
+        SceneMaxLanguageParser.skyboxUsed = new ArrayList<>();
+        SceneMaxLanguageParser.terrainsUsed = new ArrayList<>();
         addedJarEntries.clear();
         uiReferencedSpriteNames.clear();
         uiReferencedFontNames.clear();
@@ -647,7 +649,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             metadata.append("//$[project_guid]=").append(sanitizeMetadataValue(guid)).append(";");
         }
 
-        if (programUsesMultiplayer(code)) {
+        String packagedSourceText = readScannedSourceText();
+        if (programUsesMultiplayer(packagedSourceText)) {
             appendMultiplayerMetadata(metadata, code, project);
         }
 

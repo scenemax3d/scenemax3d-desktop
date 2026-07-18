@@ -10,11 +10,12 @@ const max_packet_size = 1200;
 const max_clients = 256;
 const max_entities = 2048;
 const max_sessions = 256;
-const spawn_command_size = 128;
+const spawn_command_size = 256;
 const active_action_command_size = 192;
 const snapshot_action_record_size = 12 + active_action_command_size;
-const max_active_actions = 4;
+const max_active_actions = 16;
 const snapshot_entity_size = 228 + spawn_command_size;
+const snapshot_entity_base_size = snapshot_entity_size + 1;
 const active_action_grace_ms = 1000;
 const verbose_packet_logs = false;
 
@@ -226,6 +227,9 @@ pub fn main(init: std.process.Init) !void {
                 const client = findClient(&clients, client_id) orelse continue;
                 const entity = findOwnedActiveEntity(&entities, client.id, client.session_id, client.scene_id, payload) orelse continue;
                 storeActiveAction(entity, payload, now);
+                if (isStructuralActionStart(payload)) {
+                    try dispatch(sock, io, &clients, client_id, packet_type, client_id, payload);
+                }
             },
             .active_action_end => {
                 const client = findClient(&clients, client_id) orelse continue;
@@ -466,6 +470,11 @@ fn storeActiveAction(entity: *Entity, payload: []const u8, now: i64) void {
     }
 }
 
+fn isStructuralActionStart(payload: []const u8) bool {
+    if (payload.len < 5) return false;
+    return payload[4] >= 64;
+}
+
 fn clearActiveAction(entity: *Entity, payload: []const u8) void {
     if (payload.len < 8) return;
     const slot = payload[4];
@@ -629,44 +638,37 @@ fn sendSnapshot(sock: net.Socket, io: std.Io, address: net.IpAddress, entities: 
     var count: u16 = 0;
     var total_count: u16 = 0;
     var packet_count: u16 = 0;
+    const max_actions_per_record = (packet.len - 10 - snapshot_entity_base_size) / snapshot_action_record_size;
     for (entities) |entity| {
         if (!entity.active) continue;
         if (entity.session_id != session_id or !sameScene(entity.scene_id, scene_id)) continue;
+
         const action_count = activeActionCount(entity, now);
-        const required = snapshot_entity_size + 1 + action_count * snapshot_action_record_size;
-        if (required > packet.len - 10) continue;
-        if (cursor + required > packet.len) {
-            std.mem.writeInt(u16, packet[8..][0..2], count, .little);
-            sendUdp(sock, io, address, packet[0..cursor]);
-            packet_count += 1;
-            writeHeader(packet[0..], .snapshot, 0);
-            cursor = 10;
-            count = 0;
+        var action_offset: usize = 0;
+        while (action_offset < action_count or (action_count == 0 and action_offset == 0)) {
+            const remaining_actions = action_count - action_offset;
+            const chunk_action_count: usize = if (max_actions_per_record == 0)
+                0
+            else
+                @min(remaining_actions, max_actions_per_record);
+            const required = snapshot_entity_base_size + chunk_action_count * snapshot_action_record_size;
+            if (required > packet.len - 10) break;
+            if (cursor + required > packet.len) {
+                std.mem.writeInt(u16, packet[8..][0..2], count, .little);
+                sendUdp(sock, io, address, packet[0..cursor]);
+                packet_count += 1;
+                writeHeader(packet[0..], .snapshot, 0);
+                cursor = 10;
+                count = 0;
+            }
+
+            cursor = writeSnapshotEntity(packet[0..], cursor, entity);
+            cursor = writeSnapshotActions(packet[0..], cursor, entity, now, action_offset, chunk_action_count);
+            count += 1;
+
+            if (action_count == 0 or chunk_action_count == 0) break;
+            action_offset += chunk_action_count;
         }
-        std.mem.writeInt(u32, packet[cursor..][0..4], entity.network_id, .little);
-        cursor += 4;
-        std.mem.writeInt(u16, packet[cursor..][0..2], entity.owner_client, .little);
-        cursor += 2;
-        @memcpy(packet[cursor .. cursor + 64], &entity.archetype);
-        cursor += 64;
-        @memcpy(packet[cursor .. cursor + 64], &entity.player_name);
-        cursor += 64;
-        for (entity.position) |value| {
-            std.mem.writeInt(u32, packet[cursor..][0..4], @bitCast(value), .little);
-            cursor += 4;
-        }
-        for (entity.rotation) |value| {
-            std.mem.writeInt(u32, packet[cursor..][0..4], @bitCast(value), .little);
-            cursor += 4;
-        }
-        std.mem.writeInt(u16, packet[cursor..][0..2], entity.animation_index, .little);
-        cursor += 2;
-        @memcpy(packet[cursor .. cursor + 64], &entity.animation);
-        cursor += 64;
-        @memcpy(packet[cursor .. cursor + spawn_command_size], &entity.spawn_command);
-        cursor += spawn_command_size;
-        cursor = writeSnapshotActions(packet[0..], cursor, entity, now);
-        count += 1;
         total_count += 1;
     }
     if (count > 0 or total_count == 0) {
@@ -684,6 +686,33 @@ fn sendSnapshot(sock: net.Socket, io: std.Io, address: net.IpAddress, entities: 
     }
 }
 
+fn writeSnapshotEntity(packet: []u8, start_cursor: usize, entity: Entity) usize {
+    var cursor = start_cursor;
+    std.mem.writeInt(u32, packet[cursor..][0..4], entity.network_id, .little);
+    cursor += 4;
+    std.mem.writeInt(u16, packet[cursor..][0..2], entity.owner_client, .little);
+    cursor += 2;
+    @memcpy(packet[cursor .. cursor + 64], &entity.archetype);
+    cursor += 64;
+    @memcpy(packet[cursor .. cursor + 64], &entity.player_name);
+    cursor += 64;
+    for (entity.position) |value| {
+        std.mem.writeInt(u32, packet[cursor..][0..4], @bitCast(value), .little);
+        cursor += 4;
+    }
+    for (entity.rotation) |value| {
+        std.mem.writeInt(u32, packet[cursor..][0..4], @bitCast(value), .little);
+        cursor += 4;
+    }
+    std.mem.writeInt(u16, packet[cursor..][0..2], entity.animation_index, .little);
+    cursor += 2;
+    @memcpy(packet[cursor .. cursor + 64], &entity.animation);
+    cursor += 64;
+    @memcpy(packet[cursor .. cursor + spawn_command_size], &entity.spawn_command);
+    cursor += spawn_command_size;
+    return cursor;
+}
+
 fn activeActionCount(entity: Entity, now: i64) usize {
     var count: usize = 0;
     for (entity.active_actions) |action| {
@@ -694,15 +723,22 @@ fn activeActionCount(entity: Entity, now: i64) usize {
     return count;
 }
 
-fn writeSnapshotActions(packet: []u8, start_cursor: usize, entity: Entity, now: i64) usize {
+fn writeSnapshotActions(packet: []u8, start_cursor: usize, entity: Entity, now: i64, action_offset: usize, max_actions: usize) usize {
     var cursor = start_cursor;
-    const count = activeActionCount(entity, now);
-    packet[cursor] = @intCast(@min(count, 255));
+    const count_cursor = cursor;
+    packet[cursor] = 0;
     cursor += 1;
+    var skipped: usize = 0;
+    var written: usize = 0;
     for (entity.active_actions) |action| {
         if (!action.active) continue;
         const remaining_ms = remainingActionMs(action, now);
         if (remaining_ms == 0) continue;
+        if (skipped < action_offset) {
+            skipped += 1;
+            continue;
+        }
+        if (written >= max_actions) break;
         packet[cursor] = action.slot;
         packet[cursor + 1] = 0;
         std.mem.writeInt(u16, packet[cursor + 2 ..][0..2], action.sequence, .little);
@@ -710,7 +746,9 @@ fn writeSnapshotActions(packet: []u8, start_cursor: usize, entity: Entity, now: 
         std.mem.writeInt(u32, packet[cursor + 8 ..][0..4], action.duration_ms, .little);
         @memcpy(packet[cursor + 12 .. cursor + 12 + active_action_command_size], &action.command);
         cursor += snapshot_action_record_size;
+        written += 1;
     }
+    packet[count_cursor] = @intCast(written);
     return cursor;
 }
 

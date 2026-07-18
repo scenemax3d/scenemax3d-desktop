@@ -235,6 +235,8 @@ public class SceneMaxLanguageParser implements IParser {
             effekseerUsed.clear();
             videoUsed.clear();
             spriteSheetUsed.clear();
+            skyboxUsed.clear();
+            terrainsUsed.clear();
             cinematicRigLocationCache.clear();
         }
 

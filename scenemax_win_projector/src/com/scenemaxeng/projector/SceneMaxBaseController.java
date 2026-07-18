@@ -11,6 +11,7 @@ public class SceneMaxBaseController implements ISceneMaxController {
     protected static final int MULTIPLAYER_ACTION_SLOT_MOVE = 1;
     protected static final int MULTIPLAYER_ACTION_SLOT_ROTATE = 2;
     protected static final int MULTIPLAYER_ACTION_SLOT_ANIMATE = 3;
+    protected static final int MULTIPLAYER_ACTION_SLOT_STRUCTURAL_BASE = 64;
 
     public boolean adhereToPauseStatus = true;
     protected boolean targetCalculated = false;
@@ -212,6 +213,30 @@ public class SceneMaxBaseController implements ISceneMaxController {
             return;
         }
         app.dispatchMultiplayerCommand(targetVar, commandText);
+    }
+
+    protected void dispatchMultiplayerCommand(String runtimeName, String commandText) {
+        if (cmd != null && cmd.fromMultiplayerNetwork) {
+            return;
+        }
+        if (app == null || runtimeName == null || commandText == null || commandText.trim().isEmpty()) {
+            return;
+        }
+        app.dispatchMultiplayerCommand(runtimeName, commandText);
+    }
+
+    protected int startPersistentMultiplayerCommand(String runtimeName, int slot, String commandText) {
+        if (cmd != null && cmd.fromMultiplayerNetwork) {
+            return 0;
+        }
+        if (app == null || runtimeName == null || commandText == null || commandText.trim().isEmpty()) {
+            return 0;
+        }
+        return app.startPersistentMultiplayerCommand(runtimeName, slot, commandText);
+    }
+
+    protected String multiplayerEntityPlaceholder(String runtimeName) {
+        return "{network_entity:" + runtimeName + "}";
     }
 
     protected int startMultiplayerTimedAction(int slot, float durationSeconds, String commandText) {
