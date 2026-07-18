@@ -25,6 +25,8 @@ public class MoveToController extends SceneMaxBaseController {
     private PositionStatement lookingAtPosStatement;
     private final Vector3f frameOffset = new Vector3f();
     private MotionEase.MotionEaseSpec motionEase;
+    private boolean multiplayerCommandDispatched = false;
+    private int multiplayerActionSequence = 0;
 
     //private static HashMap<String,MoveToController> activeMoveControllers = new HashMap<>();
 
@@ -114,6 +116,7 @@ public class MoveToController extends SceneMaxBaseController {
 
             totalDist = targetPos.distance(startPos);
             motionEase = MotionEase.fromCommand(cmd, scope);
+            dispatchMultiplayerMoveToCommand();
 
         }
 
@@ -155,7 +158,12 @@ public class MoveToController extends SceneMaxBaseController {
             currPos = targetSpatial.getWorldTranslation();
         }
 
-        return  timePassed==targetTime;//    currPos.distance(targetPos)<0.1f;
+        boolean finished = timePassed == targetTime;
+        if (finished) {
+            endMultiplayerTimedAction(MULTIPLAYER_ACTION_SLOT_MOVE, multiplayerActionSequence);
+            multiplayerActionSequence = 0;
+        }
+        return finished;//    currPos.distance(targetPos)<0.1f;
 
     }
 
@@ -195,6 +203,22 @@ public class MoveToController extends SceneMaxBaseController {
 
         return red; // OK continue
 
+    }
+
+    private void dispatchMultiplayerMoveToCommand() {
+        if (multiplayerCommandDispatched || targetPos == null) {
+            return;
+        }
+        multiplayerCommandDispatched = true;
+        String command = "{network_entity}.move to ("
+                + networkNumber(targetPos.x) + ","
+                + networkNumber(targetPos.y) + ","
+                + networkNumber(targetPos.z) + ") in "
+                + networkNumber(targetTime) + " seconds";
+        dispatchMultiplayerCommand(command);
+        if (targetTime > 0f) {
+            multiplayerActionSequence = startMultiplayerTimedAction(MULTIPLAYER_ACTION_SLOT_MOVE, targetTime, command);
+        }
     }
 
 

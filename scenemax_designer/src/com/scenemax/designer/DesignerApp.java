@@ -123,6 +123,7 @@ public class DesignerApp extends SceneMaxApp {
         boolean staticModel;
         boolean dynamicModel;
         boolean vehicleModel;
+        boolean multiplayerModel;
         boolean staticEntity;
         boolean colliderEntity;
         String material;
@@ -1100,26 +1101,33 @@ public class DesignerApp extends SceneMaxApp {
     }
 
     public String addModel(String resourceName, boolean isStatic, boolean isDynamic, boolean isVehicle) {
-        return addModel(resourceName, isStatic, isDynamic, isVehicle, "none", null, -1);
+        return addModel(resourceName, isStatic, isDynamic, isVehicle, false, "none", null, -1);
     }
 
     /** Creates a 3D model at a specific position in a target list. */
     public String addModel(String resourceName, boolean isStatic, boolean isDynamic, boolean isVehicle,
                          List<DesignerEntity> targetList, int insertIndex) {
-        return addModel(resourceName, isStatic, isDynamic, isVehicle, "none", targetList, insertIndex);
+        return addModel(resourceName, isStatic, isDynamic, isVehicle, false, "none", targetList, insertIndex);
     }
 
     /** Creates a 3D model at a specific position in a target list. */
     public String addModel(String resourceName, boolean isStatic, boolean isDynamic, boolean isVehicle,
                          String collisionShape, List<DesignerEntity> targetList, int insertIndex) {
+        return addModel(resourceName, isStatic, isDynamic, isVehicle, false, collisionShape, targetList, insertIndex);
+    }
+
+    /** Creates a 3D model at a specific position in a target list. */
+    public String addModel(String resourceName, boolean isStatic, boolean isDynamic, boolean isVehicle,
+                         boolean isMultiplayer, String collisionShape, List<DesignerEntity> targetList, int insertIndex) {
         String name = "model_" + (++modelCounter);
         String prefix = isStatic ? "static " : isDynamic ? "dynamic " : "";
         String vehicleSuffix = isVehicle ? " vehicle" : "";
         float initialY = isVehicle ? 5f : 0f;
         String normalizedCollisionShape = normalizeModelCollisionShape(collisionShape);
-        String code = name + " => " + prefix + resourceName + vehicleSuffix + ": pos (0," + initialY + ",0)"
+        String multiplayerAttr = isMultiplayer ? ": multiplayer, pos" : ": pos";
+        String code = name + " => " + prefix + resourceName + vehicleSuffix + multiplayerAttr + " (0," + initialY + ",0)"
                 + buildModelCollisionShapeSuffix(normalizedCollisionShape) + " async";
-        addEntityViaCode(name, code, DesignerEntityType.MODEL, 0, 0, 0, 0, resourceName, isStatic, isDynamic, isVehicle, false, false, targetList, insertIndex);
+        addEntityViaCode(name, code, DesignerEntityType.MODEL, 0, 0, 0, 0, resourceName, isStatic, isDynamic, isVehicle, isMultiplayer, false, false, targetList, insertIndex);
 
         // Apply the model's configured scale from ResourceSetup instead of defaulting to 1
         if (getAssetsMapping() != null && getAssetsMapping().get3DModelsIndex() != null) {
@@ -1131,6 +1139,7 @@ public class DesignerApp extends SceneMaxApp {
         }
         PendingEntity pe = pendingEntities.get(pendingEntities.size() - 1);
         pe.modelCollisionShape = normalizedCollisionShape;
+        pe.multiplayerModel = isMultiplayer;
         return name;
     }
 
@@ -3533,25 +3542,33 @@ public class DesignerApp extends SceneMaxApp {
     private void addEntityViaCode(String name, String code, DesignerEntityType type,
                                    float radius, float sizeX, float sizeY, float sizeZ,
                                    String resourcePath, boolean isStatic, boolean isVehicle) {
-        addEntityViaCode(name, code, type, radius, sizeX, sizeY, sizeZ, resourcePath, isStatic, false, isVehicle, false, false);
+        addEntityViaCode(name, code, type, radius, sizeX, sizeY, sizeZ, resourcePath, isStatic, false, isVehicle, false, false, null, -1);
     }
 
     private void addEntityViaCode(String name, String code, DesignerEntityType type,
                                    float radius, float sizeX, float sizeY, float sizeZ,
                                    String resourcePath, boolean isStatic, boolean isDynamic, boolean isVehicle) {
-        addEntityViaCode(name, code, type, radius, sizeX, sizeY, sizeZ, resourcePath, isStatic, isDynamic, isVehicle, false, false);
+        addEntityViaCode(name, code, type, radius, sizeX, sizeY, sizeZ, resourcePath, isStatic, isDynamic, isVehicle, false, false, null, -1);
     }
 
     private void addEntityViaCode(String name, String code, DesignerEntityType type,
                                    float radius, float sizeX, float sizeY, float sizeZ,
                                    String resourcePath, boolean isStatic, boolean isDynamic, boolean isVehicle,
                                    boolean isStaticEntity, boolean isColliderEntity) {
-        addEntityViaCode(name, code, type, radius, sizeX, sizeY, sizeZ, resourcePath, isStatic, isDynamic, isVehicle, isStaticEntity, isColliderEntity, null, -1);
+        addEntityViaCode(name, code, type, radius, sizeX, sizeY, sizeZ, resourcePath, isStatic, isDynamic, isVehicle, false, isStaticEntity, isColliderEntity, null, -1);
     }
 
     private void addEntityViaCode(String name, String code, DesignerEntityType type,
                                    float radius, float sizeX, float sizeY, float sizeZ,
                                    String resourcePath, boolean isStatic, boolean isDynamic, boolean isVehicle,
+                                   boolean isStaticEntity, boolean isColliderEntity,
+                                   List<DesignerEntity> targetList, int insertIndex) {
+        addEntityViaCode(name, code, type, radius, sizeX, sizeY, sizeZ, resourcePath, isStatic, isDynamic, isVehicle, false, isStaticEntity, isColliderEntity, targetList, insertIndex);
+    }
+
+    private void addEntityViaCode(String name, String code, DesignerEntityType type,
+                                   float radius, float sizeX, float sizeY, float sizeZ,
+                                   String resourcePath, boolean isStatic, boolean isDynamic, boolean isVehicle, boolean isMultiplayer,
                                    boolean isStaticEntity, boolean isColliderEntity,
                                    List<DesignerEntity> targetList, int insertIndex) {
         // Run the SceneMax code - this creates controllers that will be
@@ -3575,6 +3592,7 @@ public class DesignerApp extends SceneMaxApp {
         pending.staticModel = isStatic;
         pending.dynamicModel = isDynamic;
         pending.vehicleModel = isVehicle;
+        pending.multiplayerModel = isMultiplayer;
         pending.staticEntity = isStaticEntity;
         pending.colliderEntity = isColliderEntity;
         pending.nodeName = nodeName;
@@ -3802,6 +3820,7 @@ public class DesignerApp extends SceneMaxApp {
                 entity.setSceneMaxCode(pe.code);
                 entity.setSceneNode(node);
                 entity.setAttachTo(pe.attachTo);
+                entity.setMultiplayerEntity(pe.multiplayerModel);
                 entity.setIkAsset(pe.ikAsset);
                 copyIKLayerPlaybacks(pe.ikLayerPlaybacks, entity.getIkLayerPlaybacks());
 
@@ -4583,6 +4602,7 @@ public class DesignerApp extends SceneMaxApp {
         boolean staticModel = entity.isStaticModel();
         boolean dynamicModel = entity.isDynamicModel();
         boolean vehicleModel = entity.isVehicleModel();
+        boolean multiplayerModel = entity.isMultiplayerEntity();
         String modelCollisionShape = entity.getModelCollisionShape();
         String jointMapping = entity.getJointMapping();
         String attachTo = entity.getAttachTo();
@@ -4635,56 +4655,56 @@ public class DesignerApp extends SceneMaxApp {
         // exported .code file by DesignerDocument.generateEntityCode().
         String staticPfx = isStatic ? "static " : "";
         String materialSuffix = (material != null && !material.isEmpty()) ? ", material \"" + material + "\"" : "";
-        String hiddenAttr = hidden ? " hidden," : "";
+        String entityAttrs = buildEntityLeadingAttributes(hidden, multiplayerModel);
         String shadowSuffix = buildShadowModeSuffix(shadowMode);
         String code;
         switch (type) {
             case SPHERE:
-                code = name + " => " + staticPfx + "sphere :" + hiddenAttr + " pos (" + pos.x + "," + pos.y + "," + pos.z +
+                code = name + " => " + staticPfx + "sphere " + entityAttrs + " pos (" + pos.x + "," + pos.y + "," + pos.z +
                        "), radius " + radius + materialSuffix + shadowSuffix;
                 break;
             case BOX:
-                code = name + " => " + staticPfx + "box :" + hiddenAttr + " size (" +
+                code = name + " => " + staticPfx + "box " + entityAttrs + " size (" +
                        (sizeX * 2) + "," + (sizeY * 2) + "," + (sizeZ * 2) +
                        "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
                 break;
             case WEDGE:
-                code = name + " => " + staticPfx + "wedge :" + hiddenAttr + " size (" +
+                code = name + " => " + staticPfx + "wedge " + entityAttrs + " size (" +
                        wedgeWidth + "," + wedgeHeight + "," + wedgeDepth +
                        "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
                 break;
             case CYLINDER:
-                code = name + " => " + staticPfx + "cylinder :" + hiddenAttr + " radius (" +
+                code = name + " => " + staticPfx + "cylinder " + entityAttrs + " radius (" +
                        radiusTop + "," + radiusBottom +
                        "), height " + cylHeight +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
                 break;
             case CONE:
-                code = name + " => " + staticPfx + "cone :" + hiddenAttr + " radius (" +
+                code = name + " => " + staticPfx + "cone " + entityAttrs + " radius (" +
                        radiusTop + "," + radiusBottom +
                        "), height " + cylHeight +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
                 break;
             case HOLLOW_CYLINDER:
-                code = name + " => " + staticPfx + "hollow cylinder :" + hiddenAttr + " radius (" +
+                code = name + " => " + staticPfx + "hollow cylinder " + entityAttrs + " radius (" +
                        radiusTop + "," + radiusBottom +
                        "), inner radius (" + innerRadiusTop + "," + innerRadiusBottom +
                        "), height " + cylHeight +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
                 break;
             case QUAD:
-                code = name + " => " + staticPfx + "quad :" + hiddenAttr + " size (" +
+                code = name + " => " + staticPfx + "quad " + entityAttrs + " size (" +
                        quadWidth + "," + quadHeight +
                        "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
                 break;
             case STAIRS:
-                code = name + " => " + staticPfx + "stairs :" + hiddenAttr + " size (" +
+                code = name + " => " + staticPfx + "stairs " + entityAttrs + " size (" +
                        stairsWidth + "," + stairsStepHeight + "," + stairsStepDepth +
                        "), steps " + stairsStepCount +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
                 break;
             case ARCH:
-                code = name + " => " + staticPfx + "arch :" + hiddenAttr + " size (" +
+                code = name + " => " + staticPfx + "arch " + entityAttrs + " size (" +
                        archWidth + "," + archHeight + "," + archDepth +
                        "), thickness " + archThickness +
                        ", segments " + archSegments +
@@ -4694,7 +4714,7 @@ public class DesignerApp extends SceneMaxApp {
                 String modelPrefix = staticModel ? "static " : dynamicModel ? "dynamic " : "";
                 String vehicleSuffix = vehicleModel ? " vehicle" : "";
                 code = name + " => " + modelPrefix + resourcePath + vehicleSuffix +
-                        ":" + hiddenAttr + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" +
+                        entityAttrs + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" +
                         shadowSuffix + buildModelCollisionShapeSuffix(modelCollisionShape) + " async";
                 break;
             default:
@@ -4742,6 +4762,7 @@ public class DesignerApp extends SceneMaxApp {
         pending.staticModel = staticModel;
         pending.dynamicModel = dynamicModel;
         pending.vehicleModel = vehicleModel;
+        pending.multiplayerModel = multiplayerModel;
         pending.modelCollisionShape = modelCollisionShape;
         pending.jointMapping = jointMapping;
         pending.staticEntity = isStatic;
@@ -5461,6 +5482,7 @@ public class DesignerApp extends SceneMaxApp {
                     pending.staticModel = entityTemplate.isStaticModel();
                     pending.dynamicModel = entityTemplate.isDynamicModel();
                     pending.vehicleModel = entityTemplate.isVehicleModel();
+                    pending.multiplayerModel = entityTemplate.isMultiplayerEntity();
                     pending.modelCollisionShape = entityTemplate.getModelCollisionShape();
                     pending.hidden = entityTemplate.isHidden();
                     pending.shader = entityTemplate.getShader();
@@ -5591,58 +5613,58 @@ public class DesignerApp extends SceneMaxApp {
         String name = entity.getName();
         String mat = entity.getMaterial();
         String materialSuffix = (mat != null && !mat.isEmpty()) ? ", material \"" + mat + "\"" : "";
-        String hiddenAttr = entity.isHidden() ? " hidden," : "";
+        String entityAttrs = buildEntityLeadingAttributes(entity.isHidden(), entity.isMultiplayerEntity());
         String shadowSuffix = buildShadowModeSuffix(entity.getShadowMode());
         String rotateSuffix = buildDesignRotateSuffix(rotation);
         String scaleSuffix = buildDesignScaleSuffix(scale);
         switch (entity.getType()) {
             case SPHERE:
                 String spherePrefix = entity.isStaticEntity() ? "static " : "";
-                return name + " => " + spherePrefix + "sphere :" + hiddenAttr + " pos (" + pos.x + "," + pos.y + "," + pos.z +
+                return name + " => " + spherePrefix + "sphere " + entityAttrs + " pos (" + pos.x + "," + pos.y + "," + pos.z +
                        "), radius " + entity.getRadius() + materialSuffix + shadowSuffix;
             case BOX:
                 String boxPrefix = entity.isStaticEntity() ? "static " : "";
-                return name + " => " + boxPrefix + "box :" + hiddenAttr + " size (" +
+                return name + " => " + boxPrefix + "box " + entityAttrs + " size (" +
                        (entity.getSizeX() * 2) + "," + (entity.getSizeY() * 2) + "," + (entity.getSizeZ() * 2) +
                        "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
             case WEDGE:
                 String wedgePrefix = entity.isStaticEntity() ? "static " : "";
-                return name + " => " + wedgePrefix + "wedge :" + hiddenAttr + " size (" +
+                return name + " => " + wedgePrefix + "wedge " + entityAttrs + " size (" +
                        entity.getWedgeWidth() + "," + entity.getWedgeHeight() + "," + entity.getWedgeDepth() +
                        "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
             case CYLINDER:
                 String cylPrefix = entity.isStaticEntity() ? "static " : "";
-                return name + " => " + cylPrefix + "cylinder :" + hiddenAttr + " radius (" +
+                return name + " => " + cylPrefix + "cylinder " + entityAttrs + " radius (" +
                        entity.getRadiusTop() + "," + entity.getRadiusBottom() +
                        "), height " + entity.getHeight() +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
             case CONE:
                 String conePrefix = entity.isStaticEntity() ? "static " : "";
-                return name + " => " + conePrefix + "cone :" + hiddenAttr + " radius (" +
+                return name + " => " + conePrefix + "cone " + entityAttrs + " radius (" +
                        entity.getRadiusTop() + "," + entity.getRadiusBottom() +
                        "), height " + entity.getHeight() +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
             case HOLLOW_CYLINDER:
                 String hcPrefix = entity.isStaticEntity() ? "static " : "";
-                return name + " => " + hcPrefix + "hollow cylinder :" + hiddenAttr + " radius (" +
+                return name + " => " + hcPrefix + "hollow cylinder " + entityAttrs + " radius (" +
                        entity.getRadiusTop() + "," + entity.getRadiusBottom() +
                        "), inner radius (" + entity.getInnerRadiusTop() + "," + entity.getInnerRadiusBottom() +
                        "), height " + entity.getHeight() +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
             case QUAD:
                 String quadPrefix = entity.isStaticEntity() ? "static " : "";
-                return name + " => " + quadPrefix + "quad :" + hiddenAttr + " size (" +
+                return name + " => " + quadPrefix + "quad " + entityAttrs + " size (" +
                        entity.getQuadWidth() + "," + entity.getQuadHeight() +
                        "), pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
             case STAIRS:
                 String stairsPrefix = entity.isStaticEntity() ? "static " : "";
-                return name + " => " + stairsPrefix + "stairs :" + hiddenAttr + " size (" +
+                return name + " => " + stairsPrefix + "stairs " + entityAttrs + " size (" +
                        entity.getStairsWidth() + "," + entity.getStairsStepHeight() + "," + entity.getStairsStepDepth() +
                        "), steps " + entity.getStairsStepCount() +
                        ", pos (" + pos.x + "," + pos.y + "," + pos.z + ")" + materialSuffix + shadowSuffix;
             case ARCH:
                 String archPrefix = entity.isStaticEntity() ? "static " : "";
-                return name + " => " + archPrefix + "arch :" + hiddenAttr + " size (" +
+                return name + " => " + archPrefix + "arch " + entityAttrs + " size (" +
                        entity.getArchWidth() + "," + entity.getArchHeight() + "," + entity.getArchDepth() +
                        "), thickness " + entity.getArchThickness() +
                        ", segments " + entity.getArchSegments() +
@@ -5654,11 +5676,22 @@ public class DesignerApp extends SceneMaxApp {
                 String vehicleSfx = entity.isVehicleModel() ? " vehicle" : "";
                 String collisionSuffix = buildModelCollisionShapeSuffix(entity.getModelCollisionShape());
                 return name + " => " + staticPfx + entity.getResourcePath() + vehicleSfx +
-                        ":" + hiddenAttr + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" +
+                        entityAttrs + " pos (" + pos.x + "," + pos.y + "," + pos.z + ")" +
                         scaleSuffix + rotateSuffix + shadowSuffix + collisionSuffix + " async";
             default:
                 return "";
         }
+    }
+
+    private String buildEntityLeadingAttributes(boolean hidden, boolean multiplayer) {
+        List<String> attrs = new ArrayList<>();
+        if (hidden) {
+            attrs.add("hidden");
+        }
+        if (multiplayer) {
+            attrs.add("multiplayer");
+        }
+        return attrs.isEmpty() ? ":" : ": " + String.join(", ", attrs) + ",";
     }
 
     private String buildModelCollisionShapeSuffix(String value) {

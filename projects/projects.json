@@ -1,19 +1,25 @@
 {
     "projects": [
         {
-            "path": "projects/fighting_game_project",
             "itchWindowsChannel": "windows",
-            "selectedNode": "tests",
             "itchGamePage": "https://adi-barda.itch.io/fighting-game-concept",
+            "multiplayerDeployOs": "Windows",
+            "itchMacChannel": "macos",
+            "itchLinuxChannel": "linux",
+            "path": "projects/fighting_game_project",
+            "multiplayerPassword": "",
+            "multiplayerServerIp": "127.0.0.1",
+            "selectedNode": "horse1_end.code",
+            "projectGuid": "b616bee4-eeca-4b8f-939b-37510d338fa3",
             "name": "fighting game project",
             "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game\\side_tests",
-            "itchMacChannel": "macos",
-            "itchLinuxChannel": "linux"
+            "multiplayerServerPort": 9001
         },
         {
             "path": "projects/default_project",
             "selectedNode": "main",
+            "projectGuid": "e900ce5a-50ea-4c7d-aab1-3af562f4396c",
             "name": "default project",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\default_project\\scripts\\Jam-Crime-With_pause"
         },
@@ -22,6 +28,7 @@
             "itchWindowsChannel": "",
             "selectedNode": "main",
             "itchGamePage": "",
+            "projectGuid": "f6b84b1c-465e-4e7c-82c9-0a264005f6f6",
             "name": "test1",
             "itchButlerPath": "",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test1\\scripts\\4play",
@@ -31,126 +38,147 @@
         {
             "path": "projects/test2",
             "selectedNode": "main",
+            "projectGuid": "fa7d02f5-78c5-4e37-a83c-40bda6c1a4cb",
             "name": "test2",
             "selectedParent": "4play-lesson-3"
         },
         {
             "path": "projects/test3",
             "selectedNode": "main",
+            "projectGuid": "8cb436a2-7ae2-4640-bcbe-eb71ac695e46",
             "name": "test3",
             "selectedParent": "4play"
         },
         {
             "path": "projects/test4",
             "selectedNode": "main",
+            "projectGuid": "4fd7ed47-f17f-4bb0-af59-21eddf60788a",
             "name": "test4",
             "selectedParent": "test4"
         },
         {
             "path": "projects/test5",
             "selectedNode": "main",
+            "projectGuid": "1297c758-5b03-4ea0-9244-69ba6236eda2",
             "name": "test5",
             "selectedParent": "test5"
         },
         {
             "path": "projects/test6",
             "selectedNode": "main",
+            "projectGuid": "c770af2a-e445-46cc-9360-5535217191ff",
             "name": "test6",
             "selectedParent": "test6"
         },
         {
             "path": "projects/test7",
             "selectedNode": "main",
+            "projectGuid": "29140548-fd8b-48f5-9710-2ca46031d9ec",
             "name": "test7",
             "selectedParent": "Rally-Desert-Cheese"
         },
         {
             "path": "projects/test8",
             "selectedNode": "main",
+            "projectGuid": "25d9020a-636b-4937-aed2-088bcef0fbbe",
             "name": "test8",
             "selectedParent": "4play-lesson-3"
         },
         {
             "path": "projects/test9",
             "selectedNode": "main",
+            "projectGuid": "7e18ca7b-fd8f-4aff-97ed-be17fb0ad51d",
             "name": "test9",
             "selectedParent": "hello world"
         },
         {
             "path": "projects/test10",
             "selectedNode": "main",
+            "projectGuid": "b9fcd95b-03fb-4a5f-9581-75fadf2a1679",
             "name": "test10",
             "selectedParent": "hello world"
         },
         {
             "path": "projects/test12",
             "selectedNode": "main",
+            "projectGuid": "e65c829b-7ada-473e-8d5c-c300cd2c534b",
             "name": "test12",
             "selectedParent": "car race demo"
         },
         {
             "path": "projects/test-add-code",
             "selectedNode": "main",
+            "projectGuid": "af6813fb-0822-4ca0-aefb-d95615c120d5",
             "name": "test-add-code",
             "selectedParent": "test-add-code"
         },
         {
             "path": "projects/4play",
             "selectedNode": "main",
+            "projectGuid": "648c68e1-e88c-4f38-aae0-096d59af2bde",
             "name": "4play",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\4play\\scripts\\4play"
         },
         {
             "path": "projects/test_functions",
             "selectedNode": "main",
+            "projectGuid": "0c42f92c-1786-4d80-a638-c3c2b496218a",
             "name": "test functions",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_functions\\scripts\\Fighting Game"
         },
         {
             "path": "projects/test_dynamic_sprite_load",
             "selectedNode": "main",
+            "projectGuid": "df44783e-ea52-45c7-83ad-a92078b0ccbd",
             "name": "test dynamic sprite load",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_dynamic_sprite_load\\scripts\\test dynamic sprite load"
         },
         {
             "path": "projects/English_Game",
             "selectedNode": "main",
+            "projectGuid": "2de1cc6f-fcc8-4c04-94d2-e92d4372754b",
             "name": "English Game",
             "selectedParent": "English Game"
         },
         {
             "path": "projects/Fighting_Game",
             "selectedNode": "input",
+            "projectGuid": "a595d550-a3ee-41eb-b87d-b6df4c012ba8",
             "name": "Fighting Game",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\Fighting_Game\\scripts\\tests"
         },
         {
             "path": "projects/proj1",
             "selectedNode": "main",
+            "projectGuid": "540df981-82ee-4a15-ada3-c0d6b3974232",
             "name": "proj1",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\proj1\\scripts\\proj1"
         },
         {
             "path": "projects/proj2",
             "selectedNode": "main",
+            "projectGuid": "51c3e7e5-1d24-4b8a-97fe-b7da87c6f290",
             "name": "proj2",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\proj2\\scripts\\proj2\\level3"
         },
         {
             "path": "projects/test_gemini",
             "selectedNode": "main",
+            "projectGuid": "85a99264-0895-47e9-90fb-5f8392e5a879",
             "name": "test gemini",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_gemini\\scripts\\GeminiAI"
         },
         {
             "path": "projects/demo1",
             "selectedNode": "main",
+            "projectGuid": "ec0d2d96-5797-48e8-b2e9-093a0be56db2",
             "name": "demo1",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\demo1\\scripts\\demo1"
         },
         {
             "path": "projects/test_designer",
             "selectedNode": "level1.smdesign",
+            "projectGuid": "56ad1c30-1b01-4e08-963b-393eca20ba41",
             "name": "test designer",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_designer\\scripts\\test designer\\level1"
         },
@@ -159,6 +187,7 @@
             "itchWindowsChannel": "",
             "selectedNode": "main",
             "itchGamePage": "",
+            "projectGuid": "66983f74-f51c-417f-85ef-ebb28d859541",
             "name": "AI_tests",
             "itchButlerPath": "",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game",
@@ -170,12 +199,28 @@
             "itchWindowsChannel": "",
             "selectedNode": "main",
             "itchGamePage": "",
+            "projectGuid": "1e299825-6a98-4966-ac32-a22602a01933",
             "name": "hello_dragon_tutorial",
             "itchButlerPath": "",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\hello_dragon_tutorial\\scripts\\dragon_scene",
             "itchMacChannel": "",
             "itchLinuxChannel": ""
+        },
+        {
+            "itchWindowsChannel": "",
+            "itchGamePage": "",
+            "multiplayerDeployOs": "Windows",
+            "itchMacChannel": "",
+            "itchLinuxChannel": "",
+            "path": "projects/multi-player-test",
+            "multiplayerPassword": "",
+            "multiplayerServerIp": "127.0.0.1",
+            "selectedNode": "main",
+            "projectGuid": "845fa4dd-4351-4924-89a9-b7700a90fec6",
+            "name": "multi-player-test",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\multi-player-test\\scripts\\multi-player-test",
+            "multiplayerServerPort": 9001
         }
     ],
-    "selectedProject": "fighting game project"
+    "selectedProject": "multi-player-test"
 }

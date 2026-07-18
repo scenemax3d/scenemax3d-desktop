@@ -82,8 +82,10 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     private final Set<String> shaderNamesUsed = new LinkedHashSet<>();
     private final Set<String> environmentShaderNamesUsed = new LinkedHashSet<>();
     private final Set<String> materialNamesUsed = new LinkedHashSet<>();
+    private final Set<String> builtInMaterialNamesUsed = new LinkedHashSet<>();
     private final Set<String> weaponAssetNamesUsed = new LinkedHashSet<>();
     private final Set<String> throwMotionAssetNamesUsed = new LinkedHashSet<>();
+    private final Set<String> ikAssetNamesUsed = new LinkedHashSet<>();
     private final List<String> scannedScriptFiles = new ArrayList<>();
     private final List<String> scannedDesignerFiles = new ArrayList<>();
     private final List<String> reachableUiFiles = new ArrayList<>();
@@ -233,6 +235,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         SceneMaxLanguageParser.spriteSheetUsed = new ArrayList<>();
         SceneMaxLanguageParser.audioUsed = new ArrayList<>();
         SceneMaxLanguageParser.fontsUsed = new ArrayList<>();
+        SceneMaxLanguageParser.skyboxUsed = new ArrayList<>();
+        SceneMaxLanguageParser.terrainsUsed = new ArrayList<>();
         addedJarEntries.clear();
         uiReferencedSpriteNames.clear();
         uiReferencedFontNames.clear();
@@ -241,8 +245,10 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         shaderNamesUsed.clear();
         environmentShaderNamesUsed.clear();
         materialNamesUsed.clear();
+        builtInMaterialNamesUsed.clear();
         weaponAssetNamesUsed.clear();
         throwMotionAssetNamesUsed.clear();
+        ikAssetNamesUsed.clear();
         scannedScriptFiles.clear();
         scannedDesignerFiles.clear();
         reachableUiFiles.clear();
@@ -353,6 +359,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         copyAnimationResourcesToDeploy(deployFolder, resources.getJSONArray("animations"));
         copyWeaponResourcesToDeploy(deployFolder);
         copyThrowMotionResourcesToDeploy(deployFolder);
+        copyIKResourcesToDeploy(deployFolder);
 
 
         collectUiDocumentReferences(reachableUiFiles);
@@ -446,6 +453,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         appendUsedShaderResources(assetsMapping, resources.getJSONArray("shaders"), resources.getJSONArray("environmentShaders"));
         appendUsedMaterialResources(assetsMapping, resources.getJSONArray("materials"));
+        copyUsedBuiltInMaterialTextures();
         appendUsedVideoResources(deployFolder, resources.getJSONArray("videos"));
 
         appendCinematicResources(resources.getJSONArray("cinematics"));
@@ -477,6 +485,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         File scriptFolderCopy = copyAndApplyMacro(scriptFolder);
         FileUtils.moveDirectory(scriptFolderCopy, new File(deployFolder, "running")); // rename
+        injectProjectMetadata(new File(deployFolder, "running"));
         logPackage("Copied packaged scripts into deploy/running.");
         try {
             javaExtensionBuildResult = JavaExtensionBuildTool.buildExtensions(
@@ -617,6 +626,93 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         String code = FileUtils.readFileToString(file, StandardCharsets.UTF_8);
         ApplyMacroResults mr = macroFilter.apply(code);
         FileUtils.write(file, mr.finalPrg, StandardCharsets.UTF_8);
+    }
+
+    private void injectProjectMetadata(File runningFolder) throws IOException {
+        if (runningFolder == null) {
+            return;
+        }
+        File mainFile = new File(runningFolder, "main");
+        if (!mainFile.isFile()) {
+            return;
+        }
+        String code = FileUtils.readFileToString(mainFile, StandardCharsets.UTF_8);
+        StringBuilder metadata = new StringBuilder();
+        SceneMaxProject project = Util.getActiveProject();
+
+        if (project != null && project.name != null && !project.name.isBlank() && !code.contains("//$[project]=")) {
+            metadata.append("//$[project]=").append(sanitizeMetadataValue(project.name)).append(";");
+        }
+
+        String guid = resolveActiveProjectGuid();
+        if (!guid.isBlank() && !code.contains("//$[project_guid]=")) {
+            metadata.append("//$[project_guid]=").append(sanitizeMetadataValue(guid)).append(";");
+        }
+
+        String packagedSourceText = readScannedSourceText();
+        if (programUsesMultiplayer(packagedSourceText)) {
+            appendMultiplayerMetadata(metadata, code, project);
+        }
+
+        if (metadata.length() == 0) {
+            return;
+        }
+        FileUtils.write(mainFile, metadata + code, StandardCharsets.UTF_8);
+    }
+
+    private void appendMultiplayerMetadata(StringBuilder metadata, String code, SceneMaxProject project) {
+        String serverIp = project != null && project.multiplayerServerIp != null && !project.multiplayerServerIp.isBlank()
+                ? project.multiplayerServerIp.trim()
+                : "127.0.0.1";
+        int serverPort = project != null && project.multiplayerServerPort > 0
+                ? project.multiplayerServerPort
+                : SceneMaxProject.DEFAULT_MULTIPLAYER_PORT;
+        String sessionName = project != null && project.name != null && !project.name.isBlank()
+                ? project.name.trim()
+                : "local";
+
+        appendMetadataIfMissing(metadata, code, "multiplayer_server", serverIp);
+        appendMetadataIfMissing(metadata, code, "multiplayer_port", Integer.toString(serverPort));
+        if (project != null && project.multiplayerPassword != null && !project.multiplayerPassword.isBlank()) {
+            appendMetadataIfMissing(metadata, code, "multiplayer_password", project.multiplayerPassword);
+        }
+        appendMetadataIfMissing(metadata, code, "multiplayer_session_id", "1000");
+        appendMetadataIfMissing(metadata, code, "multiplayer_create_session", "false");
+        appendMetadataIfMissing(metadata, code, "multiplayer_session_name", sessionName);
+        appendMetadataIfMissing(metadata, code, "multiplayer_scene", "main");
+    }
+
+    private void appendMetadataIfMissing(StringBuilder metadata, String code, String key, String value) {
+        if (value == null || value.isBlank() || code.contains("//$[" + key + "]=")) {
+            return;
+        }
+        metadata.append("//$[").append(key).append("]=").append(sanitizeMetadataValue(value)).append(";");
+    }
+
+    private boolean programUsesMultiplayer(String code) {
+        return code != null && Pattern.compile("\\bmultiplayer\\b", Pattern.CASE_INSENSITIVE).matcher(code).find();
+    }
+
+    private String sanitizeMetadataValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace('\r', ' ')
+                .replace('\n', ' ')
+                .replace(';', ' ')
+                .trim();
+    }
+
+    private String resolveActiveProjectGuid() {
+        SceneMaxProject project = Util.getActiveProject();
+        if (project == null) {
+            return "";
+        }
+        if (project.projectGuid == null || project.projectGuid.trim().isEmpty()) {
+            project.projectGuid = java.util.UUID.randomUUID().toString();
+            Util.saveProjectSettings(project);
+        }
+        return project.projectGuid == null ? "" : project.projectGuid.trim();
     }
 
     private void prepareTargetPackages(JSONObject resources) throws IOException {
@@ -1057,11 +1153,13 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         addCategory(rows, deployRoot, "shaders", "shaders", resourceCount(packagedResources, "shaders"));
         addCategory(rows, deployRoot, "environment shaders", "environment_shaders", resourceCount(packagedResources, "environmentShaders"));
         addCategory(rows, deployRoot, "skyboxes", "skyboxes", resourceCount(packagedResources, "skyboxes"));
+        addCategory(rows, deployRoot, "IK", "resources/IK", ikAssetNamesUsed.size());
         addCategory(rows, deployRoot, "throw motions", "resources/throw_motions", throwMotionAssetNamesUsed.size());
         addCategory(rows, deployRoot, "weapons", "resources/weapons", weaponAssetNamesUsed.size());
 
         long resourceTotal = sizeOf(new File(deployRoot, "resources"));
         long knownResourceTotal = sizeOf(new File(deployRoot, "resources/effects"))
+                + sizeOf(new File(deployRoot, "resources/IK"))
                 + sizeOf(new File(deployRoot, "resources/throw_motions"))
                 + sizeOf(new File(deployRoot, "resources/weapons"));
         long resourceOther = Math.max(0, resourceTotal - knownResourceTotal);
@@ -2331,6 +2429,16 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         );
     }
 
+    private void copyIKResourcesToDeploy(File deployFolder) {
+        File deployIKDir = new File(deployFolder, "resources/IK");
+        copyReferencedStandaloneAssetsToDeploy(
+                collectIKStandaloneAssetFiles(),
+                ikAssetNamesUsed,
+                deployIKDir,
+                "smik"
+        );
+    }
+
     private File resolveEffekseerEffectSource(String assetId) {
         File projectResources = getPackagedProjectResourcesFolder();
         if (projectResources != null) {
@@ -2384,6 +2492,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         collectNamedReferences(sourceText, assetsMapping.getAnimationsIndex().keySet(), animationNamesUsed);
         collectNamedReferences(sourceText, assetsMapping.getMaterialsIndex().keySet(), materialNamesUsed);
+        collectNamedReferences(sourceText, builtInMaterialTexturePaths().keySet(), builtInMaterialNamesUsed);
 
         for (ResourceShader shader : assetsMapping.getShadersIndex().values()) {
             if (shader == null || shader.name == null || !containsAssetName(sourceText, shader.name)) {
@@ -2398,6 +2507,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
         collectNamedReferences(sourceText, collectStandaloneAssetCandidateNames("smweapon", "weapons", "Weapons"), weaponAssetNamesUsed);
         collectNamedReferences(sourceText, collectStandaloneAssetCandidateNames("smmotion", "throw_motions", "ThrowMotions"), throwMotionAssetNamesUsed);
+        collectNamedReferences(sourceText, collectIKStandaloneAssetCandidateNames(), ikAssetNamesUsed);
     }
 
     private String readScannedSourceText() {
@@ -2505,6 +2615,33 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             }
             upsertIndexedResource(targetArray, resource);
         }
+    }
+
+    private void copyUsedBuiltInMaterialTextures() {
+        Map<String, String[]> textures = builtInMaterialTexturePaths();
+        for (String materialName : builtInMaterialNamesUsed) {
+            String[] paths = textures.get(materialName.toLowerCase(Locale.ROOT));
+            if (paths == null) {
+                continue;
+            }
+            for (String path : paths) {
+                copyResourceFileToDeploy(new File("./deploy"), path);
+            }
+        }
+    }
+
+    private Map<String, String[]> builtInMaterialTexturePaths() {
+        Map<String, String[]> textures = new LinkedHashMap<>();
+        textures.put("pond", new String[]{"Textures/Terrain/Pond/Pond.jpg", "Textures/Terrain/Pond/Pond_normal.png"});
+        textures.put("rock", new String[]{"Textures/Terrain/Rock/rock.png", "Textures/Terrain/Rock/rock_normal.png"});
+        textures.put("rock2", new String[]{"Textures/Terrain/Rock/rock2.jpg", "Textures/Terrain/Rock/rock_normal.png"});
+        textures.put("brickwall", new String[]{"Textures/Terrain/BrickWall/brickwall.jpg", "Textures/Terrain/BrickWall/brickwall_normal.jpg"});
+        textures.put("dirt", new String[]{"Textures/Terrain/Splat/dirt.jpg", "Textures/Terrain/Splat/dirt_normal.png"});
+        textures.put("grass", new String[]{"Textures/Terrain/Splat/grass.jpg", "Textures/Terrain/Splat/grass_normal.jpg"});
+        textures.put("road", new String[]{"Textures/Terrain/Splat/road.jpg", "Textures/Terrain/Splat/road_normal.png"});
+        textures.put("alpha", new String[]{"Textures/Terrain/Splat/alpha1.png", "Textures/Terrain/Splat/alphamap.png"});
+        textures.put("alpha2", new String[]{"Textures/Terrain/Splat/alpha2.png", "Textures/Terrain/Splat/alphamap2.png"});
+        return textures;
     }
 
     private void appendUsedVideoResources(File deployFolder, JSONArray targetArray) {
@@ -2687,6 +2824,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     }
 
     private void copyJ3oSidecars(File sourceJ3o, File targetJ3o) {
+        copySiblingModelSidecars(sourceJ3o, targetJ3o);
+
         File texturesRoot = new File(sourceJ3o.getParentFile(), "textures");
         if (!texturesRoot.isDirectory()) {
             return;
@@ -2707,6 +2846,54 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         for (File rootFile : rootFiles) {
             copyFileIfNeeded(rootFile, new File(targetTexturesRoot, rootFile.getName()));
         }
+    }
+
+    private void copyResourceFileToDeploy(File deployFolder, String resourcePath) {
+        if (resourcePath == null || resourcePath.isBlank()) {
+            return;
+        }
+        File sourceFile = resolveResourceFile(resourcePath);
+        if (sourceFile == null || !sourceFile.isFile()) {
+            return;
+        }
+        copyFileIfNeeded(sourceFile, new File(deployFolder, resourcePath.replace("\\", "/")));
+    }
+
+    private void copySiblingModelSidecars(File sourceModel, File targetModel) {
+        File sourceFolder = sourceModel.getParentFile();
+        File targetFolder = targetModel.getParentFile();
+        if (sourceFolder == null || targetFolder == null || !sourceFolder.isDirectory()) {
+            return;
+        }
+
+        File[] sidecars = sourceFolder.listFiles(File::isFile);
+        if (sidecars == null) {
+            return;
+        }
+
+        String sourceName = sourceModel.getName();
+        for (File sidecar : sidecars) {
+            if (sourceName.equals(sidecar.getName()) || !isModelSidecarFile(sidecar)) {
+                continue;
+            }
+            copyFileIfNeeded(sidecar, new File(targetFolder, sidecar.getName()));
+        }
+    }
+
+    private boolean isModelSidecarFile(File file) {
+        String name = file.getName().toLowerCase(Locale.ROOT);
+        return name.endsWith(".material")
+                || name.endsWith(".j3m")
+                || name.endsWith(".j3md")
+                || name.endsWith(".j3odata")
+                || name.endsWith(".jpg")
+                || name.endsWith(".jpeg")
+                || name.endsWith(".png")
+                || name.endsWith(".dds")
+                || name.endsWith(".tga")
+                || name.endsWith(".bmp")
+                || name.endsWith(".gif")
+                || name.endsWith(".webp");
     }
 
     private void copyFileIfNeeded(File source, File target) {
@@ -2739,6 +2926,28 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         return names;
     }
 
+    private Set<String> collectIKStandaloneAssetCandidateNames() {
+        Set<String> names = new LinkedHashSet<>();
+        for (StandaloneAssetFile assetFile : collectIKStandaloneAssetFiles()) {
+            names.addAll(assetFile.candidateNames);
+        }
+        return names;
+    }
+
+    private List<StandaloneAssetFile> collectIKStandaloneAssetFiles() {
+        List<StandaloneAssetFile> files = new ArrayList<>();
+        for (File root : collectIKStandaloneAssetRoots()) {
+            Collection<File> found = FileUtils.listFiles(root, new String[]{"smik", "json"}, true);
+            for (File file : found) {
+                if (!isIKStandaloneAssetFile(file)) {
+                    continue;
+                }
+                files.add(new StandaloneAssetFile(root, file, collectStandaloneAssetCandidateNames(file)));
+            }
+        }
+        return files;
+    }
+
     private List<StandaloneAssetFile> collectStandaloneAssetFiles(String extension, String... folderNames) {
         List<StandaloneAssetFile> files = new ArrayList<>();
         for (File root : collectStandaloneAssetRoots(folderNames)) {
@@ -2761,6 +2970,15 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         return new ArrayList<>(roots);
     }
 
+    private List<File> collectIKStandaloneAssetRoots() {
+        LinkedHashSet<File> roots = new LinkedHashSet<>();
+        for (File root : collectStandaloneAssetRoots("ik", "IK")) {
+            addStandaloneAssetRoot(roots, root);
+        }
+        addStandaloneAssetRoot(roots, scriptFolder);
+        return new ArrayList<>(roots);
+    }
+
     private void addStandaloneAssetRoot(Set<File> roots, File root) {
         if (root == null || !root.isDirectory()) {
             return;
@@ -2774,11 +2992,12 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
 
     private Set<String> collectStandaloneAssetCandidateNames(File file) {
         Set<String> names = new LinkedHashSet<>();
-        names.add(stripExtension(file.getName()));
+        names.add(stripStandaloneAssetExtension(file.getName()));
         try {
             JSONObject root = new JSONObject(FileUtils.readFileToString(file, StandardCharsets.UTF_8));
             addIfNotBlank(names, root.optString("id", ""));
             addIfNotBlank(names, root.optString("displayName", ""));
+            addIfNotBlank(names, root.optString("name", ""));
             JSONObject metadata = root.optJSONObject("designerMetadata");
             if (metadata != null) {
                 addIfNotBlank(names, metadata.optString("displayName", ""));
@@ -2811,7 +3030,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 FileUtils.copyFile(assetFile.file, new File(targetDir, assetFile.file.getName()));
                 for (String matchedName : matchedNames) {
                     File aliasTarget = new File(targetDir, matchedName + "." + extension);
-                    if (!aliasTarget.getCanonicalFile().equals(assetFile.file.getCanonicalFile())) {
+                    if (!aliasTarget.getCanonicalFile().equals(assetFile.file.getCanonicalFile())
+                            && !aliasTarget.getCanonicalFile().equals(relativeTarget.getCanonicalFile())) {
                         FileUtils.copyFile(assetFile.file, aliasTarget);
                     }
                 }
@@ -2840,6 +3060,25 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         }
         int dot = name.lastIndexOf('.');
         return dot <= 0 ? name : name.substring(0, dot);
+    }
+
+    private String stripStandaloneAssetExtension(String name) {
+        if (name == null) {
+            return "";
+        }
+        String lower = name.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".ik.json")) {
+            return name.substring(0, name.length() - ".ik.json".length());
+        }
+        return stripExtension(name);
+    }
+
+    private boolean isIKStandaloneAssetFile(File file) {
+        if (file == null || !file.isFile()) {
+            return false;
+        }
+        String lower = file.getName().toLowerCase(Locale.ROOT);
+        return lower.endsWith(".smik") || lower.endsWith(".ik.json");
     }
 
     private static final class StandaloneAssetFile {
@@ -2951,8 +3190,10 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         referenced.put("shaders", toSortedJsonArray(shaderNamesUsed));
         referenced.put("environmentShaders", toSortedJsonArray(environmentShaderNamesUsed));
         referenced.put("materials", toSortedJsonArray(materialNamesUsed));
+        referenced.put("builtInMaterials", toSortedJsonArray(builtInMaterialNamesUsed));
         referenced.put("weapons", toSortedJsonArray(weaponAssetNamesUsed));
         referenced.put("throwMotions", toSortedJsonArray(throwMotionAssetNamesUsed));
+        referenced.put("ik", toSortedJsonArray(ikAssetNamesUsed));
         inventory.put("referencedResources", referenced);
 
         JSONObject missing = new JSONObject();
@@ -2971,6 +3212,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         missing.put("materials", findMissingIndexedResources(materialNamesUsed, assetsMapping.getMaterialsIndex()));
         missing.put("weapons", findMissingStandaloneAssets(weaponAssetNamesUsed, "smweapon", "weapons", "Weapons"));
         missing.put("throwMotions", findMissingStandaloneAssets(throwMotionAssetNamesUsed, "smmotion", "throw_motions", "ThrowMotions"));
+        missing.put("ik", findMissingIKStandaloneAssets(ikAssetNamesUsed));
         inventory.put("missingResources", missing);
 
         inventory.put("packagedResources", new JSONObject(packagedResources.toString()));
@@ -3095,6 +3337,28 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     private JSONArray findMissingStandaloneAssets(Collection<String> names, String extension, String... folderNames) {
         List<String> missing = new ArrayList<>();
         List<StandaloneAssetFile> assetFiles = collectStandaloneAssetFiles(extension, folderNames);
+        appendMissingStandaloneAssets(names, assetFiles, missing);
+        Collections.sort(missing);
+        JSONArray array = new JSONArray();
+        for (String name : missing) {
+            array.put(name);
+        }
+        return array;
+    }
+
+    private JSONArray findMissingIKStandaloneAssets(Collection<String> names) {
+        List<String> missing = new ArrayList<>();
+        appendMissingStandaloneAssets(names, collectIKStandaloneAssetFiles(), missing);
+        Collections.sort(missing);
+        JSONArray array = new JSONArray();
+        for (String name : missing) {
+            array.put(name);
+        }
+        return array;
+    }
+
+    private void appendMissingStandaloneAssets(Collection<String> names, List<StandaloneAssetFile> assetFiles,
+                                               List<String> missing) {
         for (String name : names) {
             if (name == null || name.isBlank()) {
                 continue;
@@ -3115,12 +3379,6 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                 missing.add(name);
             }
         }
-        Collections.sort(missing);
-        JSONArray array = new JSONArray();
-        for (String name : missing) {
-            array.put(name);
-        }
-        return array;
     }
 
     private void appendCinematicResourcesRecursive(File projectRoot, File designerFile, JSONArray entities, String documentBuffer, JSONArray targetArray) {

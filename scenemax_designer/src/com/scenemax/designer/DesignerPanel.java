@@ -314,6 +314,7 @@ public class DesignerPanel extends JPanel {
     private JPanel modelAssetPanel;
     private JComboBox<String> cboModelCollisionShape;
     private JPanel modelCollisionShapePanel;
+    private JCheckBox chkMultiplayer;
     private JCheckBox chkJointMapping;
     private JButton btnEditJointMapping;
     private JPanel jointMappingPanel;
@@ -1194,7 +1195,7 @@ public class DesignerPanel extends JPanel {
         materialPanel.setVisible(false);
         propertiesForm.add(materialPanel);
 
-        // Hidden checkbox (BOX, SPHERE, MODEL)
+        // Hidden / multiplayer checkboxes (3D entities)
         hiddenPanel = new JPanel();
         hiddenPanel.setLayout(new BoxLayout(hiddenPanel, BoxLayout.Y_AXIS));
         hiddenPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -1203,9 +1204,12 @@ public class DesignerPanel extends JPanel {
         hiddenRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         hiddenRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
         chkHidden = new JCheckBox("Hidden");
+        chkMultiplayer = new JCheckBox("Multiplayer");
         hiddenRow.add(chkHidden);
+        hiddenRow.add(chkMultiplayer);
         hiddenPanel.add(hiddenRow);
         chkHidden.addActionListener(e -> applyHiddenChange());
+        chkMultiplayer.addActionListener(e -> applyMultiplayerChange());
         hiddenPanel.setVisible(false);
         propertiesForm.add(hiddenPanel);
 
@@ -1787,6 +1791,7 @@ public class DesignerPanel extends JPanel {
         JComboBox<String> cmbModels = new JComboBox<>(modelNames.toArray(new String[0]));
         JCheckBox chkStatic = new JCheckBox("Static");
         JCheckBox chkDynamic = new JCheckBox("Dynamic");
+        JCheckBox chkMultiplayer = new JCheckBox("Multiplayer");
         JComboBox<String> cboCollisionShape = new JComboBox<>(new String[]{"None", "Default", "Box", "Boxes", "Mesh"});
         cmbModels.setRenderer(new DefaultListCellRenderer() {
             @Override
@@ -1838,6 +1843,7 @@ public class DesignerPanel extends JPanel {
         JPanel optionsPanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
         optionsPanel.add(chkStatic);
         optionsPanel.add(chkDynamic);
+        optionsPanel.add(chkMultiplayer);
         panel.add(optionsPanel, gbc);
 
         gbc.gridx = 0; gbc.gridy = 2; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
@@ -1852,10 +1858,11 @@ public class DesignerPanel extends JPanel {
             String selectedModel = (String) cmbModels.getSelectedItem();
             boolean isStatic = chkStatic.isSelected();
             boolean isDynamic = chkDynamic.isSelected();
+            boolean isMultiplayer = chkMultiplayer.isSelected();
             if (selectedModel != null) {
                 boolean isVehicle = app.isModelVehicle(selectedModel);
                 String collisionShape = modelCollisionShapeFromLabel((String) cboCollisionShape.getSelectedItem());
-                app.enqueue(() -> { app.addModel(selectedModel, isStatic, isDynamic, isVehicle, collisionShape, targetList, insertIndex); return null; });
+                app.enqueue(() -> { app.addModel(selectedModel, isStatic, isDynamic, isVehicle, isMultiplayer, collisionShape, targetList, insertIndex); return null; });
             }
         }
     }
@@ -3139,6 +3146,7 @@ public class DesignerPanel extends JPanel {
                     || entity.getType() == DesignerEntityType.ARCH
                     || entity.getType() == DesignerEntityType.MODEL) {
                 chkHidden.setSelected(entity.isHidden());
+                chkMultiplayer.setSelected(entity.isMultiplayerEntity());
                 hiddenPanel.setVisible(true);
 
                 refreshShaderChoices(entity.getShader());
@@ -3722,6 +3730,19 @@ public class DesignerPanel extends JPanel {
         String shape = modelCollisionShapeFromLabel((String) cboModelCollisionShape.getSelectedItem());
         app.enqueue(() -> {
             sel.setModelCollisionShape(shape);
+            app.markDocumentDirty();
+            return null;
+        });
+    }
+
+    private void applyMultiplayerChange() {
+        if (updatingProperties || app == null) return;
+        DesignerEntity sel = app.getSelectionManager().getSelected();
+        if (sel == null || !isMultiplayerCapableEntity(sel)) return;
+
+        boolean multiplayer = chkMultiplayer.isSelected();
+        app.enqueue(() -> {
+            sel.setMultiplayerEntity(multiplayer);
             app.markDocumentDirty();
             return null;
         });
@@ -4481,6 +4502,10 @@ public class DesignerPanel extends JPanel {
             default:
                 return false;
         }
+    }
+
+    private boolean isMultiplayerCapableEntity(DesignerEntity entity) {
+        return isAttachableEntity(entity);
     }
 
     private void setAttachToRowVisible(boolean visible) {

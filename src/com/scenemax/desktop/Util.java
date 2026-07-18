@@ -242,8 +242,23 @@ public class Util {
             p.itchWindowsChannel = o.optString("itchWindowsChannel", "");
             p.itchLinuxChannel = o.optString("itchLinuxChannel", "");
             p.itchMacChannel = o.optString("itchMacChannel", "");
+            p.multiplayerServerIp = o.optString("multiplayerServerIp", "127.0.0.1");
+            p.multiplayerServerPort = o.optInt("multiplayerServerPort", SceneMaxProject.DEFAULT_MULTIPLAYER_PORT);
+            p.multiplayerDeployOs = o.optString("multiplayerDeployOs", "Windows");
+            p.multiplayerPassword = o.optString("multiplayerPassword", "");
+            p.projectGuid = o.optString("projectGuid", "");
+            if (p.projectGuid == null || p.projectGuid.trim().isEmpty()) {
+                p.projectGuid = UUID.randomUUID().toString();
+                o.put("projectGuid", p.projectGuid);
+            }
 
             projects.add(p);
+        }
+
+        try {
+            FileUtils.write(new File("projects/projects.json"), obj.toString(4), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            e.printStackTrace();
         }
 
         return projects;
@@ -325,6 +340,7 @@ public class Util {
         pr.put("path","projects/"+folderName);
         pr.put("selectedParent",defaultFolderName);
         pr.put("selectedNode","main");
+        pr.put("projectGuid", UUID.randomUUID().toString());
         arr.put(pr);
 
         obj.put("selectedProject",name);
@@ -405,6 +421,11 @@ public class Util {
                 obj.put("itchWindowsChannel", safeProjectValue(p.itchWindowsChannel));
                 obj.put("itchLinuxChannel", safeProjectValue(p.itchLinuxChannel));
                 obj.put("itchMacChannel", safeProjectValue(p.itchMacChannel));
+                obj.put("multiplayerServerIp", safeProjectValue(p.multiplayerServerIp));
+                obj.put("multiplayerServerPort", p.multiplayerServerPort <= 0 ? SceneMaxProject.DEFAULT_MULTIPLAYER_PORT : p.multiplayerServerPort);
+                obj.put("multiplayerDeployOs", safeProjectValue(p.multiplayerDeployOs).isEmpty() ? "Windows" : safeProjectValue(p.multiplayerDeployOs));
+                obj.put("multiplayerPassword", p.multiplayerPassword == null ? "" : p.multiplayerPassword);
+                obj.put("projectGuid", safeProjectValue(p.projectGuid).isEmpty() ? UUID.randomUUID().toString() : safeProjectValue(p.projectGuid));
 
                 try {
                     File f = new File("projects/projects.json");

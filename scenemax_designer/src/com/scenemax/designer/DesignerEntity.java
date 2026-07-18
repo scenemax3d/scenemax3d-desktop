@@ -99,6 +99,9 @@ public class DesignerEntity {
     // Hidden flag – only affects generated code output, not designer visibility
     private boolean hidden;
 
+    // Multiplayer sync flag for generated 3D entities
+    private boolean multiplayer;
+
     // Shadow mode: "none", "cast", "receive", "both"
     private String shadowMode = "none";
 
@@ -243,6 +246,11 @@ public class DesignerEntity {
 
     public boolean isVehicleModel() { return vehicleModel; }
     public void setVehicleModel(boolean vehicleModel) { this.vehicleModel = vehicleModel; }
+
+    public boolean isMultiplayerEntity() { return multiplayer; }
+    public void setMultiplayerEntity(boolean multiplayer) { this.multiplayer = multiplayer; }
+    public boolean isMultiplayerModel() { return isMultiplayerEntity(); }
+    public void setMultiplayerModel(boolean multiplayerModel) { setMultiplayerEntity(multiplayerModel); }
 
     public String getModelCollisionShape() { return normalizeModelCollisionShape(modelCollisionShape); }
     public void setModelCollisionShape(String modelCollisionShape) {
@@ -397,6 +405,9 @@ public class DesignerEntity {
                 }
             }
             json.put("ikLayers", layers);
+        }
+        if (is3DEntityType(type)) {
+            json.put("multiplayer", multiplayer);
         }
 
         switch (type) {
@@ -585,6 +596,7 @@ public class DesignerEntity {
                 }
             }
         }
+        entity.multiplayer = json.optBoolean("multiplayer", json.optBoolean("multiplayerModel", false));
 
         switch (type) {
             case SPHERE:
@@ -803,6 +815,19 @@ public class DesignerEntity {
             default:
                 return "default";
         }
+    }
+
+    private static boolean is3DEntityType(DesignerEntityType type) {
+        return type == DesignerEntityType.BOX
+                || type == DesignerEntityType.SPHERE
+                || type == DesignerEntityType.WEDGE
+                || type == DesignerEntityType.CYLINDER
+                || type == DesignerEntityType.CONE
+                || type == DesignerEntityType.HOLLOW_CYLINDER
+                || type == DesignerEntityType.QUAD
+                || type == DesignerEntityType.STAIRS
+                || type == DesignerEntityType.ARCH
+                || type == DesignerEntityType.MODEL;
     }
 
     public static class IKLayerPlayback {

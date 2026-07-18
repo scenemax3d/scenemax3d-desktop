@@ -47,6 +47,64 @@ public class DesignerAttachmentCodeGenerationTest {
     }
 
     @Test
+    public void emitsMultiplayerAttributeForModelEntities() throws Exception {
+        Path tempDir = Files.createTempDirectory("designer-multiplayer-code");
+        File smdesign = tempDir.resolve("scene.smdesign").toFile();
+
+        DesignerEntity horse = new DesignerEntity("horse", DesignerEntityType.MODEL);
+        horse.setResourcePath("horse1_native");
+        horse.setMultiplayerEntity(true);
+        horse.setModelCollisionShape("none");
+        Node horseNode = new Node("horse");
+        horseNode.setLocalTranslation(0.48224258f, 0f, 1.1645527f);
+        horseNode.setLocalScale(3.7f);
+        horse.setSceneNode(horseNode);
+
+        DesignerDocument.saveCodeFile(
+                smdesign,
+                Arrays.asList(horse),
+                new Vector3f(0, 2, 10),
+                new Quaternion(0, 1, 0, 0),
+                "");
+
+        String code = Files.readString(DesignerDocument.getCodeFile(smdesign).toPath(), StandardCharsets.UTF_8);
+        assertTrue(code.contains("horse => horse1_native: multiplayer, pos (0.48224258,0.0,1.1645527), scale 3.7, collision shape none async"));
+    }
+
+    @Test
+    public void emitsMultiplayerAttributeForPrimitiveEntities() throws Exception {
+        Path tempDir = Files.createTempDirectory("designer-primitive-multiplayer-code");
+        File smdesign = tempDir.resolve("scene.smdesign").toFile();
+
+        DesignerEntity box = new DesignerEntity("crate", DesignerEntityType.BOX);
+        box.setSizeX(1f);
+        box.setSizeY(1.5f);
+        box.setSizeZ(2f);
+        box.setMultiplayerEntity(true);
+        Node boxNode = new Node("crate");
+        boxNode.setLocalTranslation(1f, 2f, 3f);
+        box.setSceneNode(boxNode);
+
+        DesignerEntity sphere = new DesignerEntity("orb", DesignerEntityType.SPHERE);
+        sphere.setRadius(0.75f);
+        sphere.setMultiplayerEntity(true);
+        Node sphereNode = new Node("orb");
+        sphereNode.setLocalTranslation(4f, 5f, 6f);
+        sphere.setSceneNode(sphereNode);
+
+        DesignerDocument.saveCodeFile(
+                smdesign,
+                Arrays.asList(box, sphere),
+                new Vector3f(0, 2, 10),
+                new Quaternion(0, 1, 0, 0),
+                "");
+
+        String code = Files.readString(DesignerDocument.getCodeFile(smdesign).toPath(), StandardCharsets.UTF_8);
+        assertTrue(code.contains("crate => box : multiplayer, size (2.0,3.0,4.0), pos (1.0,2.0,3.0)"));
+        assertTrue(code.contains("orb => sphere : multiplayer, pos (4.0,5.0,6.0), radius 0.75"));
+    }
+
+    @Test
     public void designerAttachmentPreviewCompensatesForParentScaleLikeRuntime() {
         DesignerApp app = new DesignerApp();
 

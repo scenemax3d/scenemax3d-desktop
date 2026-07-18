@@ -12,7 +12,10 @@ public class RotateToController extends SceneMaxBaseController {
     private float passedTime = 0;
     private float targetTime=0;
     private float targetVal=0;
+    private float requestedTargetVal=0;
     private MotionEase.MotionEaseSpec motionEase;
+    private boolean multiplayerCommandDispatched = false;
+    private int multiplayerActionSequence = 0;
 
 
     public RotateToController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope, ActionCommandRotateTo cmd) {
@@ -45,6 +48,7 @@ public class RotateToController extends SceneMaxBaseController {
 
             findTargetVar();
             targetVal = this.cmd.rotateValExpr==null?1.0f:((Double)new ActionLogicalExpressionVm(this.cmd.rotateValExpr,this.scope).evaluate()).floatValue();
+            requestedTargetVal = targetVal;
             targetTime = this.cmd.speedExpr==null?1.0f:((Double)new ActionLogicalExpressionVm(this.cmd.speedExpr,this.scope).evaluate()).floatValue();
 
             float curr=0;
@@ -73,6 +77,7 @@ public class RotateToController extends SceneMaxBaseController {
 
             targetCalculated = true;
             motionEase = MotionEase.fromCommand(cmd, scope);
+            dispatchMultiplayerRotateToCommand();
 
         }
 
@@ -112,9 +117,26 @@ public class RotateToController extends SceneMaxBaseController {
             this.app.rotateModel(targetVar, axisNum, direction, rotateVal);
         }
 
+        if (finished) {
+            endMultiplayerTimedAction(MULTIPLAYER_ACTION_SLOT_ROTATE, multiplayerActionSequence);
+            multiplayerActionSequence = 0;
+        }
         return finished;
 
 
+    }
+
+    private void dispatchMultiplayerRotateToCommand() {
+        if (multiplayerCommandDispatched) {
+            return;
+        }
+        multiplayerCommandDispatched = true;
+        String command = "{network_entity}.rotate to (" + cmd.axis + " "
+                + networkNumber(requestedTargetVal) + ") in " + networkNumber(targetTime) + " seconds";
+        dispatchMultiplayerCommand(command);
+        if (targetTime > 0f) {
+            multiplayerActionSequence = startMultiplayerTimedAction(MULTIPLAYER_ACTION_SLOT_ROTATE, targetTime, command);
+        }
     }
 
 }

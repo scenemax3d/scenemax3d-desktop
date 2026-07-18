@@ -1,0 +1,33 @@
+{
+  "server": "127.0.0.1:9001",
+  "clients_requested": 4,
+  "clients_ready": 4,
+  "clients_rejected": 0,
+  "duration_seconds": 5.0,
+  "transform_rate_per_client": 10.0,
+  "command_rate_per_client": 1.0,
+  "transforms_sent": 197,
+  "commands_sent": 20,
+  "heartbeats_sent": 20,
+  "sent_transforms_per_second": 39.4,
+  "sent_commands_per_second": 4.0,
+  "expected_command_relays": 60,
+  "received_command_relays": 60,
+  "duplicate_command_relays": 0,
+  "command_relay_delivery_pct": 100.0,
+  "latency_ms": {
+    "count": 60,
+    "avg": 0.472,
+    "p50": 0.346,
+    "p95": 1.021,
+    "p99": 1.144,
+    "max": 1.144
+  },
+  "received_packets_by_type": {
+    "2": 4,
+    "11": 16,
+    "20": 60,
+    "21": 591,
+    "30": 4
+  }
+}

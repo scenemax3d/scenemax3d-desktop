@@ -51,10 +51,40 @@ public class AttachToController extends SceneMaxBaseController{
             }
             //app.attachEntity(targetEntity, entityToAttach, jointName, xPos, yPos, zPos);
             app.attachEntity2(entityToAttach, cmd.sourceJointName, targetEntity, cmd.jointName, xPos, yPos, zPos);
+            dispatchMultiplayerAttachCommand(cmd, entityToAttach.varName, targetEntity.varName, xPos, yPos, zPos);
         }
 
         return true;
     }
 
+    private void dispatchMultiplayerAttachCommand(AttachToCommand cmd, String childRuntimeName, String parentRuntimeName,
+                                                  Double xPos, Double yPos, Double zPos) {
+        StringBuilder command = new StringBuilder();
+        command.append("{network_entity}");
+        if (cmd.sourceJointName != null && !cmd.sourceJointName.isBlank()) {
+            command.append(".\"").append(escapeSceneMaxString(cmd.sourceJointName)).append("\"");
+        }
+        command.append(".attach to ")
+                .append(multiplayerEntityPlaceholder(parentRuntimeName));
+        if (cmd.jointName != null && !cmd.jointName.isBlank()) {
+            command.append(".\"").append(escapeSceneMaxString(cmd.jointName)).append("\"");
+        }
+        if (cmd.xExpr != null) {
+            command.append(": pos (")
+                    .append(networkNumber(xPos))
+                    .append(",")
+                    .append(networkNumber(yPos))
+                    .append(",")
+                    .append(networkNumber(zPos))
+                    .append(")");
+        }
+        String commandText = command.toString();
+        dispatchMultiplayerCommand(childRuntimeName, commandText);
+        startPersistentMultiplayerCommand(childRuntimeName, MULTIPLAYER_ACTION_SLOT_STRUCTURAL_BASE, commandText);
+    }
+
+    private String escapeSceneMaxString(String value) {
+        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
 
 }

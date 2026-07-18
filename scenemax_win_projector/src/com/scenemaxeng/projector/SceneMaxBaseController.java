@@ -4,7 +4,14 @@ import com.scenemaxeng.compiler.ActionStatementBase;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.VariableDef;
 
+import java.util.Locale;
+
 public class SceneMaxBaseController implements ISceneMaxController {
+
+    protected static final int MULTIPLAYER_ACTION_SLOT_MOVE = 1;
+    protected static final int MULTIPLAYER_ACTION_SLOT_ROTATE = 2;
+    protected static final int MULTIPLAYER_ACTION_SLOT_ANIMATE = 3;
+    protected static final int MULTIPLAYER_ACTION_SLOT_STRUCTURAL_BASE = 64;
 
     public boolean adhereToPauseStatus = true;
     protected boolean targetCalculated = false;
@@ -130,6 +137,14 @@ public class SceneMaxBaseController implements ISceneMaxController {
         }
 
         VarInst vi = scope.getVar(cmd.varDef.varName);
+        String runtimeEntityName = cmd.targetVar != null ? cmd.targetVar : varDef.varName;
+        EntityInstBase runtimeEntity = runtimeEntityName == null ? null : scope.getEntityInst(runtimeEntityName);
+        if (runtimeEntity != null && runtimeEntity.varDef != null && runtimeEntity.scope != null) {
+            targetVarDef = runtimeEntity.varDef;
+            this.targetVar = runtimeEntity.varDef.varName + "@" + runtimeEntity.scope.scopeId;
+            return 0;
+        }
+
         if (vi != null && vi.value instanceof EntityInstBase) {
             varDef = ((EntityInstBase) vi.value).varDef;
             targetVarDef = varDef;
@@ -188,5 +203,78 @@ public class SceneMaxBaseController implements ISceneMaxController {
 
     protected void setScope(SceneMaxScope scope) {
         this.scope = scope;
+    }
+
+    protected void dispatchMultiplayerCommand(String commandText) {
+        if (cmd != null && cmd.fromMultiplayerNetwork) {
+            return;
+        }
+        if (app == null || targetVar == null || commandText == null || commandText.trim().isEmpty()) {
+            return;
+        }
+        app.dispatchMultiplayerCommand(targetVar, commandText);
+    }
+
+    protected void dispatchMultiplayerCommand(String runtimeName, String commandText) {
+        if (cmd != null && cmd.fromMultiplayerNetwork) {
+            return;
+        }
+        if (app == null || runtimeName == null || commandText == null || commandText.trim().isEmpty()) {
+            return;
+        }
+        app.dispatchMultiplayerCommand(runtimeName, commandText);
+    }
+
+    protected int startPersistentMultiplayerCommand(String runtimeName, int slot, String commandText) {
+        if (cmd != null && cmd.fromMultiplayerNetwork) {
+            return 0;
+        }
+        if (app == null || runtimeName == null || commandText == null || commandText.trim().isEmpty()) {
+            return 0;
+        }
+        return app.startPersistentMultiplayerCommand(runtimeName, slot, commandText);
+    }
+
+    protected String multiplayerEntityPlaceholder(String runtimeName) {
+        return "{network_entity:" + runtimeName + "}";
+    }
+
+    protected int startMultiplayerTimedAction(int slot, float durationSeconds, String commandText) {
+        if (cmd != null && cmd.fromMultiplayerNetwork) {
+            return 0;
+        }
+        if (app == null || targetVar == null || commandText == null || commandText.trim().isEmpty()) {
+            return 0;
+        }
+        return app.startMultiplayerTimedAction(targetVar, slot, durationSeconds, commandText);
+    }
+
+    protected void endMultiplayerTimedAction(int slot, int sequence) {
+        if (cmd != null && cmd.fromMultiplayerNetwork) {
+            return;
+        }
+        if (app == null || targetVar == null || sequence <= 0) {
+            return;
+        }
+        app.endMultiplayerTimedAction(targetVar, slot, sequence);
+    }
+
+    protected MultiplayerControllerResumeState consumeMultiplayerResumeState(int slot) {
+        if (cmd == null || !cmd.fromMultiplayerNetwork || app == null || targetVar == null) {
+            return null;
+        }
+        return app.consumeMultiplayerResumeState(targetVar, slot);
+    }
+
+    protected String networkNumber(double value) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            return "0";
+        }
+        if (Math.abs(value - Math.rint(value)) < 0.000001d) {
+            return Long.toString(Math.round(value));
+        }
+        return String.format(Locale.ROOT, "%.6f", value)
+                .replaceAll("0+$", "")
+                .replaceAll("\\.$", "");
     }
 }

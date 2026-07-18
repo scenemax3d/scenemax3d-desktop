@@ -235,6 +235,8 @@ public class SceneMaxLanguageParser implements IParser {
             effekseerUsed.clear();
             videoUsed.clear();
             spriteSheetUsed.clear();
+            skyboxUsed.clear();
+            terrainsUsed.clear();
             cinematicRigLocationCache.clear();
         }
 
@@ -1399,6 +1401,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -1470,6 +1474,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -1541,6 +1547,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -1618,6 +1626,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -1686,6 +1696,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -1755,6 +1767,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -1826,6 +1840,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -1898,6 +1914,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
                         }
 
@@ -2645,6 +2663,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.shadowMode = 3;
                                 }
+                            } else if(attr.model_attr().init_multiplayer_attr()!=null) {
+                                varDef.isMultiplayer = true;
                             }
 
                         } else if(attr.sphere_specific_attr()!=null) {
@@ -2798,6 +2818,8 @@ public class SceneMaxLanguageParser implements IParser {
                             } else if(shapeType.equals("none")) {
                                 varDef.collisionShape = VariableDef.COLLISION_SHAPE_NONE;
                             }
+                        } else if(attr.init_multiplayer_attr()!=null) {
+                            varDef.isMultiplayer = true;
                         }
                     }
                 }

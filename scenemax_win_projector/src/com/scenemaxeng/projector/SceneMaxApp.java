@@ -229,6 +229,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private String currentLevel = "";
     private String entryScriptFileName;
     private ProgramDef prg;
+    private MultiplayerNetworkComponent multiplayerNetwork;
+    private boolean suppressMultiplayerCommandDispatch;
+    private final Map<String, MultiplayerControllerResumeState> pendingMultiplayerResumeStates = new HashMap<>();
     private float runtimeShaderElapsedTime = 0f;
     private SceneMaxBaseController lastWaitController;
     private SkyControl skyControl;
@@ -252,6 +255,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private HashMap<String, EntityInstBase> archInstances = new HashMap<>();
     private HashMap<String, EntityInstBase> effekseerInstances = new HashMap<>();
     private String projectName = null;
+    private String projectGuid = "";
     private DungeonCameraAppState dungeonCameraState = null;
     private FollowCameraAppState followCameraState = null;
     private FightingCameraAppState fightingCameraState = null;
@@ -469,11 +473,19 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
             if(this.projectName!=null) {
                 this.logger.log(Level.INFO, "SimpleInitApp projectName = "+this.projectName);
-                String projFolder = "./projects/"+this.projectName;
-                assetsMapping = new AssetsMapping(projFolder+"/resources");
-                assetsMapping.loadCinematicsFromProject(projFolder);
-                assetsMapping.loadWeaponsFromProject(projFolder);
-                assetManager.registerLocator(new File(projFolder+"/resources").getCanonicalPath(), FileLocator.class);
+                File projectRoot = new File("./projects/" + this.projectName).getCanonicalFile();
+                File resourcesFolder = new File(projectRoot, "resources").getCanonicalFile();
+                if (resourcesFolder.isDirectory()) {
+                    assetsMapping = new AssetsMapping(resourcesFolder.getAbsolutePath());
+                    assetsMapping.loadCinematicsFromProject(projectRoot.getAbsolutePath());
+                    assetsMapping.loadWeaponsFromProject(projectRoot.getAbsolutePath());
+                    assetManager.registerLocator(resourcesFolder.getCanonicalPath(), FileLocator.class);
+                } else {
+                    this.logger.log(Level.INFO,
+                            "Project resources folder not found at {0}; using packaged classpath assets.",
+                            resourcesFolder.getAbsolutePath());
+                    assetsMapping = new AssetsMapping();
+                }
             } else if(workingFolder!=null) {
                 this.logger.log(Level.INFO, "SimpleInitApp workingFolder = "+this.workingFolder);
                 File projectRoot = resolveRuntimeProjectRoot();
@@ -516,6 +528,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         // You must add a light to make the model visible
         addLighting();
         ensureEffekseerRenderProcessor();
+        multiplayerNetwork = new MultiplayerNetworkComponent(this);
+        multiplayerNetwork.startFromSystemProperties();
 
         if(_appObserver!=null) {
             _appObserver.init();
@@ -1251,6 +1265,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     public void runPartialCode(String code, SceneMaxScope scope, boolean closeOnError) {
+        runPartialCode(code, scope, closeOnError, false);
+    }
+
+    private void runPartialCode(String code, SceneMaxScope scope, boolean closeOnError, boolean fromMultiplayerNetwork) {
 
         if (this.prg == null) {
             this.prg = new ProgramDef();
@@ -1279,6 +1297,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 showFloatingMessage(prg.syntaxErrors, "OK", 10);
             }
             return;
+        }
+        if (fromMultiplayerNetwork) {
+            markMultiplayerNetworkActions(prg);
         }
 
         if(scope==null) {
@@ -1314,6 +1335,64 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             scope.mainController.add(this.lastWaitController);
         }
 
+    }
+
+    public void runNetworkMultiplayerCommand(String code) {
+        runPartialCode(code, null, false, true);
+    }
+
+    public void runNetworkMultiplayerCommand(String code, String runtimeName, MultiplayerControllerResumeState resumeState) {
+        if (runtimeName != null && resumeState != null) {
+            pendingMultiplayerResumeStates.put(runtimeName, resumeState);
+        }
+        runPartialCode(code, null, false, true);
+    }
+
+    MultiplayerControllerResumeState consumeMultiplayerResumeState(String runtimeName, int slot) {
+        if (runtimeName == null) {
+            return null;
+        }
+        MultiplayerControllerResumeState state = pendingMultiplayerResumeStates.remove(runtimeName);
+        if (state == null) {
+            int scopeSeparator = runtimeName.indexOf('@');
+            if (scopeSeparator > 0) {
+                state = pendingMultiplayerResumeStates.remove(runtimeName.substring(0, scopeSeparator));
+            }
+        }
+        if (state == null || state.slot != slot) {
+            return null;
+        }
+        return state;
+    }
+
+    private void markMultiplayerNetworkActions(ProgramDef program) {
+        if (program == null || program.actions == null) {
+            return;
+        }
+        for (StatementDef statement : program.actions) {
+            if (statement instanceof ActionStatementBase) {
+                markMultiplayerNetworkAction((ActionStatementBase) statement);
+            }
+        }
+    }
+
+    private void markMultiplayerNetworkAction(ActionStatementBase action) {
+        if (action == null) {
+            return;
+        }
+        action.fromMultiplayerNetwork = true;
+        if (!(action instanceof GraphicEntityCreationCommand)) {
+            action.isAsync = true;
+        }
+        if (action.statements != null) {
+            for (ActionStatementBase child : action.statements) {
+                markMultiplayerNetworkAction(child);
+            }
+        }
+    }
+
+    public int getMainScopeIdForNetwork() {
+        return mainScope == null ? 0 : mainScope.scopeId;
     }
 
     private void showFloatingMessage(String msg) {
@@ -2687,6 +2766,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         SphereVariableDef varDef = (SphereVariableDef)inst.varDef;
         float radius = inst.radiusExpr==null?1f:((Double)inst.radiusExpr.evaluate()).floatValue();
+        String materialName = null;
         String sphereName = inst.varDef.varName+"@"+inst.scope.scopeId;
         Node sphereNode = new Node(sphereName);
         sphereNode.setUserData("key",sphereName);
@@ -2753,7 +2833,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
 
             if (inst.materialExpr != null) {
-                String materialName = inst.materialExpr.evaluate().toString();
+                materialName = inst.materialExpr.evaluate().toString();
                 if (!setGeometryMaterial(sphereGeo, materialName)) {
                     handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
                     return;
@@ -2801,6 +2881,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         spheres.put(sphereName,sphereNode);
         geoName2ModelName.put(sphereName,sphereName);
         geoName2EntityInst.put(sphereName,inst);
+        registerMultiplayerEntity(inst, sphereName, "sphere", sphereSpawnCommand(inst, sphereNode, radius, materialName));
 
         List<java.lang.Object> ctls = new ArrayList<>();
         if(modelCtl!=null) {
@@ -4038,6 +4119,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         am.resource = resource;
         models.put(modelName, am);
         parentNode.setName(modelName);
+        registerMultiplayerEntity(modelInst, modelName, resource);
 
         final Vector3f scale = resolveInitialModelScale(modelInst, resource);
         parentNode.setLocalScale(scale);
@@ -4389,6 +4471,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         am.resource = resource;
         models.put(modelName, am);
         c.getNode().setName(modelName);
+        registerMultiplayerEntity(modelInst, modelName, resource);
         c.getNode().setUserData("key",modelName);
 
         geoName2ModelName.put(modelName, modelName);
@@ -4397,6 +4480,233 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         am.physicalControl = c;
 
         return c;
+    }
+
+    private void registerMultiplayerEntity(ModelInst modelInst, String runtimeName, ResourceSetup resource) {
+        String archetype = modelInst != null && modelInst.modelDef != null && modelInst.modelDef.name != null
+                ? modelInst.modelDef.name
+                : resource != null && resource.name != null ? resource.name : "";
+        registerMultiplayerEntity(modelInst, runtimeName, archetype, modelSpawnCommand(modelInst, archetype, resource));
+    }
+
+    private void registerMultiplayerEntity(ModelInst modelInst, String runtimeName, String archetype) {
+        registerMultiplayerEntity(modelInst, runtimeName, archetype, "");
+    }
+
+    private void registerMultiplayerEntity(ModelInst modelInst, String runtimeName, String archetype, String spawnCommand) {
+        if (modelInst == null || modelInst.varDef == null || !modelInst.varDef.isMultiplayer) {
+            logMultiplayerRegistrationSkip(modelInst, runtimeName, archetype);
+            return;
+        }
+        if (multiplayerNetwork == null) {
+            multiplayerNetwork = new MultiplayerNetworkComponent(this);
+            multiplayerNetwork.startFromSystemProperties();
+        }
+        multiplayerNetwork.registerEntity(runtimeName, modelInst.varDef, archetype, spawnCommand);
+    }
+
+    private void logMultiplayerRegistrationSkip(ModelInst modelInst, String runtimeName, String archetype) {
+        if (modelInst == null || modelInst.varDef == null) {
+            writeMultiplayerClientLog("skip register runtime=" + runtimeName
+                    + " archetype=" + archetype
+                    + " reason=no-var-def");
+            return;
+        }
+        writeMultiplayerClientLog("skip register runtime=" + runtimeName
+                + " type=" + modelInst.varDef.varType
+                + " archetype=" + archetype
+                + " isMultiplayer=" + modelInst.varDef.isMultiplayer);
+    }
+
+    private void writeMultiplayerClientLog(String message) {
+        String line = "[SceneMax MP] " + message;
+        System.err.println(line);
+        try {
+            Files.writeString(Paths.get("scenemax-multiplayer-client.log"),
+                    line + System.lineSeparator(),
+                    StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND);
+        } catch (IOException ignored) {
+        }
+    }
+
+    private String modelSpawnCommand(ModelInst modelInst, String archetype, ResourceSetup resource) {
+        if (modelInst == null || modelInst.varDef == null || archetype == null || archetype.trim().isEmpty()) {
+            return "";
+        }
+        StringBuilder command = new StringBuilder();
+        command.append("{network_entity} => ")
+                .append(archetype.trim())
+                .append(": ");
+        List<String> attrs = new ArrayList<>();
+
+        Vector3f position = initialModelPosition(modelInst, resource);
+        attrs.add("pos (" + networkNumber(position.x) + ","
+                + networkNumber(position.y) + ","
+                + networkNumber(position.z) + ")");
+
+        if (modelInst.scaleExpr != null) {
+            float scale = Float.parseFloat(modelInst.scaleExpr.evaluate().toString());
+            attrs.add("scale " + networkNumber(scale));
+        }
+
+        Vector3f rotation = initialModelRotationDegrees(modelInst);
+        if (rotation != null) {
+            attrs.add("rotate(" + networkNumber(rotation.x) + ","
+                    + networkNumber(rotation.y) + ","
+                    + networkNumber(rotation.z) + ")");
+        }
+
+        String collisionShape = collisionShapeAttribute(modelInst.varDef.collisionShape);
+        if (collisionShape != null) {
+            attrs.add(collisionShape);
+        }
+
+        command.append(String.join(", ", attrs));
+        return command.toString();
+    }
+
+    private Vector3f initialModelPosition(ModelInst modelInst, ResourceSetup resource) {
+        if (modelInst != null && modelInst.xExpr != null) {
+            return new Vector3f(
+                    Float.parseFloat(modelInst.xExpr.evaluate().toString()),
+                    Float.parseFloat(modelInst.yExpr.evaluate().toString()),
+                    Float.parseFloat(modelInst.zExpr.evaluate().toString()));
+        }
+        if (resource != null) {
+            return new Vector3f(resource.localTranslationX, resource.localTranslationY, resource.localTranslationZ);
+        }
+        return Vector3f.ZERO;
+    }
+
+    private Vector3f initialModelRotationDegrees(ModelInst modelInst) {
+        if (modelInst == null || modelInst.varDef == null) {
+            return null;
+        }
+        if (modelInst.varDef.useVerbalTurn) {
+            float rotateX = 0f;
+            float rotateY = 0f;
+            float rotateZ = 0f;
+            if (modelInst.rxExpr != null) {
+                rotateX = Float.parseFloat(modelInst.rxExpr.evaluate().toString()) * modelInst.varDef.rotDir;
+            } else if (modelInst.ryExpr != null) {
+                rotateY = Float.parseFloat(modelInst.ryExpr.evaluate().toString()) * modelInst.varDef.rotDir;
+            } else if (modelInst.rzExpr != null) {
+                rotateZ = Float.parseFloat(modelInst.rzExpr.evaluate().toString()) * modelInst.varDef.rotDir;
+            } else {
+                return null;
+            }
+            return new Vector3f(rotateX, rotateY, rotateZ);
+        }
+        if (modelInst.rxExpr == null) {
+            return null;
+        }
+        return new Vector3f(
+                Float.parseFloat(modelInst.rxExpr.evaluate().toString()),
+                Float.parseFloat(modelInst.ryExpr.evaluate().toString()),
+                Float.parseFloat(modelInst.rzExpr.evaluate().toString()));
+    }
+
+    private String collisionShapeAttribute(int collisionShape) {
+        if (collisionShape == VariableDef.COLLISION_SHAPE_NONE) {
+            return "collision shape none";
+        }
+        if (collisionShape == VariableDef.COLLISION_SHAPE_BOX) {
+            return "collision shape box";
+        }
+        if (collisionShape == VariableDef.COLLISION_SHAPE_BOXES) {
+            return "collision shape boxes";
+        }
+        if (collisionShape == VariableDef.COLLISION_SHAPE_MESH) {
+            return "collision shape mesh";
+        }
+        return null;
+    }
+
+    private String sphereSpawnCommand(SphereInst inst, Node sphereNode, float radius, String materialName) {
+        Vector3f position = sphereNode == null ? Vector3f.ZERO : sphereNode.getLocalTranslation();
+        StringBuilder command = new StringBuilder();
+        boolean collider = inst != null && inst.varDef instanceof SphereVariableDef
+                && ((SphereVariableDef) inst.varDef).isCollider;
+        command.append("{network_entity} => ")
+                .append(collider ? "collider sphere" : "sphere")
+                .append(": pos (")
+                .append(networkNumber(position.x)).append(",")
+                .append(networkNumber(position.y)).append(",")
+                .append(networkNumber(position.z)).append(")");
+        command.append(", radius ").append(networkNumber(radius));
+        if (inst != null && inst.scaleExpr != null) {
+            float scale = Float.parseFloat(inst.scaleExpr.evaluate().toString());
+            command.append(", scale ").append(networkNumber(scale));
+        }
+        if (materialName != null && !materialName.trim().isEmpty()) {
+            command.append(", material=\"").append(escapeSceneMaxString(materialName.trim())).append("\"");
+        }
+        return command.toString();
+    }
+
+    private String networkNumber(double value) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            return "0";
+        }
+        if (Math.abs(value - Math.rint(value)) < 0.000001d) {
+            return Long.toString(Math.round(value));
+        }
+        return String.format(Locale.ROOT, "%.6f", value)
+                .replaceAll("0+$", "")
+                .replaceAll("\\.$", "");
+    }
+
+    private String escapeSceneMaxString(String value) {
+        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    public void destroyMultiplayerEntity(String runtimeName) {
+        if (multiplayerNetwork == null || runtimeName == null || runtimeName.trim().isEmpty()) {
+            return;
+        }
+        multiplayerNetwork.destroyEntity(runtimeName);
+    }
+
+    public void dispatchMultiplayerCommand(String runtimeName, String commandText) {
+        if (suppressMultiplayerCommandDispatch) {
+            return;
+        }
+        if (multiplayerNetwork == null || runtimeName == null || commandText == null || commandText.trim().isEmpty()) {
+            return;
+        }
+        multiplayerNetwork.dispatchCommand(runtimeName, commandText);
+    }
+
+    public int startPersistentMultiplayerCommand(String runtimeName, int slot, String commandText) {
+        if (suppressMultiplayerCommandDispatch) {
+            return 0;
+        }
+        if (multiplayerNetwork == null || runtimeName == null || commandText == null || commandText.trim().isEmpty()) {
+            return 0;
+        }
+        return multiplayerNetwork.startPersistentCommand(runtimeName, slot, commandText);
+    }
+
+    public int startMultiplayerTimedAction(String runtimeName, int slot, float durationSeconds, String commandText) {
+        if (suppressMultiplayerCommandDispatch) {
+            return 0;
+        }
+        if (multiplayerNetwork == null || runtimeName == null || commandText == null || commandText.trim().isEmpty()) {
+            return 0;
+        }
+        return multiplayerNetwork.startActiveAction(runtimeName, slot, durationSeconds, commandText);
+    }
+
+    public void endMultiplayerTimedAction(String runtimeName, int slot, int sequence) {
+        if (suppressMultiplayerCommandDispatch) {
+            return;
+        }
+        if (multiplayerNetwork == null || runtimeName == null || sequence <= 0) {
+            return;
+        }
+        multiplayerNetwork.endActiveAction(runtimeName, slot, sequence);
     }
 
     @Override
@@ -5297,6 +5607,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     @Override
     public void destroy(){
+        if (this.multiplayerNetwork != null) {
+            this.multiplayerNetwork.close();
+            this.multiplayerNetwork = null;
+        }
         if (this.pluginsCommunicationChannel != null) {
             this.pluginsCommunicationChannel.stop(); // call all subscribed clients to stop
         }
@@ -5328,6 +5642,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     @Override
     public void simpleUpdate(float tpf) {
         effekseerFrameTpf = tpf;
+        if (multiplayerNetwork != null) {
+            multiplayerNetwork.update(tpf);
+        }
         runtimeShaderElapsedTime += tpf;
         updateRuntimeShaderMaterials();
         updateEnvironmentShaderOverlaySize();
@@ -9106,15 +9423,23 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     public void showSolarSystemSkyBox(SkyBoxCommand cmd) {
 
-        float cloudFlattening = cmd.cloudFlatteningVal!=null?cmd.cloudFlatteningVal.floatValue():0.9f;
-        float cloudiness = cmd.cloudinessVal!=null?cmd.cloudinessVal.floatValue():0.5f;
-        skyControl = new SkyControl(assetManager, cam, cloudFlattening, StarsOption.Cube, true);
-        skyControl.setCloudiness(cloudiness);
-        if(cmd.hourOfDayVal!=null) {
-            skyControl.getSunAndStars().setHour(cmd.hourOfDayVal.floatValue());
+        try {
+            float cloudFlattening = cmd.cloudFlatteningVal != null ? cmd.cloudFlatteningVal.floatValue() : 0.9f;
+            float cloudiness = cmd.cloudinessVal != null ? cmd.cloudinessVal.floatValue() : 0.5f;
+            skyControl = new SkyControl(assetManager, cam, cloudFlattening, StarsOption.Cube, true);
+            skyControl.setCloudiness(cloudiness);
+            if (cmd.hourOfDayVal != null && skyControl.getSunAndStars() != null) {
+                skyControl.getSunAndStars().setHour(cmd.hourOfDayVal.floatValue());
+            }
+            rootNode.addControl(skyControl);
+            skyControl.setEnabled(true);
+        } catch (Throwable t) {
+            skyControl = null;
+            logger.log(Level.SEVERE, "Failed to show solar system skybox.", t);
+            String message = "Solar system skybox skipped: " + firstNonBlank(t.getMessage(), t.toString());
+            recordRuntimeIssue(message, "skybox");
+            logRuntimeMessage(LoggerCommand.ERROR, message);
         }
-        rootNode.addControl(skyControl);
-        skyControl.setEnabled(true);
 
 
 //        for (Light light : rootNode.getLocalLightList()) {
@@ -9132,7 +9457,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
             if(skyControl!=null) {
 
-            if(cmd.hourOfDayVal!=null) {
+            if(cmd.hourOfDayVal!=null && skyControl.getSunAndStars()!=null) {
                 skyControl.getSunAndStars().setHour(cmd.hourOfDayVal.floatValue());
             }
 
@@ -10426,6 +10751,52 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         this.projectName=projectName;
     }
 
+    public void setProjectGuid(String projectGuid) {
+        this.projectGuid = projectGuid == null ? "" : projectGuid.trim();
+    }
+
+    public String getProjectGuidForNetwork() {
+        String configured = System.getProperty("scenemax.multiplayer.projectGuid");
+        if (configured != null && !configured.trim().isEmpty()) {
+            return configured.trim();
+        }
+        configured = System.getenv("SCENEMAX_MULTIPLAYER_PROJECT_GUID");
+        if (configured != null && !configured.trim().isEmpty()) {
+            return configured.trim();
+        }
+        if (projectGuid != null && !projectGuid.trim().isEmpty()) {
+            return projectGuid.trim();
+        }
+        return resolveProjectGuidFromProjectsFile();
+    }
+
+    private String resolveProjectGuidFromProjectsFile() {
+        if (projectName == null || projectName.trim().isEmpty()) {
+            return "";
+        }
+        File configFile = new File("projects/projects.json");
+        if (!configFile.isFile()) {
+            return "";
+        }
+        try {
+            String text = FileUtils.readFileToString(configFile, StandardCharsets.UTF_8);
+            JSONObject config = new JSONObject(text);
+            JSONArray projects = config.optJSONArray("projects");
+            if (projects == null) {
+                return "";
+            }
+            for (int i = 0; i < projects.length(); i++) {
+                JSONObject project = projects.optJSONObject(i);
+                if (project != null && projectName.equals(project.optString("name", ""))) {
+                    return project.optString("projectGuid", "").trim();
+                }
+            }
+        } catch (Exception ex) {
+            logger.log(Level.WARNING, "Failed to resolve SceneMax multiplayer project GUID.", ex);
+        }
+        return "";
+    }
+
 
     public SpriteInst createSpriteInst(SceneMaxScope scope, CreateSpriteCommand cmd) {
         SpriteInst inst = new SpriteInst(cmd.spriteDef, cmd.varDef, scope);
@@ -10980,6 +11351,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     public void prepareToSwitchState(String code, String level) {
         this.currentLevel = level;
+        if (multiplayerNetwork != null) {
+            multiplayerNetwork.joinScene(level);
+        }
         this.switchStateCode = code;
     }
 
