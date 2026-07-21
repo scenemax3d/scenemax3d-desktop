@@ -57,7 +57,6 @@ import com.scenemaxeng.common.weapons.WeaponDefinition;
 import com.scenemaxeng.compiler.Utils;
 import org.apache.commons.io.FileUtils;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
-import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import org.fife.ui.rtextarea.RTextScrollPane;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -205,8 +204,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         btnRecordScene.setEnabled(false); // until we find a way to get the running window rect
 
         textArea = new RSyntaxTextArea(20, 60);
-        textArea.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_JAVA);
-        Util.applyDarkTheme(textArea);
+        SceneMaxEditorSyntax.initialize(textArea);
 
         textArea.setCodeFoldingEnabled(true);
         textArea.setTabSize(2);

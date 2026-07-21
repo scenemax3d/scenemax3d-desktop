@@ -726,6 +726,7 @@ public class EditorTabPanel extends JPanel {
         } else {
             // Show the code editor
             centerContainer.add(editorPane, BorderLayout.CENTER);
+            SceneMaxEditorSyntax.applyForFile(textArea, newTab.filePath);
 
             // Load new tab content into editor
             suppressDocumentEvents = true;
@@ -944,6 +945,7 @@ public class EditorTabPanel extends JPanel {
                 // No tabs left, show editor and clear it
                 centerContainer.removeAll();
                 centerContainer.add(editorPane, BorderLayout.CENTER);
+                SceneMaxEditorSyntax.applyForFile(textArea, null);
                 centerContainer.revalidate();
                 centerContainer.repaint();
 
