@@ -1,73 +1,74 @@
 package com.scenemax.desktop;
 
 import org.fife.ui.rsyntaxtextarea.AbstractTokenMaker;
-import org.fife.ui.rsyntaxtextarea.RSyntaxUtilities;
 import org.fife.ui.rsyntaxtextarea.Token;
 import org.fife.ui.rsyntaxtextarea.TokenMap;
 
 import javax.swing.text.Segment;
 
 public class SceneMaxTokenManager extends AbstractTokenMaker {
+    private static final String[] SCOPE_WORDS = {
+            "do", "end", "then", "if", "else", "when", "while", "for", "foreach", "switch"
+    };
+
+    private static final String[] KEYWORDS = {
+            "var", "shared", "run", "call", "async", "wait", "seconds", "is", "a", "an",
+            "having", "and", "in", "at", "from", "to", "with", "of", "loop", "once", "every",
+            "move", "rotate", "scale", "animate", "play", "hide", "show", "delete", "turn",
+            "roll", "look", "pos", "stop", "push", "pop", "clear", "print", "accelerate",
+            "steer", "brake", "turbo", "reset", "attach", "detach", "record", "replay",
+            "belongs", "group", "dynamic", "static", "collider", "vehicle", "material",
+            "radius", "height", "size", "gravity", "shadow", "mode", "hidden", "collision",
+            "shape", "calibrate", "joints", "data", "camera", "chase", "follow", "trailing",
+            "dungeon", "default", "fighting", "third_person", "first_person", "racing",
+            "platformer", "rts", "modifiers", "apply", "hit_modifier", "fall_modifier",
+            "shooting_modifier", "accelerating_modifier", "decelerating_modifier", "bump_modifier",
+            "landing_modifier", "earthquake_modifier", "explosion_modifier", "near_miss_modifier",
+            "vertical", "horizontal", "rotation", "max", "min", "distance", "damping", "type",
+            "solar", "system", "terrain", "water", "cloud", "flattening", "cloudiness", "hour",
+            "depth", "strength", "audio", "sound", "volume", "logger", "info", "debug", "error",
+            "lights", "light", "probe", "directional", "point", "spot", "sky", "ambient",
+            "direction", "intensity", "lumens", "range", "preset", "exposure", "low", "medium",
+            "high", "warm", "cool", "screen", "scene", "pause", "resume", "full", "window",
+            "effects", "minimap", "using", "code", "add", "pressed", "released", "engine",
+            "power", "breaking", "suspension", "compression", "stiffness", "length", "front",
+            "rear", "input", "reverse", "horn", "forward", "backward", "left", "right", "up",
+            "down", "billboard", "wireframe", "outline", "offset", "duration", "emissions",
+            "start", "draw", "frames", "frame", "append", "color", "font", "cast", "receive",
+            "protected", "new", "class", "save", "after", "collides", "ray", "check", "file",
+            "name", "contains", "each", "where", "http", "get", "post", "put", "ui", "load",
+            "message", "texteffect", "ease", "java", "plugins", "animation", "rows", "cols",
+            "times", "inner", "transitions", "commands", "ignore", "jump", "speedo", "tacho",
+            "angle", "json", "looking", "not"
+    };
+
+    private static final String[] DATA_TYPES = {
+            "sprite", "model", "sphere", "box", "cylinder", "quad", "hollow", "skybox",
+            "character", "ragdoll", "kinematic", "floating", "rigid", "body", "wedge",
+            "cone", "stairs", "arch"
+    };
+
+    private static final String[] FUNCTIONS = {
+            "function", "return", "abs", "rnd", "round"
+    };
+
     @Override
     public TokenMap getWordsToHighlight() {
-        TokenMap tokenMap = new TokenMap();
-
-        tokenMap.put("var", Token.RESERVED_WORD);
-        tokenMap.put("run", Token.RESERVED_WORD);
-        tokenMap.put("call", Token.RESERVED_WORD);
-        tokenMap.put("play", Token.RESERVED_WORD);
-
-        tokenMap.put("wait", Token.RESERVED_WORD);
-        tokenMap.put("async", Token.RESERVED_WORD);
-        tokenMap.put("seconds", Token.RESERVED_WORD);
-
-        tokenMap.put("if", Token.RESERVED_WORD);
-        tokenMap.put("then", Token.RESERVED_WORD);
-        tokenMap.put("when", Token.RESERVED_WORD);
-        tokenMap.put("collides", Token.RESERVED_WORD);
-
-        tokenMap.put("sprite",  Token.RESERVED_WORD);
-        tokenMap.put("do",   Token.RESERVED_WORD);
-        tokenMap.put("end",    Token.RESERVED_WORD);
-        tokenMap.put("skybox", Token.RESERVED_WORD);
-        tokenMap.put("lights", Token.RESERVED_WORD);
-        tokenMap.put("directional", Token.RESERVED_WORD);
-        tokenMap.put("point", Token.RESERVED_WORD);
-        tokenMap.put("spot", Token.RESERVED_WORD);
-        tokenMap.put("sky", Token.RESERVED_WORD);
-        tokenMap.put("ambient", Token.RESERVED_WORD);
-        tokenMap.put("intensity", Token.RESERVED_WORD);
-        tokenMap.put("lumens", Token.RESERVED_WORD);
-        tokenMap.put("direction", Token.RESERVED_WORD);
-        tokenMap.put("range", Token.RESERVED_WORD);
-        tokenMap.put("preset", Token.RESERVED_WORD);
-        tokenMap.put("exposure", Token.RESERVED_WORD);
-        tokenMap.put("terrain", Token.RESERVED_WORD);
-        tokenMap.put("water", Token.RESERVED_WORD);
-        tokenMap.put("function", Token.RESERVED_WORD);
-        tokenMap.put("audio", Token.RESERVED_WORD);
-        tokenMap.put("logger", Token.RESERVED_WORD);
-        tokenMap.put("info", Token.RESERVED_WORD);
-        tokenMap.put("debug", Token.RESERVED_WORD);
-        tokenMap.put("error", Token.RESERVED_WORD);
-        tokenMap.put("camera", Token.RESERVED_WORD);
-        tokenMap.put("wedge", Token.RESERVED_WORD);
-        tokenMap.put("cone", Token.RESERVED_WORD);
-        tokenMap.put("stairs", Token.RESERVED_WORD);
-        tokenMap.put("arch", Token.RESERVED_WORD);
-
-
-        tokenMap.put("abs", Token.FUNCTION);
-        tokenMap.put("rnd",  Token.FUNCTION);
-        tokenMap.put("round",  Token.FUNCTION);
-
+        TokenMap tokenMap = new TokenMap(true);
+        putAll(tokenMap, SCOPE_WORDS, Token.RESERVED_WORD_2);
+        putAll(tokenMap, KEYWORDS, Token.RESERVED_WORD);
+        putAll(tokenMap, DATA_TYPES, Token.DATA_TYPE);
+        putAll(tokenMap, FUNCTIONS, Token.FUNCTION);
+        tokenMap.put("true", Token.LITERAL_BOOLEAN);
+        tokenMap.put("false", Token.LITERAL_BOOLEAN);
+        tokenMap.put("on", Token.LITERAL_BOOLEAN);
+        tokenMap.put("off", Token.LITERAL_BOOLEAN);
         return tokenMap;
     }
 
     @Override
     public void addToken(Segment segment, int start, int end, int tokenType, int startOffset) {
-        // This assumes all keywords, etc. were parsed as "identifiers."
-        if (tokenType==Token.IDENTIFIER) {
+        if (tokenType == Token.IDENTIFIER) {
             int value = wordsToHighlight.get(segment, start, end);
             if (value != -1) {
                 tokenType = value;
@@ -82,235 +83,111 @@ public class SceneMaxTokenManager extends AbstractTokenMaker {
 
         char[] array = text.array;
         int offset = text.offset;
-        int count = text.count;
-        int end = offset + count;
-
-        // Token starting offsets are always of the form:
-        // 'startOffset + (currentTokenStart-offset)', but since startOffset and
-        // offset are constant, tokens' starting positions become:
-        // 'newStartOffset+currentTokenStart'.
+        int end = offset + text.count;
         int newStartOffset = startOffset - offset;
+        int i = offset;
 
-        int currentTokenStart = offset;
-        int currentTokenType  = startTokenType;
-
-        for (int i=offset; i<end; i++) {
-
+        while (i < end) {
             char c = array[i];
+            int tokenStart = i;
 
-            switch (currentTokenType) {
-
-                case Token.NULL:
-
-                    currentTokenStart = i;   // Starting a new token here.
-
-                    switch (c) {
-
-                        case ' ':
-                        case '\n':
-                        case '\r':
-                        case '\t':
-                            currentTokenType = Token.WHITESPACE;
-                            break;
-
-                        case '"':
-                            currentTokenType = Token.LITERAL_STRING_DOUBLE_QUOTE;
-                            break;
-
-                        case '/':
-                            currentTokenType = Token.COMMENT_EOL;
-                            break;
-
-                        default:
-                            if (RSyntaxUtilities.isDigit(c)) {
-                                currentTokenType = Token.LITERAL_NUMBER_DECIMAL_INT;
-                                break;
-                            }
-                            else if (RSyntaxUtilities.isLetter(c) || c=='_') {
-                                currentTokenType = Token.IDENTIFIER;
-                                break;
-                            }
-
-                            // Anything not currently handled - mark as an identifier
-                            currentTokenType = Token.IDENTIFIER;
-                            break;
-
-                    } // End of switch (c).
-
-                    break;
-
-                case Token.WHITESPACE:
-
-                    switch (c) {
-
-                        case ' ':
-                        case '\t':
-                            break;   // Still whitespace.
-
-                        case '"':
-                            addToken(text, currentTokenStart,i-1, Token.WHITESPACE, newStartOffset+currentTokenStart);
-                            currentTokenStart = i;
-                            currentTokenType = Token.LITERAL_STRING_DOUBLE_QUOTE;
-                            break;
-
-                        case '/':
-                            addToken(text, currentTokenStart,i-1, Token.WHITESPACE, newStartOffset+currentTokenStart);
-                            currentTokenStart = i;
-                            currentTokenType = Token.COMMENT_EOL;
-                            break;
-
-                        default:   // Add the whitespace token and start anew.
-
-                            addToken(text, currentTokenStart,i-1, Token.WHITESPACE, newStartOffset+currentTokenStart);
-                            currentTokenStart = i;
-
-                            if (RSyntaxUtilities.isDigit(c)) {
-                                currentTokenType = Token.LITERAL_NUMBER_DECIMAL_INT;
-                                break;
-                            }
-                            else if (RSyntaxUtilities.isLetter(c) || c=='/' || c=='_') {
-                                currentTokenType = Token.IDENTIFIER;
-                                break;
-                            }
-
-                            // Anything not currently handled - mark as identifier
-                            currentTokenType = Token.IDENTIFIER;
-
-                    } // End of switch (c).
-
-                    break;
-
-                case Token.IDENTIFIER:
-
-                    switch (c) {
-                        case '\r':
-                        case '\n':
-                        case '.':
-                        case ' ':
-                        case '\t':
-                            addToken(text, currentTokenStart,i-1, Token.IDENTIFIER, newStartOffset+currentTokenStart);
-                            currentTokenStart = i;
-                            currentTokenType = Token.WHITESPACE;
-                            break;
-
-                        case '"':
-                            addToken(text, currentTokenStart,i-1, Token.IDENTIFIER, newStartOffset+currentTokenStart);
-                            currentTokenStart = i;
-                            currentTokenType = Token.LITERAL_STRING_DOUBLE_QUOTE;
-                            break;
-
-                        default:
-                            if (RSyntaxUtilities.isLetterOrDigit(c) || c=='/' || c=='_') {
-                                break;   // Still an identifier of some type.
-                            }
-                            // Otherwise, we're still an identifier (?).
-
-                    } // End of switch (c).
-
-                    break;
-
-                default: // Should never happen
-
-//                case Token.IDENTIFIER:
-//
-//                    switch (c) {
-//
-//                        case '\n':
-//                        case '.':
-//                        case ' ':
-//                        case '\t':
-//                            addToken(text, currentTokenStart,i-1, Token.IDENTIFIER, newStartOffset+currentTokenStart);
-//                            currentTokenStart = i;
-//                            currentTokenType = Token.WHITESPACE;
-//                            break;
-//
-//                        case '"':
-//                            addToken(text, currentTokenStart,i-1, Token.IDENTIFIER, newStartOffset+currentTokenStart);
-//                            currentTokenStart = i;
-//                            currentTokenType = Token.LITERAL_STRING_DOUBLE_QUOTE;
-//                            break;
-//
-//                        default:
-//                            if (RSyntaxUtilities.isLetterOrDigit(c) || c=='/' || c=='_') {
-//                                break;   // Still an identifier of some type.
-//                            }
-//                            // Otherwise, we're still an identifier (?).
-//
-//                    } // End of switch (c).
-//
-//                    break;
-
-                case Token.LITERAL_NUMBER_DECIMAL_INT:
-
-                    switch (c) {
-
-                        case ' ':
-                        case '\t':
-                            addToken(text, currentTokenStart,i-1, Token.LITERAL_NUMBER_DECIMAL_INT, newStartOffset+currentTokenStart);
-                            currentTokenStart = i;
-                            currentTokenType = Token.WHITESPACE;
-                            break;
-
-                        case '"':
-                            addToken(text, currentTokenStart,i-1, Token.LITERAL_NUMBER_DECIMAL_INT, newStartOffset+currentTokenStart);
-                            currentTokenStart = i;
-                            currentTokenType = Token.LITERAL_STRING_DOUBLE_QUOTE;
-                            break;
-
-                        default:
-
-                            if (RSyntaxUtilities.isDigit(c)) {
-                                break;   // Still a literal number.
-                            }
-
-                            // Otherwise, remember this was a number and start over.
-                            addToken(text, currentTokenStart,i-1, Token.LITERAL_NUMBER_DECIMAL_INT, newStartOffset+currentTokenStart);
-                            i--;
-                            currentTokenType = Token.NULL;
-
-                    } // End of switch (c).
-
-                    break;
-
-                case Token.COMMENT_EOL:
-                    i = end - 1;
-                    addToken(text, currentTokenStart,i, currentTokenType, newStartOffset+currentTokenStart);
-                    // We need to set token type to null so at the bottom we don't add one more token.
-                    currentTokenType = Token.NULL;
-                    break;
-
-                case Token.LITERAL_STRING_DOUBLE_QUOTE:
-                    if (c=='"') {
-                        addToken(text, currentTokenStart,i, Token.LITERAL_STRING_DOUBLE_QUOTE, newStartOffset+currentTokenStart);
-                        currentTokenType = Token.NULL;
+            if (isWhitespace(c)) {
+                i++;
+                while (i < end && isWhitespace(array[i])) {
+                    i++;
+                }
+                addToken(text, tokenStart, i - 1, Token.WHITESPACE, newStartOffset + tokenStart);
+            } else if (c == '/' && i + 1 < end && array[i + 1] == '/') {
+                addToken(text, tokenStart, end - 1, Token.COMMENT_EOL, newStartOffset + tokenStart);
+                i = end;
+            } else if (c == '"') {
+                i = scanQuotedString(array, i + 1, end, '"');
+                int tokenType = i <= end && array[i - 1] == '"' ? Token.LITERAL_STRING_DOUBLE_QUOTE : Token.ERROR_STRING_DOUBLE;
+                addToken(text, tokenStart, i - 1, tokenType, newStartOffset + tokenStart);
+            } else if (c == '\'') {
+                i = scanQuotedString(array, i + 1, end, '\'');
+                int tokenType = i <= end && array[i - 1] == '\'' ? Token.LITERAL_CHAR : Token.ERROR_CHAR;
+                addToken(text, tokenStart, i - 1, tokenType, newStartOffset + tokenStart);
+            } else if (Character.isDigit(c)) {
+                i++;
+                boolean seenDot = false;
+                while (i < end) {
+                    char ch = array[i];
+                    if (Character.isDigit(ch)) {
+                        i++;
+                    } else if (ch == '.' && !seenDot) {
+                        seenDot = true;
+                        i++;
+                    } else {
+                        break;
                     }
-                    break;
-
-            } // End of switch (currentTokenType).
-
-        } // End of for (int i=offset; i<end; i++).
-
-        switch (currentTokenType) {
-
-            // Remember what token type to begin the next line with.
-            case Token.LITERAL_STRING_DOUBLE_QUOTE:
-                addToken(text, currentTokenStart,end-1, currentTokenType, newStartOffset+currentTokenStart);
-                break;
-
-            // Do nothing if everything was okay.
-            case Token.NULL:
-                addNullToken();
-                break;
-
-            // All other token types don't continue to the next line...
-            default:
-                addToken(text, currentTokenStart,end-1, currentTokenType, newStartOffset+currentTokenStart);
-                addNullToken();
-
+                }
+                addToken(text, tokenStart, i - 1,
+                        seenDot ? Token.LITERAL_NUMBER_FLOAT : Token.LITERAL_NUMBER_DECIMAL_INT,
+                        newStartOffset + tokenStart);
+            } else if (isIdentifierStart(c)) {
+                i++;
+                while (i < end && isIdentifierPart(array[i])) {
+                    i++;
+                }
+                addToken(text, tokenStart, i - 1, Token.IDENTIFIER, newStartOffset + tokenStart);
+            } else if (isSeparator(c)) {
+                addToken(text, tokenStart, tokenStart, Token.SEPARATOR, newStartOffset + tokenStart);
+                i++;
+            } else if (isOperator(c)) {
+                i++;
+                while (i < end && isOperator(array[i])) {
+                    i++;
+                }
+                addToken(text, tokenStart, i - 1, Token.OPERATOR, newStartOffset + tokenStart);
+            } else {
+                addToken(text, tokenStart, tokenStart, Token.IDENTIFIER, newStartOffset + tokenStart);
+                i++;
+            }
         }
 
-        // Return the first token in our linked list.
+        addNullToken();
         return firstToken;
+    }
 
+    private static void putAll(TokenMap tokenMap, String[] words, int tokenType) {
+        for (String word : words) {
+            tokenMap.put(word, tokenType);
+        }
+    }
+
+    private static boolean isWhitespace(char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+    }
+
+    private static boolean isIdentifierStart(char c) {
+        return Character.isLetter(c) || c == '_';
+    }
+
+    private static boolean isIdentifierPart(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
+    }
+
+    private static boolean isSeparator(char c) {
+        return "{}()[],:;.".indexOf(c) >= 0;
+    }
+
+    private static boolean isOperator(char c) {
+        return "+-*=<>!&|/%".indexOf(c) >= 0;
+    }
+
+    private static int scanQuotedString(char[] array, int index, int end, char quote) {
+        boolean escaped = false;
+        while (index < end) {
+            char c = array[index++];
+            if (escaped) {
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+            } else if (c == quote) {
+                break;
+            }
+        }
+        return index;
     }
 }
