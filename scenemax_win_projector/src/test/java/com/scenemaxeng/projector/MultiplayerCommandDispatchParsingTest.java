@@ -1,6 +1,9 @@
 package com.scenemaxeng.projector;
 
 import com.scenemaxeng.compiler.DoBlockCommand;
+import com.scenemaxeng.compiler.CollisionStatementCommand;
+import com.scenemaxeng.compiler.NetworkEventHandlerCommand;
+import com.scenemaxeng.compiler.NetworkSendCommand;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
 import com.scenemaxeng.compiler.SphereVariableDef;
@@ -69,6 +72,25 @@ public class MultiplayerCommandDispatchParsingTest {
         }
 
         assertTrue("Expected inner sphere to keep the multiplayer flag", sphere != null && sphere.isMultiplayer);
+    }
+
+    @Test
+    public void parsesNetworkCollisionEventModel() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "when left_foot_collider collides with #head_collider do\n"
+                        + "  network.send \"head_hit_by_leg\"\n"
+                        + "end do\n"
+                        + "network.on (\"head_hit_by_leg\") = do\n"
+                        + "  man.move backward 3 in 0.1 seconds\n"
+                        + "end do");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        assertEquals(2, program.actions.size());
+        CollisionStatementCommand collision = (CollisionStatementCommand) program.actions.get(0);
+        assertTrue(collision.destEndpoint.networkEntity);
+        assertEquals("head_collider", collision.destEndpoint.networkObjectName);
+        assertTrue(collision.doBlock.prg.actions.get(0) instanceof NetworkSendCommand);
+        assertTrue(program.actions.get(1) instanceof NetworkEventHandlerCommand);
     }
 
     @Test

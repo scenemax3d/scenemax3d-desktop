@@ -169,6 +169,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private BulletAppState bulletAppState;
 
     private HashMap<String,CollisionHandler> collisionHandlers = new HashMap<>();
+    private List<NetworkCollisionHandler> networkCollisionHandlers = new ArrayList<>();
+    private Map<String, List<RegisteredNetworkEventHandler>> networkEventHandlers = new HashMap<>();
     private HashMap<String,UserInputDoBlockController> inputHandlers = new HashMap<>();
     private HashMap<String,UserInputDoBlockController> releaseInputHandlers = new HashMap<>();
 
@@ -1695,6 +1697,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if(action instanceof LoggerCommand) {
             LoggerCommandController ctl = new LoggerCommandController(this, prg, scope, (LoggerCommand) action);
             ctl.async = action.isAsync;
+            scope.add(ctl);
+        } else if(action instanceof NetworkSendCommand) {
+            NetworkSendController ctl = new NetworkSendController(this, prg, scope, (NetworkSendCommand) action);
+            scope.add(ctl);
+        } else if(action instanceof NetworkEventHandlerCommand) {
+            NetworkEventHandlerController ctl =
+                    new NetworkEventHandlerController(this, prg, scope, (NetworkEventHandlerCommand) action);
             scope.add(ctl);
         } else if(action instanceof ProcessEndCommand) {
             ProcessEndController ctl = new ProcessEndController(this, prg, scope, (ProcessEndCommand) action);
@@ -4669,6 +4678,50 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         multiplayerNetwork.destroyEntity(runtimeName);
     }
 
+    public void registerNetworkEventHandler(String eventName, SceneMaxScope scope, DoBlockCommand doBlock) {
+        if (eventName == null || eventName.trim().isEmpty() || doBlock == null) {
+            return;
+        }
+        String key = eventName.trim();
+        List<RegisteredNetworkEventHandler> handlers =
+                networkEventHandlers.computeIfAbsent(key, ignored -> new ArrayList<>());
+        for (RegisteredNetworkEventHandler handler : handlers) {
+            if (handler.scope == scope && handler.doBlock == doBlock) {
+                return;
+            }
+        }
+        RegisteredNetworkEventHandler handler = new RegisteredNetworkEventHandler();
+        handler.scope = scope;
+        handler.doBlock = doBlock;
+        handlers.add(handler);
+    }
+
+    public void receiveNetworkEvent(String eventName) {
+        if (eventName == null || eventName.trim().isEmpty()) {
+            return;
+        }
+        List<RegisteredNetworkEventHandler> handlers = networkEventHandlers.get(eventName.trim());
+        if (handlers == null || handlers.isEmpty()) {
+            return;
+        }
+        for (RegisteredNetworkEventHandler handler : new ArrayList<>(handlers)) {
+            DoBlockController controller = new DoBlockController(this, handler.scope, handler.doBlock);
+            controller.app = this;
+            controller.async = handler.doBlock.isAsync;
+            registerController(controller);
+        }
+    }
+
+    public void sendNetworkEventToCollisionTarget(SceneMaxScope scope, String eventName) {
+        if (multiplayerNetwork == null || scope == null || eventName == null || eventName.trim().isEmpty()) {
+            return;
+        }
+        int targetClientId = scope.getNetworkEventTargetClientId();
+        if (targetClientId != 0) {
+            multiplayerNetwork.sendNetworkEvent(targetClientId, eventName.trim());
+        }
+    }
+
     public void dispatchMultiplayerCommand(String runtimeName, String commandText) {
         if (suppressMultiplayerCommandDispatch) {
             return;
@@ -4707,6 +4760,16 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return;
         }
         multiplayerNetwork.endActiveAction(runtimeName, slot, sequence);
+    }
+
+    private static class RegisteredNetworkEventHandler {
+        SceneMaxScope scope;
+        DoBlockCommand doBlock;
+    }
+
+    private static class NetworkCollisionHandler extends CollisionHandler {
+        String localRuntimeName;
+        String remoteObjectName;
     }
 
     @Override
@@ -6297,11 +6360,21 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
 
             if(runHandler==true) {
+                c.doBlock.networkEventTargetClientId = c.networkEventTargetClientId;
                 registerController(c.doBlock);// run on its own thread
                 c.doBlock.isRunning = true;
                 return true;
             }
 
+        }
+
+        CollisionHandler networkHandler = findNetworkCollisionHandler(name1, name2, jointNameA, jointNameB);
+        if (networkHandler != null && !networkHandler.doBlock.isRunning
+                && networkHandler.checkSpritesCollision() && networkHandler.checkGoExpr()) {
+            networkHandler.doBlock.networkEventTargetClientId = networkHandler.networkEventTargetClientId;
+            registerController(networkHandler.doBlock);
+            networkHandler.doBlock.isRunning = true;
+            return true;
         }
 
 //        String key2 = var2.concat(var1);
@@ -9467,6 +9540,68 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
 
         }
+    }
+
+    public void addNetworkCollisionHandler(String localVar, String remoteObjectName,
+                                           DoBlockController c, EntityInstBase localInst,
+                                           String localJoint, String remoteJoint,
+                                           SceneMaxParser.Logical_expressionContext goCondition) {
+        if (localVar == null || localVar.trim().isEmpty()
+                || remoteObjectName == null || remoteObjectName.trim().isEmpty()
+                || c == null) {
+            return;
+        }
+        NetworkCollisionHandler handler = new NetworkCollisionHandler();
+        handler.localRuntimeName = localVar;
+        handler.remoteObjectName = remoteObjectName.trim();
+        handler.joint1 = localJoint;
+        handler.joint2 = remoteJoint;
+        handler.goExpr = goCondition;
+        handler.doBlock = c;
+        networkCollisionHandlers.add(handler);
+    }
+
+    private CollisionHandler findNetworkCollisionHandler(String var1, String var2, String jointNameA, String jointNameB) {
+        if (multiplayerNetwork == null || networkCollisionHandlers.isEmpty()) {
+            return null;
+        }
+        for (NetworkCollisionHandler handler : networkCollisionHandlers) {
+            CollisionHandler matched = matchNetworkCollisionHandler(handler, var1, var2, jointNameA, jointNameB);
+            if (matched != null) {
+                return matched;
+            }
+            matched = matchNetworkCollisionHandler(handler, var2, var1, jointNameB, jointNameA);
+            if (matched != null) {
+                return matched;
+            }
+        }
+        return null;
+    }
+
+    private CollisionHandler matchNetworkCollisionHandler(NetworkCollisionHandler handler,
+                                                          String localRuntimeName,
+                                                          String remoteRuntimeName,
+                                                          String localJoint,
+                                                          String remoteJoint) {
+        if (!handler.localRuntimeName.equals(localRuntimeName)) {
+            return null;
+        }
+        String sourceObjectName = multiplayerNetwork.remoteSourceObjectName(remoteRuntimeName);
+        if (sourceObjectName == null || !sourceObjectName.equalsIgnoreCase(handler.remoteObjectName)) {
+            return null;
+        }
+        if (handler.joint1 != null && !handler.joint1.equals(localJoint)) {
+            return null;
+        }
+        if (handler.joint2 != null && !handler.joint2.equals(remoteJoint)) {
+            return null;
+        }
+        int ownerClientId = multiplayerNetwork.remoteOwnerClientId(remoteRuntimeName);
+        if (ownerClientId == 0) {
+            return null;
+        }
+        handler.networkEventTargetClientId = ownerClientId;
+        return handler;
     }
 
     public void changeModelScale(String targetVar, Double scale) {

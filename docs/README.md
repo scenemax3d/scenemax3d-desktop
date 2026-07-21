@@ -34,6 +34,7 @@
 - [UI & Drawing](ui-and-drawing.md)
 - [Camera Tracking & Minimap](minimap.md)
 - [Levels & Shared State](levels-and-shared-state.md)
+- [Multiplayer](multiplayer.md)
 - [Path Replay](path-replay.md)
 - [Utilities](utilities.md)
 - [itch.io Integration Guide](itchio-integration.md)

@@ -45,13 +45,15 @@ public class MultiplayerNetworkComponent {
     private static final byte TRANSFORM_CORRECTION = 21;
     private static final byte ACTIVE_ACTION_START = 22;
     private static final byte ACTIVE_ACTION_END = 23;
+    private static final byte NETWORK_EVENT = 24;
     private static final byte SNAPSHOT = 30;
     private static final byte DISCONNECT = 40;
     private static final int MAX_PACKET_SIZE = 1200;
+    private static final int SOURCE_OBJECT_NAME_SIZE = 64;
     private static final int SPAWN_COMMAND_SIZE = 256;
     private static final int ACTIVE_ACTION_COMMAND_SIZE = 192;
     private static final int ACTIVE_ACTION_RECORD_SIZE = 12 + ACTIVE_ACTION_COMMAND_SIZE;
-    private static final int SNAPSHOT_ENTITY_SIZE = 228 + SPAWN_COMMAND_SIZE;
+    private static final int SNAPSHOT_ENTITY_SIZE = 228 + SOURCE_OBJECT_NAME_SIZE + SPAWN_COMMAND_SIZE;
     private static final float CORRECTION_INTERVAL_SECONDS = 0.25f;
     private static final float CREATE_RETRY_INTERVAL_SECONDS = 0.35f;
     private static final float POSITION_EPSILON_SQUARED = 0.0004f;
@@ -134,6 +136,7 @@ public class MultiplayerNetworkComponent {
         entity.runtimeName = runtimeName;
         entity.varDef = varDef;
         entity.archetypeName = archetypeName == null ? "" : archetypeName;
+        entity.sourceObjectName = varDef.varName == null ? "" : varDef.varName;
         entity.spawnCommand = spawnCommand == null ? "" : spawnCommand;
         entity.createRequestId = nextCreateRequestId();
         localEntities.put(runtimeName, entity);
@@ -180,6 +183,28 @@ public class MultiplayerNetworkComponent {
         packet.put(commandBytes, 0, Math.min(commandBytes.length, MAX_PACKET_SIZE - 12));
         logNet("send command entity=" + networkEntityId + " command=\"" + commandText + "\"");
         send(packet);
+    }
+
+    public void sendNetworkEvent(int targetClientId, String eventName) {
+        if (!isActive() || clientId == 0 || targetClientId == 0 || eventName == null || eventName.trim().isEmpty()) {
+            return;
+        }
+        byte[] eventBytes = eventName.trim().getBytes(StandardCharsets.UTF_8);
+        ByteBuffer packet = packet(NETWORK_EVENT, Math.min(eventBytes.length + 2, MAX_PACKET_SIZE - 8));
+        packet.putShort((short) targetClientId);
+        packet.put(eventBytes, 0, Math.min(eventBytes.length, MAX_PACKET_SIZE - 10));
+        logNet("send network event targetClient=" + targetClientId + " event=\"" + eventName.trim() + "\"");
+        send(packet);
+    }
+
+    public String remoteSourceObjectName(String runtimeName) {
+        RemoteEntity entity = remoteEntityForRuntime(runtimeName);
+        return entity == null ? null : entity.sourceObjectName;
+    }
+
+    public int remoteOwnerClientId(String runtimeName) {
+        RemoteEntity entity = remoteEntityForRuntime(runtimeName);
+        return entity == null ? 0 : entity.ownerClientId;
     }
 
     public void dispatchCommand(String runtimeName, String commandText) {
@@ -353,10 +378,11 @@ public class MultiplayerNetworkComponent {
         if (entity.createRequestId == 0) {
             entity.createRequestId = nextCreateRequestId();
         }
-        ByteBuffer packet = packet(CREATE_ENTITY_REQUEST, 4 + 128 + SPAWN_COMMAND_SIZE);
+        ByteBuffer packet = packet(CREATE_ENTITY_REQUEST, 4 + 128 + SOURCE_OBJECT_NAME_SIZE + SPAWN_COMMAND_SIZE);
         packet.putInt(entity.createRequestId);
         putFixedString(packet, entity.archetypeName, 64);
         putFixedString(packet, playerName, 64);
+        putFixedString(packet, entity.sourceObjectName, SOURCE_OBJECT_NAME_SIZE);
         putFixedString(packet, entity.spawnCommand, SPAWN_COMMAND_SIZE);
         pendingCreateAcks.put(entity.createRequestId, entity.runtimeName);
         entity.createRetryTimer = 0;
@@ -487,12 +513,21 @@ public class MultiplayerNetworkComponent {
             } else if (payload.remaining() >= 128) {
                 String archetype = readFixedString(payload, 64);
                 String remotePlayerName = readFixedString(payload, 64);
-                String spawnCommand = payload.remaining() >= SPAWN_COMMAND_SIZE ? readFixedString(payload, SPAWN_COMMAND_SIZE) : "";
+                String sourceObjectName = "";
+                String spawnCommand = "";
+                if (payload.remaining() >= SOURCE_OBJECT_NAME_SIZE + SPAWN_COMMAND_SIZE) {
+                    sourceObjectName = readFixedString(payload, SOURCE_OBJECT_NAME_SIZE);
+                    spawnCommand = readFixedString(payload, SPAWN_COMMAND_SIZE);
+                } else if (payload.remaining() >= SPAWN_COMMAND_SIZE) {
+                    spawnCommand = readFixedString(payload, SPAWN_COMMAND_SIZE);
+                }
                 logNet("receive remote create networkId=" + networkId
                         + " sender=" + senderClientId
                         + " archetype=" + archetype
+                        + " source=" + sourceObjectName
                         + " spawn=\"" + spawnCommand + "\"");
-                createOrUpdateRemoteEntity(networkId, archetype, remotePlayerName, transformOrNull(networkId), 0, "", spawnCommand);
+                createOrUpdateRemoteEntity(networkId, senderClientId, archetype, remotePlayerName,
+                        sourceObjectName, transformOrNull(networkId), 0, "", spawnCommand);
             }
         } else if (type == DESTROY_ENTITY && payload.remaining() >= 4) {
             int networkId = payload.getInt();
@@ -510,6 +545,14 @@ public class MultiplayerNetworkComponent {
             handleActiveActionStart(payload);
         } else if (type == TRANSFORM_CORRECTION && payload.remaining() >= 32) {
             handleTransformCorrection(payload);
+        } else if (type == NETWORK_EVENT && payload.remaining() > 0) {
+            byte[] bytes = new byte[payload.remaining()];
+            payload.get(bytes);
+            String eventName = new String(bytes, StandardCharsets.UTF_8).trim();
+            if (!eventName.isEmpty() && app != null) {
+                logNet("receive network event sender=" + senderClientId + " event=\"" + eventName + "\"");
+                app.receiveNetworkEvent(eventName);
+            }
         } else if (type == SNAPSHOT) {
             handleSnapshot(payload);
         }
@@ -644,6 +687,7 @@ public class MultiplayerNetworkComponent {
             int ownerClientId = Short.toUnsignedInt(payload.getShort());
             String archetype = readFixedString(payload, 64);
             String remotePlayerName = readFixedString(payload, 64);
+            String sourceObjectName = readFixedString(payload, SOURCE_OBJECT_NAME_SIZE);
             TransformState transform = readTransformState(payload);
             int animationIndex = Short.toUnsignedInt(payload.getShort());
             String animation = readFixedString(payload, 64);
@@ -652,7 +696,8 @@ public class MultiplayerNetworkComponent {
             if (ownerClientId == clientId || isLocalNetworkEntity(networkId)) {
                 continue;
             }
-            createOrUpdateRemoteEntity(networkId, archetype, remotePlayerName, transform, animationIndex, animation, spawnCommand);
+            createOrUpdateRemoteEntity(networkId, ownerClientId, archetype, remotePlayerName,
+                    sourceObjectName, transform, animationIndex, animation, spawnCommand);
             applySnapshotActions(networkId, actions);
         }
     }
@@ -763,10 +808,11 @@ public class MultiplayerNetworkComponent {
 
     private void createOrUpdateRemoteEntity(int networkId, String archetype, String remotePlayerName,
                                             TransformState transform, int animationIndex, String animation) {
-        createOrUpdateRemoteEntity(networkId, archetype, remotePlayerName, transform, animationIndex, animation, "");
+        createOrUpdateRemoteEntity(networkId, 0, archetype, remotePlayerName, "", transform, animationIndex, animation, "");
     }
 
-    private void createOrUpdateRemoteEntity(int networkId, String archetype, String remotePlayerName,
+    private void createOrUpdateRemoteEntity(int networkId, int ownerClientId, String archetype, String remotePlayerName,
+                                            String sourceObjectName,
                                             TransformState transform, int animationIndex, String animation,
                                             String spawnCommand) {
         if (networkId == 0 || archetype == null || archetype.trim().isEmpty()) {
@@ -776,13 +822,24 @@ public class MultiplayerNetworkComponent {
         if (entity == null) {
             entity = new RemoteEntity();
             entity.networkEntityId = networkId;
+            entity.ownerClientId = ownerClientId;
             entity.sourceName = "mp_remote_" + networkId;
+            entity.sourceObjectName = sourceObjectName == null || sourceObjectName.trim().isEmpty()
+                    ? entity.sourceName
+                    : sourceObjectName.trim();
             entity.archetypeName = sanitizeIdentifier(archetype);
             entity.varType = archetypeVarType(entity.archetypeName);
             entity.playerName = remotePlayerName == null ? "" : remotePlayerName;
             entity.spawnCommand = spawnCommand == null ? "" : spawnCommand.trim();
             remoteEntities.put(networkId, entity);
             createRemoteModel(entity, transform);
+        } else {
+            if (ownerClientId != 0) {
+                entity.ownerClientId = ownerClientId;
+            }
+            if (sourceObjectName != null && !sourceObjectName.trim().isEmpty()) {
+                entity.sourceObjectName = sourceObjectName.trim();
+            }
         }
         entity.animationIndex = animationIndex;
         entity.animation = animation == null ? "" : animation;
@@ -1000,6 +1057,22 @@ public class MultiplayerNetworkComponent {
             }
         }
         return false;
+    }
+
+    private RemoteEntity remoteEntityForRuntime(String runtimeName) {
+        if (runtimeName == null || runtimeName.trim().isEmpty()) {
+            return null;
+        }
+        String normalized = runtimeName.trim();
+        for (RemoteEntity entity : remoteEntities.values()) {
+            if (entity == null) {
+                continue;
+            }
+            if (normalized.equals(entity.runtimeName) || normalized.equals(entity.sourceName)) {
+                return entity;
+            }
+        }
+        return null;
     }
 
     private String resolveRemoteCommandTarget(int networkId, String command) {
@@ -1222,6 +1295,7 @@ public class MultiplayerNetworkComponent {
         String runtimeName;
         VariableDef varDef;
         String archetypeName;
+        String sourceObjectName;
         String spawnCommand;
         int networkEntityId;
         int createRequestId;
@@ -1235,8 +1309,10 @@ public class MultiplayerNetworkComponent {
 
     private static class RemoteEntity {
         int networkEntityId;
+        int ownerClientId;
         String sourceName;
         String runtimeName;
+        String sourceObjectName;
         String archetypeName;
         int varType;
         String spawnCommand;

@@ -903,6 +903,22 @@ public class SceneMaxLanguageParser implements IParser {
 
             }
 
+            public ActionStatementBase visitNetworkStatement(SceneMaxParser.NetworkStatementContext ctx) {
+                SceneMaxParser.Network_actionContext action = ctx.network_statement().network_action();
+                if (action.network_send() != null) {
+                    NetworkSendCommand cmd = new NetworkSendCommand();
+                    cmd.eventNameExpr = action.network_send().logical_expression();
+                    return cmd;
+                }
+
+                NetworkEventHandlerCommand cmd = new NetworkEventHandlerCommand();
+                cmd.eventNameExpr = action.network_on().logical_expression();
+                DoBlockCommand doBlock = new DoBlockVisitor(prg).visit(action.network_on().do_block());
+                doBlock.isSecondLevelReturnPoint = true;
+                cmd.doBlock = doBlock;
+                return cmd;
+            }
+
             public ActionStatementBase visitForStatement(SceneMaxParser.ForStatementContext ctx) {
                 ForCommand cmd = new ForCommand();
 
@@ -3002,6 +3018,21 @@ public class SceneMaxLanguageParser implements IParser {
                     endpoint.ownerVarDef = prg.getVar(ownerVarName);
                     endpoint.colliderName = stripQutes(weaponCollider.QUOTED_STRING().getText());
                     endpoint.entity = createDeferredCollisionEntity(endpoint.colliderName);
+                    return endpoint;
+                }
+
+                if (collisionEntityContext.network_collision_entity() != null) {
+                    String entityName = collisionEntityContext.network_collision_entity().var_decl().getText();
+                    String joint = null;
+                    if (collisionEntityContext.network_collision_entity().collision_joint_1() != null) {
+                        joint = collisionEntityContext.network_collision_entity().collision_joint_1().QUOTED_STRING().getText();
+                        joint = stripQutes(joint);
+                    }
+
+                    endpoint.networkEntity = true;
+                    endpoint.networkObjectName = entityName;
+                    endpoint.entity = createDeferredCollisionEntity(entityName);
+                    endpoint.joint = joint;
                     return endpoint;
                 }
 

@@ -32,6 +32,7 @@ CREATE_ENTITY_REQUEST = 10
 CREATE_ENTITY_ACCEPTED = 11
 COMMAND_DISPATCH = 20
 TRANSFORM_CORRECTION = 21
+NETWORK_EVENT = 24
 SNAPSHOT = 30
 DISCONNECT = 40
 
@@ -133,7 +134,8 @@ class LoadTest:
         payload = struct.pack("<I", client.create_request_id)
         payload += fixed(self.args.archetype, 64)
         payload += fixed(f"load_{client.index}", 64)
-        payload += fixed("", 128)
+        payload += fixed(f"load_entity_{client.index}", 64)
+        payload += fixed("", 256)
         client.sock.send(packet(CREATE_ENTITY_REQUEST, client.client_id, payload))
         client.last_create_send = now
 
