@@ -6,7 +6,6 @@ import com.scenemaxeng.compiler.NetworkEventHandlerCommand;
 import com.scenemaxeng.compiler.NetworkSendCommand;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
-import com.scenemaxeng.compiler.SphereVariableDef;
 import com.scenemaxeng.compiler.StatementDef;
 import com.scenemaxeng.compiler.VariableDef;
 import org.junit.Test;
@@ -50,28 +49,50 @@ public class MultiplayerCommandDispatchParsingTest {
     }
 
     @Test
-    public void keepsMultiplayerFlagOnSphereCreatedInsideDoBlock() {
+    public void parsesGeneratedMultiplayerSpawnCommandsForAllPrimitives() {
+        assertParses("mp_remote_box => box: pos (1,2,3), rotate(0,45,0), size (2,3,4), material=\"stone\"");
+        assertParses("mp_remote_sphere => sphere: pos (1,2,3), radius 0.75, material=\"glass\"");
+        assertParses("mp_remote_cylinder => cylinder: pos (1,2,3), radius (0.5,1), height 2.5, material=\"metal\"");
+        assertParses("mp_remote_hollow => hollow cylinder: pos (1,2,3), radius (1.2,1), inner radius (0.4,0.3), height 2");
+        assertParses("mp_remote_quad => quad: pos (1,2,3), scale 2, size (4,3), material=\"screen\"");
+        assertParses("mp_remote_wedge => wedge: pos (1,2,3), size (2,1,3)");
+        assertParses("mp_remote_cone => cone: pos (1,2,3), radius (0,1), height 2");
+        assertParses("mp_remote_stairs => stairs: pos (1,2,3), size (2,0.25,0.4), steps 6");
+        assertParses("mp_remote_arch => arch: pos (1,2,3), size (2,2.5,0.5), thickness 0.35, segments 12");
+        assertParses("mp_remote_collider_box => collider box: pos (1,2,3), size (2,3,4)");
+        assertParses("mp_remote_collider_hollow => collider hollow cylinder: pos (1,2,3), radius (1,1), inner radius (0.5,0.5), height 2");
+    }
+
+    @Test
+    public void keepsMultiplayerFlagOnPrimitivesCreatedInsideDoBlock() {
         ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
                 "do async\n"
                         + "  s=>sphere : pos (0,0,0), material=\"pond\", multiplayer\n"
+                        + "  b=>box : pos (0,0,0), multiplayer\n"
+                        + "  c=>cylinder : pos (0,0,0), multiplayer\n"
+                        + "  h=>hollow cylinder : pos (0,0,0), multiplayer\n"
+                        + "  q=>quad : pos (0,0,0), multiplayer\n"
+                        + "  w=>wedge : pos (0,0,0), multiplayer\n"
+                        + "  co=>cone : pos (0,0,0), multiplayer\n"
+                        + "  st=>stairs : pos (0,0,0), multiplayer\n"
+                        + "  a=>arch : pos (0,0,0), multiplayer\n"
                         + "end do");
 
         assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
         assertFalse(program.actions.isEmpty());
         DoBlockCommand block = (DoBlockCommand) program.actions.get(0);
 
-        VariableDef sphere = null;
+        int multiplayerPrimitiveCount = 0;
         for (StatementDef statement : block.prg.actions) {
             if (statement instanceof com.scenemaxeng.compiler.GraphicEntityCreationCommand) {
                 VariableDef var = ((com.scenemaxeng.compiler.GraphicEntityCreationCommand) statement).varDef;
-                if (var instanceof SphereVariableDef) {
-                    sphere = var;
-                    break;
+                if (isPrimitiveType(var.varType) && var.isMultiplayer) {
+                    multiplayerPrimitiveCount++;
                 }
             }
         }
 
-        assertTrue("Expected inner sphere to keep the multiplayer flag", sphere != null && sphere.isMultiplayer);
+        assertEquals("Expected every primitive to keep the multiplayer flag", 9, multiplayerPrimitiveCount);
     }
 
     @Test
@@ -114,5 +135,17 @@ public class MultiplayerCommandDispatchParsingTest {
         ProgramDef program = new SceneMaxLanguageParser(null, "").parse(code);
         assertTrue("Expected command to parse without syntax errors:\n" + code,
                 program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+    }
+
+    private boolean isPrimitiveType(int varType) {
+        return varType == VariableDef.VAR_TYPE_SPHERE
+                || varType == VariableDef.VAR_TYPE_BOX
+                || varType == VariableDef.VAR_TYPE_CYLINDER
+                || varType == VariableDef.VAR_TYPE_HOLLOW_CYLINDER
+                || varType == VariableDef.VAR_TYPE_QUAD
+                || varType == VariableDef.VAR_TYPE_WEDGE
+                || varType == VariableDef.VAR_TYPE_CONE
+                || varType == VariableDef.VAR_TYPE_STAIRS
+                || varType == VariableDef.VAR_TYPE_ARCH;
     }
 }

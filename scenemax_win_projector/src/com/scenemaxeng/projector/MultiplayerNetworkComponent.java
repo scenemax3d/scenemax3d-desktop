@@ -1037,6 +1037,20 @@ public class MultiplayerNetworkComponent {
             app.killSphere(entity.runtimeName);
         } else if (entity.varType == VariableDef.VAR_TYPE_BOX) {
             app.killBox(entity.runtimeName);
+        } else if (entity.varType == VariableDef.VAR_TYPE_CYLINDER) {
+            app.killCylinder(entity.runtimeName);
+        } else if (entity.varType == VariableDef.VAR_TYPE_HOLLOW_CYLINDER) {
+            app.killHollowCylinder(entity.runtimeName);
+        } else if (entity.varType == VariableDef.VAR_TYPE_QUAD) {
+            app.killQuad(entity.runtimeName);
+        } else if (entity.varType == VariableDef.VAR_TYPE_WEDGE) {
+            app.killWedge(entity.runtimeName);
+        } else if (entity.varType == VariableDef.VAR_TYPE_CONE) {
+            app.killCone(entity.runtimeName);
+        } else if (entity.varType == VariableDef.VAR_TYPE_STAIRS) {
+            app.killStairs(entity.runtimeName);
+        } else if (entity.varType == VariableDef.VAR_TYPE_ARCH) {
+            app.killArch(entity.runtimeName);
         } else {
             app.killModel(entity.runtimeName);
         }
@@ -1261,14 +1275,29 @@ public class MultiplayerNetworkComponent {
         if (archetype == null) {
             return VariableDef.VAR_TYPE_3D;
         }
-        String normalized = archetype.trim().toLowerCase();
-        if ("sphere".equals(normalized)) {
-            return VariableDef.VAR_TYPE_SPHERE;
+        String normalized = archetype.trim().toLowerCase().replace(" ", "").replace("_", "");
+        switch (normalized) {
+            case "sphere":
+                return VariableDef.VAR_TYPE_SPHERE;
+            case "box":
+                return VariableDef.VAR_TYPE_BOX;
+            case "cylinder":
+                return VariableDef.VAR_TYPE_CYLINDER;
+            case "hollowcylinder":
+                return VariableDef.VAR_TYPE_HOLLOW_CYLINDER;
+            case "quad":
+                return VariableDef.VAR_TYPE_QUAD;
+            case "wedge":
+                return VariableDef.VAR_TYPE_WEDGE;
+            case "cone":
+                return VariableDef.VAR_TYPE_CONE;
+            case "stairs":
+                return VariableDef.VAR_TYPE_STAIRS;
+            case "arch":
+                return VariableDef.VAR_TYPE_ARCH;
+            default:
+                return VariableDef.VAR_TYPE_3D;
         }
-        if ("box".equals(normalized)) {
-            return VariableDef.VAR_TYPE_BOX;
-        }
-        return VariableDef.VAR_TYPE_3D;
     }
 
     private int nextCreateRequestId() {
