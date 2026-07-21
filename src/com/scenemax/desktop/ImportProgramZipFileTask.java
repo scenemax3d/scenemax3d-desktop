@@ -23,6 +23,7 @@ public class ImportProgramZipFileTask extends SwingWorker<Integer, String> {
 
         this.finish = finish;
         this.filePath = filePath;
+        this.error = "";
 
     }
 
@@ -253,10 +254,82 @@ public class ImportProgramZipFileTask extends SwingWorker<Integer, String> {
             }
 
 
+            mergeResourceIndex(json, "fonts", "fonts/fonts-ext.json");
+            mergeResourceIndex(json, "animations", "animations/animations-ext.json");
+            mergeResourceIndex(json, "videos", "videos/videos-ext.json");
+            mergeResourceIndex(json, "shaders", "shaders/shaders-ext.json");
+            mergeResourceIndex(json, "environmentShaders", "environment_shaders/environment-shaders-ext.json");
+            mergeResourceIndex(json, "materials", "material/materials-ext.json");
+            mergeResourceIndex(json, "terrains", "terrain/terrains-ext.json");
+
 
          } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private void mergeResourceIndex(JSONObject importedResources, String arrayKey, String targetIndexRelativePath) {
+        if (importedResources == null || !importedResources.has(arrayKey)) {
+            return;
+        }
+
+        try {
+            JSONArray importedArray = importedResources.optJSONArray(arrayKey);
+            if (importedArray == null || importedArray.length() == 0) {
+                return;
+            }
+
+            File targetIndex = new File(Util.getResourcesFolder(), targetIndexRelativePath);
+            JSONObject targetRoot = getResourcesFolderIndex(targetIndex.getAbsolutePath());
+            if (targetRoot == null) {
+                targetRoot = new JSONObject();
+                targetRoot.put(arrayKey, new JSONArray());
+            }
+
+            JSONArray targetArray = targetRoot.optJSONArray(arrayKey);
+            if (targetArray == null) {
+                targetArray = new JSONArray();
+                targetRoot.put(arrayKey, targetArray);
+            }
+
+            boolean changed = false;
+            for (int i = 0; i < importedArray.length(); i++) {
+                JSONObject imported = importedArray.optJSONObject(i);
+                if (imported == null || resourceExists(targetArray, imported)) {
+                    continue;
+                }
+                targetArray.put(new JSONObject(imported.toString()));
+                changed = true;
+            }
+
+            if (changed) {
+                File parent = targetIndex.getParentFile();
+                if (parent != null) {
+                    FileUtils.forceMkdir(parent);
+                }
+                Util.writeFile(targetIndex.getAbsolutePath(), targetRoot.toString(2));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private boolean resourceExists(JSONArray currentResources, JSONObject imported) {
+        String importedName = imported.optString("name", "");
+        String importedPath = imported.optString("path", "");
+        for (int i = 0; i < currentResources.length(); i++) {
+            JSONObject current = currentResources.optJSONObject(i);
+            if (current == null) {
+                continue;
+            }
+            if (!importedName.isBlank() && importedName.equalsIgnoreCase(current.optString("name", ""))) {
+                return true;
+            }
+            if (!importedPath.isBlank() && importedPath.equalsIgnoreCase(current.optString("path", ""))) {
+                return true;
+            }
+        }
+        return false;
     }
 
 
@@ -365,7 +438,7 @@ public class ImportProgramZipFileTask extends SwingWorker<Integer, String> {
                 if(f.getName().equals("export_res")) {
                     importResFolder(f);
                 } else if(f.getName().equals("export_src")) {
-                    importSrcFolder(f);
+                    importSrcFolder(f, targetFolderName, targetScriptFile);
                 }
             }
         }
@@ -373,11 +446,19 @@ public class ImportProgramZipFileTask extends SwingWorker<Integer, String> {
         return 0;
     }
 
-    private void importSrcFolder(File folder) {
+    private void importSrcFolder(File folder, String targetFolderName, String targetScriptFile) {
         for(File f: folder.listFiles()) {
             if(f.isDirectory()) {
                 try {
                     FileUtils.copyDirectoryToDirectory(f,new File(Util.getScriptsFolder()));
+                    if (f.getName().equals(targetFolderName) && targetScriptFile != null && targetScriptFile.length() > 0) {
+                        File targetFile = new File(new File(Util.getScriptsFolder(), targetFolderName), targetScriptFile);
+                        if (targetFile.isFile()) {
+                            AppDB.getInstance().setParam("selected_tree_node_parent", targetFolderName);
+                            AppDB.getInstance().setParam("selected_tree_node", targetScriptFile);
+                            targetScriptPath = targetFile.getAbsolutePath();
+                        }
+                    }
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -386,6 +467,8 @@ public class ImportProgramZipFileTask extends SwingWorker<Integer, String> {
     }
 
     private static void importResFolder(File f) throws IOException {
+        File resourcesRoot = new File(Util.getResourcesFolder());
+        FileUtils.forceMkdir(resourcesRoot);
         for(File resFile: f.listFiles()) {
             if(resFile.isDirectory()) {
                 if(resFile.getName().equals("macro")) {
@@ -395,10 +478,78 @@ public class ImportProgramZipFileTask extends SwingWorker<Integer, String> {
                             FileUtils.copyFileToDirectory(macroFile,macroFolder);
                         }
                     }
+                } else if(resFile.getName().equals("resources")) {
+                    File[] nestedResources = resFile.listFiles();
+                    if (nestedResources != null) {
+                        for (File nestedResource : nestedResources) {
+                            copyResourcePayloadEntry(nestedResource, resourcesRoot);
+                        }
+                    }
+                } else {
+                    copyResourcePayloadEntry(resFile, resourcesRoot);
                 }
 
+            } else if(resFile.isFile()) {
+                FileUtils.copyFileToDirectory(resFile, resourcesRoot);
             }
         }
+    }
+
+    private static void copyResourcePayloadEntry(File source, File resourcesRoot) throws IOException {
+        if (source == null || resourcesRoot == null) {
+            return;
+        }
+        if (source.isDirectory()) {
+            copyResourcePayloadDirectory(source, new File(resourcesRoot, source.getName()));
+        } else if (source.isFile()) {
+            copyResourcePayloadFile(source, new File(resourcesRoot, source.getName()));
+        }
+    }
+
+    private static void copyResourcePayloadDirectory(File sourceDir, File targetDir) throws IOException {
+        File[] children = sourceDir.listFiles();
+        if (children == null) {
+            return;
+        }
+        FileUtils.forceMkdir(targetDir);
+        for (File child : children) {
+            File target = new File(targetDir, child.getName());
+            if (child.isDirectory()) {
+                copyResourcePayloadDirectory(child, target);
+            } else if (child.isFile()) {
+                copyResourcePayloadFile(child, target);
+            }
+        }
+    }
+
+    private static void copyResourcePayloadFile(File source, File target) throws IOException {
+        if (isMergeManagedResourceIndex(source)) {
+            return;
+        }
+        File parent = target.getParentFile();
+        if (parent != null) {
+            FileUtils.forceMkdir(parent);
+        }
+        FileUtils.copyFile(source, target);
+    }
+
+    private static boolean isMergeManagedResourceIndex(File file) {
+        if (file == null || !file.isFile()) {
+            return false;
+        }
+        String name = file.getName().toLowerCase();
+        return name.equals("models-ext.json")
+                || name.equals("sprites-ext.json")
+                || name.equals("audio-ext.json")
+                || name.equals("fonts-ext.json")
+                || name.equals("skyboxes-ext.json")
+                || name.equals("animations-ext.json")
+                || name.equals("videos-ext.json")
+                || name.equals("shaders-ext.json")
+                || name.equals("environment-shaders-ext.json")
+                || name.equals("materials-ext.json")
+                || name.equals("terrains-ext.json")
+                || name.equals("terrains.json");
     }
 
 
