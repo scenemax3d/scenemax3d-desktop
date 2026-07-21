@@ -12,6 +12,7 @@ public class CollisionHandler {
     public String joint1;
     public String joint2;
     public SceneMaxParser.Logical_expressionContext goExpr;
+    public int networkEventTargetClientId;
 
     DoBlockController doBlock;
 

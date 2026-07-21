@@ -9,11 +9,11 @@
             "path": "projects/fighting_game_project",
             "multiplayerPassword": "",
             "multiplayerServerIp": "127.0.0.1",
-            "selectedNode": "horse1_end.code",
+            "selectedNode": "game_init.code",
             "projectGuid": "b616bee4-eeca-4b8f-939b-37510d338fa3",
             "name": "fighting game project",
             "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game\\side_tests",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game\\game_level1",
             "multiplayerServerPort": 9001
         },
         {
@@ -218,7 +218,7 @@
             "selectedNode": "main",
             "projectGuid": "845fa4dd-4351-4924-89a9-b7700a90fec6",
             "name": "multi-player-test",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\multi-player-test\\scripts\\multi-player-test",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\multi-player-test\\scripts\\multi-player-test\\scene2",
             "multiplayerServerPort": 9001
         }
     ],

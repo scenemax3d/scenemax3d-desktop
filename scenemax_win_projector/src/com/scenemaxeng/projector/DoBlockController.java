@@ -30,6 +30,7 @@ public class DoBlockController extends SceneMaxBaseController {
     private int eventHandlersCount;
     private boolean hasReturnValue;
     private Object returnValue;
+    public int networkEventTargetClientId;
 
     // Cached to avoid per-frame allocation
     private ActionLogicalExpressionVm goExprCached;
@@ -102,6 +103,7 @@ public class DoBlockController extends SceneMaxBaseController {
         if(scope==null && goCondition) {
             scope = new SceneMaxScope();
             scope.mainController.app=app;
+            scope.networkEventTargetClientId = networkEventTargetClientId;
             scope.isReturnPoint=cmd.isReturnPoint;
             scope.isSecondLevelReturnPoint=cmd.isSecondLevelReturnPoint;
             scope.mainController.adhereToPauseStatus=false; // scope main controller never pauses

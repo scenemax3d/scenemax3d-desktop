@@ -10,11 +10,12 @@ const max_packet_size = 1200;
 const max_clients = 256;
 const max_entities = 2048;
 const max_sessions = 256;
+const source_object_name_size = 64;
 const spawn_command_size = 256;
 const active_action_command_size = 192;
 const snapshot_action_record_size = 12 + active_action_command_size;
 const max_active_actions = 16;
-const snapshot_entity_size = 228 + spawn_command_size;
+const snapshot_entity_size = 228 + source_object_name_size + spawn_command_size;
 const snapshot_entity_base_size = snapshot_entity_size + 1;
 const active_action_grace_ms = 1000;
 const verbose_packet_logs = false;
@@ -32,6 +33,7 @@ const PacketType = enum(u8) {
     transform_correction = 21,
     active_action_start = 22,
     active_action_end = 23,
+    network_event = 24,
     snapshot = 30,
     disconnect = 40,
 };
@@ -69,6 +71,7 @@ const Entity = struct {
     scene_id: [128]u8 = [_]u8{0} ** 128,
     archetype: [64]u8 = [_]u8{0} ** 64,
     player_name: [64]u8 = [_]u8{0} ** 64,
+    source_object_name: [source_object_name_size]u8 = [_]u8{0} ** source_object_name_size,
     position: [3]f32 = .{ 0, 0, 0 },
     rotation: [4]f32 = .{ 0, 0, 0, 1 },
     animation_index: u16 = 0,
@@ -235,6 +238,12 @@ pub fn main(init: std.process.Init) !void {
                 const client = findClient(&clients, client_id) orelse continue;
                 const entity = findOwnedActiveEntity(&entities, client.id, client.session_id, client.scene_id, payload) orelse continue;
                 clearActiveAction(entity, payload);
+            },
+            .network_event => {
+                const client = findClient(&clients, client_id) orelse continue;
+                if (payload.len <= 2) continue;
+                const target_client_id = std.mem.readInt(u16, payload[0..][0..2], .little);
+                try dispatchNetworkEvent(sock, io, &clients, client.*, target_client_id, payload[2..]);
             },
             .destroy_entity => {
                 const client = findClient(&clients, client_id) orelse continue;
@@ -518,7 +527,13 @@ fn decodeEntityCreate(payload: []const u8, entity_id: u32, client: Client) Entit
     };
     copyFixed(&entity.archetype, payload, create_offset);
     copyFixed(&entity.player_name, payload, create_offset + 64);
-    copyFixed(&entity.spawn_command, payload, create_offset + 128);
+    const extended_create_size = create_offset + 128 + source_object_name_size + spawn_command_size;
+    if (payload.len >= extended_create_size) {
+        copyFixed(&entity.source_object_name, payload, create_offset + 128);
+        copyFixed(&entity.spawn_command, payload, create_offset + 128 + source_object_name_size);
+    } else {
+        copyFixed(&entity.spawn_command, payload, create_offset + 128);
+    }
     return entity;
 }
 
@@ -542,6 +557,7 @@ fn decodePacketType(value: u8) ?PacketType {
         21 => .transform_correction,
         22 => .active_action_start,
         23 => .active_action_end,
+        24 => .network_event,
         30 => .snapshot,
         40 => .disconnect,
         else => null,
@@ -696,6 +712,8 @@ fn writeSnapshotEntity(packet: []u8, start_cursor: usize, entity: Entity) usize 
     cursor += 64;
     @memcpy(packet[cursor .. cursor + 64], &entity.player_name);
     cursor += 64;
+    @memcpy(packet[cursor .. cursor + source_object_name_size], &entity.source_object_name);
+    cursor += source_object_name_size;
     for (entity.position) |value| {
         std.mem.writeInt(u32, packet[cursor..][0..4], @bitCast(value), .little);
         cursor += 4;
@@ -822,6 +840,27 @@ fn dispatch(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, sender_
     }
 }
 
+fn dispatchNetworkEvent(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, sender: Client, target_client_id: u16, event_payload: []const u8) !void {
+    if (target_client_id == 0 or event_payload.len == 0) return;
+    var packet: [max_packet_size]u8 = undefined;
+    writeHeader(packet[0..], .network_event, sender.id);
+    const payload_len = @min(event_payload.len, packet.len - 8);
+    @memcpy(packet[8 .. 8 + payload_len], event_payload[0..payload_len]);
+    for (clients) |client| {
+        if (!client.active or client.id != target_client_id) continue;
+        if (client.session_id != sender.session_id or !sameScene(client.scene_id, sender.scene_id)) return;
+        sendUdp(sock, io, client.address, packet[0 .. 8 + payload_len]);
+        if (verbose_packet_logs) {
+            std.debug.print("[SceneMax MP] dispatched network event from={d} to={d} bytes={d}\n", .{
+                sender.id,
+                target_client_id,
+                payload_len,
+            });
+        }
+        return;
+    }
+}
+
 fn sameScene(a: [128]u8, b: [128]u8) bool {
     return std.mem.eql(u8, &a, &b);
 }
@@ -879,6 +918,7 @@ fn packetTypeName(packet_type: PacketType) []const u8 {
         .transform_correction => "transform",
         .active_action_start => "active_action_start",
         .active_action_end => "active_action_end",
+        .network_event => "network_event",
         .snapshot => "snapshot",
         .disconnect => "disconnect",
     };

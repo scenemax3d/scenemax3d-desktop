@@ -40,6 +40,32 @@ public class CollisionController extends CompositeController {
                 continue;
             }
 
+            if (collCmd.destEndpoint != null && collCmd.destEndpoint.networkEntity) {
+                app.addNetworkCollisionHandler(
+                        rt1.runtimeName,
+                        collCmd.destEndpoint.networkObjectName,
+                        collisionController,
+                        rt1.entityInst,
+                        rt1.joint,
+                        collCmd.destEndpoint.joint,
+                        collCmd.goExpr);
+                counter++;
+                continue;
+            }
+
+            if (endpoint != null && endpoint.networkEntity) {
+                app.addNetworkCollisionHandler(
+                        rt2.runtimeName,
+                        endpoint.networkObjectName,
+                        collisionController,
+                        rt2.entityInst,
+                        rt2.joint,
+                        endpoint.joint,
+                        collCmd.goExpr);
+                counter++;
+                continue;
+            }
+
             app.addCollisionHandler(
                     rt1.runtimeName,
                     rt2.runtimeName,
@@ -80,6 +106,10 @@ public class CollisionController extends CompositeController {
 
     private CollisionTarget resolveCollisionTarget(CollisionStatementCommand.CollisionEndpoint endpoint,
                                                    VariableDef fallbackEntity) {
+        if (endpoint != null && endpoint.networkEntity) {
+            return new CollisionTarget(endpoint.networkObjectName, null, endpoint.joint);
+        }
+
         if (endpoint != null && endpoint.equippedWeaponCollider) {
             RunTimeVarDef owner = app.findVarRuntime(prg, scope, endpoint.ownerVarName);
             if (owner == null) {

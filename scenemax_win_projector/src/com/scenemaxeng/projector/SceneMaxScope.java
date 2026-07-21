@@ -14,6 +14,7 @@ public class SceneMaxScope {
     public HashMap<String, VarInst> vars_index = new HashMap<String, VarInst>();
     public SceneMaxScope sequenceCreatorScope;
     public HashMap<String, EntityInstBase> entities = new HashMap<>();
+    public int networkEventTargetClientId;
     public HashMap<String, GroupInst> groups = new HashMap<>();
 
     //
@@ -116,6 +117,13 @@ public class SceneMaxScope {
         } else {
             return var;
         }
+    }
+
+    public int getNetworkEventTargetClientId() {
+        if (networkEventTargetClientId != 0) {
+            return networkEventTargetClientId;
+        }
+        return parent == null ? 0 : parent.getNetworkEventTargetClientId();
     }
 
     public EntityInstBase getEntityInst(String var) {

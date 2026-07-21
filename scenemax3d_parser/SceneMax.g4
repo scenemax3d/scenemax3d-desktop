@@ -69,6 +69,7 @@ statement
    | for_each_statement # forEachStatement
    | for_statement # forStatement
    | http_statement # httpStatement
+   | network_statement # networkStatement
    | when_statement # whenStatement
    | switch_statement # switchStatement
    | object_pool_release # objectPoolRelease
@@ -106,6 +107,11 @@ http_put : Put http_address ',' http_body ',' res_var_decl ;
 
 http_address : logical_expression ;
 http_body : logical_expression ;
+
+network_statement : Network '.' network_action ;
+network_action : network_send | network_on ;
+network_send : Send logical_expression ;
+network_on : On '(' logical_expression ')' Equals do_block ;
 
 add_external_code : Add file_name (',' file_name)* Code ;
 file_name : QUOTED_STRING ;
@@ -682,7 +688,8 @@ check_static: When var_decl Is Static For logical_expression Seconds do_block ;
 
 collision : go_condition? When source_collision_entities Collides With collision_entity do_block ;
 source_collision_entities : collision_entity (',' collision_entity)* ;
-collision_entity : weapon_collider_ref | var_decl collision_joint_1? ;
+collision_entity : weapon_collider_ref | network_collision_entity | var_decl collision_joint_1? ;
+network_collision_entity : Pound var_decl collision_joint_1? ;
 weapon_collider_ref : var_decl '.' Weapon '.' Colliders '[' QUOTED_STRING ']' ;
 collision_joint_1 : ('.' QUOTED_STRING) ;
 //collision_joint_2 : ('.' QUOTED_STRING) ;
@@ -1029,11 +1036,13 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
     Effekseer | Attr | Cinematic | Videos | Target | Message | TextEffect | Ease | Logger | Java | Error | Process | Weapon | Colliders | Posture | Empty | Event | IK |
     Weight | Blend |
-    Motion | Throw | Toward | Arc | Spin | Physics | Impulse | Force | Torque | Object | Pool | Acquire | Release | Free;
+    Motion | Throw | Toward | Arc | Spin | Physics | Impulse | Force | Torque | Object | Pool | Acquire | Release | Free | Network | Send;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
 Pound: '#' ;
+Network : 'Network' | 'network' ;
+Send : 'Send' | 'send' ;
 Http : 'Http' | 'http' ;
 Get : 'Get' | 'get' | 'GET' ;
 Post : 'Post' | 'post' | 'POST' ;

@@ -24,5 +24,7 @@ public class CollisionStatementCommand extends ActionStatementBase {
         public VariableDef ownerVarDef;
         public int ownerVarLine;
         public String colliderName = "";
+        public boolean networkEntity;
+        public String networkObjectName = "";
     }
 }
