@@ -253,14 +253,14 @@ The items below are planned for future delivery, but they will not necessarily b
 - **Gallery** -- a shared place for presenting SceneMax3D projects
 - **Terrain Builder** -- tools for creating and editing terrain
 - **Material Builder** -- tools for defining and tuning materials - **done**
-- **Lighting System** -- improved lighting authoring and control
-- **Physics System** -- manipulate object rigs and test physical effects
+- **Lighting System** -- improved lighting authoring and control - **done**
+- **Physics System** -- symulate physical effects - **done**
 - **Audio System** -- built-in audio workflow and tooling
 - **Android Package & Deployment** -- streamlined Android build packaging and deployment
 - **Move to Jolt Physics** -- transition from the current physics backend to the Jolt physics engine
 - **Debugger** -- easier runtime breakpoints and debugging information
-- **Multiplayer Support** -- support for multiplayer game experiences
+- **Multiplayer Support** -- support for multiplayer game experiences - **done**
 - **Web Browser Projector** -- run exported projects directly in the browser
-- **Java Extensibility**
+- **Java Extensibility** - allow adding custome Java code - **done**
 - **Scene Sharing**
 
