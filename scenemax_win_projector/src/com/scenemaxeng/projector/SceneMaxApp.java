@@ -2629,6 +2629,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         float x=1.0f,y=1.0f,z=1.0f;
         BoxVariableDef varDef = (BoxVariableDef)inst.varDef;
+        String materialName = null;
         if(varDef.sizeX!=null) {
             x = ((Double)new ActionLogicalExpressionVm(varDef.sizeX,inst.scope).evaluate()).floatValue();
             y = ((Double)new ActionLogicalExpressionVm(varDef.sizeY,inst.scope).evaluate()).floatValue();
@@ -2701,7 +2702,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
 
             if (varDef.materialExpr != null) {
-                String materialName = new ActionLogicalExpressionVm(varDef.materialExpr, inst.scope).evaluate().toString();
+                materialName = new ActionLogicalExpressionVm(varDef.materialExpr, inst.scope).evaluate().toString();
                 if (!setGeometryMaterial(boxGeo, materialName)) {
                     handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
                     return;
@@ -2748,6 +2749,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         boxes.put(boxName,boxNode);
         geoName2ModelName.put(boxName,boxName);
         geoName2EntityInst.put(boxName,inst);
+        registerMultiplayerEntity(inst, boxName, "box", primitiveSpawnCommand(inst, boxNode, "box", materialName,
+                "size (" + networkNumber(x) + "," + networkNumber(y) + "," + networkNumber(z) + ")"));
 
         List<java.lang.Object> ctls = new ArrayList<>();
         if(modelCtl!=null) {
@@ -2920,6 +2923,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         float radiusTop = inst.radiusTopExpr==null?1f:((Double)inst.radiusTopExpr.evaluate()).floatValue();
         float radiusBottom = inst.radiusBottomExpr==null?1f:((Double)inst.radiusBottomExpr.evaluate()).floatValue();
         float height = inst.heightExpr==null?2f:((Double)inst.heightExpr.evaluate()).floatValue();
+        String materialName = null;
 
         // Guard against zero/negative dimensions which crash jME3's Cylinder constructor
         if (radiusTop <= 0) radiusTop = 1f;
@@ -2985,7 +2989,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
 
             if (inst.materialExpr != null) {
-                String materialName = inst.materialExpr.evaluate().toString();
+                materialName = inst.materialExpr.evaluate().toString();
                 if (!setGeometryMaterial(cylinderGeo, materialName)) {
                     handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
                     return;
@@ -3028,6 +3032,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         cylinders.put(cylinderName,cylinderNode);
         geoName2ModelName.put(cylinderName,cylinderName);
         geoName2EntityInst.put(cylinderName,inst);
+        registerMultiplayerEntity(inst, cylinderName, "cylinder", primitiveSpawnCommand(inst, cylinderNode, "cylinder", materialName,
+                "radius (" + networkNumber(radiusTop) + "," + networkNumber(radiusBottom) + ")",
+                "height " + networkNumber(height)));
 
         List<java.lang.Object> ctls = new ArrayList<>();
         if(modelCtl!=null) {
@@ -3058,6 +3065,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         float innerRadiusTop = inst.innerRadiusTopExpr==null?0.5f:((Double)inst.innerRadiusTopExpr.evaluate()).floatValue();
         float innerRadiusBottom = inst.innerRadiusBottomExpr==null?0.5f:((Double)inst.innerRadiusBottomExpr.evaluate()).floatValue();
         float height = inst.heightExpr==null?2f:((Double)inst.heightExpr.evaluate()).floatValue();
+        String materialName = null;
 
         // Guard against zero/negative dimensions
         if (radiusTop <= 0) radiusTop = 1f;
@@ -3125,7 +3133,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
 
             if (inst.materialExpr != null) {
-                String materialName = inst.materialExpr.evaluate().toString();
+                materialName = inst.materialExpr.evaluate().toString();
                 if (!setGeometryMaterial(hcGeo, materialName)) {
                     handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
                     return;
@@ -3166,6 +3174,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         hollowCylinders.put(hcName,hcNode);
         geoName2ModelName.put(hcName,hcName);
         geoName2EntityInst.put(hcName,inst);
+        registerMultiplayerEntity(inst, hcName, "hollowcylinder", primitiveSpawnCommand(inst, hcNode, "hollow cylinder", materialName,
+                "radius (" + networkNumber(radiusTop) + "," + networkNumber(radiusBottom) + ")",
+                "inner radius (" + networkNumber(innerRadiusTop) + "," + networkNumber(innerRadiusBottom) + ")",
+                "height " + networkNumber(height)));
 
         List<java.lang.Object> ctls = new ArrayList<>();
         if(modelCtl!=null) {
@@ -3192,6 +3204,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         QuadVariableDef varDef = (QuadVariableDef)inst.varDef;
         float width = inst.widthExpr==null?1f:((Double)inst.widthExpr.evaluate()).floatValue();
         float height = inst.heightExpr==null?1f:((Double)inst.heightExpr.evaluate()).floatValue();
+        String materialName = null;
 
         String quadName = inst.varDef.varName+"@"+inst.scope.scopeId;
         Node quadNode = new Node(quadName);
@@ -3252,7 +3265,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         if (inst.materialExpr != null) {
-            String materialName = inst.materialExpr.evaluate().toString();
+            materialName = inst.materialExpr.evaluate().toString();
             if (!setGeometryMaterial(quadGeo, materialName)) {
                 handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
                 return;
@@ -3294,6 +3307,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         quads.put(quadName,quadNode);
         geoName2ModelName.put(quadName,quadName);
         geoName2EntityInst.put(quadName,inst);
+        registerMultiplayerEntity(inst, quadName, "quad", primitiveSpawnCommand(inst, quadNode, "quad", materialName,
+                "size (" + networkNumber(width) + "," + networkNumber(height) + ")"));
 
         List<java.lang.Object> ctls = new ArrayList<>();
         if(modelCtl!=null) {
@@ -3316,6 +3331,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         float width = inst.sizeXExpr == null ? 1f : ((Double) inst.sizeXExpr.evaluate()).floatValue();
         float height = inst.sizeYExpr == null ? 1f : ((Double) inst.sizeYExpr.evaluate()).floatValue();
         float depth = inst.sizeZExpr == null ? 1f : ((Double) inst.sizeZExpr.evaluate()).floatValue();
+        String materialName = null;
 
         String wedgeName = inst.varDef.varName + "@" + inst.scope.scopeId;
         Node wedgeNode = new Node(wedgeName);
@@ -3329,7 +3345,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         applyShadowModeToSpatial(wedgeNode, inst.varDef.shadowMode);
 
         if (inst.materialExpr != null) {
-            String materialName = inst.materialExpr.evaluate().toString();
+            materialName = inst.materialExpr.evaluate().toString();
             if (!setSpatialMaterial(wedgeNode, materialName)) {
                 handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
                 return;
@@ -3362,6 +3378,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         wedges.put(wedgeName, wedgeNode);
         geoName2ModelName.put(wedgeName, wedgeName);
         geoName2EntityInst.put(wedgeName, inst);
+        registerMultiplayerEntity(inst, wedgeName, "wedge", primitiveSpawnCommand(inst, wedgeNode, "wedge", materialName,
+                "size (" + networkNumber(width) + "," + networkNumber(height) + "," + networkNumber(depth) + ")"));
 
         List<java.lang.Object> ctls = new ArrayList<>();
         if (modelCtl != null) {
@@ -3390,6 +3408,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         float safeTop = Math.max(0.0001f, radiusTop);
         float safeBottom = Math.max(0.0001f, radiusBottom);
         float safeHeight = Math.max(0.0001f, height);
+        String materialName = null;
 
         String coneName = inst.varDef.varName + "@" + inst.scope.scopeId;
         Node coneNode = new Node(coneName);
@@ -3404,7 +3423,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         applyShadowModeToSpatial(coneNode, inst.varDef.shadowMode);
 
         if (inst.materialExpr != null) {
-            String materialName = inst.materialExpr.evaluate().toString();
+            materialName = inst.materialExpr.evaluate().toString();
             if (!setSpatialMaterial(coneNode, materialName)) {
                 handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
                 return;
@@ -3438,6 +3457,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         cones.put(coneName, coneNode);
         geoName2ModelName.put(coneName, coneName);
         geoName2EntityInst.put(coneName, inst);
+        registerMultiplayerEntity(inst, coneName, "cone", primitiveSpawnCommand(inst, coneNode, "cone", materialName,
+                "radius (" + networkNumber(radiusTop) + "," + networkNumber(radiusBottom) + ")",
+                "height " + networkNumber(height)));
 
         List<java.lang.Object> ctls = new ArrayList<>();
         if (modelCtl != null) {
@@ -3464,6 +3486,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         float stepHeight = inst.stepHeightExpr == null ? 0.25f : ((Double) inst.stepHeightExpr.evaluate()).floatValue();
         float stepDepth = inst.stepDepthExpr == null ? 0.4f : ((Double) inst.stepDepthExpr.evaluate()).floatValue();
         int stepCount = inst.stepCountExpr == null ? 6 : Math.max(1, (int) Math.round(((Double) inst.stepCountExpr.evaluate()).doubleValue()));
+        String materialName = null;
 
         String stairsName = inst.varDef.varName + "@" + inst.scope.scopeId;
         Node stairsNode = createStairsVisualNode(stairsName, width, stepHeight, stepDepth, stepCount, ColorRGBA.Brown);
@@ -3472,7 +3495,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         applyShadowModeToSpatial(stairsNode, inst.varDef.shadowMode);
 
         if (inst.materialExpr != null) {
-            String materialName = inst.materialExpr.evaluate().toString();
+            materialName = inst.materialExpr.evaluate().toString();
             if (!setSpatialMaterial(stairsNode, materialName)) {
                 handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
                 return;
@@ -3501,6 +3524,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         stairsMap.put(stairsName, stairsNode);
         geoName2ModelName.put(stairsName, stairsName);
         geoName2EntityInst.put(stairsName, inst);
+        registerMultiplayerEntity(inst, stairsName, "stairs", primitiveSpawnCommand(inst, stairsNode, "stairs", materialName,
+                "size (" + networkNumber(width) + "," + networkNumber(stepHeight) + "," + networkNumber(stepDepth) + ")",
+                "steps " + stepCount));
 
         List<java.lang.Object> ctls = new ArrayList<>();
         if (modelCtl != null) {
@@ -3528,6 +3554,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         float depth = inst.depthExpr == null ? 0.5f : ((Double) inst.depthExpr.evaluate()).floatValue();
         float thickness = inst.thicknessExpr == null ? 0.35f : ((Double) inst.thicknessExpr.evaluate()).floatValue();
         int segments = inst.segmentsExpr == null ? 12 : Math.max(4, (int) Math.round(((Double) inst.segmentsExpr.evaluate()).doubleValue()));
+        String materialName = null;
 
         String archName = inst.varDef.varName + "@" + inst.scope.scopeId;
         Node archNode = createArchVisualNode(archName, width, height, depth, thickness, segments, ColorRGBA.LightGray);
@@ -3536,7 +3563,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         applyShadowModeToSpatial(archNode, inst.varDef.shadowMode);
 
         if (inst.materialExpr != null) {
-            String materialName = inst.materialExpr.evaluate().toString();
+            materialName = inst.materialExpr.evaluate().toString();
             if (!setSpatialMaterial(archNode, materialName)) {
                 handleRuntimeError("Cannot find material resource named: '" + materialName + "'");
                 return;
@@ -3565,6 +3592,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         arches.put(archName, archNode);
         geoName2ModelName.put(archName, archName);
         geoName2EntityInst.put(archName, inst);
+        registerMultiplayerEntity(inst, archName, "arch", primitiveSpawnCommand(inst, archNode, "arch", materialName,
+                "size (" + networkNumber(width) + "," + networkNumber(height) + "," + networkNumber(depth) + ")",
+                "thickness " + networkNumber(thickness),
+                "segments " + segments));
 
         List<java.lang.Object> ctls = new ArrayList<>();
         if (modelCtl != null) {
@@ -4653,6 +4684,82 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             command.append(", material=\"").append(escapeSceneMaxString(materialName.trim())).append("\"");
         }
         return command.toString();
+    }
+
+    private String primitiveSpawnCommand(ModelInst inst, Node node, String primitiveType, String materialName, String... specificAttrs) {
+        Vector3f position = node == null ? Vector3f.ZERO : node.getLocalTranslation();
+        StringBuilder command = new StringBuilder();
+        boolean collider = isPrimitiveCollider(inst);
+        command.append("{network_entity} => ");
+        if (collider) {
+            command.append("collider ");
+        }
+        command.append(primitiveType)
+                .append(": pos (")
+                .append(networkNumber(position.x)).append(",")
+                .append(networkNumber(position.y)).append(",")
+                .append(networkNumber(position.z)).append(")");
+
+        Vector3f rotation = initialModelRotationDegrees(inst);
+        if (rotation != null) {
+            command.append(", rotate(")
+                    .append(networkNumber(rotation.x)).append(",")
+                    .append(networkNumber(rotation.y)).append(",")
+                    .append(networkNumber(rotation.z)).append(")");
+        }
+
+        if (inst != null && inst.scaleExpr != null) {
+            float scale = Float.parseFloat(inst.scaleExpr.evaluate().toString());
+            command.append(", scale ").append(networkNumber(scale));
+        }
+
+        if (specificAttrs != null) {
+            for (String attr : specificAttrs) {
+                if (attr != null && !attr.trim().isEmpty()) {
+                    command.append(", ").append(attr.trim());
+                }
+            }
+        }
+
+        if (materialName != null && !materialName.trim().isEmpty()) {
+            command.append(", material=\"").append(escapeSceneMaxString(materialName.trim())).append("\"");
+        }
+        return command.toString();
+    }
+
+    private boolean isPrimitiveCollider(ModelInst inst) {
+        if (inst == null || inst.varDef == null) {
+            return false;
+        }
+        VariableDef varDef = inst.varDef;
+        if (varDef instanceof SphereVariableDef) {
+            return ((SphereVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof BoxVariableDef) {
+            return ((BoxVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof CylinderVariableDef) {
+            return ((CylinderVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof HollowCylinderVariableDef) {
+            return ((HollowCylinderVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof QuadVariableDef) {
+            return ((QuadVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof WedgeVariableDef) {
+            return ((WedgeVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof ConeVariableDef) {
+            return ((ConeVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof StairsVariableDef) {
+            return ((StairsVariableDef) varDef).isCollider;
+        }
+        if (varDef instanceof ArchVariableDef) {
+            return ((ArchVariableDef) varDef).isCollider;
+        }
+        return false;
     }
 
     private String networkNumber(double value) {

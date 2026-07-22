@@ -9,7 +9,7 @@
             "path": "projects/fighting_game_project",
             "multiplayerPassword": "",
             "multiplayerServerIp": "127.0.0.1",
-            "selectedNode": "game_init.code",
+            "selectedNode": "main",
             "projectGuid": "b616bee4-eeca-4b8f-939b-37510d338fa3",
             "name": "fighting game project",
             "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
@@ -141,11 +141,19 @@
             "selectedParent": "English Game"
         },
         {
+            "itchWindowsChannel": "",
+            "itchGamePage": "",
+            "multiplayerDeployOs": "Windows",
+            "itchMacChannel": "",
+            "itchLinuxChannel": "",
             "path": "projects/Fighting_Game",
-            "selectedNode": "input",
+            "multiplayerPassword": "",
+            "multiplayerServerIp": "127.0.0.1",
+            "selectedNode": "main",
             "projectGuid": "a595d550-a3ee-41eb-b87d-b6df4c012ba8",
             "name": "Fighting Game",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\Fighting_Game\\scripts\\tests"
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\Fighting_Game\\scripts\\tests",
+            "multiplayerServerPort": 9001
         },
         {
             "path": "projects/proj1",
@@ -218,9 +226,16 @@
             "selectedNode": "main",
             "projectGuid": "845fa4dd-4351-4924-89a9-b7700a90fec6",
             "name": "multi-player-test",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\multi-player-test\\scripts\\multi-player-test\\scene2",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\multi-player-test\\scripts\\multi-player-test",
             "multiplayerServerPort": 9001
+        },
+        {
+            "path": "projects/GMTK_2026",
+            "selectedNode": "main",
+            "projectGuid": "a0b355af-0b53-4886-86f3-b8c329a4f575",
+            "name": "GMTK 2026",
+            "selectedParent": "GMTK 2026"
         }
     ],
-    "selectedProject": "multi-player-test"
+    "selectedProject": "GMTK 2026"
 }

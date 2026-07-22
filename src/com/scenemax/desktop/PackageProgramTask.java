@@ -128,6 +128,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         public final String itchWindowsChannel;
         public final String itchLinuxChannel;
         public final String itchMacChannel;
+        public final boolean exportCompleteGameSource;
+        public final boolean exportResourcesOnly;
 
         public PackageOptions(File windowsIcon, File linuxIcon, File macIcon,
                               String webBaseUrl, String webVendor, String webHomepage,
@@ -138,6 +140,27 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
                               String itchButlerPath, String itchGameTarget,
                               String itchApiKey, String itchWindowsChannel, String itchLinuxChannel,
                               String itchMacChannel) {
+            this(windowsIcon, linuxIcon, macIcon,
+                    webBaseUrl, webVendor, webHomepage,
+                    webRemoteFolder, uploadWebStart, signWebStart,
+                    generateSelfSignedCertificate, keystoreFile,
+                    keystoreAlias, keystorePassword, keyPassword,
+                    uploadToItch, embedMinimalJavaRuntime,
+                    itchButlerPath, itchGameTarget,
+                    itchApiKey, itchWindowsChannel, itchLinuxChannel,
+                    itchMacChannel, false, false);
+        }
+
+        public PackageOptions(File windowsIcon, File linuxIcon, File macIcon,
+                              String webBaseUrl, String webVendor, String webHomepage,
+                              String webRemoteFolder, boolean uploadWebStart, boolean signWebStart,
+                              boolean generateSelfSignedCertificate, File keystoreFile,
+                              String keystoreAlias, String keystorePassword, String keyPassword,
+                              boolean uploadToItch, boolean embedMinimalJavaRuntime,
+                              String itchButlerPath, String itchGameTarget,
+                              String itchApiKey, String itchWindowsChannel, String itchLinuxChannel,
+                              String itchMacChannel, boolean exportCompleteGameSource,
+                              boolean exportResourcesOnly) {
             this.windowsIcon = windowsIcon;
             this.linuxIcon = linuxIcon;
             this.macIcon = macIcon;
@@ -160,6 +183,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
             this.itchWindowsChannel = itchWindowsChannel == null ? "" : itchWindowsChannel.trim();
             this.itchLinuxChannel = itchLinuxChannel == null ? "" : itchLinuxChannel.trim();
             this.itchMacChannel = itchMacChannel == null ? "" : itchMacChannel.trim();
+            this.exportCompleteGameSource = exportCompleteGameSource;
+            this.exportResourcesOnly = exportResourcesOnly;
         }
     }
 
@@ -168,9 +193,13 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         this.finish=finish;
         this.canceled=canceled;
         this.options = options == null ? new PackageOptions(null, null, null, "", "", "", "", false, false, false, null, "", "", "", false, false, "", "", "", "", "", "") : options;
-        this.targets = targets == null || targets.isEmpty()
-                ? EnumSet.of(PackageTarget.WINDOWS)
-                : EnumSet.copyOf(targets);
+        if (targets == null || targets.isEmpty()) {
+            this.targets = this.options.exportCompleteGameSource || this.options.exportResourcesOnly
+                    ? EnumSet.noneOf(PackageTarget.class)
+                    : EnumSet.of(PackageTarget.WINDOWS);
+        } else {
+            this.targets = EnumSet.copyOf(targets);
+        }
 
         if(scriptFilePath!=null) {
             File f = new File(scriptFilePath);
@@ -724,6 +753,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         }
         producedArtifacts.clear();
         logPackage("Preparing target packages in: " + outputFolder.getAbsolutePath());
+        createImportableExportArtifacts(resources, gameName);
         int targetCount = Math.max(1, targets.size());
         int targetIndex = 0;
 
@@ -823,6 +853,163 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         }
 
         writePackagingInventoryArtifact();
+    }
+
+    private void createImportableExportArtifacts(JSONObject resources, String gameName) throws IOException {
+        if (options.exportCompleteGameSource) {
+            updateStatus("Creating complete game source ZIP...");
+            File sourceZip = createImportableExportZip(resources, gameName, false);
+            producedArtifacts.add(sourceZip);
+            logPackage("Complete game source ZIP: " + sourceZip.getAbsolutePath() + " (" + sourceZip.length() + " bytes)");
+        }
+
+        if (options.exportResourcesOnly) {
+            updateStatus("Creating resources-only ZIP...");
+            File resourcesZip = createImportableExportZip(resources, gameName, true);
+            producedArtifacts.add(resourcesZip);
+            logPackage("Resources-only ZIP: " + resourcesZip.getAbsolutePath() + " (" + resourcesZip.length() + " bytes)");
+        }
+    }
+
+    private File createImportableExportZip(JSONObject resources, String gameName, boolean resourcesOnly) throws IOException {
+        File zipFile = new File(outputFolder, gameName + (resourcesOnly ? "_resources.zip" : "_source.zip"));
+        if (zipFile.exists()) {
+            zipFile.delete();
+        }
+        JSONObject importableResources = buildImportableResourcesIndex(resources);
+
+        JSONObject config = new JSONObject();
+        config.put("targetFolder", scriptFolder == null ? gameName : scriptFolder.getName());
+        config.put("scriptFile", "main");
+        config.put("resOnly", resourcesOnly);
+        config.put("codeOnly", false);
+        config.put("resourcesHash", importableResources.toString().hashCode());
+        config.put("packageMode", resourcesOnly ? "resourcesOnly" : "completeGameSource");
+
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFile))) {
+            addStringToZip(zos, "resources.json", importableResources.toString(2));
+            addStringToZip(zos, "extract_config.json", config.toString(2));
+            addFullProjectResourcesToImportZip(zos);
+            if (!resourcesOnly && scriptFolder != null && scriptFolder.isDirectory()) {
+                addUsedMacroFilesToImportZip(zos);
+                addToZip(scriptFolder, "export_src/" + scriptFolder.getName(), zos);
+            }
+        }
+
+        return zipFile;
+    }
+
+    private JSONObject buildImportableResourcesIndex(JSONObject packagedResources) {
+        JSONObject root = new JSONObject(packagedResources == null ? "{}" : packagedResources.toString());
+        ensureResourceArray(root, "models");
+        ensureResourceArray(root, "sprites");
+        ensureResourceArray(root, "sounds");
+        ensureResourceArray(root, "fonts");
+        ensureResourceArray(root, "skyboxes");
+        ensureResourceArray(root, "terrains");
+        ensureResourceArray(root, "shaders");
+        ensureResourceArray(root, "environmentShaders");
+        ensureResourceArray(root, "materials");
+        ensureResourceArray(root, "cinematics");
+        ensureResourceArray(root, "animations");
+        ensureResourceArray(root, "videos");
+
+        appendProjectResourceIndex(root, "models", "Models/models-ext.json");
+        appendProjectResourceIndex(root, "models", "models/models-ext.json");
+        appendProjectResourceIndex(root, "sprites", "sprites/sprites-ext.json");
+        appendProjectResourceIndex(root, "sounds", "audio/audio-ext.json");
+        appendProjectResourceIndex(root, "fonts", "fonts/fonts-ext.json");
+        appendProjectResourceIndex(root, "skyboxes", "skyboxes/skyboxes-ext.json");
+        appendProjectResourceIndex(root, "terrains", "terrain/terrains-ext.json");
+        appendProjectResourceIndex(root, "shaders", "shaders/shaders-ext.json");
+        appendProjectResourceIndex(root, "environmentShaders", "environment_shaders/environment-shaders-ext.json");
+        appendProjectResourceIndex(root, "materials", "material/materials-ext.json");
+        appendProjectResourceIndex(root, "animations", "animations/animations-ext.json");
+        appendProjectResourceIndex(root, "videos", "videos/videos-ext.json");
+        return root;
+    }
+
+    private void ensureResourceArray(JSONObject root, String arrayKey) {
+        if (root.optJSONArray(arrayKey) == null) {
+            root.put(arrayKey, new JSONArray());
+        }
+    }
+
+    private void appendProjectResourceIndex(JSONObject root, String arrayKey, String relativeIndexPath) {
+        File indexFile = getProjectResourceIndexFile(relativeIndexPath);
+        if (indexFile == null || !indexFile.isFile()) {
+            return;
+        }
+        try {
+            JSONObject indexRoot = new JSONObject(FileUtils.readFileToString(indexFile, StandardCharsets.UTF_8));
+            JSONArray sourceArray = indexRoot.optJSONArray(arrayKey);
+            if (sourceArray == null) {
+                return;
+            }
+            JSONArray targetArray = root.getJSONArray(arrayKey);
+            for (int i = 0; i < sourceArray.length(); i++) {
+                JSONObject resource = sourceArray.optJSONObject(i);
+                if (resource != null) {
+                    upsertIndexedResource(targetArray, resource);
+                }
+            }
+        } catch (Exception e) {
+            logPackage("Could not read project resource index for ZIP export: " + indexFile.getAbsolutePath());
+        }
+    }
+
+    private void addFullProjectResourcesToImportZip(ZipOutputStream zos) throws IOException {
+        File projectResources = getPackagedProjectResourcesFolder();
+        if (projectResources == null || !projectResources.isDirectory()) {
+            logPackage("No project resources folder found. Importable ZIP will include deploy resources only.");
+            addDeployResourcesToImportZip(zos);
+            return;
+        }
+
+        File[] resources = projectResources.listFiles();
+        if (resources == null) {
+            return;
+        }
+        for (File resource : resources) {
+            addToZip(resource, "export_res/" + resource.getName(), zos);
+        }
+    }
+
+    private void addDeployResourcesToImportZip(ZipOutputStream zos) throws IOException {
+        File deployRoot = new File("deploy");
+        File[] deployFiles = deployRoot.listFiles();
+        if (deployFiles == null) {
+            return;
+        }
+
+        for (File child : deployFiles) {
+            String name = child.getName();
+            if (!"running".equals(name) && !"packaging-inventory.json".equals(name)) {
+                addToZip(child, "export_res/" + name, zos);
+            }
+        }
+    }
+
+    private void addUsedMacroFilesToImportZip(ZipOutputStream zos) throws IOException {
+        File macroFolder = new File("macro");
+        if (!macroFolder.isDirectory() || SceneMaxLanguageParser.macroFilesUsed == null) {
+            return;
+        }
+        for (String macroFileName : SceneMaxLanguageParser.macroFilesUsed) {
+            if (macroFileName == null || macroFileName.isBlank()) {
+                continue;
+            }
+            File macroFile = new File(macroFolder, macroFileName);
+            if (macroFile.isFile()) {
+                addToZip(macroFile, "export_res/macro/" + macroFile.getName(), zos);
+            }
+        }
+    }
+
+    private void addStringToZip(ZipOutputStream zos, String entryName, String content) throws IOException {
+        zos.putNextEntry(new ZipEntry(entryName));
+        zos.write(content.getBytes(StandardCharsets.UTF_8));
+        zos.closeEntry();
     }
 
     private int targetProgressBase(int targetIndex, int targetCount) {

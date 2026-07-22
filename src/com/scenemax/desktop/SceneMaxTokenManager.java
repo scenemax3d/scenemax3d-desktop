@@ -7,6 +7,8 @@ import org.fife.ui.rsyntaxtextarea.TokenMap;
 import javax.swing.text.Segment;
 
 public class SceneMaxTokenManager extends AbstractTokenMaker {
+    private static final String[] LINE_COMMENT = {"//", null};
+
     private static final String[] SCOPE_WORDS = {
             "do", "end", "then", "if", "else", "when", "while", "for", "foreach", "switch"
     };
@@ -75,6 +77,16 @@ public class SceneMaxTokenManager extends AbstractTokenMaker {
             }
         }
         super.addToken(segment, start, end, tokenType, startOffset);
+    }
+
+    @Override
+    public boolean getCurlyBracesDenoteCodeBlocks(int languageIndex) {
+        return true;
+    }
+
+    @Override
+    public String[] getLineCommentStartAndEnd(int languageIndex) {
+        return LINE_COMMENT;
     }
 
     @Override

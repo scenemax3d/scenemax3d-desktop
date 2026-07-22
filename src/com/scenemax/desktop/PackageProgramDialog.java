@@ -19,6 +19,8 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
     private final JCheckBox chkLinux = new JCheckBox("Linux (.jar + .sh)", true);
     private final JCheckBox chkMac = new JCheckBox("Mac OSX (.jar + .command)", true);
     private final JCheckBox chkWebStart = new JCheckBox("Web Start (.jnlp + landing page)", false);
+    private final JCheckBox chkCompleteGameSource = new JCheckBox("Complete game source (.zip)", false);
+    private final JCheckBox chkResourcesOnly = new JCheckBox("Resources only (.zip)", false);
     private final JTextField txtWindowsIcon = new JTextField();
     private final JTextField txtLinuxIcon = new JTextField();
     private final JTextField txtMacIcon = new JTextField();
@@ -56,6 +58,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
     private String scriptFilePath;
     private String prg;
     private boolean doneInvoked = false;
+    private boolean targetsEnabled = true;
 
     public PackageProgramDialog() {
         super((Frame) null, "Package & Deploy", true);
@@ -84,6 +87,18 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         chkLinux.addActionListener(e -> updatePlatformSections());
         chkMac.addActionListener(e -> updatePlatformSections());
         chkWebStart.addActionListener(e -> updatePlatformSections());
+        chkCompleteGameSource.addActionListener(e -> {
+            if (chkCompleteGameSource.isSelected()) {
+                chkResourcesOnly.setSelected(false);
+            }
+            updatePlatformSections();
+        });
+        chkResourcesOnly.addActionListener(e -> {
+            if (chkResourcesOnly.isSelected()) {
+                chkCompleteGameSource.setSelected(false);
+            }
+            updatePlatformSections();
+        });
         chkEmbedMinimalJavaRuntime.addActionListener(e -> updatePlatformSections());
         chkSignWebStart.addActionListener(e -> updatePlatformSections());
         chkShowAdvancedWebOptions.addActionListener(e -> updatePlatformSections());
@@ -125,6 +140,8 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         targetPanel.add(chkLinux);
         targetPanel.add(chkMac);
         targetPanel.add(chkWebStart);
+        targetPanel.add(chkCompleteGameSource);
+        targetPanel.add(chkResourcesOnly);
         targetPanel.add(chkEmbedMinimalJavaRuntime);
         JLabel runtimeHint = new JLabel("<html>Uses jdeps + jlink to build the smallest Java image needed by the packaged SceneMax/JME runtime. Requires a JDK with jlink for each embedded desktop target.</html>");
         runtimeHint.setForeground(new Color(92, 92, 92));
@@ -336,63 +353,42 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
     }
 
     private void setTargetsEnabled(boolean enabled) {
-        chkWindows.setEnabled(enabled);
-        chkLinux.setEnabled(enabled);
-        chkMac.setEnabled(enabled);
-        txtWindowsIcon.setEnabled(enabled);
-        txtLinuxIcon.setEnabled(enabled);
-        txtMacIcon.setEnabled(enabled);
-        txtWebBaseUrl.setEnabled(enabled);
-        txtWebVendor.setEnabled(enabled);
-        txtWebHomepage.setEnabled(enabled);
-        txtWebRemoteFolder.setEnabled(enabled);
-        chkUploadWebStart.setEnabled(enabled);
-        chkShowAdvancedWebOptions.setEnabled(enabled);
-        chkSignWebStart.setEnabled(enabled);
-        chkGenerateSelfSigned.setEnabled(enabled);
-        chkUploadToItch.setEnabled(enabled);
-        chkEmbedMinimalJavaRuntime.setEnabled(enabled);
-        txtKeystorePath.setEnabled(enabled);
-        txtKeystoreAlias.setEnabled(enabled);
-        txtKeystorePassword.setEnabled(enabled);
-        txtKeyPassword.setEnabled(enabled);
-        btnBrowseWindowsIcon.setEnabled(enabled);
-        btnBrowseLinuxIcon.setEnabled(enabled);
-        btnBrowseMacIcon.setEnabled(enabled);
-        btnBrowseKeystore.setEnabled(enabled);
-        btnBrowseFtpFolder.setEnabled(enabled);
+        targetsEnabled = enabled;
         updatePlatformSections();
     }
 
     private void startPackaging() {
+        boolean importableExportMode = isImportableExportMode();
         List<PackageProgramTask.PackageTarget> targets = new ArrayList<>();
-        if (chkWindows.isSelected()) {
-            targets.add(PackageProgramTask.PackageTarget.WINDOWS);
-        }
-        if (chkLinux.isSelected()) {
-            targets.add(PackageProgramTask.PackageTarget.LINUX);
-        }
-        if (chkMac.isSelected()) {
-            targets.add(PackageProgramTask.PackageTarget.MAC_OSX);
-        }
-        if (chkWebStart.isSelected()) {
-            targets.add(PackageProgramTask.PackageTarget.WEB_START);
+        if (!importableExportMode) {
+            if (chkWindows.isSelected()) {
+                targets.add(PackageProgramTask.PackageTarget.WINDOWS);
+            }
+            if (chkLinux.isSelected()) {
+                targets.add(PackageProgramTask.PackageTarget.LINUX);
+            }
+            if (chkMac.isSelected()) {
+                targets.add(PackageProgramTask.PackageTarget.MAC_OSX);
+            }
+            if (chkWebStart.isSelected()) {
+                targets.add(PackageProgramTask.PackageTarget.WEB_START);
+            }
         }
 
-        if (targets.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Select at least one target platform.", "Package Error", JOptionPane.INFORMATION_MESSAGE);
+        if (targets.isEmpty() && !chkCompleteGameSource.isSelected() && !chkResourcesOnly.isSelected()) {
+            JOptionPane.showMessageDialog(this, "Select at least one package target.", "Package Error", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
 
         String webBaseUrl = txtWebBaseUrl.getText() == null ? "" : txtWebBaseUrl.getText().trim();
-        if (chkWebStart.isSelected() && webBaseUrl.length() == 0) {
+        if (!importableExportMode && chkWebStart.isSelected() && webBaseUrl.length() == 0) {
             JOptionPane.showMessageDialog(this, "Enter the public base URL that will host the generated Web Start files.", "Package Error", JOptionPane.INFORMATION_MESSAGE);
             txtWebBaseUrl.requestFocusInWindow();
             return;
         }
 
         String webRemoteFolder = valueOrBlank(txtWebRemoteFolder.getText());
-        if (chkWebStart.isSelected() && chkUploadWebStart.isSelected() && webRemoteFolder.length() == 0) {
+        if (!importableExportMode && chkWebStart.isSelected() && chkUploadWebStart.isSelected() && webRemoteFolder.length() == 0) {
             JOptionPane.showMessageDialog(this, "Enter the FTP remote folder that should receive the Web Start files.", "Package Error", JOptionPane.INFORMATION_MESSAGE);
             txtWebRemoteFolder.requestFocusInWindow();
             return;
@@ -402,7 +398,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         String keystoreAlias = valueOrBlank(txtKeystoreAlias.getText());
         String storePassword = new String(txtKeystorePassword.getPassword());
         String keyPassword = new String(txtKeyPassword.getPassword());
-        if (chkWebStart.isSelected() && chkSignWebStart.isSelected()) {
+        if (!importableExportMode && chkWebStart.isSelected() && chkSignWebStart.isSelected()) {
             if (keystoreAlias.length() == 0) {
                 JOptionPane.showMessageDialog(this, "Enter a keystore alias for Web Start signing.", "Package Error", JOptionPane.INFORMATION_MESSAGE);
                 txtKeystoreAlias.requestFocusInWindow();
@@ -427,7 +423,7 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
         String itchTarget = "";
         String butlerPath = "";
         String itchApiKey = "";
-        if (chkUploadToItch.isSelected()) {
+        if (!importableExportMode && chkUploadToItch.isSelected()) {
             if (activeProject == null) {
                 JOptionPane.showMessageDialog(this, "Create or select a project first, then configure itch.io in File > Projects > Project Settings...", "Package Error", JOptionPane.INFORMATION_MESSAGE);
                 return;
@@ -507,21 +503,23 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
                             valueOrBlank(txtWebVendor.getText()),
                             valueOrBlank(txtWebHomepage.getText()),
                             webRemoteFolder,
-                            chkUploadWebStart.isSelected(),
-                            chkSignWebStart.isSelected(),
+                            !importableExportMode && chkUploadWebStart.isSelected(),
+                            !importableExportMode && chkSignWebStart.isSelected(),
                             chkGenerateSelfSigned.isSelected(),
                             toFileOrNull(keystorePath),
                             keystoreAlias,
                             storePassword,
                             keyPassword,
-                            chkUploadToItch.isSelected(),
-                            chkEmbedMinimalJavaRuntime.isSelected(),
+                            !importableExportMode && chkUploadToItch.isSelected(),
+                            !importableExportMode && chkEmbedMinimalJavaRuntime.isSelected(),
                             butlerPath,
                             itchTarget,
                             itchApiKey,
                             activeProject == null ? "" : valueOrBlank(activeProject.itchWindowsChannel),
                             activeProject == null ? "" : valueOrBlank(activeProject.itchLinuxChannel),
-                            activeProject == null ? "" : valueOrBlank(activeProject.itchMacChannel)
+                            activeProject == null ? "" : valueOrBlank(activeProject.itchMacChannel),
+                            chkCompleteGameSource.isSelected(),
+                            chkResourcesOnly.isSelected()
                     ),
                     this::onPackagingFinished,
                     this::onPackagingCanceled
@@ -638,18 +636,53 @@ public class PackageProgramDialog extends JDialog implements PropertyChangeListe
     }
 
     private void updatePlatformSections() {
-        windowsPanel.setVisible(chkWindows.isSelected());
-        linuxPanel.setVisible(chkLinux.isSelected());
-        macPanel.setVisible(chkMac.isSelected());
-        chkEmbedMinimalJavaRuntime.setEnabled(chkWindows.isEnabled()
+        boolean importableExportMode = isImportableExportMode();
+        boolean normalOptionsEnabled = targetsEnabled && !importableExportMode;
+        chkWindows.setEnabled(normalOptionsEnabled);
+        chkLinux.setEnabled(normalOptionsEnabled);
+        chkMac.setEnabled(normalOptionsEnabled);
+        chkWebStart.setEnabled(normalOptionsEnabled);
+        chkUploadWebStart.setEnabled(normalOptionsEnabled);
+        chkShowAdvancedWebOptions.setEnabled(normalOptionsEnabled);
+        chkSignWebStart.setEnabled(normalOptionsEnabled);
+        chkGenerateSelfSigned.setEnabled(normalOptionsEnabled);
+        chkUploadToItch.setEnabled(normalOptionsEnabled);
+        txtWindowsIcon.setEnabled(normalOptionsEnabled);
+        txtLinuxIcon.setEnabled(normalOptionsEnabled);
+        txtMacIcon.setEnabled(normalOptionsEnabled);
+        txtWebBaseUrl.setEnabled(normalOptionsEnabled);
+        txtWebVendor.setEnabled(normalOptionsEnabled);
+        txtWebHomepage.setEnabled(normalOptionsEnabled);
+        txtWebRemoteFolder.setEnabled(normalOptionsEnabled);
+        txtKeystorePath.setEnabled(normalOptionsEnabled);
+        txtKeystoreAlias.setEnabled(normalOptionsEnabled);
+        txtKeystorePassword.setEnabled(normalOptionsEnabled);
+        txtKeyPassword.setEnabled(normalOptionsEnabled);
+        btnBrowseWindowsIcon.setEnabled(normalOptionsEnabled);
+        btnBrowseLinuxIcon.setEnabled(normalOptionsEnabled);
+        btnBrowseMacIcon.setEnabled(normalOptionsEnabled);
+        btnBrowseKeystore.setEnabled(normalOptionsEnabled);
+        btnBrowseFtpFolder.setEnabled(normalOptionsEnabled);
+
+        chkCompleteGameSource.setEnabled(targetsEnabled && !chkResourcesOnly.isSelected());
+        chkResourcesOnly.setEnabled(targetsEnabled && !chkCompleteGameSource.isSelected());
+
+        windowsPanel.setVisible(!importableExportMode && chkWindows.isSelected());
+        linuxPanel.setVisible(!importableExportMode && chkLinux.isSelected());
+        macPanel.setVisible(!importableExportMode && chkMac.isSelected());
+        chkEmbedMinimalJavaRuntime.setEnabled(normalOptionsEnabled
                 && (chkWindows.isSelected() || chkLinux.isSelected() || chkMac.isSelected()));
-        boolean showWeb = chkWebStart.isSelected();
+        boolean showWeb = !importableExportMode && chkWebStart.isSelected();
         webPanel.setVisible(showWeb);
         signingPanel.setVisible(showWeb && chkShowAdvancedWebOptions.isSelected() && chkSignWebStart.isSelected());
         if (getContentPane() != null) {
             getContentPane().revalidate();
             getContentPane().repaint();
         }
+    }
+
+    private boolean isImportableExportMode() {
+        return chkCompleteGameSource.isSelected() || chkResourcesOnly.isSelected();
     }
 
     private File toFileOrNull(String text) {

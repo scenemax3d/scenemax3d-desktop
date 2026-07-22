@@ -77,6 +77,8 @@ Add `multiplayer` to the entity attributes:
 ```scenemax
 hero => hero_native: multiplayer, pos (0,0,0), scale 2 async
 ball => sphere: multiplayer, pos (1,2,3), radius 0.5
+crate => box: multiplayer, size (2,2,2), pos (2,0,0)
+stairs_1 => stairs: multiplayer, size (2,0.25,0.4), steps 6, pos (4,0,0)
 hand_target => collider sphere: multiplayer, pos (0,1,0), radius 0.2
 ```
 
@@ -86,8 +88,10 @@ You can also set the same flag from the designer; the saved design emits entitie
 Current runtime registration covers:
 
 - 3D model/resource entities.
-- Sphere entities.
-- Collider sphere entities.
+- All built-in primitive entities: `sphere`, `box`, `cylinder`, `hollow cylinder`, `quad`,
+  `wedge`, `cone`, `stairs`, and `arch`.
+- Collider primitives that use the same primitive declarations, such as `collider sphere`,
+  `collider box`, or `collider hollow cylinder`.
 
 The parser accepts `multiplayer` as a general model/entity attribute, but a networked entity
 must also be registered by the runtime. If a type is parsed as multiplayer but no registration

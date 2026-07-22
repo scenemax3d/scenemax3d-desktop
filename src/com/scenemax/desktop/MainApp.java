@@ -1777,8 +1777,6 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     dlg.setModal(true);
                     dlg.setVisible(true);
 
-                } else if (cmd.equals("export_to_zip")) {
-                    exportProgramToLocalZipFile(filePath);
                 } else if (cmd.equals("import_from_zip")) {
                     ImportProgramDialog dlg = new ImportProgramDialog();
                     dlg.setSize(500, 150);
@@ -1901,7 +1899,6 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             menuItemUploadFolderToCloud.setEnabled(sendToFolderFlag);
         }
 
-        addScriptsTreePopupMenuItem("Export Program To Zip File...", "export_to_zip", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Import Program From Zip File...", "import_from_zip", popup, popupActionListener, true, false, file);
         item = addScriptsTreePopupMenuItem("Upload Program To Web...", "upload_to_web", popup, popupActionListener, true, false, file);
 
@@ -1959,16 +1956,6 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     private boolean isWindows() {
         return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
-    }
-
-    private void exportProgramToLocalZipFile(String filePath) {
-        String prg = this.getMainFileContent(filePath);
-        filePath = this.getMainFilePath(filePath);
-        ExportProgramDialog dlg = new ExportProgramDialog(filePath, prg, false);
-        dlg.setSize(500, 200);
-        dlg.setLocationRelativeTo(null);
-        dlg.setModal(true);
-        dlg.setVisible(true);
     }
 
     public String exportNativeAndroidApp(String filePath) {
