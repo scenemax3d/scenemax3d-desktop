@@ -42,6 +42,7 @@ const PacketType = enum(u8) {
     network_variable_update = 25,
     snapshot = 30,
     server_state = 31,
+    initial_sync_complete = 32,
     disconnect = 40,
 };
 
@@ -179,6 +180,7 @@ pub fn main(init: std.process.Init) !void {
                 try broadcastServerState(sock, io, &clients, &sessions);
                 try sendSnapshot(sock, io, message.from, &entities, session.id, login.scene_id, now);
                 try sendNetworkVariableSnapshot(sock, io, message.from, &network_variables, session.id, login.scene_id);
+                try sendInitialSyncComplete(sock, io, message.from, assigned);
             },
             .heartbeat => {
                 if (findClient(&clients, client_id)) |client| {
@@ -203,6 +205,7 @@ pub fn main(init: std.process.Init) !void {
                     try destroyClientEntities(sock, io, &clients, &entities, client.id, client.session_id, old_scene_id);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
                     try sendNetworkVariableSnapshot(sock, io, message.from, &network_variables, client.session_id, client.scene_id);
+                    try sendInitialSyncComplete(sock, io, message.from, client.id);
                 }
             },
             .join_session => {
@@ -231,6 +234,7 @@ pub fn main(init: std.process.Init) !void {
                     try broadcastServerState(sock, io, &clients, &sessions);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
                     try sendNetworkVariableSnapshot(sock, io, message.from, &network_variables, client.session_id, client.scene_id);
+                    try sendInitialSyncComplete(sock, io, message.from, client.id);
                 }
             },
             .create_entity_request => {
@@ -659,6 +663,7 @@ fn decodePacketType(value: u8) ?PacketType {
         25 => .network_variable_update,
         30 => .snapshot,
         31 => .server_state,
+        32 => .initial_sync_complete,
         40 => .disconnect,
         else => null,
     };
@@ -938,6 +943,12 @@ fn sendNetworkVariableSnapshot(sock: net.Socket, io: std.Io, address: net.IpAddr
     }
 }
 
+fn sendInitialSyncComplete(sock: net.Socket, io: std.Io, address: net.IpAddress, client_id: u16) !void {
+    var packet: [8]u8 = undefined;
+    writeHeader(packet[0..], .initial_sync_complete, client_id);
+    sendUdp(sock, io, address, &packet);
+}
+
 fn writeSnapshotEntity(packet: []u8, start_cursor: usize, entity: Entity) usize {
     var cursor = start_cursor;
     std.mem.writeInt(u32, packet[cursor..][0..4], entity.network_id, .little);
@@ -1159,6 +1170,7 @@ fn packetTypeName(packet_type: PacketType) []const u8 {
         .network_variable_update => "network_variable",
         .snapshot => "snapshot",
         .server_state => "server_state",
+        .initial_sync_complete => "initial_sync_complete",
         .disconnect => "disconnect",
     };
 }

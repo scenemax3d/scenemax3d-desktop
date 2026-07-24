@@ -52,6 +52,7 @@ public class MultiplayerNetworkComponent {
     private static final byte NETWORK_VARIABLE_UPDATE = 25;
     private static final byte SNAPSHOT = 30;
     private static final byte SERVER_STATE = 31;
+    private static final byte INITIAL_SYNC_COMPLETE = 32;
     private static final byte DISCONNECT = 40;
     private static final int MAX_PACKET_SIZE = 1200;
     private static final int SOURCE_OBJECT_NAME_SIZE = 64;
@@ -98,6 +99,7 @@ public class MultiplayerNetworkComponent {
     private boolean joinSessionRequested;
     private long pendingJoinSessionId;
     private String pendingJoinSessionName = "";
+    private boolean initialSyncPending;
     private JSONObject networkState = new JSONObject();
     private final List<Object> stateSessions = new ArrayList<>();
     private final Map<Long, Map<String, Object>> stateSessionsById = new LinkedHashMap<>();
@@ -117,7 +119,29 @@ public class MultiplayerNetworkComponent {
     }
 
     public boolean isReady() {
-        return isActive() && clientId != 0 && networkReady;
+        return isActive() && clientId != 0 && networkReady && !initialSyncPending;
+    }
+
+    public boolean isJoinSessionComplete(long requestedSessionId) {
+        if (requestedSessionId <= 0) {
+            return true;
+        }
+        return isReady()
+                && !sessionSwitchPending
+                && !joinSessionRequested
+                && !initialSyncPending
+                && sessionId == requestedSessionId;
+    }
+
+    public boolean isJoinSessionComplete(String requestedSessionName) {
+        if (requestedSessionName == null || requestedSessionName.trim().isEmpty()) {
+            return true;
+        }
+        return isReady()
+                && !sessionSwitchPending
+                && !joinSessionRequested
+                && !initialSyncPending
+                && requestedSessionName.trim().equals(sessionName);
     }
 
     public JSONObject getState() {
@@ -146,6 +170,7 @@ public class MultiplayerNetworkComponent {
             channel.configureBlocking(false);
             channel.connect(new InetSocketAddress(server.trim(), port));
             networkReady = false;
+            initialSyncPending = true;
             logNet("connecting to " + server.trim() + ":" + port
                     + " sessionId=" + requestedSessionId
                     + " sessionName=\"" + (requestedSessionName == null ? "" : requestedSessionName) + "\""
@@ -387,6 +412,7 @@ public class MultiplayerNetworkComponent {
         networkReady = false;
         sessionSwitchPending = false;
         joinSessionRequested = false;
+        initialSyncPending = false;
         pendingJoinSessionId = 0;
         pendingJoinSessionName = "";
         pendingCreateAcks.clear();
@@ -422,6 +448,7 @@ public class MultiplayerNetworkComponent {
         localEntities.clear();
         pendingCreateAcks.clear();
         pendingNetworkVariables.clear();
+        initialSyncPending = true;
         if (isActive() && clientId != 0) {
             ByteBuffer packet = packet(JOIN_SCENE, 128);
             putFixedString(packet, activeSceneId, 128);
@@ -443,6 +470,7 @@ public class MultiplayerNetworkComponent {
         appliedRemoteStructuralCommands.clear();
         pendingCreateAcks.clear();
         pendingNetworkVariables.clear();
+        initialSyncPending = true;
         for (RegisteredEntity entity : localEntities.values()) {
             entity.networkEntityId = 0;
             entity.createRequestId = nextCreateRequestId();
@@ -611,6 +639,7 @@ public class MultiplayerNetworkComponent {
                 pendingJoinSessionId = 0;
                 pendingJoinSessionName = "";
             }
+            initialSyncPending = true;
             upsertCurrentSessionState();
             networkReady = true;
             rebuildNetworkState();
@@ -694,6 +723,9 @@ public class MultiplayerNetworkComponent {
             handleSnapshot(payload);
         } else if (type == SERVER_STATE) {
             handleServerState(payload);
+        } else if (type == INITIAL_SYNC_COMPLETE) {
+            initialSyncPending = false;
+            rebuildNetworkState();
         }
     }
 

@@ -5206,19 +5206,30 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
     }
 
-    public void joinNetworkSession(Object sessionSelector) {
+    public boolean joinNetworkSession(Object sessionSelector) {
         if (multiplayerNetwork == null) {
             multiplayerNetwork = new MultiplayerNetworkComponent(this);
             multiplayerNetwork.startFromSystemProperties();
         }
         if (multiplayerNetwork == null || sessionSelector == null) {
-            return;
+            return false;
         }
         if (sessionSelector instanceof Number) {
             multiplayerNetwork.joinSession(((Number) sessionSelector).longValue());
         } else {
             multiplayerNetwork.joinSession(String.valueOf(sessionSelector));
         }
+        return multiplayerNetwork.isActive();
+    }
+
+    public boolean isNetworkSessionJoinComplete(Object sessionSelector) {
+        if (multiplayerNetwork == null || sessionSelector == null || !multiplayerNetwork.isActive()) {
+            return true;
+        }
+        if (sessionSelector instanceof Number) {
+            return multiplayerNetwork.isJoinSessionComplete(((Number) sessionSelector).longValue());
+        }
+        return multiplayerNetwork.isJoinSessionComplete(String.valueOf(sessionSelector));
     }
 
     public boolean isNetworkReady() {

@@ -27,7 +27,9 @@ public class MultiplayerCommandDispatchParsingTest {
 
     private static final int MAGIC = 0x504d5853;
     private static final byte VERSION = 1;
+    private static final byte LOGIN_ACCEPTED = 2;
     private static final byte LOGIN_REJECTED = 3;
+    private static final byte INITIAL_SYNC_COMPLETE = 32;
 
     @Test
     public void parsesGeneratedMoveAndRotateDispatchCommands() {
@@ -223,10 +225,121 @@ public class MultiplayerCommandDispatchParsingTest {
         }
     }
 
+    @Test
+    public void joinSessionWaitsForInitialSyncCompletePacket() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            setField(component, "channel", client);
+            setField(component, "clientId", 7);
+
+            component.joinSession(42);
+            assertFalse(component.isJoinSessionComplete(42));
+
+            sendLoginAccepted(server, 7, 42, "selected_session");
+            component.update(0f);
+            assertFalse(component.isReady());
+            assertFalse(component.isJoinSessionComplete(42));
+
+            sendHeaderOnly(server, INITIAL_SYNC_COMPLETE, 7);
+            component.update(0f);
+            assertTrue(component.isReady());
+            assertTrue(component.isJoinSessionComplete(42));
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
+    @Test
+    public void pendingJoinIgnoresInitialSessionSyncComplete() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            setField(component, "channel", client);
+            component.joinSession(42);
+
+            sendLoginAccepted(server, 7, 1, "initial_session");
+            component.update(0f);
+            sendHeaderOnly(server, INITIAL_SYNC_COMPLETE, 7);
+            component.update(0f);
+            assertFalse(component.isJoinSessionComplete(42));
+
+            sendLoginAccepted(server, 7, 42, "selected_session");
+            component.update(0f);
+            assertFalse(component.isReady());
+            assertFalse(component.isJoinSessionComplete(42));
+
+            sendHeaderOnly(server, INITIAL_SYNC_COMPLETE, 7);
+            component.update(0f);
+            assertTrue(component.isJoinSessionComplete(42));
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
     private void assertParses(String code) {
         ProgramDef program = new SceneMaxLanguageParser(null, "").parse(code);
         assertTrue("Expected command to parse without syntax errors:\n" + code,
                 program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+    }
+
+    private void setField(Object target, String fieldName, Object value) throws Exception {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    private void sendHeaderOnly(DatagramChannel server, byte type, int senderClientId) throws Exception {
+        ByteBuffer packet = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);
+        writeHeader(packet, type, senderClientId);
+        packet.flip();
+        server.write(packet);
+    }
+
+    private void sendLoginAccepted(DatagramChannel server, int clientId, int sessionId, String sessionName) throws Exception {
+        ByteBuffer packet = ByteBuffer.allocate(78).order(ByteOrder.LITTLE_ENDIAN);
+        writeHeader(packet, LOGIN_ACCEPTED, clientId);
+        packet.putShort((short) clientId);
+        packet.putInt(sessionId);
+        putFixedString(packet, sessionName, 64);
+        packet.flip();
+        server.write(packet);
+    }
+
+    private void writeHeader(ByteBuffer packet, byte type, int senderClientId) {
+        packet.putInt(MAGIC);
+        packet.put(VERSION);
+        packet.put(type);
+        packet.putShort((short) senderClientId);
+    }
+
+    private void putFixedString(ByteBuffer packet, String value, int length) {
+        byte[] bytes = (value == null ? "" : value).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        int count = Math.min(bytes.length, length - 1);
+        packet.put(bytes, 0, count);
+        for (int i = count; i < length; i++) {
+            packet.put((byte) 0);
+        }
     }
 
     private boolean isPrimitiveType(int varType) {
