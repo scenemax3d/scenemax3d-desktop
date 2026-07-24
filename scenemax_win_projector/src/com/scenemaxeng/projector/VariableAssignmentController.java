@@ -64,10 +64,10 @@ public class VariableAssignmentController extends CompositeController {
                 return true;
             }
 
-            if (varDef.isExprPointer) {
-                var.value = varAssignmentCommand.values.get(index);
-                var.varType = VariableDef.VAR_TYPE_EXPR_POINTER;
-                index++;
+                if (varDef.isExprPointer) {
+                    var.value = varAssignmentCommand.values.get(index);
+                    var.varType = VariableDef.VAR_TYPE_EXPR_POINTER;
+                    index++;
                 continue;
             }
 
@@ -138,7 +138,16 @@ public class VariableAssignmentController extends CompositeController {
                 }
             }
 
+            if (app != null && var.varDef != null && var.varDef.isNetwork
+                    && !varAssignmentCommand.fromMultiplayerNetwork) {
+                app.syncNetworkVariable(var.varDef.varName, var.value, varAssignmentCommand.triggeredByDeclaration);
+            }
+
             index++;
+        }
+
+        if (app != null) {
+            app.applyPendingNetworkVariableValues(this.scope);
         }
 
         return true;
@@ -173,7 +182,7 @@ public class VariableAssignmentController extends CompositeController {
             var = new VarInst(vd, this.scope);
             this.scope.vars_index.put(varDef.varName, var);
         } else {
-            if (varDef.isShared && this.varAssignmentCommand.triggeredByDeclaration) {
+            if ((varDef.isShared || varDef.isNetwork) && this.varAssignmentCommand.triggeredByDeclaration) {
                 return null; // don't update existing shared variables in the declaration phase
             }
         }

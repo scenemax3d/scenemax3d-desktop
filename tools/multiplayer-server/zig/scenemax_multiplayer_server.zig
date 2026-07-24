@@ -9,8 +9,12 @@ const protocol_version = 1;
 const max_packet_size = 1200;
 const max_clients = 256;
 const max_entities = 2048;
+const max_network_variables = 2048;
 const max_sessions = 256;
 const source_object_name_size = 64;
+const network_variable_name_size = 64;
+const network_variable_value_size = 256;
+const network_variable_update_size = network_variable_name_size + 1 + network_variable_value_size;
 const spawn_command_size = 256;
 const active_action_command_size = 192;
 const snapshot_action_record_size = 12 + active_action_command_size;
@@ -35,6 +39,7 @@ const PacketType = enum(u8) {
     active_action_start = 22,
     active_action_end = 23,
     network_event = 24,
+    network_variable_update = 25,
     snapshot = 30,
     server_state = 31,
     disconnect = 40,
@@ -91,6 +96,14 @@ const ActiveAction = struct {
     command: [active_action_command_size]u8 = [_]u8{0} ** active_action_command_size,
 };
 
+const NetworkVariable = struct {
+    active: bool = false,
+    session_id: u32 = 0,
+    scene_id: [128]u8 = [_]u8{0} ** 128,
+    name: [network_variable_name_size]u8 = [_]u8{0} ** network_variable_name_size,
+    value: [network_variable_value_size]u8 = [_]u8{0} ** network_variable_value_size,
+};
+
 export var scenemax_mp_config_block: [config_begin.len + config_payload_size + config_end.len]u8 =
     initConfigBlock();
 
@@ -109,6 +122,7 @@ pub fn main(init: std.process.Init) !void {
     var clients = [_]Client{.{}} ** max_clients;
     var sessions = [_]Session{.{}} ** max_sessions;
     var entities = [_]Entity{.{}} ** max_entities;
+    var network_variables = [_]NetworkVariable{.{}} ** max_network_variables;
     var next_client_id: u16 = 1;
     var next_session_id: u32 = 1000;
     var next_entity_id: u32 = 1;
@@ -164,6 +178,7 @@ pub fn main(init: std.process.Init) !void {
                 try sendLoginAccepted(sock, io, message.from, assigned, session.id, session.name);
                 try broadcastServerState(sock, io, &clients, &sessions);
                 try sendSnapshot(sock, io, message.from, &entities, session.id, login.scene_id, now);
+                try sendNetworkVariableSnapshot(sock, io, message.from, &network_variables, session.id, login.scene_id);
             },
             .heartbeat => {
                 if (findClient(&clients, client_id)) |client| {
@@ -187,6 +202,7 @@ pub fn main(init: std.process.Init) !void {
                     }
                     try destroyClientEntities(sock, io, &clients, &entities, client.id, client.session_id, old_scene_id);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
+                    try sendNetworkVariableSnapshot(sock, io, message.from, &network_variables, client.session_id, client.scene_id);
                 }
             },
             .join_session => {
@@ -214,6 +230,7 @@ pub fn main(init: std.process.Init) !void {
                     try sendLoginAccepted(sock, io, message.from, client.id, session.id, session.name);
                     try broadcastServerState(sock, io, &clients, &sessions);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
+                    try sendNetworkVariableSnapshot(sock, io, message.from, &network_variables, client.session_id, client.scene_id);
                 }
             },
             .create_entity_request => {
@@ -274,6 +291,16 @@ pub fn main(init: std.process.Init) !void {
                 if (payload.len <= 2) continue;
                 const target_client_id = std.mem.readInt(u16, payload[0..][0..2], .little);
                 try dispatchNetworkEvent(sock, io, &clients, client.*, target_client_id, payload[2..]);
+            },
+            .network_variable_update => {
+                const client = findClient(&clients, client_id) orelse continue;
+                if (payload.len < network_variable_update_size) continue;
+                client.last_seen_ms = now;
+                client.address = message.from;
+                const stored = storeNetworkVariable(&network_variables, client.session_id, client.scene_id, payload);
+                if (stored) {
+                    try dispatch(sock, io, &clients, client_id, packet_type, client_id, payload);
+                }
             },
             .destroy_entity => {
                 const client = findClient(&clients, client_id) orelse continue;
@@ -629,6 +656,7 @@ fn decodePacketType(value: u8) ?PacketType {
         22 => .active_action_start,
         23 => .active_action_end,
         24 => .network_event,
+        25 => .network_variable_update,
         30 => .snapshot,
         31 => .server_state,
         40 => .disconnect,
@@ -673,6 +701,56 @@ fn destroyOwnedEntity(entities: *[max_entities]Entity, client_id: u16, session_i
         return true;
     }
     return false;
+}
+
+fn storeNetworkVariable(network_variables: *[max_network_variables]NetworkVariable, session_id: u32, scene_id: [128]u8, payload: []const u8) bool {
+    if (payload.len < network_variable_update_size) return false;
+    const declaration_init = payload[network_variable_name_size] != 0;
+    var name = [_]u8{0} ** network_variable_name_size;
+    var value = [_]u8{0} ** network_variable_value_size;
+    copyFixed(&name, payload, 0);
+    copyFixed(&value, payload, network_variable_name_size + 1);
+    if (isEmpty(&name)) return false;
+
+    if (findNetworkVariable(network_variables, session_id, scene_id, name)) |existing| {
+        if (declaration_init) return false;
+        existing.value = value;
+        return true;
+    }
+
+    const slot = networkVariableSlot(network_variables, session_id, scene_id, name) orelse return false;
+    network_variables[slot] = .{
+        .active = true,
+        .session_id = session_id,
+        .scene_id = scene_id,
+        .name = name,
+        .value = value,
+    };
+    return true;
+}
+
+fn findNetworkVariable(network_variables: *[max_network_variables]NetworkVariable, session_id: u32, scene_id: [128]u8, name: [network_variable_name_size]u8) ?*NetworkVariable {
+    const wanted = fixedText(&name);
+    for (network_variables) |*network_variable| {
+        if (!network_variable.active) continue;
+        if (network_variable.session_id != session_id or !sameScene(network_variable.scene_id, scene_id)) continue;
+        if (std.mem.eql(u8, fixedText(&network_variable.name), wanted)) return network_variable;
+    }
+    return null;
+}
+
+fn networkVariableSlot(network_variables: *[max_network_variables]NetworkVariable, session_id: u32, scene_id: [128]u8, name: [network_variable_name_size]u8) ?usize {
+    var hash = std.hash.Wyhash.init(0);
+    hash.update(std.mem.asBytes(&session_id));
+    hash.update(&scene_id);
+    hash.update(fixedText(&name));
+    const start: usize = @intCast(hash.final() % max_network_variables);
+    var i: usize = 0;
+    while (i < max_network_variables) : (i += 1) {
+        const slot = (start + i) % max_network_variables;
+        if (!network_variables[slot].active) return slot;
+    }
+    return null;
 }
 
 fn readF32(bytes: []const u8) f32 {
@@ -833,6 +911,29 @@ fn sendSnapshot(sock: net.Socket, io: std.Io, address: net.IpAddress, entities: 
             fixedText(&scene_id),
             total_count,
             packet_count,
+        });
+    }
+}
+
+fn sendNetworkVariableSnapshot(sock: net.Socket, io: std.Io, address: net.IpAddress, network_variables: *[max_network_variables]NetworkVariable, session_id: u32, scene_id: [128]u8) !void {
+    var sent: usize = 0;
+    for (network_variables) |network_variable| {
+        if (!network_variable.active) continue;
+        if (network_variable.session_id != session_id or !sameScene(network_variable.scene_id, scene_id)) continue;
+
+        var packet: [8 + network_variable_update_size]u8 = undefined;
+        writeHeader(packet[0..], .network_variable_update, 0);
+        @memcpy(packet[8 .. 8 + network_variable_name_size], &network_variable.name);
+        packet[8 + network_variable_name_size] = 0;
+        @memcpy(packet[8 + network_variable_name_size + 1 .. 8 + network_variable_update_size], &network_variable.value);
+        sendUdp(sock, io, address, packet[0..]);
+        sent += 1;
+    }
+    if (verbose_packet_logs) {
+        std.debug.print("[SceneMax MP] variable snapshot session={d} scene=\"{s}\" variables={d}\n", .{
+            session_id,
+            fixedText(&scene_id),
+            sent,
         });
     }
 }
@@ -1055,6 +1156,7 @@ fn packetTypeName(packet_type: PacketType) []const u8 {
         .active_action_start => "active_action_start",
         .active_action_end => "active_action_end",
         .network_event => "network_event",
+        .network_variable_update => "network_variable",
         .snapshot => "snapshot",
         .server_state => "server_state",
         .disconnect => "disconnect",

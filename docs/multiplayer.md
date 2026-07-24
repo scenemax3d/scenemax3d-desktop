@@ -130,6 +130,8 @@ SceneMax currently synchronizes the following multiplayer entity behavior:
 - Persistent structural commands, such as attach and IK, so late joiners receive the current
   structure in the snapshot.
 - Persistent label text state, so late joiners receive the latest synchronized label text.
+- Scalar variables declared with `network var`, such as `network var fighters_count = 0`.
+  Clients evaluate assignments locally, then send the resulting value to the server for relay.
 
 Timed movement, rotation, and animation commands are sent both as normal commands and as
 active actions. Active actions let a late-joining client resume a command at the correct
@@ -142,8 +144,8 @@ These stay local unless you explicitly turn them into commands on multiplayer en
 - Keyboard, mouse, and controller input events.
 - Camera state, UI, HUD drawing, screen/canvas settings, skybox, lights, audio, and debug
   output.
-- Variables, arrays, random numbers, timers, and custom game state that are not expressed as
-  commands on networked entities.
+- Plain variables, arrays, random numbers, timers, and custom game state that are not
+  expressed as commands on networked entities or scalar `network var` declarations.
 - Commands targeting entities that are not marked and registered as multiplayer.
 - Assets that are only available in the IDE project folder and are not packaged with the game.
 

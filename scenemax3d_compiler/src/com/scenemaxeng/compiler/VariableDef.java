@@ -78,6 +78,7 @@ public class VariableDef extends StatementDef{
     public boolean isExprPointer;
     public VariableDeclarationCommand declaration;
     public boolean isShared;
+    public boolean isNetwork;
     public boolean isMultiplayer;
 
     @Override

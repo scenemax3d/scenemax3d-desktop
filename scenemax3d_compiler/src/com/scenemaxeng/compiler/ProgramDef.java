@@ -138,7 +138,7 @@ public class ProgramDef {
         }
 
         prevPrg.vars_index.forEach((key, varDef) -> {
-            if (varDef.isShared) {
+            if (varDef.isShared || varDef.isNetwork) {
                 this.vars_index.put(key, varDef);
                 if (varDef.varType == VAR_TYPE_3D) {
                     this.models.put(varDef.resName, prevPrg.models.get(varDef.resName));

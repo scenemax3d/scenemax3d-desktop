@@ -32,6 +32,11 @@ public class MultiplayerSourceDetectorTest {
     }
 
     @Test
+    public void detectsNetworkVariableDeclaration() {
+        assertTrue(MultiplayerSourceDetector.usesMultiplayer("network var fighters_count = 0"));
+    }
+
+    @Test
     public void ignoresPlainNonNetworkScripts() {
         assertFalse(MultiplayerSourceDetector.usesMultiplayer("sys.print \"hello\""));
     }

@@ -380,7 +380,7 @@ ui_runtime_value : UI '.' ui_dot_path '.' ui_property_name ;
 
 // THE LANGUAGE SYNTAX
 
-declare_variable : Shared? Var variable_name_and_assignemt (',' variable_name_and_assignemt)* ;
+declare_variable : (Shared | Network)? Var variable_name_and_assignemt (',' variable_name_and_assignemt)* ;
 variable_name_and_assignemt : Commat? res_var_decl (Equals var_value_option)? var_range_option?;
 var_range_option : '[' min_num_value? '..' max_num_value? ']' ;
 min_num_value : logical_expression ;

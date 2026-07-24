@@ -8,6 +8,7 @@ import com.scenemaxeng.compiler.NetworkSendCommand;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
 import com.scenemaxeng.compiler.StatementDef;
+import com.scenemaxeng.compiler.VariableDeclarationCommand;
 import com.scenemaxeng.compiler.VariableDef;
 import org.junit.Test;
 
@@ -155,6 +156,19 @@ public class MultiplayerCommandDispatchParsingTest {
         assertEquals(3, program.actions.size());
         assertTrue(program.actions.get(0) instanceof NetworkJoinSessionCommand);
         assertTrue(program.actions.get(1) instanceof NetworkJoinSessionCommand);
+    }
+
+    @Test
+    public void parsesNetworkVariableDeclaration() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse("network var fighters_count = 0");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        assertEquals(1, program.actions.size());
+        assertTrue(program.actions.get(0) instanceof com.scenemaxeng.compiler.VariableAssignmentCommand);
+        VariableDef var = program.getVar("fighters_count");
+        assertTrue(var.isNetwork);
+        VariableDeclarationCommand declaration = var.declaration;
+        assertTrue(declaration.isNetwork);
     }
 
     @Test

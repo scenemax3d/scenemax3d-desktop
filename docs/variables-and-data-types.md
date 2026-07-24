@@ -58,6 +58,24 @@ Declare a variable shared across all levels (not deleted on level switch):
 shared var score = 0
 ```
 
+## Network Variables
+
+Declare multiplayer game state owned by the SceneMax multiplayer server:
+
+```scenemax
+network var fighters_count = 0
+```
+
+The client still evaluates assignments locally:
+
+```scenemax
+fighters_count = fighters_count + 1
+```
+
+After the assignment, the new scalar value is sent to the multiplayer server and relayed to
+the other clients in the same session and scene. Late joiners receive the latest value from
+the server snapshot before normal synchronization continues.
+
 ## Shared Models
 
 Declare a model shared across all levels:

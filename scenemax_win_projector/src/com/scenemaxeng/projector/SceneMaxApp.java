@@ -234,6 +234,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private ProgramDef prg;
     private MultiplayerNetworkComponent multiplayerNetwork;
     private boolean suppressMultiplayerCommandDispatch;
+    private final Map<String, Object> pendingNetworkVariableValues = new HashMap<>();
     private final Map<String, MultiplayerControllerResumeState> pendingMultiplayerResumeStates = new HashMap<>();
     private float runtimeShaderElapsedTime = 0f;
     private SceneMaxBaseController lastWaitController;
@@ -5252,6 +5253,68 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return;
         }
         multiplayerNetwork.dispatchCommand(runtimeName, commandText);
+    }
+
+    public void syncNetworkVariable(String varName, Object value, boolean declarationInit) {
+        if (suppressMultiplayerCommandDispatch || varName == null || varName.trim().isEmpty()) {
+            return;
+        }
+        if (multiplayerNetwork == null) {
+            multiplayerNetwork = new MultiplayerNetworkComponent(this);
+            multiplayerNetwork.startFromSystemProperties();
+        }
+        if (multiplayerNetwork != null) {
+            multiplayerNetwork.syncVariable(varName.trim(), value, declarationInit);
+        }
+    }
+
+    public void receiveNetworkVariableUpdate(String varName, Object value) {
+        if (varName == null || varName.trim().isEmpty()) {
+            return;
+        }
+        String normalizedName = varName.trim();
+        if (mainScope == null) {
+            pendingNetworkVariableValues.put(normalizedName, value);
+            return;
+        }
+        if (!applyNetworkVariableValue(normalizedName, value)) {
+            pendingNetworkVariableValues.put(normalizedName, value);
+        }
+    }
+
+    private boolean applyNetworkVariableValue(String varName, Object value) {
+        VarInst var = mainScope == null ? null : mainScope.getVar(varName);
+        if (var == null) {
+            VariableDef varDef = prg == null ? null : prg.getVar(varName);
+            if (varDef == null || !varDef.isNetwork) {
+                return false;
+            }
+            var = new VarInst(varDef, mainScope);
+            mainScope.vars_index.put(varName, var);
+        }
+        var.value = value;
+        if (value instanceof List) {
+            var.values = (List<Object>) value;
+            var.varType = VariableDef.VAR_TYPE_ARRAY;
+        } else if (value instanceof String) {
+            var.varType = VariableDef.VAR_TYPE_STRING;
+        } else if (value instanceof Number) {
+            var.varType = VariableDef.VAR_TYPE_NUMBER;
+        }
+        return true;
+    }
+
+    public void applyPendingNetworkVariableValues(SceneMaxScope scope) {
+        if (scope == null || pendingNetworkVariableValues.isEmpty()) {
+            return;
+        }
+        for (Iterator<Map.Entry<String, Object>> iterator = pendingNetworkVariableValues.entrySet().iterator();
+             iterator.hasNext();) {
+            Map.Entry<String, Object> entry = iterator.next();
+            if (applyNetworkVariableValue(entry.getKey(), entry.getValue())) {
+                iterator.remove();
+            }
+        }
     }
 
     public int startPersistentMultiplayerCommand(String runtimeName, int slot, String commandText) {

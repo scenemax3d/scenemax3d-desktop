@@ -621,6 +621,7 @@ public class SceneMaxLanguageParser implements IParser {
                     if (resultVar == null) {
                         resultVar = new VariableDef();
                         resultVar.isShared = var.isShared;
+                        resultVar.isNetwork = var.isNetwork;
                         resultVar.declaration = var;
                         resultVar.resName = "var";
                         resultVar.varName = var.varName;
@@ -1163,10 +1164,12 @@ public class SceneMaxLanguageParser implements IParser {
                 VariableDeclarationCommand cmd = new VariableDeclarationCommand();
                 cmd.siblings = new ArrayList<>();
                 boolean isShared = ctx.declare_variable().Shared() != null;
+                boolean isNetwork = ctx.declare_variable().Network() != null;
 
                 for(SceneMaxParser.Variable_name_and_assignemtContext v : ctx.declare_variable().variable_name_and_assignemt()) {
                     VariableDeclarationCommand var = new VariableDeclarationCommand();
                     var.isShared = isShared;
+                    var.isNetwork = isNetwork;
                     var.isExprPointer = v.Commat() != null;
                     var.varName = v.res_var_decl().getText();
                     if (v.var_range_option()!=null) {
