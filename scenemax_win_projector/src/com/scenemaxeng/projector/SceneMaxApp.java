@@ -3072,12 +3072,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
             }
 
-            CollisionShape modelShape;
-            if(inst.varDef.isStatic) {
-                modelShape = new MeshCollisionShape(boxGeo.getMesh());
-            } else {
-                modelShape = CollisionShapeFactory.createBoxShape(boxGeo);
-            }
+            CollisionShape modelShape = createPrimitiveRigidBodyShape(boxNode, inst.varDef.isStatic, true);
 
             modelCtl = new RigidBodyControl(modelShape,mass);
 
@@ -3217,12 +3212,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
             }
 
-            CollisionShape modelShape;
-            if(inst.varDef.isStatic) {
-                modelShape = new MeshCollisionShape(sphereGeo.getMesh());
-            } else {
-                modelShape = CollisionShapeFactory.createDynamicMeshShape(sphereGeo);
-            }
+            CollisionShape modelShape = createPrimitiveRigidBodyShape(sphereNode, inst.varDef.isStatic, false);
 
             modelCtl = new RigidBodyControl(modelShape,mass);
 
@@ -3360,12 +3350,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 }
             }
 
-            CollisionShape modelShape;
-            if(inst.varDef.isStatic) {
-                modelShape = new MeshCollisionShape(cylinderGeo.getMesh());
-            } else {
-                modelShape = CollisionShapeFactory.createDynamicMeshShape(cylinderGeo);
-            }
+            CollisionShape modelShape = createPrimitiveRigidBodyShape(cylinderNode, inst.varDef.isStatic, false);
 
             modelCtl = new RigidBodyControl(modelShape,mass);
 
@@ -3504,12 +3489,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 }
             }
 
-            CollisionShape modelShape;
-            if(inst.varDef.isStatic) {
-                modelShape = new MeshCollisionShape(hcGeo.getMesh());
-            } else {
-                modelShape = CollisionShapeFactory.createDynamicMeshShape(hcGeo);
-            }
+            CollisionShape modelShape = createPrimitiveRigidBodyShape(hcNode, inst.varDef.isStatic, false);
 
             modelCtl = new RigidBodyControl(modelShape,mass);
 
@@ -3635,12 +3615,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
         }
 
-        CollisionShape modelShape;
-        if(inst.varDef.isStatic) {
-            modelShape = new MeshCollisionShape(quadGeo.getMesh());
-        } else {
-            modelShape = CollisionShapeFactory.createDynamicMeshShape(quadGeo);
-        }
+        CollisionShape modelShape = createPrimitiveRigidBodyShape(quadNode, inst.varDef.isStatic, false);
 
         modelCtl = new RigidBodyControl(modelShape,mass);
 
@@ -3711,9 +3686,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 mass = inst.varDef.isStatic ? 0 : Float.parseFloat(inst.massExpr.evaluate().toString());
             }
 
-            CollisionShape modelShape = inst.varDef.isStatic
-                    ? CollisionShapeFactory.createDynamicMeshShape(wedgeNode)
-                    : CollisionShapeFactory.createDynamicMeshShape(wedgeNode);
+            CollisionShape modelShape = createPrimitiveRigidBodyShape(wedgeNode, inst.varDef.isStatic, false);
             modelCtl = new RigidBodyControl(modelShape, mass);
             if (!inst.varDef.isStatic) {
                 modelCtl.setKinematic(!isPhysical);
@@ -3790,9 +3763,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 mass = inst.varDef.isStatic ? 0 : Float.parseFloat(inst.massExpr.evaluate().toString());
             }
 
-            CollisionShape modelShape = inst.varDef.isStatic
-                    ? CollisionShapeFactory.createDynamicMeshShape(coneNode)
-                    : CollisionShapeFactory.createDynamicMeshShape(coneNode);
+            CollisionShape modelShape = createPrimitiveRigidBodyShape(coneNode, inst.varDef.isStatic, false);
             modelCtl = new RigidBodyControl(modelShape, mass);
             if (!inst.varDef.isStatic) {
                 modelCtl.setKinematic(!isPhysical);
@@ -3859,7 +3830,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 mass = inst.varDef.isStatic ? 0 : Float.parseFloat(inst.massExpr.evaluate().toString());
             }
 
-            CollisionShape modelShape = CollisionShapeFactory.createDynamicMeshShape(stairsNode);
+            CollisionShape modelShape = createPrimitiveRigidBodyShape(stairsNode, inst.varDef.isStatic, false);
             modelCtl = new RigidBodyControl(modelShape, mass);
             if (!inst.varDef.isStatic) {
                 modelCtl.setKinematic(!isPhysical);
@@ -3927,7 +3898,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 mass = inst.varDef.isStatic ? 0 : Float.parseFloat(inst.massExpr.evaluate().toString());
             }
 
-            CollisionShape modelShape = CollisionShapeFactory.createDynamicMeshShape(archNode);
+            CollisionShape modelShape = createPrimitiveRigidBodyShape(archNode, inst.varDef.isStatic, false);
             modelCtl = new RigidBodyControl(modelShape, mass);
             if (!inst.varDef.isStatic) {
                 modelCtl.setKinematic(!isPhysical);
@@ -3993,6 +3964,17 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         applyInitialScale(node, inst);
+    }
+
+    private CollisionShape createPrimitiveRigidBodyShape(Spatial primitiveRoot, boolean isStatic, boolean preferBoxForDynamic) {
+        primitiveRoot.updateGeometricState();
+        if (isStatic) {
+            return CollisionShapeFactory.createMeshShape(primitiveRoot);
+        }
+        if (preferBoxForDynamic) {
+            return CollisionShapeFactory.createBoxShape(primitiveRoot);
+        }
+        return CollisionShapeFactory.createDynamicMeshShape(primitiveRoot);
     }
 
     private Material createDefaultPrimitiveMaterial(ColorRGBA color) {
