@@ -28,6 +28,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 public class MultiplayerNetworkComponent {
 
@@ -38,6 +40,7 @@ public class MultiplayerNetworkComponent {
     private static final byte LOGIN_REJECTED = 3;
     private static final byte HEARTBEAT = 4;
     private static final byte JOIN_SCENE = 5;
+    private static final byte JOIN_SESSION = 6;
     private static final byte CREATE_ENTITY_REQUEST = 10;
     private static final byte CREATE_ENTITY_ACCEPTED = 11;
     private static final byte DESTROY_ENTITY = 12;
@@ -47,6 +50,7 @@ public class MultiplayerNetworkComponent {
     private static final byte ACTIVE_ACTION_END = 23;
     private static final byte NETWORK_EVENT = 24;
     private static final byte SNAPSHOT = 30;
+    private static final byte SERVER_STATE = 31;
     private static final byte DISCONNECT = 40;
     private static final int MAX_PACKET_SIZE = 1200;
     private static final int SOURCE_OBJECT_NAME_SIZE = 64;
@@ -84,6 +88,14 @@ public class MultiplayerNetworkComponent {
     private int clientId;
     private long sessionId;
     private String sessionName = "";
+    private boolean networkReady;
+    private boolean sessionSwitchPending;
+    private boolean joinSessionRequested;
+    private long pendingJoinSessionId;
+    private String pendingJoinSessionName = "";
+    private JSONObject networkState = new JSONObject();
+    private final List<Object> stateSessions = new ArrayList<>();
+    private final Map<Long, Map<String, Object>> stateSessionsById = new LinkedHashMap<>();
     private String activeSceneId = "main";
     private String playerName = "";
     private String projectGuid = "";
@@ -97,6 +109,18 @@ public class MultiplayerNetworkComponent {
 
     public boolean isActive() {
         return channel != null && channel.isOpen();
+    }
+
+    public boolean isReady() {
+        return isActive() && clientId != 0 && networkReady;
+    }
+
+    public JSONObject getState() {
+        return networkState;
+    }
+
+    public List<Object> getStateSessions() {
+        return new ArrayList<>(stateSessions);
     }
 
     public void startFromSystemProperties() {
@@ -116,6 +140,11 @@ public class MultiplayerNetworkComponent {
             channel = DatagramChannel.open();
             channel.configureBlocking(false);
             channel.connect(new InetSocketAddress(server.trim(), port));
+            networkReady = false;
+            logNet("connecting to " + server.trim() + ":" + port
+                    + " sessionId=" + requestedSessionId
+                    + " sessionName=\"" + (requestedSessionName == null ? "" : requestedSessionName) + "\""
+                    + " projectGuidSet=" + (projectGuid != null && !projectGuid.isBlank()));
             sendLogin(password == null ? "" : password, createSession, requestedSessionId, requestedSessionName);
             logger.info("SceneMax multiplayer UDP client connecting to " + server + ":" + port);
         } catch (IOException ex) {
@@ -144,7 +173,7 @@ public class MultiplayerNetworkComponent {
                 + " type=" + varDef.varType
                 + " archetype=" + entity.archetypeName
                 + " spawn=\"" + entity.spawnCommand + "\"");
-        if (clientId != 0) {
+        if (clientId != 0 && !sessionSwitchPending) {
             sendCreateEntity(entity);
         }
     }
@@ -330,12 +359,31 @@ public class MultiplayerNetworkComponent {
         }
         channel = null;
         clientId = 0;
+        networkReady = false;
+        sessionSwitchPending = false;
+        joinSessionRequested = false;
+        pendingJoinSessionId = 0;
+        pendingJoinSessionName = "";
         pendingCreateAcks.clear();
         removeRemoteEntities();
         pendingTransforms.clear();
         pendingRemoteCommands.clear();
         lastSentCorrections.clear();
         appliedRemoteStructuralCommands.clear();
+    }
+
+    public void joinSession(long requestedSessionId) {
+        if (requestedSessionId <= 0) {
+            return;
+        }
+        joinSessionInternal(requestedSessionId, "");
+    }
+
+    public void joinSession(String requestedSessionName) {
+        if (requestedSessionName == null || requestedSessionName.trim().isEmpty()) {
+            return;
+        }
+        joinSessionInternal(0, requestedSessionName.trim());
     }
 
     public void joinScene(String sceneId) {
@@ -352,6 +400,42 @@ public class MultiplayerNetworkComponent {
             putFixedString(packet, activeSceneId, 128);
             send(packet);
         }
+    }
+
+    private void joinSessionInternal(long requestedSessionId, String requestedSessionName) {
+        if (!isActive()) {
+            return;
+        }
+        sessionSwitchPending = true;
+        networkReady = false;
+        rebuildNetworkState();
+        removeRemoteEntities();
+        pendingTransforms.clear();
+        pendingRemoteCommands.clear();
+        lastSentCorrections.clear();
+        appliedRemoteStructuralCommands.clear();
+        pendingCreateAcks.clear();
+        for (RegisteredEntity entity : localEntities.values()) {
+            entity.networkEntityId = 0;
+            entity.createRequestId = nextCreateRequestId();
+            entity.createRetryTimer = 0;
+            entity.createSendCount = 0;
+            entity.destroyAfterCreateAck = false;
+        }
+        joinSessionRequested = true;
+        pendingJoinSessionId = requestedSessionId;
+        pendingJoinSessionName = requestedSessionName == null ? "" : requestedSessionName;
+        if (clientId != 0) {
+            sendJoinSessionRequest();
+        }
+    }
+
+    private void sendJoinSessionRequest() {
+        ByteBuffer packet = packet(JOIN_SESSION, 68);
+        packet.putInt((int) pendingJoinSessionId);
+        putFixedString(packet, pendingJoinSessionName, 64);
+        logNet("send join session id=" + pendingJoinSessionId + " name=\"" + pendingJoinSessionName + "\"");
+        send(packet);
     }
 
     private void sendLogin(String password, boolean createSession, long requestedSessionId, String requestedSessionName) {
@@ -456,10 +540,14 @@ public class MultiplayerNetworkComponent {
     }
 
     private void readPackets() {
+        DatagramChannel activeChannel = channel;
+        if (activeChannel == null || !activeChannel.isOpen()) {
+            return;
+        }
         try {
             while (true) {
                 receiveBuffer.clear();
-                if (channel.receive(receiveBuffer) == null) {
+                if (activeChannel.receive(receiveBuffer) == null) {
                     return;
                 }
                 receiveBuffer.flip();
@@ -469,6 +557,9 @@ public class MultiplayerNetworkComponent {
                 byte type = receiveBuffer.get();
                 int senderClientId = Short.toUnsignedInt(receiveBuffer.getShort());
                 handlePacket(type, senderClientId, receiveBuffer);
+                if (channel != activeChannel || !activeChannel.isOpen()) {
+                    return;
+                }
             }
         } catch (IOException ex) {
             logger.log(Level.WARNING, "SceneMax multiplayer receive failed", ex);
@@ -481,12 +572,27 @@ public class MultiplayerNetworkComponent {
             clientId = Short.toUnsignedInt(payload.getShort());
             sessionId = Integer.toUnsignedLong(payload.getInt());
             sessionName = readFixedString(payload, 64);
-            logger.info("SceneMax multiplayer joined session " + sessionId + " (" + sessionName + "), scene " + activeSceneId);
+            sessionSwitchPending = false;
+            if (joinSessionRequested && !matchesPendingJoinSession()) {
+                sessionSwitchPending = true;
+                sendJoinSessionRequest();
+                return;
+            }
+            if (joinSessionRequested) {
+                joinSessionRequested = false;
+                pendingJoinSessionId = 0;
+                pendingJoinSessionName = "";
+            }
+            upsertCurrentSessionState();
+            networkReady = true;
+            rebuildNetworkState();
+            logNet("joined session " + sessionId + " (\"" + sessionName + "\"), scene " + activeSceneId
+                    + ", clientId=" + clientId);
             for (RegisteredEntity entity : localEntities.values()) {
                 sendCreateEntity(entity);
             }
         } else if (type == LOGIN_REJECTED) {
-            logger.warning("SceneMax multiplayer login rejected.");
+            logNet("login rejected by server");
             close();
         } else if (type == CREATE_ENTITY_ACCEPTED && payload.remaining() >= 4) {
             int networkId = payload.getInt();
@@ -555,7 +661,80 @@ public class MultiplayerNetworkComponent {
             }
         } else if (type == SNAPSHOT) {
             handleSnapshot(payload);
+        } else if (type == SERVER_STATE) {
+            handleServerState(payload);
         }
+    }
+
+    private void handleServerState(ByteBuffer payload) {
+        if (payload.remaining() < 6) {
+            return;
+        }
+        int total = Short.toUnsignedInt(payload.getShort());
+        int offset = Short.toUnsignedInt(payload.getShort());
+        int count = Short.toUnsignedInt(payload.getShort());
+        if (offset == 0) {
+            stateSessionsById.clear();
+        }
+        for (int i = 0; i < count && payload.remaining() >= 70; i++) {
+            long id = Integer.toUnsignedLong(payload.getInt());
+            int clientCount = Short.toUnsignedInt(payload.getShort());
+            String name = readFixedString(payload, 64);
+            Map<String, Object> session = new LinkedHashMap<>();
+            session.put("id", id);
+            session.put("name", name);
+            session.put("clients", clientCount);
+            session.put("connectedClients", clientCount);
+            stateSessionsById.put(id, session);
+        }
+        if (!sessionSwitchPending && stateSessionsById.size() >= total) {
+            networkReady = true;
+        }
+        rebuildNetworkState();
+    }
+
+    private void rebuildNetworkState() {
+        stateSessions.clear();
+        JSONArray sessionsJson = new JSONArray();
+        for (Map<String, Object> session : stateSessionsById.values()) {
+            Map<String, Object> copy = new LinkedHashMap<>(session);
+            stateSessions.add(copy);
+            sessionsJson.put(new JSONObject(copy));
+        }
+        JSONObject state = new JSONObject();
+        state.put("ready", isReady());
+        state.put("sessionId", sessionId);
+        state.put("sessionName", sessionName);
+        state.put("sessions", sessionsJson);
+        networkState = state;
+    }
+
+    private void upsertCurrentSessionState() {
+        if (sessionId == 0) {
+            return;
+        }
+        Map<String, Object> session = stateSessionsById.get(sessionId);
+        if (session == null) {
+            session = new LinkedHashMap<>();
+            stateSessionsById.put(sessionId, session);
+        }
+        session.put("id", sessionId);
+        session.put("name", sessionName == null ? "" : sessionName);
+        if (!session.containsKey("clients")) {
+            session.put("clients", 1);
+        }
+        if (!session.containsKey("connectedClients")) {
+            session.put("connectedClients", 1);
+        }
+    }
+
+    private boolean matchesPendingJoinSession() {
+        if (pendingJoinSessionId > 0) {
+            return sessionId == pendingJoinSessionId;
+        }
+        return pendingJoinSessionName == null
+                || pendingJoinSessionName.isEmpty()
+                || pendingJoinSessionName.equals(sessionName);
     }
 
     private String pollFirstPendingCreateAck() {
@@ -1160,12 +1339,13 @@ public class MultiplayerNetworkComponent {
     }
 
     private void send(ByteBuffer packet) {
-        if (!isActive()) {
+        DatagramChannel activeChannel = channel;
+        if (activeChannel == null || !activeChannel.isOpen()) {
             return;
         }
         try {
             packet.flip();
-            channel.write(packet);
+            activeChannel.write(packet);
         } catch (IOException ex) {
             logger.log(Level.WARNING, "SceneMax multiplayer send failed", ex);
             close();

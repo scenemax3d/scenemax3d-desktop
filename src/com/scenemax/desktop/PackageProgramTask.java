@@ -719,7 +719,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     }
 
     private boolean programUsesMultiplayer(String code) {
-        return code != null && Pattern.compile("\\bmultiplayer\\b", Pattern.CASE_INSENSITIVE).matcher(code).find();
+        return MultiplayerSourceDetector.usesMultiplayer(code);
     }
 
     private String sanitizeMetadataValue(String value) {
@@ -3733,6 +3733,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         }
 
         addIfNotBlank(uiReferencedFontNames, widget.getFontName());
+        addIfNotBlank(uiReferencedFontNames, widget.getListHeaderFontName());
+        addIfNotBlank(uiReferencedFontNames, widget.getListRowFontName());
         addIfNotBlank(uiReferencedSpriteNames, widget.getSpriteName());
         addIfNotBlank(uiReferencedImagePaths, widget.getImagePath());
         addIfNotBlank(uiReferencedImagePaths, widget.getBackgroundImage());

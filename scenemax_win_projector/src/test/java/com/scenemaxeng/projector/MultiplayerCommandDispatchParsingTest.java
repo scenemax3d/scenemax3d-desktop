@@ -3,6 +3,7 @@ package com.scenemaxeng.projector;
 import com.scenemaxeng.compiler.DoBlockCommand;
 import com.scenemaxeng.compiler.CollisionStatementCommand;
 import com.scenemaxeng.compiler.NetworkEventHandlerCommand;
+import com.scenemaxeng.compiler.NetworkJoinSessionCommand;
 import com.scenemaxeng.compiler.NetworkSendCommand;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
@@ -10,13 +11,22 @@ import com.scenemaxeng.compiler.StatementDef;
 import com.scenemaxeng.compiler.VariableDef;
 import org.junit.Test;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.channels.DatagramChannel;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class MultiplayerCommandDispatchParsingTest {
+
+    private static final int MAGIC = 0x504d5853;
+    private static final byte VERSION = 1;
+    private static final byte LOGIN_REJECTED = 3;
 
     @Test
     public void parsesGeneratedMoveAndRotateDispatchCommands() {
@@ -115,6 +125,21 @@ public class MultiplayerCommandDispatchParsingTest {
     }
 
     @Test
+    public void parsesNetworkSessionJoinAndRuntimeStateExpressions() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "network.join session \"combat 1\"\n"
+                        + "network.join session 1000\n"
+                        + "when network.ready do\n"
+                        + "  var sessions = network.state.sessions\n"
+                        + "end do");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        assertEquals(3, program.actions.size());
+        assertTrue(program.actions.get(0) instanceof NetworkJoinSessionCommand);
+        assertTrue(program.actions.get(1) instanceof NetworkJoinSessionCommand);
+    }
+
+    @Test
     public void preparesSnapshotResumeCommands() throws Exception {
         MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
         Method method = MultiplayerNetworkComponent.class.getDeclaredMethod(
@@ -129,6 +154,41 @@ public class MultiplayerCommandDispatchParsingTest {
                 method.invoke(component, "{network_entity}.rotate (y + 90) in 10 seconds", 5000));
         assertEquals("{network_entity}.move to (4,0,0) in 5 seconds",
                 method.invoke(component, "{network_entity}.move to (4,0,0) in 10 seconds", 5000));
+    }
+
+    @Test
+    public void receiveLoopStopsWhenPacketHandlerClosesChannel() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            Field channelField = MultiplayerNetworkComponent.class.getDeclaredField("channel");
+            channelField.setAccessible(true);
+            channelField.set(component, client);
+
+            ByteBuffer packet = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);
+            packet.putInt(MAGIC);
+            packet.put(VERSION);
+            packet.put(LOGIN_REJECTED);
+            packet.putShort((short) 0);
+            packet.flip();
+            server.write(packet);
+
+            Method readPackets = MultiplayerNetworkComponent.class.getDeclaredMethod("readPackets");
+            readPackets.setAccessible(true);
+            readPackets.invoke(component);
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
     }
 
     private void assertParses(String code) {

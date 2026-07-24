@@ -31,7 +31,7 @@ public class UiGetSchemaTool extends AbstractSceneMaxTool {
         JSONObject data = new JSONObject();
 
         data.put("widgetTypes", new JSONArray()
-                .put("PANEL").put("BUTTON").put("TEXT_VIEW").put("IMAGE").put("GUIDELINE"));
+                .put("PANEL").put("BUTTON").put("TEXT_VIEW").put("EDIT_TEXT").put("LIST_VIEW").put("IMAGE").put("GUIDELINE"));
 
         data.put("enums", new JSONObject()
                 .put("sizeMode", new JSONArray().put("FIXED").put("WRAP_CONTENT").put("MATCH_CONSTRAINT"))
@@ -39,13 +39,16 @@ public class UiGetSchemaTool extends AbstractSceneMaxTool {
                 .put("renderMode", new JSONArray().put("SCREEN_SPACE").put("WORLD_SPACE"))
                 .put("chainStyle", new JSONArray().put("SPREAD").put("SPREAD_INSIDE").put("PACKED"))
                 .put("imageScaleMode", new JSONArray().put("fit").put("fill").put("stretch"))
-                .put("textAlignment", new JSONArray().put("left").put("center").put("right")));
+                .put("textAlignment", new JSONArray().put("left").put("center").put("right"))
+                .put("listViewStyle", new JSONArray().put("classic").put("dark").put("blue")));
 
         data.put("commonProperties", commonPropertiesSchema());
         data.put("typeProperties", new JSONObject()
                 .put("PANEL", panelPropertiesSchema())
                 .put("BUTTON", buttonPropertiesSchema())
                 .put("TEXT_VIEW", textViewPropertiesSchema())
+                .put("EDIT_TEXT", editTextPropertiesSchema())
+                .put("LIST_VIEW", listViewPropertiesSchema())
                 .put("IMAGE", imagePropertiesSchema())
                 .put("GUIDELINE", guidelinePropertiesSchema()));
 
@@ -154,10 +157,35 @@ public class UiGetSchemaTool extends AbstractSceneMaxTool {
                 .put("spriteFrame", "integer (default 0)");
     }
 
+    private JSONObject editTextPropertiesSchema() {
+        return textViewPropertiesSchema()
+                .put("text", "string (current/default value; user edits update this at runtime)")
+                .put("editTextMultiline", "boolean (default false; Enter inserts a newline when true)")
+                .put("editTextPlaceholder", "string shown when empty and unfocused")
+                .put("editTextBackgroundColor", "RGBA hex (default #20242AFF)")
+                .put("editTextFocusedColor", "RGBA hex (default #2A303AFF)")
+                .put("editTextCursorColor", "RGBA hex (default #FFFFFFFF)")
+                .put("editTextSelectionColor", "RGBA hex (default #4A90E280)");
+    }
+
     private JSONObject guidelinePropertiesSchema() {
         return new JSONObject()
                 .put("guidelineIsHorizontal", "boolean (true = horizontal, false = vertical)")
                 .put("guidelineIsPercent", "boolean (true = guidelinePosition is a 0..1 ratio)")
                 .put("guidelinePosition", "number (pixels or 0..1 depending on guidelineIsPercent)");
+    }
+
+    private JSONObject listViewPropertiesSchema() {
+        return new JSONObject()
+                .put("listColumnCount", "integer >= 1 (default 3)")
+                .put("listHeaders", "array of strings, one per column")
+                .put("listRows", "array of rows; each row is an array of cell strings")
+                .put("listColumnWidths", "array of numbers, one preferred width per column; normalized to fill the widget")
+                .put("listHeaderFontName", "string name from ui.list_fonts, or null for default")
+                .put("listRowFontName", "string name from ui.list_fonts, or null for default")
+                .put("listHeaderFontSize", "number (default 16)")
+                .put("listRowFontSize", "number (default 14)")
+                .put("listViewStyle", "one of enums.listViewStyle (default 'classic')")
+                .put("listSelectedRowIndex", "integer, -1 means no selected row");
     }
 }

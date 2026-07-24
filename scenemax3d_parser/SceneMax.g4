@@ -109,9 +109,10 @@ http_address : logical_expression ;
 http_body : logical_expression ;
 
 network_statement : Network '.' network_action ;
-network_action : network_send | network_on ;
+network_action : network_send | network_on | network_join_session ;
 network_send : Send logical_expression ;
 network_on : On '(' logical_expression ')' Equals do_block ;
+network_join_session : Join Session logical_expression ;
 
 add_external_code : Add file_name (',' file_name)* Code ;
 file_name : QUOTED_STRING ;
@@ -170,7 +171,7 @@ light_ambient_attr : Ambient Equals? light_color_value ;
 
 input : go_condition? When input_source input_action on_entity? do_block ;
 input_source : KeyA | KeyB | KeyC | KeyD | KeyE | KeyF | KeyG | KeyH | KeyI | KeyJ | KeyK | KeyL | KeyM | KeyN | KeyO |
-               KeyP | KeyQ | KeyR | KeyS | KeyT | KeyU | KeyV | KeyW | KeyX | KeyY | KeyZ | KeySPACE |
+               KeyP | KeyQ | KeyR | KeyS | KeyT | KeyU | KeyV | KeyW | KeyX | KeyY | KeyZ | KeySPACE | KeyEnter |
                KeyLeft | KeyRight | KeyUp | KeyDown | KeyDel |
                Key0 | Key1 | Key2 | Key3 | Key4 | Key5 | Key6 | Key7 | Key8 | Key9 |
                MouseLeft | MouseRight ;
@@ -334,6 +335,8 @@ value    :
     |    camera_modifier_expr
     |    motion_expr
     |    pool_acquire
+    |    network_runtime_value
+    |    ui_runtime_value
     |    var_decl
     |    variable_field
     |    variable_data_field
@@ -371,6 +374,8 @@ variable_field : var_decl '.' var_field ;
 var_field : X | Y | Z | RX | RY | RZ | Hit | AnimPercent | ReplayIndex ;
 
 pool_acquire : var_decl '.' Acquire ;
+network_runtime_value : Network '.' Ready | Network '.' State ('.' Sessions)? ;
+ui_runtime_value : UI '.' ui_dot_path '.' ui_property_name ;
 
 // THE LANGUAGE SYNTAX
 
@@ -465,7 +470,12 @@ rot_entity : var_decl ;
 rotate_x : logical_expression ;
 rotate_y : logical_expression ;
 rotate_z : logical_expression ;
-init_scale_attr : Scale Equals? logical_expression ;
+init_scale_attr : Scale Equals? scale_value ;
+scale_value : logical_expression | '(' scale_axes ')' ;
+scale_axes : scale_x ',' scale_y ',' scale_z ;
+scale_x : logical_expression ;
+scale_y : logical_expression ;
+scale_z : logical_expression ;
 init_mass_attr : Mass Equals? logical_expression ;
 
 modify_variable : variable_name_and_mandatory_assignemt (',' variable_name_and_mandatory_assignemt)*;
@@ -1036,13 +1046,19 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
     Effekseer | Attr | Cinematic | Videos | Target | Message | TextEffect | Ease | Logger | Java | Error | Process | Weapon | Colliders | Posture | Empty | Event | IK |
     Weight | Blend |
-    Motion | Throw | Toward | Arc | Spin | Physics | Impulse | Force | Torque | Object | Pool | Acquire | Release | Free | Network | Send;
+    Motion | Throw | Toward | Arc | Spin | Physics | Impulse | Force | Torque | Object | Pool | Acquire | Release | Free |
+    Network | Send | Join | Session | Ready | State | Sessions;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
 Pound: '#' ;
 Network : 'Network' | 'network' ;
 Send : 'Send' | 'send' ;
+Join : 'Join' | 'join' ;
+Session : 'Session' | 'session' ;
+Ready : 'Ready' | 'ready' ;
+State : 'State' | 'state' ;
+Sessions : 'Sessions' | 'sessions' ;
 Http : 'Http' | 'http' ;
 Get : 'Get' | 'get' | 'GET' ;
 Post : 'Post' | 'post' | 'POST' ;
@@ -1460,6 +1476,7 @@ MouseLeft : 'mouse left' | 'Mouse left' | 'mouse Left' | 'Mouse Left' ;
 MouseRight : 'mouse right' | 'Mouse right' | 'mouse Right' | 'Mouse Right' ;
 KeyDel : 'key del' | 'Key del' | 'key Del' | 'Key Del' ;
 KeySPACE : 'key space' | 'Key space' | 'key Space' | 'Key Space';
+KeyEnter : 'key enter' | 'Key enter' | 'key Enter' | 'Key Enter';
 KeyLeft : 'key left' | 'Key left' | 'key Left' | 'Key Left';
 KeyRight : 'key right' | 'Key right' | 'key Right' | 'Key Right';
 KeyUp : 'key up' | 'Key up' | 'key Up' | 'Key Up';

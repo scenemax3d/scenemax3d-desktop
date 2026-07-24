@@ -67,6 +67,21 @@ public class SceneMaxLanguageParser implements IParser {
         return s;
     }
 
+    private static void setInitialScale(VariableDef varDef, SceneMaxParser.Init_scale_attrContext scaleAttr) {
+        if (varDef == null || scaleAttr == null || scaleAttr.scale_value() == null) {
+            return;
+        }
+        SceneMaxParser.Scale_valueContext scaleValue = scaleAttr.scale_value();
+        if (scaleValue.scale_axes() != null) {
+            SceneMaxParser.Scale_axesContext axes = scaleValue.scale_axes();
+            varDef.scaleXExpr = axes.scale_x().logical_expression();
+            varDef.scaleYExpr = axes.scale_y().logical_expression();
+            varDef.scaleZExpr = axes.scale_z().logical_expression();
+        } else {
+            varDef.scaleExpr = scaleValue.logical_expression();
+        }
+    }
+
     public static String readFile(File f) {
 
         String text = "";
@@ -911,6 +926,12 @@ public class SceneMaxLanguageParser implements IParser {
                     return cmd;
                 }
 
+                if (action.network_join_session() != null) {
+                    NetworkJoinSessionCommand cmd = new NetworkJoinSessionCommand();
+                    cmd.sessionExpr = action.network_join_session().logical_expression();
+                    return cmd;
+                }
+
                 NetworkEventHandlerCommand cmd = new NetworkEventHandlerCommand();
                 cmd.eventNameExpr = action.network_on().logical_expression();
                 DoBlockCommand doBlock = new DoBlockVisitor(prg).visit(action.network_on().do_block());
@@ -1402,6 +1423,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.entityRot = attr.model_attr().init_rotate_attr().rot_entity().getText();
                                 }
+                            } else if(attr.model_attr().init_scale_attr()!=null) {
+                                setInitialScale(varDef, attr.model_attr().init_scale_attr());
                             } else if(attr.model_attr().init_mass_attr()!=null) {
                                 varDef.massExpr = attr.model_attr().init_mass_attr().logical_expression();
                             } else if(attr.model_attr().init_static_attr()!=null) {
@@ -1475,6 +1498,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.entityRot = attr.model_attr().init_rotate_attr().rot_entity().getText();
                                 }
+                            } else if(attr.model_attr().init_scale_attr()!=null) {
+                                setInitialScale(varDef, attr.model_attr().init_scale_attr());
                             } else if(attr.model_attr().init_mass_attr()!=null) {
                                 varDef.massExpr = attr.model_attr().init_mass_attr().logical_expression();
                             } else if(attr.model_attr().init_static_attr()!=null) {
@@ -1548,6 +1573,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.entityRot = attr.model_attr().init_rotate_attr().rot_entity().getText();
                                 }
+                            } else if(attr.model_attr().init_scale_attr()!=null) {
+                                setInitialScale(varDef, attr.model_attr().init_scale_attr());
                             } else if(attr.model_attr().init_mass_attr()!=null) {
                                 varDef.massExpr = attr.model_attr().init_mass_attr().logical_expression();
                             } else if(attr.model_attr().init_static_attr()!=null) {
@@ -1626,7 +1653,7 @@ public class SceneMaxLanguageParser implements IParser {
                                     varDef.entityRot = attr.model_attr().init_rotate_attr().rot_entity().getText();
                                 }
                             } else if(attr.model_attr().init_scale_attr()!=null) {
-                                varDef.scaleExpr = attr.model_attr().init_scale_attr().logical_expression();
+                                setInitialScale(varDef, attr.model_attr().init_scale_attr());
                             } else if(attr.model_attr().init_mass_attr()!=null) {
                                 varDef.massExpr = attr.model_attr().init_mass_attr().logical_expression();
                             } else if(attr.model_attr().init_static_attr()!=null) {
@@ -1697,6 +1724,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.entityRot = attr.model_attr().init_rotate_attr().rot_entity().getText();
                                 }
+                            } else if(attr.model_attr().init_scale_attr()!=null) {
+                                setInitialScale(varDef, attr.model_attr().init_scale_attr());
                             } else if(attr.model_attr().init_mass_attr()!=null) {
                                 varDef.massExpr = attr.model_attr().init_mass_attr().logical_expression();
                             } else if(attr.model_attr().init_static_attr()!=null) {
@@ -1768,6 +1797,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.entityRot = attr.model_attr().init_rotate_attr().rot_entity().getText();
                                 }
+                            } else if(attr.model_attr().init_scale_attr()!=null) {
+                                setInitialScale(varDef, attr.model_attr().init_scale_attr());
                             } else if(attr.model_attr().init_mass_attr()!=null) {
                                 varDef.massExpr = attr.model_attr().init_mass_attr().logical_expression();
                             } else if(attr.model_attr().init_static_attr()!=null) {
@@ -1841,6 +1872,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.entityRot = attr.model_attr().init_rotate_attr().rot_entity().getText();
                                 }
+                            } else if(attr.model_attr().init_scale_attr()!=null) {
+                                setInitialScale(varDef, attr.model_attr().init_scale_attr());
                             } else if(attr.model_attr().init_mass_attr()!=null) {
                                 varDef.massExpr = attr.model_attr().init_mass_attr().logical_expression();
                             } else if(attr.model_attr().init_static_attr()!=null) {
@@ -1915,6 +1948,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.entityRot = attr.model_attr().init_rotate_attr().rot_entity().getText();
                                 }
+                            } else if(attr.model_attr().init_scale_attr()!=null) {
+                                setInitialScale(varDef, attr.model_attr().init_scale_attr());
                             } else if(attr.model_attr().init_mass_attr()!=null) {
                                 varDef.massExpr = attr.model_attr().init_mass_attr().logical_expression();
                             } else if(attr.model_attr().init_static_attr()!=null) {
@@ -2602,7 +2637,7 @@ public class SceneMaxLanguageParser implements IParser {
                                     setEntityPos(def.entityPos,spriteAttr.print_pos_attr().pos_entity());
                                 }
                             } else if (spriteAttr.init_scale_attr()!=null) {
-                                def.scaleExpr = spriteAttr.init_scale_attr().logical_expression();
+                                def.scaleExpr = spriteAttr.init_scale_attr().scale_value().logical_expression();
                             } else if (spriteAttr.collision_shape_attr()!=null) {
                                 def.hasCollisionShape = spriteAttr.collision_shape_attr().collision_shape_options().None()==null;
                             } else if (spriteAttr.init_hidden_attr()!=null) {
@@ -2664,6 +2699,8 @@ public class SceneMaxLanguageParser implements IParser {
                                 } else {
                                     varDef.entityRot = attr.model_attr().init_rotate_attr().rot_entity().getText();
                                 }
+                            } else if(attr.model_attr().init_scale_attr()!=null) {
+                                setInitialScale(varDef, attr.model_attr().init_scale_attr());
                             } else if(attr.model_attr().init_mass_attr()!=null) {
                                 varDef.massExpr = attr.model_attr().init_mass_attr().logical_expression();
                             } else if(attr.model_attr().init_static_attr()!=null) {
@@ -2796,7 +2833,7 @@ public class SceneMaxLanguageParser implements IParser {
                                 varDef.entityRot = attr.init_rotate_attr().rot_entity().getText();
                             }
                         } else if(attr.init_scale_attr()!=null) {
-                            varDef.scaleExpr = attr.init_scale_attr().logical_expression();
+                            setInitialScale(varDef, attr.init_scale_attr());
                         } else if(attr.init_mass_attr()!=null) {
                             varDef.massExpr = attr.init_mass_attr().logical_expression();
                         } else if(attr.init_static_attr()!=null) {

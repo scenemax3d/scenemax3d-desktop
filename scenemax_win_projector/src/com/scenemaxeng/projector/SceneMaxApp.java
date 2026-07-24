@@ -385,6 +385,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         keyMapping.put("left",KeyInput.KEY_LEFT);
         keyMapping.put("right",KeyInput.KEY_RIGHT);
         keyMapping.put("space",KeyInput.KEY_SPACE);
+        keyMapping.put("enter",KeyInput.KEY_RETURN);
 
         keyMapping.put("0",KeyInput.KEY_0);
         keyMapping.put("1",KeyInput.KEY_1);
@@ -1701,6 +1702,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if(action instanceof NetworkSendCommand) {
             NetworkSendController ctl = new NetworkSendController(this, prg, scope, (NetworkSendCommand) action);
             scope.add(ctl);
+        } else if(action instanceof NetworkJoinSessionCommand) {
+            NetworkJoinSessionController ctl =
+                    new NetworkJoinSessionController(this, prg, scope, (NetworkJoinSessionCommand) action);
+            scope.add(ctl);
         } else if(action instanceof NetworkEventHandlerCommand) {
             NetworkEventHandlerController ctl =
                     new NetworkEventHandlerController(this, prg, scope, (NetworkEventHandlerCommand) action);
@@ -2682,6 +2687,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
 
 
+        applyInitialScale(boxNode, inst);
+
         if(varDef.isCollider) {
             ghost = new GhostControl(
                     new BoxCollisionShape(new Vector3f(x,y,z)));
@@ -2822,6 +2829,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         }
 
+
+        applyInitialScale(sphereNode, inst);
 
         if(varDef.isCollider) {
             ghost = new GhostControl(
@@ -2969,6 +2978,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
         }
 
+        applyInitialScale(cylinderNode, inst);
+
         if(varDef.isCollider) {
             ghost = new GhostControl(
                     new CylinderCollisionShape(new Vector3f(Math.max(radiusTop,radiusBottom), height/2, Math.max(radiusTop,radiusBottom)), 1));
@@ -3113,6 +3124,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
         }
 
+        applyInitialScale(hcNode, inst);
+
         if(varDef.isCollider) {
             ghost = new GhostControl(
                     new CylinderCollisionShape(new Vector3f(Math.max(radiusTop,radiusBottom), height/2, Math.max(radiusTop,radiusBottom)), 1));
@@ -3245,10 +3258,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
         }
 
-        if (inst.scaleExpr != null) {
-            float scale = Float.parseFloat(inst.scaleExpr.evaluate().toString());
-            quadNode.setLocalScale(scale);
-        }
+        applyInitialScale(quadNode, inst);
 
         com.jme3.scene.shape.Quad quadMesh = new com.jme3.scene.shape.Quad(width, height);
         final Geometry quadGeo = new Geometry(quadName, quadMesh);
@@ -3645,6 +3655,8 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 }
             }
         }
+
+        applyInitialScale(node, inst);
     }
 
     private Material createDefaultPrimitiveMaterial(ColorRGBA color) {
@@ -4366,11 +4378,40 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     private Vector3f resolveInitialModelScale(ModelInst modelInst, ResourceSetup resource) {
-        if (modelInst.scaleExpr != null) {
-            float sc = Float.parseFloat(modelInst.scaleExpr.evaluate().toString());
+        return resolveInitialScale(modelInst, new Vector3f(resource.scaleX, resource.scaleY, resource.scaleZ));
+    }
+
+    private Vector3f resolveInitialScale(ModelInst inst, Vector3f fallback) {
+        if (inst != null && inst.scaleXExpr != null) {
+            return new Vector3f(
+                    Float.parseFloat(inst.scaleXExpr.evaluate().toString()),
+                    Float.parseFloat(inst.scaleYExpr.evaluate().toString()),
+                    Float.parseFloat(inst.scaleZExpr.evaluate().toString()));
+        }
+        if (inst != null && inst.scaleExpr != null) {
+            float sc = Float.parseFloat(inst.scaleExpr.evaluate().toString());
             return new Vector3f(sc, sc, sc);
         }
-        return new Vector3f(resource.scaleX, resource.scaleY, resource.scaleZ);
+        return fallback != null ? fallback.clone() : Vector3f.UNIT_XYZ.clone();
+    }
+
+    private void applyInitialScale(Node node, ModelInst inst) {
+        if (node != null && inst != null && (inst.scaleExpr != null || inst.scaleXExpr != null)) {
+            node.setLocalScale(resolveInitialScale(inst, Vector3f.UNIT_XYZ));
+        }
+    }
+
+    private String initialScaleAttribute(ModelInst inst) {
+        if (inst == null || (inst.scaleExpr == null && inst.scaleXExpr == null)) {
+            return null;
+        }
+        Vector3f scale = resolveInitialScale(inst, Vector3f.UNIT_XYZ);
+        if (Math.abs(scale.x - scale.y) < 0.0001f && Math.abs(scale.x - scale.z) < 0.0001f) {
+            return "scale " + networkNumber(scale.x);
+        }
+        return "scale (" + networkNumber(scale.x) + ","
+                + networkNumber(scale.y) + ","
+                + networkNumber(scale.z) + ")";
     }
 
     private Quaternion resolveInitialModelRotation(ModelInst modelInst, ResourceSetup resource) {
@@ -4586,9 +4627,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 + networkNumber(position.y) + ","
                 + networkNumber(position.z) + ")");
 
-        if (modelInst.scaleExpr != null) {
-            float scale = Float.parseFloat(modelInst.scaleExpr.evaluate().toString());
-            attrs.add("scale " + networkNumber(scale));
+        String scaleAttr = initialScaleAttribute(modelInst);
+        if (scaleAttr != null) {
+            attrs.add(scaleAttr);
         }
 
         Vector3f rotation = initialModelRotationDegrees(modelInst);
@@ -4676,9 +4717,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 .append(networkNumber(position.y)).append(",")
                 .append(networkNumber(position.z)).append(")");
         command.append(", radius ").append(networkNumber(radius));
-        if (inst != null && inst.scaleExpr != null) {
-            float scale = Float.parseFloat(inst.scaleExpr.evaluate().toString());
-            command.append(", scale ").append(networkNumber(scale));
+        String scaleAttr = initialScaleAttribute(inst);
+        if (scaleAttr != null) {
+            command.append(", ").append(scaleAttr);
         }
         if (materialName != null && !materialName.trim().isEmpty()) {
             command.append(", material=\"").append(escapeSceneMaxString(materialName.trim())).append("\"");
@@ -4708,9 +4749,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                     .append(networkNumber(rotation.z)).append(")");
         }
 
-        if (inst != null && inst.scaleExpr != null) {
-            float scale = Float.parseFloat(inst.scaleExpr.evaluate().toString());
-            command.append(", scale ").append(networkNumber(scale));
+        String scaleAttr = initialScaleAttribute(inst);
+        if (scaleAttr != null) {
+            command.append(", ").append(scaleAttr);
         }
 
         if (specificAttrs != null) {
@@ -4827,6 +4868,45 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         if (targetClientId != 0) {
             multiplayerNetwork.sendNetworkEvent(targetClientId, eventName.trim());
         }
+    }
+
+    public void joinNetworkSession(Object sessionSelector) {
+        if (multiplayerNetwork == null) {
+            multiplayerNetwork = new MultiplayerNetworkComponent(this);
+            multiplayerNetwork.startFromSystemProperties();
+        }
+        if (multiplayerNetwork == null || sessionSelector == null) {
+            return;
+        }
+        if (sessionSelector instanceof Number) {
+            multiplayerNetwork.joinSession(((Number) sessionSelector).longValue());
+        } else {
+            multiplayerNetwork.joinSession(String.valueOf(sessionSelector));
+        }
+    }
+
+    public boolean isNetworkReady() {
+        return multiplayerNetwork != null && multiplayerNetwork.isReady();
+    }
+
+    public Object getNetworkRuntimeValue(String path) {
+        if (path == null) {
+            return null;
+        }
+        String normalized = path.trim().toLowerCase(Locale.ROOT);
+        if ("network.ready".equals(normalized)) {
+            return isNetworkReady();
+        }
+        if (multiplayerNetwork == null) {
+            return "network.state.sessions".equals(normalized) ? Collections.emptyList() : new JSONObject();
+        }
+        if ("network.state.sessions".equals(normalized)) {
+            return multiplayerNetwork.getStateSessions();
+        }
+        if ("network.state".equals(normalized)) {
+            return multiplayerNetwork.getState();
+        }
+        return null;
     }
 
     public void dispatchMultiplayerCommand(String runtimeName, String commandText) {

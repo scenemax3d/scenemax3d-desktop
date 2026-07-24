@@ -56,6 +56,9 @@ public class VariableDef extends StatementDef{
     public ParserRuleContext rzExpr;
 
     public ParserRuleContext scaleExpr;
+    public ParserRuleContext scaleXExpr;
+    public ParserRuleContext scaleYExpr;
+    public ParserRuleContext scaleZExpr;
     public ParserRuleContext massExpr;
     public EntityPos entityPos;
     public String entityRot;

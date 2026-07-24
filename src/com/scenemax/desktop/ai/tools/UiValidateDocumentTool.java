@@ -94,6 +94,8 @@ public class UiValidateDocumentTool extends AbstractSceneMaxTool {
                 case "PANEL":
                 case "BUTTON":
                 case "TEXT_VIEW":
+                case "EDIT_TEXT":
+                case "LIST_VIEW":
                 case "IMAGE":
                 case "GUIDELINE":
                     break;
@@ -198,6 +200,50 @@ public class UiValidateDocumentTool extends AbstractSceneMaxTool {
             String fontName = widget.optString("fontName", "");
             if (!fontName.isEmpty() && !fontCatalog.contains(fontName)) {
                 warnings.put(widgetPath + ": fontName '" + fontName + "' not found in font catalog.");
+            }
+            String headerFontName = widget.optString("listHeaderFontName", "");
+            if (!headerFontName.isEmpty() && !fontCatalog.contains(headerFontName)) {
+                warnings.put(widgetPath + ": listHeaderFontName '" + headerFontName + "' not found in font catalog.");
+            }
+            String rowFontName = widget.optString("listRowFontName", "");
+            if (!rowFontName.isEmpty() && !fontCatalog.contains(rowFontName)) {
+                warnings.put(widgetPath + ": listRowFontName '" + rowFontName + "' not found in font catalog.");
+            }
+            if ("LIST_VIEW".equals(type)) {
+                int columns = widget.optInt("listColumnCount", 0);
+                if (columns < 1) {
+                    errors.put(widgetPath + ": listColumnCount must be at least 1.");
+                }
+                String style = widget.optString("listViewStyle", "classic");
+                if (!"classic".equals(style) && !"dark".equals(style) && !"blue".equals(style)) {
+                    errors.put(widgetPath + ": invalid listViewStyle '" + style + "' (use classic/dark/blue).");
+                }
+                JSONArray headers = widget.optJSONArray("listHeaders");
+                if (headers != null && columns > 0 && headers.length() != columns) {
+                    warnings.put(widgetPath + ": listHeaders length does not match listColumnCount.");
+                }
+                JSONArray widths = widget.optJSONArray("listColumnWidths");
+                if (widths != null && columns > 0) {
+                    if (widths.length() != columns) {
+                        warnings.put(widgetPath + ": listColumnWidths length does not match listColumnCount.");
+                    }
+                    for (int i = 0; i < widths.length(); i++) {
+                        if (widths.optDouble(i, 0) <= 0) {
+                            errors.put(widgetPath + ": listColumnWidths[" + i + "] must be greater than zero.");
+                        }
+                    }
+                }
+                JSONArray rows = widget.optJSONArray("listRows");
+                if (rows != null && columns > 0) {
+                    for (int i = 0; i < rows.length(); i++) {
+                        JSONArray row = rows.optJSONArray(i);
+                        if (row == null) {
+                            errors.put(widgetPath + ": listRows[" + i + "] must be an array.");
+                        } else if (row.length() != columns) {
+                            warnings.put(widgetPath + ": listRows[" + i + "] length does not match listColumnCount.");
+                        }
+                    }
+                }
             }
         });
 

@@ -108,12 +108,14 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
         LOAD_CAMERA_MODIFIER_VALUE,
         LOAD_MOTION_VALUE,
         LOAD_POOL_ACQUIRE,
+        LOAD_NETWORK_VALUE,
         LOAD_EXPR_POINTER,
         LOAD_ARRAY_VALUE,
         LOAD_ARRAY_LENGTH,
         LOAD_DISTANCE,
         LOAD_ANGLE,
         LOAD_JSON_VALUE,
+        LOAD_UI_PROPERTY,
 
         NOT,
         NEGATE,
@@ -399,6 +401,18 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                 return null;
             }
 
+            if (ctx.network_runtime_value() != null) {
+                code.add(new Instruction(OpCode.LOAD_NETWORK_VALUE, ctx.network_runtime_value().getText(), line));
+                return null;
+            }
+
+            if (ctx.ui_runtime_value() != null) {
+                String path = ctx.ui_runtime_value().ui_dot_path().getText() + "."
+                        + ctx.ui_runtime_value().ui_property_name().getText();
+                code.add(new Instruction(OpCode.LOAD_UI_PROPERTY, path, line));
+                return null;
+            }
+
             if (ctx.logical_expression_pointer() != null) {
                 String varName = ctx.logical_expression_pointer().var_decl().getText();
                 code.add(new Instruction(OpCode.LOAD_EXPR_POINTER, varName, line));
@@ -544,6 +558,9 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                     case LOAD_POOL_ACQUIRE:
                         pushValue(stack, loadPoolAcquire(scope, (String) ins.a, ins.line));
                         break;
+                    case LOAD_NETWORK_VALUE:
+                        pushValue(stack, app == null ? null : app.getNetworkRuntimeValue((String) ins.a));
+                        break;
                     case LOAD_EXPR_POINTER:
                         pushValue(stack, loadExpressionPointer(scope, (String) ins.a, ins.line));
                         break;
@@ -561,6 +578,9 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                         break;
                     case LOAD_JSON_VALUE:
                         pushValue(stack, loadJsonValue(scope, (JsonAccessorSpec) ins.a, ins.line));
+                        break;
+                    case LOAD_UI_PROPERTY:
+                        pushValue(stack, UIRuntimePropertyAccessor.read(app, (String) ins.a, ins.line));
                         break;
 
                     case NOT:

@@ -140,7 +140,7 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
         if (activeProject == null) {
             return "";
         }
-        if (projectName != null && !projectName.isBlank() && !projectName.equals(activeProject.name)) {
+        if (projectName != null && !projectName.isBlank() && !matchesActiveProjectName(projectName, activeProject)) {
             return "";
         }
         if (activeProject.projectGuid == null || activeProject.projectGuid.trim().isEmpty()) {
@@ -148,6 +148,19 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             Util.saveProjectSettings(activeProject);
         }
         return activeProject.projectGuid.trim();
+    }
+
+    private boolean matchesActiveProjectName(String projectName, SceneMaxProject activeProject) {
+        if (activeProject == null || projectName == null || projectName.isBlank()) {
+            return false;
+        }
+        if (projectName.equals(activeProject.name)) {
+            return true;
+        }
+        if (activeProject.path == null || activeProject.path.isBlank()) {
+            return false;
+        }
+        return projectName.equals(new File(activeProject.path).getName());
     }
 
 
@@ -409,6 +422,10 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
         if (project != null && project.multiplayerPassword != null && !project.multiplayerPassword.isBlank()) {
             command.add("-Dscenemax.multiplayer.password=" + project.multiplayerPassword);
         }
+        String projectGuid = project != null && project.projectGuid != null ? project.projectGuid.trim() : "";
+        if (!projectGuid.isBlank()) {
+            command.add("-Dscenemax.multiplayer.projectGuid=" + projectGuid);
+        }
         command.add("-Dscenemax.multiplayer.sessionId=1000");
         command.add("-Dscenemax.multiplayer.createSession=false");
         command.add("-Dscenemax.multiplayer.sessionName=" + sessionName);
@@ -417,10 +434,7 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
     }
 
     private boolean programUsesMultiplayer() {
-        if (prg == null || prg.isBlank()) {
-            return false;
-        }
-        return Pattern.compile("\\bmultiplayer\\b", Pattern.CASE_INSENSITIVE).matcher(prg).find();
+        return MultiplayerSourceDetector.usesMultiplayerInReachableScripts(scriptFolder, prg);
     }
 
     private String localPlayerName() {

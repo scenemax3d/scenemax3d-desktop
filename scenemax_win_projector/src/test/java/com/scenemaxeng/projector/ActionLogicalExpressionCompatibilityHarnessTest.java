@@ -2,8 +2,16 @@ package com.scenemaxeng.projector;
 
 import com.abware.scenemaxlang.parser.SceneMaxLexer;
 import com.abware.scenemaxlang.parser.SceneMaxParser;
+import com.jme3.scene.Node;
 import com.scenemaxeng.compiler.ProgramDef;
+import com.scenemaxeng.compiler.SceneMaxLanguageParser;
+import com.scenemaxeng.compiler.VariableAssignmentCommand;
 import com.scenemaxeng.compiler.VariableDef;
+import com.scenemaxeng.common.ui.model.UIWidgetDef;
+import com.scenemaxeng.common.ui.model.UIWidgetType;
+import com.scenemaxeng.common.ui.widget.UIEditTextNode;
+import com.scenemaxeng.common.ui.widget.UIManager;
+import com.scenemaxeng.common.ui.widget.UIWidgetNode;
 import org.antlr.v4.runtime.ANTLRInputStream;
 import org.antlr.v4.runtime.BaseErrorListener;
 import org.antlr.v4.runtime.CommonTokenStream;
@@ -143,6 +151,48 @@ public class ActionLogicalExpressionCompatibilityHarnessTest {
         assertVmValue("@exprTrue", scope, "true");
         assertVmValue("@exprFalse", scope, "false");
         assertVmValue("@exprNested", scope, "true");
+    }
+
+    @Test
+    public void uiRuntimeGetterReadsLiveEditTextValue() {
+        SceneMaxScope scope = createScope();
+        UIWidgetDef def = new UIWidgetDef("editText1", UIWidgetType.EDIT_TEXT);
+        def.setText("Adi");
+        UIEditTextNode editText = new UIEditTextNode("editText1", def, null, 100, 100, 100, 100, null);
+        app.uiManager = new StubUIManager(app, editText);
+
+        assertVmValue("UI.layer1.editText1.text", scope, "Adi");
+        assertLegacyValue("UI.layer1.editText1.value", scope, "Adi");
+
+        editText.setText("Dana");
+        assertVmValue("UI.layer1.editText1.text", scope, "Dana");
+    }
+
+    @Test
+    public void parserKeepsUiRuntimeGetterInVariableAssignment() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "shared var selected_name = \"\"\n"
+                        + "selected_name = UI.layer1.edit_name.text\n");
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+        assertTrue(prg.actions.get(1) instanceof VariableAssignmentCommand);
+        VariableAssignmentCommand assignment = (VariableAssignmentCommand) prg.actions.get(1);
+        assertEquals("UI.layer1.edit_name.text", assignment.values.get(0).getText());
+        assertTrue("Expected UI getter parse node inside assignment",
+                assignment.values.get(0).booleanAndExpression(0).relationalExpression(0)
+                        .additiveExpression(0).multiplicativeExpression(0).unaryExpression(0)
+                        .primaryExpression().value().ui_runtime_value() != null);
+    }
+
+    @Test
+    public void parserKeepsUiRuntimeGetterInsideInputDoBlock() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "shared var selected_name = \"\"\n"
+                        + "when key Enter is pressed once do\n"
+                        + "  selected_name = UI.layer1.edit_name.text\n"
+                        + "end do\n");
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
     }
 
     @Test
@@ -502,6 +552,7 @@ public class ActionLogicalExpressionCompatibilityHarnessTest {
         String runTimeError;
         boolean collisionResult;
         int collisionChecks;
+        UIManager uiManager;
 
         void reset() {
             runTimeError = null;
@@ -560,6 +611,28 @@ public class ActionLogicalExpressionCompatibilityHarnessTest {
         @Override
         public Object calcAngle(String varName1, String varName2) {
             return Double.valueOf(45.0);
+        }
+
+        @Override
+        public UIManager getUIManager() {
+            return uiManager;
+        }
+    }
+
+    private static class StubUIManager extends UIManager {
+        private final UIWidgetNode widget;
+
+        StubUIManager(SceneMaxApp app, UIWidgetNode widget) {
+            super(app, new Node(), new Node());
+            this.widget = widget;
+        }
+
+        @Override
+        public UIWidgetNode resolveWidget(String uiName, String layerName, String widgetName) {
+            if ("layer1".equals(layerName) && "editText1".equals(widgetName)) {
+                return widget;
+            }
+            return null;
         }
     }
 }

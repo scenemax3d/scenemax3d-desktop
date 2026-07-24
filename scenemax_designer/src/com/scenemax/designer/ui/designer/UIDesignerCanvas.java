@@ -15,6 +15,7 @@ import java.awt.geom.Rectangle2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -49,6 +50,12 @@ public class UIDesignerCanvas extends JPanel {
     private Point lastMousePoint;
     private boolean isPanning;
     private boolean spaceHeld;  // Space key held = pan mode (like Figma/Photoshop)
+    private UIWidgetDef columnResizeWidget;
+    private int columnResizeDividerIndex = -1;
+    private float columnResizeStartCanvasX;
+    private List<Float> columnResizeStartWidths = new ArrayList<>();
+    private static final float LIST_COLUMN_RESIZE_TOLERANCE = 5f;
+    private static final float MIN_LIST_COLUMN_WIDTH = 24f;
 
     // Colors
     private static final Color COLOR_CANVAS_BG = new Color(45, 45, 48);
@@ -70,9 +77,14 @@ public class UIDesignerCanvas extends JPanel {
 
     // Listener for selection changes
     private SelectionListener selectionListener;
+    private WidgetEditListener widgetEditListener;
 
     public interface SelectionListener {
         void onWidgetSelected(UIWidgetDef widget);
+    }
+
+    public interface WidgetEditListener {
+        void onWidgetEdited(UIWidgetDef widget);
     }
 
     public UIDesignerCanvas() {
@@ -114,13 +126,25 @@ public class UIDesignerCanvas extends JPanel {
                         isPanning = true;
                         lastMousePoint = e.getPoint();
                     } else {
-                        handleClick(e.getX(), e.getY());
+                        int dividerIndex = findListColumnDividerAt(e.getX(), e.getY());
+                        if (dividerIndex >= 0) {
+                            startListColumnResize(e.getX(), dividerIndex);
+                        } else {
+                            handleClick(e.getX(), e.getY());
+                        }
                     }
                 }
             }
 
             @Override
             public void mouseReleased(MouseEvent e) {
+                if (columnResizeWidget != null) {
+                    columnResizeWidget = null;
+                    columnResizeDividerIndex = -1;
+                    columnResizeStartWidths.clear();
+                    updateHoverCursor(e.getX(), e.getY());
+                    return;
+                }
                 if (isPanning) {
                     isPanning = false;
                     if (!spaceHeld) {
@@ -133,12 +157,21 @@ public class UIDesignerCanvas extends JPanel {
         addMouseMotionListener(new MouseMotionAdapter() {
             @Override
             public void mouseDragged(MouseEvent e) {
+                if (columnResizeWidget != null) {
+                    updateListColumnResize(e.getX());
+                    return;
+                }
                 if (isPanning && lastMousePoint != null) {
                     panX += e.getX() - lastMousePoint.x;
                     panY += e.getY() - lastMousePoint.y;
                     lastMousePoint = e.getPoint();
                     repaint();
                 }
+            }
+
+            @Override
+            public void mouseMoved(MouseEvent e) {
+                updateHoverCursor(e.getX(), e.getY());
             }
         });
 
@@ -193,6 +226,10 @@ public class UIDesignerCanvas extends JPanel {
 
     public void setSelectionListener(SelectionListener listener) {
         this.selectionListener = listener;
+    }
+
+    public void setWidgetEditListener(WidgetEditListener listener) {
+        this.widgetEditListener = listener;
     }
 
     public void setSpriteResources(AssetsMapping assetsMapping, String projectPath) {
@@ -449,7 +486,19 @@ public class UIDesignerCanvas extends JPanel {
             case BUTTON:  bgColor = COLOR_BUTTON; break;
             case IMAGE:   bgColor = COLOR_IMAGE;  break;
             case TEXT_VIEW: bgColor = new Color(50, 50, 55, 100); break;
+            case EDIT_TEXT: bgColor = new Color(32, 36, 42); break;
+            case LIST_VIEW: bgColor = new Color(235, 238, 242); break;
             default:      bgColor = COLOR_PANEL;  break;
+        }
+
+        if (widget.getType() == UIWidgetType.LIST_VIEW) {
+            drawListView(g2, widget, rect);
+            if (widget == selectedWidget) {
+                g2.setColor(COLOR_SELECTION);
+                g2.setStroke(new BasicStroke(2f));
+                g2.draw(new RoundRectangle2D.Float(x - 1, y - 1, w + 2, h + 2, 6, 6));
+            }
+            return;
         }
 
         // Try to draw sprite image for IMAGE widgets
@@ -495,26 +544,43 @@ public class UIDesignerCanvas extends JPanel {
         String label = widget.getName();
         FontMetrics fm = g2.getFontMetrics();
 
-        // Draw text content for TEXT_VIEW and BUTTON
+        // Draw text content for TEXT_VIEW, EDIT_TEXT and BUTTON
         String displayText = null;
         switch (widget.getType()) {
             case TEXT_VIEW: displayText = widget.getText(); break;
+            case EDIT_TEXT:
+                displayText = widget.getText();
+                if ((displayText == null || displayText.isEmpty())
+                        && widget.getEditTextPlaceholder() != null
+                        && !widget.getEditTextPlaceholder().isEmpty()) {
+                    displayText = widget.getEditTextPlaceholder();
+                    g2.setColor(new Color(190, 200, 210, 160));
+                }
+                break;
             case BUTTON: displayText = widget.getButtonText(); break;
         }
 
         if (displayText != null && !displayText.isEmpty() && h > 14) {
             // Draw the content text centered
-            g2.setColor(new Color(255, 255, 255, 220));
+            if (widget.getType() != UIWidgetType.EDIT_TEXT || widget.getText() != null && !widget.getText().isEmpty()) {
+                g2.setColor(new Color(255, 255, 255, 220));
+            }
             float textWidth = fm.stringWidth(displayText);
-            float tx = x + (w - textWidth) / 2;
+            float tx = widget.getType() == UIWidgetType.EDIT_TEXT ? x + 8 : x + (w - textWidth) / 2;
             float ty = y + (h + fm.getAscent()) / 2 - 2;
             if (textWidth > w - 4) {
                 // Truncate
                 displayText = truncateText(displayText, fm, w - 8);
                 textWidth = fm.stringWidth(displayText);
-                tx = x + (w - textWidth) / 2;
+                tx = widget.getType() == UIWidgetType.EDIT_TEXT ? x + 8 : x + (w - textWidth) / 2;
             }
             g2.drawString(displayText, tx, ty);
+
+            if (widget.getType() == UIWidgetType.EDIT_TEXT) {
+                g2.setColor(new Color(255, 255, 255, 180));
+                float caretX = x + Math.min(w - 8, 10 + textWidth);
+                g2.draw(new Line2D.Float(caretX, y + 8, caretX, y + h - 8));
+            }
 
             // Draw name as small label above
             g2.setColor(new Color(180, 180, 180, 160));
@@ -657,8 +723,288 @@ public class UIDesignerCanvas extends JPanel {
             case PANEL:     return "\u25A1"; // square
             case BUTTON:    return "\u25C9"; // circle with dot
             case TEXT_VIEW: return "T";
+            case EDIT_TEXT: return "I";
+            case LIST_VIEW: return "\u2261";
             case IMAGE:     return "\u25A3"; // filled square
             default:        return "";
+        }
+    }
+
+    private int findListColumnDividerAt(int sx, int sy) {
+        if (selectedWidget == null || selectedWidget.getType() != UIWidgetType.LIST_VIEW) {
+            return -1;
+        }
+        LayoutRect rect = layoutResults.get(selectedWidget.getName());
+        if (rect == null) {
+            return -1;
+        }
+
+        float cx = screenToCanvasX(sx);
+        float cy = screenToCanvasY(sy);
+        float tolerance = LIST_COLUMN_RESIZE_TOLERANCE / Math.max(0.05f, zoom);
+        if (cy < rect.y || cy > rect.y + rect.height || cx < rect.x - tolerance || cx > rect.x + rect.width + tolerance) {
+            return -1;
+        }
+
+        List<Float> widths = selectedWidget.getEffectiveListColumnWidths(rect.width);
+        float boundaryX = rect.x;
+        for (int i = 0; i < widths.size() - 1; i++) {
+            boundaryX += widths.get(i);
+            if (Math.abs(cx - boundaryX) <= tolerance) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private void startListColumnResize(int sx, int dividerIndex) {
+        LayoutRect rect = layoutResults.get(selectedWidget.getName());
+        if (rect == null) {
+            return;
+        }
+        columnResizeWidget = selectedWidget;
+        columnResizeDividerIndex = dividerIndex;
+        columnResizeStartCanvasX = screenToCanvasX(sx);
+        columnResizeStartWidths = new ArrayList<>(selectedWidget.getEffectiveListColumnWidths(rect.width));
+        setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
+    }
+
+    private void updateListColumnResize(int sx) {
+        if (columnResizeWidget == null || columnResizeDividerIndex < 0
+                || columnResizeDividerIndex + 1 >= columnResizeStartWidths.size()) {
+            return;
+        }
+
+        float delta = screenToCanvasX(sx) - columnResizeStartCanvasX;
+        float leftStart = columnResizeStartWidths.get(columnResizeDividerIndex);
+        float rightStart = columnResizeStartWidths.get(columnResizeDividerIndex + 1);
+        float pairWidth = leftStart + rightStart;
+        float minWidth = Math.min(MIN_LIST_COLUMN_WIDTH, pairWidth / 2f);
+        float leftWidth = Math.max(minWidth, Math.min(pairWidth - minWidth, leftStart + delta));
+        float rightWidth = pairWidth - leftWidth;
+
+        List<Float> widths = new ArrayList<>(columnResizeStartWidths);
+        widths.set(columnResizeDividerIndex, leftWidth);
+        widths.set(columnResizeDividerIndex + 1, rightWidth);
+        columnResizeWidget.setListColumnWidths(widths);
+
+        if (widgetEditListener != null) {
+            widgetEditListener.onWidgetEdited(columnResizeWidget);
+        }
+        repaint();
+    }
+
+    private void updateHoverCursor(int sx, int sy) {
+        if (spaceHeld) {
+            setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+        } else if (findListColumnDividerAt(sx, sy) >= 0) {
+            setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
+        } else {
+            setCursor(Cursor.getDefaultCursor());
+        }
+    }
+
+    private float screenToCanvasX(int sx) {
+        return (sx - panX) / zoom;
+    }
+
+    private float screenToCanvasY(int sy) {
+        return (sy - panY) / zoom;
+    }
+
+    private void drawListView(Graphics2D g2, UIWidgetDef widget, LayoutRect rect) {
+        ListViewPreviewStyle style = listViewStyle(widget.getListViewStyle());
+        float x = rect.x;
+        float y = rect.y;
+        float w = Math.max(1f, rect.width);
+        float h = Math.max(1f, rect.height);
+        int columns = Math.max(1, widget.getListColumnCount());
+        List<Float> columnWidths = widget.getEffectiveListColumnWidths(w);
+        float cursorY = y;
+
+        g2.setColor(style.background);
+        g2.fill(new RoundRectangle2D.Float(x, y, w, h, 4, 4));
+
+        Font headerFont = g2.getFont().deriveFont(Font.BOLD, Math.max(1f, widget.getListHeaderFontSize()));
+        Font rowFont = g2.getFont().deriveFont(Font.PLAIN, Math.max(1f, widget.getListRowFontSize()));
+        float headerHeight = measureWrappedRowHeight(g2, headerFont, widget.getListHeaders(), columnWidths);
+        headerHeight = Math.min(headerHeight, h);
+        g2.setColor(style.headerBackground);
+        g2.fill(new Rectangle2D.Float(x, cursorY, w, headerHeight));
+        drawWrappedCells(g2, widget.getListHeaders(), headerFont, style.headerText, x, cursorY, headerHeight, columnWidths, true);
+        cursorY += headerHeight;
+
+        List<List<String>> rows = widget.getListRows();
+        for (int rowIndex = 0; rowIndex < rows.size() && cursorY < y + h; rowIndex++) {
+            List<String> row = rows.get(rowIndex);
+            float rowHeight = measureWrappedRowHeight(g2, rowFont, row, columnWidths);
+            rowHeight = Math.min(rowHeight, y + h - cursorY);
+            g2.setColor(rowIndex == widget.getListSelectedRowIndex()
+                    ? style.selectedBackground
+                    : (rowIndex % 2 == 0 ? style.rowBackground : style.alternateRowBackground));
+            g2.fill(new Rectangle2D.Float(x, cursorY, w, rowHeight));
+            drawWrappedCells(g2, row, rowFont, style.rowText, x, cursorY, rowHeight, columnWidths, false);
+            cursorY += rowHeight;
+        }
+
+        g2.setColor(style.grid);
+        g2.setStroke(new BasicStroke(1f));
+        float gridX = x;
+        for (int i = 1; i < columns; i++) {
+            gridX += columnWidths.get(i - 1);
+            g2.draw(new Line2D.Float(gridX, y, gridX, y + h));
+        }
+        if (widget == selectedWidget) {
+            g2.setColor(new Color(0, 150, 255, 115));
+            g2.setStroke(new BasicStroke(2f));
+            gridX = x;
+            for (int i = 1; i < columns; i++) {
+                gridX += columnWidths.get(i - 1);
+                g2.draw(new Line2D.Float(gridX, y, gridX, y + h));
+            }
+        }
+        g2.draw(new RoundRectangle2D.Float(x, y, w, h, 4, 4));
+
+        g2.setColor(new Color(90, 96, 104, 180));
+        g2.setFont(g2.getFont().deriveFont(Font.PLAIN, 9f));
+        g2.drawString(widget.getName(), x + 4, y + 11);
+    }
+
+    private void drawWrappedCells(Graphics2D g2, List<String> values, Font font, Color color,
+                                  float x, float y, float rowHeight, List<Float> columnWidths, boolean center) {
+        g2.setFont(font);
+        g2.setColor(color);
+        FontMetrics fm = g2.getFontMetrics();
+        int padding = 6;
+        int columns = Math.max(1, columnWidths.size());
+        float cellX = x;
+        for (int i = 0; i < columns; i++) {
+            float columnWidth = columnWidths.get(i);
+            String text = i < values.size() && values.get(i) != null ? values.get(i) : "";
+            java.util.List<String> lines = wrapText(text, fm, Math.max(1, (int) columnWidth - padding * 2));
+            int textHeight = lines.size() * fm.getHeight();
+            int ty = (int) y + padding + fm.getAscent();
+            if (center) {
+                ty = (int) (y + Math.max(fm.getAscent() + padding, (rowHeight - textHeight) / 2f + fm.getAscent()));
+            }
+            for (String line : lines) {
+                int tx = (int) (cellX + padding);
+                if (center) {
+                    tx = (int) (cellX + (columnWidth - fm.stringWidth(line)) / 2f);
+                }
+                g2.drawString(line, tx, ty);
+                ty += fm.getHeight();
+                if (ty > y + rowHeight) {
+                    break;
+                }
+            }
+            cellX += columnWidth;
+        }
+    }
+
+    private float measureWrappedRowHeight(Graphics2D g2, Font font, List<String> values, List<Float> columnWidths) {
+        g2.setFont(font);
+        FontMetrics fm = g2.getFontMetrics();
+        int maxLines = 1;
+        for (int i = 0; i < columnWidths.size(); i++) {
+            String value = i < values.size() ? values.get(i) : "";
+            maxLines = Math.max(maxLines, wrapText(value == null ? "" : value, fm,
+                    Math.max(1, (int) columnWidths.get(i).floatValue() - 12)).size());
+        }
+        return Math.max(fm.getHeight() + 12, maxLines * fm.getHeight() + 12);
+    }
+
+    private java.util.List<String> wrapText(String text, FontMetrics fm, int maxWidth) {
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        String[] paragraphs = text.split("\\R", -1);
+        for (String paragraph : paragraphs) {
+            StringBuilder line = new StringBuilder();
+            for (String word : paragraph.split("\\s+")) {
+                if (word.isEmpty()) {
+                    continue;
+                }
+                String candidate = line.length() == 0 ? word : line + " " + word;
+                if (fm.stringWidth(candidate) <= maxWidth) {
+                    line.setLength(0);
+                    line.append(candidate);
+                } else {
+                    if (line.length() > 0) {
+                        lines.add(line.toString());
+                        line.setLength(0);
+                    }
+                    if (fm.stringWidth(word) <= maxWidth) {
+                        line.append(word);
+                    } else {
+                        splitLongWord(word, fm, maxWidth, lines);
+                    }
+                }
+            }
+            lines.add(line.toString());
+        }
+        if (lines.isEmpty()) {
+            lines.add("");
+        }
+        return lines;
+    }
+
+    private void splitLongWord(String word, FontMetrics fm, int maxWidth, java.util.List<String> lines) {
+        StringBuilder chunk = new StringBuilder();
+        for (int i = 0; i < word.length(); i++) {
+            String candidate = chunk.toString() + word.charAt(i);
+            if (fm.stringWidth(candidate) > maxWidth && chunk.length() > 0) {
+                lines.add(chunk.toString());
+                chunk.setLength(0);
+            }
+            chunk.append(word.charAt(i));
+        }
+        if (chunk.length() > 0) {
+            lines.add(chunk.toString());
+        }
+    }
+
+    private ListViewPreviewStyle listViewStyle(String name) {
+        if ("dark".equalsIgnoreCase(name)) {
+            return new ListViewPreviewStyle(
+                    new Color(31, 35, 42), new Color(50, 57, 69),
+                    new Color(37, 43, 52), new Color(32, 37, 45),
+                    new Color(52, 91, 140), new Color(94, 107, 125),
+                    Color.WHITE, new Color(231, 236, 242));
+        }
+        if ("blue".equalsIgnoreCase(name)) {
+            return new ListViewPreviewStyle(
+                    new Color(244, 248, 255), new Color(207, 226, 255),
+                    new Color(234, 242, 255), new Color(221, 235, 255),
+                    new Color(156, 195, 255), new Color(158, 183, 217),
+                    new Color(17, 58, 107), new Color(23, 49, 79));
+        }
+        return new ListViewPreviewStyle(
+                new Color(250, 250, 250), new Color(226, 230, 234),
+                Color.WHITE, new Color(242, 244, 246),
+                new Color(212, 231, 255), new Color(199, 205, 211),
+                new Color(32, 36, 42), new Color(48, 52, 58));
+    }
+
+    private static class ListViewPreviewStyle {
+        final Color background;
+        final Color headerBackground;
+        final Color rowBackground;
+        final Color alternateRowBackground;
+        final Color selectedBackground;
+        final Color grid;
+        final Color headerText;
+        final Color rowText;
+
+        ListViewPreviewStyle(Color background, Color headerBackground, Color rowBackground,
+                             Color alternateRowBackground, Color selectedBackground, Color grid,
+                             Color headerText, Color rowText) {
+            this.background = background;
+            this.headerBackground = headerBackground;
+            this.rowBackground = rowBackground;
+            this.alternateRowBackground = alternateRowBackground;
+            this.selectedBackground = selectedBackground;
+            this.grid = grid;
+            this.headerText = headerText;
+            this.rowText = rowText;
         }
     }
 

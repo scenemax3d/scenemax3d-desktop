@@ -23,7 +23,7 @@ public class UiAddWidgetTool extends AbstractSceneMaxTool {
 
     @Override
     public String getDescription() {
-        return "Adds a widget (PANEL/BUTTON/TEXT_VIEW/IMAGE/GUIDELINE) to a .smui document. "
+        return "Adds a widget (PANEL/BUTTON/TEXT_VIEW/EDIT_TEXT/LIST_VIEW/IMAGE/GUIDELINE) to a .smui document. "
                 + "Set 'parent' to a layer name (top-level) or a dot-path to an existing PANEL "
                 + "(e.g. 'hud.statusPanel') to nest. Name must be unique across the document; "
                 + "if omitted, a unique one is generated from the type. Pass initial properties "
@@ -42,7 +42,7 @@ public class UiAddWidgetTool extends AbstractSceneMaxTool {
                         .put("parent", new JSONObject().put("type", "string")
                                 .put("description", "Layer name, or dot-path to a PANEL widget."))
                         .put("type", new JSONObject().put("type", "string")
-                                .put("description", "PANEL / BUTTON / TEXT_VIEW / IMAGE / GUIDELINE"))
+                                .put("description", "PANEL / BUTTON / TEXT_VIEW / EDIT_TEXT / LIST_VIEW / IMAGE / GUIDELINE"))
                         .put("name", new JSONObject().put("type", "string")
                                 .put("description", "Unique across the document. Auto-generated if omitted."))
                         .put("properties", new JSONObject().put("type", "object")
@@ -66,7 +66,7 @@ public class UiAddWidgetTool extends AbstractSceneMaxTool {
             widgetType = UIWidgetType.valueOf(typeRaw);
         } catch (IllegalArgumentException ex) {
             throw new IllegalArgumentException("Invalid widget type: " + typeRaw
-                    + " (valid: PANEL, BUTTON, TEXT_VIEW, IMAGE, GUIDELINE).");
+                    + " (valid: PANEL, BUTTON, TEXT_VIEW, EDIT_TEXT, LIST_VIEW, IMAGE, GUIDELINE).");
         }
 
         JSONObject root = UiAuthoringSupport.readUiDoc(path);
@@ -179,6 +179,34 @@ public class UiAddWidgetTool extends AbstractSceneMaxTool {
                 widget.put("fontSize", 16);
                 widget.put("textAlignment", "left");
                 break;
+            case EDIT_TEXT:
+                widget.put("width", 220);
+                widget.put("height", 42);
+                widget.put("text", "");
+                widget.put("textColor", "#FFFFFFFF");
+                widget.put("fontSize", 16);
+                widget.put("textAlignment", "left");
+                widget.put("editTextMultiline", false);
+                widget.put("editTextPlaceholder", "Enter text");
+                widget.put("editTextBackgroundColor", "#20242AFF");
+                widget.put("editTextFocusedColor", "#2A303AFF");
+                widget.put("editTextCursorColor", "#FFFFFFFF");
+                widget.put("editTextSelectionColor", "#4A90E280");
+                break;
+            case LIST_VIEW:
+                widget.put("width", 420);
+                widget.put("height", 220);
+                widget.put("listColumnCount", 3);
+                widget.put("listHeaders", new JSONArray().put("Name").put("Value").put("Status"));
+                widget.put("listColumnWidths", new JSONArray().put(140).put(140).put(140));
+                widget.put("listRows", new JSONArray()
+                        .put(new JSONArray().put("Player 1").put("100").put("Ready"))
+                        .put(new JSONArray().put("Player 2").put("80").put("Waiting")));
+                widget.put("listHeaderFontSize", 16);
+                widget.put("listRowFontSize", 14);
+                widget.put("listViewStyle", "classic");
+                widget.put("listSelectedRowIndex", -1);
+                break;
             case IMAGE:
                 widget.put("imageScaleMode", "fit");
                 widget.put("spriteFrame", 0);
@@ -225,7 +253,7 @@ public class UiAddWidgetTool extends AbstractSceneMaxTool {
                     break;
             }
         }
-        if (type == UIWidgetType.TEXT_VIEW && props.has("textAlignment")) {
+        if ((type == UIWidgetType.TEXT_VIEW || type == UIWidgetType.EDIT_TEXT) && props.has("textAlignment")) {
             String ta = props.optString("textAlignment", "left");
             if (!"left".equals(ta) && !"center".equals(ta) && !"right".equals(ta)) {
                 throw new IllegalArgumentException("textAlignment must be left, center, or right.");
@@ -235,6 +263,31 @@ public class UiAddWidgetTool extends AbstractSceneMaxTool {
             String im = props.optString("imageScaleMode", "fit");
             if (!"fit".equals(im) && !"fill".equals(im) && !"stretch".equals(im)) {
                 throw new IllegalArgumentException("imageScaleMode must be fit, fill, or stretch.");
+            }
+        }
+        if (type == UIWidgetType.LIST_VIEW) {
+            validateListViewProperties(widget);
+        }
+    }
+
+    private void validateListViewProperties(JSONObject widget) {
+        int columns = widget.optInt("listColumnCount", 1);
+        if (columns < 1) {
+            throw new IllegalArgumentException("listColumnCount must be at least 1.");
+        }
+        String style = widget.optString("listViewStyle", "classic");
+        if (!"classic".equals(style) && !"dark".equals(style) && !"blue".equals(style)) {
+            throw new IllegalArgumentException("listViewStyle must be classic, dark, or blue.");
+        }
+        JSONArray widths = widget.optJSONArray("listColumnWidths");
+        if (widths != null) {
+            if (widths.length() != columns) {
+                throw new IllegalArgumentException("listColumnWidths must contain one width per column.");
+            }
+            for (int i = 0; i < widths.length(); i++) {
+                if (widths.optDouble(i, 0) <= 0) {
+                    throw new IllegalArgumentException("listColumnWidths values must be greater than zero.");
+                }
             }
         }
     }
@@ -283,6 +336,20 @@ public class UiAddWidgetTool extends AbstractSceneMaxTool {
             Set<String> names = UiAuthoringSupport.fontNames(context);
             if (!names.contains(font)) {
                 warnings.put("Unknown fontName '" + font + "' — not found in ui.list_fonts.");
+            }
+        }
+        String headerFont = widget.optString("listHeaderFontName", null);
+        if (headerFont != null && !headerFont.isEmpty()) {
+            Set<String> names = UiAuthoringSupport.fontNames(context);
+            if (!names.contains(headerFont)) {
+                warnings.put("Unknown listHeaderFontName '" + headerFont + "' not found in ui.list_fonts.");
+            }
+        }
+        String rowFont = widget.optString("listRowFontName", null);
+        if (rowFont != null && !rowFont.isEmpty()) {
+            Set<String> names = UiAuthoringSupport.fontNames(context);
+            if (!names.contains(rowFont)) {
+                warnings.put("Unknown listRowFontName '" + rowFont + "' not found in ui.list_fonts.");
             }
         }
         String bgImg = widget.optString("backgroundImage", null);

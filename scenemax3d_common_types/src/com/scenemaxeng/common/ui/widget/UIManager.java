@@ -2,6 +2,15 @@ package com.scenemaxeng.common.ui.widget;
 
 import com.jme3.app.Application;
 import com.jme3.asset.AssetManager;
+import com.jme3.input.KeyInput;
+import com.jme3.input.RawInputListener;
+import com.jme3.input.event.JoyAxisEvent;
+import com.jme3.input.event.JoyButtonEvent;
+import com.jme3.input.event.KeyInputEvent;
+import com.jme3.input.event.MouseButtonEvent;
+import com.jme3.input.event.MouseMotionEvent;
+import com.jme3.input.event.TouchEvent;
+import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
 import com.jme3.scene.control.BillboardControl;
 import com.scenemaxeng.common.ui.model.UIDocument;
@@ -30,6 +39,10 @@ public class UIManager {
     private Node rootNode;
     private AssetsMapping assetsMapping;
     private String activeUIName;
+    private UIEditTextNode focusedEditText;
+    private boolean rawInputListenerInstalled;
+    private boolean shiftDown;
+    private boolean ctrlDown;
 
     private Map<String, LoadedUI> loadedUIs = new LinkedHashMap<>();
 
@@ -49,6 +62,7 @@ public class UIManager {
         this.assetManager = app.getAssetManager();
         this.guiNode = guiNode;
         this.rootNode = rootNode;
+        installRawInputListener();
     }
 
     public UIManager(Application app, Node guiNode, Node rootNode, AssetsMapping assetsMapping) {
@@ -119,6 +133,10 @@ public class UIManager {
 
         for (UILayerNode layerNode : loaded.layerNodes.values()) {
             layerNode.removeFromParent();
+        }
+        if (focusedEditText != null) {
+            focusedEditText.setFocused(false);
+            focusedEditText = null;
         }
 
         if (uiName != null && uiName.equals(activeUIName)) {
@@ -228,5 +246,92 @@ public class UIManager {
     private void addBillboardControls(Node node) {
         BillboardControl billboard = new BillboardControl();
         node.addControl(billboard);
+    }
+
+    private void installRawInputListener() {
+        if (rawInputListenerInstalled || app.getInputManager() == null) {
+            return;
+        }
+        app.getInputManager().addRawInputListener(new RawInputListener() {
+            @Override public void beginInput() { }
+            @Override public void endInput() { }
+            @Override public void onJoyAxisEvent(JoyAxisEvent evt) { }
+            @Override public void onJoyButtonEvent(JoyButtonEvent evt) { }
+            @Override public void onMouseMotionEvent(MouseMotionEvent evt) { }
+            @Override public void onTouchEvent(TouchEvent evt) { }
+
+            @Override
+            public void onMouseButtonEvent(MouseButtonEvent evt) {
+                if (!evt.isPressed() || evt.getButtonIndex() != 0) {
+                    return;
+                }
+                UIEditTextNode hit = findEditTextAt(evt.getX(), evt.getY());
+                focusEditText(hit);
+                if (hit != null) {
+                    Vector3f world = hit.getWorldTranslation();
+                    hit.setCaretFromLocal(evt.getX() - world.x, evt.getY() - world.y, shiftDown);
+                    evt.setConsumed();
+                }
+            }
+
+            @Override
+            public void onKeyEvent(KeyInputEvent evt) {
+                int keyCode = evt.getKeyCode();
+                if (keyCode == KeyInput.KEY_LSHIFT || keyCode == KeyInput.KEY_RSHIFT) {
+                    shiftDown = evt.isPressed();
+                } else if (keyCode == KeyInput.KEY_LCONTROL || keyCode == KeyInput.KEY_RCONTROL) {
+                    ctrlDown = evt.isPressed();
+                }
+
+                if (!evt.isPressed() || focusedEditText == null) {
+                    return;
+                }
+                if (keyCode == KeyInput.KEY_ESCAPE) {
+                    focusEditText(null);
+                    evt.setConsumed();
+                    return;
+                }
+                if (focusedEditText.handleKey(keyCode, evt.getKeyChar(), shiftDown, ctrlDown)) {
+                    evt.setConsumed();
+                }
+            }
+        });
+        rawInputListenerInstalled = true;
+    }
+
+    private void focusEditText(UIEditTextNode editText) {
+        if (focusedEditText == editText) {
+            return;
+        }
+        if (focusedEditText != null) {
+            focusedEditText.setFocused(false);
+        }
+        focusedEditText = editText;
+        if (focusedEditText != null) {
+            focusedEditText.setFocused(true);
+        }
+    }
+
+    private UIEditTextNode findEditTextAt(float x, float y) {
+        UIEditTextNode hit = null;
+        for (LoadedUI loaded : loadedUIs.values()) {
+            for (UILayerNode layer : loaded.layerNodes.values()) {
+                if (!layer.isScreenSpace()) {
+                    continue;
+                }
+                for (UIWidgetNode widget : layer.getWidgetNodes()) {
+                    if (!(widget instanceof UIEditTextNode)
+                            || widget.getCullHint() == com.jme3.scene.Spatial.CullHint.Always) {
+                        continue;
+                    }
+                    Vector3f world = widget.getWorldTranslation();
+                    if (x >= world.x && x <= world.x + widget.getRuntimeWidth()
+                            && y >= world.y && y <= world.y + widget.getRuntimeHeight()) {
+                        hit = (UIEditTextNode) widget;
+                    }
+                }
+            }
+        }
+        return hit;
     }
 }

@@ -168,6 +168,7 @@ public class InputMapping {
         keyMapping.put("left",KEY_LEFT);
         keyMapping.put("right",KEY_RIGHT);
         keyMapping.put("space",KEY_SPACE);
+        keyMapping.put("enter",KEY_RETURN);
 
         keyMapping.put("0",KEY_0);
         keyMapping.put("1",KEY_1);
