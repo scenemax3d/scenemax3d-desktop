@@ -1230,6 +1230,8 @@ public class MultiplayerNetworkComponent {
             app.killStairs(entity.runtimeName);
         } else if (entity.varType == VariableDef.VAR_TYPE_ARCH) {
             app.killArch(entity.runtimeName);
+        } else if (entity.varType == VariableDef.VAR_TYPE_LABEL) {
+            app.killLabel(entity.runtimeName);
         } else {
             app.killModel(entity.runtimeName);
         }
@@ -1475,6 +1477,8 @@ public class MultiplayerNetworkComponent {
                 return VariableDef.VAR_TYPE_STAIRS;
             case "arch":
                 return VariableDef.VAR_TYPE_ARCH;
+            case "label":
+                return VariableDef.VAR_TYPE_LABEL;
             default:
                 return VariableDef.VAR_TYPE_3D;
         }

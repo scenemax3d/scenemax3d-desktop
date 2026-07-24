@@ -41,6 +41,8 @@ public class ShowHideController extends SceneMaxBaseController {
             app.showHideBox(targetVar, cmd);
         } else if(targetVarDef.varType== VariableDef.VAR_TYPE_EFFEKSEER) {
             app.showHideEffekseer(targetVar, cmd);
+        } else if(targetVarDef.varType== VariableDef.VAR_TYPE_LABEL) {
+            app.showHideLabel(targetVar, cmd);
         }
         return true;
 

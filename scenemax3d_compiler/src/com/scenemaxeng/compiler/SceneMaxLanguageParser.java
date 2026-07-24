@@ -1993,6 +1993,56 @@ public class SceneMaxLanguageParser implements IParser {
 
             }
 
+            public StatementDef visitDefLabel(SceneMaxParser.DefLabelContext ctx) {
+
+                String varName = ctx.define_label().res_var_decl().getText();
+                LabelVariableDef varDef = new LabelVariableDef();
+                varDef.isShared = ctx.define_label().Shared() != null;
+                varDef.varName = varName;
+                varDef.varLineNum = ctx.define_label().res_var_decl().getStart().getLine();
+
+                if(ctx.define_label().label_having_expr()!=null) {
+                    for(SceneMaxParser.Label_attrContext attr:ctx.define_label().label_having_expr().label_attributes().label_attr()) {
+                        if(attr.print_pos_attr()!=null) {
+                            if(attr.print_pos_attr().pos_axes()!=null) {
+                                if(attr.print_pos_attr().pos_axes().exception!=null) {
+                                    return null;
+                                }
+                                varDef.xExpr = attr.print_pos_attr().pos_axes().print_pos_x().logical_expression();
+                                varDef.yExpr = attr.print_pos_attr().pos_axes().print_pos_y().logical_expression();
+                                varDef.zExpr = attr.print_pos_attr().pos_axes().print_pos_z().logical_expression();
+                            } else {
+                                varDef.entityPos = new EntityPos();
+                                setEntityPos(varDef.entityPos, attr.print_pos_attr().pos_entity());
+                            }
+                        } else if(attr.init_scale_attr()!=null) {
+                            setInitialScale(varDef, attr.init_scale_attr());
+                        } else if(attr.init_hidden_attr()!=null) {
+                            varDef.visible = false;
+                        } else if(attr.init_multiplayer_attr()!=null) {
+                            varDef.isMultiplayer = true;
+                        } else if(attr.label_text_attr()!=null) {
+                            varDef.textExpr = attr.label_text_attr().logical_expression();
+                        } else if(attr.label_font_attr()!=null) {
+                            varDef.font = stripQutes(attr.label_font_attr().QUOTED_STRING().getText());
+                            if(varDef.font.length()>0 && !fontsUsed.contains(varDef.font)) {
+                                fontsUsed.add(varDef.font);
+                            }
+                        } else if(attr.label_style_attr()!=null) {
+                            varDef.style = stripQutes(attr.label_style_attr().QUOTED_STRING().getText());
+                        } else if(attr.label_size_attr()!=null) {
+                            varDef.widthExpr = attr.label_size_attr().label_width().logical_expression();
+                            varDef.heightExpr = attr.label_size_attr().label_height().logical_expression();
+                        } else if(attr.label_transparency_attr()!=null) {
+                            varDef.transparencyExpr = attr.label_transparency_attr().logical_expression();
+                        }
+                    }
+                }
+
+                return varDef;
+
+            }
+
             public StatementDef visitSceneActions(SceneMaxParser.SceneActionsContext ctx) {
                 if(ctx.scene_actions().exception!=null) {
                     return null;
@@ -3933,6 +3983,15 @@ public class SceneMaxLanguageParser implements IParser {
 
             }
 
+            public ActionStatementBase visitLabelTextSetStatement(SceneMaxParser.LabelTextSetStatementContext ctx) {
+                LabelTextCommand cmd = new LabelTextCommand();
+                cmd.targetVar = ctx.label_text_set().var_decl().getText();
+                cmd.textExpr = ctx.label_text_set().logical_expression();
+
+                return cmd;
+
+            }
+
             public ActionStatementBase visitVelocityStatement(SceneMaxParser.VelocityStatementContext ctx) {
                 ChangeVelocityCommand cmd = new ChangeVelocityCommand();
                 cmd.targetVar=ctx.velocity().var_decl().getText();
@@ -4889,13 +4948,13 @@ public class SceneMaxLanguageParser implements IParser {
         return targetRef.var_decl() == null ? "" : targetRef.var_decl().getText();
     }
 
-    private String stripQutes(String str) {
-        if (str.length() > 2) {
-            return str.substring(1, str.length() - 1);
-        } else {
-            return "";
-        }
-    }
+            private String stripQutes(String str) {
+                if (str.length() > 2) {
+                    return str.substring(1, str.length() - 1);
+                } else {
+                    return "";
+                }
+            }
 
     private void applyAnimationFrameRange(ProgramDef program, ActionCommandAnimate cmd, SceneMaxParser.Anim_frame_rangeContext range) {
         if (cmd == null || range == null) {

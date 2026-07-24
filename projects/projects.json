@@ -223,7 +223,7 @@
             "path": "projects/multi-player-test",
             "multiplayerPassword": "",
             "multiplayerServerIp": "127.0.0.1",
-            "selectedNode": "main",
+            "selectedNode": "horse1.code",
             "projectGuid": "845fa4dd-4351-4924-89a9-b7700a90fec6",
             "name": "multi-player-test",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\multi-player-test\\scripts\\multi-player-test",

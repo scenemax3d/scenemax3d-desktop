@@ -80,6 +80,7 @@ ball => sphere: multiplayer, pos (1,2,3), radius 0.5
 crate => box: multiplayer, size (2,2,2), pos (2,0,0)
 stairs_1 => stairs: multiplayer, size (2,0.25,0.4), steps 6, pos (4,0,0)
 hand_target => collider sphere: multiplayer, pos (0,1,0), radius 0.2
+name_tag => label: multiplayer, text "Hero", style "holo_glass", size (50,10)
 ```
 
 You can also set the same flag from the designer; the saved design emits entities with
@@ -92,6 +93,7 @@ Current runtime registration covers:
   `wedge`, `cone`, `stairs`, and `arch`.
 - Collider primitives that use the same primitive declarations, such as `collider sphere`,
   `collider box`, or `collider hollow cylinder`.
+- Runtime labels created with `label`.
 
 The parser accepts `multiplayer` as a general model/entity attribute, but a networked entity
 must also be registered by the runtime. If a type is parsed as multiplayer but no registration
@@ -124,8 +126,10 @@ SceneMax currently synchronizes the following multiplayer entity behavior:
 - Model animation commands, including animation name, speed, and frame ranges.
 - Attach commands between multiplayer entities.
 - IK apply/remove, layer target, weight, blend, play, and stop commands.
+- Label text changes with `label_name.text = ...`.
 - Persistent structural commands, such as attach and IK, so late joiners receive the current
   structure in the snapshot.
+- Persistent label text state, so late joiners receive the latest synchronized label text.
 
 Timed movement, rotation, and animation commands are sent both as normal commands and as
 active actions. Active actions let a late-joining client resume a command at the correct

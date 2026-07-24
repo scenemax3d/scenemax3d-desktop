@@ -189,6 +189,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private static HashMap<String,Node> cones = new HashMap<>();
     private static HashMap<String,Node> stairsMap = new HashMap<>();
     private static HashMap<String,Node> arches = new HashMap<>();
+    private static HashMap<String,LabelInst> labels = new HashMap<>();
     private static HashMap<String, LightInst> lights = new HashMap<>();
     private FilterPostProcessor lightingPostProcessor;
     private final List<Light> fallbackLights = new ArrayList<>();
@@ -255,6 +256,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private HashMap<String, EntityInstBase> coneInstances = new HashMap<>();
     private HashMap<String, EntityInstBase> stairsInstances = new HashMap<>();
     private HashMap<String, EntityInstBase> archInstances = new HashMap<>();
+    private HashMap<String, EntityInstBase> labelInstances = new HashMap<>();
     private HashMap<String, EntityInstBase> effekseerInstances = new HashMap<>();
     private String projectName = null;
     private String projectGuid = "";
@@ -1010,6 +1012,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
         }
 
+        for (Object key : labels.keySet().toArray()) {
+            LabelInst inst = labels.get(key);
+            if (inst != null && !isSharedEntity(inst)) {
+                this.killLabel((String) key);
+            }
+        }
+
         for (Object key : lights.keySet().toArray()) {
             LightInst inst = lights.get(key);
             if (inst != null && !isSharedEntity(inst)) {
@@ -1058,6 +1067,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         coneInstances = new HashMap<>();
         stairsInstances = new HashMap<>();
         archInstances = new HashMap<>();
+        labelInstances = new HashMap<>();
         effekseerInstances = new HashMap<>();
         if (lights.isEmpty()) {
             installFallbackLighting();
@@ -1137,6 +1147,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             this.killArch((String) key);
         }
 
+        for (Object key : labels.keySet().toArray()) {
+            this.killLabel((String) key);
+        }
+
         for (Object key : lights.keySet().toArray()) {
             this.killLight((String) key);
         }
@@ -1174,6 +1188,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         coneInstances = new HashMap<>();
         stairsInstances = new HashMap<>();
         archInstances = new HashMap<>();
+        labelInstances = new HashMap<>();
         effekseerInstances = new HashMap<>();
         if (lights.isEmpty()) {
             installFallbackLighting();
@@ -1787,6 +1802,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             SetUserDataController ctl = new SetUserDataController(this,prg,scope,(SetUserDataCommand)action);
             ctl.async = action.isAsync;
             scope.add(ctl);
+        } else if (action instanceof LabelTextCommand) {
+            LabelTextController ctl = new LabelTextController(this, prg, scope, (LabelTextCommand) action);
+            ctl.async = action.isAsync;
+            scope.add(ctl);
         } else if (action instanceof AddEntityToGroupCommand) {
             AddEntityToGroupController ctl = new AddEntityToGroupController(this,prg,scope,(AddEntityToGroupCommand)action);
             ctl.async = action.isAsync;
@@ -2222,6 +2241,18 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return;
         }
 
+        if (var.varType == VariableDef.VAR_TYPE_LABEL) {
+            LabelInst inst = createLabelInst((LabelVariableDef) var, scope);
+            if (inst != null) {
+                String key = var.varName + "_" + ++entityInstCounter;
+                inst.entityKey = key;
+                labelInstances.put(key, inst);
+                scope.entities.put(var.varName, inst);
+                loadLabel(inst);
+            }
+            return;
+        }
+
         if (var.varType == VariableDef.VAR_TYPE_LIGHT) {
             LightInst inst = createLightInst(prg, (LightVariableDef) var, scope);
             if (inst != null) {
@@ -2396,6 +2427,310 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             loadArch(inst);
         }
 
+    }
+
+    private LabelInst createLabelInst(LabelVariableDef varDef, SceneMaxScope scope) {
+        return new LabelInst(varDef, scope);
+    }
+
+    public void loadLabel(LabelInst inst) {
+        if (inst == null || inst.labelDef == null || inst.scope == null) {
+            return;
+        }
+
+        String labelName = inst.getVarRunTimeName();
+        inst.node.setName(labelName);
+        inst.node.setUserData("key", labelName);
+
+        BitmapFont font = guiFont;
+        String requestedFont = inst.labelDef.font;
+        if (requestedFont != null && !requestedFont.trim().isEmpty()) {
+            ResourceFont resourceFont = resolveFontResource(requestedFont.trim());
+            if (resourceFont != null) {
+                try {
+                    font = assetManager.loadFont(resourceFont.path);
+                } catch (Exception e) {
+                    logger.warning("Failed to load label font '" + requestedFont + "' from " + resourceFont.path);
+                }
+            } else {
+                logger.warning("Requested label font not found in assets mapping: " + requestedFont);
+            }
+        }
+
+        LabelStyle style = labelStyle(inst.labelDef.style);
+        float transparency = resolveRuntimeFloat(inst.transparencyExpr, 0f);
+        float alpha = 1f - clamp(transparency, 0f, 100f) / 100f;
+        ColorRGBA panelColor = withAlpha(style.panelColor, style.panelColor.a * alpha);
+        ColorRGBA textColor = withAlpha(style.textColor, style.textColor.a * alpha);
+        ColorRGBA accentColor = withAlpha(style.accentColor, style.accentColor.a * alpha);
+
+        BitmapText text = new BitmapText(font, false);
+        text.setText(resolveLabelText(inst));
+        text.setColor(textColor);
+        text.setQueueBucket(RenderQueue.Bucket.Transparent);
+        inst.text = text;
+
+        Geometry panel = new Geometry(labelName + "_panel", new com.jme3.scene.shape.Quad(1f, 1f));
+        panel.setMaterial(createLabelMaterial(panelColor));
+        panel.setQueueBucket(RenderQueue.Bucket.Transparent);
+
+        Geometry accent = new Geometry(labelName + "_accent", new com.jme3.scene.shape.Quad(1f, 0.035f));
+        accent.setMaterial(createLabelMaterial(accentColor));
+        accent.setQueueBucket(RenderQueue.Bucket.Transparent);
+
+        inst.node.attachChild(panel);
+        inst.node.attachChild(accent);
+        inst.node.attachChild(text);
+        updateLabelLayout(inst);
+        inst.node.addControl(new BillboardControl());
+
+        if (inst.labelDef.xExpr != null) {
+            inst.node.setLocalTranslation(
+                    resolveRuntimeFloat(inst.xExpr, 0f),
+                    resolveRuntimeFloat(inst.yExpr, 0f),
+                    resolveRuntimeFloat(inst.zExpr, 0f));
+        } else if (inst.labelDef.entityPos != null) {
+            Spatial posSpatial = resolveEntityPosSpatial(null, inst.scope, inst.labelDef.entityPos);
+            if (posSpatial != null) {
+                inst.node.setLocalTranslation(posSpatial.getWorldTranslation());
+            }
+        }
+
+        if (inst.scaleExpr != null) {
+            inst.node.setLocalScale(resolveRuntimeFloat(inst.scaleExpr, 1f));
+        } else if (inst.scaleXExpr != null) {
+            inst.node.setLocalScale(
+                    resolveRuntimeFloat(inst.scaleXExpr, 1f),
+                    resolveRuntimeFloat(inst.scaleYExpr, 1f),
+                    resolveRuntimeFloat(inst.scaleZExpr, 1f));
+        }
+
+        if (!inst.labelDef.visible) {
+            inst.node.setCullHint(Spatial.CullHint.Always);
+        }
+
+        rootNode.attachChild(inst.node);
+        labels.put(labelName, inst);
+        geoName2EntityInst.put(labelName, inst);
+        registerMultiplayerEntity(inst, labelName, "label", labelSpawnCommand(inst));
+    }
+
+    private String resolveLabelText(LabelInst inst) {
+        if (inst != null && inst.labelDef != null && inst.labelDef.textExpr != null) {
+            Object value = new ActionLogicalExpressionVm(inst.labelDef.textExpr, inst.scope).evaluate();
+            return value == null ? "" : value.toString();
+        }
+        return inst == null || inst.labelDef == null ? "" : inst.labelDef.varName;
+    }
+
+    private String labelSpawnCommand(LabelInst inst) {
+        if (inst == null || inst.labelDef == null || inst.node == null) {
+            return "";
+        }
+
+        StringBuilder command = new StringBuilder();
+        command.append("{network_entity} => label: ");
+        List<String> attrs = new ArrayList<>();
+        attrs.add("text \"" + escapeSceneMaxString(inst.text == null ? resolveLabelText(inst) : inst.text.getText()) + "\"");
+
+        if (inst.labelDef.font != null && !inst.labelDef.font.trim().isEmpty()) {
+            attrs.add("font \"" + escapeSceneMaxString(inst.labelDef.font.trim()) + "\"");
+        }
+        if (inst.labelDef.style != null && !inst.labelDef.style.trim().isEmpty()) {
+            attrs.add("style \"" + escapeSceneMaxString(inst.labelDef.style.trim()) + "\"");
+        }
+        if (inst.widthExpr != null && inst.heightExpr != null) {
+            attrs.add("size (" + networkNumber(resolveRuntimeFloat(inst.widthExpr, 1.15f))
+                    + "," + networkNumber(resolveRuntimeFloat(inst.heightExpr, 0.63f)) + ")");
+        }
+        if (inst.transparencyExpr != null) {
+            attrs.add("transparency " + networkNumber(resolveRuntimeFloat(inst.transparencyExpr, 0f)));
+        }
+
+        Vector3f position = inst.node.getLocalTranslation();
+        attrs.add("pos (" + networkNumber(position.x) + ","
+                + networkNumber(position.y) + ","
+                + networkNumber(position.z) + ")");
+
+        String scaleAttr = labelInitialScaleAttribute(inst);
+        if (scaleAttr != null) {
+            attrs.add(scaleAttr);
+        }
+
+        if (!inst.labelDef.visible) {
+            attrs.add("hidden");
+        }
+
+        command.append(String.join(", ", attrs));
+        return command.toString();
+    }
+
+    private String labelInitialScaleAttribute(LabelInst inst) {
+        if (inst == null || (inst.scaleExpr == null && inst.scaleXExpr == null)) {
+            return null;
+        }
+        if (inst.scaleExpr != null) {
+            return "scale " + networkNumber(resolveRuntimeFloat(inst.scaleExpr, 1f));
+        }
+        return "scale (" + networkNumber(resolveRuntimeFloat(inst.scaleXExpr, 1f))
+                + "," + networkNumber(resolveRuntimeFloat(inst.scaleYExpr, 1f))
+                + "," + networkNumber(resolveRuntimeFloat(inst.scaleZExpr, 1f)) + ")";
+    }
+
+    public void setLabelText(String targetVar, String textValue) {
+        LabelInst inst = labels.get(targetVar);
+        if (inst == null || inst.text == null) {
+            return;
+        }
+
+        inst.text.setText(textValue == null ? "" : textValue);
+        updateLabelLayout(inst);
+    }
+
+    private void updateLabelLayout(LabelInst inst) {
+        if (inst == null || inst.text == null || inst.node == null) {
+            return;
+        }
+
+        String labelName = inst.node.getName();
+        float panelWidth;
+        float panelHeight;
+        float horizontalPadding;
+        boolean fixedSize = inst.widthExpr != null && inst.heightExpr != null;
+
+        if (fixedSize) {
+            panelWidth = Math.max(0.1f, resolveRuntimeFloat(inst.widthExpr, 1.15f));
+            panelHeight = Math.max(0.1f, resolveRuntimeFloat(inst.heightExpr, 0.63f));
+            horizontalPadding = Math.min(panelWidth * 0.18f, Math.max(0.16f, panelHeight * 0.32f));
+            fitLabelTextToPanel(inst.text, panelWidth, panelHeight, horizontalPadding);
+        } else {
+            inst.text.setSize(0.35f);
+            float textWidth = Math.max(0.65f, inst.text.getLineWidth());
+            float textHeight = Math.max(0.35f, inst.text.getLineHeight());
+            panelWidth = textWidth + 0.5f;
+            panelHeight = textHeight + 0.28f;
+            horizontalPadding = 0.25f;
+        }
+
+        float textWidth = Math.max(0.01f, inst.text.getLineWidth());
+        float textHeight = Math.max(0.01f, inst.text.getLineHeight());
+        float accentHeight = Math.max(0.025f, panelHeight * 0.055f);
+
+        Spatial panelSpatial = inst.node.getChild(labelName + "_panel");
+        if (panelSpatial instanceof Geometry) {
+            Geometry panel = (Geometry) panelSpatial;
+            panel.setMesh(new com.jme3.scene.shape.Quad(panelWidth, panelHeight));
+            panel.setLocalTranslation(-panelWidth / 2f, -panelHeight / 2f, -0.02f);
+        }
+
+        Spatial accentSpatial = inst.node.getChild(labelName + "_accent");
+        if (accentSpatial instanceof Geometry) {
+            Geometry accent = (Geometry) accentSpatial;
+            accent.setMesh(new com.jme3.scene.shape.Quad(panelWidth, accentHeight));
+            accent.setLocalTranslation(-panelWidth / 2f, -panelHeight / 2f, -0.01f);
+        }
+
+        inst.text.setLocalTranslation(-textWidth / 2f, textHeight / 2.7f, 0f);
+    }
+
+    private void fitLabelTextToPanel(BitmapText text, float panelWidth, float panelHeight, float horizontalPadding) {
+        if (text == null) {
+            return;
+        }
+
+        float textSize = Math.max(0.05f, panelHeight * 0.42f);
+        text.setSize(textSize);
+
+        float maxTextWidth = Math.max(0.05f, panelWidth - horizontalPadding * 2f);
+        float lineWidth = text.getLineWidth();
+        if (lineWidth > maxTextWidth && lineWidth > 0f) {
+            text.setSize(Math.max(0.05f, textSize * (maxTextWidth / lineWidth)));
+        }
+    }
+
+    private Material createLabelMaterial(ColorRGBA color) {
+        Material material = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+        material.setColor("Color", color);
+        material.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
+        material.getAdditionalRenderState().setDepthWrite(false);
+        return material;
+    }
+
+    private float resolveRuntimeFloat(ActionLogicalExpressionVm expr, float fallback) {
+        if (expr == null) {
+            return fallback;
+        }
+        Object value = expr.evaluate();
+        if (value instanceof Number) {
+            return ((Number) value).floatValue();
+        }
+        if (value != null) {
+            try {
+                return Float.parseFloat(value.toString());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return fallback;
+    }
+
+    private static float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static ColorRGBA withAlpha(ColorRGBA color, float alpha) {
+        ColorRGBA result = color.clone();
+        result.a = clamp(alpha, 0f, 1f);
+        return result;
+    }
+
+    private LabelStyle labelStyle(String rawStyle) {
+        String style = rawStyle == null ? "" : rawStyle.trim().toLowerCase(Locale.ROOT);
+        if (style.equals("holo_glass") || style.equals("style1") || style.equals("futuristic") || style.equals("glass")) {
+            return new LabelStyle(
+                    new ColorRGBA(0.04f, 0.12f, 0.16f, 0.52f),
+                    new ColorRGBA(0.82f, 0.98f, 1.0f, 0.96f),
+                    new ColorRGBA(0.2f, 0.9f, 1.0f, 0.8f));
+        }
+        if (style.equals("neon_cyan") || style.equals("neon") || style.equals("style2")) {
+            return new LabelStyle(
+                    new ColorRGBA(0.02f, 0.05f, 0.08f, 0.48f),
+                    new ColorRGBA(0.78f, 1.0f, 1.0f, 0.97f),
+                    new ColorRGBA(0.0f, 0.95f, 1.0f, 0.9f));
+        }
+        if (style.equals("tactical_dark") || style.equals("minimal") || style.equals("style3")) {
+            return new LabelStyle(
+                    new ColorRGBA(0.02f, 0.03f, 0.04f, 0.6f),
+                    new ColorRGBA(0.92f, 0.98f, 1.0f, 0.96f),
+                    new ColorRGBA(0.54f, 0.72f, 0.92f, 0.75f));
+        }
+        if (style.equals("warning_amber")) {
+            return new LabelStyle(
+                    new ColorRGBA(0.16f, 0.09f, 0.02f, 0.58f),
+                    new ColorRGBA(1.0f, 0.93f, 0.72f, 0.97f),
+                    new ColorRGBA(1.0f, 0.62f, 0.18f, 0.86f));
+        }
+        if (style.equals("minimal_light")) {
+            return new LabelStyle(
+                    new ColorRGBA(0.88f, 0.96f, 1.0f, 0.5f),
+                    new ColorRGBA(0.04f, 0.08f, 0.11f, 0.95f),
+                    new ColorRGBA(0.22f, 0.62f, 0.8f, 0.7f));
+        }
+        return new LabelStyle(
+                new ColorRGBA(0.03f, 0.1f, 0.13f, 0.48f),
+                new ColorRGBA(0.86f, 0.98f, 1.0f, 0.95f),
+                new ColorRGBA(0.45f, 0.95f, 1.0f, 0.72f));
+    }
+
+    private static class LabelStyle {
+        final ColorRGBA panelColor;
+        final ColorRGBA textColor;
+        final ColorRGBA accentColor;
+
+        LabelStyle(ColorRGBA panelColor, ColorRGBA textColor, ColorRGBA accentColor) {
+            this.panelColor = panelColor;
+            this.textColor = textColor;
+            this.accentColor = accentColor;
+        }
     }
 
     private LightInst createLightInst(ProgramDef prg, LightVariableDef varDef, SceneMaxScope scope) {
@@ -4574,29 +4909,29 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         registerMultiplayerEntity(modelInst, runtimeName, archetype, "");
     }
 
-    private void registerMultiplayerEntity(ModelInst modelInst, String runtimeName, String archetype, String spawnCommand) {
-        if (modelInst == null || modelInst.varDef == null || !modelInst.varDef.isMultiplayer) {
-            logMultiplayerRegistrationSkip(modelInst, runtimeName, archetype);
+    private void registerMultiplayerEntity(EntityInstBase inst, String runtimeName, String archetype, String spawnCommand) {
+        if (inst == null || inst.varDef == null || !inst.varDef.isMultiplayer) {
+            logMultiplayerRegistrationSkip(inst, runtimeName, archetype);
             return;
         }
         if (multiplayerNetwork == null) {
             multiplayerNetwork = new MultiplayerNetworkComponent(this);
             multiplayerNetwork.startFromSystemProperties();
         }
-        multiplayerNetwork.registerEntity(runtimeName, modelInst.varDef, archetype, spawnCommand);
+        multiplayerNetwork.registerEntity(runtimeName, inst.varDef, archetype, spawnCommand);
     }
 
-    private void logMultiplayerRegistrationSkip(ModelInst modelInst, String runtimeName, String archetype) {
-        if (modelInst == null || modelInst.varDef == null) {
+    private void logMultiplayerRegistrationSkip(EntityInstBase inst, String runtimeName, String archetype) {
+        if (inst == null || inst.varDef == null) {
             writeMultiplayerClientLog("skip register runtime=" + runtimeName
                     + " archetype=" + archetype
                     + " reason=no-var-def");
             return;
         }
         writeMultiplayerClientLog("skip register runtime=" + runtimeName
-                + " type=" + modelInst.varDef.varType
+                + " type=" + inst.varDef.varType
                 + " archetype=" + archetype
-                + " isMultiplayer=" + modelInst.varDef.isMultiplayer);
+                + " isMultiplayer=" + inst.varDef.isMultiplayer);
     }
 
     private void writeMultiplayerClientLog(String message) {
@@ -6758,6 +7093,26 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         showHideGeoNode(g,targetVar,show.show);
     }
 
+    public void showHideLabel(String targetVar, ActionCommandShowHide show) {
+
+        LabelInst inst = labels.get(targetVar);
+        if(inst==null || inst.node==null) {
+            return;
+        }
+
+        if(show.axisX || show.axisY || show.axisZ) {
+            attachCoordinateAxes(inst.node.getWorldTranslation(),show,rootNode);
+            return;
+        }
+
+        if(show.outline) {
+            showHideOutline(inst.node, show.show);
+            return;
+        }
+
+        inst.node.setCullHint(show.show ? Spatial.CullHint.Inherit : Spatial.CullHint.Always);
+    }
+
 
     public void posModel(String targetVar, Double valX, Double valY, Double valZ, RunTimeVarDef varForPos, Vector3f calculatedPosition) {
 
@@ -6870,6 +7225,25 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             g.setLocalTranslation(sp.getLocalTranslation());
         } else {
             g.setLocalTranslation(valX.floatValue(), valY.floatValue(), valZ.floatValue());
+        }
+
+    }
+
+    public void posLabel(String targetVar, Double valX, Double valY, Double valZ, RunTimeVarDef varForPos, Vector3f calculatedPosition) {
+        LabelInst inst = labels.get(targetVar);
+        if(inst==null || inst.node==null) {
+            return;
+        }
+
+        if(calculatedPosition!=null) {
+            inst.node.setLocalTranslation(calculatedPosition);
+        } else if(varForPos!=null) {
+            Spatial sp = getEntitySpatial(varForPos.varName,varForPos.varDef.varType);
+            if (sp != null) {
+                inst.node.setLocalTranslation(sp.getLocalTranslation());
+            }
+        } else {
+            inst.node.setLocalTranslation(valX.floatValue(), valY.floatValue(), valZ.floatValue());
         }
 
     }
@@ -7553,6 +7927,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             return effekseerEffects.get(varName).node;
         }
 
+        if(labels.containsKey(varName)) {
+            return labels.get(varName).node;
+        }
+
         LightInst light = resolveLightInst(varName);
         if(light != null) {
             return light.node;
@@ -7668,6 +8046,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             m=arches.get(targetVar);
         } else if(varType==VariableDef.VAR_TYPE_EFFEKSEER) {
             EffekseerInst inst = effekseerEffects.get(targetVar);
+            m = inst != null ? inst.node : null;
+        } else if(varType==VariableDef.VAR_TYPE_LABEL) {
+            LabelInst inst = labels.get(targetVar);
             m = inst != null ? inst.node : null;
         } else if(varType==VariableDef.VAR_TYPE_LIGHT) {
             LightInst inst = resolveLightInst(targetVar);
@@ -9107,6 +9488,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         addEntityInstances(instances, coneInstances.values());
         addEntityInstances(instances, stairsInstances.values());
         addEntityInstances(instances, archInstances.values());
+        addEntityInstances(instances, labelInstances.values());
         addEntityInstances(instances, effekseerInstances.values());
         addEntityInstances(instances, lights.values());
         addEntityInstances(instances, geoName2EntityInst.values());
@@ -9920,6 +10302,15 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         inst.node.setLocalScale(scale.floatValue());
     }
 
+    public void changeLabelScale(String targetVar, Double scale) {
+        LabelInst inst = labels.get(targetVar);
+        if (inst == null || inst.node == null) {
+            return;
+        }
+
+        inst.node.setLocalScale(scale.floatValue());
+    }
+
 
     public void characterJump(String targetVar, Double speed) {
 
@@ -10126,6 +10517,23 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             g.setLocalRotation(rot);
             g.setLocalTranslation(pos);
 
+        }
+    }
+
+    public void detachLabelFromParent(String targetVar) {
+        LabelInst inst = labels.get(targetVar);
+        if(inst==null || inst.node==null) {
+            return;
+        }
+
+        Node g = inst.node;
+        if(g.getParent()!=null && g.getParent()!=rootNode) {
+            Vector3f pos = rootNode.worldToLocal(g.getWorldTranslation(),null);
+            Quaternion rot = g.getWorldRotation();
+
+            rootNode.attachChild(g);
+            g.setLocalRotation(rot);
+            g.setLocalTranslation(pos);
         }
     }
 
@@ -10893,6 +11301,19 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             removeCollisionControlsFromPhysics(varName);
             collisionControlsCache.remove(varName);
             clearSpatialGeometries(varName, g);
+        }
+    }
+
+    public void killLabel(String varName) {
+        LabelInst inst = labels.get(varName);
+        if(inst!=null && inst.node!=null) {
+            removeOutlineFilter(inst.node);
+            inst.node.removeFromParent();
+            labels.remove(varName);
+            if (inst.entityKey != null) {
+                labelInstances.remove(inst.entityKey);
+            }
+            geoName2EntityInst.remove(varName);
         }
     }
 

@@ -26,6 +26,7 @@ public class ProgramDef {
     public static final int VAR_TYPE_LIGHT = 100; // aligned with VariableDef.VAR_TYPE_LIGHT
     public static final int VAR_TYPE_VIDEO = 130; // aligned with VariableDef.VAR_TYPE_VIDEO
     public static final int VAR_TYPE_OBJECT_POOL = 140; // aligned with VariableDef.VAR_TYPE_OBJECT_POOL
+    public static final int VAR_TYPE_LABEL = 150; // aligned with VariableDef.VAR_TYPE_LABEL
 
 //
     public int scopeId = ++scopeSeq;
