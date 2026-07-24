@@ -166,6 +166,10 @@ public class UILayerNode extends Node {
         return widgetNodes.get(name);
     }
 
+    public java.util.Collection<UIWidgetNode> getWidgetNodes() {
+        return java.util.Collections.unmodifiableCollection(widgetNodesByPath.values());
+    }
+
     public UILayerDef getLayerDef() {
         return layerDef;
     }

@@ -31,7 +31,7 @@ public class UiGetSchemaTool extends AbstractSceneMaxTool {
         JSONObject data = new JSONObject();
 
         data.put("widgetTypes", new JSONArray()
-                .put("PANEL").put("BUTTON").put("TEXT_VIEW").put("LIST_VIEW").put("IMAGE").put("GUIDELINE"));
+                .put("PANEL").put("BUTTON").put("TEXT_VIEW").put("EDIT_TEXT").put("LIST_VIEW").put("IMAGE").put("GUIDELINE"));
 
         data.put("enums", new JSONObject()
                 .put("sizeMode", new JSONArray().put("FIXED").put("WRAP_CONTENT").put("MATCH_CONSTRAINT"))
@@ -47,6 +47,7 @@ public class UiGetSchemaTool extends AbstractSceneMaxTool {
                 .put("PANEL", panelPropertiesSchema())
                 .put("BUTTON", buttonPropertiesSchema())
                 .put("TEXT_VIEW", textViewPropertiesSchema())
+                .put("EDIT_TEXT", editTextPropertiesSchema())
                 .put("LIST_VIEW", listViewPropertiesSchema())
                 .put("IMAGE", imagePropertiesSchema())
                 .put("GUIDELINE", guidelinePropertiesSchema()));
@@ -154,6 +155,17 @@ public class UiGetSchemaTool extends AbstractSceneMaxTool {
                 .put("imageScaleMode", "one of enums.imageScaleMode (default 'fit')")
                 .put("spriteName", "string — name from ui.list_sprites (takes priority over imagePath)")
                 .put("spriteFrame", "integer (default 0)");
+    }
+
+    private JSONObject editTextPropertiesSchema() {
+        return textViewPropertiesSchema()
+                .put("text", "string (current/default value; user edits update this at runtime)")
+                .put("editTextMultiline", "boolean (default false; Enter inserts a newline when true)")
+                .put("editTextPlaceholder", "string shown when empty and unfocused")
+                .put("editTextBackgroundColor", "RGBA hex (default #20242AFF)")
+                .put("editTextFocusedColor", "RGBA hex (default #2A303AFF)")
+                .put("editTextCursorColor", "RGBA hex (default #FFFFFFFF)")
+                .put("editTextSelectionColor", "RGBA hex (default #4A90E280)");
     }
 
     private JSONObject guidelinePropertiesSchema() {

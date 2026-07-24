@@ -23,7 +23,7 @@ public class UiAddWidgetTool extends AbstractSceneMaxTool {
 
     @Override
     public String getDescription() {
-        return "Adds a widget (PANEL/BUTTON/TEXT_VIEW/LIST_VIEW/IMAGE/GUIDELINE) to a .smui document. "
+        return "Adds a widget (PANEL/BUTTON/TEXT_VIEW/EDIT_TEXT/LIST_VIEW/IMAGE/GUIDELINE) to a .smui document. "
                 + "Set 'parent' to a layer name (top-level) or a dot-path to an existing PANEL "
                 + "(e.g. 'hud.statusPanel') to nest. Name must be unique across the document; "
                 + "if omitted, a unique one is generated from the type. Pass initial properties "
@@ -42,7 +42,7 @@ public class UiAddWidgetTool extends AbstractSceneMaxTool {
                         .put("parent", new JSONObject().put("type", "string")
                                 .put("description", "Layer name, or dot-path to a PANEL widget."))
                         .put("type", new JSONObject().put("type", "string")
-                                .put("description", "PANEL / BUTTON / TEXT_VIEW / LIST_VIEW / IMAGE / GUIDELINE"))
+                                .put("description", "PANEL / BUTTON / TEXT_VIEW / EDIT_TEXT / LIST_VIEW / IMAGE / GUIDELINE"))
                         .put("name", new JSONObject().put("type", "string")
                                 .put("description", "Unique across the document. Auto-generated if omitted."))
                         .put("properties", new JSONObject().put("type", "object")
@@ -66,7 +66,7 @@ public class UiAddWidgetTool extends AbstractSceneMaxTool {
             widgetType = UIWidgetType.valueOf(typeRaw);
         } catch (IllegalArgumentException ex) {
             throw new IllegalArgumentException("Invalid widget type: " + typeRaw
-                    + " (valid: PANEL, BUTTON, TEXT_VIEW, LIST_VIEW, IMAGE, GUIDELINE).");
+                    + " (valid: PANEL, BUTTON, TEXT_VIEW, EDIT_TEXT, LIST_VIEW, IMAGE, GUIDELINE).");
         }
 
         JSONObject root = UiAuthoringSupport.readUiDoc(path);
@@ -179,6 +179,20 @@ public class UiAddWidgetTool extends AbstractSceneMaxTool {
                 widget.put("fontSize", 16);
                 widget.put("textAlignment", "left");
                 break;
+            case EDIT_TEXT:
+                widget.put("width", 220);
+                widget.put("height", 42);
+                widget.put("text", "");
+                widget.put("textColor", "#FFFFFFFF");
+                widget.put("fontSize", 16);
+                widget.put("textAlignment", "left");
+                widget.put("editTextMultiline", false);
+                widget.put("editTextPlaceholder", "Enter text");
+                widget.put("editTextBackgroundColor", "#20242AFF");
+                widget.put("editTextFocusedColor", "#2A303AFF");
+                widget.put("editTextCursorColor", "#FFFFFFFF");
+                widget.put("editTextSelectionColor", "#4A90E280");
+                break;
             case LIST_VIEW:
                 widget.put("width", 420);
                 widget.put("height", 220);
@@ -239,7 +253,7 @@ public class UiAddWidgetTool extends AbstractSceneMaxTool {
                     break;
             }
         }
-        if (type == UIWidgetType.TEXT_VIEW && props.has("textAlignment")) {
+        if ((type == UIWidgetType.TEXT_VIEW || type == UIWidgetType.EDIT_TEXT) && props.has("textAlignment")) {
             String ta = props.optString("textAlignment", "left");
             if (!"left".equals(ta) && !"center".equals(ta) && !"right".equals(ta)) {
                 throw new IllegalArgumentException("textAlignment must be left, center, or right.");

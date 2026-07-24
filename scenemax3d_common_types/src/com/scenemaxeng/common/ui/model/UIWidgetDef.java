@@ -12,7 +12,7 @@ import java.util.UUID;
  *
  * Each widget has:
  * - A unique name (used for constraint references and scripting access)
- * - A type (PANEL, BUTTON, TEXT_VIEW, LIST_VIEW, IMAGE, GUIDELINE)
+ * - A type (PANEL, BUTTON, TEXT_VIEW, EDIT_TEXT, LIST_VIEW, IMAGE, GUIDELINE)
  * - Size mode and dimensions
  * - Constraints that define its position within the parent
  * - Bias for centering when constrained on both sides
@@ -88,6 +88,14 @@ public class UIWidgetDef {
     private float fontSize = 16;
     private String textAlignment = "left";   // left, center, right
     private String fontName = null;          // font from AssetsMapping (null = default)
+
+    // EDIT_TEXT
+    private boolean editTextMultiline = false;
+    private String editTextPlaceholder = "";
+    private String editTextBackgroundColor = "#20242AFF";
+    private String editTextFocusedColor = "#2A303AFF";
+    private String editTextCursorColor = "#FFFFFFFF";
+    private String editTextSelectionColor = "#4A90E280";
 
     // LIST_VIEW
     private int listColumnCount = 3;
@@ -229,6 +237,20 @@ public class UIWidgetDef {
     public void setTextAlignment(String alignment) { this.textAlignment = alignment; }
     public String getFontName() { return fontName; }
     public void setFontName(String fontName) { this.fontName = fontName; }
+
+    // Edit text properties
+    public boolean isEditTextMultiline() { return editTextMultiline; }
+    public void setEditTextMultiline(boolean multiline) { this.editTextMultiline = multiline; }
+    public String getEditTextPlaceholder() { return editTextPlaceholder; }
+    public void setEditTextPlaceholder(String placeholder) { this.editTextPlaceholder = placeholder == null ? "" : placeholder; }
+    public String getEditTextBackgroundColor() { return editTextBackgroundColor; }
+    public void setEditTextBackgroundColor(String color) { this.editTextBackgroundColor = color; }
+    public String getEditTextFocusedColor() { return editTextFocusedColor; }
+    public void setEditTextFocusedColor(String color) { this.editTextFocusedColor = color; }
+    public String getEditTextCursorColor() { return editTextCursorColor; }
+    public void setEditTextCursorColor(String color) { this.editTextCursorColor = color; }
+    public String getEditTextSelectionColor() { return editTextSelectionColor; }
+    public void setEditTextSelectionColor(String color) { this.editTextSelectionColor = color; }
 
     // List view properties
     public int getListColumnCount() { return listColumnCount; }
@@ -458,11 +480,20 @@ public class UIWidgetDef {
                 json.put("buttonPressedColor", buttonPressedColor);
                 break;
             case TEXT_VIEW:
+            case EDIT_TEXT:
                 json.put("text", text);
                 json.put("textColor", textColor);
                 json.put("fontSize", fontSize);
                 json.put("textAlignment", textAlignment);
                 if (fontName != null) json.put("fontName", fontName);
+                if (type == UIWidgetType.EDIT_TEXT) {
+                    json.put("editTextMultiline", editTextMultiline);
+                    json.put("editTextPlaceholder", editTextPlaceholder);
+                    json.put("editTextBackgroundColor", editTextBackgroundColor);
+                    json.put("editTextFocusedColor", editTextFocusedColor);
+                    json.put("editTextCursorColor", editTextCursorColor);
+                    json.put("editTextSelectionColor", editTextSelectionColor);
+                }
                 break;
             case LIST_VIEW:
                 normalizeListViewData();
@@ -586,11 +617,20 @@ public class UIWidgetDef {
                 def.buttonPressedColor = json.optString("buttonPressedColor", "#2266CCFF");
                 break;
             case TEXT_VIEW:
-                def.text = json.optString("text", "Text");
+            case EDIT_TEXT:
+                def.text = json.optString("text", type == UIWidgetType.EDIT_TEXT ? "" : "Text");
                 def.textColor = json.optString("textColor", "#FFFFFFFF");
                 def.fontSize = (float) json.optDouble("fontSize", 16);
                 def.textAlignment = json.optString("textAlignment", "left");
                 def.fontName = json.optString("fontName", null);
+                if (type == UIWidgetType.EDIT_TEXT) {
+                    def.editTextMultiline = json.optBoolean("editTextMultiline", false);
+                    def.editTextPlaceholder = json.optString("editTextPlaceholder", "");
+                    def.editTextBackgroundColor = json.optString("editTextBackgroundColor", "#20242AFF");
+                    def.editTextFocusedColor = json.optString("editTextFocusedColor", "#2A303AFF");
+                    def.editTextCursorColor = json.optString("editTextCursorColor", "#FFFFFFFF");
+                    def.editTextSelectionColor = json.optString("editTextSelectionColor", "#4A90E280");
+                }
                 break;
             case LIST_VIEW:
                 def.listColumnCount = Math.max(1, json.optInt("listColumnCount", 3));

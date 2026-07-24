@@ -75,7 +75,59 @@ public class UISetPropertyController extends SceneMaxBaseController {
             return;
         }
 
-        if (widget instanceof UITextViewNode) {
+        if (widget instanceof UIEditTextNode) {
+            UIEditTextNode editText = (UIEditTextNode) widget;
+            switch (prop) {
+                case "text":
+                case "value":
+                    editText.setText(value);
+                    break;
+                case "placeholder":
+                case "edittextplaceholder":
+                    editText.setPlaceholder(value);
+                    break;
+                case "multiline":
+                case "edittextmultiline":
+                    editText.setMultiline(value.equalsIgnoreCase("true") || value.equals("1"));
+                    break;
+                case "shader":
+                    app.setUIWidgetShader(editText, value);
+                    break;
+                case "color":
+                case "textcolor":
+                    editText.setTextColor(value);
+                    break;
+                case "backgroundcolor":
+                case "edittextbackgroundcolor":
+                    editText.setBackgroundColor(value);
+                    break;
+                case "focusedcolor":
+                case "edittextfocusedcolor":
+                    editText.setFocusedColor(value);
+                    break;
+                case "cursorcolor":
+                case "edittextcursorcolor":
+                    editText.setCursorColor(value);
+                    break;
+                case "selectioncolor":
+                case "edittextselectioncolor":
+                    editText.setSelectionColor(value);
+                    break;
+                case "fontsize":
+                    try {
+                        editText.setFontSize(Float.parseFloat(value));
+                    } catch (NumberFormatException e) {
+                        app.handleRuntimeError("Invalid font size: " + value);
+                    }
+                    break;
+                case "font":
+                case "fontname":
+                    editText.setFontName(value);
+                    break;
+                default:
+                    applyCommonProperty(widget, prop, value);
+            }
+        } else if (widget instanceof UITextViewNode) {
             UITextViewNode textView = (UITextViewNode) widget;
             switch (prop) {
                 case "text":
@@ -272,6 +324,9 @@ public class UISetPropertyController extends SceneMaxBaseController {
 
         if (propCmd.implicitWidgetValue && widget instanceof UIImageNode) {
             return "sprite";
+        }
+        if (propCmd.implicitWidgetValue && widget instanceof UIEditTextNode) {
+            return "text";
         }
 
         return null;

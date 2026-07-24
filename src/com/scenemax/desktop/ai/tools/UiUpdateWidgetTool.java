@@ -158,7 +158,7 @@ public class UiUpdateWidgetTool extends AbstractSceneMaxTool {
                     break;
             }
         }
-        if ("TEXT_VIEW".equals(type) && updates.has("textAlignment")) {
+        if (("TEXT_VIEW".equals(type) || "EDIT_TEXT".equals(type)) && updates.has("textAlignment")) {
             String ta = updates.optString("textAlignment", "left");
             if (!"left".equals(ta) && !"center".equals(ta) && !"right".equals(ta)) {
                 throw new IllegalArgumentException("textAlignment must be left, center, or right.");

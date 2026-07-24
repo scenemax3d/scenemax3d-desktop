@@ -115,6 +115,7 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
         LOAD_DISTANCE,
         LOAD_ANGLE,
         LOAD_JSON_VALUE,
+        LOAD_UI_PROPERTY,
 
         NOT,
         NEGATE,
@@ -405,6 +406,13 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                 return null;
             }
 
+            if (ctx.ui_runtime_value() != null) {
+                String path = ctx.ui_runtime_value().ui_dot_path().getText() + "."
+                        + ctx.ui_runtime_value().ui_property_name().getText();
+                code.add(new Instruction(OpCode.LOAD_UI_PROPERTY, path, line));
+                return null;
+            }
+
             if (ctx.logical_expression_pointer() != null) {
                 String varName = ctx.logical_expression_pointer().var_decl().getText();
                 code.add(new Instruction(OpCode.LOAD_EXPR_POINTER, varName, line));
@@ -570,6 +578,9 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                         break;
                     case LOAD_JSON_VALUE:
                         pushValue(stack, loadJsonValue(scope, (JsonAccessorSpec) ins.a, ins.line));
+                        break;
+                    case LOAD_UI_PROPERTY:
+                        pushValue(stack, UIRuntimePropertyAccessor.read(app, (String) ins.a, ins.line));
                         break;
 
                     case NOT:

@@ -486,6 +486,7 @@ public class UIDesignerCanvas extends JPanel {
             case BUTTON:  bgColor = COLOR_BUTTON; break;
             case IMAGE:   bgColor = COLOR_IMAGE;  break;
             case TEXT_VIEW: bgColor = new Color(50, 50, 55, 100); break;
+            case EDIT_TEXT: bgColor = new Color(32, 36, 42); break;
             case LIST_VIEW: bgColor = new Color(235, 238, 242); break;
             default:      bgColor = COLOR_PANEL;  break;
         }
@@ -543,26 +544,43 @@ public class UIDesignerCanvas extends JPanel {
         String label = widget.getName();
         FontMetrics fm = g2.getFontMetrics();
 
-        // Draw text content for TEXT_VIEW and BUTTON
+        // Draw text content for TEXT_VIEW, EDIT_TEXT and BUTTON
         String displayText = null;
         switch (widget.getType()) {
             case TEXT_VIEW: displayText = widget.getText(); break;
+            case EDIT_TEXT:
+                displayText = widget.getText();
+                if ((displayText == null || displayText.isEmpty())
+                        && widget.getEditTextPlaceholder() != null
+                        && !widget.getEditTextPlaceholder().isEmpty()) {
+                    displayText = widget.getEditTextPlaceholder();
+                    g2.setColor(new Color(190, 200, 210, 160));
+                }
+                break;
             case BUTTON: displayText = widget.getButtonText(); break;
         }
 
         if (displayText != null && !displayText.isEmpty() && h > 14) {
             // Draw the content text centered
-            g2.setColor(new Color(255, 255, 255, 220));
+            if (widget.getType() != UIWidgetType.EDIT_TEXT || widget.getText() != null && !widget.getText().isEmpty()) {
+                g2.setColor(new Color(255, 255, 255, 220));
+            }
             float textWidth = fm.stringWidth(displayText);
-            float tx = x + (w - textWidth) / 2;
+            float tx = widget.getType() == UIWidgetType.EDIT_TEXT ? x + 8 : x + (w - textWidth) / 2;
             float ty = y + (h + fm.getAscent()) / 2 - 2;
             if (textWidth > w - 4) {
                 // Truncate
                 displayText = truncateText(displayText, fm, w - 8);
                 textWidth = fm.stringWidth(displayText);
-                tx = x + (w - textWidth) / 2;
+                tx = widget.getType() == UIWidgetType.EDIT_TEXT ? x + 8 : x + (w - textWidth) / 2;
             }
             g2.drawString(displayText, tx, ty);
+
+            if (widget.getType() == UIWidgetType.EDIT_TEXT) {
+                g2.setColor(new Color(255, 255, 255, 180));
+                float caretX = x + Math.min(w - 8, 10 + textWidth);
+                g2.draw(new Line2D.Float(caretX, y + 8, caretX, y + h - 8));
+            }
 
             // Draw name as small label above
             g2.setColor(new Color(180, 180, 180, 160));
@@ -705,6 +723,7 @@ public class UIDesignerCanvas extends JPanel {
             case PANEL:     return "\u25A1"; // square
             case BUTTON:    return "\u25C9"; // circle with dot
             case TEXT_VIEW: return "T";
+            case EDIT_TEXT: return "I";
             case LIST_VIEW: return "\u2261";
             case IMAGE:     return "\u25A3"; // filled square
             default:        return "";

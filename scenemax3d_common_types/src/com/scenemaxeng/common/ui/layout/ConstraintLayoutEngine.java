@@ -360,12 +360,15 @@ public class ConstraintLayoutEngine {
     private float getPreferredSize(UIWidgetDef widget, boolean horizontal) {
         switch (widget.getType()) {
             case TEXT_VIEW:
+            case EDIT_TEXT:
                 // Approximate: fontSize * character count for width, fontSize for height
                 if (horizontal) {
                     String text = widget.getText();
-                    return text != null ? text.length() * widget.getFontSize() * 0.6f : 50;
+                    float width = text != null ? text.length() * widget.getFontSize() * 0.6f : 50;
+                    return widget.getType() == UIWidgetType.EDIT_TEXT ? Math.max(160f, width + 24f) : width;
                 } else {
-                    return widget.getFontSize() * 1.4f;
+                    float lineCount = widget.getType() == UIWidgetType.EDIT_TEXT && widget.isEditTextMultiline() ? 3f : 1f;
+                    return widget.getFontSize() * 1.4f * lineCount + (widget.getType() == UIWidgetType.EDIT_TEXT ? 16f : 0f);
                 }
             case BUTTON:
                 if (horizontal) {

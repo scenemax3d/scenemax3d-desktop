@@ -79,6 +79,10 @@ public class UIDesignerPanel extends JPanel {
     private JComboBox<String> cboTextAlign;
     private JComboBox<String> cboFont;
 
+    private JPanel editTextPropsPanel;
+    private JTextField txtEditPlaceholder;
+    private JCheckBox chkEditMultiline;
+
     private JPanel buttonPropsPanel;
     private JTextField txtButtonText;
 
@@ -244,6 +248,11 @@ public class UIDesignerPanel extends JPanel {
         btnAddText.setToolTipText("Add Text View");
         btnAddText.addActionListener(e -> addWidget(UIWidgetType.TEXT_VIEW));
         toolbar.add(btnAddText);
+
+        JButton btnAddEditText = new JButton(createUIToolbarIcon("edittext"));
+        btnAddEditText.setToolTipText("Add Edit Text");
+        btnAddEditText.addActionListener(e -> addWidget(UIWidgetType.EDIT_TEXT));
+        toolbar.add(btnAddEditText);
 
         JButton btnAddImage = new JButton(createUIToolbarIcon("image"));
         btnAddImage.setToolTipText("Add Image");
@@ -525,6 +534,25 @@ public class UIDesignerPanel extends JPanel {
         textPropsPanel.setVisible(false);
         propertiesPanel.add(textPropsPanel);
 
+        // --- Type-specific: Edit Text ---
+        editTextPropsPanel = new JPanel();
+        editTextPropsPanel.setLayout(new BoxLayout(editTextPropsPanel, BoxLayout.Y_AXIS));
+        editTextPropsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        editTextPropsPanel.setBorder(BorderFactory.createTitledBorder("Edit Text Properties"));
+
+        txtEditPlaceholder = new JTextField(15);
+        txtEditPlaceholder.addActionListener(e -> applyEditTextChange());
+        installAutoSaveOnFocusLost(txtEditPlaceholder, this::applyEditTextChange);
+        addFormRowTo(editTextPropsPanel, "Placeholder:", txtEditPlaceholder);
+
+        chkEditMultiline = new JCheckBox("Multiline");
+        chkEditMultiline.addActionListener(e -> applyEditTextChange());
+        installAutoSaveOnFocusLost(chkEditMultiline, null);
+        addFormRowTo(editTextPropsPanel, "Mode:", chkEditMultiline);
+
+        editTextPropsPanel.setVisible(false);
+        propertiesPanel.add(editTextPropsPanel);
+
         // --- Type-specific: Button ---
         buttonPropsPanel = new JPanel();
         buttonPropsPanel.setLayout(new BoxLayout(buttonPropsPanel, BoxLayout.Y_AXIS));
@@ -647,6 +675,7 @@ public class UIDesignerPanel extends JPanel {
             case PANEL: baseName = "panel"; break;
             case BUTTON: baseName = "button"; break;
             case TEXT_VIEW: baseName = "text"; break;
+            case EDIT_TEXT: baseName = "editText"; break;
             case LIST_VIEW: baseName = "listView"; break;
             case IMAGE: baseName = "image"; break;
             case GUIDELINE: baseName = "guideline"; break;
@@ -674,6 +703,12 @@ public class UIDesignerPanel extends JPanel {
             case TEXT_VIEW:
                 widget.setWidth(150);
                 widget.setHeight(30);
+                break;
+            case EDIT_TEXT:
+                widget.setWidth(220);
+                widget.setHeight(42);
+                widget.setText("");
+                widget.setEditTextPlaceholder("Enter text");
                 break;
             case LIST_VIEW:
                 widget.setWidth(420);
@@ -948,6 +983,13 @@ public class UIDesignerPanel extends JPanel {
             });
             menu.add(miAddText);
 
+            JMenuItem miAddEditText = new JMenuItem("Add Edit Text");
+            miAddEditText.addActionListener(ev -> {
+                canvas.setSelectedWidget(widget);
+                addWidget(UIWidgetType.EDIT_TEXT);
+            });
+            menu.add(miAddEditText);
+
             JMenuItem miAddImage = new JMenuItem("Add Image");
             miAddImage.addActionListener(ev -> {
                 canvas.setSelectedWidget(widget);
@@ -986,6 +1028,7 @@ public class UIDesignerPanel extends JPanel {
 
         // Hide all type-specific panels
         textPropsPanel.setVisible(false);
+        editTextPropsPanel.setVisible(false);
         buttonPropsPanel.setVisible(false);
         listViewPropsPanel.setVisible(false);
         imagePropsPanel.setVisible(false);
@@ -1037,6 +1080,7 @@ public class UIDesignerPanel extends JPanel {
         // Type-specific
         switch (widget.getType()) {
             case TEXT_VIEW:
+            case EDIT_TEXT:
                 textPropsPanel.setVisible(true);
                 txtText.setText(widget.getText());
                 spnFontSize.setValue((double) widget.getFontSize());
@@ -1045,6 +1089,11 @@ public class UIDesignerPanel extends JPanel {
                     cboFont.setSelectedItem(widget.getFontName());
                 } else {
                     cboFont.setSelectedIndex(0);
+                }
+                if (widget.getType() == UIWidgetType.EDIT_TEXT) {
+                    editTextPropsPanel.setVisible(true);
+                    txtEditPlaceholder.setText(widget.getEditTextPlaceholder());
+                    chkEditMultiline.setSelected(widget.isEditTextMultiline());
                 }
                 break;
             case BUTTON:
@@ -1099,6 +1148,7 @@ public class UIDesignerPanel extends JPanel {
             txtListColumnWidths.setText("");
         }
         textPropsPanel.setVisible(false);
+        editTextPropsPanel.setVisible(false);
         buttonPropsPanel.setVisible(false);
         listViewPropsPanel.setVisible(false);
         imagePropsPanel.setVisible(false);
@@ -1281,7 +1331,8 @@ public class UIDesignerPanel extends JPanel {
     private void applyTextChange() {
         if (updatingProperties) return;
         UIWidgetDef widget = canvas.getSelectedWidget();
-        if (widget == null || widget.getType() != UIWidgetType.TEXT_VIEW) return;
+        if (widget == null || (widget.getType() != UIWidgetType.TEXT_VIEW
+                && widget.getType() != UIWidgetType.EDIT_TEXT)) return;
 
         widget.setText(txtText.getText());
         widget.setFontSize(((Number) spnFontSize.getValue()).floatValue());
@@ -1325,6 +1376,17 @@ public class UIDesignerPanel extends JPanel {
         widget.setListHeaders(parseListCells(txtListHeaders.getText(), columns));
         widget.setListRows(parseListRows(txtListRows.getText(), columns));
 
+        markDirty();
+        canvas.refreshLayout();
+    }
+
+    private void applyEditTextChange() {
+        if (updatingProperties) return;
+        UIWidgetDef widget = canvas.getSelectedWidget();
+        if (widget == null || widget.getType() != UIWidgetType.EDIT_TEXT) return;
+
+        widget.setEditTextPlaceholder(txtEditPlaceholder.getText());
+        widget.setEditTextMultiline(chkEditMultiline.isSelected());
         markDirty();
         canvas.refreshLayout();
     }
@@ -1775,6 +1837,13 @@ public class UIDesignerPanel extends JPanel {
                 g.setFont(g.getFont().deriveFont(Font.BOLD, 14f));
                 g.drawString("T", 5, 16);
                 break;
+            case "edittext":
+                g.drawRoundRect(2, 4, 16, 12, 3, 3);
+                g.drawLine(6, 8, 6, 14);
+                g.drawLine(4, 8, 8, 8);
+                g.drawLine(4, 14, 8, 14);
+                g.drawLine(10, 13, 16, 13);
+                break;
             case "image":
                 g.drawRect(2, 2, 16, 16);
                 // Small mountain/sun icon
@@ -2074,6 +2143,11 @@ public class UIDesignerPanel extends JPanel {
                 case TEXT_VIEW:
                     g.setFont(g.getFont().deriveFont(Font.BOLD, 12f));
                     g.drawString("T", 3, 13);
+                    break;
+                case EDIT_TEXT:
+                    g.drawRoundRect(1, 3, 14, 10, 2, 2);
+                    g.drawLine(5, 5, 5, 11);
+                    g.drawLine(8, 10, 13, 10);
                     break;
                 case LIST_VIEW:
                     g.drawRoundRect(1, 2, 13, 12, 2, 2);

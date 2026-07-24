@@ -336,6 +336,7 @@ value    :
     |    motion_expr
     |    pool_acquire
     |    network_runtime_value
+    |    ui_runtime_value
     |    var_decl
     |    variable_field
     |    variable_data_field
@@ -374,6 +375,7 @@ var_field : X | Y | Z | RX | RY | RZ | Hit | AnimPercent | ReplayIndex ;
 
 pool_acquire : var_decl '.' Acquire ;
 network_runtime_value : Network '.' Ready | Network '.' State ('.' Sessions)? ;
+ui_runtime_value : UI '.' ui_dot_path '.' ui_property_name ;
 
 // THE LANGUAGE SYNTAX
 

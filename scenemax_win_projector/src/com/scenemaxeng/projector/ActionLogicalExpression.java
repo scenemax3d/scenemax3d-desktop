@@ -668,6 +668,20 @@ public class ActionLogicalExpression extends ActionStatementBase {
                 return res;
             }
 
+            if (ctx.ui_runtime_value() != null) {
+                String path = ctx.ui_runtime_value().ui_dot_path().getText() + "."
+                        + ctx.ui_runtime_value().ui_property_name().getText();
+                res = UIRuntimePropertyAccessor.read(app, path, ctx.start.getLine());
+                if (res instanceof String) {
+                    turnOnIsString();
+                } else if (res instanceof List || res instanceof JSONObject || res instanceof JSONArray || res instanceof EntityInstBase) {
+                    isObject = true;
+                } else if (res instanceof Boolean) {
+                    isResBool = true;
+                }
+                return res;
+            }
+
             if (ctx.logical_expression_pointer() != null) {
                 String varName = ctx.logical_expression_pointer().var_decl().getText();
                 VarInst vi = scope.getVar(varName);

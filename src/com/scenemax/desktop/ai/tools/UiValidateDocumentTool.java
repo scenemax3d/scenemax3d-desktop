@@ -94,6 +94,7 @@ public class UiValidateDocumentTool extends AbstractSceneMaxTool {
                 case "PANEL":
                 case "BUTTON":
                 case "TEXT_VIEW":
+                case "EDIT_TEXT":
                 case "LIST_VIEW":
                 case "IMAGE":
                 case "GUIDELINE":
