@@ -89,7 +89,6 @@ import java.security.*;
 import java.security.cert.X509Certificate;
 import java.util.*;
 import java.util.List;
-import java.util.Timer;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -1314,7 +1313,18 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         });
 
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(e -> {
-            if (e.getID() != KeyEvent.KEY_PRESSED || e.getModifiersEx() != 0 || !isMainWindowKeyEvent(e)) {
+            if (e.getID() != KeyEvent.KEY_PRESSED || !isMainWindowKeyEvent(e)) {
+                return false;
+            }
+            if (e.getKeyCode() == KeyEvent.VK_TAB
+                    && (e.getModifiersEx() & KeyEvent.CTRL_DOWN_MASK) != 0
+                    && (e.getModifiersEx() & KeyEvent.ALT_DOWN_MASK) == 0) {
+                if (editorTabPanel != null) {
+                    editorTabPanel.switchToPreviousTab();
+                }
+                return true;
+            }
+            if (e.getModifiersEx() != 0) {
                 return false;
             }
             if (e.getKeyCode() == KeyEvent.VK_F10) {
@@ -6754,17 +6764,6 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             if (editorTabPanel != null && editorTabPanel.getActiveTab() != null) {
                 editorTabPanel.saveActiveTab();
                 autoComplete.invalidateCache();
-
-                final JTextArea txt = e.getSource() == textArea ? textArea : textAreaRTL;
-                final Color c = txt.getBackground();
-                txt.setBackground(Color.CYAN);
-                Timer timer = new Timer();
-                timer.schedule(new TimerTask() {
-                    @Override
-                    public void run() {
-                        txt.setBackground(c);
-                    }
-                }, 200);
 
                 isDocumentChanged = false;
             }

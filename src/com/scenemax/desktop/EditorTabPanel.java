@@ -216,6 +216,7 @@ public class EditorTabPanel extends JPanel {
     private final List<TabData> tabs = new ArrayList<>();
     private final Map<String, TabButton> tabButtons = new LinkedHashMap<>();
     private TabData activeTab = null;
+    private TabData previousActiveTab = null;
     private final JPanel tabBar;
 
     private final RSyntaxTextArea textArea;
@@ -658,6 +659,7 @@ public class EditorTabPanel extends JPanel {
 
         if (activeTab != null) {
             deactivateTabForSwitch(activeTab, newTab);
+            previousActiveTab = activeTab;
         }
         ensureSceneDesignerCanvasDetached(newTab);
 
@@ -768,6 +770,17 @@ public class EditorTabPanel extends JPanel {
         if (onTabChangedCallback != null) {
             onTabChangedCallback.run();
         }
+    }
+
+    public void switchToPreviousTab() {
+        if (activeTab == null || previousActiveTab == null || previousActiveTab == activeTab) {
+            return;
+        }
+        if (!tabs.contains(previousActiveTab)) {
+            previousActiveTab = null;
+            return;
+        }
+        switchToTab(previousActiveTab);
     }
 
     private void deactivateTabForSwitch(TabData currentTab, TabData nextTab) {
@@ -927,6 +940,9 @@ public class EditorTabPanel extends JPanel {
 
         int index = tabs.indexOf(tabData);
         tabs.remove(tabData);
+        if (previousActiveTab == tabData) {
+            previousActiveTab = null;
+        }
 
         TabButton btn = tabButtons.remove(tabData.filePath);
         if (btn != null) {
@@ -942,6 +958,7 @@ public class EditorTabPanel extends JPanel {
                 int newIndex = Math.min(index, tabs.size() - 1);
                 switchToTab(tabs.get(newIndex));
             } else {
+                previousActiveTab = null;
                 // No tabs left, show editor and clear it
                 centerContainer.removeAll();
                 centerContainer.add(editorPane, BorderLayout.CENTER);
