@@ -55,6 +55,7 @@ public class SceneMaxLanguageParser implements IParser {
     private boolean animationFrameRangeModelsLoaded;
 
     private boolean isChildParser=false;
+    private boolean suppressParserErrorLogging=false;
     private String _sourceFileName="";
     private static int foreachCounter=0; // implicit foreach function counter
     private ProgramDef previousProgramState;
@@ -234,6 +235,10 @@ public class SceneMaxLanguageParser implements IParser {
         this.isChildParser=enable;
     }
 
+    public void setSuppressParserErrorLogging(boolean suppress) {
+        this.suppressParserErrorLogging = suppress;
+    }
+
     public void setCurrentProgramState(ProgramDef prg) {
         this.previousProgramState = prg;
     }
@@ -298,7 +303,9 @@ public class SceneMaxLanguageParser implements IParser {
         try {
             prg = v.visit(parser.prog());
         } catch (RuntimeException ex) {
-            logParserException(ex);
+            if (!suppressParserErrorLogging) {
+                logParserException(ex);
+            }
             throw ex;
         }
 
@@ -309,7 +316,9 @@ public class SceneMaxLanguageParser implements IParser {
             prg.syntaxErrors.addAll(errors);
         }
 
-        logParserErrors(prg);
+        if (!suppressParserErrorLogging) {
+            logParserErrors(prg);
+        }
 
         return prg;
     }
@@ -1110,6 +1119,7 @@ public class SceneMaxLanguageParser implements IParser {
                                 SceneMaxLanguageParser.this.animationFrameRangeResourcesRootPath);
                         parser.setParserSourceFileName(file);
                         parser.enableChildParserMode(true);
+                        parser.setSuppressParserErrorLogging(SceneMaxLanguageParser.this.suppressParserErrorLogging);
                         //parser.setMacroFilter(SceneMaxLanguageParser.getMacroFilter());
                         ProgramDef prg = parser.parse(code);
                         filesUsed.add(file);

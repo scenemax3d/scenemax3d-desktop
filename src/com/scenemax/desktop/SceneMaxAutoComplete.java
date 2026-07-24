@@ -52,6 +52,7 @@ public class SceneMaxAutoComplete {
     private DefaultListModel<CompletionItem> listModel;
     private boolean isShowing = false;
     private boolean isInserting = false;
+    private long lastUserEditIntentTime = 0;
 
     // Cached ProgramDef from last parse
     private ProgramDef cachedProgram = null;
@@ -63,6 +64,7 @@ public class SceneMaxAutoComplete {
     private static final long LOCAL_PARSE_COOLDOWN_MS = 750; // avoid parsing incomplete text on every keystroke
 
     private static final int AUTO_TRIGGER_LENGTH = 2;
+    private static final long USER_EDIT_INTENT_WINDOW_MS = 500;
 
     // Callback to get active file path from EditorTabPanel
     private ActiveFileProvider activeFileProvider;
@@ -274,6 +276,10 @@ public class SceneMaxAutoComplete {
                     return;
                 }
 
+                if (isEditKey(e)) {
+                    markUserEditIntent();
+                }
+
                 if (!isShowing) return;
 
                 switch (e.getKeyCode()) {
@@ -300,6 +306,13 @@ public class SceneMaxAutoComplete {
                     case KeyEvent.VK_END:
                         hidePopup();
                         break;
+                }
+            }
+
+            @Override
+            public void keyTyped(KeyEvent e) {
+                if (isTextInputKey(e)) {
+                    markUserEditIntent();
                 }
             }
         });
@@ -402,11 +415,11 @@ public class SceneMaxAutoComplete {
             // Autocomplete only needs symbols, so keep this parse lightweight and
             // avoid expensive project-wide cinematic rig resolution on the EDT.
             parser.enableChildParserMode(true);
+            parser.setSuppressParserErrorLogging(true);
             cachedProgram = parser.parse(code);
             lastParseTime = now;
         } catch (Exception e) {
-            // Parsing failed — keep old cache if available
-            e.printStackTrace();
+            // Parsing failed; keep old cache if available.
         }
     }
 
@@ -440,6 +453,7 @@ public class SceneMaxAutoComplete {
 
             SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, codePath);
             parser.enableChildParserMode(true); // don't clear static collections
+            parser.setSuppressParserErrorLogging(true);
             cachedLocalProgram = parser.parse(code);
             localParseDirty = false;
             lastLocalParseTime = now;
@@ -455,6 +469,11 @@ public class SceneMaxAutoComplete {
 
     private void onTextChanged() {
         localParseDirty = true;
+        if (!wasCurrentChangeUserInitiated()) {
+            hidePopup();
+            return;
+        }
+
         String prefix = getCurrentPrefix();
         if (isJavaFile() && isAfterMemberDot()) {
             showCompletions(true);
@@ -523,6 +542,33 @@ public class SceneMaxAutoComplete {
         isShowing = false;
     }
 
+    private void markUserEditIntent() {
+        lastUserEditIntentTime = System.currentTimeMillis();
+    }
+
+    private boolean wasCurrentChangeUserInitiated() {
+        return textArea.hasFocus()
+                && (System.currentTimeMillis() - lastUserEditIntentTime) <= USER_EDIT_INTENT_WINDOW_MS;
+    }
+
+    private boolean isEditKey(KeyEvent e) {
+        int keyCode = e.getKeyCode();
+        if (keyCode == KeyEvent.VK_BACK_SPACE || keyCode == KeyEvent.VK_DELETE) {
+            return true;
+        }
+        return isShortcutDown(e) && (keyCode == KeyEvent.VK_V || keyCode == KeyEvent.VK_X);
+    }
+
+    private boolean isTextInputKey(KeyEvent e) {
+        return !e.isAltDown()
+                && !isShortcutDown(e)
+                && !Character.isISOControl(e.getKeyChar());
+    }
+
+    private boolean isShortcutDown(KeyEvent e) {
+        return e.isControlDown() || e.isMetaDown();
+    }
+
     private void moveSelection(int direction) {
         int idx = completionList.getSelectedIndex() + direction;
         if (idx >= 0 && idx < listModel.size()) {
@@ -586,6 +632,8 @@ public class SceneMaxAutoComplete {
         lastParseTime = 0;
         lastLocalParseTime = 0;
         localParseDirty = true;
+        lastUserEditIntentTime = 0;
+        hidePopup();
     }
 
     // ---- Building completion list from ProgramDef ----
