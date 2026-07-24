@@ -971,7 +971,10 @@ public class MultiplayerNetworkComponent {
             return false;
         }
         String normalized = command.toLowerCase(java.util.Locale.ROOT);
-        return normalized.contains(".attach to ") || normalized.contains(".ik");
+        return normalized.contains(".attach to ")
+                || normalized.contains(".ik")
+                || normalized.contains(".switch to character mode")
+                || normalized.contains(".clear character mode");
     }
 
     private boolean markRemoteStructuralCommandApplied(int networkId, String command) {

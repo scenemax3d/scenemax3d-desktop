@@ -53,6 +53,24 @@ public class MultiplayerCommandDispatchParsingTest {
     }
 
     @Test
+    public void parsesGeneratedCharacterModeDispatchCommands() {
+        assertParses("mp_remote_1 => sinbad\n"
+                + "mp_remote_1.switch to character mode : gravity 60");
+        assertParses("mp_remote_1 => sinbad\n"
+                + "mp_remote_1.clear character mode");
+    }
+
+    @Test
+    public void treatsCharacterModeAsStructuralMultiplayerState() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        Method method = MultiplayerNetworkComponent.class.getDeclaredMethod("isStructuralCommand", String.class);
+        method.setAccessible(true);
+
+        assertTrue((Boolean) method.invoke(component, "{network_entity}.switch to character mode : gravity 60"));
+        assertTrue((Boolean) method.invoke(component, "{network_entity}.clear character mode"));
+    }
+
+    @Test
     public void parsesGeneratedMultiplayerSpawnCommandsWithScaleAndColliders() {
         assertParses("mp_remote_1 => horse1_native: pos (0.482243,0,1.164553), scale 3.7, collision shape none");
         assertParses("mp_remote_2 => collider sphere: pos (-5.174184,1.964885,4.311819), radius 0.5, scale 0.3");

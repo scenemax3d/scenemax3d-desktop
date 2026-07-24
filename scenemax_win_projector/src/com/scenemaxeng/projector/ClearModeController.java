@@ -21,12 +21,21 @@ public class ClearModeController extends SceneMaxBaseController {
             ClearModeCommand cmd = (ClearModeCommand) this.cmd;
             if(cmd.modeToClear== SwitchModeCommand.CHARACTER) {
                 app.clearCharacterControl(targetVar, this.targetVarDef);
+                dispatchMultiplayerCharacterModeClearCommand();
             }
 
         }
 
         return true;
 
+    }
+
+    private void dispatchMultiplayerCharacterModeClearCommand() {
+        String commandText = "{network_entity}.clear character mode";
+        dispatchMultiplayerCommand(commandText);
+        startPersistentMultiplayerCommand(targetVar,
+                SwitchModeController.MULTIPLAYER_ACTION_SLOT_CHARACTER_MODE,
+                commandText);
     }
 
 
