@@ -230,11 +230,11 @@
             "multiplayerServerPort": 9001
         },
         {
-            "itchWindowsChannel": "",
+            "itchWindowsChannel": "windows",
             "itchGamePage": "",
             "multiplayerDeployOs": "Windows",
-            "itchMacChannel": "",
-            "itchLinuxChannel": "",
+            "itchMacChannel": "macos",
+            "itchLinuxChannel": "linux",
             "path": "projects/GMTK_2026",
             "multiplayerPassword": "",
             "multiplayerServerIp": "127.0.0.1",

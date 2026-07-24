@@ -26,6 +26,7 @@ const PacketType = enum(u8) {
     login_rejected = 3,
     heartbeat = 4,
     join_scene = 5,
+    join_session = 6,
     create_entity_request = 10,
     create_entity_accepted = 11,
     destroy_entity = 12,
@@ -35,6 +36,7 @@ const PacketType = enum(u8) {
     active_action_end = 23,
     network_event = 24,
     snapshot = 30,
+    server_state = 31,
     disconnect = 40,
 };
 
@@ -160,6 +162,7 @@ pub fn main(init: std.process.Init) !void {
                     .last_seen_ms = now,
                 };
                 try sendLoginAccepted(sock, io, message.from, assigned, session.id, session.name);
+                try broadcastServerState(sock, io, &clients, &sessions);
                 try sendSnapshot(sock, io, message.from, &entities, session.id, login.scene_id, now);
             },
             .heartbeat => {
@@ -183,6 +186,33 @@ pub fn main(init: std.process.Init) !void {
                         });
                     }
                     try destroyClientEntities(sock, io, &clients, &entities, client.id, client.session_id, old_scene_id);
+                    try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
+                }
+            },
+            .join_session => {
+                if (findClient(&clients, client_id)) |client| {
+                    if (payload.len < 68) continue;
+                    client.last_seen_ms = now;
+                    client.address = message.from;
+                    const old_session_id = client.session_id;
+                    const old_scene_id = client.scene_id;
+                    const requested_session_id = std.mem.readInt(u32, payload[0..][0..4], .little);
+                    var requested_session_name = [_]u8{0} ** 64;
+                    copyFixed(&requested_session_name, payload, 4);
+                    const session = resolveJoinSession(&sessions, &next_session_id, requested_session_id, requested_session_name);
+                    if (verbose_packet_logs) {
+                        std.debug.print("[SceneMax MP] join session client={d} from={d} to={d} name=\"{s}\" scene=\"{s}\"\n", .{
+                            client.id,
+                            old_session_id,
+                            session.id,
+                            fixedText(&session.name),
+                            fixedText(&client.scene_id),
+                        });
+                    }
+                    try destroyClientEntities(sock, io, &clients, &entities, client.id, old_session_id, old_scene_id);
+                    client.session_id = session.id;
+                    try sendLoginAccepted(sock, io, message.from, client.id, session.id, session.name);
+                    try broadcastServerState(sock, io, &clients, &sessions);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
                 }
             },
@@ -276,6 +306,7 @@ pub fn main(init: std.process.Init) !void {
                     }
                     try destroyClientEntities(sock, io, &clients, &entities, client.id, client.session_id, client.scene_id);
                     client.active = false;
+                    try broadcastServerState(sock, io, &clients, &sessions);
                 }
             },
             else => {},
@@ -375,9 +406,48 @@ fn resolveSession(sessions: *[max_sessions]Session, next_session_id: *u32, reque
     return &sessions[slot];
 }
 
+fn resolveJoinSession(sessions: *[max_sessions]Session, next_session_id: *u32, requested_id: u32, requested_name: [64]u8) *Session {
+    if (requested_id != 0) {
+        if (findSession(sessions, requested_id)) |session| return session;
+        const slot = requested_id % max_sessions;
+        sessions[slot] = .{ .active = true, .id = requested_id };
+        if (isEmpty(&requested_name)) {
+            writeDefaultSessionName(&sessions[slot].name, requested_id);
+        } else {
+            sessions[slot].name = requested_name;
+        }
+        return &sessions[slot];
+    }
+
+    if (!isEmpty(&requested_name)) {
+        if (findSessionByName(sessions, requested_name)) |session| return session;
+    }
+
+    const allocated = next_session_id.*;
+    next_session_id.* += 1;
+    const slot = allocated % max_sessions;
+    sessions[slot] = .{ .active = true, .id = allocated };
+    if (isEmpty(&requested_name)) {
+        writeDefaultSessionName(&sessions[slot].name, allocated);
+    } else {
+        sessions[slot].name = requested_name;
+    }
+    return &sessions[slot];
+}
+
 fn findSession(sessions: *[max_sessions]Session, session_id: u32) ?*Session {
     for (sessions) |*session| {
         if (session.active and session.id == session_id) return session;
+    }
+    return null;
+}
+
+fn findSessionByName(sessions: *[max_sessions]Session, session_name: [64]u8) ?*Session {
+    if (isEmpty(&session_name)) return null;
+    const wanted = fixedText(&session_name);
+    for (sessions) |*session| {
+        if (!session.active) continue;
+        if (std.mem.eql(u8, fixedText(&session.name), wanted)) return session;
     }
     return null;
 }
@@ -550,6 +620,7 @@ fn decodePacketType(value: u8) ?PacketType {
         3 => .login_rejected,
         4 => .heartbeat,
         5 => .join_scene,
+        6 => .join_session,
         10 => .create_entity_request,
         11 => .create_entity_accepted,
         12 => .destroy_entity,
@@ -559,6 +630,7 @@ fn decodePacketType(value: u8) ?PacketType {
         23 => .active_action_end,
         24 => .network_event,
         30 => .snapshot,
+        31 => .server_state,
         40 => .disconnect,
         else => null,
     };
@@ -637,6 +709,69 @@ fn sendLoginAccepted(sock: net.Socket, io: std.Io, address: net.IpAddress, clien
     std.mem.writeInt(u32, packet[10..][0..4], session_id, .little);
     @memcpy(packet[14..78], &session_name);
     sendUdp(sock, io, address, &packet);
+}
+
+fn sendServerState(sock: net.Socket, io: std.Io, address: net.IpAddress, sessions: *[max_sessions]Session, clients: *[max_clients]Client) !void {
+    const record_size: usize = 70;
+    const max_records_per_packet: usize = (max_packet_size - 14) / record_size;
+    const total = activeSessionCount(sessions);
+    var offset: u16 = 0;
+
+    while (offset < total or (total == 0 and offset == 0)) {
+        var packet: [max_packet_size]u8 = undefined;
+        writeHeader(packet[0..], .server_state, 0);
+        std.mem.writeInt(u16, packet[8..][0..2], total, .little);
+        std.mem.writeInt(u16, packet[10..][0..2], offset, .little);
+        var cursor: usize = 14;
+        var count: u16 = 0;
+        var seen: u16 = 0;
+
+        for (sessions) |session| {
+            if (!session.active) continue;
+            if (seen < offset) {
+                seen += 1;
+                continue;
+            }
+            if (count >= max_records_per_packet) break;
+            std.mem.writeInt(u32, packet[cursor..][0..4], session.id, .little);
+            cursor += 4;
+            std.mem.writeInt(u16, packet[cursor..][0..2], connectedClientCount(clients, session.id), .little);
+            cursor += 2;
+            @memcpy(packet[cursor .. cursor + 64], &session.name);
+            cursor += 64;
+            count += 1;
+            seen += 1;
+        }
+
+        std.mem.writeInt(u16, packet[12..][0..2], count, .little);
+        sendUdp(sock, io, address, packet[0..cursor]);
+        if (total == 0) break;
+        offset += count;
+        if (count == 0) break;
+    }
+}
+
+fn broadcastServerState(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, sessions: *[max_sessions]Session) !void {
+    for (clients) |client| {
+        if (!client.active) continue;
+        try sendServerState(sock, io, client.address, sessions, clients);
+    }
+}
+
+fn activeSessionCount(sessions: *[max_sessions]Session) u16 {
+    var count: u16 = 0;
+    for (sessions) |session| {
+        if (session.active) count += 1;
+    }
+    return count;
+}
+
+fn connectedClientCount(clients: *[max_clients]Client, session_id: u32) u16 {
+    var count: u16 = 0;
+    for (clients) |client| {
+        if (client.active and client.session_id == session_id) count += 1;
+    }
+    return count;
 }
 
 fn sendEntityAccepted(sock: net.Socket, io: std.Io, address: net.IpAddress, client_id: u16, entity_id: u32, client_create_id: u32) !void {
@@ -911,6 +1046,7 @@ fn packetTypeName(packet_type: PacketType) []const u8 {
         .login_rejected => "login_rejected",
         .heartbeat => "heartbeat",
         .join_scene => "join_scene",
+        .join_session => "join_session",
         .create_entity_request => "create",
         .create_entity_accepted => "create_accepted",
         .destroy_entity => "destroy",
@@ -920,6 +1056,7 @@ fn packetTypeName(packet_type: PacketType) []const u8 {
         .active_action_end => "active_action_end",
         .network_event => "network_event",
         .snapshot => "snapshot",
+        .server_state => "server_state",
         .disconnect => "disconnect",
     };
 }

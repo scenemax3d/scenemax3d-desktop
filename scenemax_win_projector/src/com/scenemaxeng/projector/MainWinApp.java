@@ -133,6 +133,11 @@ public class MainWinApp implements IAppObserver {
         prg = applyMultiplayerProperty(prg, "multiplayer_create_session", "scenemax.multiplayer.createSession");
         prg = applyMultiplayerProperty(prg, "multiplayer_session_name", "scenemax.multiplayer.sessionName");
         prg = applyMultiplayerProperty(prg, "multiplayer_scene", "scenemax.multiplayer.scene");
+        if (this.projectGuid != null
+                && !this.projectGuid.isBlank()
+                && isSettingBlank("scenemax.multiplayer.projectGuid", "SCENEMAX_MULTIPLAYER_PROJECT_GUID")) {
+            System.setProperty("scenemax.multiplayer.projectGuid", this.projectGuid.trim());
+        }
         if (hasConfiguredMultiplayerServer() && isSettingBlank("scenemax.multiplayer.player", "SCENEMAX_MULTIPLAYER_PLAYER")) {
             System.setProperty("scenemax.multiplayer.player", "player_" + (System.currentTimeMillis() % 100000));
         }

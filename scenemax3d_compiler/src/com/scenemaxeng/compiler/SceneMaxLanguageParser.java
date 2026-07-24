@@ -926,6 +926,12 @@ public class SceneMaxLanguageParser implements IParser {
                     return cmd;
                 }
 
+                if (action.network_join_session() != null) {
+                    NetworkJoinSessionCommand cmd = new NetworkJoinSessionCommand();
+                    cmd.sessionExpr = action.network_join_session().logical_expression();
+                    return cmd;
+                }
+
                 NetworkEventHandlerCommand cmd = new NetworkEventHandlerCommand();
                 cmd.eventNameExpr = action.network_on().logical_expression();
                 DoBlockCommand doBlock = new DoBlockVisitor(prg).visit(action.network_on().do_block());

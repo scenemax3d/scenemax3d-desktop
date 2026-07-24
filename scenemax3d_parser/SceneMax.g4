@@ -109,9 +109,10 @@ http_address : logical_expression ;
 http_body : logical_expression ;
 
 network_statement : Network '.' network_action ;
-network_action : network_send | network_on ;
+network_action : network_send | network_on | network_join_session ;
 network_send : Send logical_expression ;
 network_on : On '(' logical_expression ')' Equals do_block ;
+network_join_session : Join Session logical_expression ;
 
 add_external_code : Add file_name (',' file_name)* Code ;
 file_name : QUOTED_STRING ;
@@ -334,6 +335,7 @@ value    :
     |    camera_modifier_expr
     |    motion_expr
     |    pool_acquire
+    |    network_runtime_value
     |    var_decl
     |    variable_field
     |    variable_data_field
@@ -371,6 +373,7 @@ variable_field : var_decl '.' var_field ;
 var_field : X | Y | Z | RX | RY | RZ | Hit | AnimPercent | ReplayIndex ;
 
 pool_acquire : var_decl '.' Acquire ;
+network_runtime_value : Network '.' Ready | Network '.' State ('.' Sessions)? ;
 
 // THE LANGUAGE SYNTAX
 
@@ -1041,13 +1044,19 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
     Effekseer | Attr | Cinematic | Videos | Target | Message | TextEffect | Ease | Logger | Java | Error | Process | Weapon | Colliders | Posture | Empty | Event | IK |
     Weight | Blend |
-    Motion | Throw | Toward | Arc | Spin | Physics | Impulse | Force | Torque | Object | Pool | Acquire | Release | Free | Network | Send;
+    Motion | Throw | Toward | Arc | Spin | Physics | Impulse | Force | Torque | Object | Pool | Acquire | Release | Free |
+    Network | Send | Join | Session | Ready | State | Sessions;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
 Pound: '#' ;
 Network : 'Network' | 'network' ;
 Send : 'Send' | 'send' ;
+Join : 'Join' | 'join' ;
+Session : 'Session' | 'session' ;
+Ready : 'Ready' | 'ready' ;
+State : 'State' | 'state' ;
+Sessions : 'Sessions' | 'sessions' ;
 Http : 'Http' | 'http' ;
 Get : 'Get' | 'get' | 'GET' ;
 Post : 'Post' | 'post' | 'POST' ;

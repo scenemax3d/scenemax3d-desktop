@@ -1702,6 +1702,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if(action instanceof NetworkSendCommand) {
             NetworkSendController ctl = new NetworkSendController(this, prg, scope, (NetworkSendCommand) action);
             scope.add(ctl);
+        } else if(action instanceof NetworkJoinSessionCommand) {
+            NetworkJoinSessionController ctl =
+                    new NetworkJoinSessionController(this, prg, scope, (NetworkJoinSessionCommand) action);
+            scope.add(ctl);
         } else if(action instanceof NetworkEventHandlerCommand) {
             NetworkEventHandlerController ctl =
                     new NetworkEventHandlerController(this, prg, scope, (NetworkEventHandlerCommand) action);
@@ -4864,6 +4868,45 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         if (targetClientId != 0) {
             multiplayerNetwork.sendNetworkEvent(targetClientId, eventName.trim());
         }
+    }
+
+    public void joinNetworkSession(Object sessionSelector) {
+        if (multiplayerNetwork == null) {
+            multiplayerNetwork = new MultiplayerNetworkComponent(this);
+            multiplayerNetwork.startFromSystemProperties();
+        }
+        if (multiplayerNetwork == null || sessionSelector == null) {
+            return;
+        }
+        if (sessionSelector instanceof Number) {
+            multiplayerNetwork.joinSession(((Number) sessionSelector).longValue());
+        } else {
+            multiplayerNetwork.joinSession(String.valueOf(sessionSelector));
+        }
+    }
+
+    public boolean isNetworkReady() {
+        return multiplayerNetwork != null && multiplayerNetwork.isReady();
+    }
+
+    public Object getNetworkRuntimeValue(String path) {
+        if (path == null) {
+            return null;
+        }
+        String normalized = path.trim().toLowerCase(Locale.ROOT);
+        if ("network.ready".equals(normalized)) {
+            return isNetworkReady();
+        }
+        if (multiplayerNetwork == null) {
+            return "network.state.sessions".equals(normalized) ? Collections.emptyList() : new JSONObject();
+        }
+        if ("network.state.sessions".equals(normalized)) {
+            return multiplayerNetwork.getStateSessions();
+        }
+        if ("network.state".equals(normalized)) {
+            return multiplayerNetwork.getState();
+        }
+        return null;
     }
 
     public void dispatchMultiplayerCommand(String runtimeName, String commandText) {

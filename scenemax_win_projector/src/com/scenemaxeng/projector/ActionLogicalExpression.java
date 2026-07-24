@@ -656,6 +656,18 @@ public class ActionLogicalExpression extends ActionStatementBase {
                 return res;
             }
 
+            if (ctx.network_runtime_value() != null) {
+                res = app == null ? null : app.getNetworkRuntimeValue(ctx.network_runtime_value().getText());
+                if (res instanceof String) {
+                    turnOnIsString();
+                } else if (res instanceof List || res instanceof JSONObject || res instanceof JSONArray) {
+                    isObject = true;
+                } else if (res instanceof Boolean) {
+                    isResBool = true;
+                }
+                return res;
+            }
+
             if (ctx.logical_expression_pointer() != null) {
                 String varName = ctx.logical_expression_pointer().var_decl().getText();
                 VarInst vi = scope.getVar(varName);

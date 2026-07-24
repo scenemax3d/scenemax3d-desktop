@@ -719,7 +719,7 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
     }
 
     private boolean programUsesMultiplayer(String code) {
-        return code != null && Pattern.compile("\\bmultiplayer\\b", Pattern.CASE_INSENSITIVE).matcher(code).find();
+        return MultiplayerSourceDetector.usesMultiplayer(code);
     }
 
     private String sanitizeMetadataValue(String value) {
