@@ -385,6 +385,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         keyMapping.put("left",KeyInput.KEY_LEFT);
         keyMapping.put("right",KeyInput.KEY_RIGHT);
         keyMapping.put("space",KeyInput.KEY_SPACE);
+        keyMapping.put("enter",KeyInput.KEY_RETURN);
 
         keyMapping.put("0",KeyInput.KEY_0);
         keyMapping.put("1",KeyInput.KEY_1);

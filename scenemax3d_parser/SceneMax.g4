@@ -170,7 +170,7 @@ light_ambient_attr : Ambient Equals? light_color_value ;
 
 input : go_condition? When input_source input_action on_entity? do_block ;
 input_source : KeyA | KeyB | KeyC | KeyD | KeyE | KeyF | KeyG | KeyH | KeyI | KeyJ | KeyK | KeyL | KeyM | KeyN | KeyO |
-               KeyP | KeyQ | KeyR | KeyS | KeyT | KeyU | KeyV | KeyW | KeyX | KeyY | KeyZ | KeySPACE |
+               KeyP | KeyQ | KeyR | KeyS | KeyT | KeyU | KeyV | KeyW | KeyX | KeyY | KeyZ | KeySPACE | KeyEnter |
                KeyLeft | KeyRight | KeyUp | KeyDown | KeyDel |
                Key0 | Key1 | Key2 | Key3 | Key4 | Key5 | Key6 | Key7 | Key8 | Key9 |
                MouseLeft | MouseRight ;
@@ -1465,6 +1465,7 @@ MouseLeft : 'mouse left' | 'Mouse left' | 'mouse Left' | 'Mouse Left' ;
 MouseRight : 'mouse right' | 'Mouse right' | 'mouse Right' | 'Mouse Right' ;
 KeyDel : 'key del' | 'Key del' | 'key Del' | 'Key Del' ;
 KeySPACE : 'key space' | 'Key space' | 'key Space' | 'Key Space';
+KeyEnter : 'key enter' | 'Key enter' | 'key Enter' | 'Key Enter';
 KeyLeft : 'key left' | 'Key left' | 'key Left' | 'Key Left';
 KeyRight : 'key right' | 'Key right' | 'key Right' | 'Key Right';
 KeyUp : 'key up' | 'Key up' | 'key Up' | 'Key Up';
