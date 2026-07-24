@@ -106,6 +106,9 @@ public class RuntimeObjectPool {
         copy.ryExpr = source.ryExpr;
         copy.rzExpr = source.rzExpr;
         copy.scaleExpr = source.scaleExpr;
+        copy.scaleXExpr = source.scaleXExpr;
+        copy.scaleYExpr = source.scaleYExpr;
+        copy.scaleZExpr = source.scaleZExpr;
         copy.massExpr = source.massExpr;
         copy.entityPos = source.entityPos;
         copy.entityRot = source.entityRot;

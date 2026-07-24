@@ -31,7 +31,7 @@ public class UiGetSchemaTool extends AbstractSceneMaxTool {
         JSONObject data = new JSONObject();
 
         data.put("widgetTypes", new JSONArray()
-                .put("PANEL").put("BUTTON").put("TEXT_VIEW").put("IMAGE").put("GUIDELINE"));
+                .put("PANEL").put("BUTTON").put("TEXT_VIEW").put("LIST_VIEW").put("IMAGE").put("GUIDELINE"));
 
         data.put("enums", new JSONObject()
                 .put("sizeMode", new JSONArray().put("FIXED").put("WRAP_CONTENT").put("MATCH_CONSTRAINT"))
@@ -39,13 +39,15 @@ public class UiGetSchemaTool extends AbstractSceneMaxTool {
                 .put("renderMode", new JSONArray().put("SCREEN_SPACE").put("WORLD_SPACE"))
                 .put("chainStyle", new JSONArray().put("SPREAD").put("SPREAD_INSIDE").put("PACKED"))
                 .put("imageScaleMode", new JSONArray().put("fit").put("fill").put("stretch"))
-                .put("textAlignment", new JSONArray().put("left").put("center").put("right")));
+                .put("textAlignment", new JSONArray().put("left").put("center").put("right"))
+                .put("listViewStyle", new JSONArray().put("classic").put("dark").put("blue")));
 
         data.put("commonProperties", commonPropertiesSchema());
         data.put("typeProperties", new JSONObject()
                 .put("PANEL", panelPropertiesSchema())
                 .put("BUTTON", buttonPropertiesSchema())
                 .put("TEXT_VIEW", textViewPropertiesSchema())
+                .put("LIST_VIEW", listViewPropertiesSchema())
                 .put("IMAGE", imagePropertiesSchema())
                 .put("GUIDELINE", guidelinePropertiesSchema()));
 
@@ -159,5 +161,19 @@ public class UiGetSchemaTool extends AbstractSceneMaxTool {
                 .put("guidelineIsHorizontal", "boolean (true = horizontal, false = vertical)")
                 .put("guidelineIsPercent", "boolean (true = guidelinePosition is a 0..1 ratio)")
                 .put("guidelinePosition", "number (pixels or 0..1 depending on guidelineIsPercent)");
+    }
+
+    private JSONObject listViewPropertiesSchema() {
+        return new JSONObject()
+                .put("listColumnCount", "integer >= 1 (default 3)")
+                .put("listHeaders", "array of strings, one per column")
+                .put("listRows", "array of rows; each row is an array of cell strings")
+                .put("listColumnWidths", "array of numbers, one preferred width per column; normalized to fill the widget")
+                .put("listHeaderFontName", "string name from ui.list_fonts, or null for default")
+                .put("listRowFontName", "string name from ui.list_fonts, or null for default")
+                .put("listHeaderFontSize", "number (default 16)")
+                .put("listRowFontSize", "number (default 14)")
+                .put("listViewStyle", "one of enums.listViewStyle (default 'classic')")
+                .put("listSelectedRowIndex", "integer, -1 means no selected row");
     }
 }

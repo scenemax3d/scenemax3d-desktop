@@ -374,6 +374,12 @@ public class ConstraintLayoutEngine {
                 } else {
                     return widget.getFontSize() * 1.4f + 16;
                 }
+            case LIST_VIEW:
+                if (horizontal) {
+                    return widget.getWidth();
+                }
+                int rowCount = widget.getListRows() != null ? widget.getListRows().size() : 0;
+                return widget.getListHeaderFontSize() * 1.8f + rowCount * widget.getListRowFontSize() * 1.8f;
             case IMAGE:
                 // Default preferred size for images; actual size comes from the texture
                 return horizontal ? widget.getWidth() : widget.getHeight();

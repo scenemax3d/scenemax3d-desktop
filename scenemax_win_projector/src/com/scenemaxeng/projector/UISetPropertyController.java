@@ -4,6 +4,9 @@ import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.UISetPropertyCommand;
 import com.scenemaxeng.common.ui.widget.*;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Runtime controller for:
  *   UI.hud.layer1.text1.text = "Hello world"
@@ -144,6 +147,84 @@ public class UISetPropertyController extends SceneMaxBaseController {
                 default:
                     applyCommonProperty(widget, prop, value);
             }
+        } else if (widget instanceof UIListViewNode) {
+            UIListViewNode listView = (UIListViewNode) widget;
+            switch (prop) {
+                case "columns":
+                case "columncount":
+                case "listcolumncount":
+                    try {
+                        listView.setColumnCount((int) Float.parseFloat(value));
+                    } catch (NumberFormatException e) {
+                        app.handleRuntimeError("Invalid list column count: " + value);
+                    }
+                    break;
+                case "headers":
+                case "listheaders":
+                    listView.setHeaders(parseListCells(value));
+                    break;
+                case "rows":
+                case "listrows":
+                    listView.setRows(parseListRows(value));
+                    break;
+                case "widths":
+                case "columnwidths":
+                case "listcolumnwidths":
+                    listView.setColumnWidths(parseListWidths(value));
+                    break;
+                case "addrow":
+                case "appendrow":
+                    listView.addRow(parseListCells(value));
+                    break;
+                case "clear":
+                case "clearrows":
+                    listView.clearRows();
+                    break;
+                case "selected":
+                case "selectedrow":
+                case "selectedrowindex":
+                    try {
+                        listView.setSelectedRowIndex((int) Float.parseFloat(value));
+                    } catch (NumberFormatException e) {
+                        app.handleRuntimeError("Invalid selected row index: " + value);
+                    }
+                    break;
+                case "style":
+                case "listviewstyle":
+                    listView.setListViewStyle(value);
+                    break;
+                case "headerfont":
+                case "listheaderfont":
+                case "listheaderfontname":
+                    listView.setHeaderFontName(defaultToNull(value));
+                    break;
+                case "rowfont":
+                case "listrowfont":
+                case "listrowfontname":
+                    listView.setRowFontName(defaultToNull(value));
+                    break;
+                case "headerfontsize":
+                case "listheaderfontsize":
+                    try {
+                        listView.setHeaderFontSize(Float.parseFloat(value));
+                    } catch (NumberFormatException e) {
+                        app.handleRuntimeError("Invalid list header font size: " + value);
+                    }
+                    break;
+                case "rowfontsize":
+                case "listrowfontsize":
+                    try {
+                        listView.setRowFontSize(Float.parseFloat(value));
+                    } catch (NumberFormatException e) {
+                        app.handleRuntimeError("Invalid list row font size: " + value);
+                    }
+                    break;
+                case "shader":
+                    app.setUIWidgetShader(listView, value);
+                    break;
+                default:
+                    applyCommonProperty(widget, prop, value);
+            }
         } else if (widget instanceof UIPanelNode) {
             UIPanelNode panel = (UIPanelNode) widget;
             switch (prop) {
@@ -194,5 +275,55 @@ public class UISetPropertyController extends SceneMaxBaseController {
         }
 
         return null;
+    }
+
+    private List<String> parseListCells(String value) {
+        List<String> cells = new ArrayList<>();
+        if (value == null || value.isEmpty()) {
+            return cells;
+        }
+        String[] parts = value.split("\\|", -1);
+        for (String part : parts) {
+            cells.add(part.trim());
+        }
+        return cells;
+    }
+
+    private List<List<String>> parseListRows(String value) {
+        List<List<String>> rows = new ArrayList<>();
+        if (value == null || value.trim().isEmpty()) {
+            return rows;
+        }
+        String[] lines = value.split("\\R|;", -1);
+        for (String line : lines) {
+            if (!line.trim().isEmpty()) {
+                rows.add(parseListCells(line));
+            }
+        }
+        return rows;
+    }
+
+    private List<Float> parseListWidths(String value) {
+        List<Float> widths = new ArrayList<>();
+        if (value == null || value.trim().isEmpty()) {
+            return widths;
+        }
+        String[] parts = value.split("[|,]", -1);
+        for (String part : parts) {
+            try {
+                widths.add(Math.max(1f, Float.parseFloat(part.trim())));
+            } catch (NumberFormatException e) {
+                app.handleRuntimeError("Invalid list column width: " + part.trim());
+            }
+        }
+        return widths;
+    }
+
+    private String defaultToNull(String value) {
+        if (value == null || value.trim().isEmpty() || "(default)".equalsIgnoreCase(value.trim())
+                || "default".equalsIgnoreCase(value.trim())) {
+            return null;
+        }
+        return value;
     }
 }

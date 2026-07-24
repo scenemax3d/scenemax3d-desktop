@@ -7,6 +7,7 @@ public enum UIWidgetType {
     PANEL,
     BUTTON,
     TEXT_VIEW,
+    LIST_VIEW,
     IMAGE,
     GUIDELINE
 }

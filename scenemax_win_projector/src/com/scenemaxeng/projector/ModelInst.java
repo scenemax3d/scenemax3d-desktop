@@ -7,6 +7,9 @@ public class ModelInst extends EntityInstBase{
 
     public ModelDef modelDef;
     public ActionLogicalExpressionVm scaleExpr;
+    public ActionLogicalExpressionVm scaleXExpr;
+    public ActionLogicalExpressionVm scaleYExpr;
+    public ActionLogicalExpressionVm scaleZExpr;
     public ActionLogicalExpressionVm massExpr;
     public ActionLogicalExpressionVm xExpr;
     public ActionLogicalExpressionVm yExpr;
@@ -24,6 +27,11 @@ public class ModelInst extends EntityInstBase{
 
         if(varDef.scaleExpr!=null) {
             this.scaleExpr = new ActionLogicalExpressionVm(varDef.scaleExpr,scope);
+        }
+        if(varDef.scaleXExpr!=null) {
+            this.scaleXExpr = new ActionLogicalExpressionVm(varDef.scaleXExpr,scope);
+            this.scaleYExpr = new ActionLogicalExpressionVm(varDef.scaleYExpr,scope);
+            this.scaleZExpr = new ActionLogicalExpressionVm(varDef.scaleZExpr,scope);
         }
 
         if(varDef.massExpr!=null) {

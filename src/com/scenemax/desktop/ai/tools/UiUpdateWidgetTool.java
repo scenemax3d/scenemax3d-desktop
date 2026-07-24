@@ -170,6 +170,27 @@ public class UiUpdateWidgetTool extends AbstractSceneMaxTool {
                 throw new IllegalArgumentException("imageScaleMode must be fit, fill, or stretch.");
             }
         }
+        if ("LIST_VIEW".equals(type)) {
+            int columns = widget.optInt("listColumnCount", 1);
+            if (columns < 1) {
+                throw new IllegalArgumentException("listColumnCount must be at least 1.");
+            }
+            String style = widget.optString("listViewStyle", "classic");
+            if (!"classic".equals(style) && !"dark".equals(style) && !"blue".equals(style)) {
+                throw new IllegalArgumentException("listViewStyle must be classic, dark, or blue.");
+            }
+            JSONArray widths = widget.optJSONArray("listColumnWidths");
+            if (widths != null) {
+                if (widths.length() != columns) {
+                    throw new IllegalArgumentException("listColumnWidths must contain one width per column.");
+                }
+                for (int i = 0; i < widths.length(); i++) {
+                    if (widths.optDouble(i, 0) <= 0) {
+                        throw new IllegalArgumentException("listColumnWidths values must be greater than zero.");
+                    }
+                }
+            }
+        }
     }
 
     private JSONObject validateConstraint(JSONObject c, JSONObject root, String selfName) {
@@ -213,6 +234,20 @@ public class UiUpdateWidgetTool extends AbstractSceneMaxTool {
             Set<String> names = UiAuthoringSupport.fontNames(context);
             if (!names.contains(font)) {
                 warnings.put("Unknown fontName '" + font + "' — not found in ui.list_fonts.");
+            }
+        }
+        String headerFont = widget.optString("listHeaderFontName", null);
+        if (headerFont != null && !headerFont.isEmpty()) {
+            Set<String> names = UiAuthoringSupport.fontNames(context);
+            if (!names.contains(headerFont)) {
+                warnings.put("Unknown listHeaderFontName '" + headerFont + "' not found in ui.list_fonts.");
+            }
+        }
+        String rowFont = widget.optString("listRowFontName", null);
+        if (rowFont != null && !rowFont.isEmpty()) {
+            Set<String> names = UiAuthoringSupport.fontNames(context);
+            if (!names.contains(rowFont)) {
+                warnings.put("Unknown listRowFontName '" + rowFont + "' not found in ui.list_fonts.");
             }
         }
         return warnings;

@@ -12,7 +12,7 @@ import java.util.UUID;
  *
  * Each widget has:
  * - A unique name (used for constraint references and scripting access)
- * - A type (PANEL, BUTTON, TEXT_VIEW, IMAGE, GUIDELINE)
+ * - A type (PANEL, BUTTON, TEXT_VIEW, LIST_VIEW, IMAGE, GUIDELINE)
  * - Size mode and dimensions
  * - Constraints that define its position within the parent
  * - Bias for centering when constrained on both sides
@@ -88,6 +88,18 @@ public class UIWidgetDef {
     private float fontSize = 16;
     private String textAlignment = "left";   // left, center, right
     private String fontName = null;          // font from AssetsMapping (null = default)
+
+    // LIST_VIEW
+    private int listColumnCount = 3;
+    private List<String> listHeaders = new ArrayList<>();
+    private List<List<String>> listRows = new ArrayList<>();
+    private List<Float> listColumnWidths = new ArrayList<>();
+    private String listHeaderFontName = null;
+    private String listRowFontName = null;
+    private float listHeaderFontSize = 16;
+    private float listRowFontSize = 14;
+    private String listViewStyle = "classic";
+    private int listSelectedRowIndex = -1;
 
     // IMAGE
     private String imagePath = null;
@@ -218,6 +230,70 @@ public class UIWidgetDef {
     public String getFontName() { return fontName; }
     public void setFontName(String fontName) { this.fontName = fontName; }
 
+    // List view properties
+    public int getListColumnCount() { return listColumnCount; }
+    public void setListColumnCount(int count) {
+        this.listColumnCount = Math.max(1, count);
+        normalizeListViewData();
+    }
+    public List<String> getListHeaders() { return listHeaders; }
+    public void setListHeaders(List<String> headers) {
+        this.listHeaders = headers != null ? new ArrayList<>(headers) : new ArrayList<>();
+        normalizeListViewData();
+    }
+    public List<List<String>> getListRows() { return listRows; }
+    public void setListRows(List<List<String>> rows) {
+        this.listRows = new ArrayList<>();
+        if (rows != null) {
+            for (List<String> row : rows) {
+                this.listRows.add(row != null ? new ArrayList<>(row) : new ArrayList<>());
+            }
+        }
+        normalizeListViewData();
+    }
+    public List<Float> getListColumnWidths() { return listColumnWidths; }
+    public void setListColumnWidths(List<Float> widths) {
+        this.listColumnWidths = new ArrayList<>();
+        if (widths != null) {
+            for (Float widthValue : widths) {
+                this.listColumnWidths.add(sanitizeListColumnWidth(widthValue));
+            }
+        }
+        normalizeListViewData();
+    }
+    public List<Float> getEffectiveListColumnWidths(float totalWidth) {
+        normalizeListViewData();
+        List<Float> effective = new ArrayList<>();
+        float targetWidth = Math.max(1f, totalWidth);
+        float totalPreferredWidth = 0f;
+        for (Float widthValue : listColumnWidths) {
+            totalPreferredWidth += Math.max(1f, widthValue);
+        }
+        if (totalPreferredWidth <= 0f) {
+            float equalWidth = targetWidth / listColumnCount;
+            for (int i = 0; i < listColumnCount; i++) {
+                effective.add(equalWidth);
+            }
+            return effective;
+        }
+        for (Float widthValue : listColumnWidths) {
+            effective.add(Math.max(1f, widthValue) / totalPreferredWidth * targetWidth);
+        }
+        return effective;
+    }
+    public String getListHeaderFontName() { return listHeaderFontName; }
+    public void setListHeaderFontName(String fontName) { this.listHeaderFontName = fontName; }
+    public String getListRowFontName() { return listRowFontName; }
+    public void setListRowFontName(String fontName) { this.listRowFontName = fontName; }
+    public float getListHeaderFontSize() { return listHeaderFontSize; }
+    public void setListHeaderFontSize(float fontSize) { this.listHeaderFontSize = Math.max(1f, fontSize); }
+    public float getListRowFontSize() { return listRowFontSize; }
+    public void setListRowFontSize(float fontSize) { this.listRowFontSize = Math.max(1f, fontSize); }
+    public String getListViewStyle() { return listViewStyle; }
+    public void setListViewStyle(String style) { this.listViewStyle = style == null || style.isEmpty() ? "classic" : style; }
+    public int getListSelectedRowIndex() { return listSelectedRowIndex; }
+    public void setListSelectedRowIndex(int rowIndex) { this.listSelectedRowIndex = rowIndex; }
+
     // Image properties
     public String getImagePath() { return imagePath; }
     public void setImagePath(String path) { this.imagePath = path; }
@@ -245,6 +321,42 @@ public class UIWidgetDef {
     // Z-order
     public int getZOrder() { return zOrder; }
     public void setZOrder(int zOrder) { this.zOrder = zOrder; }
+
+    private void normalizeListViewData() {
+        if (listColumnCount < 1) {
+            listColumnCount = 1;
+        }
+        while (listHeaders.size() < listColumnCount) {
+            listHeaders.add("Column " + (listHeaders.size() + 1));
+        }
+        while (listHeaders.size() > listColumnCount) {
+            listHeaders.remove(listHeaders.size() - 1);
+        }
+        while (listColumnWidths.size() < listColumnCount) {
+            listColumnWidths.add(100f);
+        }
+        while (listColumnWidths.size() > listColumnCount) {
+            listColumnWidths.remove(listColumnWidths.size() - 1);
+        }
+        for (int i = 0; i < listColumnWidths.size(); i++) {
+            listColumnWidths.set(i, sanitizeListColumnWidth(listColumnWidths.get(i)));
+        }
+        for (List<String> row : listRows) {
+            while (row.size() < listColumnCount) {
+                row.add("");
+            }
+            while (row.size() > listColumnCount) {
+                row.remove(row.size() - 1);
+            }
+        }
+    }
+
+    private float sanitizeListColumnWidth(Float widthValue) {
+        if (widthValue == null || widthValue.isNaN() || widthValue.isInfinite()) {
+            return 100f;
+        }
+        return Math.max(1f, widthValue);
+    }
 
     // ========================================================================
     // Constraint helpers
@@ -352,6 +464,35 @@ public class UIWidgetDef {
                 json.put("textAlignment", textAlignment);
                 if (fontName != null) json.put("fontName", fontName);
                 break;
+            case LIST_VIEW:
+                normalizeListViewData();
+                json.put("listColumnCount", listColumnCount);
+                JSONArray headersArr = new JSONArray();
+                for (String header : listHeaders) {
+                    headersArr.put(header);
+                }
+                json.put("listHeaders", headersArr);
+                JSONArray rowsArr = new JSONArray();
+                for (List<String> row : listRows) {
+                    JSONArray rowArr = new JSONArray();
+                    for (String cell : row) {
+                        rowArr.put(cell);
+                    }
+                    rowsArr.put(rowArr);
+                }
+                json.put("listRows", rowsArr);
+                JSONArray widthsArr = new JSONArray();
+                for (Float widthValue : listColumnWidths) {
+                    widthsArr.put(widthValue);
+                }
+                json.put("listColumnWidths", widthsArr);
+                if (listHeaderFontName != null) json.put("listHeaderFontName", listHeaderFontName);
+                if (listRowFontName != null) json.put("listRowFontName", listRowFontName);
+                json.put("listHeaderFontSize", listHeaderFontSize);
+                json.put("listRowFontSize", listRowFontSize);
+                json.put("listViewStyle", listViewStyle);
+                json.put("listSelectedRowIndex", listSelectedRowIndex);
+                break;
             case IMAGE:
                 if (imagePath != null) json.put("imagePath", imagePath);
                 json.put("imageScaleMode", imageScaleMode);
@@ -450,6 +591,44 @@ public class UIWidgetDef {
                 def.fontSize = (float) json.optDouble("fontSize", 16);
                 def.textAlignment = json.optString("textAlignment", "left");
                 def.fontName = json.optString("fontName", null);
+                break;
+            case LIST_VIEW:
+                def.listColumnCount = Math.max(1, json.optInt("listColumnCount", 3));
+                def.listHeaders.clear();
+                JSONArray headersArr = json.optJSONArray("listHeaders");
+                if (headersArr != null) {
+                    for (int i = 0; i < headersArr.length(); i++) {
+                        def.listHeaders.add(headersArr.optString(i, ""));
+                    }
+                }
+                def.listRows.clear();
+                JSONArray rowsArr = json.optJSONArray("listRows");
+                if (rowsArr != null) {
+                    for (int i = 0; i < rowsArr.length(); i++) {
+                        JSONArray rowArr = rowsArr.optJSONArray(i);
+                        List<String> row = new ArrayList<>();
+                        if (rowArr != null) {
+                            for (int j = 0; j < rowArr.length(); j++) {
+                                row.add(rowArr.optString(j, ""));
+                            }
+                        }
+                        def.listRows.add(row);
+                    }
+                }
+                def.listColumnWidths.clear();
+                JSONArray widthsArr = json.optJSONArray("listColumnWidths");
+                if (widthsArr != null) {
+                    for (int i = 0; i < widthsArr.length(); i++) {
+                        def.listColumnWidths.add(def.sanitizeListColumnWidth((float) widthsArr.optDouble(i, 100)));
+                    }
+                }
+                def.listHeaderFontName = json.optString("listHeaderFontName", null);
+                def.listRowFontName = json.optString("listRowFontName", null);
+                def.listHeaderFontSize = (float) json.optDouble("listHeaderFontSize", 16);
+                def.listRowFontSize = (float) json.optDouble("listRowFontSize", 14);
+                def.listViewStyle = json.optString("listViewStyle", "classic");
+                def.listSelectedRowIndex = json.optInt("listSelectedRowIndex", -1);
+                def.normalizeListViewData();
                 break;
             case IMAGE:
                 def.imagePath = json.optString("imagePath", null);

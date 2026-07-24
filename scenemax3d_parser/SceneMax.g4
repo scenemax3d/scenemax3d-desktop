@@ -465,7 +465,12 @@ rot_entity : var_decl ;
 rotate_x : logical_expression ;
 rotate_y : logical_expression ;
 rotate_z : logical_expression ;
-init_scale_attr : Scale Equals? logical_expression ;
+init_scale_attr : Scale Equals? scale_value ;
+scale_value : logical_expression | '(' scale_axes ')' ;
+scale_axes : scale_x ',' scale_y ',' scale_z ;
+scale_x : logical_expression ;
+scale_y : logical_expression ;
+scale_z : logical_expression ;
 init_mass_attr : Mass Equals? logical_expression ;
 
 modify_variable : variable_name_and_mandatory_assignemt (',' variable_name_and_mandatory_assignemt)*;

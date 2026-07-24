@@ -105,6 +105,37 @@ public class DesignerAttachmentCodeGenerationTest {
     }
 
     @Test
+    public void emitsVectorScaleForNonUniformPrimitiveAndModelScale() throws Exception {
+        Path tempDir = Files.createTempDirectory("designer-vector-scale-code");
+        File smdesign = tempDir.resolve("scene.smdesign").toFile();
+
+        DesignerEntity cylinder = new DesignerEntity("cylinder_1", DesignerEntityType.CYLINDER);
+        cylinder.setMaterial("alpha2");
+        Node cylinderNode = new Node("cylinder_1");
+        cylinderNode.setLocalTranslation(0f, -1.7346244f, 0f);
+        cylinderNode.setLocalScale(10.9f, 10.8f, 1f);
+        cylinder.setSceneNode(cylinderNode);
+
+        DesignerEntity model = new DesignerEntity("model_1", DesignerEntityType.MODEL);
+        model.setResourcePath("fighter1_native");
+        Node modelNode = new Node("model_1");
+        modelNode.setLocalTranslation(0f, -0.55080366f, -4.655924f);
+        modelNode.setLocalScale(2f, 3f, 4f);
+        model.setSceneNode(modelNode);
+
+        DesignerDocument.saveCodeFile(
+                smdesign,
+                Arrays.asList(cylinder, model),
+                new Vector3f(0, 2, 10),
+                new Quaternion(0, 1, 0, 0),
+                "");
+
+        String code = Files.readString(DesignerDocument.getCodeFile(smdesign).toPath(), StandardCharsets.UTF_8);
+        assertTrue(code.contains("cylinder_1 => cylinder : radius (1.0,1.0), height 2.0, pos (0.0,-1.7346244,0.0), material \"alpha2\", scale (10.9,10.8,1.0)"));
+        assertTrue(code.contains("model_1 => fighter1_native: pos (0.0,-0.55080366,-4.655924), scale (2.0,3.0,4.0) async"));
+    }
+
+    @Test
     public void designerAttachmentPreviewCompensatesForParentScaleLikeRuntime() {
         DesignerApp app = new DesignerApp();
 

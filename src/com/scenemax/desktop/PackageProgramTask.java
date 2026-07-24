@@ -3733,6 +3733,8 @@ public class PackageProgramTask extends SwingWorker<Integer, String> {
         }
 
         addIfNotBlank(uiReferencedFontNames, widget.getFontName());
+        addIfNotBlank(uiReferencedFontNames, widget.getListHeaderFontName());
+        addIfNotBlank(uiReferencedFontNames, widget.getListRowFontName());
         addIfNotBlank(uiReferencedSpriteNames, widget.getSpriteName());
         addIfNotBlank(uiReferencedImagePaths, widget.getImagePath());
         addIfNotBlank(uiReferencedImagePaths, widget.getBackgroundImage());

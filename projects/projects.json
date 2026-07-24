@@ -230,11 +230,19 @@
             "multiplayerServerPort": 9001
         },
         {
+            "itchWindowsChannel": "",
+            "itchGamePage": "",
+            "multiplayerDeployOs": "Windows",
+            "itchMacChannel": "",
+            "itchLinuxChannel": "",
             "path": "projects/GMTK_2026",
+            "multiplayerPassword": "",
+            "multiplayerServerIp": "127.0.0.1",
             "selectedNode": "main",
             "projectGuid": "a0b355af-0b53-4886-86f3-b8c329a4f575",
             "name": "GMTK 2026",
-            "selectedParent": "GMTK 2026"
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\GMTK_2026\\scripts\\GMTK 2026\\level1",
+            "multiplayerServerPort": 9001
         }
     ],
     "selectedProject": "GMTK 2026"

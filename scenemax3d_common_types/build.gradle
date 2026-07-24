@@ -28,7 +28,7 @@ sourceSets {
     }
 }
 
-def jme3 = [v:'3.7.0-alpha3.1', g:'org.jmonkeyengine']
+def jme3 = [v:'3.9.0-stable', g:'org.jmonkeyengine']
 dependencies {
     implementation 'commons-io:commons-io:2.11.0'
     implementation "${jme3.g}:jme3-core:${jme3.v}"

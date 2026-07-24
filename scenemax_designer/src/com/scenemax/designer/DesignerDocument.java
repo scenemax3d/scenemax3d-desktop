@@ -607,15 +607,23 @@ public class DesignerDocument {
     }
 
     /**
-     * Builds the ", scale N" suffix from a Vector3f scale (using the X component).
-     * Returns an empty string when the scale is effectively 1.0.
+     * Builds the scale suffix for either uniform or non-uniform Vector3f scale.
+     * Returns an empty string when the scale is effectively (1,1,1).
      */
     private static String buildScaleSuffix(Vector3f scale) {
-        float s = scale.x;
-        if (Math.abs(s - 1.0f) < 0.001f) {
+        if (scale == null || isUnitScale(scale)) {
             return "";
         }
-        return ", scale " + s;
+        if (Math.abs(scale.x - scale.y) < 0.001f && Math.abs(scale.x - scale.z) < 0.001f) {
+            return ", scale " + scale.x;
+        }
+        return ", scale (" + scale.x + "," + scale.y + "," + scale.z + ")";
+    }
+
+    private static boolean isUnitScale(Vector3f scale) {
+        return Math.abs(scale.x - 1.0f) < 0.001f
+                && Math.abs(scale.y - 1.0f) < 0.001f
+                && Math.abs(scale.z - 1.0f) < 0.001f;
     }
 
     /**

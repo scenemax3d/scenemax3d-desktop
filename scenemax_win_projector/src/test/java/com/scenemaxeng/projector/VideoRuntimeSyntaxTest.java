@@ -61,4 +61,38 @@ public class VideoRuntimeSyntaxTest {
         QuadVariableDef quad = (QuadVariableDef) prg.getVar("quad_1");
         assertTrue(quad.scaleExpr != null);
     }
+
+    @Test
+    public void parsesVectorScaleForModelsAndAllPrimitiveEntities() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "model_1 => cube: pos (0,0,0), scale (2,3,4)\n"
+                        + "box_1 => box : size (1,1,1), scale (2,3,4)\n"
+                        + "sphere_1 => sphere : radius 1, scale (2,3,4)\n"
+                        + "cylinder_1 => cylinder : radius (1,1), height 2, scale (2,3,4)\n"
+                        + "hollow_1 => hollow cylinder : radius (1,1), inner radius (0.5,0.5), height 2, scale (2,3,4)\n"
+                        + "quad_1 => quad : size (1,1), scale (2,3,4)\n"
+                        + "wedge_1 => wedge : size (1,1,1), scale (2,3,4)\n"
+                        + "cone_1 => cone : radius (0,1), height 2, scale (2,3,4)\n"
+                        + "stairs_1 => stairs : size (2,0.25,0.4), steps 6, scale (2,3,4)\n"
+                        + "arch_1 => arch : size (2,2.5,0.5), thickness 0.35, segments 12, scale (2,3,4)");
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+        assertVectorScale(prg.getVar("model_1"));
+        assertVectorScale(prg.getVar("box_1"));
+        assertVectorScale(prg.getVar("sphere_1"));
+        assertVectorScale(prg.getVar("cylinder_1"));
+        assertVectorScale(prg.getVar("hollow_1"));
+        assertVectorScale(prg.getVar("quad_1"));
+        assertVectorScale(prg.getVar("wedge_1"));
+        assertVectorScale(prg.getVar("cone_1"));
+        assertVectorScale(prg.getVar("stairs_1"));
+        assertVectorScale(prg.getVar("arch_1"));
+    }
+
+    private static void assertVectorScale(VariableDef varDef) {
+        assertTrue(varDef.scaleExpr == null);
+        assertTrue(varDef.scaleXExpr != null);
+        assertTrue(varDef.scaleYExpr != null);
+        assertTrue(varDef.scaleZExpr != null);
+    }
 }

@@ -82,6 +82,18 @@ public class UIDesignerPanel extends JPanel {
     private JPanel buttonPropsPanel;
     private JTextField txtButtonText;
 
+    private JPanel listViewPropsPanel;
+    private JSpinner spnListColumnCount;
+    private JComboBox<String> cboListViewStyle;
+    private JComboBox<String> cboListHeaderFont;
+    private JComboBox<String> cboListRowFont;
+    private JSpinner spnListHeaderFontSize;
+    private JSpinner spnListRowFontSize;
+    private JSpinner spnListSelectedRow;
+    private JTextField txtListColumnWidths;
+    private JTextArea txtListHeaders;
+    private JTextArea txtListRows;
+
     private JPanel imagePropsPanel;
     private JTextField txtImagePath;
     private JComboBox<String> cboSprite;
@@ -238,6 +250,11 @@ public class UIDesignerPanel extends JPanel {
         btnAddImage.addActionListener(e -> addWidget(UIWidgetType.IMAGE));
         toolbar.add(btnAddImage);
 
+        JButton btnAddListView = new JButton(createUIToolbarIcon("listview"));
+        btnAddListView.setToolTipText("Add Selectable List View");
+        btnAddListView.addActionListener(e -> addWidget(UIWidgetType.LIST_VIEW));
+        toolbar.add(btnAddListView);
+
         JButton btnAddGuideline = new JButton(createUIToolbarIcon("guideline"));
         btnAddGuideline.setToolTipText("Add Guideline");
         btnAddGuideline.addActionListener(e -> addWidget(UIWidgetType.GUIDELINE));
@@ -295,6 +312,12 @@ public class UIDesignerPanel extends JPanel {
         canvas.setSelectionListener(widget -> {
             selectWidgetInTree(widget);
             showPropertiesForWidget(widget);
+        });
+        canvas.setWidgetEditListener(widget -> {
+            markDirty();
+            if (widget != null && widget == canvas.getSelectedWidget()) {
+                showPropertiesForWidget(widget);
+            }
         });
 
         // --- Right panel: Properties ---
@@ -516,6 +539,69 @@ public class UIDesignerPanel extends JPanel {
         buttonPropsPanel.setVisible(false);
         propertiesPanel.add(buttonPropsPanel);
 
+        // --- Type-specific: Selectable List View ---
+        listViewPropsPanel = new JPanel();
+        listViewPropsPanel.setLayout(new BoxLayout(listViewPropsPanel, BoxLayout.Y_AXIS));
+        listViewPropsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        listViewPropsPanel.setBorder(BorderFactory.createTitledBorder("List View Properties"));
+
+        spnListColumnCount = new JSpinner(new SpinnerNumberModel(3, 1, 50, 1));
+        spnListColumnCount.addChangeListener(e -> applyListViewChange());
+        installAutoSaveOnFocusLost(spnListColumnCount, this::applyListViewChange);
+        addFormRowTo(listViewPropsPanel, "Columns:", spnListColumnCount);
+
+        cboListViewStyle = new JComboBox<>(new String[]{"classic", "dark", "blue"});
+        cboListViewStyle.addActionListener(e -> applyListViewChange());
+        installAutoSaveOnFocusLost(cboListViewStyle, null);
+        addFormRowTo(listViewPropsPanel, "Style:", cboListViewStyle);
+
+        spnListHeaderFontSize = new JSpinner(new SpinnerNumberModel(16.0, 1.0, 200.0, 1.0));
+        spnListHeaderFontSize.addChangeListener(e -> applyListViewChange());
+        installAutoSaveOnFocusLost(spnListHeaderFontSize, this::applyListViewChange);
+        addFormRowTo(listViewPropsPanel, "Header Size:", spnListHeaderFontSize);
+
+        spnListRowFontSize = new JSpinner(new SpinnerNumberModel(14.0, 1.0, 200.0, 1.0));
+        spnListRowFontSize.addChangeListener(e -> applyListViewChange());
+        installAutoSaveOnFocusLost(spnListRowFontSize, this::applyListViewChange);
+        addFormRowTo(listViewPropsPanel, "Row Size:", spnListRowFontSize);
+
+        cboListHeaderFont = new JComboBox<>();
+        copyFontItems(cboListHeaderFont);
+        cboListHeaderFont.addActionListener(e -> applyListViewChange());
+        installAutoSaveOnFocusLost(cboListHeaderFont, null);
+        addFormRowTo(listViewPropsPanel, "Header Font:", cboListHeaderFont);
+
+        cboListRowFont = new JComboBox<>();
+        copyFontItems(cboListRowFont);
+        cboListRowFont.addActionListener(e -> applyListViewChange());
+        installAutoSaveOnFocusLost(cboListRowFont, null);
+        addFormRowTo(listViewPropsPanel, "Row Font:", cboListRowFont);
+
+        spnListSelectedRow = new JSpinner(new SpinnerNumberModel(-1, -1, 9999, 1));
+        spnListSelectedRow.addChangeListener(e -> applyListViewChange());
+        installAutoSaveOnFocusLost(spnListSelectedRow, this::applyListViewChange);
+        addFormRowTo(listViewPropsPanel, "Selected:", spnListSelectedRow);
+
+        txtListColumnWidths = new JTextField(15);
+        txtListColumnWidths.addActionListener(e -> applyListViewChange());
+        installAutoSaveOnFocusLost(txtListColumnWidths, this::applyListViewChange);
+        addFormRowTo(listViewPropsPanel, "Widths:", txtListColumnWidths);
+
+        txtListHeaders = new JTextArea(2, 15);
+        txtListHeaders.setLineWrap(true);
+        txtListHeaders.setWrapStyleWord(true);
+        installAutoSaveOnFocusLost(txtListHeaders, this::applyListViewChange);
+        addTextAreaRowTo(listViewPropsPanel, "Headers:", txtListHeaders);
+
+        txtListRows = new JTextArea(6, 15);
+        txtListRows.setLineWrap(true);
+        txtListRows.setWrapStyleWord(true);
+        installAutoSaveOnFocusLost(txtListRows, this::applyListViewChange);
+        addTextAreaRowTo(listViewPropsPanel, "Rows:", txtListRows);
+
+        listViewPropsPanel.setVisible(false);
+        propertiesPanel.add(listViewPropsPanel);
+
         // --- Type-specific: Image ---
         imagePropsPanel = new JPanel();
         imagePropsPanel.setLayout(new BoxLayout(imagePropsPanel, BoxLayout.Y_AXIS));
@@ -561,6 +647,7 @@ public class UIDesignerPanel extends JPanel {
             case PANEL: baseName = "panel"; break;
             case BUTTON: baseName = "button"; break;
             case TEXT_VIEW: baseName = "text"; break;
+            case LIST_VIEW: baseName = "listView"; break;
             case IMAGE: baseName = "image"; break;
             case GUIDELINE: baseName = "guideline"; break;
             default: baseName = "widget"; break;
@@ -587,6 +674,18 @@ public class UIDesignerPanel extends JPanel {
             case TEXT_VIEW:
                 widget.setWidth(150);
                 widget.setHeight(30);
+                break;
+            case LIST_VIEW:
+                widget.setWidth(420);
+                widget.setHeight(220);
+                widget.setListColumnCount(3);
+                widget.setListHeaders(Arrays.asList("Name", "Value", "Status"));
+                widget.setListColumnWidths(Arrays.asList(140f, 140f, 140f));
+                widget.setListRows(Arrays.asList(
+                        Arrays.asList("Player 1", "100", "Ready"),
+                        Arrays.asList("Player 2", "80", "Waiting")
+                ));
+                widget.setListViewStyle("classic");
                 break;
             case IMAGE:
                 widget.setWidth(100);
@@ -856,6 +955,13 @@ public class UIDesignerPanel extends JPanel {
             });
             menu.add(miAddImage);
 
+            JMenuItem miAddListView = new JMenuItem("Add Selectable List View");
+            miAddListView.addActionListener(ev -> {
+                canvas.setSelectedWidget(widget);
+                addWidget(UIWidgetType.LIST_VIEW);
+            });
+            menu.add(miAddListView);
+
             menu.addSeparator();
         }
 
@@ -881,6 +987,7 @@ public class UIDesignerPanel extends JPanel {
         // Hide all type-specific panels
         textPropsPanel.setVisible(false);
         buttonPropsPanel.setVisible(false);
+        listViewPropsPanel.setVisible(false);
         imagePropsPanel.setVisible(false);
 
         if (widget == null) {
@@ -944,6 +1051,19 @@ public class UIDesignerPanel extends JPanel {
                 buttonPropsPanel.setVisible(true);
                 txtButtonText.setText(widget.getButtonText());
                 break;
+            case LIST_VIEW:
+                listViewPropsPanel.setVisible(true);
+                spnListColumnCount.setValue(widget.getListColumnCount());
+                cboListViewStyle.setSelectedItem(widget.getListViewStyle() != null ? widget.getListViewStyle() : "classic");
+                spnListHeaderFontSize.setValue((double) widget.getListHeaderFontSize());
+                spnListRowFontSize.setValue((double) widget.getListRowFontSize());
+                spnListSelectedRow.setValue(widget.getListSelectedRowIndex());
+                setFontComboSelection(cboListHeaderFont, widget.getListHeaderFontName());
+                setFontComboSelection(cboListRowFont, widget.getListRowFontName());
+                txtListColumnWidths.setText(joinListWidths(widget.getListColumnWidths()));
+                txtListHeaders.setText(joinListCells(widget.getListHeaders()));
+                txtListRows.setText(joinListRows(widget.getListRows()));
+                break;
             case IMAGE:
                 imagePropsPanel.setVisible(true);
                 txtImagePath.setText(widget.getImagePath() != null ? widget.getImagePath() : "");
@@ -975,8 +1095,12 @@ public class UIDesignerPanel extends JPanel {
         spnMarginRight.setValue(0.0);
         spnMarginTop.setValue(0.0);
         spnMarginBottom.setValue(0.0);
+        if (txtListColumnWidths != null) {
+            txtListColumnWidths.setText("");
+        }
         textPropsPanel.setVisible(false);
         buttonPropsPanel.setVisible(false);
+        listViewPropsPanel.setVisible(false);
         imagePropsPanel.setVisible(false);
         updatingProperties = false;
     }
@@ -1184,6 +1308,27 @@ public class UIDesignerPanel extends JPanel {
         canvas.refreshLayout();
     }
 
+    private void applyListViewChange() {
+        if (updatingProperties) return;
+        UIWidgetDef widget = canvas.getSelectedWidget();
+        if (widget == null || widget.getType() != UIWidgetType.LIST_VIEW) return;
+
+        int columns = ((Number) spnListColumnCount.getValue()).intValue();
+        widget.setListColumnCount(columns);
+        widget.setListViewStyle((String) cboListViewStyle.getSelectedItem());
+        widget.setListHeaderFontSize(((Number) spnListHeaderFontSize.getValue()).floatValue());
+        widget.setListRowFontSize(((Number) spnListRowFontSize.getValue()).floatValue());
+        widget.setListSelectedRowIndex(((Number) spnListSelectedRow.getValue()).intValue());
+        widget.setListHeaderFontName(fontComboValue(cboListHeaderFont));
+        widget.setListRowFontName(fontComboValue(cboListRowFont));
+        widget.setListColumnWidths(parseListWidths(txtListColumnWidths.getText(), columns));
+        widget.setListHeaders(parseListCells(txtListHeaders.getText(), columns));
+        widget.setListRows(parseListRows(txtListRows.getText(), columns));
+
+        markDirty();
+        canvas.refreshLayout();
+    }
+
     private void applyImagePathChange() {
         if (updatingProperties) return;
         UIWidgetDef widget = canvas.getSelectedWidget();
@@ -1261,6 +1406,127 @@ public class UIDesignerPanel extends JPanel {
         } catch (Exception e) {
             System.err.println("[UIDesigner] Failed to load font names: " + e.getMessage());
         }
+    }
+
+    private void copyFontItems(JComboBox<String> target) {
+        target.addItem("(default)");
+        if (cboFont == null) {
+            return;
+        }
+        for (int i = 0; i < cboFont.getItemCount(); i++) {
+            String item = cboFont.getItemAt(i);
+            if (!"(default)".equals(item)) {
+                target.addItem(item);
+            }
+        }
+    }
+
+    private String fontComboValue(JComboBox<String> combo) {
+        String selected = (String) combo.getSelectedItem();
+        return selected == null || "(default)".equals(selected) ? null : selected;
+    }
+
+    private void setFontComboSelection(JComboBox<String> combo, String fontName) {
+        if (fontName != null && !fontName.isEmpty()) {
+            combo.setSelectedItem(fontName);
+        } else {
+            combo.setSelectedIndex(0);
+        }
+    }
+
+    private List<String> parseListCells(String text, int columns) {
+        List<String> cells = new ArrayList<>();
+        if (text != null && !text.isEmpty()) {
+            String[] parts = text.split("\\|", -1);
+            for (String part : parts) {
+                cells.add(part.trim());
+            }
+        }
+        while (cells.size() < columns) {
+            cells.add("Column " + (cells.size() + 1));
+        }
+        while (cells.size() > columns) {
+            cells.remove(cells.size() - 1);
+        }
+        return cells;
+    }
+
+    private List<List<String>> parseListRows(String text, int columns) {
+        List<List<String>> rows = new ArrayList<>();
+        if (text == null || text.trim().isEmpty()) {
+            return rows;
+        }
+        String[] lines = text.split("\\R", -1);
+        for (String line : lines) {
+            if (line.trim().isEmpty()) {
+                continue;
+            }
+            List<String> row = new ArrayList<>();
+            String[] parts = line.split("\\|", -1);
+            for (String part : parts) {
+                row.add(part.trim());
+            }
+            while (row.size() < columns) {
+                row.add("");
+            }
+            while (row.size() > columns) {
+                row.remove(row.size() - 1);
+            }
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private List<Float> parseListWidths(String text, int columns) {
+        List<Float> widths = new ArrayList<>();
+        if (text != null && !text.trim().isEmpty()) {
+            String[] parts = text.split("[|,]", -1);
+            for (String part : parts) {
+                try {
+                    widths.add(Math.max(1f, Float.parseFloat(part.trim())));
+                } catch (NumberFormatException e) {
+                    widths.add(100f);
+                }
+            }
+        }
+        while (widths.size() < columns) {
+            widths.add(100f);
+        }
+        while (widths.size() > columns) {
+            widths.remove(widths.size() - 1);
+        }
+        return widths;
+    }
+
+    private String joinListCells(List<String> cells) {
+        return String.join(" | ", cells);
+    }
+
+    private String joinListWidths(List<Float> widths) {
+        StringBuilder sb = new StringBuilder();
+        for (Float width : widths) {
+            if (sb.length() > 0) {
+                sb.append(" | ");
+            }
+            float value = width != null ? width : 100f;
+            if (Math.abs(value - Math.round(value)) < 0.001f) {
+                sb.append(Math.round(value));
+            } else {
+                sb.append(String.format(Locale.US, "%.1f", value));
+            }
+        }
+        return sb.toString();
+    }
+
+    private String joinListRows(List<List<String>> rows) {
+        StringBuilder sb = new StringBuilder();
+        for (List<String> row : rows) {
+            if (sb.length() > 0) {
+                sb.append('\n');
+            }
+            sb.append(joinListCells(row));
+        }
+        return sb.toString();
     }
 
     // ========================================================================
@@ -1367,6 +1633,20 @@ public class UIDesignerPanel extends JPanel {
         row.add(lbl, BorderLayout.WEST);
         field.setPreferredSize(new Dimension(0, 24));
         row.add(field, BorderLayout.CENTER);
+        row.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        panel.add(row);
+    }
+
+    private void addTextAreaRowTo(JPanel panel, String label, JTextArea field) {
+        JPanel row = new JPanel(new BorderLayout(4, 0));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 118));
+        JLabel lbl = new JLabel(label);
+        lbl.setPreferredSize(new Dimension(LABEL_WIDTH, 24));
+        row.add(lbl, BorderLayout.WEST);
+        JScrollPane scroll = new JScrollPane(field);
+        scroll.setPreferredSize(new Dimension(0, 92));
+        row.add(scroll, BorderLayout.CENTER);
         row.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
         panel.add(row);
     }
@@ -1502,6 +1782,13 @@ public class UIDesignerPanel extends JPanel {
                 g.drawLine(8, 8, 12, 12);
                 g.drawLine(12, 12, 18, 6);
                 g.fillOval(12, 3, 4, 4);
+                break;
+            case "listview":
+                g.drawRoundRect(2, 3, 16, 14, 2, 2);
+                g.drawLine(2, 7, 18, 7);
+                g.drawLine(7, 3, 7, 17);
+                g.drawLine(12, 3, 12, 17);
+                g.drawLine(2, 12, 18, 12);
                 break;
             case "guideline":
                 float[] dash = {3f, 2f};
@@ -1787,6 +2074,12 @@ public class UIDesignerPanel extends JPanel {
                 case TEXT_VIEW:
                     g.setFont(g.getFont().deriveFont(Font.BOLD, 12f));
                     g.drawString("T", 3, 13);
+                    break;
+                case LIST_VIEW:
+                    g.drawRoundRect(1, 2, 13, 12, 2, 2);
+                    g.drawLine(1, 6, 14, 6);
+                    g.drawLine(6, 2, 6, 14);
+                    g.drawLine(1, 10, 14, 10);
                     break;
                 case IMAGE:
                     g.drawRect(1, 1, 13, 13);

@@ -51,6 +51,25 @@ Notes:
 - This version animates whole-text reveal/scale/fade effects that work with the current `BitmapText` pipeline.
 - Per-glyph wave, wobble, bounce, and inline rich-text effects are not implemented yet.
 
+## Selectable List Views
+
+List-view widgets authored in `.smui` files render at runtime with their design-time headers, rows, fonts, selected row, and style preset.
+
+You can update list data with normal UI property assignment:
+
+```scenemax
+UI.layer1.players.headers = "Name | Score | Status"
+UI.layer1.players.rows = "Alice | 10 | Ready; Bob | 5 | Waiting"
+UI.layer1.players.addrow = "Cara | 7 | Ready"
+UI.layer1.players.selected = 1
+UI.layer1.players.style = "dark"
+UI.layer1.players.columnwidths = "180 | 90 | 150"
+UI.layer1.players.headerfontsize = 18
+UI.layer1.players.rowfontsize = 14
+```
+
+Rows are separated by semicolons or new lines. Cells and column widths are separated with `|`. Cell text wraps by word when it does not fit the column width. In the designer, selected list views can also resize columns by dragging the vertical dividers.
+
 ## UI Ease Animations
 
 Slide a UI layer or widget in and out of view with built-in easing:
