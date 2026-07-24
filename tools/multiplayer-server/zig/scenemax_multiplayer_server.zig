@@ -203,6 +203,7 @@ pub fn main(init: std.process.Init) !void {
                         });
                     }
                     try destroyClientEntities(sock, io, &clients, &entities, client.id, client.session_id, old_scene_id);
+                    clearSceneNetworkVariablesIfEmpty(&clients, &network_variables, client.session_id, old_scene_id);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
                     try sendNetworkVariableSnapshot(sock, io, message.from, &network_variables, client.session_id, client.scene_id);
                     try sendInitialSyncComplete(sock, io, message.from, client.id);
@@ -230,6 +231,7 @@ pub fn main(init: std.process.Init) !void {
                     }
                     try destroyClientEntities(sock, io, &clients, &entities, client.id, old_session_id, old_scene_id);
                     client.session_id = session.id;
+                    clearSceneNetworkVariablesIfEmpty(&clients, &network_variables, old_session_id, old_scene_id);
                     try sendLoginAccepted(sock, io, message.from, client.id, session.id, session.name);
                     try broadcastServerState(sock, io, &clients, &sessions);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
@@ -335,15 +337,18 @@ pub fn main(init: std.process.Init) !void {
                             fixedText(&client.scene_id),
                         });
                     }
-                    try destroyClientEntities(sock, io, &clients, &entities, client.id, client.session_id, client.scene_id);
+                    const old_session_id = client.session_id;
+                    const old_scene_id = client.scene_id;
+                    try destroyClientEntities(sock, io, &clients, &entities, client.id, old_session_id, old_scene_id);
                     client.active = false;
+                    clearSceneNetworkVariablesIfEmpty(&clients, &network_variables, old_session_id, old_scene_id);
                     try broadcastServerState(sock, io, &clients, &sessions);
                 }
             },
             else => {},
         }
 
-        try expireClients(sock, io, &clients, &entities, now);
+        try expireClients(sock, io, &clients, &entities, &network_variables, now);
     }
 }
 
@@ -522,7 +527,7 @@ fn findOwnedActiveEntity(entities: *[max_entities]Entity, client_id: u16, sessio
     return null;
 }
 
-fn expireClients(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, entities: *[max_entities]Entity, now: i64) !void {
+fn expireClients(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, entities: *[max_entities]Entity, network_variables: *[max_network_variables]NetworkVariable, now: i64) !void {
     for (clients) |*client| {
         if (client.active and now - client.last_seen_ms > 15000) {
             std.debug.print("[SceneMax MP] client timeout client={d} session={d} scene=\"{s}\"\n", .{
@@ -530,8 +535,11 @@ fn expireClients(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, en
                 client.session_id,
                 fixedText(&client.scene_id),
             });
-            try destroyClientEntities(sock, io, clients, entities, client.id, client.session_id, client.scene_id);
+            const old_session_id = client.session_id;
+            const old_scene_id = client.scene_id;
+            try destroyClientEntities(sock, io, clients, entities, client.id, old_session_id, old_scene_id);
             client.active = false;
+            clearSceneNetworkVariablesIfEmpty(clients, network_variables, old_session_id, old_scene_id);
         }
     }
 }
@@ -708,6 +716,26 @@ fn destroyOwnedEntity(entities: *[max_entities]Entity, client_id: u16, session_i
     return false;
 }
 
+fn clearSceneNetworkVariablesIfEmpty(clients: *[max_clients]Client, network_variables: *[max_network_variables]NetworkVariable, session_id: u32, scene_id: [128]u8) void {
+    if (connectedClientCountInScene(clients, session_id, scene_id) != 0) {
+        return;
+    }
+    var cleared: usize = 0;
+    for (network_variables) |*network_variable| {
+        if (!network_variable.active) continue;
+        if (network_variable.session_id != session_id or !sameScene(network_variable.scene_id, scene_id)) continue;
+        network_variable.active = false;
+        cleared += 1;
+    }
+    if (cleared > 0) {
+        std.debug.print("[SceneMax MP] cleared network variables session={d} scene=\"{s}\" count={d}\n", .{
+            session_id,
+            fixedText(&scene_id),
+            cleared,
+        });
+    }
+}
+
 fn storeNetworkVariable(network_variables: *[max_network_variables]NetworkVariable, session_id: u32, scene_id: [128]u8, payload: []const u8) bool {
     if (payload.len < network_variable_update_size) return false;
     const declaration_init = payload[network_variable_name_size] != 0;
@@ -853,6 +881,14 @@ fn connectedClientCount(clients: *[max_clients]Client, session_id: u32) u16 {
     var count: u16 = 0;
     for (clients) |client| {
         if (client.active and client.session_id == session_id) count += 1;
+    }
+    return count;
+}
+
+fn connectedClientCountInScene(clients: *[max_clients]Client, session_id: u32, scene_id: [128]u8) u16 {
+    var count: u16 = 0;
+    for (clients) |client| {
+        if (client.active and client.session_id == session_id and sameScene(client.scene_id, scene_id)) count += 1;
     }
     return count;
 }

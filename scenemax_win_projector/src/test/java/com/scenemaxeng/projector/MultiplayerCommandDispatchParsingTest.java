@@ -261,6 +261,64 @@ public class MultiplayerCommandDispatchParsingTest {
     }
 
     @Test
+    public void networkReadyFallsBackWhenServerDoesNotSendInitialSyncComplete() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            setField(component, "channel", client);
+
+            sendLoginAccepted(server, 7, 1, "initial_session");
+            component.update(0f);
+            assertFalse(component.isReady());
+
+            component.update(0.2f);
+            assertTrue(component.isReady());
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
+    @Test
+    public void joinSessionFallsBackWhenServerDoesNotSendInitialSyncComplete() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            setField(component, "channel", client);
+            setField(component, "clientId", 7);
+
+            component.joinSession(42);
+            sendLoginAccepted(server, 7, 42, "selected_session");
+            component.update(0f);
+            assertFalse(component.isJoinSessionComplete(42));
+
+            component.update(0.2f);
+            assertTrue(component.isJoinSessionComplete(42));
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
+    @Test
     public void pendingJoinIgnoresInitialSessionSyncComplete() throws Exception {
         MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
         DatagramChannel client = DatagramChannel.open();

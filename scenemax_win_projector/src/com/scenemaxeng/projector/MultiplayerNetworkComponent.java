@@ -65,6 +65,8 @@ public class MultiplayerNetworkComponent {
     private static final int SNAPSHOT_ENTITY_SIZE = 228 + SOURCE_OBJECT_NAME_SIZE + SPAWN_COMMAND_SIZE;
     private static final float CORRECTION_INTERVAL_SECONDS = 0.25f;
     private static final float CREATE_RETRY_INTERVAL_SECONDS = 0.35f;
+    private static final float INITIAL_SYNC_FALLBACK_SECONDS = 0.15f;
+    private static final float INITIAL_SYNC_PACKET_QUIET_SECONDS = 0.05f;
     private static final float POSITION_EPSILON_SQUARED = 0.0004f;
     private static final float ROTATION_EPSILON = 0.002f;
     private static final Pattern TIMED_COMMAND_PATTERN = Pattern.compile(
@@ -100,6 +102,7 @@ public class MultiplayerNetworkComponent {
     private long pendingJoinSessionId;
     private String pendingJoinSessionName = "";
     private boolean initialSyncPending;
+    private float initialSyncFallbackRemainingSeconds;
     private JSONObject networkState = new JSONObject();
     private final List<Object> stateSessions = new ArrayList<>();
     private final Map<Long, Map<String, Object>> stateSessionsById = new LinkedHashMap<>();
@@ -213,6 +216,7 @@ public class MultiplayerNetworkComponent {
             return;
         }
         readPackets();
+        updateInitialSyncFallback(tpf);
         applyPendingTransforms();
         applyPendingRemoteCommands();
         applyPendingRemoteDestroys();
@@ -413,6 +417,7 @@ public class MultiplayerNetworkComponent {
         sessionSwitchPending = false;
         joinSessionRequested = false;
         initialSyncPending = false;
+        initialSyncFallbackRemainingSeconds = 0f;
         pendingJoinSessionId = 0;
         pendingJoinSessionName = "";
         pendingCreateAcks.clear();
@@ -449,6 +454,7 @@ public class MultiplayerNetworkComponent {
         pendingCreateAcks.clear();
         pendingNetworkVariables.clear();
         initialSyncPending = true;
+        initialSyncFallbackRemainingSeconds = INITIAL_SYNC_FALLBACK_SECONDS;
         if (isActive() && clientId != 0) {
             ByteBuffer packet = packet(JOIN_SCENE, 128);
             putFixedString(packet, activeSceneId, 128);
@@ -471,6 +477,7 @@ public class MultiplayerNetworkComponent {
         pendingCreateAcks.clear();
         pendingNetworkVariables.clear();
         initialSyncPending = true;
+        initialSyncFallbackRemainingSeconds = INITIAL_SYNC_FALLBACK_SECONDS;
         for (RegisteredEntity entity : localEntities.values()) {
             entity.networkEntityId = 0;
             entity.createRequestId = nextCreateRequestId();
@@ -640,6 +647,7 @@ public class MultiplayerNetworkComponent {
                 pendingJoinSessionName = "";
             }
             initialSyncPending = true;
+            initialSyncFallbackRemainingSeconds = INITIAL_SYNC_FALLBACK_SECONDS;
             upsertCurrentSessionState();
             networkReady = true;
             rebuildNetworkState();
@@ -719,14 +727,38 @@ public class MultiplayerNetworkComponent {
             }
         } else if (type == NETWORK_VARIABLE_UPDATE && payload.remaining() >= NETWORK_VARIABLE_UPDATE_SIZE) {
             handleNetworkVariableUpdate(payload);
+            resetInitialSyncFallbackQuietPeriod();
         } else if (type == SNAPSHOT) {
             handleSnapshot(payload);
+            resetInitialSyncFallbackQuietPeriod();
         } else if (type == SERVER_STATE) {
             handleServerState(payload);
+            resetInitialSyncFallbackQuietPeriod();
         } else if (type == INITIAL_SYNC_COMPLETE) {
-            initialSyncPending = false;
-            rebuildNetworkState();
+            completeInitialSync();
         }
+    }
+
+    private void updateInitialSyncFallback(float tpf) {
+        if (!initialSyncPending || initialSyncFallbackRemainingSeconds <= 0f) {
+            return;
+        }
+        initialSyncFallbackRemainingSeconds = Math.max(0f, initialSyncFallbackRemainingSeconds - Math.max(0f, tpf));
+        if (initialSyncFallbackRemainingSeconds == 0f) {
+            completeInitialSync();
+        }
+    }
+
+    private void resetInitialSyncFallbackQuietPeriod() {
+        if (initialSyncPending) {
+            initialSyncFallbackRemainingSeconds = INITIAL_SYNC_PACKET_QUIET_SECONDS;
+        }
+    }
+
+    private void completeInitialSync() {
+        initialSyncPending = false;
+        initialSyncFallbackRemainingSeconds = 0f;
+        rebuildNetworkState();
     }
 
     private void handleServerState(ByteBuffer payload) {
