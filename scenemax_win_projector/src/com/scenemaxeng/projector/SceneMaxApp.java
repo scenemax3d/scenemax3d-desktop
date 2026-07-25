@@ -5237,6 +5237,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
         for (RegisteredNetworkEventHandler handler : new ArrayList<>(handlers)) {
             DoBlockController controller = new DoBlockController(this, handler.scope, handler.doBlock);
+            controller.goExpr = handler.doBlock.goExpr;
             controller.app = this;
             controller.async = handler.doBlock.isAsync;
             registerController(controller);

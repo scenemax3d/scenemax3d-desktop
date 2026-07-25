@@ -947,6 +947,15 @@ public class SceneMaxLanguageParser implements IParser {
                 cmd.eventNameExpr = expressions.isEmpty() ? null : expressions.get(0);
                 cmd.serverIntervalSecondsExpr = expressions.size() > 1 ? expressions.get(1) : null;
                 DoBlockCommand doBlock = new DoBlockVisitor(prg).visit(action.network_on().do_block());
+                if (doBlock == null) {
+                    return cmd;
+                }
+                if (ctx.network_statement().go_condition() != null) {
+                    cmd.goExpr = ctx.network_statement().go_condition().logical_expression();
+                    cmd.useGoExprEveryIteration = ctx.network_statement().go_condition().Pound() != null;
+                    doBlock.goExpr = cmd.goExpr;
+                    doBlock.useGoExprEveryIteration = cmd.useGoExprEveryIteration;
+                }
                 doBlock.isSecondLevelReturnPoint = true;
                 cmd.doBlock = doBlock;
                 return cmd;

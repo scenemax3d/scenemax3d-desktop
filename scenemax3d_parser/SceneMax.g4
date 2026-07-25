@@ -109,7 +109,7 @@ http_put : Put http_address ',' http_body ',' res_var_decl ;
 http_address : logical_expression ;
 http_body : logical_expression ;
 
-network_statement : Network '.' network_action ;
+network_statement : go_condition? Network '.' network_action ;
 network_action : network_send | network_on | network_join_session ;
 network_send : Send logical_expression ;
 network_on : On '(' logical_expression (',' logical_expression)? ')' Equals do_block ;

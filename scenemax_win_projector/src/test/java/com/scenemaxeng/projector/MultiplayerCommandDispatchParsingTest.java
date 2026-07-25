@@ -178,6 +178,38 @@ public class MultiplayerCommandDispatchParsingTest {
     }
 
     @Test
+    public void parsesGuardedServerInvokedNetworkEventHandler() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "[player.data.is_fighter == 1]\n"
+                        + "network.on (\"count\", 5) = do\n"
+                        + "end do");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        assertEquals(1, program.actions.size());
+        NetworkEventHandlerCommand handler = (NetworkEventHandlerCommand) program.actions.get(0);
+        assertNotNull(handler.goExpr);
+        assertNotNull(handler.doBlock.goExpr);
+    }
+
+    @Test
+    public void dispatchesNetworkEventHandlerWithGoCondition() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "[player.data.is_fighter == 1]\n"
+                        + "network.on (\"count\", 5) = do\n"
+                        + "end do");
+        NetworkEventHandlerCommand handler = (NetworkEventHandlerCommand) program.actions.get(0);
+        CapturingSceneMaxApp app = new CapturingSceneMaxApp();
+        SceneMaxScope scope = new SceneMaxScope();
+
+        app.registerNetworkEventHandler("count", scope, handler.doBlock);
+        app.receiveNetworkEvent("count");
+
+        assertNotNull(app.registeredController);
+        assertTrue(app.registeredController instanceof DoBlockController);
+        assertNotNull(((DoBlockController) app.registeredController).goExpr);
+    }
+
+    @Test
     public void parsesNetworkSessionJoinAndRuntimeStateExpressions() {
         ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
                 "network.join session \"combat 1\"\n"
@@ -487,5 +519,15 @@ public class MultiplayerCommandDispatchParsingTest {
                 || varType == VariableDef.VAR_TYPE_CONE
                 || varType == VariableDef.VAR_TYPE_STAIRS
                 || varType == VariableDef.VAR_TYPE_ARCH;
+    }
+
+    private static class CapturingSceneMaxApp extends SceneMaxApp {
+        SceneMaxBaseController registeredController;
+
+        @Override
+        public int registerController(SceneMaxBaseController c) {
+            registeredController = c;
+            return 0;
+        }
     }
 }
