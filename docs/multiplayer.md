@@ -80,6 +80,7 @@ ball => sphere: multiplayer, pos (1,2,3), radius 0.5
 crate => box: multiplayer, size (2,2,2), pos (2,0,0)
 stairs_1 => stairs: multiplayer, size (2,0.25,0.4), steps 6, pos (4,0,0)
 hand_target => collider sphere: multiplayer, pos (0,1,0), radius 0.2
+name_tag => label: multiplayer, text "Hero", style "holo_glass", size (50,10)
 ```
 
 You can also set the same flag from the designer; the saved design emits entities with
@@ -92,6 +93,7 @@ Current runtime registration covers:
   `wedge`, `cone`, `stairs`, and `arch`.
 - Collider primitives that use the same primitive declarations, such as `collider sphere`,
   `collider box`, or `collider hollow cylinder`.
+- Runtime labels created with `label`.
 
 The parser accepts `multiplayer` as a general model/entity attribute, but a networked entity
 must also be registered by the runtime. If a type is parsed as multiplayer but no registration
@@ -124,12 +126,41 @@ SceneMax currently synchronizes the following multiplayer entity behavior:
 - Model animation commands, including animation name, speed, and frame ranges.
 - Attach commands between multiplayer entities.
 - IK apply/remove, layer target, weight, blend, play, and stop commands.
+- Label text changes with `label_name.text = ...`.
 - Persistent structural commands, such as attach and IK, so late joiners receive the current
   structure in the snapshot.
+- Persistent label text state, so late joiners receive the latest synchronized label text.
+- Scalar variables declared with `network var`, such as `network var fighters_count = 0`.
+  Clients evaluate assignments locally, then send the resulting value to the server for relay.
+- Server-invoked events declared with `network.on ("count", 5) = do ... end do`. The first
+  value is the event name and the second value is the interval in seconds. The UDP server
+  stores one timer per session, scene, and event name, then broadcasts that event name to all
+  clients in the same scene whenever the interval elapses.
 
 Timed movement, rotation, and animation commands are sent both as normal commands and as
 active actions. Active actions let a late-joining client resume a command at the correct
 elapsed time instead of replaying it from the beginning.
+
+## Network Events
+
+Use `network.on` without an interval to handle events sent by other clients:
+
+```scenemax
+network.on ("head_hit_by_leg") = do
+  man.move backward 3 in 0.1 seconds
+end do
+```
+
+Use `network.on` with an interval to let the server invoke and broadcast the event:
+
+```scenemax
+network.on ("count", 5) = do
+  sys.print "server tick"
+end do
+```
+
+The server-side timer is deduplicated, so if every client registers the same event, only one
+timer runs for that session and scene.
 
 ## What Does Not Get Synchronized
 
@@ -138,8 +169,8 @@ These stay local unless you explicitly turn them into commands on multiplayer en
 - Keyboard, mouse, and controller input events.
 - Camera state, UI, HUD drawing, screen/canvas settings, skybox, lights, audio, and debug
   output.
-- Variables, arrays, random numbers, timers, and custom game state that are not expressed as
-  commands on networked entities.
+- Plain variables, arrays, random numbers, timers, and custom game state that are not
+  expressed as commands on networked entities or scalar `network var` declarations.
 - Commands targeting entities that are not marked and registered as multiplayer.
 - Assets that are only available in the IDE project folder and are not packaged with the game.
 

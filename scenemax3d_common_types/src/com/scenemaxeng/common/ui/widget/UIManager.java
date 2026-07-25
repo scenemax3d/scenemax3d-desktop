@@ -16,11 +16,15 @@ import com.jme3.scene.control.BillboardControl;
 import com.scenemaxeng.common.ui.model.UIDocument;
 import com.scenemaxeng.common.ui.model.UILayerDef;
 import com.scenemaxeng.common.ui.model.UIRenderMode;
+import com.scenemaxeng.common.ui.model.UIWidgetDef;
+import com.scenemaxeng.common.ui.model.UIWidgetType;
 
 import com.scenemaxeng.common.types.AssetsMapping;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.logging.Level;
@@ -45,6 +49,7 @@ public class UIManager {
     private boolean ctrlDown;
 
     private Map<String, LoadedUI> loadedUIs = new LinkedHashMap<>();
+    private Map<String, UITextViewNode> multiplayerTextViews = new LinkedHashMap<>();
 
     private static class LoadedUI {
         UIDocument document;
@@ -117,6 +122,7 @@ public class UIManager {
 
             layerNode.setLayerVisible(layerDef.isVisible());
             loadedUI.layerNodes.put(layerDef.getName(), layerNode);
+            registerMultiplayerTextViews(name, layerDef, layerNode);
         }
 
         loadedUIs.put(name, loadedUI);
@@ -134,6 +140,7 @@ public class UIManager {
         for (UILayerNode layerNode : loaded.layerNodes.values()) {
             layerNode.removeFromParent();
         }
+        multiplayerTextViews.entrySet().removeIf(entry -> entry.getKey().startsWith(multiplayerSyncKeyPrefix(uiName)));
         if (focusedEditText != null) {
             focusedEditText.setFocused(false);
             focusedEditText = null;
@@ -202,6 +209,24 @@ public class UIManager {
         return activeUIName;
     }
 
+    public String multiplayerTextSyncKey(String uiName, String layerName, String widgetPath) {
+        if (uiName == null || uiName.trim().isEmpty()
+                || layerName == null || layerName.trim().isEmpty()
+                || widgetPath == null || widgetPath.trim().isEmpty()) {
+            return null;
+        }
+        return multiplayerSyncKeyPrefix(uiName) + sha1Hex(layerName.trim() + "." + widgetPath.trim()).substring(0, 16);
+    }
+
+    public boolean applyMultiplayerTextSync(String syncKey, String text) {
+        UITextViewNode node = multiplayerTextViews.get(syncKey);
+        if (node == null) {
+            return false;
+        }
+        node.setText(text == null ? "" : text);
+        return true;
+    }
+
     private LoadedUI getLoadedUI(String uiName) {
         if (uiName != null && !uiName.isEmpty()) {
             return loadedUIs.get(uiName);
@@ -241,6 +266,52 @@ public class UIManager {
         }
 
         return null;
+    }
+
+    private void registerMultiplayerTextViews(String uiName, UILayerDef layerDef, UILayerNode layerNode) {
+        if (uiName == null || layerDef == null || layerNode == null) {
+            return;
+        }
+        for (UIWidgetDef widget : layerDef.getWidgets()) {
+            registerMultiplayerTextViewRecursive(uiName, layerDef.getName(), widget, widget.getName(), layerNode);
+        }
+    }
+
+    private void registerMultiplayerTextViewRecursive(String uiName, String layerName, UIWidgetDef widget,
+                                                       String widgetPath, UILayerNode layerNode) {
+        if (widget == null) {
+            return;
+        }
+        if (widget.getType() == UIWidgetType.TEXT_VIEW && widget.isMultiplayer()) {
+            UIWidgetNode node = layerNode.findWidget(widgetPath);
+            if (node instanceof UITextViewNode) {
+                String key = multiplayerTextSyncKey(uiName, layerName, widgetPath);
+                if (key != null) {
+                    multiplayerTextViews.put(key, (UITextViewNode) node);
+                }
+            }
+        }
+        for (UIWidgetDef child : widget.getChildren()) {
+            registerMultiplayerTextViewRecursive(uiName, layerName, child, widgetPath + "." + child.getName(), layerNode);
+        }
+    }
+
+    private String multiplayerSyncKeyPrefix(String uiName) {
+        return "$ui:" + sha1Hex(uiName == null ? "" : uiName.trim()).substring(0, 8) + ":";
+    }
+
+    private String sha1Hex(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            byte[] bytes = digest.digest((value == null ? "" : value).getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(bytes.length * 2);
+            for (byte b : bytes) {
+                sb.append(String.format("%02x", b & 0xff));
+            }
+            return sb.toString();
+        } catch (Exception ex) {
+            return Integer.toHexString((value == null ? "" : value).hashCode()) + "0000000000000000000000000000000000000000";
+        }
     }
 
     private void addBillboardControls(Node node) {

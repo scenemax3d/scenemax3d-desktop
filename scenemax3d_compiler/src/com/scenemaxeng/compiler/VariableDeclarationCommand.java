@@ -14,6 +14,7 @@ public class VariableDeclarationCommand extends StatementDef {
     public SceneMaxParser.Logical_expressionContext minExpr;
     public SceneMaxParser.Logical_expressionContext maxExpr;
     public boolean isShared;
+    public boolean isNetwork;
     public int varType;
 
     public VariableAssignmentCommand toVarAssignment(ProgramDef prg) {
@@ -24,6 +25,7 @@ public class VariableDeclarationCommand extends StatementDef {
             if(!prg.vars_index.containsKey(var.varName)) {
                 VariableDef vd = new VariableDef();
                 vd.isShared = var.isShared;
+                vd.isNetwork = var.isNetwork;
                 vd.declaration = var;
                 vd.resName = "var";
                 vd.varName = var.varName;

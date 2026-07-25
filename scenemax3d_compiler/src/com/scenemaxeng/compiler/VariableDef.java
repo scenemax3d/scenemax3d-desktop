@@ -39,6 +39,7 @@ public class VariableDef extends StatementDef{
     public static final int VAR_TYPE_THROW_MOTION = 120;
     public static final int VAR_TYPE_VIDEO = 130;
     public static final int VAR_TYPE_OBJECT_POOL = 140;
+    public static final int VAR_TYPE_LABEL = 150;
     //public int threadId;
 
     public String resName;
@@ -77,6 +78,7 @@ public class VariableDef extends StatementDef{
     public boolean isExprPointer;
     public VariableDeclarationCommand declaration;
     public boolean isShared;
+    public boolean isNetwork;
     public boolean isMultiplayer;
 
     @Override

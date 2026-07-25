@@ -38,6 +38,53 @@ public class VariableAssignmentControllerTest {
     }
 
     @Test
+    public void syncsNetworkVariableAfterLocalAssignment() {
+        CapturingSceneMaxApp app = new CapturingSceneMaxApp();
+        SceneMaxScope scope = new SceneMaxScope();
+
+        VariableDef varDef = new VariableDef();
+        varDef.varName = "fighters_count";
+        varDef.isNetwork = true;
+
+        VarInst varInst = new VarInst(varDef, scope);
+        scope.vars_index.put("fighters_count", varInst);
+
+        VariableAssignmentCommand cmd = new VariableAssignmentCommand();
+        cmd.vars.add(varDef);
+        cmd.values.add(parseExpression("7"));
+
+        VariableAssignmentController controller = new VariableAssignmentController(app, scope, new ProgramDef(), cmd);
+        controller.run(0f);
+
+        assertEquals("fighters_count", app.syncedVarName);
+        assertEquals(7d, ((Double) app.syncedValue).doubleValue(), 0.0);
+    }
+
+    @Test
+    public void doesNotEchoNetworkVariableFromRemoteAssignment() {
+        CapturingSceneMaxApp app = new CapturingSceneMaxApp();
+        SceneMaxScope scope = new SceneMaxScope();
+
+        VariableDef varDef = new VariableDef();
+        varDef.varName = "fighters_count";
+        varDef.isNetwork = true;
+
+        VarInst varInst = new VarInst(varDef, scope);
+        scope.vars_index.put("fighters_count", varInst);
+
+        VariableAssignmentCommand cmd = new VariableAssignmentCommand();
+        cmd.fromMultiplayerNetwork = true;
+        cmd.vars.add(varDef);
+        cmd.values.add(parseExpression("9"));
+
+        VariableAssignmentController controller = new VariableAssignmentController(app, scope, new ProgramDef(), cmd);
+        controller.run(0f);
+
+        assertEquals(9d, ((Double) varInst.value).doubleValue(), 0.0);
+        assertEquals(null, app.syncedVarName);
+    }
+
+    @Test
     public void arraySetOutOfBoundsReportsRuntimeErrorWithoutThrowing() {
         CapturingSceneMaxApp app = new CapturingSceneMaxApp();
         SceneMaxScope scope = new SceneMaxScope();
@@ -71,10 +118,18 @@ public class VariableAssignmentControllerTest {
 
     private static class CapturingSceneMaxApp extends SceneMaxApp {
         String lastRuntimeError;
+        String syncedVarName;
+        Object syncedValue;
 
         @Override
         public void handleRuntimeError(String err) {
             lastRuntimeError = err;
+        }
+
+        @Override
+        public void syncNetworkVariable(String varName, Object value, boolean declarationInit) {
+            syncedVarName = varName;
+            syncedValue = value;
         }
     }
 }

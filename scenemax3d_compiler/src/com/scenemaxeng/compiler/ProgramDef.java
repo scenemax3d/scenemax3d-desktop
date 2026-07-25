@@ -26,6 +26,7 @@ public class ProgramDef {
     public static final int VAR_TYPE_LIGHT = 100; // aligned with VariableDef.VAR_TYPE_LIGHT
     public static final int VAR_TYPE_VIDEO = 130; // aligned with VariableDef.VAR_TYPE_VIDEO
     public static final int VAR_TYPE_OBJECT_POOL = 140; // aligned with VariableDef.VAR_TYPE_OBJECT_POOL
+    public static final int VAR_TYPE_LABEL = 150; // aligned with VariableDef.VAR_TYPE_LABEL
 
 //
     public int scopeId = ++scopeSeq;
@@ -137,7 +138,7 @@ public class ProgramDef {
         }
 
         prevPrg.vars_index.forEach((key, varDef) -> {
-            if (varDef.isShared) {
+            if (varDef.isShared || varDef.isNetwork) {
                 this.vars_index.put(key, varDef);
                 if (varDef.varType == VAR_TYPE_3D) {
                     this.models.put(varDef.resName, prevPrg.models.get(varDef.resName));

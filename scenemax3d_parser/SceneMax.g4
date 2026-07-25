@@ -23,6 +23,7 @@ statement
    | define_cone        # defCone
    | define_stairs      # defStairs
    | define_arch        # defArch
+   | define_label       # defLabel
    | define_light       # defLight
    | define_group       # defineGroup
    | define_object_pool # defineObjectPool
@@ -108,10 +109,10 @@ http_put : Put http_address ',' http_body ',' res_var_decl ;
 http_address : logical_expression ;
 http_body : logical_expression ;
 
-network_statement : Network '.' network_action ;
+network_statement : go_condition? Network '.' network_action ;
 network_action : network_send | network_on | network_join_session ;
 network_send : Send logical_expression ;
-network_on : On '(' logical_expression ')' Equals do_block ;
+network_on : On '(' logical_expression (',' logical_expression)? ')' Equals do_block ;
 network_join_session : Join Session logical_expression ;
 
 add_external_code : Add file_name (',' file_name)* Code ;
@@ -379,7 +380,7 @@ ui_runtime_value : UI '.' ui_dot_path '.' ui_property_name ;
 
 // THE LANGUAGE SYNTAX
 
-declare_variable : Shared? Var variable_name_and_assignemt (',' variable_name_and_assignemt)* ;
+declare_variable : (Shared | Network)? Var variable_name_and_assignemt (',' variable_name_and_assignemt)* ;
 variable_name_and_assignemt : Commat? res_var_decl (Equals var_value_option)? var_range_option?;
 var_range_option : '[' min_num_value? '..' max_num_value? ']' ;
 min_num_value : logical_expression ;
@@ -438,6 +439,7 @@ define_wedge: Shared? res_var_decl isa_expr Collider? Static? Wedge (wedge_havin
 define_cone: Shared? res_var_decl isa_expr Collider? Static? Cone (cone_having_expr)? ;
 define_stairs: Shared? res_var_decl isa_expr Collider? Static? Stairs (stairs_having_expr)? ;
 define_arch: Shared? res_var_decl isa_expr Collider? Static? Arch (arch_having_expr)? ;
+define_label: Shared? res_var_decl isa_expr Label (label_having_expr)? ;
 define_sprite_implicit : Shared? var_decl isa_expr dynamic_model_type Sprite (sprite_having_expr)? ;
 
 define_variable : Shared? var_decl isa_expr Dynamic? Static? dynamic_model_type Vehicle? (scene_entity_having_expr)? (async_expr)? ;
@@ -639,6 +641,7 @@ action_operation
    | animate_short # animateShortStatement
    | stop # stopStatement
    | user_data  # userDataStatement
+   | label_text_set # labelTextSetStatement
    | ray_check  # rayCheckStatement
    | attach_to # attachTo
    | camera_modifier_apply # cameraModifierApply
@@ -787,6 +790,7 @@ pos : var_decl '.' Pos '(' (pos_axes | pos_entity | position_statement) ')' ;
 //fixed_rotate : var_decl '.' Rotate '(' pos_axes ')' ;
 mass : var_decl '.' Mass Equals? logical_expression ;
 user_data : var_decl '.' Data '.' field_name Equals logical_expression ;
+label_text_set : var_decl '.' Text Equals logical_expression ;
 
 velocity : var_decl '.' Velocity Equals? logical_expression ;
 angular_velocity : var_decl '.' Angular Velocity Equals? logical_expression ;
@@ -987,6 +991,17 @@ arch_depth : logical_expression ;
 arch_thickness_attr : Thickness Equals? logical_expression ;
 arch_segments_attr : Segments Equals? logical_expression ;
 
+label_having_expr : (Having label_attributes) ;
+label_attributes : label_attr (and_expr label_attr)* ;
+label_attr : print_pos_attr | init_scale_attr | init_hidden_attr | init_multiplayer_attr | label_text_attr | label_font_attr | label_style_attr | label_size_attr | label_transparency_attr ;
+label_text_attr : Text Equals? logical_expression ;
+label_font_attr : Font Equals? QUOTED_STRING ;
+label_style_attr : Style Equals? QUOTED_STRING ;
+label_size_attr : Size Equals? '(' label_width ',' label_height ')' ;
+label_width : logical_expression ;
+label_height : logical_expression ;
+label_transparency_attr : Transparency Equals? logical_expression ;
+
 sprite_having_expr : (Having sprite_attributes) ; //rows_def And cols_def
 sprite_attributes : sprite_attr (and_expr sprite_attr)* ;
 sprite_attr : rows_def | cols_def | print_pos_attr | init_scale_attr
@@ -1028,7 +1043,7 @@ number_sign : PLUS | MINUS ;
 number: DecimalDigit ('.' DecimalDigit)? ;
 
 allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | ReplayIndex | AnimPercent |
-    Do | Loop | Material | Radius | Sphere | Box | Cylinder | Quad | Wedge | Cone | Stairs | Arch | Thickness | Segments |
+    Do | Loop | Material | Radius | Sphere | Box | Cylinder | Quad | Wedge | Cone | Stairs | Arch | Label | Thickness | Segments |
     Steps | Boxes | Collision | Shape | Spark | Flash | Explosion | Debris |
     Spark | Fire | Flame | Destination | Gradient | Orbital | Start | Gravity | Duration |
     Water | Strength | Depth | Terrain | Camera | Chase | Trailing | Vertical | Horizontal | Rotation | Max | Min | Distance |
@@ -1040,7 +1055,7 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Directional | Point | Spot | Sky | Ambient | Direction | Intensity | Lumens | Range | Preset | Exposure | Low | Medium | High | Warm | Cool |
     Hour | Wireframe | Info | Speedo | Tacho | Outline | Delete | Accelerate | Steer | Brake | Turbo | Reset | Front | Rear |
     Input | Reverse | Break | HandBrake | Horn | Engine | Power | Breaking | Friction | Suspension | Compression | Damping |
-    Stiffness | Length | Stop | Return | Animate | Animation | Print | Append | Color | Font | SystemColor | Ray | Check | Pos |
+    Stiffness | Length | Stop | Return | Animate | Animation | Print | Append | Color | Font | Text | Style | Transparency | SystemColor | Ray | Check | Pos |
     Size | Height | Follow | File | Clear | Switch | Vehicle | Character | Jump | RagDoll | Kinematic | Floating | Rigid | Body |
     Screen | Scene | Environment | Pause | Resume | Record | Transitions | Commands | Save | Mode | Full | Window | Class | Function | Run | Rewind |
     Call | Every | Equals |New | When | Collides | With | Offset | Dungeon | Type | Http | Get | Post | Put | UI | Load | Shader |
@@ -1104,6 +1119,7 @@ Wedge : 'Wedge' | 'wedge' ;
 Cone : 'Cone' | 'cone' ;
 Stairs : 'Stairs' | 'stairs' ;
 Arch : 'Arch' | 'arch' ;
+Label : 'Label' | 'label' ;
 Thickness : 'Thickness' | 'thickness' ;
 Segments : 'Segments' | 'segments' ;
 Steps : 'Steps' | 'steps' ;
@@ -1310,6 +1326,9 @@ Print : 'Print' | 'print' ;
 Append : 'Append' | 'append' ;
 Color : 'Color' | 'color' ;
 Font : 'Font' | 'font' ;
+Text : 'Text' | 'text' ;
+Style : 'Style' | 'style' ;
+Transparency : 'Transparency' | 'transparency' ;
 SystemColor : Red | Green | Blue | White | Black | Brown | Cyan |
               Gray | DarkGray | Green | LightGray | Magenta | Orange | Pink | Yellow ;
 Red : 'Red' | 'red' ;

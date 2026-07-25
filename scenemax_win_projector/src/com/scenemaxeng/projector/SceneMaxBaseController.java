@@ -12,6 +12,7 @@ public class SceneMaxBaseController implements ISceneMaxController {
     protected static final int MULTIPLAYER_ACTION_SLOT_ROTATE = 2;
     protected static final int MULTIPLAYER_ACTION_SLOT_ANIMATE = 3;
     protected static final int MULTIPLAYER_ACTION_SLOT_STRUCTURAL_BASE = 64;
+    protected static final int MULTIPLAYER_ACTION_SLOT_POS = MULTIPLAYER_ACTION_SLOT_STRUCTURAL_BASE + 188;
 
     public boolean adhereToPauseStatus = true;
     protected boolean targetCalculated = false;

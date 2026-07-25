@@ -19,7 +19,28 @@ public class NetworkEventHandlerController extends SceneMaxBaseController {
         String eventName = value == null ? "" : String.valueOf(value).trim();
         if (!eventName.isEmpty() && handler.doBlock != null) {
             app.registerNetworkEventHandler(eventName, scope, handler.doBlock);
+            float intervalSeconds = evaluateIntervalSeconds(handler);
+            if (intervalSeconds > 0f) {
+                app.registerServerNetworkEvent(eventName, intervalSeconds);
+            }
         }
         return true;
+    }
+
+    private float evaluateIntervalSeconds(NetworkEventHandlerCommand handler) {
+        if (handler.serverIntervalSecondsExpr == null) {
+            return 0f;
+        }
+        Object value = new ActionLogicalExpressionVm(handler.serverIntervalSecondsExpr, scope).evaluate();
+        if (value instanceof Number) {
+            return ((Number) value).floatValue();
+        }
+        if (value != null) {
+            try {
+                return Float.parseFloat(String.valueOf(value).trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return 0f;
     }
 }

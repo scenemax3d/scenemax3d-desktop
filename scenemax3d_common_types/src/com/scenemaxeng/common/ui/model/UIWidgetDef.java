@@ -88,6 +88,7 @@ public class UIWidgetDef {
     private float fontSize = 16;
     private String textAlignment = "left";   // left, center, right
     private String fontName = null;          // font from AssetsMapping (null = default)
+    private boolean multiplayer = false;     // TEXT_VIEW text is synchronized between multiplayer clients
 
     // EDIT_TEXT
     private boolean editTextMultiline = false;
@@ -237,6 +238,8 @@ public class UIWidgetDef {
     public void setTextAlignment(String alignment) { this.textAlignment = alignment; }
     public String getFontName() { return fontName; }
     public void setFontName(String fontName) { this.fontName = fontName; }
+    public boolean isMultiplayer() { return multiplayer; }
+    public void setMultiplayer(boolean multiplayer) { this.multiplayer = multiplayer; }
 
     // Edit text properties
     public boolean isEditTextMultiline() { return editTextMultiline; }
@@ -486,6 +489,7 @@ public class UIWidgetDef {
                 json.put("fontSize", fontSize);
                 json.put("textAlignment", textAlignment);
                 if (fontName != null) json.put("fontName", fontName);
+                if (type == UIWidgetType.TEXT_VIEW && multiplayer) json.put("multiplayer", true);
                 if (type == UIWidgetType.EDIT_TEXT) {
                     json.put("editTextMultiline", editTextMultiline);
                     json.put("editTextPlaceholder", editTextPlaceholder);
@@ -623,6 +627,7 @@ public class UIWidgetDef {
                 def.fontSize = (float) json.optDouble("fontSize", 16);
                 def.textAlignment = json.optString("textAlignment", "left");
                 def.fontName = json.optString("fontName", null);
+                def.multiplayer = type == UIWidgetType.TEXT_VIEW && json.optBoolean("multiplayer", false);
                 if (type == UIWidgetType.EDIT_TEXT) {
                     def.editTextMultiline = json.optBoolean("editTextMultiline", false);
                     def.editTextPlaceholder = json.optString("editTextPlaceholder", "");

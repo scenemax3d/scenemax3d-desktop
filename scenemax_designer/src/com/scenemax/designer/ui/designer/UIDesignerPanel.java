@@ -78,6 +78,7 @@ public class UIDesignerPanel extends JPanel {
     private JSpinner spnFontSize;
     private JComboBox<String> cboTextAlign;
     private JComboBox<String> cboFont;
+    private JCheckBox chkTextMultiplayer;
 
     private JPanel editTextPropsPanel;
     private JTextField txtEditPlaceholder;
@@ -530,6 +531,12 @@ public class UIDesignerPanel extends JPanel {
         cboFont.addActionListener(e -> applyTextChange());
         installAutoSaveOnFocusLost(cboFont, null);
         addFormRowTo(textPropsPanel, "Font:", cboFont);
+
+        chkTextMultiplayer = new JCheckBox("Multiplayer");
+        chkTextMultiplayer.setToolTipText("Synchronize this Text View's text between multiplayer clients");
+        chkTextMultiplayer.addActionListener(e -> applyTextChange());
+        installAutoSaveOnFocusLost(chkTextMultiplayer, null);
+        addFormRowTo(textPropsPanel, "Sync:", chkTextMultiplayer);
 
         textPropsPanel.setVisible(false);
         propertiesPanel.add(textPropsPanel);
@@ -1090,6 +1097,8 @@ public class UIDesignerPanel extends JPanel {
                 } else {
                     cboFont.setSelectedIndex(0);
                 }
+                chkTextMultiplayer.setSelected(widget.getType() == UIWidgetType.TEXT_VIEW && widget.isMultiplayer());
+                chkTextMultiplayer.setEnabled(widget.getType() == UIWidgetType.TEXT_VIEW);
                 if (widget.getType() == UIWidgetType.EDIT_TEXT) {
                     editTextPropsPanel.setVisible(true);
                     txtEditPlaceholder.setText(widget.getEditTextPlaceholder());
@@ -1146,6 +1155,10 @@ public class UIDesignerPanel extends JPanel {
         spnMarginBottom.setValue(0.0);
         if (txtListColumnWidths != null) {
             txtListColumnWidths.setText("");
+        }
+        if (chkTextMultiplayer != null) {
+            chkTextMultiplayer.setSelected(false);
+            chkTextMultiplayer.setEnabled(false);
         }
         textPropsPanel.setVisible(false);
         editTextPropsPanel.setVisible(false);
@@ -1344,6 +1357,7 @@ public class UIDesignerPanel extends JPanel {
         } else {
             widget.setFontName(selectedFont);
         }
+        widget.setMultiplayer(widget.getType() == UIWidgetType.TEXT_VIEW && chkTextMultiplayer.isSelected());
 
         markDirty();
         canvas.refreshLayout();

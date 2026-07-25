@@ -38,6 +38,35 @@ public class CompositeController extends SceneMaxBaseController {
         _controllers.remove(c);
     }
 
+    public void removeMultiplayerNetworkControllers() {
+        for (int i = _controllers.size() - 1; i >= 0; i--) {
+            SceneMaxBaseController controller = _controllers.get(i);
+            if (controller instanceof CompositeController) {
+                ((CompositeController) controller).removeMultiplayerNetworkControllers();
+            }
+            if (isMultiplayerNetworkController(controller)) {
+                controller.forceStop = true;
+                controller.dispose();
+                _controllers.remove(i);
+                if (controller.isEventHandler && eventHandlersCount > 0) {
+                    eventHandlersCount--;
+                }
+                if (runningControllerIndex > i) {
+                    runningControllerIndex--;
+                }
+            }
+        }
+        if (runningControllerIndex > _controllers.size()) {
+            runningControllerIndex = _controllers.size();
+        }
+    }
+
+    private boolean isMultiplayerNetworkController(SceneMaxBaseController controller) {
+        return controller != null
+                && controller.cmd != null
+                && controller.cmd.fromMultiplayerNetwork;
+    }
+
     public void init(int startIndex) {
         for(int i=startIndex;i<_controllers.size();++i) {
             ISceneMaxController c = _controllers.get(i);

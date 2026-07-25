@@ -132,6 +132,7 @@ public class UISetPropertyController extends SceneMaxBaseController {
             switch (prop) {
                 case "text":
                     textView.setText(value);
+                    syncMultiplayerTextView(propCmd, textView, value);
                     break;
                 case "shader":
                     app.setUIWidgetShader(textView, value);
@@ -330,6 +331,17 @@ public class UISetPropertyController extends SceneMaxBaseController {
         }
 
         return null;
+    }
+
+    private void syncMultiplayerTextView(UISetPropertyCommand propCmd, UITextViewNode textView, String value) {
+        if (cmd != null && cmd.fromMultiplayerNetwork) {
+            return;
+        }
+        if (app == null || propCmd == null || textView == null || textView.getWidgetDef() == null
+                || !textView.getWidgetDef().isMultiplayer()) {
+            return;
+        }
+        app.syncMultiplayerUIText(propCmd.uiName, propCmd.layerName, propCmd.widgetPath, value);
     }
 
     private List<String> parseListCells(String value) {

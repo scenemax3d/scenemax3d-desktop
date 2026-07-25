@@ -8,6 +8,7 @@ import com.scenemaxeng.compiler.NetworkSendCommand;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
 import com.scenemaxeng.compiler.StatementDef;
+import com.scenemaxeng.compiler.VariableDeclarationCommand;
 import com.scenemaxeng.compiler.VariableDef;
 import org.junit.Test;
 
@@ -20,13 +21,18 @@ import java.nio.channels.DatagramChannel;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class MultiplayerCommandDispatchParsingTest {
 
     private static final int MAGIC = 0x504d5853;
     private static final byte VERSION = 1;
+    private static final byte LOGIN_ACCEPTED = 2;
     private static final byte LOGIN_REJECTED = 3;
+    private static final byte CREATE_ENTITY_REQUEST = 10;
+    private static final byte INITIAL_SYNC_COMPLETE = 32;
 
     @Test
     public void parsesGeneratedMoveAndRotateDispatchCommands() {
@@ -50,6 +56,40 @@ public class MultiplayerCommandDispatchParsingTest {
                 + "mp_remote_3 => sphere\n"
                 + "mp_remote_1.ik = \"ik_sit_on_horse\"\n"
                 + "mp_remote_1.ik.horse_sit_right_foot.play : target mp_remote_3, blend 0.2, weight 1");
+    }
+
+    @Test
+    public void parsesGeneratedCharacterModeDispatchCommands() {
+        assertParses("mp_remote_1 => sinbad\n"
+                + "mp_remote_1.switch to character mode : gravity 60");
+        assertParses("mp_remote_1 => sinbad\n"
+                + "mp_remote_1.clear character mode");
+    }
+
+    @Test
+    public void parsesGeneratedPosDispatchCommands() {
+        assertParses("mp_remote_1 => sinbad\n"
+                + "mp_remote_1.pos (0,5,7)");
+    }
+
+    @Test
+    public void treatsCharacterModeAsStructuralMultiplayerState() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        Method method = MultiplayerNetworkComponent.class.getDeclaredMethod("isStructuralCommand", String.class);
+        method.setAccessible(true);
+
+        assertTrue((Boolean) method.invoke(component, "{network_entity}.switch to character mode : gravity 60"));
+        assertTrue((Boolean) method.invoke(component, "{network_entity}.clear character mode"));
+    }
+
+    @Test
+    public void treatsPosAsStructuralMultiplayerState() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        Method method = MultiplayerNetworkComponent.class.getDeclaredMethod("isStructuralCommand", String.class);
+        method.setAccessible(true);
+
+        assertTrue((Boolean) method.invoke(component, "{network_entity}.pos (0,5,7)"));
+        assertTrue((Boolean) method.invoke(component, "{network_entity}.pos(0,5,7)"));
     }
 
     @Test
@@ -125,6 +165,51 @@ public class MultiplayerCommandDispatchParsingTest {
     }
 
     @Test
+    public void parsesServerInvokedNetworkEventHandler() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "network.on (\"count\", 5) = do\n"
+                        + "end do");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        assertEquals(1, program.actions.size());
+        NetworkEventHandlerCommand handler = (NetworkEventHandlerCommand) program.actions.get(0);
+        assertNotNull(handler.eventNameExpr);
+        assertNotNull(handler.serverIntervalSecondsExpr);
+    }
+
+    @Test
+    public void parsesGuardedServerInvokedNetworkEventHandler() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "[player.data.is_fighter == 1]\n"
+                        + "network.on (\"count\", 5) = do\n"
+                        + "end do");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        assertEquals(1, program.actions.size());
+        NetworkEventHandlerCommand handler = (NetworkEventHandlerCommand) program.actions.get(0);
+        assertNotNull(handler.goExpr);
+        assertNotNull(handler.doBlock.goExpr);
+    }
+
+    @Test
+    public void dispatchesNetworkEventHandlerWithGoCondition() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "[player.data.is_fighter == 1]\n"
+                        + "network.on (\"count\", 5) = do\n"
+                        + "end do");
+        NetworkEventHandlerCommand handler = (NetworkEventHandlerCommand) program.actions.get(0);
+        CapturingSceneMaxApp app = new CapturingSceneMaxApp();
+        SceneMaxScope scope = new SceneMaxScope();
+
+        app.registerNetworkEventHandler("count", scope, handler.doBlock);
+        app.receiveNetworkEvent("count");
+
+        assertNotNull(app.registeredController);
+        assertTrue(app.registeredController instanceof DoBlockController);
+        assertNotNull(((DoBlockController) app.registeredController).goExpr);
+    }
+
+    @Test
     public void parsesNetworkSessionJoinAndRuntimeStateExpressions() {
         ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
                 "network.join session \"combat 1\"\n"
@@ -137,6 +222,19 @@ public class MultiplayerCommandDispatchParsingTest {
         assertEquals(3, program.actions.size());
         assertTrue(program.actions.get(0) instanceof NetworkJoinSessionCommand);
         assertTrue(program.actions.get(1) instanceof NetworkJoinSessionCommand);
+    }
+
+    @Test
+    public void parsesNetworkVariableDeclaration() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse("network var fighters_count = 0");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        assertEquals(1, program.actions.size());
+        assertTrue(program.actions.get(0) instanceof com.scenemaxeng.compiler.VariableAssignmentCommand);
+        VariableDef var = program.getVar("fighters_count");
+        assertTrue(var.isNetwork);
+        VariableDeclarationCommand declaration = var.declaration;
+        assertTrue(declaration.isNetwork);
     }
 
     @Test
@@ -191,10 +289,224 @@ public class MultiplayerCommandDispatchParsingTest {
         }
     }
 
+    @Test
+    public void joinSessionWaitsForInitialSyncCompletePacket() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            setField(component, "channel", client);
+            setField(component, "clientId", 7);
+
+            component.joinSession(42);
+            assertFalse(component.isJoinSessionComplete(42));
+
+            sendLoginAccepted(server, 7, 42, "selected_session");
+            component.update(0f);
+            assertFalse(component.isReady());
+            assertFalse(component.isJoinSessionComplete(42));
+
+            sendHeaderOnly(server, INITIAL_SYNC_COMPLETE, 7);
+            component.update(0f);
+            assertTrue(component.isReady());
+            assertTrue(component.isJoinSessionComplete(42));
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
+    @Test
+    public void networkReadyFallsBackWhenServerDoesNotSendInitialSyncComplete() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            setField(component, "channel", client);
+
+            sendLoginAccepted(server, 7, 1, "initial_session");
+            component.update(0f);
+            assertFalse(component.isReady());
+
+            component.update(0.2f);
+            assertTrue(component.isReady());
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
+    @Test
+    public void joinSessionFallsBackWhenServerDoesNotSendInitialSyncComplete() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            setField(component, "channel", client);
+            setField(component, "clientId", 7);
+
+            component.joinSession(42);
+            sendLoginAccepted(server, 7, 42, "selected_session");
+            component.update(0f);
+            assertFalse(component.isJoinSessionComplete(42));
+
+            component.update(0.2f);
+            assertTrue(component.isJoinSessionComplete(42));
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
+    @Test
+    public void pendingJoinIgnoresInitialSessionSyncComplete() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            setField(component, "channel", client);
+            component.joinSession(42);
+
+            sendLoginAccepted(server, 7, 1, "initial_session");
+            component.update(0f);
+            sendHeaderOnly(server, INITIAL_SYNC_COMPLETE, 7);
+            component.update(0f);
+            assertFalse(component.isJoinSessionComplete(42));
+
+            sendLoginAccepted(server, 7, 42, "selected_session");
+            component.update(0f);
+            assertFalse(component.isReady());
+            assertFalse(component.isJoinSessionComplete(42));
+
+            sendHeaderOnly(server, INITIAL_SYNC_COMPLETE, 7);
+            component.update(0f);
+            assertTrue(component.isJoinSessionComplete(42));
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
+    @Test
+    public void localCreatesWaitForInitialSceneSyncToComplete() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            setField(component, "channel", client);
+            setField(component, "clientId", 7);
+            setField(component, "networkReady", true);
+            setField(component, "initialSyncPending", true);
+
+            VariableDef varDef = new VariableDef();
+            varDef.varName = "player";
+            varDef.varType = VariableDef.VAR_TYPE_3D;
+            varDef.isMultiplayer = true;
+
+            component.registerEntity("player@1", varDef, "fighter1_native",
+                    "{network_entity} => fighter1_native: pos (0,0,0)");
+
+            ByteBuffer received = ByteBuffer.allocate(256).order(ByteOrder.LITTLE_ENDIAN);
+            assertNull(server.receive(received));
+
+            sendHeaderOnly(server, INITIAL_SYNC_COMPLETE, 7);
+            component.update(0f);
+
+            received.clear();
+            assertNotNull(server.receive(received));
+            received.flip();
+            assertEquals(MAGIC, received.getInt());
+            assertEquals(VERSION, received.get());
+            assertEquals(CREATE_ENTITY_REQUEST, received.get());
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
     private void assertParses(String code) {
         ProgramDef program = new SceneMaxLanguageParser(null, "").parse(code);
         assertTrue("Expected command to parse without syntax errors:\n" + code,
                 program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+    }
+
+    private void setField(Object target, String fieldName, Object value) throws Exception {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    private void sendHeaderOnly(DatagramChannel server, byte type, int senderClientId) throws Exception {
+        ByteBuffer packet = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);
+        writeHeader(packet, type, senderClientId);
+        packet.flip();
+        server.write(packet);
+    }
+
+    private void sendLoginAccepted(DatagramChannel server, int clientId, int sessionId, String sessionName) throws Exception {
+        ByteBuffer packet = ByteBuffer.allocate(78).order(ByteOrder.LITTLE_ENDIAN);
+        writeHeader(packet, LOGIN_ACCEPTED, clientId);
+        packet.putShort((short) clientId);
+        packet.putInt(sessionId);
+        putFixedString(packet, sessionName, 64);
+        packet.flip();
+        server.write(packet);
+    }
+
+    private void writeHeader(ByteBuffer packet, byte type, int senderClientId) {
+        packet.putInt(MAGIC);
+        packet.put(VERSION);
+        packet.put(type);
+        packet.putShort((short) senderClientId);
+    }
+
+    private void putFixedString(ByteBuffer packet, String value, int length) {
+        byte[] bytes = (value == null ? "" : value).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        int count = Math.min(bytes.length, length - 1);
+        packet.put(bytes, 0, count);
+        for (int i = count; i < length; i++) {
+            packet.put((byte) 0);
+        }
     }
 
     private boolean isPrimitiveType(int varType) {
@@ -207,5 +519,15 @@ public class MultiplayerCommandDispatchParsingTest {
                 || varType == VariableDef.VAR_TYPE_CONE
                 || varType == VariableDef.VAR_TYPE_STAIRS
                 || varType == VariableDef.VAR_TYPE_ARCH;
+    }
+
+    private static class CapturingSceneMaxApp extends SceneMaxApp {
+        SceneMaxBaseController registeredController;
+
+        @Override
+        public int registerController(SceneMaxBaseController c) {
+            registeredController = c;
+            return 0;
+        }
     }
 }

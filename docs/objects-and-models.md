@@ -210,6 +210,138 @@ gate_arch.shader = "outline"
 
 The `size` values are `width`, `height`, and `depth`. `thickness` controls the thickness of the arch frame, and `segments` controls how smooth the curved top is.
 
+### Runtime Labels
+
+Labels are 3D scene entities that render floating text as a billboard. A label always faces the active camera, so it is useful for character names, enemy status, interaction prompts, boss titles, waypoint names, or gentle in-world hints.
+
+Create a simple label:
+
+```scenemax
+lbl => label
+```
+
+By default, the label shows its entity name. In this example the visible text is `lbl`.
+
+Create a label with explicit text:
+
+```scenemax
+lbl => label : text "Pilot"
+```
+
+Create a label with text, font, style, size, scale, and transparency:
+
+```scenemax
+lbl => label : text "Ace Pilot", font "font1", style "holo_glass", size (50,10), scale 1.4, transparency 30
+```
+
+`size (width,height)` sets the label billboard dimensions. `scale` multiplies the finished label in 3D space.
+
+Change label text at runtime:
+
+```scenemax
+lbl.text = "Low Health"
+```
+
+Use an expression or variable as the text:
+
+```scenemax
+var hp = 75
+lbl.text = "HP: " + hp
+```
+
+Set the initial label width and height when creating it:
+
+```scenemax
+lbl => label : text "Ready", size (50,10)
+```
+
+Change the rendered size at runtime with the normal scale command:
+
+```scenemax
+lbl.scale = 1.8
+```
+
+Available built-in styles:
+
+```scenemax
+label1 => label : text "Shield Ready", style "holo_glass"
+label2 => label : text "Waypoint", style "neon_cyan"
+label3 => label : text "Squad Lead", style "tactical_dark"
+label4 => label : text "Low Ammo", style "warning_amber"
+label5 => label : text "Terminal", style "minimal_light"
+```
+
+The style preset strings mean:
+
+- `holo_glass`: translucent blue/cyan futuristic glass, good for character names and neutral prompts.
+- `neon_cyan`: darker panel with bright cyan accent, good for waypoints, pickups, and sci-fi UI markers.
+- `tactical_dark`: compact high-contrast dark label, good for readable combat/status labels.
+- `warning_amber`: warm amber alert label, good for warnings, objectives, and low-resource states.
+- `minimal_light`: pale lightweight label, good for quiet hints or object annotations.
+
+Styles are string values, not language keywords, so always wrap them in double quotes. Older aliases `style "style1"`, `style "style2"`, and `style "style3"` are still accepted for compatibility, but new scripts should use the preset strings above.
+
+Attach a label above a model:
+
+```scenemax
+fighter1 => fighter
+lbl => label : text "Fighter 1", font "font1", style "holo_glass", size (50,10), transparency 30
+lbl.attach to fighter1 : pos (0, 3, 0)
+```
+
+Attach a label to a specific model bone or joint:
+
+```scenemax
+fighter1 => fighter
+lbl => label : text "Head Target", font "font1", style "tactical_dark", size (50,10), transparency 30
+lbl.attach to fighter1."mixamo:head" : pos (2, 5, 0)
+```
+
+Use the exact joint name from the imported model. Mixamo models often use names such as `"mixamorig:Head"`, `"mixamorig:RightHand"`, or project-specific variants. The label remains a normal scene entity after attachment, so you can still update it:
+
+```scenemax
+lbl.text = "Locked"
+lbl.scale = 1.5
+lbl.hide
+lbl.show
+```
+
+Create a multiplayer label when all clients should see the same label:
+
+```scenemax
+fighter1 => fighter: multiplayer
+lbl => label : multiplayer, text "Fighter 1", style "holo_glass", size (50,10), transparency 30
+lbl.attach to fighter1."mixamo:head" : pos (0, 0.35, 0)
+lbl.text = "Ready"
+```
+
+For multiplayer labels, creation is synchronized to other clients. Runtime text changes and attach commands are also synchronized. Attach commands are persistent, so a late-joining client receives the current attachment state. The latest text value is also kept as label state for late joiners.
+
+Move a label without attaching it:
+
+```scenemax
+hint => label : text "Exit", style "minimal_light", size (30,8), pos (8, 2, -4)
+hint.pos (10, 2.5, -4)
+```
+
+Detach a label from its parent and keep it in the world:
+
+```scenemax
+lbl.detach from parent
+```
+
+Delete a label:
+
+```scenemax
+lbl.delete
+```
+
+Labels are cleaned up like other scene entities when the scene closes or when switching scenes. Shared labels follow the same shared-entity cleanup rules as other shared runtime objects:
+
+```scenemax
+shared player_name => label : text "Player", style "holo_glass", size (45,9)
+```
+
 All primitive objects support the same common transform and rendering attributes used by the existing primitives, including `pos (...)`, `rotate (...)`, `scale N`, `shadow mode cast|receive|on`, and `collision shape box|boxes|none`. Use `static` or `collider` as declaration prefixes when needed, for example `ramp => static wedge ...` or `arch_col => collider arch ...`. Materials are set inline with `material="name"`, while shaders are applied after creation with `object.shader = "shader_name"`.
 
 ### Static Objects

@@ -14,6 +14,8 @@ final class MultiplayerSourceDetector {
     private static final Pattern NETWORK_RUNTIME_PATTERN =
             Pattern.compile("\\bnetwork\\s*\\.\\s*(join\\s+session|ready\\b|state\\b|send\\b|on\\b)",
                     Pattern.CASE_INSENSITIVE);
+    private static final Pattern NETWORK_VARIABLE_PATTERN =
+            Pattern.compile("\\bnetwork\\s+var\\b", Pattern.CASE_INSENSITIVE);
 
     private MultiplayerSourceDetector() {
     }
@@ -23,7 +25,8 @@ final class MultiplayerSourceDetector {
             return false;
         }
         return MULTIPLAYER_ENTITY_PATTERN.matcher(code).find()
-                || NETWORK_RUNTIME_PATTERN.matcher(code).find();
+                || NETWORK_RUNTIME_PATTERN.matcher(code).find()
+                || NETWORK_VARIABLE_PATTERN.matcher(code).find();
     }
 
     static boolean usesMultiplayerInReachableScripts(File scriptRoot, String entryCode) {
@@ -37,7 +40,8 @@ final class MultiplayerSourceDetector {
         ScriptTreeResourceCollector.CollectionResult reachableSources =
                 ScriptTreeResourceCollector.collectReachableResources(scriptRoot, null);
         return usesMultiplayerInFiles(reachableSources.scriptFiles)
-                || usesMultiplayerInFiles(reachableSources.designerFiles);
+                || usesMultiplayerInFiles(reachableSources.designerFiles)
+                || usesMultiplayerInFiles(reachableSources.uiFiles);
     }
 
     private static boolean usesMultiplayerInFiles(List<String> paths) {

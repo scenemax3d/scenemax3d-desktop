@@ -6,6 +6,8 @@ import com.scenemaxeng.compiler.SwitchModeCommand;
 
 public class SwitchModeController extends SceneMaxBaseController {
 
+    static final int MULTIPLAYER_ACTION_SLOT_CHARACTER_MODE = MULTIPLAYER_ACTION_SLOT_STRUCTURAL_BASE + 189;
+
     private boolean targetCalculated = false;
 
     public SwitchModeController(SceneMaxApp app, ProgramDef prg, SceneMaxScope scope, ActionStatementBase cmd) {
@@ -27,6 +29,7 @@ public class SwitchModeController extends SceneMaxBaseController {
                 cmd.gravityVal = (Double) new ActionLogicalExpressionVm(cmd.gravityExpr,this.scope).evaluate();
             }
             this.app.switchModelToCharacterMode(this.targetVar,cmd);
+            dispatchMultiplayerCharacterModeCommand(cmd);
         } else if(cmd.switchTo==SwitchModeCommand.RAGDOLL) {
             this.app.switchModelToRagdollMode(this.targetVar);
         } else if(cmd.switchTo==SwitchModeCommand.KINEMATIC) {
@@ -41,6 +44,12 @@ public class SwitchModeController extends SceneMaxBaseController {
 
     }
 
+    private void dispatchMultiplayerCharacterModeCommand(SwitchModeCommand cmd) {
+        String commandText = "{network_entity}.switch to character mode : gravity "
+                + networkNumber(cmd.gravityVal == null ? 9.8 : cmd.gravityVal);
+        dispatchMultiplayerCommand(commandText);
+        startPersistentMultiplayerCommand(targetVar, MULTIPLAYER_ACTION_SLOT_CHARACTER_MODE, commandText);
+    }
 
 
 }

@@ -49,17 +49,26 @@ public class MultiplayerNetworkComponent {
     private static final byte ACTIVE_ACTION_START = 22;
     private static final byte ACTIVE_ACTION_END = 23;
     private static final byte NETWORK_EVENT = 24;
+    private static final byte NETWORK_VARIABLE_UPDATE = 25;
+    private static final byte SERVER_EVENT_REGISTER = 26;
     private static final byte SNAPSHOT = 30;
     private static final byte SERVER_STATE = 31;
+    private static final byte INITIAL_SYNC_COMPLETE = 32;
     private static final byte DISCONNECT = 40;
     private static final int MAX_PACKET_SIZE = 1200;
     private static final int SOURCE_OBJECT_NAME_SIZE = 64;
+    private static final int NETWORK_EVENT_NAME_SIZE = 64;
+    private static final int NETWORK_VARIABLE_NAME_SIZE = 64;
+    private static final int NETWORK_VARIABLE_VALUE_SIZE = 256;
+    private static final int NETWORK_VARIABLE_UPDATE_SIZE = NETWORK_VARIABLE_NAME_SIZE + 1 + NETWORK_VARIABLE_VALUE_SIZE;
     private static final int SPAWN_COMMAND_SIZE = 256;
     private static final int ACTIVE_ACTION_COMMAND_SIZE = 192;
     private static final int ACTIVE_ACTION_RECORD_SIZE = 12 + ACTIVE_ACTION_COMMAND_SIZE;
     private static final int SNAPSHOT_ENTITY_SIZE = 228 + SOURCE_OBJECT_NAME_SIZE + SPAWN_COMMAND_SIZE;
     private static final float CORRECTION_INTERVAL_SECONDS = 0.25f;
     private static final float CREATE_RETRY_INTERVAL_SECONDS = 0.35f;
+    private static final float INITIAL_SYNC_FALLBACK_SECONDS = 0.15f;
+    private static final float INITIAL_SYNC_PACKET_QUIET_SECONDS = 0.05f;
     private static final float POSITION_EPSILON_SQUARED = 0.0004f;
     private static final float ROTATION_EPSILON = 0.002f;
     private static final Pattern TIMED_COMMAND_PATTERN = Pattern.compile(
@@ -83,6 +92,10 @@ public class MultiplayerNetworkComponent {
     private final Map<Integer, List<PendingRemoteCommand>> pendingRemoteCommands = new HashMap<>();
     private final Map<String, TransformState> lastSentCorrections = new HashMap<>();
     private final Map<Integer, String> pendingCreateAcks = new LinkedHashMap<>();
+    private final Map<String, PendingNetworkVariable> pendingNetworkVariables = new LinkedHashMap<>();
+    private final Map<String, PendingServerEvent> registeredServerEvents = new LinkedHashMap<>();
+    private final Map<String, PendingServerEvent> pendingServerEvents = new LinkedHashMap<>();
+    private final Set<String> sentServerEventRegistrations = new HashSet<>();
     private final Set<String> appliedRemoteStructuralCommands = new HashSet<>();
     private DatagramChannel channel;
     private int clientId;
@@ -93,6 +106,8 @@ public class MultiplayerNetworkComponent {
     private boolean joinSessionRequested;
     private long pendingJoinSessionId;
     private String pendingJoinSessionName = "";
+    private boolean initialSyncPending;
+    private float initialSyncFallbackRemainingSeconds;
     private JSONObject networkState = new JSONObject();
     private final List<Object> stateSessions = new ArrayList<>();
     private final Map<Long, Map<String, Object>> stateSessionsById = new LinkedHashMap<>();
@@ -112,7 +127,29 @@ public class MultiplayerNetworkComponent {
     }
 
     public boolean isReady() {
-        return isActive() && clientId != 0 && networkReady;
+        return isActive() && clientId != 0 && networkReady && !initialSyncPending;
+    }
+
+    public boolean isJoinSessionComplete(long requestedSessionId) {
+        if (requestedSessionId <= 0) {
+            return true;
+        }
+        return isReady()
+                && !sessionSwitchPending
+                && !joinSessionRequested
+                && !initialSyncPending
+                && sessionId == requestedSessionId;
+    }
+
+    public boolean isJoinSessionComplete(String requestedSessionName) {
+        if (requestedSessionName == null || requestedSessionName.trim().isEmpty()) {
+            return true;
+        }
+        return isReady()
+                && !sessionSwitchPending
+                && !joinSessionRequested
+                && !initialSyncPending
+                && requestedSessionName.trim().equals(sessionName);
     }
 
     public JSONObject getState() {
@@ -141,6 +178,7 @@ public class MultiplayerNetworkComponent {
             channel.configureBlocking(false);
             channel.connect(new InetSocketAddress(server.trim(), port));
             networkReady = false;
+            initialSyncPending = true;
             logNet("connecting to " + server.trim() + ":" + port
                     + " sessionId=" + requestedSessionId
                     + " sessionName=\"" + (requestedSessionName == null ? "" : requestedSessionName) + "\""
@@ -173,7 +211,7 @@ public class MultiplayerNetworkComponent {
                 + " type=" + varDef.varType
                 + " archetype=" + entity.archetypeName
                 + " spawn=\"" + entity.spawnCommand + "\"");
-        if (clientId != 0 && !sessionSwitchPending) {
+        if (canSendLocalCreates()) {
             sendCreateEntity(entity);
         }
     }
@@ -183,6 +221,7 @@ public class MultiplayerNetworkComponent {
             return;
         }
         readPackets();
+        updateInitialSyncFallback(tpf);
         applyPendingTransforms();
         applyPendingRemoteCommands();
         applyPendingRemoteDestroys();
@@ -224,6 +263,49 @@ public class MultiplayerNetworkComponent {
         packet.put(eventBytes, 0, Math.min(eventBytes.length, MAX_PACKET_SIZE - 10));
         logNet("send network event targetClient=" + targetClientId + " event=\"" + eventName.trim() + "\"");
         send(packet);
+    }
+
+    public void registerServerEvent(String eventName, float intervalSeconds) {
+        if (eventName == null || eventName.trim().isEmpty() || intervalSeconds <= 0f) {
+            return;
+        }
+        String normalizedName = eventName.trim();
+        int intervalMs = Math.max(1, Math.round(intervalSeconds * 1000.0f));
+        String key = serverEventKey(normalizedName, intervalMs);
+        if (registeredServerEvents.containsKey(key)
+                && sentServerEventRegistrations.contains(key)
+                && !pendingServerEvents.containsKey(key)) {
+            return;
+        }
+        PendingServerEvent pending = new PendingServerEvent();
+        pending.name = normalizedName;
+        pending.intervalMs = intervalMs;
+        registeredServerEvents.put(key, pending);
+        if (!isReady()) {
+            pendingServerEvents.put(key, pending);
+            return;
+        }
+        sendServerEventRegistration(key, pending);
+    }
+
+    public void syncVariable(String varName, Object value, boolean declarationInit) {
+        if (varName == null || varName.trim().isEmpty()) {
+            return;
+        }
+        String encodedValue = encodeNetworkVariableValue(value);
+        if (encodedValue == null) {
+            return;
+        }
+        String normalizedName = varName.trim();
+        if (!isReady()) {
+            PendingNetworkVariable pending = new PendingNetworkVariable();
+            pending.name = normalizedName;
+            pending.encodedValue = encodedValue;
+            pending.declarationInit = declarationInit;
+            pendingNetworkVariables.put(normalizedName, pending);
+            return;
+        }
+        sendNetworkVariableUpdate(normalizedName, encodedValue, declarationInit);
     }
 
     public String remoteSourceObjectName(String runtimeName) {
@@ -362,6 +444,8 @@ public class MultiplayerNetworkComponent {
         networkReady = false;
         sessionSwitchPending = false;
         joinSessionRequested = false;
+        initialSyncPending = false;
+        initialSyncFallbackRemainingSeconds = 0f;
         pendingJoinSessionId = 0;
         pendingJoinSessionName = "";
         pendingCreateAcks.clear();
@@ -370,6 +454,10 @@ public class MultiplayerNetworkComponent {
         pendingRemoteCommands.clear();
         lastSentCorrections.clear();
         appliedRemoteStructuralCommands.clear();
+        pendingNetworkVariables.clear();
+        pendingServerEvents.clear();
+        registeredServerEvents.clear();
+        sentServerEventRegistrations.clear();
     }
 
     public void joinSession(long requestedSessionId) {
@@ -395,6 +483,12 @@ public class MultiplayerNetworkComponent {
         appliedRemoteStructuralCommands.clear();
         localEntities.clear();
         pendingCreateAcks.clear();
+        pendingNetworkVariables.clear();
+        pendingServerEvents.clear();
+        registeredServerEvents.clear();
+        sentServerEventRegistrations.clear();
+        initialSyncPending = true;
+        initialSyncFallbackRemainingSeconds = INITIAL_SYNC_FALLBACK_SECONDS;
         if (isActive() && clientId != 0) {
             ByteBuffer packet = packet(JOIN_SCENE, 128);
             putFixedString(packet, activeSceneId, 128);
@@ -415,6 +509,12 @@ public class MultiplayerNetworkComponent {
         lastSentCorrections.clear();
         appliedRemoteStructuralCommands.clear();
         pendingCreateAcks.clear();
+        pendingNetworkVariables.clear();
+        pendingServerEvents.clear();
+        sentServerEventRegistrations.clear();
+        pendingServerEvents.putAll(registeredServerEvents);
+        initialSyncPending = true;
+        initialSyncFallbackRemainingSeconds = INITIAL_SYNC_FALLBACK_SECONDS;
         for (RegisteredEntity entity : localEntities.values()) {
             entity.networkEntityId = 0;
             entity.createRequestId = nextCreateRequestId();
@@ -479,6 +579,9 @@ public class MultiplayerNetworkComponent {
     }
 
     private void retryPendingCreates(float tpf) {
+        if (!canSendLocalCreates()) {
+            return;
+        }
         for (RegisteredEntity entity : new ArrayList<>(localEntities.values())) {
             if (entity.networkEntityId != 0 || entity.createRequestId == 0) {
                 continue;
@@ -583,14 +686,13 @@ public class MultiplayerNetworkComponent {
                 pendingJoinSessionId = 0;
                 pendingJoinSessionName = "";
             }
+            initialSyncPending = true;
+            initialSyncFallbackRemainingSeconds = INITIAL_SYNC_FALLBACK_SECONDS;
             upsertCurrentSessionState();
             networkReady = true;
             rebuildNetworkState();
             logNet("joined session " + sessionId + " (\"" + sessionName + "\"), scene " + activeSceneId
                     + ", clientId=" + clientId);
-            for (RegisteredEntity entity : localEntities.values()) {
-                sendCreateEntity(entity);
-            }
         } else if (type == LOGIN_REJECTED) {
             logNet("login rejected by server");
             close();
@@ -659,11 +761,46 @@ public class MultiplayerNetworkComponent {
                 logNet("receive network event sender=" + senderClientId + " event=\"" + eventName + "\"");
                 app.receiveNetworkEvent(eventName);
             }
+        } else if (type == NETWORK_VARIABLE_UPDATE && payload.remaining() >= NETWORK_VARIABLE_UPDATE_SIZE) {
+            handleNetworkVariableUpdate(payload);
+            resetInitialSyncFallbackQuietPeriod();
         } else if (type == SNAPSHOT) {
             handleSnapshot(payload);
+            resetInitialSyncFallbackQuietPeriod();
         } else if (type == SERVER_STATE) {
             handleServerState(payload);
+            resetInitialSyncFallbackQuietPeriod();
+        } else if (type == INITIAL_SYNC_COMPLETE) {
+            completeInitialSync();
         }
+    }
+
+    private void updateInitialSyncFallback(float tpf) {
+        if (!initialSyncPending || initialSyncFallbackRemainingSeconds <= 0f) {
+            return;
+        }
+        initialSyncFallbackRemainingSeconds = Math.max(0f, initialSyncFallbackRemainingSeconds - Math.max(0f, tpf));
+        if (initialSyncFallbackRemainingSeconds == 0f) {
+            completeInitialSync();
+        }
+    }
+
+    private void resetInitialSyncFallbackQuietPeriod() {
+        if (initialSyncPending) {
+            initialSyncFallbackRemainingSeconds = INITIAL_SYNC_PACKET_QUIET_SECONDS;
+        }
+    }
+
+    private void completeInitialSync() {
+        if (sessionSwitchPending || joinSessionRequested) {
+            return;
+        }
+        initialSyncPending = false;
+        initialSyncFallbackRemainingSeconds = 0f;
+        flushPendingLocalCreates();
+        flushPendingNetworkVariables();
+        flushPendingServerEvents();
+        rebuildNetworkState();
     }
 
     private void handleServerState(ByteBuffer payload) {
@@ -745,6 +882,25 @@ public class MultiplayerNetworkComponent {
         return pendingCreateAcks.remove(firstKey);
     }
 
+    private boolean canSendLocalCreates() {
+        return isActive()
+                && clientId != 0
+                && !sessionSwitchPending
+                && !joinSessionRequested
+                && !initialSyncPending;
+    }
+
+    private void flushPendingLocalCreates() {
+        if (!canSendLocalCreates()) {
+            return;
+        }
+        for (RegisteredEntity entity : new ArrayList<>(localEntities.values())) {
+            if (entity.networkEntityId == 0 && entity.createRequestId != 0) {
+                sendCreateEntity(entity);
+            }
+        }
+    }
+
     private void flushPendingCommands(RegisteredEntity entity) {
         if (entity == null || entity.networkEntityId == 0 || entity.pendingCommands.isEmpty()) {
             return;
@@ -779,6 +935,67 @@ public class MultiplayerNetworkComponent {
         for (RegisteredEntity entity : localEntities.values()) {
             flushPendingActiveActions(entity);
         }
+    }
+
+    private void flushPendingNetworkVariables() {
+        if (pendingNetworkVariables.isEmpty()) {
+            return;
+        }
+        for (PendingNetworkVariable pending : new ArrayList<>(pendingNetworkVariables.values())) {
+            sendNetworkVariableUpdate(pending.name, pending.encodedValue, pending.declarationInit);
+            pendingNetworkVariables.remove(pending.name);
+        }
+    }
+
+    private void flushPendingServerEvents() {
+        if (pendingServerEvents.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, PendingServerEvent> entry : new ArrayList<>(pendingServerEvents.entrySet())) {
+            sendServerEventRegistration(entry.getKey(), entry.getValue());
+            pendingServerEvents.remove(entry.getKey());
+        }
+    }
+
+    private void sendServerEventRegistration(String key, PendingServerEvent event) {
+        if (!isActive() || clientId == 0 || event == null || event.name == null || event.name.trim().isEmpty()
+                || event.intervalMs <= 0) {
+            return;
+        }
+        ByteBuffer packet = packet(SERVER_EVENT_REGISTER, NETWORK_EVENT_NAME_SIZE + 4);
+        putFixedString(packet, event.name.trim(), NETWORK_EVENT_NAME_SIZE);
+        packet.putInt(event.intervalMs);
+        logNet("register server event name=" + event.name.trim() + " intervalMs=" + event.intervalMs);
+        send(packet);
+        sentServerEventRegistrations.add(key);
+    }
+
+    private String serverEventKey(String eventName, int intervalMs) {
+        return activeSceneId + "|" + eventName + "|" + intervalMs;
+    }
+
+    private void sendNetworkVariableUpdate(String varName, String encodedValue, boolean declarationInit) {
+        if (!isActive() || clientId == 0 || varName == null || varName.trim().isEmpty() || encodedValue == null) {
+            return;
+        }
+        ByteBuffer packet = packet(NETWORK_VARIABLE_UPDATE, NETWORK_VARIABLE_UPDATE_SIZE);
+        putFixedString(packet, varName.trim(), NETWORK_VARIABLE_NAME_SIZE);
+        packet.put((byte) (declarationInit ? 1 : 0));
+        putFixedString(packet, encodedValue, NETWORK_VARIABLE_VALUE_SIZE);
+        logNet("send network variable name=" + varName.trim() + " init=" + declarationInit);
+        send(packet);
+    }
+
+    private void handleNetworkVariableUpdate(ByteBuffer payload) {
+        String varName = readFixedString(payload, NETWORK_VARIABLE_NAME_SIZE);
+        payload.get();
+        String encodedValue = readFixedString(payload, NETWORK_VARIABLE_VALUE_SIZE);
+        Object value = decodeNetworkVariableValue(encodedValue);
+        if (varName == null || varName.trim().isEmpty() || app == null) {
+            return;
+        }
+        logNet("receive network variable name=" + varName.trim());
+        app.receiveNetworkVariableUpdate(varName.trim(), value);
     }
 
     private void sendDestroyEntity(int networkEntityId, String runtimeName) {
@@ -971,7 +1188,12 @@ public class MultiplayerNetworkComponent {
             return false;
         }
         String normalized = command.toLowerCase(java.util.Locale.ROOT);
-        return normalized.contains(".attach to ") || normalized.contains(".ik");
+        return normalized.contains(".attach to ")
+                || normalized.contains(".ik")
+                || normalized.contains(".pos ")
+                || normalized.contains(".pos(")
+                || normalized.contains(".switch to character mode")
+                || normalized.contains(".clear character mode");
     }
 
     private boolean markRemoteStructuralCommandApplied(int networkId, String command) {
@@ -1101,6 +1323,9 @@ public class MultiplayerNetworkComponent {
             return;
         }
         Vector3f position = transform == null ? Vector3f.ZERO : transform.position;
+        int scopeId = app.getMainScopeIdForNetwork();
+        String runtimeName = entity.sourceName + "@" + scopeId;
+        removeRemoteRuntimeName(runtimeName, entity.varType);
         String code;
         if (entity.spawnCommand != null && !entity.spawnCommand.isBlank()) {
             code = resolveRemoteCommandTarget(entity.networkEntityId, entity.spawnCommand);
@@ -1112,8 +1337,7 @@ public class MultiplayerNetworkComponent {
                 + " type=" + entity.varType
                 + " code=\"" + code + "\"");
         app.runNetworkMultiplayerCommand(code);
-        int scopeId = app.getMainScopeIdForNetwork();
-        entity.runtimeName = entity.sourceName + "@" + scopeId;
+        entity.runtimeName = runtimeName;
     }
 
     private boolean applyRemoteTransform(int networkId, TransformState transform) {
@@ -1172,6 +1396,9 @@ public class MultiplayerNetworkComponent {
     }
 
     private void removeRemoteEntities() {
+        if (app != null) {
+            app.clearNetworkMultiplayerCommands();
+        }
         for (RemoteEntity entity : remoteEntities.values()) {
             removeRemoteRuntimeEntity(entity);
         }
@@ -1212,26 +1439,35 @@ public class MultiplayerNetworkComponent {
         if (entity == null || entity.runtimeName == null) {
             return;
         }
-        if (entity.varType == VariableDef.VAR_TYPE_SPHERE) {
-            app.killSphere(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_BOX) {
-            app.killBox(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_CYLINDER) {
-            app.killCylinder(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_HOLLOW_CYLINDER) {
-            app.killHollowCylinder(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_QUAD) {
-            app.killQuad(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_WEDGE) {
-            app.killWedge(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_CONE) {
-            app.killCone(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_STAIRS) {
-            app.killStairs(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_ARCH) {
-            app.killArch(entity.runtimeName);
+        removeRemoteRuntimeName(entity.runtimeName, entity.varType);
+    }
+
+    private void removeRemoteRuntimeName(String runtimeName, int varType) {
+        if (runtimeName == null || runtimeName.trim().isEmpty()) {
+            return;
+        }
+        if (varType == VariableDef.VAR_TYPE_SPHERE) {
+            app.killSphere(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_BOX) {
+            app.killBox(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_CYLINDER) {
+            app.killCylinder(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_HOLLOW_CYLINDER) {
+            app.killHollowCylinder(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_QUAD) {
+            app.killQuad(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_WEDGE) {
+            app.killWedge(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_CONE) {
+            app.killCone(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_STAIRS) {
+            app.killStairs(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_ARCH) {
+            app.killArch(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_LABEL) {
+            app.killLabel(runtimeName);
         } else {
-            app.killModel(entity.runtimeName);
+            app.killModel(runtimeName);
         }
     }
 
@@ -1475,6 +1711,8 @@ public class MultiplayerNetworkComponent {
                 return VariableDef.VAR_TYPE_STAIRS;
             case "arch":
                 return VariableDef.VAR_TYPE_ARCH;
+            case "label":
+                return VariableDef.VAR_TYPE_LABEL;
             default:
                 return VariableDef.VAR_TYPE_3D;
         }
@@ -1500,6 +1738,49 @@ public class MultiplayerNetworkComponent {
                 .replaceAll("\\.$", "");
     }
 
+    private String encodeNetworkVariableValue(Object value) {
+        JSONObject json = new JSONObject();
+        if (value == null) {
+            json.put("type", "null");
+            json.put("value", JSONObject.NULL);
+        } else if (value instanceof Number) {
+            json.put("type", "number");
+            json.put("value", ((Number) value).doubleValue());
+        } else if (value instanceof Boolean) {
+            json.put("type", "boolean");
+            json.put("value", value);
+        } else if (value instanceof String) {
+            json.put("type", "string");
+            json.put("value", value);
+        } else {
+            return null;
+        }
+        String encoded = json.toString();
+        return encoded.getBytes(StandardCharsets.UTF_8).length < NETWORK_VARIABLE_VALUE_SIZE ? encoded : null;
+    }
+
+    private Object decodeNetworkVariableValue(String encodedValue) {
+        if (encodedValue == null || encodedValue.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            JSONObject json = new JSONObject(encodedValue);
+            String type = json.optString("type", "");
+            if ("number".equals(type)) {
+                return json.optDouble("value", 0d);
+            }
+            if ("boolean".equals(type)) {
+                return json.optBoolean("value", false);
+            }
+            if ("string".equals(type)) {
+                return json.optString("value", "");
+            }
+            return null;
+        } catch (Exception ignored) {
+            return encodedValue;
+        }
+    }
+
     private static class RegisteredEntity {
         String runtimeName;
         VariableDef varDef;
@@ -1514,6 +1795,17 @@ public class MultiplayerNetworkComponent {
         int nextActionSequence = 1;
         List<String> pendingCommands = new ArrayList<>();
         Map<Integer, ActiveAction> activeActions = new LinkedHashMap<>();
+    }
+
+    private static class PendingNetworkVariable {
+        String name;
+        String encodedValue;
+        boolean declarationInit;
+    }
+
+    private static class PendingServerEvent {
+        String name;
+        int intervalMs;
     }
 
     private static class RemoteEntity {

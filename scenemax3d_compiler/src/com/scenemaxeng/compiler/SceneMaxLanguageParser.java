@@ -55,6 +55,7 @@ public class SceneMaxLanguageParser implements IParser {
     private boolean animationFrameRangeModelsLoaded;
 
     private boolean isChildParser=false;
+    private boolean suppressParserErrorLogging=false;
     private String _sourceFileName="";
     private static int foreachCounter=0; // implicit foreach function counter
     private ProgramDef previousProgramState;
@@ -234,6 +235,10 @@ public class SceneMaxLanguageParser implements IParser {
         this.isChildParser=enable;
     }
 
+    public void setSuppressParserErrorLogging(boolean suppress) {
+        this.suppressParserErrorLogging = suppress;
+    }
+
     public void setCurrentProgramState(ProgramDef prg) {
         this.previousProgramState = prg;
     }
@@ -298,7 +303,9 @@ public class SceneMaxLanguageParser implements IParser {
         try {
             prg = v.visit(parser.prog());
         } catch (RuntimeException ex) {
-            logParserException(ex);
+            if (!suppressParserErrorLogging) {
+                logParserException(ex);
+            }
             throw ex;
         }
 
@@ -309,7 +316,9 @@ public class SceneMaxLanguageParser implements IParser {
             prg.syntaxErrors.addAll(errors);
         }
 
-        logParserErrors(prg);
+        if (!suppressParserErrorLogging) {
+            logParserErrors(prg);
+        }
 
         return prg;
     }
@@ -621,6 +630,7 @@ public class SceneMaxLanguageParser implements IParser {
                     if (resultVar == null) {
                         resultVar = new VariableDef();
                         resultVar.isShared = var.isShared;
+                        resultVar.isNetwork = var.isNetwork;
                         resultVar.declaration = var;
                         resultVar.resName = "var";
                         resultVar.varName = var.varName;
@@ -933,8 +943,19 @@ public class SceneMaxLanguageParser implements IParser {
                 }
 
                 NetworkEventHandlerCommand cmd = new NetworkEventHandlerCommand();
-                cmd.eventNameExpr = action.network_on().logical_expression();
+                List<SceneMaxParser.Logical_expressionContext> expressions = action.network_on().logical_expression();
+                cmd.eventNameExpr = expressions.isEmpty() ? null : expressions.get(0);
+                cmd.serverIntervalSecondsExpr = expressions.size() > 1 ? expressions.get(1) : null;
                 DoBlockCommand doBlock = new DoBlockVisitor(prg).visit(action.network_on().do_block());
+                if (doBlock == null) {
+                    return cmd;
+                }
+                if (ctx.network_statement().go_condition() != null) {
+                    cmd.goExpr = ctx.network_statement().go_condition().logical_expression();
+                    cmd.useGoExprEveryIteration = ctx.network_statement().go_condition().Pound() != null;
+                    doBlock.goExpr = cmd.goExpr;
+                    doBlock.useGoExprEveryIteration = cmd.useGoExprEveryIteration;
+                }
                 doBlock.isSecondLevelReturnPoint = true;
                 cmd.doBlock = doBlock;
                 return cmd;
@@ -1109,6 +1130,7 @@ public class SceneMaxLanguageParser implements IParser {
                                 SceneMaxLanguageParser.this.animationFrameRangeResourcesRootPath);
                         parser.setParserSourceFileName(file);
                         parser.enableChildParserMode(true);
+                        parser.setSuppressParserErrorLogging(SceneMaxLanguageParser.this.suppressParserErrorLogging);
                         //parser.setMacroFilter(SceneMaxLanguageParser.getMacroFilter());
                         ProgramDef prg = parser.parse(code);
                         filesUsed.add(file);
@@ -1163,10 +1185,12 @@ public class SceneMaxLanguageParser implements IParser {
                 VariableDeclarationCommand cmd = new VariableDeclarationCommand();
                 cmd.siblings = new ArrayList<>();
                 boolean isShared = ctx.declare_variable().Shared() != null;
+                boolean isNetwork = ctx.declare_variable().Network() != null;
 
                 for(SceneMaxParser.Variable_name_and_assignemtContext v : ctx.declare_variable().variable_name_and_assignemt()) {
                     VariableDeclarationCommand var = new VariableDeclarationCommand();
                     var.isShared = isShared;
+                    var.isNetwork = isNetwork;
                     var.isExprPointer = v.Commat() != null;
                     var.varName = v.res_var_decl().getText();
                     if (v.var_range_option()!=null) {
@@ -1985,6 +2009,56 @@ public class SceneMaxLanguageParser implements IParser {
                             if(attr.arch_specific_attr().material_attr()!=null) {
                                 varDef.materialExpr = attr.arch_specific_attr().material_attr().logical_expression();
                             }
+                        }
+                    }
+                }
+
+                return varDef;
+
+            }
+
+            public StatementDef visitDefLabel(SceneMaxParser.DefLabelContext ctx) {
+
+                String varName = ctx.define_label().res_var_decl().getText();
+                LabelVariableDef varDef = new LabelVariableDef();
+                varDef.isShared = ctx.define_label().Shared() != null;
+                varDef.varName = varName;
+                varDef.varLineNum = ctx.define_label().res_var_decl().getStart().getLine();
+
+                if(ctx.define_label().label_having_expr()!=null) {
+                    for(SceneMaxParser.Label_attrContext attr:ctx.define_label().label_having_expr().label_attributes().label_attr()) {
+                        if(attr.print_pos_attr()!=null) {
+                            if(attr.print_pos_attr().pos_axes()!=null) {
+                                if(attr.print_pos_attr().pos_axes().exception!=null) {
+                                    return null;
+                                }
+                                varDef.xExpr = attr.print_pos_attr().pos_axes().print_pos_x().logical_expression();
+                                varDef.yExpr = attr.print_pos_attr().pos_axes().print_pos_y().logical_expression();
+                                varDef.zExpr = attr.print_pos_attr().pos_axes().print_pos_z().logical_expression();
+                            } else {
+                                varDef.entityPos = new EntityPos();
+                                setEntityPos(varDef.entityPos, attr.print_pos_attr().pos_entity());
+                            }
+                        } else if(attr.init_scale_attr()!=null) {
+                            setInitialScale(varDef, attr.init_scale_attr());
+                        } else if(attr.init_hidden_attr()!=null) {
+                            varDef.visible = false;
+                        } else if(attr.init_multiplayer_attr()!=null) {
+                            varDef.isMultiplayer = true;
+                        } else if(attr.label_text_attr()!=null) {
+                            varDef.textExpr = attr.label_text_attr().logical_expression();
+                        } else if(attr.label_font_attr()!=null) {
+                            varDef.font = stripQutes(attr.label_font_attr().QUOTED_STRING().getText());
+                            if(varDef.font.length()>0 && !fontsUsed.contains(varDef.font)) {
+                                fontsUsed.add(varDef.font);
+                            }
+                        } else if(attr.label_style_attr()!=null) {
+                            varDef.style = stripQutes(attr.label_style_attr().QUOTED_STRING().getText());
+                        } else if(attr.label_size_attr()!=null) {
+                            varDef.widthExpr = attr.label_size_attr().label_width().logical_expression();
+                            varDef.heightExpr = attr.label_size_attr().label_height().logical_expression();
+                        } else if(attr.label_transparency_attr()!=null) {
+                            varDef.transparencyExpr = attr.label_transparency_attr().logical_expression();
                         }
                     }
                 }
@@ -3933,6 +4007,15 @@ public class SceneMaxLanguageParser implements IParser {
 
             }
 
+            public ActionStatementBase visitLabelTextSetStatement(SceneMaxParser.LabelTextSetStatementContext ctx) {
+                LabelTextCommand cmd = new LabelTextCommand();
+                cmd.targetVar = ctx.label_text_set().var_decl().getText();
+                cmd.textExpr = ctx.label_text_set().logical_expression();
+
+                return cmd;
+
+            }
+
             public ActionStatementBase visitVelocityStatement(SceneMaxParser.VelocityStatementContext ctx) {
                 ChangeVelocityCommand cmd = new ChangeVelocityCommand();
                 cmd.targetVar=ctx.velocity().var_decl().getText();
@@ -4889,13 +4972,13 @@ public class SceneMaxLanguageParser implements IParser {
         return targetRef.var_decl() == null ? "" : targetRef.var_decl().getText();
     }
 
-    private String stripQutes(String str) {
-        if (str.length() > 2) {
-            return str.substring(1, str.length() - 1);
-        } else {
-            return "";
-        }
-    }
+            private String stripQutes(String str) {
+                if (str.length() > 2) {
+                    return str.substring(1, str.length() - 1);
+                } else {
+                    return "";
+                }
+            }
 
     private void applyAnimationFrameRange(ProgramDef program, ActionCommandAnimate cmd, SceneMaxParser.Anim_frame_rangeContext range) {
         if (cmd == null || range == null) {
