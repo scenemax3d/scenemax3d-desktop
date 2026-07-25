@@ -77,7 +77,26 @@ public class EntityPosController extends SceneMaxBaseController {
             app.posLabel(targetVar,valX,valY,valZ,entityForPos, calculatedPosition);
         }
 
+        dispatchMultiplayerPosCommand();
+
         return true;
+    }
+
+    private void dispatchMultiplayerPosCommand() {
+        if (targetVarDef == null || targetVarDef.varType == ProgramDef.VAR_TYPE_CAMERA) {
+            return;
+        }
+        Spatial spatial = app.getEntitySpatial(targetVar, targetVarDef.varType);
+        if (spatial == null) {
+            return;
+        }
+        Vector3f position = spatial.getLocalTranslation();
+        String commandText = "{network_entity}.pos ("
+                + networkNumber(position.x) + ","
+                + networkNumber(position.y) + ","
+                + networkNumber(position.z) + ")";
+        dispatchMultiplayerCommand(commandText);
+        startPersistentMultiplayerCommand(targetVar, MULTIPLAYER_ACTION_SLOT_POS, commandText);
     }
 
 

@@ -67,6 +67,12 @@ public class MultiplayerCommandDispatchParsingTest {
     }
 
     @Test
+    public void parsesGeneratedPosDispatchCommands() {
+        assertParses("mp_remote_1 => sinbad\n"
+                + "mp_remote_1.pos (0,5,7)");
+    }
+
+    @Test
     public void treatsCharacterModeAsStructuralMultiplayerState() throws Exception {
         MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
         Method method = MultiplayerNetworkComponent.class.getDeclaredMethod("isStructuralCommand", String.class);
@@ -74,6 +80,16 @@ public class MultiplayerCommandDispatchParsingTest {
 
         assertTrue((Boolean) method.invoke(component, "{network_entity}.switch to character mode : gravity 60"));
         assertTrue((Boolean) method.invoke(component, "{network_entity}.clear character mode"));
+    }
+
+    @Test
+    public void treatsPosAsStructuralMultiplayerState() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        Method method = MultiplayerNetworkComponent.class.getDeclaredMethod("isStructuralCommand", String.class);
+        method.setAccessible(true);
+
+        assertTrue((Boolean) method.invoke(component, "{network_entity}.pos (0,5,7)"));
+        assertTrue((Boolean) method.invoke(component, "{network_entity}.pos(0,5,7)"));
     }
 
     @Test

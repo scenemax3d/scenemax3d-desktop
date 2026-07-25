@@ -1125,6 +1125,8 @@ public class MultiplayerNetworkComponent {
         String normalized = command.toLowerCase(java.util.Locale.ROOT);
         return normalized.contains(".attach to ")
                 || normalized.contains(".ik")
+                || normalized.contains(".pos ")
+                || normalized.contains(".pos(")
                 || normalized.contains(".switch to character mode")
                 || normalized.contains(".clear character mode");
     }
