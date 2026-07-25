@@ -165,6 +165,19 @@ public class MultiplayerCommandDispatchParsingTest {
     }
 
     @Test
+    public void parsesServerInvokedNetworkEventHandler() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "network.on (\"count\", 5) = do\n"
+                        + "end do");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        assertEquals(1, program.actions.size());
+        NetworkEventHandlerCommand handler = (NetworkEventHandlerCommand) program.actions.get(0);
+        assertNotNull(handler.eventNameExpr);
+        assertNotNull(handler.serverIntervalSecondsExpr);
+    }
+
+    @Test
     public void parsesNetworkSessionJoinAndRuntimeStateExpressions() {
         ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
                 "network.join session \"combat 1\"\n"

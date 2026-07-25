@@ -943,7 +943,9 @@ public class SceneMaxLanguageParser implements IParser {
                 }
 
                 NetworkEventHandlerCommand cmd = new NetworkEventHandlerCommand();
-                cmd.eventNameExpr = action.network_on().logical_expression();
+                List<SceneMaxParser.Logical_expressionContext> expressions = action.network_on().logical_expression();
+                cmd.eventNameExpr = expressions.isEmpty() ? null : expressions.get(0);
+                cmd.serverIntervalSecondsExpr = expressions.size() > 1 ? expressions.get(1) : null;
                 DoBlockCommand doBlock = new DoBlockVisitor(prg).visit(action.network_on().do_block());
                 doBlock.isSecondLevelReturnPoint = true;
                 cmd.doBlock = doBlock;

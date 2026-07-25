@@ -50,12 +50,14 @@ public class MultiplayerNetworkComponent {
     private static final byte ACTIVE_ACTION_END = 23;
     private static final byte NETWORK_EVENT = 24;
     private static final byte NETWORK_VARIABLE_UPDATE = 25;
+    private static final byte SERVER_EVENT_REGISTER = 26;
     private static final byte SNAPSHOT = 30;
     private static final byte SERVER_STATE = 31;
     private static final byte INITIAL_SYNC_COMPLETE = 32;
     private static final byte DISCONNECT = 40;
     private static final int MAX_PACKET_SIZE = 1200;
     private static final int SOURCE_OBJECT_NAME_SIZE = 64;
+    private static final int NETWORK_EVENT_NAME_SIZE = 64;
     private static final int NETWORK_VARIABLE_NAME_SIZE = 64;
     private static final int NETWORK_VARIABLE_VALUE_SIZE = 256;
     private static final int NETWORK_VARIABLE_UPDATE_SIZE = NETWORK_VARIABLE_NAME_SIZE + 1 + NETWORK_VARIABLE_VALUE_SIZE;
@@ -91,6 +93,9 @@ public class MultiplayerNetworkComponent {
     private final Map<String, TransformState> lastSentCorrections = new HashMap<>();
     private final Map<Integer, String> pendingCreateAcks = new LinkedHashMap<>();
     private final Map<String, PendingNetworkVariable> pendingNetworkVariables = new LinkedHashMap<>();
+    private final Map<String, PendingServerEvent> registeredServerEvents = new LinkedHashMap<>();
+    private final Map<String, PendingServerEvent> pendingServerEvents = new LinkedHashMap<>();
+    private final Set<String> sentServerEventRegistrations = new HashSet<>();
     private final Set<String> appliedRemoteStructuralCommands = new HashSet<>();
     private DatagramChannel channel;
     private int clientId;
@@ -260,6 +265,29 @@ public class MultiplayerNetworkComponent {
         send(packet);
     }
 
+    public void registerServerEvent(String eventName, float intervalSeconds) {
+        if (eventName == null || eventName.trim().isEmpty() || intervalSeconds <= 0f) {
+            return;
+        }
+        String normalizedName = eventName.trim();
+        int intervalMs = Math.max(1, Math.round(intervalSeconds * 1000.0f));
+        String key = serverEventKey(normalizedName, intervalMs);
+        if (registeredServerEvents.containsKey(key)
+                && sentServerEventRegistrations.contains(key)
+                && !pendingServerEvents.containsKey(key)) {
+            return;
+        }
+        PendingServerEvent pending = new PendingServerEvent();
+        pending.name = normalizedName;
+        pending.intervalMs = intervalMs;
+        registeredServerEvents.put(key, pending);
+        if (!isReady()) {
+            pendingServerEvents.put(key, pending);
+            return;
+        }
+        sendServerEventRegistration(key, pending);
+    }
+
     public void syncVariable(String varName, Object value, boolean declarationInit) {
         if (varName == null || varName.trim().isEmpty()) {
             return;
@@ -427,6 +455,9 @@ public class MultiplayerNetworkComponent {
         lastSentCorrections.clear();
         appliedRemoteStructuralCommands.clear();
         pendingNetworkVariables.clear();
+        pendingServerEvents.clear();
+        registeredServerEvents.clear();
+        sentServerEventRegistrations.clear();
     }
 
     public void joinSession(long requestedSessionId) {
@@ -453,6 +484,9 @@ public class MultiplayerNetworkComponent {
         localEntities.clear();
         pendingCreateAcks.clear();
         pendingNetworkVariables.clear();
+        pendingServerEvents.clear();
+        registeredServerEvents.clear();
+        sentServerEventRegistrations.clear();
         initialSyncPending = true;
         initialSyncFallbackRemainingSeconds = INITIAL_SYNC_FALLBACK_SECONDS;
         if (isActive() && clientId != 0) {
@@ -476,6 +510,9 @@ public class MultiplayerNetworkComponent {
         appliedRemoteStructuralCommands.clear();
         pendingCreateAcks.clear();
         pendingNetworkVariables.clear();
+        pendingServerEvents.clear();
+        sentServerEventRegistrations.clear();
+        pendingServerEvents.putAll(registeredServerEvents);
         initialSyncPending = true;
         initialSyncFallbackRemainingSeconds = INITIAL_SYNC_FALLBACK_SECONDS;
         for (RegisteredEntity entity : localEntities.values()) {
@@ -762,6 +799,7 @@ public class MultiplayerNetworkComponent {
         initialSyncFallbackRemainingSeconds = 0f;
         flushPendingLocalCreates();
         flushPendingNetworkVariables();
+        flushPendingServerEvents();
         rebuildNetworkState();
     }
 
@@ -907,6 +945,33 @@ public class MultiplayerNetworkComponent {
             sendNetworkVariableUpdate(pending.name, pending.encodedValue, pending.declarationInit);
             pendingNetworkVariables.remove(pending.name);
         }
+    }
+
+    private void flushPendingServerEvents() {
+        if (pendingServerEvents.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, PendingServerEvent> entry : new ArrayList<>(pendingServerEvents.entrySet())) {
+            sendServerEventRegistration(entry.getKey(), entry.getValue());
+            pendingServerEvents.remove(entry.getKey());
+        }
+    }
+
+    private void sendServerEventRegistration(String key, PendingServerEvent event) {
+        if (!isActive() || clientId == 0 || event == null || event.name == null || event.name.trim().isEmpty()
+                || event.intervalMs <= 0) {
+            return;
+        }
+        ByteBuffer packet = packet(SERVER_EVENT_REGISTER, NETWORK_EVENT_NAME_SIZE + 4);
+        putFixedString(packet, event.name.trim(), NETWORK_EVENT_NAME_SIZE);
+        packet.putInt(event.intervalMs);
+        logNet("register server event name=" + event.name.trim() + " intervalMs=" + event.intervalMs);
+        send(packet);
+        sentServerEventRegistrations.add(key);
+    }
+
+    private String serverEventKey(String eventName, int intervalMs) {
+        return activeSceneId + "|" + eventName + "|" + intervalMs;
     }
 
     private void sendNetworkVariableUpdate(String varName, String encodedValue, boolean declarationInit) {
@@ -1736,6 +1801,11 @@ public class MultiplayerNetworkComponent {
         String name;
         String encodedValue;
         boolean declarationInit;
+    }
+
+    private static class PendingServerEvent {
+        String name;
+        int intervalMs;
     }
 
     private static class RemoteEntity {

@@ -132,10 +132,35 @@ SceneMax currently synchronizes the following multiplayer entity behavior:
 - Persistent label text state, so late joiners receive the latest synchronized label text.
 - Scalar variables declared with `network var`, such as `network var fighters_count = 0`.
   Clients evaluate assignments locally, then send the resulting value to the server for relay.
+- Server-invoked events declared with `network.on ("count", 5) = do ... end do`. The first
+  value is the event name and the second value is the interval in seconds. The UDP server
+  stores one timer per session, scene, and event name, then broadcasts that event name to all
+  clients in the same scene whenever the interval elapses.
 
 Timed movement, rotation, and animation commands are sent both as normal commands and as
 active actions. Active actions let a late-joining client resume a command at the correct
 elapsed time instead of replaying it from the beginning.
+
+## Network Events
+
+Use `network.on` without an interval to handle events sent by other clients:
+
+```scenemax
+network.on ("head_hit_by_leg") = do
+  man.move backward 3 in 0.1 seconds
+end do
+```
+
+Use `network.on` with an interval to let the server invoke and broadcast the event:
+
+```scenemax
+network.on ("count", 5) = do
+  sys.print "server tick"
+end do
+```
+
+The server-side timer is deduplicated, so if every client registers the same event, only one
+timer runs for that session and scene.
 
 ## What Does Not Get Synchronized
 

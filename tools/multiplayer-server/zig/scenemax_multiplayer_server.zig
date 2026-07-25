@@ -10,8 +10,12 @@ const max_packet_size = 1200;
 const max_clients = 256;
 const max_entities = 2048;
 const max_network_variables = 2048;
+const max_server_events = 256;
 const max_sessions = 256;
 const source_object_name_size = 64;
+const server_event_name_size = 64;
+const server_event_registration_size = server_event_name_size + 4;
+const minimum_server_event_interval_ms = 100;
 const network_variable_name_size = 64;
 const network_variable_value_size = 256;
 const network_variable_update_size = network_variable_name_size + 1 + network_variable_value_size;
@@ -40,6 +44,7 @@ const PacketType = enum(u8) {
     active_action_end = 23,
     network_event = 24,
     network_variable_update = 25,
+    server_event_register = 26,
     snapshot = 30,
     server_state = 31,
     initial_sync_complete = 32,
@@ -105,6 +110,15 @@ const NetworkVariable = struct {
     value: [network_variable_value_size]u8 = [_]u8{0} ** network_variable_value_size,
 };
 
+const ServerEvent = struct {
+    active: bool = false,
+    session_id: u32 = 0,
+    scene_id: [128]u8 = [_]u8{0} ** 128,
+    name: [server_event_name_size]u8 = [_]u8{0} ** server_event_name_size,
+    interval_ms: u32 = 0,
+    next_fire_ms: i64 = 0,
+};
+
 export var scenemax_mp_config_block: [config_begin.len + config_payload_size + config_end.len]u8 =
     initConfigBlock();
 
@@ -124,6 +138,7 @@ pub fn main(init: std.process.Init) !void {
     var sessions = [_]Session{.{}} ** max_sessions;
     var entities = [_]Entity{.{}} ** max_entities;
     var network_variables = [_]NetworkVariable{.{}} ** max_network_variables;
+    var server_events = [_]ServerEvent{.{}} ** max_server_events;
     var next_client_id: u16 = 1;
     var next_session_id: u32 = 1000;
     var next_entity_id: u32 = 1;
@@ -203,7 +218,7 @@ pub fn main(init: std.process.Init) !void {
                         });
                     }
                     try destroyClientEntities(sock, io, &clients, &entities, client.id, client.session_id, old_scene_id);
-                    clearSceneNetworkVariablesIfEmpty(&clients, &network_variables, client.session_id, old_scene_id);
+                    clearSceneNetworkStateIfEmpty(&clients, &network_variables, &server_events, client.session_id, old_scene_id);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
                     try sendNetworkVariableSnapshot(sock, io, message.from, &network_variables, client.session_id, client.scene_id);
                     try sendInitialSyncComplete(sock, io, message.from, client.id);
@@ -231,7 +246,7 @@ pub fn main(init: std.process.Init) !void {
                     }
                     try destroyClientEntities(sock, io, &clients, &entities, client.id, old_session_id, old_scene_id);
                     client.session_id = session.id;
-                    clearSceneNetworkVariablesIfEmpty(&clients, &network_variables, old_session_id, old_scene_id);
+                    clearSceneNetworkStateIfEmpty(&clients, &network_variables, &server_events, old_session_id, old_scene_id);
                     try sendLoginAccepted(sock, io, message.from, client.id, session.id, session.name);
                     try broadcastServerState(sock, io, &clients, &sessions);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
@@ -308,6 +323,13 @@ pub fn main(init: std.process.Init) !void {
                     try dispatch(sock, io, &clients, client_id, packet_type, client_id, payload);
                 }
             },
+            .server_event_register => {
+                const client = findClient(&clients, client_id) orelse continue;
+                if (payload.len < server_event_registration_size) continue;
+                client.last_seen_ms = now;
+                client.address = message.from;
+                storeServerEvent(&server_events, client.session_id, client.scene_id, payload, now);
+            },
             .destroy_entity => {
                 const client = findClient(&clients, client_id) orelse continue;
                 if (payload.len < 4) continue;
@@ -341,14 +363,15 @@ pub fn main(init: std.process.Init) !void {
                     const old_scene_id = client.scene_id;
                     try destroyClientEntities(sock, io, &clients, &entities, client.id, old_session_id, old_scene_id);
                     client.active = false;
-                    clearSceneNetworkVariablesIfEmpty(&clients, &network_variables, old_session_id, old_scene_id);
+                    clearSceneNetworkStateIfEmpty(&clients, &network_variables, &server_events, old_session_id, old_scene_id);
                     try broadcastServerState(sock, io, &clients, &sessions);
                 }
             },
             else => {},
         }
 
-        try expireClients(sock, io, &clients, &entities, &network_variables, now);
+        try expireClients(sock, io, &clients, &entities, &network_variables, &server_events, now);
+        try dispatchDueServerEvents(sock, io, &clients, &server_events, now);
     }
 }
 
@@ -527,7 +550,7 @@ fn findOwnedActiveEntity(entities: *[max_entities]Entity, client_id: u16, sessio
     return null;
 }
 
-fn expireClients(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, entities: *[max_entities]Entity, network_variables: *[max_network_variables]NetworkVariable, now: i64) !void {
+fn expireClients(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, entities: *[max_entities]Entity, network_variables: *[max_network_variables]NetworkVariable, server_events: *[max_server_events]ServerEvent, now: i64) !void {
     for (clients) |*client| {
         if (client.active and now - client.last_seen_ms > 15000) {
             std.debug.print("[SceneMax MP] client timeout client={d} session={d} scene=\"{s}\"\n", .{
@@ -539,7 +562,7 @@ fn expireClients(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, en
             const old_scene_id = client.scene_id;
             try destroyClientEntities(sock, io, clients, entities, client.id, old_session_id, old_scene_id);
             client.active = false;
-            clearSceneNetworkVariablesIfEmpty(clients, network_variables, old_session_id, old_scene_id);
+            clearSceneNetworkStateIfEmpty(clients, network_variables, server_events, old_session_id, old_scene_id);
         }
     }
 }
@@ -669,6 +692,7 @@ fn decodePacketType(value: u8) ?PacketType {
         23 => .active_action_end,
         24 => .network_event,
         25 => .network_variable_update,
+        26 => .server_event_register,
         30 => .snapshot,
         31 => .server_state,
         32 => .initial_sync_complete,
@@ -716,10 +740,15 @@ fn destroyOwnedEntity(entities: *[max_entities]Entity, client_id: u16, session_i
     return false;
 }
 
-fn clearSceneNetworkVariablesIfEmpty(clients: *[max_clients]Client, network_variables: *[max_network_variables]NetworkVariable, session_id: u32, scene_id: [128]u8) void {
+fn clearSceneNetworkStateIfEmpty(clients: *[max_clients]Client, network_variables: *[max_network_variables]NetworkVariable, server_events: *[max_server_events]ServerEvent, session_id: u32, scene_id: [128]u8) void {
     if (connectedClientCountInScene(clients, session_id, scene_id) != 0) {
         return;
     }
+    clearSceneNetworkVariables(network_variables, session_id, scene_id);
+    clearSceneServerEvents(server_events, session_id, scene_id);
+}
+
+fn clearSceneNetworkVariables(network_variables: *[max_network_variables]NetworkVariable, session_id: u32, scene_id: [128]u8) void {
     var cleared: usize = 0;
     for (network_variables) |*network_variable| {
         if (!network_variable.active) continue;
@@ -734,6 +763,84 @@ fn clearSceneNetworkVariablesIfEmpty(clients: *[max_clients]Client, network_vari
             cleared,
         });
     }
+}
+
+fn clearSceneServerEvents(server_events: *[max_server_events]ServerEvent, session_id: u32, scene_id: [128]u8) void {
+    var cleared: usize = 0;
+    for (server_events) |*server_event| {
+        if (!server_event.active) continue;
+        if (server_event.session_id != session_id or !sameScene(server_event.scene_id, scene_id)) continue;
+        server_event.active = false;
+        cleared += 1;
+    }
+    if (cleared > 0) {
+        std.debug.print("[SceneMax MP] cleared server events session={d} scene=\"{s}\" count={d}\n", .{
+            session_id,
+            fixedText(&scene_id),
+            cleared,
+        });
+    }
+}
+
+fn storeServerEvent(server_events: *[max_server_events]ServerEvent, session_id: u32, scene_id: [128]u8, payload: []const u8, now: i64) void {
+    if (payload.len < server_event_registration_size) return;
+    var name = [_]u8{0} ** server_event_name_size;
+    copyFixed(&name, payload, 0);
+    if (isEmpty(&name)) return;
+    var interval_ms = std.mem.readInt(u32, payload[server_event_name_size..][0..4], .little);
+    if (interval_ms < minimum_server_event_interval_ms) {
+        interval_ms = minimum_server_event_interval_ms;
+    }
+
+    if (findServerEvent(server_events, session_id, scene_id, name)) |existing| {
+        if (existing.interval_ms != interval_ms) {
+            existing.interval_ms = interval_ms;
+            existing.next_fire_ms = now + @as(i64, @intCast(interval_ms));
+        }
+        return;
+    }
+
+    const slot = serverEventSlot(server_events, session_id, scene_id, name) orelse return;
+    server_events[slot] = .{
+        .active = true,
+        .session_id = session_id,
+        .scene_id = scene_id,
+        .name = name,
+        .interval_ms = interval_ms,
+        .next_fire_ms = now + @as(i64, @intCast(interval_ms)),
+    };
+    if (verbose_packet_logs) {
+        std.debug.print("[SceneMax MP] registered server event session={d} scene=\"{s}\" name=\"{s}\" intervalMs={d}\n", .{
+            session_id,
+            fixedText(&scene_id),
+            fixedText(&name),
+            interval_ms,
+        });
+    }
+}
+
+fn findServerEvent(server_events: *[max_server_events]ServerEvent, session_id: u32, scene_id: [128]u8, name: [server_event_name_size]u8) ?*ServerEvent {
+    const wanted = fixedText(&name);
+    for (server_events) |*server_event| {
+        if (!server_event.active) continue;
+        if (server_event.session_id != session_id or !sameScene(server_event.scene_id, scene_id)) continue;
+        if (std.mem.eql(u8, fixedText(&server_event.name), wanted)) return server_event;
+    }
+    return null;
+}
+
+fn serverEventSlot(server_events: *[max_server_events]ServerEvent, session_id: u32, scene_id: [128]u8, name: [server_event_name_size]u8) ?usize {
+    var hash = std.hash.Wyhash.init(0);
+    hash.update(std.mem.asBytes(&session_id));
+    hash.update(&scene_id);
+    hash.update(fixedText(&name));
+    const start: usize = @intCast(hash.final() % max_server_events);
+    var i: usize = 0;
+    while (i < max_server_events) : (i += 1) {
+        const slot = (start + i) % max_server_events;
+        if (!server_events[slot].active) return slot;
+    }
+    return null;
 }
 
 fn storeNetworkVariable(network_variables: *[max_network_variables]NetworkVariable, session_id: u32, scene_id: [128]u8, payload: []const u8) bool {
@@ -1144,6 +1251,41 @@ fn dispatchNetworkEvent(sock: net.Socket, io: std.Io, clients: *[max_clients]Cli
     }
 }
 
+fn dispatchDueServerEvents(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, server_events: *[max_server_events]ServerEvent, now: i64) !void {
+    for (server_events) |*server_event| {
+        if (!server_event.active or server_event.interval_ms == 0 or now < server_event.next_fire_ms) continue;
+        const interval: i64 = @intCast(server_event.interval_ms);
+        while (server_event.next_fire_ms <= now) {
+            server_event.next_fire_ms += interval;
+        }
+        try broadcastServerEvent(sock, io, clients, server_event);
+    }
+}
+
+fn broadcastServerEvent(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, server_event: *const ServerEvent) !void {
+    const event_payload = fixedText(&server_event.name);
+    if (event_payload.len == 0) return;
+    var packet: [max_packet_size]u8 = undefined;
+    writeHeader(packet[0..], .network_event, 0);
+    const payload_len = @min(event_payload.len, packet.len - 8);
+    @memcpy(packet[8 .. 8 + payload_len], event_payload[0..payload_len]);
+    var sent: usize = 0;
+    for (clients) |client| {
+        if (!client.active) continue;
+        if (client.session_id != server_event.session_id or !sameScene(client.scene_id, server_event.scene_id)) continue;
+        sendUdp(sock, io, client.address, packet[0 .. 8 + payload_len]);
+        sent += 1;
+    }
+    if (verbose_packet_logs) {
+        std.debug.print("[SceneMax MP] fired server event session={d} scene=\"{s}\" name=\"{s}\" recipients={d}\n", .{
+            server_event.session_id,
+            fixedText(&server_event.scene_id),
+            event_payload,
+            sent,
+        });
+    }
+}
+
 fn sameScene(a: [128]u8, b: [128]u8) bool {
     return std.mem.eql(u8, &a, &b);
 }
@@ -1204,6 +1346,7 @@ fn packetTypeName(packet_type: PacketType) []const u8 {
         .active_action_end => "active_action_end",
         .network_event => "network_event",
         .network_variable_update => "network_variable",
+        .server_event_register => "server_event_register",
         .snapshot => "snapshot",
         .server_state => "server_state",
         .initial_sync_complete => "initial_sync_complete",

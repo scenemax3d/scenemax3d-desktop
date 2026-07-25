@@ -5253,6 +5253,19 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
     }
 
+    public void registerServerNetworkEvent(String eventName, float intervalSeconds) {
+        if (eventName == null || eventName.trim().isEmpty() || intervalSeconds <= 0f) {
+            return;
+        }
+        if (multiplayerNetwork == null) {
+            multiplayerNetwork = new MultiplayerNetworkComponent(this);
+            multiplayerNetwork.startFromSystemProperties();
+        }
+        if (multiplayerNetwork != null) {
+            multiplayerNetwork.registerServerEvent(eventName.trim(), intervalSeconds);
+        }
+    }
+
     public boolean joinNetworkSession(Object sessionSelector) {
         if (multiplayerNetwork == null) {
             multiplayerNetwork = new MultiplayerNetworkComponent(this);

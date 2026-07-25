@@ -112,7 +112,7 @@ http_body : logical_expression ;
 network_statement : Network '.' network_action ;
 network_action : network_send | network_on | network_join_session ;
 network_send : Send logical_expression ;
-network_on : On '(' logical_expression ')' Equals do_block ;
+network_on : On '(' logical_expression (',' logical_expression)? ')' Equals do_block ;
 network_join_session : Join Session logical_expression ;
 
 add_external_code : Add file_name (',' file_name)* Code ;
