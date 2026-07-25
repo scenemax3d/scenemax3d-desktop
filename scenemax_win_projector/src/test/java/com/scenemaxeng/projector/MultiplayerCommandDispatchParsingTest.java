@@ -21,6 +21,8 @@ import java.nio.channels.DatagramChannel;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class MultiplayerCommandDispatchParsingTest {
@@ -29,6 +31,7 @@ public class MultiplayerCommandDispatchParsingTest {
     private static final byte VERSION = 1;
     private static final byte LOGIN_ACCEPTED = 2;
     private static final byte LOGIN_REJECTED = 3;
+    private static final byte CREATE_ENTITY_REQUEST = 10;
     private static final byte INITIAL_SYNC_COMPLETE = 32;
 
     @Test
@@ -348,6 +351,51 @@ public class MultiplayerCommandDispatchParsingTest {
             sendHeaderOnly(server, INITIAL_SYNC_COMPLETE, 7);
             component.update(0f);
             assertTrue(component.isJoinSessionComplete(42));
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
+    @Test
+    public void localCreatesWaitForInitialSceneSyncToComplete() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            setField(component, "channel", client);
+            setField(component, "clientId", 7);
+            setField(component, "networkReady", true);
+            setField(component, "initialSyncPending", true);
+
+            VariableDef varDef = new VariableDef();
+            varDef.varName = "player";
+            varDef.varType = VariableDef.VAR_TYPE_3D;
+            varDef.isMultiplayer = true;
+
+            component.registerEntity("player@1", varDef, "fighter1_native",
+                    "{network_entity} => fighter1_native: pos (0,0,0)");
+
+            ByteBuffer received = ByteBuffer.allocate(256).order(ByteOrder.LITTLE_ENDIAN);
+            assertNull(server.receive(received));
+
+            sendHeaderOnly(server, INITIAL_SYNC_COMPLETE, 7);
+            component.update(0f);
+
+            received.clear();
+            assertNotNull(server.receive(received));
+            received.flip();
+            assertEquals(MAGIC, received.getInt());
+            assertEquals(VERSION, received.get());
+            assertEquals(CREATE_ENTITY_REQUEST, received.get());
         } finally {
             component.close();
             client.close();

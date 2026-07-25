@@ -206,7 +206,7 @@ public class MultiplayerNetworkComponent {
                 + " type=" + varDef.varType
                 + " archetype=" + entity.archetypeName
                 + " spawn=\"" + entity.spawnCommand + "\"");
-        if (clientId != 0 && !sessionSwitchPending) {
+        if (canSendLocalCreates()) {
             sendCreateEntity(entity);
         }
     }
@@ -542,6 +542,9 @@ public class MultiplayerNetworkComponent {
     }
 
     private void retryPendingCreates(float tpf) {
+        if (!canSendLocalCreates()) {
+            return;
+        }
         for (RegisteredEntity entity : new ArrayList<>(localEntities.values())) {
             if (entity.networkEntityId != 0 || entity.createRequestId == 0) {
                 continue;
@@ -653,10 +656,6 @@ public class MultiplayerNetworkComponent {
             rebuildNetworkState();
             logNet("joined session " + sessionId + " (\"" + sessionName + "\"), scene " + activeSceneId
                     + ", clientId=" + clientId);
-            for (RegisteredEntity entity : localEntities.values()) {
-                sendCreateEntity(entity);
-            }
-            flushPendingNetworkVariables();
         } else if (type == LOGIN_REJECTED) {
             logNet("login rejected by server");
             close();
@@ -756,8 +755,13 @@ public class MultiplayerNetworkComponent {
     }
 
     private void completeInitialSync() {
+        if (sessionSwitchPending || joinSessionRequested) {
+            return;
+        }
         initialSyncPending = false;
         initialSyncFallbackRemainingSeconds = 0f;
+        flushPendingLocalCreates();
+        flushPendingNetworkVariables();
         rebuildNetworkState();
     }
 
@@ -838,6 +842,25 @@ public class MultiplayerNetworkComponent {
         }
         Integer firstKey = pendingCreateAcks.keySet().iterator().next();
         return pendingCreateAcks.remove(firstKey);
+    }
+
+    private boolean canSendLocalCreates() {
+        return isActive()
+                && clientId != 0
+                && !sessionSwitchPending
+                && !joinSessionRequested
+                && !initialSyncPending;
+    }
+
+    private void flushPendingLocalCreates() {
+        if (!canSendLocalCreates()) {
+            return;
+        }
+        for (RegisteredEntity entity : new ArrayList<>(localEntities.values())) {
+            if (entity.networkEntityId == 0 && entity.createRequestId != 0) {
+                sendCreateEntity(entity);
+            }
+        }
     }
 
     private void flushPendingCommands(RegisteredEntity entity) {
@@ -1233,6 +1256,9 @@ public class MultiplayerNetworkComponent {
             return;
         }
         Vector3f position = transform == null ? Vector3f.ZERO : transform.position;
+        int scopeId = app.getMainScopeIdForNetwork();
+        String runtimeName = entity.sourceName + "@" + scopeId;
+        removeRemoteRuntimeName(runtimeName, entity.varType);
         String code;
         if (entity.spawnCommand != null && !entity.spawnCommand.isBlank()) {
             code = resolveRemoteCommandTarget(entity.networkEntityId, entity.spawnCommand);
@@ -1244,8 +1270,7 @@ public class MultiplayerNetworkComponent {
                 + " type=" + entity.varType
                 + " code=\"" + code + "\"");
         app.runNetworkMultiplayerCommand(code);
-        int scopeId = app.getMainScopeIdForNetwork();
-        entity.runtimeName = entity.sourceName + "@" + scopeId;
+        entity.runtimeName = runtimeName;
     }
 
     private boolean applyRemoteTransform(int networkId, TransformState transform) {
@@ -1304,6 +1329,9 @@ public class MultiplayerNetworkComponent {
     }
 
     private void removeRemoteEntities() {
+        if (app != null) {
+            app.clearNetworkMultiplayerCommands();
+        }
         for (RemoteEntity entity : remoteEntities.values()) {
             removeRemoteRuntimeEntity(entity);
         }
@@ -1344,28 +1372,35 @@ public class MultiplayerNetworkComponent {
         if (entity == null || entity.runtimeName == null) {
             return;
         }
-        if (entity.varType == VariableDef.VAR_TYPE_SPHERE) {
-            app.killSphere(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_BOX) {
-            app.killBox(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_CYLINDER) {
-            app.killCylinder(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_HOLLOW_CYLINDER) {
-            app.killHollowCylinder(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_QUAD) {
-            app.killQuad(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_WEDGE) {
-            app.killWedge(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_CONE) {
-            app.killCone(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_STAIRS) {
-            app.killStairs(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_ARCH) {
-            app.killArch(entity.runtimeName);
-        } else if (entity.varType == VariableDef.VAR_TYPE_LABEL) {
-            app.killLabel(entity.runtimeName);
+        removeRemoteRuntimeName(entity.runtimeName, entity.varType);
+    }
+
+    private void removeRemoteRuntimeName(String runtimeName, int varType) {
+        if (runtimeName == null || runtimeName.trim().isEmpty()) {
+            return;
+        }
+        if (varType == VariableDef.VAR_TYPE_SPHERE) {
+            app.killSphere(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_BOX) {
+            app.killBox(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_CYLINDER) {
+            app.killCylinder(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_HOLLOW_CYLINDER) {
+            app.killHollowCylinder(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_QUAD) {
+            app.killQuad(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_WEDGE) {
+            app.killWedge(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_CONE) {
+            app.killCone(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_STAIRS) {
+            app.killStairs(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_ARCH) {
+            app.killArch(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_LABEL) {
+            app.killLabel(runtimeName);
         } else {
-            app.killModel(entity.runtimeName);
+            app.killModel(runtimeName);
         }
     }
 

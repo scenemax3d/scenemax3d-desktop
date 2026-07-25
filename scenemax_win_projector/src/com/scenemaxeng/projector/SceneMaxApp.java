@@ -1367,6 +1367,33 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         runPartialCode(code, null, false, true);
     }
 
+    public void clearNetworkMultiplayerCommands() {
+        if (mainScope != null && mainScope.mainController != null) {
+            mainScope.mainController.removeMultiplayerNetworkControllers();
+        }
+        for (int i = _controllers.size() - 1; i >= 0; i--) {
+            SceneMaxBaseController controller = _controllers.get(i);
+            if (controller instanceof CompositeController) {
+                ((CompositeController) controller).removeMultiplayerNetworkControllers();
+            }
+            if (isMultiplayerNetworkController(controller)) {
+                controller.forceStop = true;
+                controller.dispose();
+                _controllers.remove(i);
+                if (controller.isEventHandler && eventHandlersCount > 0) {
+                    eventHandlersCount--;
+                }
+            }
+        }
+        pendingMultiplayerResumeStates.clear();
+    }
+
+    private boolean isMultiplayerNetworkController(SceneMaxBaseController controller) {
+        return controller != null
+                && controller.cmd != null
+                && controller.cmd.fromMultiplayerNetwork;
+    }
+
     MultiplayerControllerResumeState consumeMultiplayerResumeState(String runtimeName, int slot) {
         if (runtimeName == null) {
             return null;
@@ -2118,6 +2145,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
         String fromRes = "";
         ModelDef md = null;
+        removeExistingRuntimeEntity(var, scope);
 
         if (var.resName != null) {
             md = prg.getModel(var.resName);
@@ -2180,6 +2208,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             }
             return;
         }
+        removeExistingRuntimeEntity(var, scope);
 
         if(var.varType==VariableDef.VAR_TYPE_3D) {
             String fromRes = "";
@@ -4484,6 +4513,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         final String modelName = name + "@" + modelInst.scope.scopeId;
+        if (modelInst.scope.getEntityInst(name) != modelInst) {
+            return null;
+        }
+        killModel(modelName);
         AppModel am = new AppModel(parentNode);
         am.entityInst = modelInst;
         am.resource = resource;
@@ -4697,6 +4730,36 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     private Vector3f resolveInitialModelScale(ModelInst modelInst, ResourceSetup resource) {
         return resolveInitialScale(modelInst, new Vector3f(resource.scaleX, resource.scaleY, resource.scaleZ));
+    }
+
+    private void removeExistingRuntimeEntity(VariableDef var, SceneMaxScope scope) {
+        if (var == null || scope == null || var.varName == null || var.varName.trim().isEmpty() || var.isShared) {
+            return;
+        }
+        String runtimeName = var.varName + "@" + scope.scopeId;
+        if (var.varType == VariableDef.VAR_TYPE_3D) {
+            killModel(runtimeName);
+        } else if (var.varType == VariableDef.VAR_TYPE_LABEL) {
+            killLabel(runtimeName);
+        } else if (var.varType == VariableDef.VAR_TYPE_SPHERE) {
+            killSphere(runtimeName);
+        } else if (var.varType == VariableDef.VAR_TYPE_BOX) {
+            killBox(runtimeName);
+        } else if (var.varType == VariableDef.VAR_TYPE_CYLINDER) {
+            killCylinder(runtimeName);
+        } else if (var.varType == VariableDef.VAR_TYPE_HOLLOW_CYLINDER) {
+            killHollowCylinder(runtimeName);
+        } else if (var.varType == VariableDef.VAR_TYPE_QUAD) {
+            killQuad(runtimeName);
+        } else if (var.varType == VariableDef.VAR_TYPE_WEDGE) {
+            killWedge(runtimeName);
+        } else if (var.varType == VariableDef.VAR_TYPE_CONE) {
+            killCone(runtimeName);
+        } else if (var.varType == VariableDef.VAR_TYPE_STAIRS) {
+            killStairs(runtimeName);
+        } else if (var.varType == VariableDef.VAR_TYPE_ARCH) {
+            killArch(runtimeName);
+        }
     }
 
     private Vector3f resolveInitialScale(ModelInst inst, Vector3f fallback) {
