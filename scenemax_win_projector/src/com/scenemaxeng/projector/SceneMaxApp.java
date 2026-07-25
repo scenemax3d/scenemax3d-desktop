@@ -235,6 +235,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private MultiplayerNetworkComponent multiplayerNetwork;
     private boolean suppressMultiplayerCommandDispatch;
     private final Map<String, Object> pendingNetworkVariableValues = new HashMap<>();
+    private final Map<String, String> pendingMultiplayerUITextValues = new HashMap<>();
     private final Map<String, MultiplayerControllerResumeState> pendingMultiplayerResumeStates = new HashMap<>();
     private float runtimeShaderElapsedTime = 0f;
     private SceneMaxBaseController lastWaitController;
@@ -1572,6 +1573,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 }
             } else {
                 uiManager.load(uiFile);
+                applyPendingMultiplayerUITextValues();
             }
             logger.log(Level.INFO, "UI.load '{0}' loaded successfully", cmd.uiName);
         } catch (Exception e) {
@@ -5324,11 +5326,29 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
     }
 
+    public void syncMultiplayerUIText(String uiName, String layerName, String widgetPath, String textValue) {
+        if (suppressMultiplayerCommandDispatch || uiManager == null) {
+            return;
+        }
+        String resolvedUiName = uiName != null && !uiName.trim().isEmpty()
+                ? uiName.trim()
+                : uiManager.getActiveUIName();
+        String syncName = uiManager.multiplayerTextSyncKey(resolvedUiName, layerName, widgetPath);
+        if (syncName == null || syncName.trim().isEmpty()) {
+            return;
+        }
+        syncNetworkVariable(syncName, textValue == null ? "" : textValue, false);
+    }
+
     public void receiveNetworkVariableUpdate(String varName, Object value) {
         if (varName == null || varName.trim().isEmpty()) {
             return;
         }
         String normalizedName = varName.trim();
+        if (isMultiplayerUITextSyncName(normalizedName)) {
+            receiveMultiplayerUITextUpdate(normalizedName, value);
+            return;
+        }
         if (mainScope == null) {
             pendingNetworkVariableValues.put(normalizedName, value);
             return;
@@ -5368,6 +5388,34 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
              iterator.hasNext();) {
             Map.Entry<String, Object> entry = iterator.next();
             if (applyNetworkVariableValue(entry.getKey(), entry.getValue())) {
+                iterator.remove();
+            }
+        }
+    }
+
+    private boolean isMultiplayerUITextSyncName(String varName) {
+        return varName != null && varName.startsWith("$ui:");
+    }
+
+    private void receiveMultiplayerUITextUpdate(String syncName, Object value) {
+        String text = value == null ? "" : String.valueOf(value);
+        if (!applyMultiplayerUITextValue(syncName, text)) {
+            pendingMultiplayerUITextValues.put(syncName, text);
+        }
+    }
+
+    private boolean applyMultiplayerUITextValue(String syncName, String text) {
+        return uiManager != null && uiManager.applyMultiplayerTextSync(syncName, text);
+    }
+
+    private void applyPendingMultiplayerUITextValues() {
+        if (pendingMultiplayerUITextValues.isEmpty()) {
+            return;
+        }
+        for (Iterator<Map.Entry<String, String>> iterator = pendingMultiplayerUITextValues.entrySet().iterator();
+             iterator.hasNext();) {
+            Map.Entry<String, String> entry = iterator.next();
+            if (applyMultiplayerUITextValue(entry.getKey(), entry.getValue())) {
                 iterator.remove();
             }
         }
@@ -10100,6 +10148,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         try {
             if (uiManager != null) {
                 uiManager.load(uiFile);
+                applyPendingMultiplayerUITextValues();
             }
         } catch (Exception e) {
             handleRuntimeError("Failed to load UI document: " + e.getMessage());
@@ -10110,6 +10159,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         try (InputStream in = inputStream) {
             if (uiManager != null && in != null) {
                 uiManager.load(in, "running/" + uiName + ".smui");
+                applyPendingMultiplayerUITextValues();
             }
         } catch (Exception e) {
             handleRuntimeError("Failed to load UI document: " + e.getMessage());

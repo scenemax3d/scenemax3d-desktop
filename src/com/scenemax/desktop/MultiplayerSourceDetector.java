@@ -40,7 +40,8 @@ final class MultiplayerSourceDetector {
         ScriptTreeResourceCollector.CollectionResult reachableSources =
                 ScriptTreeResourceCollector.collectReachableResources(scriptRoot, null);
         return usesMultiplayerInFiles(reachableSources.scriptFiles)
-                || usesMultiplayerInFiles(reachableSources.designerFiles);
+                || usesMultiplayerInFiles(reachableSources.designerFiles)
+                || usesMultiplayerInFiles(reachableSources.uiFiles);
     }
 
     private static boolean usesMultiplayerInFiles(List<String> paths) {

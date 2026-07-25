@@ -164,6 +164,9 @@ public class UiUpdateWidgetTool extends AbstractSceneMaxTool {
                 throw new IllegalArgumentException("textAlignment must be left, center, or right.");
             }
         }
+        if (updates.has("multiplayer") && !"TEXT_VIEW".equals(type)) {
+            throw new IllegalArgumentException("multiplayer is supported only on TEXT_VIEW widgets.");
+        }
         if ("IMAGE".equals(type) && updates.has("imageScaleMode")) {
             String im = updates.optString("imageScaleMode", "fit");
             if (!"fit".equals(im) && !"fill".equals(im) && !"stretch".equals(im)) {

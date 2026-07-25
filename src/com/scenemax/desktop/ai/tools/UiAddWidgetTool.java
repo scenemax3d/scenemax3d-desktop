@@ -259,6 +259,9 @@ public class UiAddWidgetTool extends AbstractSceneMaxTool {
                 throw new IllegalArgumentException("textAlignment must be left, center, or right.");
             }
         }
+        if (props.has("multiplayer") && type != UIWidgetType.TEXT_VIEW) {
+            throw new IllegalArgumentException("multiplayer is supported only on TEXT_VIEW widgets.");
+        }
         if (type == UIWidgetType.IMAGE && props.has("imageScaleMode")) {
             String im = props.optString("imageScaleMode", "fit");
             if (!"fit".equals(im) && !"fill".equals(im) && !"stretch".equals(im)) {

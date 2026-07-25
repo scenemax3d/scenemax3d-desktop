@@ -55,4 +55,19 @@ public class MultiplayerSourceDetectorTest {
                 scriptRoot,
                 "switch to \"welcome\""));
     }
+
+    @Test
+    public void detectsMultiplayerTextViewInReachableUiDocument() throws Exception {
+        File scriptRoot = temporaryFolder.newFolder("ui-scripts");
+        Files.write(new File(scriptRoot, "main").toPath(),
+                "UI.load \"hud\"".getBytes(StandardCharsets.UTF_8));
+        Files.write(new File(scriptRoot, "hud.smui").toPath(),
+                ("{\"name\":\"hud\",\"layers\":[{\"name\":\"layer1\",\"widgets\":["
+                        + "{\"id\":\"txt1\",\"name\":\"score\",\"type\":\"TEXT_VIEW\","
+                        + "\"text\":\"0\",\"multiplayer\":true}]}]}").getBytes(StandardCharsets.UTF_8));
+
+        assertTrue(MultiplayerSourceDetector.usesMultiplayerInReachableScripts(
+                scriptRoot,
+                "UI.load \"hud\""));
+    }
 }

@@ -141,6 +141,11 @@ public class UiGetSchemaTool extends AbstractSceneMaxTool {
     }
 
     private JSONObject textViewPropertiesSchema() {
+        return baseTextPropertiesSchema()
+                .put("multiplayer", "boolean (default false). For TEXT_VIEW only: synchronize text changes between multiplayer clients.");
+    }
+
+    private JSONObject baseTextPropertiesSchema() {
         return new JSONObject()
                 .put("text", "string (default 'Text')")
                 .put("textColor", "RGBA hex (default #FFFFFFFF)")
@@ -158,7 +163,7 @@ public class UiGetSchemaTool extends AbstractSceneMaxTool {
     }
 
     private JSONObject editTextPropertiesSchema() {
-        return textViewPropertiesSchema()
+        return baseTextPropertiesSchema()
                 .put("text", "string (current/default value; user edits update this at runtime)")
                 .put("editTextMultiline", "boolean (default false; Enter inserts a newline when true)")
                 .put("editTextPlaceholder", "string shown when empty and unfocused")

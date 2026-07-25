@@ -192,6 +192,9 @@ public class UiValidateDocumentTool extends AbstractSceneMaxTool {
             if (!scale.isEmpty() && !"fit".equals(scale) && !"fill".equals(scale) && !"stretch".equals(scale)) {
                 errors.put(widgetPath + ": invalid imageScaleMode '" + scale + "' (use fit/fill/stretch).");
             }
+            if (widget.has("multiplayer") && !"TEXT_VIEW".equals(type)) {
+                errors.put(widgetPath + ": multiplayer is supported only on TEXT_VIEW widgets.");
+            }
 
             String spriteName = widget.optString("spriteName", "");
             if (!spriteName.isEmpty() && !spriteCatalog.contains(spriteName)) {
