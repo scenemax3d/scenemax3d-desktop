@@ -814,6 +814,13 @@ public class UIDesignerCanvas extends JPanel {
 
     private void drawListView(Graphics2D g2, UIWidgetDef widget, LayoutRect rect) {
         ListViewPreviewStyle style = listViewStyle(widget.getListViewStyle());
+        float transparency = widget.getListViewTransparency();
+        Color background = withListTransparency(style.background, transparency);
+        Color headerBackground = withListTransparency(style.headerBackground, transparency);
+        Color rowBackground = withListTransparency(style.rowBackground, transparency);
+        Color alternateRowBackground = withListTransparency(style.alternateRowBackground, transparency);
+        Color selectedBackground = withListTransparency(style.selectedBackground, transparency);
+        Color grid = withListTransparency(style.grid, transparency);
         float x = rect.x;
         float y = rect.y;
         float w = Math.max(1f, rect.width);
@@ -822,14 +829,14 @@ public class UIDesignerCanvas extends JPanel {
         List<Float> columnWidths = widget.getEffectiveListColumnWidths(w);
         float cursorY = y;
 
-        g2.setColor(style.background);
+        g2.setColor(background);
         g2.fill(new RoundRectangle2D.Float(x, y, w, h, 4, 4));
 
         Font headerFont = g2.getFont().deriveFont(Font.BOLD, Math.max(1f, widget.getListHeaderFontSize()));
         Font rowFont = g2.getFont().deriveFont(Font.PLAIN, Math.max(1f, widget.getListRowFontSize()));
         float headerHeight = measureWrappedRowHeight(g2, headerFont, widget.getListHeaders(), columnWidths);
         headerHeight = Math.min(headerHeight, h);
-        g2.setColor(style.headerBackground);
+        g2.setColor(headerBackground);
         g2.fill(new Rectangle2D.Float(x, cursorY, w, headerHeight));
         drawWrappedCells(g2, widget.getListHeaders(), headerFont, style.headerText, x, cursorY, headerHeight, columnWidths, true);
         cursorY += headerHeight;
@@ -840,14 +847,14 @@ public class UIDesignerCanvas extends JPanel {
             float rowHeight = measureWrappedRowHeight(g2, rowFont, row, columnWidths);
             rowHeight = Math.min(rowHeight, y + h - cursorY);
             g2.setColor(rowIndex == widget.getListSelectedRowIndex()
-                    ? style.selectedBackground
-                    : (rowIndex % 2 == 0 ? style.rowBackground : style.alternateRowBackground));
+                    ? selectedBackground
+                    : (rowIndex % 2 == 0 ? rowBackground : alternateRowBackground));
             g2.fill(new Rectangle2D.Float(x, cursorY, w, rowHeight));
             drawWrappedCells(g2, row, rowFont, style.rowText, x, cursorY, rowHeight, columnWidths, false);
             cursorY += rowHeight;
         }
 
-        g2.setColor(style.grid);
+        g2.setColor(grid);
         g2.setStroke(new BasicStroke(1f));
         float gridX = x;
         for (int i = 1; i < columns; i++) {
@@ -863,11 +870,20 @@ public class UIDesignerCanvas extends JPanel {
                 g2.draw(new Line2D.Float(gridX, y, gridX, y + h));
             }
         }
+        if (widget != selectedWidget) {
+            g2.setColor(grid);
+        }
         g2.draw(new RoundRectangle2D.Float(x, y, w, h, 4, 4));
 
         g2.setColor(new Color(90, 96, 104, 180));
         g2.setFont(g2.getFont().deriveFont(Font.PLAIN, 9f));
         g2.drawString(widget.getName(), x + 4, y + 11);
+    }
+
+    private Color withListTransparency(Color color, float transparency) {
+        float clamped = Math.max(0f, Math.min(100f, transparency));
+        int alpha = Math.round(color.getAlpha() * (1f - clamped / 100f));
+        return new Color(color.getRed(), color.getGreen(), color.getBlue(), Math.max(0, Math.min(255, alpha)));
     }
 
     private void drawWrappedCells(Graphics2D g2, List<String> values, Font font, Color color,

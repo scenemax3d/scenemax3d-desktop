@@ -90,6 +90,7 @@ public class UIDesignerPanel extends JPanel {
     private JPanel listViewPropsPanel;
     private JSpinner spnListColumnCount;
     private JComboBox<String> cboListViewStyle;
+    private JSpinner spnListViewTransparency;
     private JComboBox<String> cboListHeaderFont;
     private JComboBox<String> cboListRowFont;
     private JSpinner spnListHeaderFontSize;
@@ -589,6 +590,11 @@ public class UIDesignerPanel extends JPanel {
         cboListViewStyle.addActionListener(e -> applyListViewChange());
         installAutoSaveOnFocusLost(cboListViewStyle, null);
         addFormRowTo(listViewPropsPanel, "Style:", cboListViewStyle);
+
+        spnListViewTransparency = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 100.0, 1.0));
+        spnListViewTransparency.addChangeListener(e -> applyListViewChange());
+        installAutoSaveOnFocusLost(spnListViewTransparency, this::applyListViewChange);
+        addFormRowTo(listViewPropsPanel, "Transparency:", spnListViewTransparency);
 
         spnListHeaderFontSize = new JSpinner(new SpinnerNumberModel(16.0, 1.0, 200.0, 1.0));
         spnListHeaderFontSize.addChangeListener(e -> applyListViewChange());
@@ -1113,6 +1119,7 @@ public class UIDesignerPanel extends JPanel {
                 listViewPropsPanel.setVisible(true);
                 spnListColumnCount.setValue(widget.getListColumnCount());
                 cboListViewStyle.setSelectedItem(widget.getListViewStyle() != null ? widget.getListViewStyle() : "classic");
+                spnListViewTransparency.setValue((double) widget.getListViewTransparency());
                 spnListHeaderFontSize.setValue((double) widget.getListHeaderFontSize());
                 spnListRowFontSize.setValue((double) widget.getListRowFontSize());
                 spnListSelectedRow.setValue(widget.getListSelectedRowIndex());
@@ -1155,6 +1162,9 @@ public class UIDesignerPanel extends JPanel {
         spnMarginBottom.setValue(0.0);
         if (txtListColumnWidths != null) {
             txtListColumnWidths.setText("");
+        }
+        if (spnListViewTransparency != null) {
+            spnListViewTransparency.setValue(0.0);
         }
         if (chkTextMultiplayer != null) {
             chkTextMultiplayer.setSelected(false);
@@ -1381,6 +1391,7 @@ public class UIDesignerPanel extends JPanel {
         int columns = ((Number) spnListColumnCount.getValue()).intValue();
         widget.setListColumnCount(columns);
         widget.setListViewStyle((String) cboListViewStyle.getSelectedItem());
+        widget.setListViewTransparency(((Number) spnListViewTransparency.getValue()).floatValue());
         widget.setListHeaderFontSize(((Number) spnListHeaderFontSize.getValue()).floatValue());
         widget.setListRowFontSize(((Number) spnListRowFontSize.getValue()).floatValue());
         widget.setListSelectedRowIndex(((Number) spnListSelectedRow.getValue()).intValue());
