@@ -126,6 +126,7 @@ SceneMax currently synchronizes the following multiplayer entity behavior:
 - Rotation commands:
   `rotate (...)`, `rotate to (...)`, `turn left/right/forward/backward`, and rotation reset.
 - Model animation commands, including animation name, speed, and frame ranges.
+- Character mode commands: `switch to character mode` and `clear character mode`.
 - Attach commands between multiplayer entities.
 - Effekseer `.play` commands, including position, loop, playback speed, and dynamic input
   attributes.

@@ -6390,6 +6390,59 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         return models;
     }
 
+    public boolean isCharacterControlledModel(String runtimeName) {
+        AppModel am = models.get(runtimeName);
+        return am != null && am.physicalControl instanceof CharacterControl;
+    }
+
+    public boolean applyNetworkTransformCorrection(String runtimeName, Vector3f position, Quaternion rotation) {
+        if (runtimeName == null || position == null || rotation == null) {
+            return false;
+        }
+
+        AppModel am = models.get(runtimeName);
+        if (am != null && am.model != null) {
+            Vector3f correctedPosition = position.clone();
+            Quaternion correctedRotation = rotation.clone();
+            if (am.physicalControl instanceof CharacterControl) {
+                CharacterControl ctl = (CharacterControl) am.physicalControl;
+                ctl.setPhysicsLocation(correctedPosition);
+                Vector3f viewDirection = correctedRotation.getRotationColumn(2);
+                viewDirection.setY(0f);
+                if (viewDirection.lengthSquared() > 0.0001f) {
+                    ctl.setViewDirection(viewDirection.normalizeLocal());
+                }
+                am.model.setLocalTranslation(correctedPosition);
+                am.model.setLocalRotation(correctedRotation);
+            } else if (am.physicalControl instanceof RigidBodyControl) {
+                RigidBodyControl ctl = (RigidBodyControl) am.physicalControl;
+                ctl.setPhysicsLocation(correctedPosition);
+                ctl.setPhysicsRotation(correctedRotation);
+                ctl.activate();
+                am.model.setLocalTranslation(correctedPosition);
+                am.model.setLocalRotation(correctedRotation);
+            } else if (am.physicalControl instanceof SceneMax3DGenericVehicle) {
+                SceneMax3DGenericVehicle vehicle = (SceneMax3DGenericVehicle) am.physicalControl;
+                vehicle.getVehicleControl().setPhysicsLocation(correctedPosition);
+                vehicle.getVehicleControl().setPhysicsRotation(correctedRotation);
+                am.model.setLocalTranslation(correctedPosition);
+                am.model.setLocalRotation(correctedRotation);
+            } else {
+                am.model.setLocalTranslation(correctedPosition);
+                am.model.setLocalRotation(correctedRotation);
+            }
+            return true;
+        }
+
+        Spatial spatial = getEntitySpatial(runtimeName);
+        if (spatial == null) {
+            return false;
+        }
+        spatial.setLocalTranslation(position);
+        spatial.setLocalRotation(rotation);
+        return true;
+    }
+
     public void animateModel(String targetVar, String animationName, String speed, AppModelAnimationController controller) {
 
         AppModel m = models.get(targetVar);
