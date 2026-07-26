@@ -86,7 +86,7 @@ const Entity = struct {
     player_name: [64]u8 = [_]u8{0} ** 64,
     source_object_name: [source_object_name_size]u8 = [_]u8{0} ** source_object_name_size,
     position: [3]f32 = .{ 0, 0, 0 },
-    rotation: [4]f32 = .{ 0, 0, 0, 1 },
+    rotation: [4]f32 = .{ 0, 0, 0, 0 },
     animation_index: u16 = 0,
     animation: [64]u8 = [_]u8{0} ** 64,
     spawn_command: [spawn_command_size]u8 = [_]u8{0} ** spawn_command_size,
@@ -656,6 +656,7 @@ fn decodeEntityCreate(payload: []const u8, entity_id: u32, client: Client) Entit
         .owner_client = client.id,
         .session_id = client.session_id,
         .scene_id = client.scene_id,
+        .rotation = .{ 0, 0, 0, 1 },
     };
     copyFixed(&entity.archetype, payload, create_offset);
     copyFixed(&entity.player_name, payload, create_offset + 64);

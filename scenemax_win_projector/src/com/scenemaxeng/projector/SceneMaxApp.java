@@ -5347,7 +5347,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         String resolvedUiName = uiName != null && !uiName.trim().isEmpty()
                 ? uiName.trim()
                 : uiManager.getActiveUIName();
-        String syncName = uiManager.multiplayerTextSyncKey(resolvedUiName, layerName, widgetPath);
+        String syncName = uiManager.multiplayerTextSyncKeyForPath(resolvedUiName, layerName, widgetPath);
         if (syncName == null || syncName.trim().isEmpty()) {
             return;
         }
