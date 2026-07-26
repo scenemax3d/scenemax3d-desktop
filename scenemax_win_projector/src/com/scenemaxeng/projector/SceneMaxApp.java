@@ -1747,6 +1747,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if(action instanceof NetworkSendCommand) {
             NetworkSendController ctl = new NetworkSendController(this, prg, scope, (NetworkSendCommand) action);
             scope.add(ctl);
+        } else if(action instanceof NetworkBroadcastCommand) {
+            NetworkBroadcastController ctl =
+                    new NetworkBroadcastController(this, prg, scope, (NetworkBroadcastCommand) action);
+            scope.add(ctl);
         } else if(action instanceof NetworkJoinSessionCommand) {
             NetworkJoinSessionController ctl =
                     new NetworkJoinSessionController(this, prg, scope, (NetworkJoinSessionCommand) action);
@@ -5210,6 +5214,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     public void registerNetworkEventHandler(String eventName, SceneMaxScope scope, DoBlockCommand doBlock) {
+        registerNetworkEventHandler(eventName, scope, doBlock, null);
+    }
+
+    public void registerNetworkEventHandler(String eventName, SceneMaxScope scope, DoBlockCommand doBlock,
+                                            String messageParamName) {
         if (eventName == null || eventName.trim().isEmpty() || doBlock == null) {
             return;
         }
@@ -5217,17 +5226,23 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         List<RegisteredNetworkEventHandler> handlers =
                 networkEventHandlers.computeIfAbsent(key, ignored -> new ArrayList<>());
         for (RegisteredNetworkEventHandler handler : handlers) {
-            if (handler.scope == scope && handler.doBlock == doBlock) {
+            if (handler.scope == scope && handler.doBlock == doBlock
+                    && Objects.equals(handler.messageParamName, normalizeNetworkEventMessageParamName(messageParamName))) {
                 return;
             }
         }
         RegisteredNetworkEventHandler handler = new RegisteredNetworkEventHandler();
         handler.scope = scope;
         handler.doBlock = doBlock;
+        handler.messageParamName = normalizeNetworkEventMessageParamName(messageParamName);
         handlers.add(handler);
     }
 
     public void receiveNetworkEvent(String eventName) {
+        receiveNetworkEvent(eventName, null);
+    }
+
+    public void receiveNetworkEvent(String eventName, String message) {
         if (eventName == null || eventName.trim().isEmpty()) {
             return;
         }
@@ -5240,7 +5255,25 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             controller.goExpr = handler.doBlock.goExpr;
             controller.app = this;
             controller.async = handler.doBlock.isAsync;
+            if (handler.messageParamName != null) {
+                HashMap<String, Object> params = new HashMap<>();
+                params.put(handler.messageParamName, createNetworkEventMessageVar(message));
+                controller.setFuncScopeParams(params);
+            }
             registerController(controller);
+        }
+    }
+
+    public void broadcastNetworkEvent(String eventName, Object message) {
+        if (eventName == null || eventName.trim().isEmpty()) {
+            return;
+        }
+        if (multiplayerNetwork == null) {
+            multiplayerNetwork = new MultiplayerNetworkComponent(this);
+            multiplayerNetwork.startFromSystemProperties();
+        }
+        if (multiplayerNetwork != null) {
+            multiplayerNetwork.sendNetworkBroadcast(eventName.trim(), message);
         }
     }
 
@@ -5252,6 +5285,22 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         if (targetClientId != 0) {
             multiplayerNetwork.sendNetworkEvent(targetClientId, eventName.trim());
         }
+    }
+
+    private String normalizeNetworkEventMessageParamName(String messageParamName) {
+        if (messageParamName == null || messageParamName.trim().isEmpty()) {
+            return null;
+        }
+        return messageParamName.trim();
+    }
+
+    private VarInst createNetworkEventMessageVar(String message) {
+        VariableDef vd = new VariableDef();
+        vd.varType = VariableDef.VAR_TYPE_STRING;
+        VarInst vi = new VarInst(vd, null);
+        vi.varType = VariableDef.VAR_TYPE_STRING;
+        vi.value = message == null ? "" : message;
+        return vi;
     }
 
     public void registerServerNetworkEvent(String eventName, float intervalSeconds) {
@@ -5347,7 +5396,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         String resolvedUiName = uiName != null && !uiName.trim().isEmpty()
                 ? uiName.trim()
                 : uiManager.getActiveUIName();
-        String syncName = uiManager.multiplayerTextSyncKey(resolvedUiName, layerName, widgetPath);
+        String syncName = uiManager.multiplayerTextSyncKeyForPath(resolvedUiName, layerName, widgetPath);
         if (syncName == null || syncName.trim().isEmpty()) {
             return;
         }
@@ -5468,6 +5517,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private static class RegisteredNetworkEventHandler {
         SceneMaxScope scope;
         DoBlockCommand doBlock;
+        String messageParamName;
     }
 
     private static class NetworkCollisionHandler extends CollisionHandler {

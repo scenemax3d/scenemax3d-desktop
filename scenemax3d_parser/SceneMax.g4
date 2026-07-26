@@ -110,8 +110,9 @@ http_address : logical_expression ;
 http_body : logical_expression ;
 
 network_statement : go_condition? Network '.' network_action ;
-network_action : network_send | network_on | network_join_session ;
+network_action : network_send | network_broadcast | network_on | network_join_session ;
 network_send : Send logical_expression ;
+network_broadcast : Broadcast '(' logical_expression (',' logical_expression)? ')' ;
 network_on : On '(' logical_expression (',' logical_expression)? ')' Equals do_block ;
 network_join_session : Join Session logical_expression ;
 
@@ -1062,13 +1063,14 @@ allowed_keywords_var_names : X | Y | Z | RX | RY | RZ | Hit | Once | Times | Rep
     Effekseer | Attr | Cinematic | Videos | Target | Message | TextEffect | Ease | Logger | Java | Error | Process | Weapon | Colliders | Posture | Empty | Event | IK |
     Weight | Blend |
     Motion | Throw | Toward | Arc | Spin | Physics | Impulse | Force | Torque | Object | Pool | Acquire | Release | Free |
-    Network | Send | Join | Session | Ready | State | Sessions;
+    Network | Send | Broadcast | Join | Session | Ready | State | Sessions;
 
 Protected : 'Protected' | 'protected' ;
 Commat : '@' ;
 Pound: '#' ;
 Network : 'Network' | 'network' ;
 Send : 'Send' | 'send' ;
+Broadcast : 'Broadcast' | 'broadcast' ;
 Join : 'Join' | 'join' ;
 Session : 'Session' | 'session' ;
 Ready : 'Ready' | 'ready' ;

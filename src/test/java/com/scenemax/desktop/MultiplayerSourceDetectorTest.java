@@ -37,6 +37,12 @@ public class MultiplayerSourceDetectorTest {
     }
 
     @Test
+    public void detectsNetworkBroadcastUsage() {
+        assertTrue(MultiplayerSourceDetector.usesMultiplayer(
+                "network.broadcast (\"new_player\", \"some message\")"));
+    }
+
+    @Test
     public void ignoresPlainNonNetworkScripts() {
         assertFalse(MultiplayerSourceDetector.usesMultiplayer("sys.print \"hello\""));
     }

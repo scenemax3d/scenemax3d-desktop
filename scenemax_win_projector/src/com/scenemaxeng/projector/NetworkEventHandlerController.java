@@ -18,7 +18,7 @@ public class NetworkEventHandlerController extends SceneMaxBaseController {
                 : new ActionLogicalExpressionVm(handler.eventNameExpr, scope).evaluate();
         String eventName = value == null ? "" : String.valueOf(value).trim();
         if (!eventName.isEmpty() && handler.doBlock != null) {
-            app.registerNetworkEventHandler(eventName, scope, handler.doBlock);
+            app.registerNetworkEventHandler(eventName, scope, handler.doBlock, handler.messageParamName);
             float intervalSeconds = evaluateIntervalSeconds(handler);
             if (intervalSeconds > 0f) {
                 app.registerServerNetworkEvent(eventName, intervalSeconds);

@@ -2,6 +2,7 @@ package com.scenemaxeng.projector;
 
 import com.scenemaxeng.compiler.DoBlockCommand;
 import com.scenemaxeng.compiler.CollisionStatementCommand;
+import com.scenemaxeng.compiler.NetworkBroadcastCommand;
 import com.scenemaxeng.compiler.NetworkEventHandlerCommand;
 import com.scenemaxeng.compiler.NetworkJoinSessionCommand;
 import com.scenemaxeng.compiler.NetworkSendCommand;
@@ -178,6 +179,35 @@ public class MultiplayerCommandDispatchParsingTest {
     }
 
     @Test
+    public void parsesNetworkBroadcastWithOptionalMessage() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "network.broadcast (\"new_player\", \"some message\")\n"
+                        + "network.broadcast (\"new_player\")");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        assertEquals(2, program.actions.size());
+        NetworkBroadcastCommand withMessage = (NetworkBroadcastCommand) program.actions.get(0);
+        NetworkBroadcastCommand withoutMessage = (NetworkBroadcastCommand) program.actions.get(1);
+        assertNotNull(withMessage.eventNameExpr);
+        assertNotNull(withMessage.messageExpr);
+        assertNotNull(withoutMessage.eventNameExpr);
+        assertNull(withoutMessage.messageExpr);
+    }
+
+    @Test
+    public void parsesNetworkEventHandlerMessageParameter() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "network.on (\"new_player\", msg) = do\n"
+                        + "end do");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        assertEquals(1, program.actions.size());
+        NetworkEventHandlerCommand handler = (NetworkEventHandlerCommand) program.actions.get(0);
+        assertEquals("msg", handler.messageParamName);
+        assertNull(handler.serverIntervalSecondsExpr);
+    }
+
+    @Test
     public void parsesGuardedServerInvokedNetworkEventHandler() {
         ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
                 "[player.data.is_fighter == 1]\n"
@@ -207,6 +237,42 @@ public class MultiplayerCommandDispatchParsingTest {
         assertNotNull(app.registeredController);
         assertTrue(app.registeredController instanceof DoBlockController);
         assertNotNull(((DoBlockController) app.registeredController).goExpr);
+    }
+
+    @Test
+    public void dispatchesNetworkEventHandlerWithMessageParameter() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "network.on (\"new_player\", msg) = do\n"
+                        + "end do");
+        NetworkEventHandlerCommand handler = (NetworkEventHandlerCommand) program.actions.get(0);
+        CapturingSceneMaxApp app = new CapturingSceneMaxApp();
+        SceneMaxScope scope = new SceneMaxScope();
+
+        app.registerNetworkEventHandler("new_player", scope, handler.doBlock, handler.messageParamName);
+        app.receiveNetworkEvent("new_player", "some message");
+
+        assertNotNull(app.registeredController);
+        DoBlockController controller = (DoBlockController) app.registeredController;
+        VarInst msg = (VarInst) controller.funcScopeParams.get("msg");
+        assertNotNull(msg);
+        assertEquals(VariableDef.VAR_TYPE_STRING, msg.varType);
+        assertEquals("some message", msg.value);
+    }
+
+    @Test
+    public void encodesNetworkEventMessagePayloadWithoutChangingPlainEvents() {
+        byte[] plain = MultiplayerNetworkComponent.encodeNetworkEventPayload("new_player", null, 100);
+        MultiplayerNetworkComponent.NetworkEventPayload plainDecoded =
+                MultiplayerNetworkComponent.decodeNetworkEventPayload(plain);
+        assertEquals("new_player", plainDecoded.name);
+        assertNull(plainDecoded.message);
+
+        byte[] withMessage = MultiplayerNetworkComponent.encodeNetworkEventPayload(
+                "new_player", "some message", 100);
+        MultiplayerNetworkComponent.NetworkEventPayload decoded =
+                MultiplayerNetworkComponent.decodeNetworkEventPayload(withMessage);
+        assertEquals("new_player", decoded.name);
+        assertEquals("some message", decoded.message);
     }
 
     @Test

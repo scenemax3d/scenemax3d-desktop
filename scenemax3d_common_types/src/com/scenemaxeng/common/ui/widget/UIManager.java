@@ -52,11 +52,13 @@ public class UIManager {
     private Map<String, UITextViewNode> multiplayerTextViews = new LinkedHashMap<>();
 
     private static class LoadedUI {
+        String name;
         UIDocument document;
         Map<String, UILayerNode> layerNodes = new LinkedHashMap<>();
     }
 
     private static class ResolvedUIPath {
+        String uiName;
         LoadedUI loadedUI;
         String layerName;
         String widgetPath;
@@ -95,6 +97,7 @@ public class UIManager {
         unload(name);
 
         LoadedUI loadedUI = new LoadedUI();
+        loadedUI.name = name;
         loadedUI.document = doc;
 
         float canvasWidth = doc.getCanvasWidth();
@@ -218,6 +221,14 @@ public class UIManager {
         return multiplayerSyncKeyPrefix(uiName) + sha1Hex(layerName.trim() + "." + widgetPath.trim()).substring(0, 16);
     }
 
+    public String multiplayerTextSyncKeyForPath(String uiName, String layerName, String widgetPath) {
+        ResolvedUIPath resolved = resolvePath(uiName, layerName, widgetPath);
+        if (resolved == null || resolved.uiName == null) {
+            return null;
+        }
+        return multiplayerTextSyncKey(resolved.uiName, resolved.layerName, resolved.widgetPath);
+    }
+
     public boolean applyMultiplayerTextSync(String syncKey, String text) {
         UITextViewNode node = multiplayerTextViews.get(syncKey);
         if (node == null) {
@@ -244,6 +255,7 @@ public class UIManager {
         LoadedUI loaded = getLoadedUI(uiName);
         if (loaded != null && layerName != null && loaded.layerNodes.containsKey(layerName)) {
             ResolvedUIPath resolved = new ResolvedUIPath();
+            resolved.uiName = loaded.name;
             resolved.loadedUI = loaded;
             resolved.layerName = layerName;
             resolved.widgetPath = widgetPath;
@@ -253,6 +265,7 @@ public class UIManager {
         LoadedUI activeLoaded = getLoadedUI(null);
         if (activeLoaded != null && uiName != null && activeLoaded.layerNodes.containsKey(uiName)) {
             ResolvedUIPath resolved = new ResolvedUIPath();
+            resolved.uiName = activeLoaded.name;
             resolved.loadedUI = activeLoaded;
             resolved.layerName = uiName;
             if (layerName == null || layerName.isEmpty()) {

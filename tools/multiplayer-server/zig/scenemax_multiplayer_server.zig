@@ -86,7 +86,7 @@ const Entity = struct {
     player_name: [64]u8 = [_]u8{0} ** 64,
     source_object_name: [source_object_name_size]u8 = [_]u8{0} ** source_object_name_size,
     position: [3]f32 = .{ 0, 0, 0 },
-    rotation: [4]f32 = .{ 0, 0, 0, 1 },
+    rotation: [4]f32 = .{ 0, 0, 0, 0 },
     animation_index: u16 = 0,
     animation: [64]u8 = [_]u8{0} ** 64,
     spawn_command: [spawn_command_size]u8 = [_]u8{0} ** spawn_command_size,
@@ -656,6 +656,7 @@ fn decodeEntityCreate(payload: []const u8, entity_id: u32, client: Client) Entit
         .owner_client = client.id,
         .session_id = client.session_id,
         .scene_id = client.scene_id,
+        .rotation = .{ 0, 0, 0, 1 },
     };
     copyFixed(&entity.archetype, payload, create_offset);
     copyFixed(&entity.player_name, payload, create_offset + 64);
@@ -1231,11 +1232,28 @@ fn dispatch(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, sender_
 }
 
 fn dispatchNetworkEvent(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, sender: Client, target_client_id: u16, event_payload: []const u8) !void {
-    if (target_client_id == 0 or event_payload.len == 0) return;
+    if (event_payload.len == 0) return;
     var packet: [max_packet_size]u8 = undefined;
     writeHeader(packet[0..], .network_event, sender.id);
     const payload_len = @min(event_payload.len, packet.len - 8);
     @memcpy(packet[8 .. 8 + payload_len], event_payload[0..payload_len]);
+    if (target_client_id == 0) {
+        var sent: usize = 0;
+        for (clients) |client| {
+            if (!client.active) continue;
+            if (client.session_id != sender.session_id or !sameScene(client.scene_id, sender.scene_id)) continue;
+            sendUdp(sock, io, client.address, packet[0 .. 8 + payload_len]);
+            sent += 1;
+        }
+        if (verbose_packet_logs) {
+            std.debug.print("[SceneMax MP] broadcast network event from={d} recipients={d} bytes={d}\n", .{
+                sender.id,
+                sent,
+                payload_len,
+            });
+        }
+        return;
+    }
     for (clients) |client| {
         if (!client.active or client.id != target_client_id) continue;
         if (client.session_id != sender.session_id or !sameScene(client.scene_id, sender.scene_id)) return;
