@@ -1504,6 +1504,8 @@ public class MultiplayerNetworkComponent {
             app.killArch(runtimeName);
         } else if (varType == VariableDef.VAR_TYPE_LABEL) {
             app.killLabel(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_EFFEKSEER) {
+            app.killEffekseerEffect(runtimeName);
         } else {
             app.killModel(runtimeName);
         }
@@ -1773,8 +1775,13 @@ public class MultiplayerNetworkComponent {
         if (archetype == null) {
             return VariableDef.VAR_TYPE_3D;
         }
-        String normalized = archetype.trim().toLowerCase().replace(" ", "").replace("_", "");
+        String normalized = archetype.trim().toLowerCase().replace(" ", "").replace("_", "").replace(".", "");
+        if (normalized.startsWith("effectseffekseer")) {
+            return VariableDef.VAR_TYPE_EFFEKSEER;
+        }
         switch (normalized) {
+            case "effekseer":
+                return VariableDef.VAR_TYPE_EFFEKSEER;
             case "sphere":
                 return VariableDef.VAR_TYPE_SPHERE;
             case "box":

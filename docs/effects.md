@@ -275,6 +275,14 @@ missile_fx.delete
 shield_fx.delete
 ```
 
+For multiplayer games, add `multiplayer` to an Effekseer declaration when all clients should
+create and replay the effect:
+
+```scenemax
+laser_effect => effects.effekseer.Homing_Laser01_3: multiplayer
+laser_effect.play pos (player), attr = ["play_back_speed" 1.2, "input0" 0.9]
+```
+
 ## Packaging And Scene Changes
 
 If an Effekseer asset is declared with:

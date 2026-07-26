@@ -9,11 +9,11 @@
             "path": "projects/fighting_game_project",
             "multiplayerPassword": "",
             "multiplayerServerIp": "127.0.0.1",
-            "selectedNode": "axe_utils",
+            "selectedNode": "printing",
             "projectGuid": "b616bee4-eeca-4b8f-939b-37510d338fa3",
             "name": "fighting game project",
             "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game\\game_level1",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game\\game_level1\\utils",
             "multiplayerServerPort": 9001
         },
         {
@@ -239,17 +239,17 @@
         },
         {
             "itchWindowsChannel": "windows",
-            "itchGamePage": "",
+            "itchGamePage": "https://adi-barda.itch.io/kumite-fighting-club",
             "multiplayerDeployOs": "Linux",
             "itchMacChannel": "macos",
             "itchLinuxChannel": "linux",
             "path": "projects/GMTK_2026",
             "multiplayerPassword": "",
             "multiplayerServerIp": "178.128.144.17",
-            "selectedNode": "network_events.code",
+            "selectedNode": "main",
             "projectGuid": "a0b355af-0b53-4886-86f3-b8c329a4f575",
             "name": "GMTK 2026",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\GMTK_2026\\scripts\\GMTK 2026\\level1",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\GMTK_2026\\scripts\\GMTK 2026\\welcome",
             "multiplayerServerPort": 9001
         }
     ],

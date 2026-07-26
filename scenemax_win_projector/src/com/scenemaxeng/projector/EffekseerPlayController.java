@@ -68,7 +68,50 @@ public class EffekseerPlayController extends SceneMaxBaseController {
         }
 
         app.playEffekseerEffect(targetVar, x, y, z, posEntity, calculatedPosition, loop, playbackSpeed, inputs);
+        dispatchMultiplayerCommand(effekseerPlayCommand(loop, playbackSpeed, inputs));
         return true;
+    }
+
+    private String effekseerPlayCommand(boolean loop, float playbackSpeed, float[] inputs) {
+        Vector3f position = null;
+        Spatial effectSpatial = app.getEntitySpatial(targetVar, targetVarDef.varType);
+        if (effectSpatial != null) {
+            position = effectSpatial.getLocalTranslation();
+        }
+        if (position == null) {
+            position = Vector3f.ZERO;
+        }
+
+        StringBuilder command = new StringBuilder();
+        command.append("{network_entity}.play pos (")
+                .append(networkNumber(position.x)).append(",")
+                .append(networkNumber(position.y)).append(",")
+                .append(networkNumber(position.z)).append(")");
+        if (loop) {
+            command.append(", loop");
+        }
+
+        StringBuilder attrs = new StringBuilder();
+        appendEffectAttr(attrs, "play_back_speed", playbackSpeed, 1.0f);
+        if (inputs != null) {
+            for (int i = 0; i < Math.min(inputs.length, 4); i++) {
+                appendEffectAttr(attrs, "input" + i, inputs[i], 0.0f);
+            }
+        }
+        if (attrs.length() > 0) {
+            command.append(", attr = [").append(attrs).append("]");
+        }
+        return command.toString();
+    }
+
+    private void appendEffectAttr(StringBuilder attrs, String name, float value, float defaultValue) {
+        if (Math.abs(value - defaultValue) < 0.000001f) {
+            return;
+        }
+        if (attrs.length() > 0) {
+            attrs.append(", ");
+        }
+        attrs.append("\"").append(name).append("\" ").append(networkNumber(value));
     }
 
     private boolean toBoolean(Object value) {

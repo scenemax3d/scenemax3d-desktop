@@ -100,6 +100,36 @@ public class MultiplayerCommandDispatchParsingTest {
     }
 
     @Test
+    public void parsesGeneratedMultiplayerEffekseerSpawnAndPlayCommands() {
+        assertParses("mp_remote_fx => effects.effekseer.Homing_Laser01_3: pos (1,2,3), rotate(0,90,0), scale 2");
+        assertParses("mp_remote_fx => effects.effekseer.Homing_Laser01_3\n"
+                + "mp_remote_fx.play pos (1,2,3), loop, attr = [\"play_back_speed\" 1.2, \"input0\" 0.9]");
+    }
+
+    @Test
+    public void keepsMultiplayerFlagOnEffekseerDeclarations() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "laser_effect => effects.effekseer.Homing_Laser01_3 : multiplayer, pos (0,0,0)");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        VariableDef var = program.getVar("laser_effect");
+        assertNotNull(var);
+        assertEquals(VariableDef.VAR_TYPE_EFFEKSEER, var.varType);
+        assertTrue(var.isMultiplayer);
+    }
+
+    @Test
+    public void treatsEffekseerArchetypesAsEffekseerRemoteEntities() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        Method method = MultiplayerNetworkComponent.class.getDeclaredMethod("archetypeVarType", String.class);
+        method.setAccessible(true);
+
+        assertEquals(VariableDef.VAR_TYPE_EFFEKSEER, method.invoke(component, "effekseer"));
+        assertEquals(VariableDef.VAR_TYPE_EFFEKSEER,
+                method.invoke(component, "effects.effekseer.Homing_Laser01_3"));
+    }
+
+    @Test
     public void parsesGeneratedMultiplayerSpawnCommandsForAllPrimitives() {
         assertParses("mp_remote_box => box: pos (1,2,3), rotate(0,45,0), size (2,3,4), material=\"stone\"");
         assertParses("mp_remote_sphere => sphere: pos (1,2,3), radius 0.75, material=\"glass\"");
