@@ -151,6 +151,17 @@ network.on ("head_hit_by_leg") = do
 end do
 ```
 
+Use `network.broadcast` to send an event to every client in the same session and scene. The
+message argument is optional:
+
+```scenemax
+network.broadcast ("new_player", "some message")
+
+network.on ("new_player", msg) = do
+  sys.print msg
+end do
+```
+
 Use `network.on` with an interval to let the server invoke and broadcast the event:
 
 ```scenemax

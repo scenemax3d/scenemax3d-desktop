@@ -12,7 +12,7 @@ final class MultiplayerSourceDetector {
     private static final Pattern MULTIPLAYER_ENTITY_PATTERN =
             Pattern.compile("\\bmultiplayer\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern NETWORK_RUNTIME_PATTERN =
-            Pattern.compile("\\bnetwork\\s*\\.\\s*(join\\s+session|ready\\b|state\\b|send\\b|on\\b)",
+            Pattern.compile("\\bnetwork\\s*\\.\\s*(join\\s+session|ready\\b|state\\b|send\\b|broadcast\\b|on\\b)",
                     Pattern.CASE_INSENSITIVE);
     private static final Pattern NETWORK_VARIABLE_PATTERN =
             Pattern.compile("\\bnetwork\\s+var\\b", Pattern.CASE_INSENSITIVE);

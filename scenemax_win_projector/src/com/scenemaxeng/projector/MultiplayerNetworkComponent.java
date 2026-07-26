@@ -93,6 +93,7 @@ public class MultiplayerNetworkComponent {
     private final Map<String, TransformState> lastSentCorrections = new HashMap<>();
     private final Map<Integer, String> pendingCreateAcks = new LinkedHashMap<>();
     private final Map<String, PendingNetworkVariable> pendingNetworkVariables = new LinkedHashMap<>();
+    private final List<PendingNetworkBroadcast> pendingNetworkBroadcasts = new ArrayList<>();
     private final Map<String, PendingServerEvent> registeredServerEvents = new LinkedHashMap<>();
     private final Map<String, PendingServerEvent> pendingServerEvents = new LinkedHashMap<>();
     private final Set<String> sentServerEventRegistrations = new HashSet<>();
@@ -254,14 +255,36 @@ public class MultiplayerNetworkComponent {
     }
 
     public void sendNetworkEvent(int targetClientId, String eventName) {
-        if (!isActive() || clientId == 0 || targetClientId == 0 || eventName == null || eventName.trim().isEmpty()) {
+        sendNetworkEventPayload(targetClientId, eventName, null);
+    }
+
+    public void sendNetworkBroadcast(String eventName, Object message) {
+        if (eventName == null || eventName.trim().isEmpty()) {
             return;
         }
-        byte[] eventBytes = eventName.trim().getBytes(StandardCharsets.UTF_8);
-        ByteBuffer packet = packet(NETWORK_EVENT, Math.min(eventBytes.length + 2, MAX_PACKET_SIZE - 8));
+        String normalizedName = eventName.trim();
+        String normalizedMessage = message == null ? null : String.valueOf(message);
+        if (!isReady()) {
+            PendingNetworkBroadcast pending = new PendingNetworkBroadcast();
+            pending.eventName = normalizedName;
+            pending.message = normalizedMessage;
+            pendingNetworkBroadcasts.add(pending);
+            return;
+        }
+        sendNetworkEventPayload(0, normalizedName, normalizedMessage);
+    }
+
+    private void sendNetworkEventPayload(int targetClientId, String eventName, String message) {
+        if (!isActive() || clientId == 0 || eventName == null || eventName.trim().isEmpty()) {
+            return;
+        }
+        byte[] eventBytes = encodeNetworkEventPayload(eventName.trim(), message, MAX_PACKET_SIZE - 10);
+        ByteBuffer packet = packet(NETWORK_EVENT, eventBytes.length + 2);
         packet.putShort((short) targetClientId);
-        packet.put(eventBytes, 0, Math.min(eventBytes.length, MAX_PACKET_SIZE - 10));
-        logNet("send network event targetClient=" + targetClientId + " event=\"" + eventName.trim() + "\"");
+        packet.put(eventBytes, 0, eventBytes.length);
+        logNet("send network event targetClient=" + targetClientId
+                + " event=\"" + eventName.trim() + "\""
+                + (message == null ? "" : " messageBytes=" + message.getBytes(StandardCharsets.UTF_8).length));
         send(packet);
     }
 
@@ -455,6 +478,7 @@ public class MultiplayerNetworkComponent {
         lastSentCorrections.clear();
         appliedRemoteStructuralCommands.clear();
         pendingNetworkVariables.clear();
+        pendingNetworkBroadcasts.clear();
         pendingServerEvents.clear();
         registeredServerEvents.clear();
         sentServerEventRegistrations.clear();
@@ -484,6 +508,7 @@ public class MultiplayerNetworkComponent {
         localEntities.clear();
         pendingCreateAcks.clear();
         pendingNetworkVariables.clear();
+        pendingNetworkBroadcasts.clear();
         pendingServerEvents.clear();
         registeredServerEvents.clear();
         sentServerEventRegistrations.clear();
@@ -510,6 +535,7 @@ public class MultiplayerNetworkComponent {
         appliedRemoteStructuralCommands.clear();
         pendingCreateAcks.clear();
         pendingNetworkVariables.clear();
+        pendingNetworkBroadcasts.clear();
         pendingServerEvents.clear();
         sentServerEventRegistrations.clear();
         pendingServerEvents.putAll(registeredServerEvents);
@@ -756,10 +782,11 @@ public class MultiplayerNetworkComponent {
         } else if (type == NETWORK_EVENT && payload.remaining() > 0) {
             byte[] bytes = new byte[payload.remaining()];
             payload.get(bytes);
-            String eventName = new String(bytes, StandardCharsets.UTF_8).trim();
-            if (!eventName.isEmpty() && app != null) {
-                logNet("receive network event sender=" + senderClientId + " event=\"" + eventName + "\"");
-                app.receiveNetworkEvent(eventName);
+            NetworkEventPayload event = decodeNetworkEventPayload(bytes);
+            if (!event.name.isEmpty() && app != null) {
+                logNet("receive network event sender=" + senderClientId + " event=\"" + event.name + "\""
+                        + (event.message == null ? "" : " messageBytes=" + event.message.getBytes(StandardCharsets.UTF_8).length));
+                app.receiveNetworkEvent(event.name, event.message);
             }
         } else if (type == NETWORK_VARIABLE_UPDATE && payload.remaining() >= NETWORK_VARIABLE_UPDATE_SIZE) {
             handleNetworkVariableUpdate(payload);
@@ -799,6 +826,7 @@ public class MultiplayerNetworkComponent {
         initialSyncFallbackRemainingSeconds = 0f;
         flushPendingLocalCreates();
         flushPendingNetworkVariables();
+        flushPendingNetworkBroadcasts();
         flushPendingServerEvents();
         rebuildNetworkState();
     }
@@ -944,6 +972,16 @@ public class MultiplayerNetworkComponent {
         for (PendingNetworkVariable pending : new ArrayList<>(pendingNetworkVariables.values())) {
             sendNetworkVariableUpdate(pending.name, pending.encodedValue, pending.declarationInit);
             pendingNetworkVariables.remove(pending.name);
+        }
+    }
+
+    private void flushPendingNetworkBroadcasts() {
+        if (pendingNetworkBroadcasts.isEmpty()) {
+            return;
+        }
+        for (PendingNetworkBroadcast pending : new ArrayList<>(pendingNetworkBroadcasts)) {
+            sendNetworkEventPayload(0, pending.eventName, pending.message);
+            pendingNetworkBroadcasts.remove(pending);
         }
     }
 
@@ -1611,6 +1649,50 @@ public class MultiplayerNetworkComponent {
         }
     }
 
+    static byte[] encodeNetworkEventPayload(String eventName, String message, int maxBytes) {
+        if (eventName == null || maxBytes <= 0) {
+            return new byte[0];
+        }
+        byte[] eventBytes = eventName.trim().getBytes(StandardCharsets.UTF_8);
+        if (message == null) {
+            byte[] out = new byte[Math.min(eventBytes.length, maxBytes)];
+            System.arraycopy(eventBytes, 0, out, 0, out.length);
+            return out;
+        }
+        byte[] messageBytes = message.getBytes(StandardCharsets.UTF_8);
+        int eventLength = Math.min(eventBytes.length, maxBytes);
+        int delimiterLength = eventLength < maxBytes ? 1 : 0;
+        int messageLength = Math.min(messageBytes.length, maxBytes - eventLength - delimiterLength);
+        byte[] out = new byte[eventLength + delimiterLength + messageLength];
+        System.arraycopy(eventBytes, 0, out, 0, eventLength);
+        if (delimiterLength == 1) {
+            out[eventLength] = 0;
+            System.arraycopy(messageBytes, 0, out, eventLength + 1, messageLength);
+        }
+        return out;
+    }
+
+    static NetworkEventPayload decodeNetworkEventPayload(byte[] bytes) {
+        NetworkEventPayload event = new NetworkEventPayload();
+        if (bytes == null || bytes.length == 0) {
+            return event;
+        }
+        int delimiter = -1;
+        for (int i = 0; i < bytes.length; i++) {
+            if (bytes[i] == 0) {
+                delimiter = i;
+                break;
+            }
+        }
+        if (delimiter < 0) {
+            event.name = new String(bytes, StandardCharsets.UTF_8).trim();
+            return event;
+        }
+        event.name = new String(bytes, 0, delimiter, StandardCharsets.UTF_8).trim();
+        event.message = new String(bytes, delimiter + 1, bytes.length - delimiter - 1, StandardCharsets.UTF_8);
+        return event;
+    }
+
     private String readSetting(String property, String env) {
         String value = System.getProperty(property);
         if (value != null && !value.trim().isEmpty()) {
@@ -1718,6 +1800,11 @@ public class MultiplayerNetworkComponent {
         }
     }
 
+    static class NetworkEventPayload {
+        String name = "";
+        String message;
+    }
+
     private int nextCreateRequestId() {
         int id = nextCreateRequestId++;
         if (nextCreateRequestId == 0) {
@@ -1801,6 +1888,11 @@ public class MultiplayerNetworkComponent {
         String name;
         String encodedValue;
         boolean declarationInit;
+    }
+
+    private static class PendingNetworkBroadcast {
+        String eventName;
+        String message;
     }
 
     private static class PendingServerEvent {

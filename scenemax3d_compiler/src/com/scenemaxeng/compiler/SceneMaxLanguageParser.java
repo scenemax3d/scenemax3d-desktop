@@ -936,6 +936,15 @@ public class SceneMaxLanguageParser implements IParser {
                     return cmd;
                 }
 
+                if (action.network_broadcast() != null) {
+                    NetworkBroadcastCommand cmd = new NetworkBroadcastCommand();
+                    List<SceneMaxParser.Logical_expressionContext> expressions =
+                            action.network_broadcast().logical_expression();
+                    cmd.eventNameExpr = expressions.isEmpty() ? null : expressions.get(0);
+                    cmd.messageExpr = expressions.size() > 1 ? expressions.get(1) : null;
+                    return cmd;
+                }
+
                 if (action.network_join_session() != null) {
                     NetworkJoinSessionCommand cmd = new NetworkJoinSessionCommand();
                     cmd.sessionExpr = action.network_join_session().logical_expression();
@@ -945,7 +954,14 @@ public class SceneMaxLanguageParser implements IParser {
                 NetworkEventHandlerCommand cmd = new NetworkEventHandlerCommand();
                 List<SceneMaxParser.Logical_expressionContext> expressions = action.network_on().logical_expression();
                 cmd.eventNameExpr = expressions.isEmpty() ? null : expressions.get(0);
-                cmd.serverIntervalSecondsExpr = expressions.size() > 1 ? expressions.get(1) : null;
+                if (expressions.size() > 1) {
+                    String messageParamName = networkEventMessageParamName(expressions.get(1));
+                    if (messageParamName == null) {
+                        cmd.serverIntervalSecondsExpr = expressions.get(1);
+                    } else {
+                        cmd.messageParamName = messageParamName;
+                    }
+                }
                 DoBlockCommand doBlock = new DoBlockVisitor(prg).visit(action.network_on().do_block());
                 if (doBlock == null) {
                     return cmd;
@@ -959,6 +975,14 @@ public class SceneMaxLanguageParser implements IParser {
                 doBlock.isSecondLevelReturnPoint = true;
                 cmd.doBlock = doBlock;
                 return cmd;
+            }
+
+            private String networkEventMessageParamName(SceneMaxParser.Logical_expressionContext expression) {
+                if (expression == null) {
+                    return null;
+                }
+                String text = expression.getText();
+                return text != null && text.matches("[A-Za-z_$][A-Za-z_$0-9]*") ? text : null;
             }
 
             public ActionStatementBase visitForStatement(SceneMaxParser.ForStatementContext ctx) {
