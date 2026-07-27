@@ -36,6 +36,8 @@ public class MultiplayerCommandDispatchParsingTest {
     private static final byte LOGIN_ACCEPTED = 2;
     private static final byte LOGIN_REJECTED = 3;
     private static final byte CREATE_ENTITY_REQUEST = 10;
+    private static final byte CREATE_ENTITY_ACCEPTED = 11;
+    private static final byte DESTROY_ENTITY = 12;
     private static final byte COMMAND_DISPATCH = 20;
     private static final byte ACTIVE_ACTION_START = 22;
     private static final byte INITIAL_SYNC_COMPLETE = 32;
@@ -169,6 +171,63 @@ public class MultiplayerCommandDispatchParsingTest {
             assertEquals(1, Short.toUnsignedInt(actionPacket.getShort()));
             assertEquals(Integer.MAX_VALUE, actionPacket.getInt());
             assertEquals(clearCommand, readFixedString(actionPacket, 192));
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
+    @Test
+    public void deactivatedEntityRepublishesBeforeSendingQueuedCommand() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            VariableDef varDef = new VariableDef();
+            varDef.varName = "fx";
+            varDef.varType = VariableDef.VAR_TYPE_EFFEKSEER;
+            varDef.isMultiplayer = true;
+
+            component.registerEntity("fx@1", varDef, "effekseer",
+                    "{network_entity} => effects.effekseer.burst");
+            setField(component, "channel", client);
+            setField(component, "clientId", 7);
+            setField(component, "networkReady", true);
+            setField(component, "initialSyncPending", false);
+            setRegisteredEntityNetworkId(component, "fx@1", 101);
+
+            component.deactivateEntity("fx@1");
+
+            ByteBuffer destroyPacket = receiveRequiredPacket(server);
+            assertHeader(destroyPacket, DESTROY_ENTITY);
+            assertEquals(101, destroyPacket.getInt());
+            assertNotNull(registeredEntity(component, "fx@1"));
+
+            String command = "{network_entity}.play pos (1,2,3)";
+            component.dispatchCommand("fx@1", command);
+
+            ByteBuffer createPacket = receiveRequiredPacket(server);
+            assertHeader(createPacket, CREATE_ENTITY_REQUEST);
+            int createRequestId = createPacket.getInt();
+            assertTrue(createRequestId > 0);
+
+            sendCreateAccepted(server, 7, 202, createRequestId);
+            component.update(0f);
+
+            ByteBuffer commandPacket = receiveRequiredPacket(server);
+            assertHeader(commandPacket, COMMAND_DISPATCH);
+            assertEquals(202, commandPacket.getInt());
+            byte[] commandBytes = new byte[commandPacket.remaining()];
+            commandPacket.get(commandBytes);
+            assertEquals(command, new String(commandBytes, StandardCharsets.UTF_8).trim());
         } finally {
             component.close();
             client.close();
@@ -724,6 +783,18 @@ public class MultiplayerCommandDispatchParsingTest {
         packet.putShort((short) clientId);
         packet.putInt(sessionId);
         putFixedString(packet, sessionName, 64);
+        packet.flip();
+        server.write(packet);
+    }
+
+    private void sendCreateAccepted(DatagramChannel server,
+                                    int clientId,
+                                    int networkId,
+                                    int createRequestId) throws Exception {
+        ByteBuffer packet = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN);
+        writeHeader(packet, CREATE_ENTITY_ACCEPTED, clientId);
+        packet.putInt(networkId);
+        packet.putInt(createRequestId);
         packet.flip();
         server.write(packet);
     }

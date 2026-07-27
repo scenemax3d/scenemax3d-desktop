@@ -5269,6 +5269,13 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         multiplayerNetwork.destroyEntity(runtimeName);
     }
 
+    public void deactivateMultiplayerEntity(String runtimeName) {
+        if (multiplayerNetwork == null || runtimeName == null || runtimeName.trim().isEmpty()) {
+            return;
+        }
+        multiplayerNetwork.deactivateEntity(runtimeName);
+    }
+
     public void registerNetworkEventHandler(String eventName, SceneMaxScope scope, DoBlockCommand doBlock) {
         registerNetworkEventHandler(eventName, scope, doBlock, null);
     }
@@ -12316,6 +12323,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             if (!inst.loop && inst.playing && !EffekseerNativeBridge.isEffectPlaying(inst.nativeContextHandle)) {
                 inst.playing = false;
                 inst.node.removeFromParent();
+                deactivateMultiplayerEntity(inst.node.getName());
                 continue;
             }
             EffekseerNativeBridge.render(inst.nativeContextHandle, activeCamera.getWidth(), activeCamera.getHeight());

@@ -356,12 +356,14 @@ public class MultiplayerNetworkComponent {
         if (entity.networkEntityId == 0) {
             logNet("queue command until create ack runtime=" + runtimeName + " command=\"" + commandText + "\"");
             entity.pendingCommands.add(commandText);
+            ensureEntityCreateRequested(entity);
             return;
         }
         if (!sendCommandIfResolved(entity, commandText)) {
             logNet("queue command until referenced entities have ids runtime=" + runtimeName
                     + " command=\"" + commandText + "\"");
             entity.pendingCommands.add(commandText);
+            ensureEntityCreateRequested(entity);
         }
     }
 
@@ -451,6 +453,29 @@ public class MultiplayerNetworkComponent {
             return;
         }
         sendDestroyEntity(entity.networkEntityId, runtimeName);
+    }
+
+    public void deactivateEntity(String runtimeName) {
+        if (runtimeName == null || runtimeName.trim().isEmpty()) {
+            return;
+        }
+        RegisteredEntity entity = localEntities.get(runtimeName);
+        if (entity == null) {
+            return;
+        }
+        pendingCreateAcks.values().removeIf(runtimeName::equals);
+        entity.destroyAfterCreateAck = false;
+        entity.pendingCommands.clear();
+        entity.activeActions.clear();
+        lastSentCorrections.remove(runtimeName);
+        if (entity.networkEntityId != 0) {
+            sendDestroyEntity(entity.networkEntityId, runtimeName);
+        }
+        entity.networkEntityId = 0;
+        entity.createRequestId = 0;
+        entity.createRetryTimer = 0;
+        entity.createSendCount = 0;
+        logNet("deactivated local entity runtime=" + runtimeName);
     }
 
     public void close() {
@@ -649,6 +674,17 @@ public class MultiplayerNetworkComponent {
             packet.putFloat(rotation.getZ());
             packet.putFloat(rotation.getW());
             send(packet);
+        }
+    }
+
+    private void ensureEntityCreateRequested(RegisteredEntity entity) {
+        if (entity == null || entity.networkEntityId != 0 || entity.createRequestId != 0) {
+            return;
+        }
+        entity.createRequestId = nextCreateRequestId();
+        entity.createRetryTimer = CREATE_RETRY_INTERVAL_SECONDS;
+        if (canSendLocalCreates()) {
+            sendCreateEntity(entity);
         }
     }
 
