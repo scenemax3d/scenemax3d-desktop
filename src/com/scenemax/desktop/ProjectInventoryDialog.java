@@ -8,6 +8,7 @@ import com.scenemaxeng.common.motion.ThrowMotionValidationResult;
 import com.scenemaxeng.common.weapons.WeaponDefinition;
 import com.scenemaxeng.common.weapons.WeaponValidationIssue;
 import com.scenemaxeng.common.weapons.WeaponValidationResult;
+import org.apache.commons.io.FileUtils;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -116,6 +117,7 @@ class ProjectInventoryPanel extends JPanel {
     private final JButton playAudioButton = new JButton("Play");
     private final JButton stopAudioButton = new JButton("Stop");
     private final JButton openFolderButton = new JButton("Open Folder");
+    private final JButton copyAssetButton = new JButton("Copy to other project");
     private final JButton deleteAssetButton = new JButton("Delete");
 
     private InventoryModelPreview previewApp;
@@ -245,9 +247,12 @@ class ProjectInventoryPanel extends JPanel {
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
         openFolderButton.setEnabled(false);
         openFolderButton.addActionListener(e -> openSelectedAssetFolder());
+        copyAssetButton.setEnabled(false);
+        copyAssetButton.addActionListener(e -> copySelectedAssetToOtherProject());
         deleteAssetButton.setEnabled(false);
         deleteAssetButton.addActionListener(e -> deleteSelectedAsset());
         actions.add(openFolderButton);
+        actions.add(copyAssetButton);
         actions.add(deleteAssetButton);
         header.add(actions, BorderLayout.EAST);
         details.add(header, BorderLayout.NORTH);
@@ -344,12 +349,14 @@ class ProjectInventoryPanel extends JPanel {
         propertiesTableModel.setAsset(asset);
         if (asset == null) {
             openFolderButton.setEnabled(false);
+            copyAssetButton.setEnabled(false);
             deleteAssetButton.setEnabled(false);
             textPreview.setText("No asset selected.");
             previewCards.show(previewPanel, "text");
             return;
         }
         openFolderButton.setEnabled(resolveAssetFolder(asset) != null);
+        copyAssetButton.setEnabled(canCopy(asset));
         deleteAssetButton.setEnabled(canDelete(asset));
 
         if (CATEGORY_MODELS.equals(asset.category)) {
@@ -467,6 +474,408 @@ class ProjectInventoryPanel extends JPanel {
         }
         File parent = asset.file.getParentFile();
         return parent != null && parent.isDirectory() ? parent : null;
+    }
+
+    private void copySelectedAssetToOtherProject() {
+        InventoryAsset asset = selectedAsset;
+        if (!canCopy(asset)) {
+            JOptionPane.showMessageDialog(this, "Select an asset with files to copy.",
+                    "Copy to Other Project", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        List<SceneMaxProject> targetProjects = getCopyTargetProjects();
+        if (targetProjects.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "There are no other projects to copy this asset to.",
+                    "Copy to Other Project", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        SceneMaxProject targetProject = chooseCopyTargetProject(asset, targetProjects);
+        if (targetProject == null) {
+            return;
+        }
+
+        copyAssetButton.setEnabled(false);
+        statusLabel.setText("Copying \"" + asset.name + "\" to " + targetProject.name + "...");
+
+        SwingWorker<CopyAssetResult, Void> worker = new SwingWorker<CopyAssetResult, Void>() {
+            @Override
+            protected CopyAssetResult doInBackground() throws Exception {
+                return copyAssetToProject(asset, targetProject);
+            }
+
+            @Override
+            protected void done() {
+                copyAssetButton.setEnabled(canCopy(selectedAsset));
+                try {
+                    CopyAssetResult result = get();
+                    statusLabel.setText("Copied \"" + asset.name + "\" to " + targetProject.name + ".");
+                    StringBuilder message = new StringBuilder();
+                    message.append("Copied \"").append(asset.name).append("\" to project \"")
+                            .append(targetProject.name).append("\".");
+                    if (result.indexFile != null && result.registered) {
+                        message.append("\n\nRegistered in:\n").append(result.indexFile.getAbsolutePath());
+                    } else if (result.indexFile != null) {
+                        message.append("\n\nThe asset was already registered in:\n")
+                                .append(result.indexFile.getAbsolutePath());
+                    }
+                    JOptionPane.showMessageDialog(ProjectInventoryPanel.this, message.toString(),
+                            "Copy to Other Project", JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+                    statusLabel.setText("Could not copy \"" + asset.name + "\".");
+                    JOptionPane.showMessageDialog(ProjectInventoryPanel.this,
+                            "Could not copy asset:\n" + cause.getMessage(),
+                            "Copy to Other Project", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private boolean canCopy(InventoryAsset asset) {
+        return asset != null && asset.file != null && asset.file.exists();
+    }
+
+    private List<SceneMaxProject> getCopyTargetProjects() {
+        SceneMaxProject current = Util.getActiveProject();
+        List<SceneMaxProject> targets = new ArrayList<>();
+        for (SceneMaxProject project : Util.getProjects_New()) {
+            if (project != null && !sameProject(current, project)) {
+                targets.add(project);
+            }
+        }
+        targets.sort(Comparator.comparing(p -> p.name == null ? "" : p.name.toLowerCase(Locale.ROOT)));
+        return targets;
+    }
+
+    private boolean sameProject(SceneMaxProject a, SceneMaxProject b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        if (a.name != null && b.name != null && a.name.equalsIgnoreCase(b.name)) {
+            return true;
+        }
+        if (a.path == null || b.path == null) {
+            return false;
+        }
+        try {
+            return new File(a.path).getCanonicalFile().equals(new File(b.path).getCanonicalFile());
+        } catch (IOException ex) {
+            return a.path.equalsIgnoreCase(b.path);
+        }
+    }
+
+    private SceneMaxProject chooseCopyTargetProject(InventoryAsset asset, List<SceneMaxProject> projects) {
+        JComboBox<SceneMaxProject> combo = new JComboBox<>(projects.toArray(new SceneMaxProject[0]));
+        combo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                          boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof SceneMaxProject) {
+                    SceneMaxProject project = (SceneMaxProject) value;
+                    setText(project.name == null ? project.path : project.name);
+                }
+                return this;
+            }
+        });
+
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.add(new JLabel("<html>Copy <b>" + escapeHtml(asset.name) + "</b> to:</html>"), BorderLayout.NORTH);
+        panel.add(combo, BorderLayout.CENTER);
+
+        int choice = JOptionPane.showOptionDialog(this, panel, "Copy to Other Project",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE, null,
+                new Object[]{"Copy", "Cancel"}, "Copy");
+        if (choice != JOptionPane.OK_OPTION) {
+            return null;
+        }
+        return (SceneMaxProject) combo.getSelectedItem();
+    }
+
+    private CopyAssetResult copyAssetToProject(InventoryAsset asset, SceneMaxProject targetProject) throws IOException {
+        if (asset == null || asset.file == null || !asset.file.exists()) {
+            throw new IOException("The selected asset file could not be found.");
+        }
+        if (targetProject == null || targetProject.path == null || targetProject.path.isBlank()) {
+            throw new IOException("The target project is not available.");
+        }
+
+        File targetProjectRoot = new File(targetProject.path);
+        File targetResourcesRoot = new File(targetProject.getResourcesPath());
+        FileUtils.forceMkdir(targetResourcesRoot);
+
+        if (asset.indexFile != null && asset.arrayKey != null && asset.resourceRoot != null) {
+            JSONObject sourceEntry = findIndexedEntry(asset);
+            if (sourceEntry == null) {
+                throw new IOException("Could not find the selected asset in " + asset.indexFile.getName() + ".");
+            }
+
+            File targetIndex = resolveTargetExtIndexFile(asset, targetResourcesRoot);
+            ensureCanRegisterIndexedAsset(targetIndex, asset.arrayKey, sourceEntry);
+            copyIndexedAssetFiles(asset, sourceEntry, targetResourcesRoot);
+            boolean registered = appendIndexedAsset(targetIndex, asset.arrayKey, sourceEntry);
+            return new CopyAssetResult(targetIndex, registered);
+        }
+
+        copyUnindexedAsset(asset, targetProjectRoot, targetResourcesRoot);
+        return new CopyAssetResult(null, false);
+    }
+
+    private JSONObject findIndexedEntry(InventoryAsset asset) throws IOException {
+        JSONObject json = new JSONObject(Util.readFile(asset.indexFile));
+        JSONArray array = json.optJSONArray(asset.arrayKey);
+        if (array == null) {
+            return null;
+        }
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject obj = array.optJSONObject(i);
+            if (obj != null && matchesIndexedAsset(asset, obj)) {
+                return new JSONObject(obj.toString());
+            }
+        }
+        return null;
+    }
+
+    private File resolveTargetExtIndexFile(InventoryAsset asset, File targetResourcesRoot) throws IOException {
+        String relativeIndex = relativizePath(asset.resourceRoot, asset.indexFile);
+        String extIndex = toExtIndexPath(relativeIndex);
+        return new File(targetResourcesRoot, extIndex.replace('/', File.separatorChar));
+    }
+
+    private String toExtIndexPath(String relativeIndex) {
+        String normalized = relativeIndex == null ? "" : relativeIndex.replace('\\', '/');
+        if (normalized.endsWith("-ext.json")) {
+            return normalized;
+        }
+        if (normalized.endsWith(".json")) {
+            return normalized.substring(0, normalized.length() - ".json".length()) + "-ext.json";
+        }
+        return normalized;
+    }
+
+    private void ensureCanRegisterIndexedAsset(File targetIndex, String arrayKey, JSONObject sourceEntry) throws IOException {
+        JSONObject targetJson = readIndexOrEmpty(targetIndex, arrayKey);
+        JSONArray targetArray = targetJson.optJSONArray(arrayKey);
+        if (targetArray == null) {
+            return;
+        }
+        if (resourceExists(targetArray, sourceEntry)) {
+            throw new IOException("The target project already has an asset named \""
+                    + sourceEntry.optString("name", assetDisplayPath(sourceEntry)) + "\" or the same runtime path.");
+        }
+    }
+
+    private boolean appendIndexedAsset(File targetIndex, String arrayKey, JSONObject sourceEntry) throws IOException {
+        JSONObject targetJson = readIndexOrEmpty(targetIndex, arrayKey);
+        JSONArray targetArray = targetJson.optJSONArray(arrayKey);
+        if (targetArray == null) {
+            targetArray = new JSONArray();
+            targetJson.put(arrayKey, targetArray);
+        }
+        if (resourceExists(targetArray, sourceEntry)) {
+            return false;
+        }
+        targetArray.put(new JSONObject(sourceEntry.toString()));
+        File parent = targetIndex.getParentFile();
+        if (parent != null) {
+            FileUtils.forceMkdir(parent);
+        }
+        Files.writeString(targetIndex.toPath(), targetJson.toString(2));
+        return true;
+    }
+
+    private JSONObject readIndexOrEmpty(File indexFile, String arrayKey) {
+        if (indexFile != null && indexFile.isFile()) {
+            try {
+                return new JSONObject(Util.readFile(indexFile));
+            } catch (Exception ex) {
+                System.err.println("Could not read target asset index " + indexFile + ": " + ex.getMessage());
+            }
+        }
+        JSONObject json = new JSONObject();
+        json.put(arrayKey, new JSONArray());
+        return json;
+    }
+
+    private boolean resourceExists(JSONArray currentResources, JSONObject imported) {
+        String importedName = imported.optString("name", "");
+        Set<String> importedPaths = collectIndexedPaths(imported);
+        for (int i = 0; i < currentResources.length(); i++) {
+            JSONObject current = currentResources.optJSONObject(i);
+            if (current == null) {
+                continue;
+            }
+            if (!importedName.isBlank() && importedName.equalsIgnoreCase(current.optString("name", ""))) {
+                return true;
+            }
+            Set<String> currentPaths = collectIndexedPaths(current);
+            for (String path : importedPaths) {
+                if (containsPathIgnoreCase(currentPaths, path)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean containsPathIgnoreCase(Set<String> paths, String candidate) {
+        if (candidate == null || candidate.isBlank()) {
+            return false;
+        }
+        for (String path : paths) {
+            if (candidate.equalsIgnoreCase(path)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void copyIndexedAssetFiles(InventoryAsset asset, JSONObject sourceEntry, File targetResourcesRoot) throws IOException {
+        Set<String> paths = collectIndexedPaths(sourceEntry);
+        if (paths.isEmpty() && asset.path != null && !asset.path.isBlank()) {
+            paths.add(asset.path);
+        }
+        Set<String> copiedSources = new LinkedHashSet<>();
+        for (String path : paths) {
+            File source = resolveUnderRoot(asset.resourceRoot, path);
+            if (source == null || !source.exists()) {
+                continue;
+            }
+            File copySource = bundleCopySource(asset, source);
+            String copySourceKey = relativizePath(asset.resourceRoot, copySource).toLowerCase(Locale.ROOT);
+            if (copiedSources.add(copySourceKey)) {
+                copyAssetPath(asset.resourceRoot, copySource, targetResourcesRoot);
+            }
+            copyKnownSidecars(asset, source, targetResourcesRoot);
+        }
+    }
+
+    private Set<String> collectIndexedPaths(JSONObject obj) {
+        Set<String> paths = new LinkedHashSet<>();
+        Iterator<String> keys = obj.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            Object value = obj.opt(key);
+            if (value instanceof String && looksLikeResourcePathKey(key)) {
+                String path = ((String) value).replace('\\', '/').trim();
+                if (!path.isBlank() && !path.startsWith("data:") && !path.startsWith("http://") && !path.startsWith("https://")) {
+                    paths.add(path);
+                }
+            }
+        }
+        return paths;
+    }
+
+    private boolean looksLikeResourcePathKey(String key) {
+        if (key == null) {
+            return false;
+        }
+        String lower = key.toLowerCase(Locale.ROOT);
+        return lower.equals("path")
+                || lower.equals("front")
+                || lower.equals("back")
+                || lower.equals("left")
+                || lower.equals("right")
+                || lower.equals("up")
+                || lower.equals("down")
+                || lower.equals("heightmap")
+                || lower.equals("alpha")
+                || lower.endsWith("path")
+                || lower.endsWith("map");
+    }
+
+    private File bundleCopySource(InventoryAsset asset, File source) {
+        if (source.isDirectory()) {
+            return source;
+        }
+        if (CATEGORY_MODELS.equals(asset.category) || CATEGORY_SKYBOXES.equals(asset.category)
+                || CATEGORY_TERRAIN.equals(asset.category) || CATEGORY_ANIMATIONS.equals(asset.category)) {
+            File parent = source.getParentFile();
+            return parent == null ? source : parent;
+        }
+        return source;
+    }
+
+    private void copyKnownSidecars(InventoryAsset asset, File source, File targetResourcesRoot) throws IOException {
+        if (source == null || !source.isFile() || !CATEGORY_FONTS.equals(asset.category)) {
+            return;
+        }
+        String name = source.getName();
+        int dot = name.lastIndexOf('.');
+        if (dot <= 0) {
+            return;
+        }
+        File png = new File(source.getParentFile(), name.substring(0, dot) + ".png");
+        if (png.isFile()) {
+            copyAssetPath(asset.resourceRoot, png, targetResourcesRoot);
+        }
+    }
+
+    private void copyUnindexedAsset(InventoryAsset asset, File targetProjectRoot, File targetResourcesRoot) throws IOException {
+        File sourceRoot = asset.resourceRoot != null ? asset.resourceRoot : activeProjectRoot();
+        File targetRoot = asset.resourceRoot != null ? targetResourcesRoot : targetProjectRoot;
+        if (sourceRoot == null) {
+            throw new IOException("Could not determine the source project folder.");
+        }
+        copyAssetPath(sourceRoot, asset.file, targetRoot);
+    }
+
+    private File activeProjectRoot() {
+        SceneMaxProject project = Util.getActiveProject();
+        return project == null || project.path == null ? null : new File(project.path);
+    }
+
+    private void copyAssetPath(File sourceRoot, File source, File targetRoot) throws IOException {
+        String relative = relativizePath(sourceRoot, source);
+        File target = new File(targetRoot, relative.replace('/', File.separatorChar));
+        ensureInsideRoot(targetRoot, target);
+        if (target.exists()) {
+            throw new IOException("The target already exists:\n" + target.getAbsolutePath());
+        }
+        File parent = target.getParentFile();
+        if (parent != null) {
+            FileUtils.forceMkdir(parent);
+        }
+        if (source.isDirectory()) {
+            FileUtils.copyDirectory(source, target);
+        } else {
+            FileUtils.copyFile(source, target);
+        }
+    }
+
+    private File resolveUnderRoot(File root, String relativePath) throws IOException {
+        if (root == null || relativePath == null || relativePath.isBlank()) {
+            return null;
+        }
+        File file = new File(root, relativePath.replace('/', File.separatorChar));
+        ensureInsideRoot(root, file);
+        return file;
+    }
+
+    private void ensureInsideRoot(File root, File candidate) throws IOException {
+        Path rootPath = root.getCanonicalFile().toPath();
+        Path candidatePath = candidate.getCanonicalFile().toPath();
+        if (!candidatePath.startsWith(rootPath)) {
+            throw new IOException("Asset path is outside the project resources folder: " + candidate);
+        }
+    }
+
+    private String relativizePath(File root, File file) throws IOException {
+        return root.getCanonicalFile().toURI().relativize(file.getCanonicalFile().toURI()).getPath();
+    }
+
+    private String assetDisplayPath(JSONObject obj) {
+        String path = obj.optString("path", "");
+        if (path.isBlank()) {
+            path = obj.optString("back", obj.optString("front", ""));
+        }
+        if (path.isBlank()) {
+            path = obj.optString("HeightMap", obj.optString("Alpha", ""));
+        }
+        return path.isBlank() ? "asset" : path;
     }
 
     private void deleteSelectedAsset() {
@@ -1112,6 +1521,16 @@ class ProjectInventoryPanel extends JPanel {
         @Override
         public String toString() {
             return name;
+        }
+    }
+
+    private static class CopyAssetResult {
+        final File indexFile;
+        final boolean registered;
+
+        CopyAssetResult(File indexFile, boolean registered) {
+            this.indexFile = indexFile;
+            this.registered = registered;
         }
     }
 

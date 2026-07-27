@@ -246,6 +246,14 @@ public class UISetPropertyController extends SceneMaxBaseController {
                 case "listviewstyle":
                     listView.setListViewStyle(value);
                     break;
+                case "transparency":
+                case "listviewtransparency":
+                    try {
+                        listView.setListViewTransparency(Float.parseFloat(value));
+                    } catch (NumberFormatException e) {
+                        app.handleRuntimeError("Invalid list view transparency: " + value);
+                    }
+                    break;
                 case "headerfont":
                 case "listheaderfont":
                 case "listheaderfontname":

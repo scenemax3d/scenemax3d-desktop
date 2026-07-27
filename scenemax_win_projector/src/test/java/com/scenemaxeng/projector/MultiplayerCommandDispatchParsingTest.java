@@ -19,12 +19,15 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.DatagramChannel;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class MultiplayerCommandDispatchParsingTest {
 
@@ -33,6 +36,8 @@ public class MultiplayerCommandDispatchParsingTest {
     private static final byte LOGIN_ACCEPTED = 2;
     private static final byte LOGIN_REJECTED = 3;
     private static final byte CREATE_ENTITY_REQUEST = 10;
+    private static final byte COMMAND_DISPATCH = 20;
+    private static final byte ACTIVE_ACTION_START = 22;
     private static final byte INITIAL_SYNC_COMPLETE = 32;
 
     @Test
@@ -84,6 +89,94 @@ public class MultiplayerCommandDispatchParsingTest {
     }
 
     @Test
+    public void throttlesCharacterModeTransformCorrectionsToFiveSeconds() throws Exception {
+        CapturingSceneMaxApp app = new CapturingSceneMaxApp();
+        app.characterControlled = true;
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(app);
+
+        VariableDef varDef = new VariableDef();
+        varDef.varName = "player";
+        varDef.varType = VariableDef.VAR_TYPE_3D;
+        varDef.isMultiplayer = true;
+        component.registerEntity("player@1", varDef, "fighter1_native");
+        Object entity = registeredEntity(component, "player@1");
+
+        Method method = MultiplayerNetworkComponent.class.getDeclaredMethod("shouldSendCorrection",
+                entity.getClass(),
+                com.jme3.math.Vector3f.class,
+                com.jme3.math.Quaternion.class,
+                float.class);
+        method.setAccessible(true);
+
+        assertTrue((Boolean) method.invoke(component, entity,
+                new com.jme3.math.Vector3f(0f, 0f, 0f),
+                new com.jme3.math.Quaternion(),
+                0.25f));
+        assertFalse((Boolean) method.invoke(component, entity,
+                new com.jme3.math.Vector3f(1f, 0f, 0f),
+                new com.jme3.math.Quaternion(),
+                0.25f));
+        assertTrue((Boolean) method.invoke(component, entity,
+                new com.jme3.math.Vector3f(1f, 0f, 0f),
+                new com.jme3.math.Quaternion(),
+                4.75f));
+    }
+
+    @Test
+    public void sendsClearCharacterModeAsCommandAndPersistentActionForRegisteredNetworkEntity() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            VariableDef varDef = new VariableDef();
+            varDef.varName = "player";
+            varDef.varType = VariableDef.VAR_TYPE_3D;
+            varDef.isMultiplayer = true;
+
+            component.registerEntity("player@1", varDef, "fighter1_native");
+            setField(component, "channel", client);
+            setField(component, "clientId", 7);
+            setField(component, "networkReady", true);
+            setField(component, "initialSyncPending", false);
+            setRegisteredEntityNetworkId(component, "player@1", 101);
+
+            String clearCommand = "{network_entity}.clear character mode";
+            component.dispatchCommand("player@1", clearCommand);
+            component.startPersistentCommand("player@1",
+                    SceneMaxBaseController.MULTIPLAYER_ACTION_SLOT_STRUCTURAL_BASE + 189,
+                    clearCommand);
+
+            ByteBuffer commandPacket = receiveRequiredPacket(server);
+            assertHeader(commandPacket, COMMAND_DISPATCH);
+            assertEquals(101, commandPacket.getInt());
+            byte[] commandBytes = new byte[commandPacket.remaining()];
+            commandPacket.get(commandBytes);
+            assertEquals(clearCommand, new String(commandBytes, StandardCharsets.UTF_8).trim());
+
+            ByteBuffer actionPacket = receiveRequiredPacket(server);
+            assertHeader(actionPacket, ACTIVE_ACTION_START);
+            assertEquals(101, actionPacket.getInt());
+            assertEquals(SceneMaxBaseController.MULTIPLAYER_ACTION_SLOT_STRUCTURAL_BASE + 189,
+                    Byte.toUnsignedInt(actionPacket.get()));
+            actionPacket.get();
+            assertEquals(1, Short.toUnsignedInt(actionPacket.getShort()));
+            assertEquals(Integer.MAX_VALUE, actionPacket.getInt());
+            assertEquals(clearCommand, readFixedString(actionPacket, 192));
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
+    @Test
     public void treatsPosAsStructuralMultiplayerState() throws Exception {
         MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
         Method method = MultiplayerNetworkComponent.class.getDeclaredMethod("isStructuralCommand", String.class);
@@ -97,6 +190,36 @@ public class MultiplayerCommandDispatchParsingTest {
     public void parsesGeneratedMultiplayerSpawnCommandsWithScaleAndColliders() {
         assertParses("mp_remote_1 => horse1_native: pos (0.482243,0,1.164553), scale 3.7, collision shape none");
         assertParses("mp_remote_2 => collider sphere: pos (-5.174184,1.964885,4.311819), radius 0.5, scale 0.3");
+    }
+
+    @Test
+    public void parsesGeneratedMultiplayerEffekseerSpawnAndPlayCommands() {
+        assertParses("mp_remote_fx => effects.effekseer.Homing_Laser01_3: pos (1,2,3), rotate(0,90,0), scale 2");
+        assertParses("mp_remote_fx => effects.effekseer.Homing_Laser01_3\n"
+                + "mp_remote_fx.play pos (1,2,3), loop, attr = [\"play_back_speed\" 1.2, \"input0\" 0.9]");
+    }
+
+    @Test
+    public void keepsMultiplayerFlagOnEffekseerDeclarations() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "laser_effect => effects.effekseer.Homing_Laser01_3 : multiplayer, pos (0,0,0)");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        VariableDef var = program.getVar("laser_effect");
+        assertNotNull(var);
+        assertEquals(VariableDef.VAR_TYPE_EFFEKSEER, var.varType);
+        assertTrue(var.isMultiplayer);
+    }
+
+    @Test
+    public void treatsEffekseerArchetypesAsEffekseerRemoteEntities() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        Method method = MultiplayerNetworkComponent.class.getDeclaredMethod("archetypeVarType", String.class);
+        method.setAccessible(true);
+
+        assertEquals(VariableDef.VAR_TYPE_EFFEKSEER, method.invoke(component, "effekseer"));
+        assertEquals(VariableDef.VAR_TYPE_EFFEKSEER,
+                method.invoke(component, "effects.effekseer.Homing_Laser01_3"));
     }
 
     @Test
@@ -542,6 +665,52 @@ public class MultiplayerCommandDispatchParsingTest {
         field.set(target, value);
     }
 
+    private void setRegisteredEntityNetworkId(MultiplayerNetworkComponent component,
+                                              String runtimeName,
+                                              int networkId) throws Exception {
+        Object entity = registeredEntity(component, runtimeName);
+        setField(entity, "networkEntityId", networkId);
+    }
+
+    private Object registeredEntity(MultiplayerNetworkComponent component, String runtimeName) throws Exception {
+        Field field = MultiplayerNetworkComponent.class.getDeclaredField("localEntities");
+        field.setAccessible(true);
+        Map<String, Object> localEntities = (Map<String, Object>) field.get(component);
+        Object entity = localEntities.get(runtimeName);
+        assertNotNull(entity);
+        return entity;
+    }
+
+    private ByteBuffer receiveRequiredPacket(DatagramChannel server) throws Exception {
+        ByteBuffer packet = ByteBuffer.allocate(512).order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < 20; i++) {
+            if (server.receive(packet) != null) {
+                packet.flip();
+                return packet;
+            }
+            Thread.sleep(10);
+        }
+        fail("Expected multiplayer packet");
+        return packet;
+    }
+
+    private void assertHeader(ByteBuffer packet, byte expectedType) {
+        assertEquals(MAGIC, packet.getInt());
+        assertEquals(VERSION, packet.get());
+        assertEquals(expectedType, packet.get());
+        assertEquals(7, Short.toUnsignedInt(packet.getShort()));
+    }
+
+    private String readFixedString(ByteBuffer packet, int length) {
+        byte[] bytes = new byte[Math.min(length, packet.remaining())];
+        packet.get(bytes);
+        int end = 0;
+        while (end < bytes.length && bytes[end] != 0) {
+            end++;
+        }
+        return new String(bytes, 0, end, StandardCharsets.UTF_8);
+    }
+
     private void sendHeaderOnly(DatagramChannel server, byte type, int senderClientId) throws Exception {
         ByteBuffer packet = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);
         writeHeader(packet, type, senderClientId);
@@ -589,11 +758,17 @@ public class MultiplayerCommandDispatchParsingTest {
 
     private static class CapturingSceneMaxApp extends SceneMaxApp {
         SceneMaxBaseController registeredController;
+        boolean characterControlled;
 
         @Override
         public int registerController(SceneMaxBaseController c) {
             registeredController = c;
             return 0;
+        }
+
+        @Override
+        public boolean isCharacterControlledModel(String runtimeName) {
+            return characterControlled;
         }
     }
 }

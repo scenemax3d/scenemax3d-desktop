@@ -108,6 +108,7 @@ public class UIWidgetDef {
     private float listHeaderFontSize = 16;
     private float listRowFontSize = 14;
     private String listViewStyle = "classic";
+    private float listViewTransparency = 0f;
     private int listSelectedRowIndex = -1;
 
     // IMAGE
@@ -316,6 +317,8 @@ public class UIWidgetDef {
     public void setListRowFontSize(float fontSize) { this.listRowFontSize = Math.max(1f, fontSize); }
     public String getListViewStyle() { return listViewStyle; }
     public void setListViewStyle(String style) { this.listViewStyle = style == null || style.isEmpty() ? "classic" : style; }
+    public float getListViewTransparency() { return listViewTransparency; }
+    public void setListViewTransparency(float transparency) { this.listViewTransparency = sanitizeListViewTransparency(transparency); }
     public int getListSelectedRowIndex() { return listSelectedRowIndex; }
     public void setListSelectedRowIndex(int rowIndex) { this.listSelectedRowIndex = rowIndex; }
 
@@ -381,6 +384,13 @@ public class UIWidgetDef {
             return 100f;
         }
         return Math.max(1f, widthValue);
+    }
+
+    private float sanitizeListViewTransparency(float transparency) {
+        if (Float.isNaN(transparency) || Float.isInfinite(transparency)) {
+            return 0f;
+        }
+        return Math.max(0f, Math.min(100f, transparency));
     }
 
     // ========================================================================
@@ -526,6 +536,7 @@ public class UIWidgetDef {
                 json.put("listHeaderFontSize", listHeaderFontSize);
                 json.put("listRowFontSize", listRowFontSize);
                 json.put("listViewStyle", listViewStyle);
+                json.put("listViewTransparency", listViewTransparency);
                 json.put("listSelectedRowIndex", listSelectedRowIndex);
                 break;
             case IMAGE:
@@ -672,6 +683,7 @@ public class UIWidgetDef {
                 def.listHeaderFontSize = (float) json.optDouble("listHeaderFontSize", 16);
                 def.listRowFontSize = (float) json.optDouble("listRowFontSize", 14);
                 def.listViewStyle = json.optString("listViewStyle", "classic");
+                def.listViewTransparency = def.sanitizeListViewTransparency((float) json.optDouble("listViewTransparency", 0));
                 def.listSelectedRowIndex = json.optInt("listSelectedRowIndex", -1);
                 def.normalizeListViewData();
                 break;

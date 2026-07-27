@@ -24,6 +24,7 @@ public class UIListViewWidgetDefTest {
         widget.setListHeaderFontSize(18);
         widget.setListRowFontSize(13);
         widget.setListViewStyle("dark");
+        widget.setListViewTransparency(35);
         widget.setListSelectedRowIndex(1);
 
         UIWidgetDef loaded = UIWidgetDef.fromJSON(new JSONObject(widget.toJSON().toString()));
@@ -38,6 +39,18 @@ public class UIListViewWidgetDefTest {
         assertEquals(18f, loaded.getListHeaderFontSize(), 0.001f);
         assertEquals(13f, loaded.getListRowFontSize(), 0.001f);
         assertEquals("dark", loaded.getListViewStyle());
+        assertEquals(35f, loaded.getListViewTransparency(), 0.001f);
         assertEquals(1, loaded.getListSelectedRowIndex());
+    }
+
+    @Test
+    public void listViewTransparencyIsClamped() {
+        UIWidgetDef widget = new UIWidgetDef("players", UIWidgetType.LIST_VIEW);
+
+        widget.setListViewTransparency(-10);
+        assertEquals(0f, widget.getListViewTransparency(), 0.001f);
+
+        widget.setListViewTransparency(120);
+        assertEquals(100f, widget.getListViewTransparency(), 0.001f);
     }
 }

@@ -143,6 +143,9 @@ final class UIRuntimePropertyAccessor {
             if ("style".equals(prop) || "listviewstyle".equals(prop)) {
                 return def.getListViewStyle();
             }
+            if ("transparency".equals(prop) || "listviewtransparency".equals(prop)) {
+                return Double.valueOf(def.getListViewTransparency());
+            }
         }
 
         if (widget instanceof UIPanelNode) {

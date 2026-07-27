@@ -81,6 +81,7 @@ crate => box: multiplayer, size (2,2,2), pos (2,0,0)
 stairs_1 => stairs: multiplayer, size (2,0.25,0.4), steps 6, pos (4,0,0)
 hand_target => collider sphere: multiplayer, pos (0,1,0), radius 0.2
 name_tag => label: multiplayer, text "Hero", style "holo_glass", size (50,10)
+laser_effect => effects.effekseer.Homing_Laser01_3: multiplayer
 ```
 
 You can also set the same flag from the designer; the saved design emits entities with
@@ -94,6 +95,7 @@ Current runtime registration covers:
 - Collider primitives that use the same primitive declarations, such as `collider sphere`,
   `collider box`, or `collider hollow cylinder`.
 - Runtime labels created with `label`.
+- Effekseer effects declared with `effects.effekseer.<assetId>`.
 
 The parser accepts `multiplayer` as a general model/entity attribute, but a networked entity
 must also be registered by the runtime. If a type is parsed as multiplayer but no registration
@@ -124,7 +126,10 @@ SceneMax currently synchronizes the following multiplayer entity behavior:
 - Rotation commands:
   `rotate (...)`, `rotate to (...)`, `turn left/right/forward/backward`, and rotation reset.
 - Model animation commands, including animation name, speed, and frame ranges.
+- Character mode commands: `switch to character mode` and `clear character mode`.
 - Attach commands between multiplayer entities.
+- Effekseer `.play` commands, including position, loop, playback speed, and dynamic input
+  attributes.
 - IK apply/remove, layer target, weight, blend, play, and stop commands.
 - Label text changes with `label_name.text = ...`.
 - Persistent structural commands, such as attach and IK, so late joiners receive the current

@@ -5155,6 +5155,62 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         return command.toString();
     }
 
+    private String effekseerSpawnCommand(EffekseerInst inst) {
+        if (inst == null || inst.effectResourceName == null || inst.effectResourceName.trim().isEmpty()) {
+            return "";
+        }
+        Vector3f position = inst.node == null ? Vector3f.ZERO : inst.node.getLocalTranslation();
+        StringBuilder command = new StringBuilder();
+        command.append("{network_entity} => ")
+                .append(inst.effectResourceName.trim())
+                .append(": pos (")
+                .append(networkNumber(position.x)).append(",")
+                .append(networkNumber(position.y)).append(",")
+                .append(networkNumber(position.z)).append(")");
+
+        Vector3f rotation = initialEffekseerRotationDegrees(inst);
+        if (rotation != null) {
+            command.append(", rotate(")
+                    .append(networkNumber(rotation.x)).append(",")
+                    .append(networkNumber(rotation.y)).append(",")
+                    .append(networkNumber(rotation.z)).append(")");
+        }
+
+        String scaleAttr = effekseerScaleAttribute(inst);
+        if (scaleAttr != null) {
+            command.append(", ").append(scaleAttr);
+        }
+        return command.toString();
+    }
+
+    private Vector3f initialEffekseerRotationDegrees(EffekseerInst inst) {
+        if (inst == null || inst.node == null || inst.varDef == null) {
+            return null;
+        }
+        if (!inst.varDef.useVerbalTurn && inst.varDef.rxExpr == null && inst.varDef.entityRot == null) {
+            return null;
+        }
+        float[] angles = inst.node.getLocalRotation().toAngles(null);
+        return new Vector3f(
+                angles[0] * FastMath.RAD_TO_DEG,
+                angles[1] * FastMath.RAD_TO_DEG,
+                angles[2] * FastMath.RAD_TO_DEG);
+    }
+
+    private String effekseerScaleAttribute(EffekseerInst inst) {
+        if (inst == null || inst.node == null || inst.varDef == null
+                || (inst.varDef.scaleExpr == null && inst.varDef.scaleXExpr == null)) {
+            return null;
+        }
+        Vector3f scale = inst.node.getLocalScale();
+        if (Math.abs(scale.x - scale.y) < 0.0001f && Math.abs(scale.x - scale.z) < 0.0001f) {
+            return "scale " + networkNumber(scale.x);
+        }
+        return "scale (" + networkNumber(scale.x) + ","
+                + networkNumber(scale.y) + ","
+                + networkNumber(scale.z) + ")";
+    }
+
     private boolean isPrimitiveCollider(ModelInst inst) {
         if (inst == null || inst.varDef == null) {
             return false;
@@ -6332,6 +6388,59 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
 
     public HashMap<String, AppModel> getModels() {
         return models;
+    }
+
+    public boolean isCharacterControlledModel(String runtimeName) {
+        AppModel am = models.get(runtimeName);
+        return am != null && am.physicalControl instanceof CharacterControl;
+    }
+
+    public boolean applyNetworkTransformCorrection(String runtimeName, Vector3f position, Quaternion rotation) {
+        if (runtimeName == null || position == null || rotation == null) {
+            return false;
+        }
+
+        AppModel am = models.get(runtimeName);
+        if (am != null && am.model != null) {
+            Vector3f correctedPosition = position.clone();
+            Quaternion correctedRotation = rotation.clone();
+            if (am.physicalControl instanceof CharacterControl) {
+                CharacterControl ctl = (CharacterControl) am.physicalControl;
+                ctl.setPhysicsLocation(correctedPosition);
+                Vector3f viewDirection = correctedRotation.getRotationColumn(2);
+                viewDirection.setY(0f);
+                if (viewDirection.lengthSquared() > 0.0001f) {
+                    ctl.setViewDirection(viewDirection.normalizeLocal());
+                }
+                am.model.setLocalTranslation(correctedPosition);
+                am.model.setLocalRotation(correctedRotation);
+            } else if (am.physicalControl instanceof RigidBodyControl) {
+                RigidBodyControl ctl = (RigidBodyControl) am.physicalControl;
+                ctl.setPhysicsLocation(correctedPosition);
+                ctl.setPhysicsRotation(correctedRotation);
+                ctl.activate();
+                am.model.setLocalTranslation(correctedPosition);
+                am.model.setLocalRotation(correctedRotation);
+            } else if (am.physicalControl instanceof SceneMax3DGenericVehicle) {
+                SceneMax3DGenericVehicle vehicle = (SceneMax3DGenericVehicle) am.physicalControl;
+                vehicle.getVehicleControl().setPhysicsLocation(correctedPosition);
+                vehicle.getVehicleControl().setPhysicsRotation(correctedRotation);
+                am.model.setLocalTranslation(correctedPosition);
+                am.model.setLocalRotation(correctedRotation);
+            } else {
+                am.model.setLocalTranslation(correctedPosition);
+                am.model.setLocalRotation(correctedRotation);
+            }
+            return true;
+        }
+
+        Spatial spatial = getEntitySpatial(runtimeName);
+        if (spatial == null) {
+            return false;
+        }
+        spatial.setLocalTranslation(position);
+        spatial.setLocalRotation(rotation);
+        return true;
     }
 
     public void animateModel(String targetVar, String animationName, String speed, AppModelAnimationController controller) {
@@ -11824,6 +11933,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         if (var.visible) {
             rootNode.attachChild(inst.node);
         }
+        registerMultiplayerEntity(inst, inst.node.getName(), "effekseer", effekseerSpawnCommand(inst));
         return inst;
     }
 

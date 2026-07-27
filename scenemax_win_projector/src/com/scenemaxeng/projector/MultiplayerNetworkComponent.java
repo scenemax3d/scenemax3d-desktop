@@ -66,6 +66,7 @@ public class MultiplayerNetworkComponent {
     private static final int ACTIVE_ACTION_RECORD_SIZE = 12 + ACTIVE_ACTION_COMMAND_SIZE;
     private static final int SNAPSHOT_ENTITY_SIZE = 228 + SOURCE_OBJECT_NAME_SIZE + SPAWN_COMMAND_SIZE;
     private static final float CORRECTION_INTERVAL_SECONDS = 0.25f;
+    private static final float CHARACTER_CORRECTION_INTERVAL_SECONDS = 5.0f;
     private static final float CREATE_RETRY_INTERVAL_SECONDS = 0.35f;
     private static final float INITIAL_SYNC_FALLBACK_SECONDS = 0.15f;
     private static final float INITIAL_SYNC_PACKET_QUIET_SECONDS = 0.05f;
@@ -91,6 +92,7 @@ public class MultiplayerNetworkComponent {
     private final Map<Integer, TransformState> pendingTransforms = new HashMap<>();
     private final Map<Integer, List<PendingRemoteCommand>> pendingRemoteCommands = new HashMap<>();
     private final Map<String, TransformState> lastSentCorrections = new HashMap<>();
+    private final Map<String, Float> transformCorrectionTimers = new HashMap<>();
     private final Map<Integer, String> pendingCreateAcks = new LinkedHashMap<>();
     private final Map<String, PendingNetworkVariable> pendingNetworkVariables = new LinkedHashMap<>();
     private final List<PendingNetworkBroadcast> pendingNetworkBroadcasts = new ArrayList<>();
@@ -237,8 +239,9 @@ public class MultiplayerNetworkComponent {
             sendHeaderOnly(HEARTBEAT);
         }
         if (correctionTimer >= CORRECTION_INTERVAL_SECONDS) {
+            float correctionElapsedSeconds = correctionTimer;
             correctionTimer = 0;
-            sendTransformCorrections();
+            sendTransformCorrections(correctionElapsedSeconds);
         }
     }
 
@@ -622,7 +625,7 @@ public class MultiplayerNetworkComponent {
         }
     }
 
-    private void sendTransformCorrections() {
+    private void sendTransformCorrections(float elapsedSeconds) {
         for (RegisteredEntity entity : localEntities.values()) {
             if (entity.networkEntityId == 0) {
                 continue;
@@ -633,7 +636,7 @@ public class MultiplayerNetworkComponent {
             }
             Vector3f position = spatial.getLocalTranslation();
             Quaternion rotation = spatial.getLocalRotation();
-            if (!shouldSendCorrection(entity.runtimeName, position, rotation)) {
+            if (!shouldSendCorrection(entity, position, rotation, elapsedSeconds)) {
                 continue;
             }
             ByteBuffer packet = packet(TRANSFORM_CORRECTION, 32);
@@ -649,11 +652,24 @@ public class MultiplayerNetworkComponent {
         }
     }
 
-    private boolean shouldSendCorrection(String runtimeName, Vector3f position, Quaternion rotation) {
+    private boolean shouldSendCorrection(RegisteredEntity entity,
+                                         Vector3f position,
+                                         Quaternion rotation,
+                                         float elapsedSeconds) {
+        String runtimeName = entity == null ? null : entity.runtimeName;
         if (runtimeName == null || position == null || rotation == null) {
             return false;
         }
+        boolean characterControlled = app != null && app.isCharacterControlledModel(runtimeName);
+        float accumulatedSeconds = transformCorrectionTimers.getOrDefault(runtimeName, 0f) + elapsedSeconds;
+        if (characterControlled) {
+            transformCorrectionTimers.put(runtimeName, accumulatedSeconds);
+        }
         TransformState previous = lastSentCorrections.get(runtimeName);
+        if (characterControlled && previous != null
+                && accumulatedSeconds < CHARACTER_CORRECTION_INTERVAL_SECONDS) {
+            return false;
+        }
         if (previous != null
                 && previous.position != null
                 && previous.rotation != null
@@ -665,6 +681,9 @@ public class MultiplayerNetworkComponent {
         current.position = position.clone();
         current.rotation = rotation.clone();
         lastSentCorrections.put(runtimeName, current);
+        if (characterControlled) {
+            transformCorrectionTimers.put(runtimeName, 0f);
+        }
         return true;
     }
 
@@ -1383,13 +1402,10 @@ public class MultiplayerNetworkComponent {
         if (entity == null || entity.runtimeName == null || transform == null) {
             return false;
         }
-        Spatial spatial = app.getEntitySpatial(entity.runtimeName);
-        if (spatial == null) {
+        if (app == null) {
             return false;
         }
-        spatial.setLocalTranslation(transform.position);
-        spatial.setLocalRotation(transform.rotation);
-        return true;
+        return app.applyNetworkTransformCorrection(entity.runtimeName, transform.position, transform.rotation);
     }
 
     private void applyPendingTransforms() {
@@ -1504,6 +1520,8 @@ public class MultiplayerNetworkComponent {
             app.killArch(runtimeName);
         } else if (varType == VariableDef.VAR_TYPE_LABEL) {
             app.killLabel(runtimeName);
+        } else if (varType == VariableDef.VAR_TYPE_EFFEKSEER) {
+            app.killEffekseerEffect(runtimeName);
         } else {
             app.killModel(runtimeName);
         }
@@ -1773,8 +1791,13 @@ public class MultiplayerNetworkComponent {
         if (archetype == null) {
             return VariableDef.VAR_TYPE_3D;
         }
-        String normalized = archetype.trim().toLowerCase().replace(" ", "").replace("_", "");
+        String normalized = archetype.trim().toLowerCase().replace(" ", "").replace("_", "").replace(".", "");
+        if (normalized.startsWith("effectseffekseer")) {
+            return VariableDef.VAR_TYPE_EFFEKSEER;
+        }
         switch (normalized) {
+            case "effekseer":
+                return VariableDef.VAR_TYPE_EFFEKSEER;
             case "sphere":
                 return VariableDef.VAR_TYPE_SPHERE;
             case "box":

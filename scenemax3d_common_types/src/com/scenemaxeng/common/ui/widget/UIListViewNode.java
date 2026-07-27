@@ -40,7 +40,7 @@ public class UIListViewNode extends UIWidgetNode {
     public void createVisual() {
         Quad quad = new Quad(widgetDef.getWidth(), widgetDef.getHeight());
         backgroundGeom = new Geometry(getName() + "_bg", quad);
-        backgroundGeom.setMaterial(createColorMaterial(style().background));
+        backgroundGeom.setMaterial(createColorMaterial(withListTransparency(style().background)));
         backgroundGeom.setQueueBucket(RenderQueue.Bucket.Gui);
         attachChild(backgroundGeom);
         rebuildContent();
@@ -118,6 +118,11 @@ public class UIListViewNode extends UIWidgetNode {
         rebuildContent();
     }
 
+    public void setListViewTransparency(float transparency) {
+        widgetDef.setListViewTransparency(transparency);
+        rebuildContent();
+    }
+
     private void rebuildContent() {
         for (Spatial spatial : content) {
             detachChild(spatial);
@@ -130,7 +135,7 @@ public class UIListViewNode extends UIWidgetNode {
 
         ListStyle s = style();
         if (backgroundGeom != null) {
-            backgroundGeom.setMaterial(createColorMaterial(s.background));
+            backgroundGeom.setMaterial(createColorMaterial(withListTransparency(s.background)));
         }
 
         int columns = Math.max(1, widgetDef.getListColumnCount());
@@ -223,12 +228,17 @@ public class UIListViewNode extends UIWidgetNode {
 
     private void addQuad(String suffix, float x, float y, float width, float height, ColorRGBA color, float z) {
         Geometry geom = new Geometry(getName() + "_" + suffix, new Quad(Math.max(0.1f, width), Math.max(0.1f, height)));
-        Material mat = createColorMaterial(color);
+        Material mat = createColorMaterial(withListTransparency(color));
         geom.setMaterial(mat);
         geom.setQueueBucket(RenderQueue.Bucket.Gui);
         geom.setLocalTranslation(x, y, z);
         attachChild(geom);
         content.add(geom);
+    }
+
+    private ColorRGBA withListTransparency(ColorRGBA color) {
+        float visibleAlpha = 1f - Math.max(0f, Math.min(100f, widgetDef.getListViewTransparency())) / 100f;
+        return new ColorRGBA(color.r, color.g, color.b, color.a * visibleAlpha);
     }
 
     private BitmapFont loadFont(String fontName) {
