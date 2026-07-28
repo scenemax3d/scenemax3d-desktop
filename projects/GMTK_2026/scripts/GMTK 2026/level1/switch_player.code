@@ -11,12 +11,13 @@ switch_player = {
 	
   // remember slot to use
   var slot = player.data.slot
-	player.data.slot = 0
+  //var loser_id = player.network.id
+	player.data.slot# = 0
 	
   // assign a random free player to fight  
 	var players = []
 	for each model (m) do
-	  if (m.data.slot == 0) {
+	  if (m.network.id > 0 && m.data.slot == 0) {
 	    players.push(m)
 	  }
 	end do
@@ -35,4 +36,3 @@ switch_player = {
 network.on("assign_fighter", slot) = {
 	run set_player_init_position(slot)
 }
-

@@ -28,9 +28,8 @@ right_hand_collider.attach to player."mixamorig:RightHand": pos (0,0,0)
 
 player.data.is_jumping = 0 
 player.data.is_fighter = 0
-player.data.is_player1 = 0
-player.data.is_player2 = 0
 player.data.name = selected_name
+player.data.slot# = 0
 
 set_player_init_position (slot) = {
   

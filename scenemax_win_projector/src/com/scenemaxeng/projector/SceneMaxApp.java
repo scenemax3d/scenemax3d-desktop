@@ -5389,12 +5389,31 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     private VarInst createNetworkEventMessageVar(String message) {
+        String text = message == null ? "" : message;
         VariableDef vd = new VariableDef();
-        vd.varType = VariableDef.VAR_TYPE_STRING;
         VarInst vi = new VarInst(vd, null);
+        Double number = parseNetworkEventMessageNumber(text);
+        if (number != null) {
+            vd.varType = VariableDef.VAR_TYPE_NUMBER;
+            vi.varType = VariableDef.VAR_TYPE_NUMBER;
+            vi.value = number;
+            return vi;
+        }
+        vd.varType = VariableDef.VAR_TYPE_STRING;
         vi.varType = VariableDef.VAR_TYPE_STRING;
-        vi.value = message == null ? "" : message;
+        vi.value = text;
         return vi;
+    }
+
+    private Double parseNetworkEventMessageNumber(String message) {
+        if (message == null || message.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Double.valueOf(message.trim());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     public void registerServerNetworkEvent(String eventName, float intervalSeconds) {

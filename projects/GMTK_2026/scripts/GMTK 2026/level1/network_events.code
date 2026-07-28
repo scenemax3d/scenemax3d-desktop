@@ -78,14 +78,18 @@ replay_action (action) = {
 }
 
 reduce_health = {
+
+  if (player.data.slot == 1) {
+	  player1_health = player1_health - 1
+  } else if (player.data.slot == 2) {
+		player2_health = player2_health - 1
+  }
   
-	player1_health = player1_health - 1*player.data.is_player1
-	player2_health = player2_health - 1*player.data.is_player2
 	is_hit = 0
 	
-	if (player.data.is_player1 == 1 && player1_health <= 0) {
+	if (player.data.slot == 1 && player1_health <= 0) {
 		run switch_player
-	} else if (player.data.is_player2 == 1 && player2_health <= 0) {
+	} else if (player.data.slot == 2 && player2_health <= 0) {
 		run switch_player
 	}
 

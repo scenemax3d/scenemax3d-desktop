@@ -447,6 +447,26 @@ public class MultiplayerCommandDispatchParsingTest {
     }
 
     @Test
+    public void dispatchesNumericNetworkEventHandlerMessageParameterAsNumber() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "network.on (\"assign_fighter\", slot) = do\n"
+                        + "end do");
+        NetworkEventHandlerCommand handler = (NetworkEventHandlerCommand) program.actions.get(0);
+        CapturingSceneMaxApp app = new CapturingSceneMaxApp();
+        SceneMaxScope scope = new SceneMaxScope();
+
+        app.registerNetworkEventHandler("assign_fighter", scope, handler.doBlock, handler.messageParamName);
+        app.receiveNetworkEvent("assign_fighter", "1.0");
+
+        assertNotNull(app.registeredController);
+        DoBlockController controller = (DoBlockController) app.registeredController;
+        VarInst slot = (VarInst) controller.funcScopeParams.get("slot");
+        assertNotNull(slot);
+        assertEquals(VariableDef.VAR_TYPE_NUMBER, slot.varType);
+        assertEquals(1.0, ((Number) slot.value).doubleValue(), 0.0001);
+    }
+
+    @Test
     public void encodesNetworkEventMessagePayloadWithoutChangingPlainEvents() {
         byte[] plain = MultiplayerNetworkComponent.encodeNetworkEventPayload("new_player", null, 100);
         MultiplayerNetworkComponent.NetworkEventPayload plainDecoded =

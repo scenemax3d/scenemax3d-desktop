@@ -1,7 +1,7 @@
 
 //////////////////////////  INPUT ///////////////////
 
-[player.data.is_player1 == 1 || player.data.is_player2 == 1]
+[player.data.slot == 1 || player.data.slot == 2]
 record_action (action) = {
 	recorded_actions[rec_action_index] = action
 	if (rec_action_index == 4) {
