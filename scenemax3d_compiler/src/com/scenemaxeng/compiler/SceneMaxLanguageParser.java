@@ -3423,6 +3423,15 @@ public class SceneMaxLanguageParser implements IParser {
                 return cmd;
             }
 
+            public ActionStatementBase visitArrayReset(SceneMaxParser.ArrayResetContext ctx) {
+                ArrayCommand cmd = new ArrayCommand();
+                cmd.action = ArrayCommand.ArrayAction.Reset;
+                cmd.varName = ctx.array_reset().var_decl().getText();
+                cmd.expr = ctx.array_reset().logical_expression();
+
+                return cmd;
+            }
+
             @Override
             public ActionStatementBase visitIkAction(SceneMaxParser.IkActionContext ctx) {
                 IKCommand cmd = new IKCommand();

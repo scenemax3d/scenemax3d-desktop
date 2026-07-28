@@ -2,6 +2,9 @@ package com.scenemaxeng.projector;
 
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.ArrayCommand;
+import com.scenemaxeng.compiler.VariableDef;
+
+import java.util.ArrayList;
 
 public class ArrayCommandController extends SceneMaxBaseController {
 
@@ -13,11 +16,14 @@ public class ArrayCommandController extends SceneMaxBaseController {
     }
 
     public boolean run(float tpf) {
-        this.findTargetVar();
         VarInst var = scope.getVar(this.cmd.varName);
         if (var == null) {
             return false;
         }
+        if (var.values == null) {
+            var.values = new ArrayList<>();
+        }
+        var.varType = VariableDef.VAR_TYPE_ARRAY;
 
         switch (this.cmd.action) {
             case Push:
@@ -32,6 +38,17 @@ public class ArrayCommandController extends SceneMaxBaseController {
             case Clear:
                 var.values.clear();
                 break;
+            case Reset:
+                Object resetValue = new ActionLogicalExpressionVm(this.cmd.expr, this.scope).evaluate();
+                for (int i = 0; i < var.values.size(); i++) {
+                    var.values.set(i, resetValue);
+                }
+                break;
+        }
+
+        if (app != null && var.varDef != null && var.varDef.isNetwork && !this.cmd.fromMultiplayerNetwork) {
+            app.syncNetworkVariable(var.varDef.varName, var.values, false);
+            app.applyPendingNetworkVariableValues(this.scope);
         }
 
         return true;

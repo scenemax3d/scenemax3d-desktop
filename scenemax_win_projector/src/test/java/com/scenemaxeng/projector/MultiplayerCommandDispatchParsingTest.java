@@ -20,6 +20,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.DatagramChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
@@ -483,6 +485,22 @@ public class MultiplayerCommandDispatchParsingTest {
         assertTrue(var.isNetwork);
         VariableDeclarationCommand declaration = var.declaration;
         assertTrue(declaration.isNetwork);
+    }
+
+    @Test
+    public void encodesAndDecodesNetworkVariableArrays() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        Method encode = MultiplayerNetworkComponent.class.getDeclaredMethod("encodeNetworkVariableValue", Object.class);
+        Method decode = MultiplayerNetworkComponent.class.getDeclaredMethod("decodeNetworkVariableValue", String.class);
+        encode.setAccessible(true);
+        decode.setAccessible(true);
+
+        List<Object> value = Arrays.<Object>asList(1d, "two", true, null, Arrays.<Object>asList(2d, "nested"));
+        String encoded = (String) encode.invoke(component, value);
+        Object decoded = decode.invoke(component, encoded);
+
+        assertTrue(decoded instanceof List);
+        assertEquals(value, decoded);
     }
 
     @Test

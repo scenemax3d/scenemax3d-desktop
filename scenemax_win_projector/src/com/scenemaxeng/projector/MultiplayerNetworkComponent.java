@@ -1898,11 +1898,35 @@ public class MultiplayerNetworkComponent {
         } else if (value instanceof String) {
             json.put("type", "string");
             json.put("value", value);
+        } else if (value instanceof List) {
+            json.put("type", "array");
+            JSONArray array = new JSONArray();
+            for (Object item : (List<?>) value) {
+                array.put(encodeNetworkVariableArrayItem(item));
+            }
+            json.put("value", array);
         } else {
             return null;
         }
         String encoded = json.toString();
         return encoded.getBytes(StandardCharsets.UTF_8).length < NETWORK_VARIABLE_VALUE_SIZE ? encoded : null;
+    }
+
+    private Object encodeNetworkVariableArrayItem(Object value) {
+        if (value == null) {
+            return JSONObject.NULL;
+        }
+        if (value instanceof Number || value instanceof Boolean || value instanceof String) {
+            return value;
+        }
+        if (value instanceof List) {
+            JSONArray nested = new JSONArray();
+            for (Object item : (List<?>) value) {
+                nested.put(encodeNetworkVariableArrayItem(item));
+            }
+            return nested;
+        }
+        return JSONObject.NULL;
     }
 
     private Object decodeNetworkVariableValue(String encodedValue) {
@@ -1921,10 +1945,42 @@ public class MultiplayerNetworkComponent {
             if ("string".equals(type)) {
                 return json.optString("value", "");
             }
+            if ("array".equals(type)) {
+                JSONArray array = json.optJSONArray("value");
+                List<Object> values = new ArrayList<>();
+                if (array != null) {
+                    for (int i = 0; i < array.length(); i++) {
+                        values.add(decodeNetworkVariableArrayItem(array, i));
+                    }
+                }
+                return values;
+            }
             return null;
         } catch (Exception ignored) {
             return encodedValue;
         }
+    }
+
+    private Object decodeNetworkVariableArrayItem(JSONArray array, int index) {
+        if (array == null || array.isNull(index)) {
+            return null;
+        }
+        Object value = array.opt(index);
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        if (value instanceof Boolean || value instanceof String) {
+            return value;
+        }
+        if (value instanceof JSONArray) {
+            JSONArray nested = (JSONArray) value;
+            List<Object> values = new ArrayList<>();
+            for (int i = 0; i < nested.length(); i++) {
+                values.add(decodeNetworkVariableArrayItem(nested, i));
+            }
+            return values;
+        }
+        return null;
     }
 
     private static class RegisteredEntity {

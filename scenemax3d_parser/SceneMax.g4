@@ -661,6 +661,7 @@ action_operation
    | array_push # arrayPush
    | array_pop # arrayPop
    | array_clear #arrayClear
+   | array_reset #arrayReset
    | ik_action # ikAction
    | weapon_action # weaponAction
    ;
@@ -913,6 +914,7 @@ go_condition : Pound? '[' logical_expression ']' ;
 array_push : var_decl '.' Push '(' logical_expression ')' ;
 array_pop : var_decl '.' Pop ;
 array_clear : var_decl '.' Clear ;
+array_reset : var_decl '.' Reset '(' logical_expression ')' ;
 
 ///////////////////////////////////////////////////////////////////////////
 play_duration_strategy : for_time_expr | Once | play_duration_loop_strategy ;
