@@ -7,7 +7,8 @@ public class ArrayCommand extends ActionStatementBase {
     public enum ArrayAction {
         Push,
         Pop,
-        Clear
+        Clear,
+        Reset
     }
 
     public ArrayAction action;

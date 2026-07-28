@@ -1,0 +1,46 @@
+MaterialDef env_shader1 {
+
+    MaterialParameters {
+        Color FogColor
+        Float FogDensity : 0.35
+        Float FogNearDistance : 12.0
+        Float FogFarDistance : 80.0
+        Color RainColor
+        Float RainIntensity : 0.55
+        Float RainSpeed : 1.2
+        Float RainAngle : -18.0
+        Float OverlayOpacity : 0.32
+        Color SnowColor
+        Float SnowIntensity : 0.2
+        Float SnowSpeed : 0.1
+        Float SnowFlakeSize : 0.05
+        Float WindDirection : 75.0
+        Float WindStrength : 0.45
+        Float WindGustiness : 0.35
+        Color SkyTint
+        Float SkyBrightness : 1.0
+        Float SkyHorizonBlend : 0.45
+        Color AmbientColor
+        Float AmbientIntensity : 0.65
+        Color LightColor
+        Float LightIntensity : 1.1
+        Float LightPitch : -38.0
+        Float LightYaw : -32.0
+        Float Time : 0
+    }
+
+    Technique {
+        VertexShader GLSL100:   environment_shaders/env_shader1/env_shader1.vert
+        FragmentShader GLSL100: environment_shaders/env_shader1/env_shader1.frag
+
+        WorldParameters {
+            WorldViewProjectionMatrix
+        }
+
+        RenderState {
+            Blend Alpha
+            FaceCull Off
+            DepthWrite Off
+        }
+    }
+}

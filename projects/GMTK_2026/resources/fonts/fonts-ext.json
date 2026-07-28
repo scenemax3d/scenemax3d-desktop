@@ -1,0 +1,18 @@
+{"fonts": [
+  {
+    "path": "fonts/font1.fnt",
+    "name": "font1"
+  },
+  {
+    "path": "fonts/font2_red.fnt",
+    "name": "font2_red"
+  },
+  {
+    "path": "fonts/font_header_white.fnt",
+    "name": "font_header_white"
+  },
+  {
+    "path": "fonts/font_blue1.fnt",
+    "name": "font_blue1"
+  }
+]}

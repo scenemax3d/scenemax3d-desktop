@@ -1,0 +1,57 @@
+/////////////  SHARED VARIABLES /////////
+shared var timer=0 [0..],
+    life1=INITIAL_PLAYER_STRENGTH [0..INITIAL_PLAYER_STRENGTH]
+shared var score = 0 [0..]
+/////////////////////////////////////////
+
+var recorded_actions_desc = ["MMA Kick","Hurricane kick","Quad Punch","Flying Kick","Upper Cut"]
+var recorded_actions = [0,0,0,0,0]
+var rec_action_index = 0 [0..4]
+var fighter_index = 0 // who am I? fighter 1 or 2 ?
+var fight_counter = 5 [0..6]
+var effective_hit = 0
+var is_hit = 0
+
+var move_forward = 0
+var camera_mode = 0
+//var life2=INITIAL_PLAYER_STRENGTH [0..INITIAL_PLAYER_STRENGTH]
+
+var player_ko=0,
+    action=PLAYER_ACTION_IDLE,
+		op_action=0, coll=0, score=0, 
+    op_hit=0,
+    player_hit=0, 
+    counter=0,
+    high_kick_counter = 0
+    
+    
+var level=0,
+    camera_mode=0, 
+    is_camera_rotating = 0, 
+    slow_motion=0
+
+var @asd_go_condition = player.data.is_jumping==0 
+	&& slow_motion==0 
+	&& game_status!=GAME_STATE_OVER 
+	&& player_hit==0 
+	&& player_ko==0 
+
+var @allow_move = player.data.is_jumping==0 && is_hit == 0 
+		  
+
+//var @hit_by_hands = player.data.hand_attack_hit == 1
+//var @hit_by_legs = player.data.foot_attack_hit == 1
+	             
+//var @allow_collision_check = coll==0 && player.data.is_jumping==0 && player2.data.is_jumping==0 && player1_ko==0
+
+var @player_can_hit = player.data.is_jumping == 0 && player_ko==0 
+//var @player_hand_attack_head = @player_can_hit && player.data.hand_attack_hit == 1 && player2.data.head_hit == 1
+//var @player_hand_attack_body = @player_can_hit && player.data.hand_attack_hit == 1 && player2.data.body_hit == 1
+//															 && action == PLAYER_ACTION_D 	
+																				 
+
+var @player_foot_attack = action == PLAYER_ACTION_A || action == PLAYER_ACTION_S
+var @player_hand_attack = action == PLAYER_ACTION_C || action == PLAYER_ACTION_D || action == PLAYER_ACTION_X_1 
+											
+
+        

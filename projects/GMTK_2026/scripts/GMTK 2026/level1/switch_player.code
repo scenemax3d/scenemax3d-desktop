@@ -1,0 +1,38 @@
+
+switch_player = {
+
+	// remove player from the fight 
+  player.data.is_jumping = 0 
+  player.data.is_fighter = 0
+	recorded_actions.reset(0) 
+	
+  game_status = GAME_STATE_OVER
+	run position_player_in_crowed
+	
+  // remember slot to use
+  var slot = player.data.slot
+  //var loser_id = player.network.id
+	player.data.slot# = 0
+	
+  // assign a random free player to fight  
+	var players = []
+	for each model (m) do
+	  if (m.network.id > 0 && m.data.slot == 0) {
+	    players.push(m)
+	  }
+	end do
+	
+	if (players.length > 0) {
+    var chosen = players[rnd(players.length)]
+    chosen.network.send("assign_fighter", slot)
+  }
+					
+	// start the fight 
+	wait 3 seconds
+	game_status = GAME_STATE_START
+	UI.layer1.txtCounter.text = "START"
+}
+
+network.on("assign_fighter", slot) = {
+	run set_player_init_position(slot)
+}

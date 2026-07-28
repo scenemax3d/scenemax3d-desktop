@@ -1,0 +1,96 @@
+{
+  "sceneEnvironmentShader": "env_shader1",
+  "entities": [
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "resourcePath": "coin",
+      "jointMapping": "",
+      "scale": [
+        2.5,
+        2.5,
+        2.5
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "coin1 => coin: pos (0.0,0.0,0.0), scale 2.5, collision shape none async",
+      "staticModel": false,
+      "name": "coin1",
+      "vehicleModel": false,
+      "id": "cc521eb2-3765-4839-9668-e5165d16cbb8",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        -9.3132246E-10,
+        1
+      ],
+      "resourcePath": "ninja3_native",
+      "jointMapping": "",
+      "scale": [
+        9,
+        9,
+        9
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "ninja => ninja3_native: pos (0.0,-6.0,0.0), scale 9.0, collision shape none async",
+      "staticModel": false,
+      "name": "ninja",
+      "vehicleModel": false,
+      "id": "f334c449-7eeb-4d68-a0c3-ca4f29af0b88",
+      "position": [
+        0,
+        -6,
+        0
+      ],
+      "multiplayer": false
+    }
+  ],
+  "gameCamera": {
+    "rotation": [
+      0,
+      1,
+      0,
+      0
+    ],
+    "position": [
+      0,
+      2,
+      10
+    ]
+  },
+  "camera": {
+    "rotation": [
+      -0.09904575,
+      0.8923991,
+      -0.2391176,
+      -0.36964384
+    ],
+    "position": [
+      9.185587,
+      7.5,
+      9.185586
+    ]
+  },
+  "version": 1
+}

@@ -1,0 +1,80 @@
+{
+  "template": "SNOWY_BREEZE",
+  "rain": {
+    "intensity": 0.55,
+    "color": [
+      0.82,
+      0.9,
+      1,
+      1
+    ],
+    "angle": -18,
+    "speed": 1.2,
+    "overlayOpacity": 0.32
+  },
+  "ambientColor": {
+    "intensity": 0.65,
+    "color": [
+      0.58,
+      0.62,
+      0.68,
+      1
+    ]
+  },
+  "snow": {
+    "intensity": 0.2,
+    "color": [
+      0.95,
+      0.97,
+      1,
+      1
+    ],
+    "flakeSize": 0.05,
+    "speed": 0.1
+  },
+  "name": "env_shader1",
+  "layers": [
+    "FOG",
+    "SNOW",
+    "WIND",
+    "SKY_TWEAKS",
+    "AMBIENT_COLOR"
+  ],
+  "skyTweaks": {
+    "horizonBlend": 0.45,
+    "brightness": 1,
+    "tint": [
+      0.2,
+      0.2,
+      0.2,
+      1
+    ]
+  },
+  "lighting": {
+    "intensity": 1.1,
+    "color": [
+      1,
+      0.96,
+      0.88,
+      1
+    ],
+    "pitch": -38,
+    "yaw": -32
+  },
+  "fog": {
+    "color": [
+      0.72,
+      0.8,
+      0.9,
+      1
+    ],
+    "density": 0.35,
+    "farDistance": 80,
+    "nearDistance": 12
+  },
+  "wind": {
+    "strength": 0.45,
+    "gustiness": 0.35,
+    "direction": 75
+  }
+}

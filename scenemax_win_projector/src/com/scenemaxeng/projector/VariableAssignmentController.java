@@ -51,6 +51,11 @@ public class VariableAssignmentController extends CompositeController {
 
         var.varType = VariableDef.VAR_TYPE_ARRAY;
 
+        syncNetworkArray(var, varAssignmentCommand.triggeredByDeclaration);
+        if (app != null) {
+            app.applyPendingNetworkVariableValues(this.scope);
+        }
+
         return true;
 
     }
@@ -76,6 +81,10 @@ public class VariableAssignmentController extends CompositeController {
             if (retval instanceof List) {
                 var.values = (List<Object>) retval;
                 var.varType = VariableDef.VAR_TYPE_ARRAY;
+                syncNetworkArray(var, false);
+                if (app != null) {
+                    app.applyPendingNetworkVariableValues(this.scope);
+                }
                 return true;
             } else {
 
@@ -102,6 +111,7 @@ public class VariableAssignmentController extends CompositeController {
                     }
 
                     var.values.set(arrayIndex, retval);
+                    syncNetworkArray(var, false);
                     index++;
                     continue;
                 }
@@ -151,6 +161,13 @@ public class VariableAssignmentController extends CompositeController {
         }
 
         return true;
+    }
+
+    private void syncNetworkArray(VarInst var, boolean declarationInit) {
+        if (app != null && var != null && var.varDef != null && var.varDef.isNetwork
+                && !varAssignmentCommand.fromMultiplayerNetwork) {
+            app.syncNetworkVariable(var.varDef.varName, var.values, declarationInit);
+        }
     }
 
     private int resolveArraySetLine(VariableDef varDef) {

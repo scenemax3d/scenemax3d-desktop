@@ -1,0 +1,29 @@
+
+var state = network.state
+var active_sessions = network.state.sessions
+
+show_sessions = {
+
+	var session_info = ""
+
+	for (var j=0;j<sessions.Length;j=j+1) {
+	  var session_name = sessions[j]
+	  var session_row = session_name + "|"
+	
+	  var count = 0
+	  
+		for (var i=0;i<active_sessions.Length;i=i+1) {
+		  var name = JSON(state).sessions[i].name
+		  if (name == session_name) {
+		    count = JSON(state).sessions[i].clients
+		  }
+		  
+		}
+	  session_row = session_row + count
+	  session_info = session_info + session_row + ";"
+	}
+
+	UI.layer1.lv_combats.rows = session_info
+  UI.layer1.lv_combats.selected = 0
+	
+}

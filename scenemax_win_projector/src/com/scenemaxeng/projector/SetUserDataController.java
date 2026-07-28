@@ -32,6 +32,10 @@ public class SetUserDataController extends SceneMaxBaseController {
                 this.app.setSpriteUserData(this.targetVar, cmd.fieldName, data);
             }
 
+            if (cmd.syncNetworkEntityData) {
+                this.app.syncNetworkEntityData(this.targetVar, cmd.fieldName, data);
+            }
+
         }
 
 

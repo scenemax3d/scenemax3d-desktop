@@ -154,7 +154,7 @@ when key up is pressed do
 end do
 ```
 
-Local input stays local, while commands against registered multiplayer entities are broadcast and replayed on the other clients. The runtime currently synchronizes networked entity creation/destruction for models, primitives, labels, and Effekseer effects, plus transform corrections, movement, rotation, model animation, character mode switch/clear commands, Effekseer playback, attach commands, IK apply/remove/layer commands, and scalar `network var` state. Timed and persistent structural actions plus network variables are included in late-join snapshots so new players can enter a running scene with the current shared state.
+Local input stays local, while commands against registered multiplayer entities are broadcast and replayed on the other clients. The runtime currently synchronizes networked entity creation/destruction for models, primitives, labels, and Effekseer effects, plus transform corrections, movement, rotation, model animation, character mode switch/clear commands, Effekseer playback, attach commands, IK apply/remove/layer commands, and `network var` state for scalar values and arrays. Timed and persistent structural actions plus network variables are included in late-join snapshots so new players can enter a running scene with the current shared state.
 
 The visual designer can also emit multiplayer-ready code. Enable the multiplayer flag on an entity, save the design, and the generated `.code` file includes the correct `multiplayer` attribute for supported model and primitive entities.
 

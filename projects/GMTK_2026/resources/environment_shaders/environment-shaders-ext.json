@@ -1,0 +1,11 @@
+{"environmentShaders": [{
+  "path": "environment_shaders/env_shader1/env_shader1.j3md",
+  "name": "env_shader1",
+  "layers": [
+    "FOG",
+    "SNOW",
+    "WIND",
+    "SKY_TWEAKS",
+    "AMBIENT_COLOR"
+  ]
+}]}

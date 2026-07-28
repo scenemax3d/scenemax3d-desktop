@@ -1,0 +1,119 @@
+
+//////////////////////////  INPUT ///////////////////
+
+[player.data.slot == 1 || player.data.slot == 2]
+record_action (action) = {
+	recorded_actions[rec_action_index] = action
+	if (rec_action_index == 4) {
+	  rec_action_index = 0
+	} else {
+  	rec_action_index = rec_action_index + 1
+	}
+
+	run display_recorded_actions
+	audio.play "coin2"
+}
+
+display_recorded_actions = {
+  var disp = ""
+  for (var i=0;i<recorded_actions.length;i=i+1) {
+    var action = recorded_actions[i]
+    if (action - 1 >= 0) {
+      disp = disp + recorded_actions_desc[action-1]+ newline
+    }
+  }
+  if (fighter_index == 0) {
+    UI.layer1.panel1.player1_actions.text = disp
+  } else if (fighter_index == 1) {
+  	UI.layer1.panel2.player2_actions.text = disp
+  }
+}
+
+when key A is pressed once do
+  run record_action (1)
+end do 
+
+when key S is pressed once do
+  run record_action (2)
+end do 
+
+when key D is pressed once do
+  run record_action (3)
+end do 
+
+when key Z is pressed once do
+  run record_action (4)
+end do 
+
+when key X is pressed once do
+  run record_action (5)
+end do 
+
+//when key C is pressed once do
+//	recorded_actions_text[fighter_index] = recorded_actions_text[fighter_index] + "xxxx" + newline
+//end do 
+
+[@allow_move]
+when key left is pressed  do
+  player.turn left 3 in 0.1 seconds async
+end do
+
+[@allow_move]
+when key right is pressed  do
+  player.turn right 3 in 0.1 seconds async
+end do
+
+[@allow_move && move_forward==0]
+when key up is pressed once do 
+  move_forward=1
+end do
+
+when key up is released do
+	move_forward=0
+	player.idle2 loop
+end do
+
+// ninja: punch1, jumping, victory, backflip, idle2, fast_run, idle3, hit_on_legs, run, idle1, hit1, 
+// walk1, fly_kick, walk2, idle4, head_hit, hit_backwards, round_kick, hurricane_kick, run_flip, 
+
+[@allow_move]
+when key down is pressed do
+  player.move backward 0.3 for 0.2 seconds async
+end do
+
+[@allow_move]
+when key W is pressed once do 
+  
+  laser_effect => effects.effekseer.Homing_Laser01_3 : multiplayer
+  laser_effect.play pos (player)
+    
+  audio.play "jump1"
+  player.data.is_jumping = 1
+  do async
+    camera_mode = CAMERA_MODE_CHASE_PLAYER1
+    camera.chase player
+		wait 1 seconds
+		camera.chase stop
+		camera_mode = CAMERA_MODE_DEFAULT
+		run set_camera_on_player
+  end do
+  
+  do async
+		player.big_jump : protected
+		player.idle2 loop
+		//player.look at (player2)
+		player.data.is_jumping = 0
+  end do
+
+  do async
+	  wait 1 seconds
+	  audio.play "crash1"
+		wait 0.1 second
+		run shake_the_world2
+		//
+	end do
+	
+  player.move forward 0.5 for 0.5 seconds async
+  player.character.jump at speed of 35
+  
+end do

@@ -33,3 +33,31 @@ var arr2 = [10,20,30,40,50,60,70]
 var arr3 = [1,2,3,4,5,6,"hello world"]
 var my_arrays = [arr1,arr2,arr3]
 ```
+
+## Array Operations
+
+Append a value to the end of an array:
+
+```scenemax
+recorded_actions.push(42)
+```
+
+Remove the last value from an array:
+
+```scenemax
+recorded_actions.pop
+```
+
+Clear all values and make the array zero length:
+
+```scenemax
+recorded_actions.clear
+```
+
+Reset every existing array slot to a value while preserving the array length:
+
+```scenemax
+recorded_actions.reset(0)
+```
+
+When an array is declared as a `network var`, assignments, indexed writes, `push`, `pop`, `clear`, and `reset` synchronize the new array state.

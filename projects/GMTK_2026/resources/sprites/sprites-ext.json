@@ -1,0 +1,32 @@
+{"sprites": [
+  {
+    "frameHeight": 1,
+    "path": "sprites/GMTK Game Jam 2026 Small Logo.png",
+    "frameWidth": 1,
+    "name": "gmtk_2026",
+    "rows": 1,
+    "cols": 1
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/panel_brown_damaged.png",
+    "frameWidth": 1,
+    "name": "panel_brown_damaged",
+    "rows": 1,
+    "cols": 1
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/powered_by_scenemax3d.png",
+    "frameWidth": 1,
+    "name": "powered_by_scenemax3d",
+    "rows": 1,
+    "cols": 1
+  },
+  {
+    "path": "sprites/bar1.png",
+    "name": "health_bar1",
+    "rows": 15,
+    "cols": 1
+  }
+]}

@@ -1,0 +1,144 @@
+{
+  "sceneEnvironmentShader": "",
+  "entities": [
+    {
+      "lightLookAtTarget": "",
+      "lightDirection": [
+        -0.05,
+        -0.8,
+        -0.3
+      ],
+      "lightAmbientColor": "#223344",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "lightColor": "warm",
+      "type": "LIGHT",
+      "lightType": "ambient",
+      "lightIntensity": 900,
+      "lightExposure": 0.2,
+      "lightAngle": 56,
+      "lightIntensityUnit": "lumens",
+      "lightRange": 15,
+      "name": "light_1",
+      "id": "b19570ae-7df1-48a7-809a-9513219445a1",
+      "position": [
+        -6.374384,
+        4.701523,
+        0
+      ],
+      "lightShadowMode": "medium",
+      "lightPreset": "Night Neon"
+    },
+    {
+      "children": [{
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "name": "lights",
+        "scale": [
+          1,
+          1,
+          1
+        ],
+        "codeText": "lights.add probe \"5\"",
+        "id": "7327950f-dd13-4520-a7dd-c1731687c1e0",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "type": "CODE"
+      }],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "name": "general",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "id": "bd2a23fb-f820-40d4-9e2d-b422831250c9",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "type": "SECTION"
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "resourcePath": "arena2",
+      "jointMapping": "",
+      "scale": [
+        0.1,
+        0.1,
+        0.1
+      ],
+      "modelCollisionShape": "default",
+      "type": "MODEL",
+      "sceneMaxCode": "model_1 => static arena2: pos (0.0,-23.650703,0.0), scale 0.3, shadow mode on async",
+      "staticModel": true,
+      "name": "model_1",
+      "vehicleModel": false,
+      "id": "0e6f3d40-754b-4887-ae07-78d541e2c514",
+      "position": [
+        0,
+        -23.650703,
+        0
+      ],
+      "multiplayer": false
+    }
+  ],
+  "gameCamera": {
+    "rotation": [
+      0,
+      -0.83147734,
+      0,
+      -0.5555587
+    ],
+    "position": [
+      -12.756525,
+      3.1712837,
+      5.658081
+    ]
+  },
+  "camera": {
+    "rotation": [
+      0.2216874,
+      0.68497175,
+      -0.23217285,
+      0.6540369
+    ],
+    "position": [
+      -2.3791618,
+      2.3241413,
+      -34.716415
+    ]
+  },
+  "version": 1
+}

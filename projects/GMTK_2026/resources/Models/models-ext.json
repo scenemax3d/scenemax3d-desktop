@@ -1,0 +1,210 @@
+{"models": [
+  {
+    "hasArmature": false,
+    "ikCompatibilityScanned": true,
+    "scaleZ": 0.5,
+    "scaleX": 0.5,
+    "path": "Models/arena2/arena2.glb",
+    "scaleY": 0.5,
+    "transZ": 0,
+    "transX": 0,
+    "hasSkeleton": false,
+    "ikReady": false,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": 0,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "transY": 0,
+    "name": "arena2",
+    "rotateY": 0
+  },
+  {
+    "animationFrameRanges": [],
+    "hasArmature": true,
+    "ikCompatibilityScanned": true,
+    "scaleZ": 1,
+    "scaleX": 1,
+    "path": "Models/adi2/adi2.glb",
+    "scaleY": 1,
+    "transZ": 0,
+    "transX": 0,
+    "hasSkeleton": true,
+    "ikReady": true,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": 0,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "transY": 0,
+    "name": "adi2",
+    "rotateY": 0
+  },
+  {
+    "animationFrameRanges": [],
+    "hasArmature": true,
+    "ikCompatibilityScanned": true,
+    "scaleZ": 3,
+    "scaleX": 3,
+    "path": "Models/fighter1/fighter1_native.j3o",
+    "scaleY": 3,
+    "transZ": 0,
+    "transX": 0,
+    "hasSkeleton": true,
+    "ikReady": true,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": -2.5,
+      "capsuleRadius": 1,
+      "capsuleHeight": 3,
+      "stepHeight": 0.05
+    }},
+    "transY": 0,
+    "name": "fighter1_native",
+    "sourceModel": "fighter1",
+    "rotateY": 0
+  },
+  {
+    "animationFrameRanges": [],
+    "hasArmature": true,
+    "ikCompatibilityScanned": true,
+    "sourceAnimation": "pull_start",
+    "scaleZ": 3,
+    "scaleX": 3,
+    "animationFrameRangesSourceAnimation": "pull_start",
+    "path": "Models/old_fighter/old_fighter_native.j3o",
+    "scaleY": 3,
+    "transZ": 0,
+    "transX": 0,
+    "hasSkeleton": true,
+    "ikReady": true,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": -2.5,
+      "capsuleRadius": 1,
+      "capsuleHeight": 3,
+      "stepHeight": 0.05
+    }},
+    "transY": 0,
+    "name": "old_fighter2_native",
+    "sourceModel": "old_fighter2",
+    "rotateY": 0
+  },
+  {
+    "isStatic": false,
+    "animationFrameRanges": [
+      {
+        "name": "Idle1",
+        "start": 8,
+        "end": 575
+      },
+      {
+        "name": "PawGround",
+        "start": 575,
+        "end": 713
+      },
+      {
+        "name": "Walk",
+        "start": 720,
+        "end": 751
+      },
+      {
+        "name": "Gallop",
+        "start": 807,
+        "end": 823
+      },
+      {
+        "name": "FastWalk",
+        "start": 833,
+        "end": 848
+      },
+      {
+        "name": "SideToSide",
+        "start": 855,
+        "end": 928
+      },
+      {
+        "name": "Death",
+        "start": 934,
+        "end": 999
+      },
+      {
+        "name": "OnBackLegs",
+        "start": 1005,
+        "end": 1043
+      },
+      {
+        "name": "BackKick",
+        "start": 1035,
+        "end": 1065
+      },
+      {
+        "name": "SideToSide2",
+        "start": 1076,
+        "end": 1215
+      },
+      {
+        "name": "Idle2",
+        "start": 1176,
+        "end": 1255
+      }
+    ],
+    "sourceAnimation": "Take 001",
+    "hasArmature": true,
+    "ikCompatibilityScanned": true,
+    "scaleZ": 1,
+    "scaleX": 1,
+    "animationFrameRangesSourceAnimation": "Take 001",
+    "path": "Models/horse/horse_native.j3o",
+    "scaleY": 1,
+    "transZ": 0,
+    "transX": 0,
+    "hasSkeleton": true,
+    "ikReady": true,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": 0,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "transY": 0,
+    "name": "horse1_native",
+    "sourceModel": "horse1",
+    "rotateY": 0
+  },
+  {
+    "animationFrameRanges": [],
+    "hasArmature": true,
+    "ikCompatibilityScanned": true,
+    "scaleZ": 3.5,
+    "scaleX": 3.5,
+    "path": "Models/ninja3/ninja3_native.j3o",
+    "scaleY": 3.5,
+    "transZ": 0,
+    "transX": 0,
+    "hasSkeleton": true,
+    "ikReady": true,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": -3,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "transY": 0,
+    "name": "ninja3_native",
+    "sourceModel": "ninja3",
+    "rotateY": 0
+  }
+]}

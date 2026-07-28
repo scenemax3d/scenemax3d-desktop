@@ -1,0 +1,12 @@
+var xx=1
+
+func1 = {
+  if (xx==1) {
+    sys.print "1"
+    return
+  }
+
+  sys.print 2
+}
+
+run func1

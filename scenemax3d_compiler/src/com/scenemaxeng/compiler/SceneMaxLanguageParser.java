@@ -3423,6 +3423,28 @@ public class SceneMaxLanguageParser implements IParser {
                 return cmd;
             }
 
+            public ActionStatementBase visitArrayReset(SceneMaxParser.ArrayResetContext ctx) {
+                ArrayCommand cmd = new ArrayCommand();
+                cmd.action = ArrayCommand.ArrayAction.Reset;
+                cmd.varName = ctx.array_reset().var_decl().getText();
+                cmd.expr = ctx.array_reset().logical_expression();
+
+                return cmd;
+            }
+
+            @Override
+            public ActionStatementBase visitNetworkEntitySend(SceneMaxParser.NetworkEntitySendContext ctx) {
+                SceneMaxParser.Network_entity_sendContext sendCtx = ctx.network_entity_send();
+                NetworkEntitySendCommand cmd = new NetworkEntitySendCommand();
+                cmd.targetVar = sendCtx.var_decl().getText();
+                cmd.varLineNum = sendCtx.var_decl().getStart().getLine();
+                cmd.varDef = prg.getVar(cmd.targetVar);
+                List<SceneMaxParser.Logical_expressionContext> expressions = sendCtx.logical_expression();
+                cmd.eventNameExpr = expressions.isEmpty() ? null : expressions.get(0);
+                cmd.messageExpr = expressions.size() > 1 ? expressions.get(1) : null;
+                return cmd;
+            }
+
             @Override
             public ActionStatementBase visitIkAction(SceneMaxParser.IkActionContext ctx) {
                 IKCommand cmd = new IKCommand();
@@ -4025,6 +4047,7 @@ public class SceneMaxLanguageParser implements IParser {
                 SetUserDataCommand cmd = new SetUserDataCommand();
                 cmd.varName = ctx.user_data().var_decl().getText();
                 cmd.fieldName = ctx.user_data().field_name().getText();
+                cmd.syncNetworkEntityData = ctx.user_data().Pound() != null;
                 cmd.dataExpr = ctx.user_data().logical_expression() ;
 
                 return cmd;

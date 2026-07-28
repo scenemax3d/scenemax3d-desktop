@@ -1,0 +1,5 @@
+
+when move_forward == 1 do
+  player."run_sword" loop
+  player.move forward 0.2 for 0.5 seconds //loop while move_forward==1
+end do

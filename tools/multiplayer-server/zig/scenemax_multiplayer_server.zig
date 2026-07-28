@@ -10,6 +10,7 @@ const max_packet_size = 1200;
 const max_clients = 256;
 const max_entities = 2048;
 const max_network_variables = 2048;
+const max_network_entity_data = 4096;
 const max_server_events = 256;
 const max_sessions = 256;
 const source_object_name_size = 64;
@@ -19,6 +20,9 @@ const minimum_server_event_interval_ms = 100;
 const network_variable_name_size = 64;
 const network_variable_value_size = 256;
 const network_variable_update_size = network_variable_name_size + 1 + network_variable_value_size;
+const network_entity_data_field_size = 64;
+const network_entity_data_value_size = network_variable_value_size;
+const network_entity_data_update_size = 4 + network_entity_data_field_size + network_entity_data_value_size;
 const spawn_command_size = 256;
 const active_action_command_size = 192;
 const snapshot_action_record_size = 12 + active_action_command_size;
@@ -45,6 +49,7 @@ const PacketType = enum(u8) {
     network_event = 24,
     network_variable_update = 25,
     server_event_register = 26,
+    network_entity_data_update = 27,
     snapshot = 30,
     server_state = 31,
     initial_sync_complete = 32,
@@ -110,6 +115,15 @@ const NetworkVariable = struct {
     value: [network_variable_value_size]u8 = [_]u8{0} ** network_variable_value_size,
 };
 
+const NetworkEntityData = struct {
+    active: bool = false,
+    session_id: u32 = 0,
+    scene_id: [128]u8 = [_]u8{0} ** 128,
+    network_id: u32 = 0,
+    field: [network_entity_data_field_size]u8 = [_]u8{0} ** network_entity_data_field_size,
+    value: [network_entity_data_value_size]u8 = [_]u8{0} ** network_entity_data_value_size,
+};
+
 const ServerEvent = struct {
     active: bool = false,
     session_id: u32 = 0,
@@ -138,6 +152,7 @@ pub fn main(init: std.process.Init) !void {
     var sessions = [_]Session{.{}} ** max_sessions;
     var entities = [_]Entity{.{}} ** max_entities;
     var network_variables = [_]NetworkVariable{.{}} ** max_network_variables;
+    var network_entity_data = [_]NetworkEntityData{.{}} ** max_network_entity_data;
     var server_events = [_]ServerEvent{.{}} ** max_server_events;
     var next_client_id: u16 = 1;
     var next_session_id: u32 = 1000;
@@ -195,6 +210,7 @@ pub fn main(init: std.process.Init) !void {
                 try broadcastServerState(sock, io, &clients, &sessions);
                 try sendSnapshot(sock, io, message.from, &entities, session.id, login.scene_id, now);
                 try sendNetworkVariableSnapshot(sock, io, message.from, &network_variables, session.id, login.scene_id);
+                try sendNetworkEntityDataSnapshot(sock, io, message.from, &network_entity_data, session.id, login.scene_id);
                 try sendInitialSyncComplete(sock, io, message.from, assigned);
             },
             .heartbeat => {
@@ -217,10 +233,11 @@ pub fn main(init: std.process.Init) !void {
                             fixedText(&client.scene_id),
                         });
                     }
-                    try destroyClientEntities(sock, io, &clients, &entities, client.id, client.session_id, old_scene_id);
-                    clearSceneNetworkStateIfEmpty(&clients, &network_variables, &server_events, client.session_id, old_scene_id);
+                    try destroyClientEntities(sock, io, &clients, &entities, &network_entity_data, client.id, client.session_id, old_scene_id);
+                    clearSceneNetworkStateIfEmpty(&clients, &network_variables, &network_entity_data, &server_events, client.session_id, old_scene_id);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
                     try sendNetworkVariableSnapshot(sock, io, message.from, &network_variables, client.session_id, client.scene_id);
+                    try sendNetworkEntityDataSnapshot(sock, io, message.from, &network_entity_data, client.session_id, client.scene_id);
                     try sendInitialSyncComplete(sock, io, message.from, client.id);
                 }
             },
@@ -244,13 +261,14 @@ pub fn main(init: std.process.Init) !void {
                             fixedText(&client.scene_id),
                         });
                     }
-                    try destroyClientEntities(sock, io, &clients, &entities, client.id, old_session_id, old_scene_id);
+                    try destroyClientEntities(sock, io, &clients, &entities, &network_entity_data, client.id, old_session_id, old_scene_id);
                     client.session_id = session.id;
-                    clearSceneNetworkStateIfEmpty(&clients, &network_variables, &server_events, old_session_id, old_scene_id);
+                    clearSceneNetworkStateIfEmpty(&clients, &network_variables, &network_entity_data, &server_events, old_session_id, old_scene_id);
                     try sendLoginAccepted(sock, io, message.from, client.id, session.id, session.name);
                     try broadcastServerState(sock, io, &clients, &sessions);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
                     try sendNetworkVariableSnapshot(sock, io, message.from, &network_variables, client.session_id, client.scene_id);
+                    try sendNetworkEntityDataSnapshot(sock, io, message.from, &network_entity_data, client.session_id, client.scene_id);
                     try sendInitialSyncComplete(sock, io, message.from, client.id);
                 }
             },
@@ -323,6 +341,19 @@ pub fn main(init: std.process.Init) !void {
                     try dispatch(sock, io, &clients, client_id, packet_type, client_id, payload);
                 }
             },
+            .network_entity_data_update => {
+                const client = findClient(&clients, client_id) orelse continue;
+                if (payload.len < network_entity_data_update_size) continue;
+                if (!isOwnedActiveEntity(&entities, client.id, client.session_id, client.scene_id, payload)) {
+                    continue;
+                }
+                client.last_seen_ms = now;
+                client.address = message.from;
+                const stored = storeNetworkEntityData(&network_entity_data, client.session_id, client.scene_id, payload);
+                if (stored) {
+                    try dispatch(sock, io, &clients, client_id, packet_type, client_id, payload);
+                }
+            },
             .server_event_register => {
                 const client = findClient(&clients, client_id) orelse continue;
                 if (payload.len < server_event_registration_size) continue;
@@ -335,6 +366,7 @@ pub fn main(init: std.process.Init) !void {
                 if (payload.len < 4) continue;
                 const entity_id = std.mem.readInt(u32, payload[0..][0..4], .little);
                 if (destroyOwnedEntity(&entities, client.id, client.session_id, client.scene_id, entity_id)) {
+                    clearEntityNetworkData(&network_entity_data, client.session_id, client.scene_id, entity_id);
                     if (verbose_packet_logs) {
                         std.debug.print("[SceneMax MP] destroy entity client={d} entity={d} session={d} scene=\"{s}\"\n", .{
                             client.id,
@@ -361,16 +393,16 @@ pub fn main(init: std.process.Init) !void {
                     }
                     const old_session_id = client.session_id;
                     const old_scene_id = client.scene_id;
-                    try destroyClientEntities(sock, io, &clients, &entities, client.id, old_session_id, old_scene_id);
+                    try destroyClientEntities(sock, io, &clients, &entities, &network_entity_data, client.id, old_session_id, old_scene_id);
                     client.active = false;
-                    clearSceneNetworkStateIfEmpty(&clients, &network_variables, &server_events, old_session_id, old_scene_id);
+                    clearSceneNetworkStateIfEmpty(&clients, &network_variables, &network_entity_data, &server_events, old_session_id, old_scene_id);
                     try broadcastServerState(sock, io, &clients, &sessions);
                 }
             },
             else => {},
         }
 
-        try expireClients(sock, io, &clients, &entities, &network_variables, &server_events, now);
+        try expireClients(sock, io, &clients, &entities, &network_variables, &network_entity_data, &server_events, now);
         try dispatchDueServerEvents(sock, io, &clients, &server_events, now);
     }
 }
@@ -550,7 +582,7 @@ fn findOwnedActiveEntity(entities: *[max_entities]Entity, client_id: u16, sessio
     return null;
 }
 
-fn expireClients(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, entities: *[max_entities]Entity, network_variables: *[max_network_variables]NetworkVariable, server_events: *[max_server_events]ServerEvent, now: i64) !void {
+fn expireClients(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, entities: *[max_entities]Entity, network_variables: *[max_network_variables]NetworkVariable, network_entity_data: *[max_network_entity_data]NetworkEntityData, server_events: *[max_server_events]ServerEvent, now: i64) !void {
     for (clients) |*client| {
         if (client.active and now - client.last_seen_ms > 15000) {
             std.debug.print("[SceneMax MP] client timeout client={d} session={d} scene=\"{s}\"\n", .{
@@ -560,9 +592,9 @@ fn expireClients(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, en
             });
             const old_session_id = client.session_id;
             const old_scene_id = client.scene_id;
-            try destroyClientEntities(sock, io, clients, entities, client.id, old_session_id, old_scene_id);
+            try destroyClientEntities(sock, io, clients, entities, network_entity_data, client.id, old_session_id, old_scene_id);
             client.active = false;
-            clearSceneNetworkStateIfEmpty(clients, network_variables, server_events, old_session_id, old_scene_id);
+            clearSceneNetworkStateIfEmpty(clients, network_variables, network_entity_data, server_events, old_session_id, old_scene_id);
         }
     }
 }
@@ -694,6 +726,7 @@ fn decodePacketType(value: u8) ?PacketType {
         24 => .network_event,
         25 => .network_variable_update,
         26 => .server_event_register,
+        27 => .network_entity_data_update,
         30 => .snapshot,
         31 => .server_state,
         32 => .initial_sync_complete,
@@ -719,12 +752,13 @@ fn updateEntityTransform(entities: *[max_entities]Entity, payload: []const u8) v
     }
 }
 
-fn destroyClientEntities(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, entities: *[max_entities]Entity, client_id: u16, session_id: u32, scene_id: [128]u8) !void {
+fn destroyClientEntities(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, entities: *[max_entities]Entity, network_entity_data: *[max_network_entity_data]NetworkEntityData, client_id: u16, session_id: u32, scene_id: [128]u8) !void {
     for (entities) |*entity| {
         if (!entity.active or entity.owner_client != client_id or entity.session_id != session_id or !sameScene(entity.scene_id, scene_id)) {
             continue;
         }
         try dispatchEntityDestroyed(sock, io, clients, client_id, session_id, scene_id, entity.network_id);
+        clearEntityNetworkData(network_entity_data, session_id, scene_id, entity.network_id);
         entity.active = false;
     }
 }
@@ -741,11 +775,12 @@ fn destroyOwnedEntity(entities: *[max_entities]Entity, client_id: u16, session_i
     return false;
 }
 
-fn clearSceneNetworkStateIfEmpty(clients: *[max_clients]Client, network_variables: *[max_network_variables]NetworkVariable, server_events: *[max_server_events]ServerEvent, session_id: u32, scene_id: [128]u8) void {
+fn clearSceneNetworkStateIfEmpty(clients: *[max_clients]Client, network_variables: *[max_network_variables]NetworkVariable, network_entity_data: *[max_network_entity_data]NetworkEntityData, server_events: *[max_server_events]ServerEvent, session_id: u32, scene_id: [128]u8) void {
     if (connectedClientCountInScene(clients, session_id, scene_id) != 0) {
         return;
     }
     clearSceneNetworkVariables(network_variables, session_id, scene_id);
+    clearSceneNetworkEntityData(network_entity_data, session_id, scene_id);
     clearSceneServerEvents(server_events, session_id, scene_id);
 }
 
@@ -763,6 +798,32 @@ fn clearSceneNetworkVariables(network_variables: *[max_network_variables]Network
             fixedText(&scene_id),
             cleared,
         });
+    }
+}
+
+fn clearSceneNetworkEntityData(network_entity_data: *[max_network_entity_data]NetworkEntityData, session_id: u32, scene_id: [128]u8) void {
+    var cleared: usize = 0;
+    for (network_entity_data) |*entry| {
+        if (!entry.active) continue;
+        if (entry.session_id != session_id or !sameScene(entry.scene_id, scene_id)) continue;
+        entry.active = false;
+        cleared += 1;
+    }
+    if (cleared > 0) {
+        std.debug.print("[SceneMax MP] cleared network entity data session={d} scene=\"{s}\" count={d}\n", .{
+            session_id,
+            fixedText(&scene_id),
+            cleared,
+        });
+    }
+}
+
+fn clearEntityNetworkData(network_entity_data: *[max_network_entity_data]NetworkEntityData, session_id: u32, scene_id: [128]u8, network_id: u32) void {
+    for (network_entity_data) |*entry| {
+        if (!entry.active) continue;
+        if (entry.session_id != session_id or !sameScene(entry.scene_id, scene_id)) continue;
+        if (entry.network_id != network_id) continue;
+        entry.active = false;
     }
 }
 
@@ -890,6 +951,59 @@ fn networkVariableSlot(network_variables: *[max_network_variables]NetworkVariabl
     while (i < max_network_variables) : (i += 1) {
         const slot = (start + i) % max_network_variables;
         if (!network_variables[slot].active) return slot;
+    }
+    return null;
+}
+
+fn storeNetworkEntityData(network_entity_data: *[max_network_entity_data]NetworkEntityData, session_id: u32, scene_id: [128]u8, payload: []const u8) bool {
+    if (payload.len < network_entity_data_update_size) return false;
+    const network_id = std.mem.readInt(u32, payload[0..][0..4], .little);
+    if (network_id == 0) return false;
+    var field = [_]u8{0} ** network_entity_data_field_size;
+    var value = [_]u8{0} ** network_entity_data_value_size;
+    copyFixed(&field, payload, 4);
+    copyFixed(&value, payload, 4 + network_entity_data_field_size);
+    if (isEmpty(&field)) return false;
+
+    if (findNetworkEntityData(network_entity_data, session_id, scene_id, network_id, field)) |existing| {
+        existing.value = value;
+        return true;
+    }
+
+    const slot = networkEntityDataSlot(network_entity_data, session_id, scene_id, network_id, field) orelse return false;
+    network_entity_data[slot] = .{
+        .active = true,
+        .session_id = session_id,
+        .scene_id = scene_id,
+        .network_id = network_id,
+        .field = field,
+        .value = value,
+    };
+    return true;
+}
+
+fn findNetworkEntityData(network_entity_data: *[max_network_entity_data]NetworkEntityData, session_id: u32, scene_id: [128]u8, network_id: u32, field: [network_entity_data_field_size]u8) ?*NetworkEntityData {
+    const wanted = fixedText(&field);
+    for (network_entity_data) |*entry| {
+        if (!entry.active) continue;
+        if (entry.session_id != session_id or !sameScene(entry.scene_id, scene_id)) continue;
+        if (entry.network_id != network_id) continue;
+        if (std.mem.eql(u8, fixedText(&entry.field), wanted)) return entry;
+    }
+    return null;
+}
+
+fn networkEntityDataSlot(network_entity_data: *[max_network_entity_data]NetworkEntityData, session_id: u32, scene_id: [128]u8, network_id: u32, field: [network_entity_data_field_size]u8) ?usize {
+    var hash = std.hash.Wyhash.init(0);
+    hash.update(std.mem.asBytes(&session_id));
+    hash.update(&scene_id);
+    hash.update(std.mem.asBytes(&network_id));
+    hash.update(fixedText(&field));
+    const start: usize = @intCast(hash.final() % max_network_entity_data);
+    var i: usize = 0;
+    while (i < max_network_entity_data) : (i += 1) {
+        const slot = (start + i) % max_network_entity_data;
+        if (!network_entity_data[slot].active) return slot;
     }
     return null;
 }
@@ -1080,6 +1194,29 @@ fn sendNetworkVariableSnapshot(sock: net.Socket, io: std.Io, address: net.IpAddr
     }
     if (verbose_packet_logs) {
         std.debug.print("[SceneMax MP] variable snapshot session={d} scene=\"{s}\" variables={d}\n", .{
+            session_id,
+            fixedText(&scene_id),
+            sent,
+        });
+    }
+}
+
+fn sendNetworkEntityDataSnapshot(sock: net.Socket, io: std.Io, address: net.IpAddress, network_entity_data: *[max_network_entity_data]NetworkEntityData, session_id: u32, scene_id: [128]u8) !void {
+    var sent: usize = 0;
+    for (network_entity_data) |entry| {
+        if (!entry.active) continue;
+        if (entry.session_id != session_id or !sameScene(entry.scene_id, scene_id)) continue;
+
+        var packet: [8 + network_entity_data_update_size]u8 = undefined;
+        writeHeader(packet[0..], .network_entity_data_update, 0);
+        std.mem.writeInt(u32, packet[8..][0..4], entry.network_id, .little);
+        @memcpy(packet[12 .. 12 + network_entity_data_field_size], &entry.field);
+        @memcpy(packet[12 + network_entity_data_field_size .. 8 + network_entity_data_update_size], &entry.value);
+        sendUdp(sock, io, address, packet[0..]);
+        sent += 1;
+    }
+    if (verbose_packet_logs) {
+        std.debug.print("[SceneMax MP] entity data snapshot session={d} scene=\"{s}\" entries={d}\n", .{
             session_id,
             fixedText(&scene_id),
             sent,
@@ -1365,6 +1502,7 @@ fn packetTypeName(packet_type: PacketType) []const u8 {
         .network_event => "network_event",
         .network_variable_update => "network_variable",
         .server_event_register => "server_event_register",
+        .network_entity_data_update => "network_entity_data",
         .snapshot => "snapshot",
         .server_state => "server_state",
         .initial_sync_complete => "initial_sync_complete",

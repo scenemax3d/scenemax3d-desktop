@@ -1,0 +1,98 @@
+{"sounds": [
+  {
+    "name": "track1",
+    "path": "audio/SLIMETHIGHCITY 7-24.wav"
+  },
+  {
+    "path": "audio/148634__smileylovers__sl-kick-02.wav",
+    "name": "kick1"
+  },
+  {
+    "path": "audio/341232__sharesynth__kick00.wav",
+    "name": "kick2"
+  },
+  {
+    "path": "audio/44428__thecheeseman__hurt1.wav",
+    "name": "hurt1"
+  },
+  {
+    "path": "audio/243358__winamice__monster-roar.ogg",
+    "name": "monster_roar"
+  },
+  {
+    "path": "audio/401231__rileywarren__drums-1-fight-scene.ogg",
+    "name": "drums_music1"
+  },
+  {
+    "path": "audio/kick3.ogg",
+    "name": "kick3"
+  },
+  {
+    "path": "audio/scream1.ogg",
+    "name": "scream1"
+  },
+  {
+    "path": "audio/276254__dynajinn__fight-voiceover-fight.ogg",
+    "name": "fight1"
+  },
+  {
+    "path": "audio/97977__oldedgar__kung-fu-yell.ogg",
+    "name": "hu_ya1"
+  },
+  {
+    "path": "audio/15_monster_damage.ogg",
+    "name": "monster_damage_15"
+  },
+  {
+    "path": "audio/07_macho_attack_1.ogg",
+    "name": "macho_attack_07"
+  },
+  {
+    "path": "audio/13_monster_attack.ogg",
+    "name": "attack1_jap"
+  },
+  {
+    "path": "audio/level_win1.ogg",
+    "name": "level_win1"
+  },
+  {
+    "path": "audio/505985__bipwave__80-synth-music-2.ogg",
+    "name": "fight_music1"
+  },
+  {
+    "path": "audio/crash1.wav",
+    "name": "crash1"
+  },
+  {
+    "path": "audio/slap1.wav",
+    "name": "slap1"
+  },
+  {
+    "path": "audio/punch1.wav",
+    "name": "punch1"
+  },
+  {
+    "path": "audio/jump1.wav",
+    "name": "jump1"
+  },
+  {
+    "path": "audio/fall1.wav",
+    "name": "fall1"
+  },
+  {
+    "path": "audio/cartoon1.wav",
+    "name": "cartoon1"
+  },
+  {
+    "path": "audio/car_racing_sound1.wav",
+    "name": "car_racing_sound1"
+  },
+  {
+    "path": "audio/Neon Dojo Assault.wav",
+    "name": "neon_dojo1"
+  },
+  {
+    "path": "audio/helicopter_flyby_m_cel_cc0_loud.wav",
+    "name": "helicopter_near1"
+  }
+]}

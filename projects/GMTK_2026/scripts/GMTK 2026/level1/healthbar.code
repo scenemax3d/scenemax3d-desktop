@@ -1,0 +1,14 @@
+
+print_status = {
+
+  var frame1=round(player1_health*16/INITIAL_PLAYER_STRENGTH),
+      frame2=round(player2_health*16/INITIAL_PLAYER_STRENGTH)
+
+  UI.layer1.img_player1_health.frame = frame1
+  UI.layer1.img_player2_health.frame = frame2
+
+
+  //UI.layer1.playerHud.playerHealthValue.text = player_percent + "%"
+  //UI.layer1.opponentHud.opponentHealthValue.text = opponent_percent + "%"
+}
+run print_status every 1 second

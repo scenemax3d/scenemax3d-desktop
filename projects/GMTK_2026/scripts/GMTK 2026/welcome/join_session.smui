@@ -1,0 +1,483 @@
+{
+  "canvasWidth": 1920,
+  "name": "join_session",
+  "layers": [{
+    "renderMode": "SCREEN_SPACE",
+    "visible": true,
+    "name": "layer1",
+    "zOrder": 0,
+    "id": "4e908d98-15a0-47f8-a3ff-da05567262d7",
+    "widgets": [
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "centerHorizontal": true,
+        "type": "TEXT_VIEW",
+        "constraints": [],
+        "textColor": "#FFFFFFFF",
+        "fontName": "font_blue1",
+        "horizontalBias": 0.5,
+        "textAlignment": "center",
+        "name": "text1",
+        "heightMode": "FIXED",
+        "width": 150,
+        "fontSize": 128,
+        "id": "96215ad0-adfd-4400-b5d7-4aa8dd0386e1",
+        "text": "Join Combat",
+        "marginTop": 50,
+        "height": 30
+      },
+      {
+        "verticalBias": 0.5,
+        "listViewStyle": "dark",
+        "listHeaderFontSize": 64,
+        "widthMode": "FIXED",
+        "visible": true,
+        "centerHorizontal": true,
+        "listRows": [
+          [
+            "ROME IT",
+            "0"
+          ],
+          [
+            "LONDON ENG",
+            "0"
+          ]
+        ],
+        "listColumnCount": 2,
+        "listHeaders": [
+          "Combat",
+          "Players"
+        ],
+        "type": "LIST_VIEW",
+        "constraints": [],
+        "listColumnWidths": [
+          521.4,
+          278.6
+        ],
+        "listHeaderFontName": "font_header_white",
+        "horizontalBias": 0.5,
+        "listViewTransparency": 30,
+        "name": "lv_combats",
+        "heightMode": "FIXED",
+        "width": 800,
+        "listRowFontName": "font1",
+        "id": "cbaec93d-f1fe-4415-93c8-0388376d206f",
+        "listRowFontSize": 48,
+        "marginTop": 150,
+        "height": 400,
+        "listSelectedRowIndex": 0
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "type": "TEXT_VIEW",
+        "constraints": [
+          {
+            "side": "LEFT",
+            "targetName": "lv_combats",
+            "margin": 0,
+            "targetSide": "LEFT"
+          },
+          {
+            "side": "TOP",
+            "targetName": "lv_combats",
+            "margin": 0,
+            "targetSide": "BOTTOM"
+          }
+        ],
+        "textColor": "#FFFFFFFF",
+        "horizontalBias": 0.5,
+        "textAlignment": "left",
+        "name": "text2",
+        "heightMode": "FIXED",
+        "width": 150,
+        "fontSize": 16,
+        "id": "adbda6b6-58bc-4ac6-80ee-11c29f400bd6",
+        "text": "Press Up / Down arrows to select a combat",
+        "marginTop": 15,
+        "height": 30
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "type": "TEXT_VIEW",
+        "constraints": [
+          {
+            "side": "LEFT",
+            "targetName": "lv_combats",
+            "margin": 0,
+            "targetSide": "LEFT"
+          },
+          {
+            "side": "TOP",
+            "targetName": "lv_combats",
+            "margin": 0,
+            "targetSide": "BOTTOM"
+          }
+        ],
+        "textColor": "#FFFFFFFF",
+        "fontName": "font_header_white",
+        "horizontalBias": 0.5,
+        "textAlignment": "left",
+        "name": "text3",
+        "heightMode": "FIXED",
+        "width": 150,
+        "fontSize": 64,
+        "id": "71ad516f-ecac-4b35-aaae-7fec8d25dc09",
+        "text": "Name:",
+        "marginTop": 150,
+        "height": 30
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "spriteFrame": 0,
+        "type": "IMAGE",
+        "constraints": [{
+          "side": "BOTTOM",
+          "targetName": "parent",
+          "margin": 0,
+          "targetSide": "BOTTOM"
+        }],
+        "marginLeft": 20,
+        "horizontalBias": 0.5,
+        "name": "image1",
+        "heightMode": "FIXED",
+        "width": 100,
+        "spriteName": "gmtk_2026",
+        "marginBottom": 30,
+        "id": "b971d8a2-9e9b-4f18-af3c-b993c2612f7d",
+        "imageScaleMode": "fit",
+        "height": 100
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "editTextBackgroundColor": "#20242AFF",
+        "editTextPlaceholder": "",
+        "editTextFocusedColor": "#2A303AFF",
+        "type": "EDIT_TEXT",
+        "constraints": [
+          {
+            "side": "LEFT",
+            "targetName": "text3",
+            "margin": 0,
+            "targetSide": "RIGHT"
+          },
+          {
+            "side": "TOP",
+            "targetName": "text3",
+            "margin": 0,
+            "targetSide": "TOP"
+          }
+        ],
+        "textColor": "#FFFFFFFF",
+        "marginLeft": 5,
+        "editTextMultiline": false,
+        "editTextSelectionColor": "#4A90E280",
+        "fontName": "font_blue1",
+        "horizontalBias": 0.5,
+        "textAlignment": "left",
+        "name": "edit_name",
+        "heightMode": "FIXED",
+        "width": 220,
+        "editTextCursorColor": "#FFFFFFFF",
+        "fontSize": 128,
+        "id": "5ba04eba-d09d-4cba-ba2a-b4dca31cc056",
+        "text": "",
+        "height": 42
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "spriteFrame": 0,
+        "type": "IMAGE",
+        "constraints": [
+          {
+            "side": "LEFT",
+            "targetName": "image1",
+            "margin": 0,
+            "targetSide": "RIGHT"
+          },
+          {
+            "side": "BOTTOM",
+            "targetName": "parent",
+            "margin": 0,
+            "targetSide": "BOTTOM"
+          }
+        ],
+        "marginLeft": 20,
+        "horizontalBias": 0.5,
+        "name": "image2",
+        "heightMode": "FIXED",
+        "width": 150,
+        "spriteName": "powered_by_scenemax3d",
+        "id": "f3f6f6b7-5f4c-4e60-a9f3-35e8bf624553",
+        "imageScaleMode": "fit",
+        "marginTop": 2,
+        "height": 150
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "type": "TEXT_VIEW",
+        "constraints": [],
+        "textColor": "#FFFFFFFF",
+        "fontName": "font_blue1",
+        "horizontalBias": 0.5,
+        "textAlignment": "left",
+        "name": "credit1",
+        "heightMode": "FIXED",
+        "width": 150,
+        "fontSize": 64,
+        "id": "498a865c-8b33-4bfa-a4ab-7452a725d3bd",
+        "text": "CREDITS",
+        "centerVertical": true,
+        "height": 30
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "type": "TEXT_VIEW",
+        "constraints": [{
+          "side": "TOP",
+          "targetName": "credit1",
+          "margin": 0,
+          "targetSide": "BOTTOM"
+        }],
+        "textColor": "#FFFFFFFF",
+        "marginLeft": 5,
+        "horizontalBias": 0.5,
+        "textAlignment": "left",
+        "name": "text4",
+        "heightMode": "FIXED",
+        "width": 150,
+        "fontSize": 16,
+        "id": "3aea8bfd-9d12-4299-b64f-b1d34bf0a14e",
+        "text": "Programming: Adi Barda",
+        "marginTop": 5,
+        "height": 30
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "type": "TEXT_VIEW",
+        "constraints": [{
+          "side": "TOP",
+          "targetName": "text4",
+          "margin": 0,
+          "targetSide": "BOTTOM"
+        }],
+        "textColor": "#FFFFFFFF",
+        "marginLeft": 5,
+        "horizontalBias": 0.5,
+        "textAlignment": "left",
+        "name": "text5",
+        "heightMode": "FIXED",
+        "width": 150,
+        "fontSize": 16,
+        "id": "b2047286-e4e8-47e6-8eef-8c7fe81fcfef",
+        "text": "Music: Eric Guenther - ericguenther.com",
+        "height": 30
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "type": "TEXT_VIEW",
+        "constraints": [{
+          "side": "TOP",
+          "targetName": "text5",
+          "margin": 0,
+          "targetSide": "BOTTOM"
+        }],
+        "textColor": "#FFFFFFFF",
+        "marginLeft": 5,
+        "horizontalBias": 0.5,
+        "textAlignment": "left",
+        "name": "text6",
+        "heightMode": "FIXED",
+        "width": 150,
+        "fontSize": 16,
+        "id": "8e177d1e-a208-449c-9136-8816a2868030",
+        "text": "Graphics: mixamo.com / sketchfab.com",
+        "height": 30
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "type": "TEXT_VIEW",
+        "constraints": [{
+          "side": "BOTTOM",
+          "targetName": "parent",
+          "margin": 0,
+          "targetSide": "BOTTOM"
+        }],
+        "textColor": "#FFFFFFFF",
+        "horizontalBias": 0.5,
+        "textAlignment": "left",
+        "name": "text7",
+        "heightMode": "FIXED",
+        "width": 150,
+        "fontSize": 16,
+        "id": "1510eabb-fdd1-4374-bae4-8071bd805574",
+        "text": "Created using SceneMax3D - open source choreographic game engine",
+        "height": 30
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "type": "TEXT_VIEW",
+        "constraints": [{
+          "side": "RIGHT",
+          "targetName": "parent",
+          "margin": 0,
+          "targetSide": "RIGHT"
+        }],
+        "textColor": "#FFFFFFFF",
+        "marginRight": 200,
+        "fontName": "font_blue1",
+        "horizontalBias": 0.5,
+        "textAlignment": "left",
+        "name": "txt_instructions",
+        "heightMode": "FIXED",
+        "width": 150,
+        "fontSize": 64,
+        "id": "bdbd173e-40aa-4d68-9767-5dfc467bb49a",
+        "text": "Instructions",
+        "centerVertical": true,
+        "height": 30
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "type": "TEXT_VIEW",
+        "constraints": [
+          {
+            "side": "LEFT",
+            "targetName": "txt_instructions",
+            "margin": 0,
+            "targetSide": "LEFT"
+          },
+          {
+            "side": "TOP",
+            "targetName": "txt_instructions",
+            "margin": 0,
+            "targetSide": "BOTTOM"
+          }
+        ],
+        "textColor": "#FFFFFFFF",
+        "horizontalBias": 0.5,
+        "textAlignment": "left",
+        "name": "text8",
+        "heightMode": "FIXED",
+        "width": 150,
+        "fontSize": 16,
+        "id": "bf5b2a90-9a78-495f-a349-764dd9bf7210",
+        "text": "A, S, D, Z, X => Attack",
+        "marginTop": 5,
+        "height": 30
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "type": "TEXT_VIEW",
+        "constraints": [
+          {
+            "side": "RIGHT",
+            "targetName": "txt_instructions",
+            "margin": 0,
+            "targetSide": "RIGHT"
+          },
+          {
+            "side": "TOP",
+            "targetName": "text8",
+            "margin": 0,
+            "targetSide": "BOTTOM"
+          }
+        ],
+        "textColor": "#FFFFFFFF",
+        "horizontalBias": 0.5,
+        "textAlignment": "left",
+        "name": "text9",
+        "heightMode": "FIXED",
+        "width": 150,
+        "fontSize": 16,
+        "id": "bf242087-2c54-439d-b221-7ca3a8041d69",
+        "text": "Arrow Keys => Move & Rotate",
+        "height": 30
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "type": "TEXT_VIEW",
+        "constraints": [
+          {
+            "side": "RIGHT",
+            "targetName": "txt_instructions",
+            "margin": 0,
+            "targetSide": "RIGHT"
+          },
+          {
+            "side": "TOP",
+            "targetName": "text9",
+            "margin": 0,
+            "targetSide": "BOTTOM"
+          }
+        ],
+        "textColor": "#FFFFFFFF",
+        "horizontalBias": 0.5,
+        "textAlignment": "left",
+        "name": "text10",
+        "heightMode": "FIXED",
+        "width": 150,
+        "fontSize": 16,
+        "id": "f9e1bff1-e333-4da3-af5f-04e3e9ab2089",
+        "text": "W => Jump",
+        "height": 30
+      },
+      {
+        "verticalBias": 0.5,
+        "widthMode": "FIXED",
+        "visible": true,
+        "centerHorizontal": true,
+        "type": "TEXT_VIEW",
+        "constraints": [{
+          "side": "BOTTOM",
+          "targetName": "parent",
+          "margin": 0,
+          "targetSide": "BOTTOM"
+        }],
+        "textColor": "#FFFFFFFF",
+        "fontName": "font_header_white",
+        "horizontalBias": 0.5,
+        "textAlignment": "center",
+        "name": "text11",
+        "heightMode": "FIXED",
+        "width": 150,
+        "marginBottom": 200,
+        "fontSize": 64,
+        "id": "17bbfb1d-ca08-4add-a430-dfafa2e9b7a8",
+        "text": "Plan your attack moves according to his",
+        "height": 30
+      }
+    ]
+  }],
+  "version": 1,
+  "canvasHeight": 1080
+}
