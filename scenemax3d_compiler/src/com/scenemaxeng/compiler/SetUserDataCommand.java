@@ -5,6 +5,7 @@ import com.abware.scenemaxlang.parser.SceneMaxParser;
 public class SetUserDataCommand extends ActionStatementBase {
     public String varName;
     public String fieldName;
+    public boolean syncNetworkEntityData;
     public SceneMaxParser.Logical_expressionContext dataExpr;
 
     @Override

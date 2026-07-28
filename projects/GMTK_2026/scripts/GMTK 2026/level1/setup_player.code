@@ -32,46 +32,41 @@ player.data.is_player1 = 0
 player.data.is_player2 = 0
 player.data.name = selected_name
 
-set_player_init_position (game_status) = {
-  //player.clear character mode
-	if (fighter_slot1 == 0) {
-	  
+set_player_init_position (slot) = {
+  
+	if (fighter_slot1 == 0 || slot == 1) {
 	  fighter_slot1 = 1
 	  player.pos (0.0,5,-7)
 		UI.layer1.player1_name.text = player.data.name 
 		player.data.is_fighter = 1
-		player.data.is_player1 = 1
+		player.data.slot# = 1  
 		fighter_index = 0
 		player1_health = INITIAL_PLAYER_STRENGTH
-	} else if (fighter_slot2 == 0) {
-	
+	} else if (fighter_slot2 == 0 || slot == 2) {
 		fighter_slot2 = 1
 		player.pos (0.0,5,7)
 	  UI.layer1.player2_name.text = player.data.name
 	  player.data.is_fighter = 1 
-	  player.data.is_player2 = 1
+	  player.data.slot# = 2
 	  fighter_index = 1
 	  player2_health = INITIAL_PLAYER_STRENGTH
 	} else {
 	
-	  // put the player in the crowed just for the first time 
-	  if (game_status == 0) {
-		  var radius = 10
-		  var rad = 3.14 / 180
-		  var ang = total_players_count * 30 * rad
-		  var xPos = cos(ang) * radius
-		  var zPos = sin(ang) * radius
-		  player.pos (xPos,5,zPos)
-	  } 
-	  
+	  run position_player_in_crowed
 	}
-  
   
   player.idle2 loop
   camera.chase player
 	
 }
 
-	
-	
+position_player_in_crowed = {
+  // put the player in the crowed 
+  var radius = 10
+  var rad = 3.14 / 180
+  var ang = total_players_count * 30 * rad
+  var xPos = cos(ang) * radius
+  var zPos = sin(ang) * radius
+  player.pos (xPos,5,zPos)
+}
 

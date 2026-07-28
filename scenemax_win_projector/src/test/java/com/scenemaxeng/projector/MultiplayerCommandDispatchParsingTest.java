@@ -3,11 +3,13 @@ package com.scenemaxeng.projector;
 import com.scenemaxeng.compiler.DoBlockCommand;
 import com.scenemaxeng.compiler.CollisionStatementCommand;
 import com.scenemaxeng.compiler.NetworkBroadcastCommand;
+import com.scenemaxeng.compiler.NetworkEntitySendCommand;
 import com.scenemaxeng.compiler.NetworkEventHandlerCommand;
 import com.scenemaxeng.compiler.NetworkJoinSessionCommand;
 import com.scenemaxeng.compiler.NetworkSendCommand;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
+import com.scenemaxeng.compiler.SetUserDataCommand;
 import com.scenemaxeng.compiler.StatementDef;
 import com.scenemaxeng.compiler.VariableDeclarationCommand;
 import com.scenemaxeng.compiler.VariableDef;
@@ -42,6 +44,7 @@ public class MultiplayerCommandDispatchParsingTest {
     private static final byte DESTROY_ENTITY = 12;
     private static final byte COMMAND_DISPATCH = 20;
     private static final byte ACTIVE_ACTION_START = 22;
+    private static final byte NETWORK_EVENT = 24;
     private static final byte INITIAL_SYNC_COMPLETE = 32;
 
     @Test
@@ -460,6 +463,118 @@ public class MultiplayerCommandDispatchParsingTest {
     }
 
     @Test
+    public void parsesNetworkEntityIdAndDirectSend() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "player => fighter1_native: multiplayer\n"
+                        + "var player_id = player.network.id\n"
+                        + "player.network.send(\"assign_fighter\", \"slot1\")");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        assertEquals(3, program.actions.size());
+        assertTrue(program.actions.get(2) instanceof NetworkEntitySendCommand);
+        NetworkEntitySendCommand send = (NetworkEntitySendCommand) program.actions.get(2);
+        assertEquals("player", send.targetVar);
+        assertNotNull(send.eventNameExpr);
+        assertNotNull(send.messageExpr);
+    }
+
+    @Test
+    public void parsesSynchronizedNetworkEntityDataAssignment() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "player => fighter1_native: multiplayer\n"
+                        + "player.data.slot# = 1");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        assertEquals(2, program.actions.size());
+        SetUserDataCommand command = (SetUserDataCommand) program.actions.get(1);
+        assertEquals("player", command.varName);
+        assertEquals("slot", command.fieldName);
+        assertTrue(command.syncNetworkEntityData);
+    }
+
+    @Test
+    public void sendsDirectNetworkEventToRegisteredEntityOwnerWithMessage() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            VariableDef varDef = new VariableDef();
+            varDef.varName = "player";
+            varDef.varType = VariableDef.VAR_TYPE_3D;
+            varDef.isMultiplayer = true;
+
+            component.registerEntity("player@1", varDef, "fighter1_native");
+            setField(component, "channel", client);
+            setField(component, "clientId", 7);
+            setField(component, "networkReady", true);
+            setField(component, "initialSyncPending", false);
+            setRegisteredEntityNetworkId(component, "player@1", 101);
+
+            assertEquals(101, component.networkEntityId("player@1"));
+            component.sendNetworkEventToEntity("player@1", "assign_fighter", "slot1");
+
+            ByteBuffer packet = receiveRequiredPacket(server);
+            assertHeader(packet, NETWORK_EVENT);
+            assertEquals(7, Short.toUnsignedInt(packet.getShort()));
+            byte[] eventBytes = new byte[packet.remaining()];
+            packet.get(eventBytes);
+            MultiplayerNetworkComponent.NetworkEventPayload decoded =
+                    MultiplayerNetworkComponent.decodeNetworkEventPayload(eventBytes);
+            assertEquals("assign_fighter", decoded.name);
+            assertEquals("slot1", decoded.message);
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
+    @Test
+    public void sendsDirectNetworkEventToRemoteEntityOwnerWithMessage() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            setField(component, "channel", client);
+            setField(component, "clientId", 7);
+            setField(component, "networkReady", true);
+            setField(component, "initialSyncPending", false);
+            addRemoteEntity(component, "mp_remote_101@1", 101, 11);
+
+            assertEquals(101, component.networkEntityId("mp_remote_101@1"));
+            component.sendNetworkEventToEntity("mp_remote_101@1", "assign_fighter", "slot1");
+
+            ByteBuffer packet = receiveRequiredPacket(server);
+            assertHeader(packet, NETWORK_EVENT);
+            assertEquals(11, Short.toUnsignedInt(packet.getShort()));
+            byte[] eventBytes = new byte[packet.remaining()];
+            packet.get(eventBytes);
+            MultiplayerNetworkComponent.NetworkEventPayload decoded =
+                    MultiplayerNetworkComponent.decodeNetworkEventPayload(eventBytes);
+            assertEquals("assign_fighter", decoded.name);
+            assertEquals("slot1", decoded.message);
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
+    @Test
     public void parsesNetworkSessionJoinAndRuntimeStateExpressions() {
         ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
                 "network.join session \"combat 1\"\n"
@@ -756,6 +871,25 @@ public class MultiplayerCommandDispatchParsingTest {
         Object entity = localEntities.get(runtimeName);
         assertNotNull(entity);
         return entity;
+    }
+
+    private void addRemoteEntity(MultiplayerNetworkComponent component,
+                                 String runtimeName,
+                                 int networkId,
+                                 int ownerClientId) throws Exception {
+        Class<?> remoteEntityClass = Class.forName(
+                "com.scenemaxeng.projector.MultiplayerNetworkComponent$RemoteEntity");
+        java.lang.reflect.Constructor<?> constructor = remoteEntityClass.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        Object entity = constructor.newInstance();
+        setField(entity, "runtimeName", runtimeName);
+        setField(entity, "networkEntityId", networkId);
+        setField(entity, "ownerClientId", ownerClientId);
+
+        Field field = MultiplayerNetworkComponent.class.getDeclaredField("remoteEntities");
+        field.setAccessible(true);
+        Map<Integer, Object> remoteEntities = (Map<Integer, Object>) field.get(component);
+        remoteEntities.put(networkId, entity);
     }
 
     private ByteBuffer receiveRequiredPacket(DatagramChannel server) throws Exception {

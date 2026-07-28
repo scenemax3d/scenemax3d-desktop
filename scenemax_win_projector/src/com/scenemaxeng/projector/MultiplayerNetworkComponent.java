@@ -51,6 +51,7 @@ public class MultiplayerNetworkComponent {
     private static final byte NETWORK_EVENT = 24;
     private static final byte NETWORK_VARIABLE_UPDATE = 25;
     private static final byte SERVER_EVENT_REGISTER = 26;
+    private static final byte NETWORK_ENTITY_DATA_UPDATE = 27;
     private static final byte SNAPSHOT = 30;
     private static final byte SERVER_STATE = 31;
     private static final byte INITIAL_SYNC_COMPLETE = 32;
@@ -61,6 +62,9 @@ public class MultiplayerNetworkComponent {
     private static final int NETWORK_VARIABLE_NAME_SIZE = 64;
     private static final int NETWORK_VARIABLE_VALUE_SIZE = 256;
     private static final int NETWORK_VARIABLE_UPDATE_SIZE = NETWORK_VARIABLE_NAME_SIZE + 1 + NETWORK_VARIABLE_VALUE_SIZE;
+    private static final int NETWORK_ENTITY_DATA_FIELD_SIZE = 64;
+    private static final int NETWORK_ENTITY_DATA_VALUE_SIZE = NETWORK_VARIABLE_VALUE_SIZE;
+    private static final int NETWORK_ENTITY_DATA_UPDATE_SIZE = 4 + NETWORK_ENTITY_DATA_FIELD_SIZE + NETWORK_ENTITY_DATA_VALUE_SIZE;
     private static final int SPAWN_COMMAND_SIZE = 256;
     private static final int ACTIVE_ACTION_COMMAND_SIZE = 192;
     private static final int ACTIVE_ACTION_RECORD_SIZE = 12 + ACTIVE_ACTION_COMMAND_SIZE;
@@ -95,6 +99,7 @@ public class MultiplayerNetworkComponent {
     private final Map<String, Float> transformCorrectionTimers = new HashMap<>();
     private final Map<Integer, String> pendingCreateAcks = new LinkedHashMap<>();
     private final Map<String, PendingNetworkVariable> pendingNetworkVariables = new LinkedHashMap<>();
+    private final Map<Integer, List<PendingEntityData>> pendingRemoteEntityData = new HashMap<>();
     private final List<PendingNetworkBroadcast> pendingNetworkBroadcasts = new ArrayList<>();
     private final Map<String, PendingServerEvent> registeredServerEvents = new LinkedHashMap<>();
     private final Map<String, PendingServerEvent> pendingServerEvents = new LinkedHashMap<>();
@@ -226,6 +231,7 @@ public class MultiplayerNetworkComponent {
         readPackets();
         updateInitialSyncFallback(tpf);
         applyPendingTransforms();
+        applyPendingRemoteEntityData();
         applyPendingRemoteCommands();
         applyPendingRemoteDestroys();
         if (clientId == 0) {
@@ -342,6 +348,58 @@ public class MultiplayerNetworkComponent {
     public int remoteOwnerClientId(String runtimeName) {
         RemoteEntity entity = remoteEntityForRuntime(runtimeName);
         return entity == null ? 0 : entity.ownerClientId;
+    }
+
+    public int networkEntityId(String runtimeName) {
+        RegisteredEntity local = localEntities.get(runtimeName);
+        if (local != null) {
+            return local.networkEntityId;
+        }
+        RemoteEntity remote = remoteEntityForRuntime(runtimeName);
+        return remote == null ? 0 : remote.networkEntityId;
+    }
+
+    public void sendNetworkEventToEntity(String runtimeName, String eventName, Object message) {
+        if (runtimeName == null || eventName == null || eventName.trim().isEmpty()) {
+            return;
+        }
+        int targetClientId = 0;
+        RegisteredEntity local = localEntities.get(runtimeName);
+        if (local != null && local.networkEntityId != 0) {
+            targetClientId = clientId;
+        }
+        if (targetClientId == 0) {
+            RemoteEntity remote = remoteEntityForRuntime(runtimeName);
+            targetClientId = remote == null || remote.networkEntityId == 0 ? 0 : remote.ownerClientId;
+        }
+        if (targetClientId != 0) {
+            sendNetworkEventPayload(targetClientId, eventName.trim(), message == null ? null : String.valueOf(message));
+        }
+    }
+
+    public void syncEntityData(String runtimeName, String fieldName, Object value) {
+        if (runtimeName == null || runtimeName.trim().isEmpty()
+                || fieldName == null || fieldName.trim().isEmpty()) {
+            return;
+        }
+        RegisteredEntity entity = localEntities.get(runtimeName);
+        if (entity == null) {
+            return;
+        }
+        String encodedValue = encodeNetworkVariableValue(value);
+        if (encodedValue == null) {
+            return;
+        }
+        String normalizedField = fieldName.trim();
+        if (entity.networkEntityId == 0 || !isReady()) {
+            PendingEntityData pending = new PendingEntityData();
+            pending.fieldName = normalizedField;
+            pending.encodedValue = encodedValue;
+            entity.pendingEntityData.put(normalizedField, pending);
+            ensureEntityCreateRequested(entity);
+            return;
+        }
+        sendNetworkEntityDataUpdate(entity.networkEntityId, normalizedField, encodedValue);
     }
 
     public void dispatchCommand(String runtimeName, String commandText) {
@@ -796,6 +854,7 @@ public class MultiplayerNetworkComponent {
                     }
                     flushPendingCommands(entity);
                     flushPendingActiveActions(entity);
+                    flushPendingEntityData(entity);
                     flushAllPendingLocalCommands();
                     flushAllPendingLocalActiveActions();
                 }
@@ -846,6 +905,9 @@ public class MultiplayerNetworkComponent {
         } else if (type == NETWORK_VARIABLE_UPDATE && payload.remaining() >= NETWORK_VARIABLE_UPDATE_SIZE) {
             handleNetworkVariableUpdate(payload);
             resetInitialSyncFallbackQuietPeriod();
+        } else if (type == NETWORK_ENTITY_DATA_UPDATE && payload.remaining() >= NETWORK_ENTITY_DATA_UPDATE_SIZE) {
+            handleNetworkEntityDataUpdate(payload);
+            resetInitialSyncFallbackQuietPeriod();
         } else if (type == SNAPSHOT) {
             handleSnapshot(payload);
             resetInitialSyncFallbackQuietPeriod();
@@ -881,6 +943,7 @@ public class MultiplayerNetworkComponent {
         initialSyncFallbackRemainingSeconds = 0f;
         flushPendingLocalCreates();
         flushPendingNetworkVariables();
+        flushAllPendingLocalEntityData();
         flushPendingNetworkBroadcasts();
         flushPendingServerEvents();
         rebuildNetworkState();
@@ -1020,6 +1083,22 @@ public class MultiplayerNetworkComponent {
         }
     }
 
+    private void flushPendingEntityData(RegisteredEntity entity) {
+        if (entity == null || entity.networkEntityId == 0 || entity.pendingEntityData.isEmpty() || !isReady()) {
+            return;
+        }
+        for (PendingEntityData pending : new ArrayList<>(entity.pendingEntityData.values())) {
+            sendNetworkEntityDataUpdate(entity.networkEntityId, pending.fieldName, pending.encodedValue);
+        }
+        entity.pendingEntityData.clear();
+    }
+
+    private void flushAllPendingLocalEntityData() {
+        for (RegisteredEntity entity : localEntities.values()) {
+            flushPendingEntityData(entity);
+        }
+    }
+
     private void flushPendingNetworkVariables() {
         if (pendingNetworkVariables.isEmpty()) {
             return;
@@ -1089,6 +1168,38 @@ public class MultiplayerNetworkComponent {
         }
         logNet("receive network variable name=" + varName.trim());
         app.receiveNetworkVariableUpdate(varName.trim(), value);
+    }
+
+    private void sendNetworkEntityDataUpdate(int networkEntityId, String fieldName, String encodedValue) {
+        if (!isActive() || clientId == 0 || networkEntityId == 0
+                || fieldName == null || fieldName.trim().isEmpty() || encodedValue == null) {
+            return;
+        }
+        ByteBuffer packet = packet(NETWORK_ENTITY_DATA_UPDATE, NETWORK_ENTITY_DATA_UPDATE_SIZE);
+        packet.putInt(networkEntityId);
+        putFixedString(packet, fieldName.trim(), NETWORK_ENTITY_DATA_FIELD_SIZE);
+        putFixedString(packet, encodedValue, NETWORK_ENTITY_DATA_VALUE_SIZE);
+        logNet("send network entity data entity=" + networkEntityId + " field=" + fieldName.trim());
+        send(packet);
+    }
+
+    private void handleNetworkEntityDataUpdate(ByteBuffer payload) {
+        int networkEntityId = payload.getInt();
+        String fieldName = readFixedString(payload, NETWORK_ENTITY_DATA_FIELD_SIZE);
+        String encodedValue = readFixedString(payload, NETWORK_ENTITY_DATA_VALUE_SIZE);
+        Object value = decodeNetworkVariableValue(encodedValue);
+        if (networkEntityId == 0 || fieldName == null || fieldName.trim().isEmpty() || app == null) {
+            return;
+        }
+        if (isLocalNetworkEntity(networkEntityId)) {
+            return;
+        }
+        PendingEntityData update = new PendingEntityData();
+        update.fieldName = fieldName.trim();
+        update.encodedValue = encodedValue;
+        if (!applyNetworkEntityDataUpdate(networkEntityId, update, value)) {
+            pendingRemoteEntityData.computeIfAbsent(networkEntityId, ignored -> new ArrayList<>()).add(update);
+        }
     }
 
     private void sendDestroyEntity(int networkEntityId, String runtimeName) {
@@ -1340,6 +1451,34 @@ public class MultiplayerNetworkComponent {
         if (transform != null && !applyRemoteTransform(networkId, transform)) {
             pendingTransforms.put(networkId, transform);
         }
+        applyPendingRemoteEntityData(networkId);
+    }
+
+    private void applyPendingRemoteEntityData(int networkId) {
+        List<PendingEntityData> pending = pendingRemoteEntityData.get(networkId);
+        if (pending == null || pending.isEmpty()) {
+            return;
+        }
+        for (Iterator<PendingEntityData> iterator = pending.iterator(); iterator.hasNext();) {
+            PendingEntityData update = iterator.next();
+            Object value = decodeNetworkVariableValue(update.encodedValue);
+            if (applyNetworkEntityDataUpdate(networkId, update, value)) {
+                iterator.remove();
+            }
+        }
+        if (pending.isEmpty()) {
+            pendingRemoteEntityData.remove(networkId);
+        }
+    }
+
+    private boolean applyNetworkEntityDataUpdate(int networkId, PendingEntityData update, Object value) {
+        RemoteEntity entity = remoteEntities.get(networkId);
+        if (!isRemoteEntityReady(entity)) {
+            return false;
+        }
+        app.receiveNetworkEntityDataUpdate(entity.runtimeName, update.fieldName, value);
+        logNet("receive network entity data entity=" + networkId + " field=" + update.fieldName);
+        return true;
     }
 
     private void applySnapshotActions(int networkId, List<SnapshotAction> actions) {
@@ -1452,6 +1591,12 @@ public class MultiplayerNetworkComponent {
         }
     }
 
+    private void applyPendingRemoteEntityData() {
+        for (Integer networkId : new ArrayList<>(pendingRemoteEntityData.keySet())) {
+            applyPendingRemoteEntityData(networkId);
+        }
+    }
+
     private void applyPendingRemoteCommands() {
         for (Map.Entry<Integer, List<PendingRemoteCommand>> entry : new HashMap<>(pendingRemoteCommands).entrySet()) {
             RemoteEntity entity = remoteEntities.get(entry.getKey());
@@ -1522,7 +1667,8 @@ public class MultiplayerNetworkComponent {
     }
 
     private boolean isRemoteEntityReady(RemoteEntity entity) {
-        return entity != null && entity.runtimeName != null && app.getEntitySpatial(entity.runtimeName) != null;
+        return entity != null && entity.runtimeName != null && app != null
+                && app.getEntitySpatial(entity.runtimeName) != null;
     }
 
     private void removeRemoteRuntimeEntity(RemoteEntity entity) {
@@ -1533,7 +1679,7 @@ public class MultiplayerNetworkComponent {
     }
 
     private void removeRemoteRuntimeName(String runtimeName, int varType) {
-        if (runtimeName == null || runtimeName.trim().isEmpty()) {
+        if (runtimeName == null || runtimeName.trim().isEmpty() || app == null) {
             return;
         }
         if (varType == VariableDef.VAR_TYPE_SPHERE) {
@@ -1997,6 +2143,7 @@ public class MultiplayerNetworkComponent {
         int nextActionSequence = 1;
         List<String> pendingCommands = new ArrayList<>();
         Map<Integer, ActiveAction> activeActions = new LinkedHashMap<>();
+        Map<String, PendingEntityData> pendingEntityData = new LinkedHashMap<>();
     }
 
     private static class PendingNetworkVariable {
@@ -2013,6 +2160,11 @@ public class MultiplayerNetworkComponent {
     private static class PendingServerEvent {
         String name;
         int intervalMs;
+    }
+
+    private static class PendingEntityData {
+        String fieldName;
+        String encodedValue;
     }
 
     private static class RemoteEntity {

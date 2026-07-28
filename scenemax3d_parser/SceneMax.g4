@@ -338,6 +338,7 @@ value    :
     |    motion_expr
     |    pool_acquire
     |    network_runtime_value
+    |    network_entity_runtime_value
     |    ui_runtime_value
     |    var_decl
     |    variable_field
@@ -377,6 +378,7 @@ var_field : X | Y | Z | RX | RY | RZ | Hit | AnimPercent | ReplayIndex ;
 
 pool_acquire : var_decl '.' Acquire ;
 network_runtime_value : Network '.' Ready | Network '.' State ('.' Sessions)? ;
+network_entity_runtime_value : var_decl '.' Network '.' var_decl ;
 ui_runtime_value : UI '.' ui_dot_path '.' ui_property_name ;
 
 // THE LANGUAGE SYNTAX
@@ -662,9 +664,12 @@ action_operation
    | array_pop # arrayPop
    | array_clear #arrayClear
    | array_reset #arrayReset
+   | network_entity_send #networkEntitySend
    | ik_action # ikAction
    | weapon_action # weaponAction
    ;
+
+network_entity_send : var_decl '.' Network '.' Send '(' logical_expression (',' logical_expression)? ')' ;
 
 ik_action : ik_attach | ik_layer_property | ik_layer_play | ik_layer_stop ;
 ik_attach : var_decl '.' IK Equals (Empty | logical_expression) ;
@@ -791,7 +796,7 @@ scale : var_decl '.' Scale Equals? logical_expression ;
 pos : var_decl '.' Pos '(' (pos_axes | pos_entity | position_statement) ')' ;
 //fixed_rotate : var_decl '.' Rotate '(' pos_axes ')' ;
 mass : var_decl '.' Mass Equals? logical_expression ;
-user_data : var_decl '.' Data '.' field_name Equals logical_expression ;
+user_data : var_decl '.' Data '.' field_name Pound? Equals logical_expression ;
 label_text_set : var_decl '.' Text Equals logical_expression ;
 
 velocity : var_decl '.' Velocity Equals? logical_expression ;

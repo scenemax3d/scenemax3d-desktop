@@ -1747,6 +1747,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         } else if(action instanceof NetworkSendCommand) {
             NetworkSendController ctl = new NetworkSendController(this, prg, scope, (NetworkSendCommand) action);
             scope.add(ctl);
+        } else if(action instanceof NetworkEntitySendCommand) {
+            NetworkEntitySendController ctl =
+                    new NetworkEntitySendController(this, prg, scope, (NetworkEntitySendCommand) action);
+            scope.add(ctl);
         } else if(action instanceof NetworkBroadcastCommand) {
             NetworkBroadcastController ctl =
                     new NetworkBroadcastController(this, prg, scope, (NetworkBroadcastCommand) action);
@@ -5350,6 +5354,33 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
     }
 
+    public int getEntityNetworkId(SceneMaxScope scope, String varName) {
+        if (multiplayerNetwork == null || scope == null || varName == null || varName.trim().isEmpty()) {
+            return 0;
+        }
+        EntityInstBase inst = scope.getEntityInst(varName.trim());
+        return inst == null ? 0 : multiplayerNetwork.networkEntityId(inst.getVarRunTimeName());
+    }
+
+    public void sendNetworkEventToEntity(SceneMaxScope scope, String varName, String eventName, Object message) {
+        if (multiplayerNetwork == null || scope == null || varName == null || varName.trim().isEmpty()
+                || eventName == null || eventName.trim().isEmpty()) {
+            return;
+        }
+        EntityInstBase inst = scope.getEntityInst(varName.trim());
+        if (inst != null) {
+            multiplayerNetwork.sendNetworkEventToEntity(inst.getVarRunTimeName(), eventName.trim(), message);
+        }
+    }
+
+    public void syncNetworkEntityData(String runtimeName, String fieldName, Object value) {
+        if (multiplayerNetwork == null || runtimeName == null || runtimeName.trim().isEmpty()
+                || fieldName == null || fieldName.trim().isEmpty()) {
+            return;
+        }
+        multiplayerNetwork.syncEntityData(runtimeName, fieldName.trim(), value);
+    }
+
     private String normalizeNetworkEventMessageParamName(String messageParamName) {
         if (messageParamName == null || messageParamName.trim().isEmpty()) {
             return null;
@@ -5482,6 +5513,14 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         if (!applyNetworkVariableValue(normalizedName, value)) {
             pendingNetworkVariableValues.put(normalizedName, value);
         }
+    }
+
+    public void receiveNetworkEntityDataUpdate(String runtimeName, String fieldName, Object value) {
+        if (runtimeName == null || runtimeName.trim().isEmpty()
+                || fieldName == null || fieldName.trim().isEmpty()) {
+            return;
+        }
+        setEntityUserData(runtimeName.trim(), fieldName.trim(), value);
     }
 
     private boolean applyNetworkVariableValue(String varName, Object value) {
@@ -8928,6 +8967,24 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
 
         g.setUserData(fieldName,data);
+    }
+
+    private void setEntityUserData(String targetVar, String fieldName, java.lang.Object data) {
+        if (models.containsKey(targetVar)) {
+            setModelUserData(targetVar, fieldName, data);
+            return;
+        }
+        if (spheres.containsKey(targetVar)) {
+            setSphereUserData(targetVar, fieldName, data);
+            return;
+        }
+        if (boxes.containsKey(targetVar)) {
+            setBoxUserData(targetVar, fieldName, data);
+            return;
+        }
+        if (sprites.containsKey(targetVar)) {
+            setSpriteUserData(targetVar, fieldName, data);
+        }
     }
 
     public void AddEntityToGroup(int varType, String targetVar, String targetGroup, ProgramDef prg, SceneMaxScope scope) {

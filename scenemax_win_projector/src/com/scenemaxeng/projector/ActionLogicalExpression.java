@@ -618,6 +618,17 @@ public class ActionLogicalExpression extends ActionStatementBase {
                 return res;
             }
 
+            if (ctx.network_entity_runtime_value() != null) {
+                SceneMaxParser.Network_entity_runtime_valueContext networkCtx = ctx.network_entity_runtime_value();
+                String field = networkCtx.var_decl(1).getText();
+                if (field.equalsIgnoreCase("id")) {
+                    res = app.getEntityNetworkId(scope, networkCtx.var_decl(0).getText());
+                } else {
+                    res = 0;
+                }
+                return res;
+            }
+
             if (ctx.variable_field() != null) {
                 String var = ctx.variable_field().var_decl().getText();
                 RunTimeVarDef vd1 = app.findVarRuntime(null, scope, var);

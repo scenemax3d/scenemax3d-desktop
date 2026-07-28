@@ -103,6 +103,7 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
         LOAD_IDENTIFIER,
         LOAD_VARIABLE_FIELD,
         LOAD_VARIABLE_DATA_FIELD,
+        LOAD_NETWORK_ENTITY_FIELD,
         LOAD_FUNCTION_VALUE,
         LOAD_CAMERA_SYSTEM_VALUE,
         LOAD_CAMERA_MODIFIER_VALUE,
@@ -368,6 +369,13 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                 return null;
             }
 
+            if (ctx.network_entity_runtime_value() != null) {
+                String var = ctx.network_entity_runtime_value().var_decl(0).getText();
+                String field = ctx.network_entity_runtime_value().var_decl(1).getText();
+                code.add(new Instruction(OpCode.LOAD_NETWORK_ENTITY_FIELD, var, field, line));
+                return null;
+            }
+
             if (ctx.variable_field() != null) {
                 String var = ctx.variable_field().var_decl().getText();
                 String field = ctx.variable_field().var_field().getText();
@@ -542,6 +550,9 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                         break;
                     case LOAD_VARIABLE_DATA_FIELD:
                         pushValue(stack, loadVariableDataField(scope, (String) ins.a, (String) ins.b));
+                        break;
+                    case LOAD_NETWORK_ENTITY_FIELD:
+                        pushValue(stack, loadNetworkEntityField(scope, (String) ins.a, (String) ins.b));
                         break;
                     case LOAD_FUNCTION_VALUE:
                         pushValue(stack, loadFunctionValue(scope, (SceneMaxParser.Function_valueContext) ins.a, ins.line));
@@ -740,6 +751,13 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                 return null;
             }
             return normalizeNumber(app.getUserDataFieldValue(vd1.varName, field));
+        }
+
+        private static Object loadNetworkEntityField(SceneMaxScope scope, String var, String field) {
+            if (!"id".equalsIgnoreCase(field)) {
+                return 0d;
+            }
+            return normalizeNumber(app.getEntityNetworkId(scope, var));
         }
 
         private static Object loadFunctionValue(SceneMaxScope scope, SceneMaxParser.Function_valueContext fnCtx, int line) {
