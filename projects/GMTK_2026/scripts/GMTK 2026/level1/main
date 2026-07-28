@@ -1,0 +1,34 @@
+//audio.play "track1" loop
+add "level1.code",
+    "/variables/constants",
+    "/variables/global_variables", 
+    "network_state.code", 
+    "collision.code" code
+    
+UI.load "level1_ui"
+
+network.join session selected_session
+UI.layer1.txt_session_name.text = selected_session
+
+add "setup_player.code" code 
+player.switch to character mode : gravity 60 // this is intentionaly here and not inside player set up code
+add "player_state.code" code
+add "player_input.code" code
+add "camera_strategy" Code
+add "network_events.code" Code
+add "healthbar.code" code
+add "switch_player.code" Code
+
+total_players_count = total_players_count + 1
+
+/////
+run set_player_init_position(0)
+network.broadcast("new_player", selected_name)
+
+[player.data.is_fighter == 1 && is_executing==0]
+count_down = {
+	fight_counter = fight_counter - 1
+	UI.layer1.txtCounter.text = fight_counter 
+	
+}
+run count_down every 1 second 

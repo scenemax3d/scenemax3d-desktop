@@ -1,0 +1,77 @@
+
+var model_types = ["fighter1_native"]
+
+// 
+player => (model_types[selected_fighter]): pos(-100,0,0),
+	multiplayer, scale 3.0,shadow mode cast, collision shape none async
+player_label => label : multiplayer, text selected_name
+player_label.attach to player."mixamorig:Head" : pos (-1,1.5,0)
+
+body_collider => collider box : multiplayer, size (1.0,1.0,1.0), pos (0.0,0.5,2.88586)
+// player1_body_collider_attach
+body_collider.attach to player: pos (0,1,0)
+head_collider => collider sphere :multiplayer, pos (2.5929513,0.5,0.0), radius 0.5
+// player1_head_collider_attach
+head_collider.attach to player."mixamorig:Head": pos (0,0.5,0)
+left_foot_collider => collider sphere :multiplayer, pos (4.0232105,0.5,0.0), radius 0.5
+// player1_left_foot_collider_attach
+left_foot_collider.attach to player."mixamorig:LeftFoot": pos (0,0,0)
+right_foot_collider => collider sphere :multiplayer, pos (5.2495646,0.5,0.0), radius 0.5
+// player1_right_foot_collider_attach
+right_foot_collider.attach to player."mixamorig:RightFoot": pos (0,0,0)
+left_hand_collider => collider sphere :multiplayer, pos (6.8733816,0.5,0.0), radius 0.5
+// player1_left_hand_collider_attach
+left_hand_collider.attach to player."mixamorig:LeftHand": pos (0,0,0)
+right_hand_collider => collider sphere :multiplayer, pos (8.34038,0.5,0.0), radius 0.5
+// player1_right_hand_collider_attach
+right_hand_collider.attach to player."mixamorig:RightHand": pos (0,0,0)
+
+player.data.is_jumping = 0 
+player.data.is_fighter = 0
+player.data.is_player1 = 0
+player.data.is_player2 = 0
+player.data.name = selected_name
+
+set_player_init_position (game_status) = {
+  //player.clear character mode
+	if (fighter_slot1 == 0) {
+	  
+	  fighter_slot1 = 1
+	  player.pos (0.0,5,-7)
+		UI.layer1.player1_name.text = player.data.name 
+		player.data.is_fighter = 1
+		player.data.is_player1 = 1
+		fighter_index = 0
+		player1_health = INITIAL_PLAYER_STRENGTH
+	} else if (fighter_slot2 == 0) {
+	
+		fighter_slot2 = 1
+		player.pos (0.0,5,7)
+	  UI.layer1.player2_name.text = player.data.name
+	  player.data.is_fighter = 1 
+	  player.data.is_player2 = 1
+	  fighter_index = 1
+	  player2_health = INITIAL_PLAYER_STRENGTH
+	} else {
+	
+	  // put the player in the crowed just for the first time 
+	  if (game_status == 0) {
+		  var radius = 10
+		  var rad = 3.14 / 180
+		  var ang = total_players_count * 30 * rad
+		  var xPos = cos(ang) * radius
+		  var zPos = sin(ang) * radius
+		  player.pos (xPos,5,zPos)
+	  } 
+	  
+	}
+  
+  
+  player.idle2 loop
+  camera.chase player
+	
+}
+
+	
+	
+

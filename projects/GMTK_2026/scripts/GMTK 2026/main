@@ -1,0 +1,6 @@
+canvas.size 800,900
+//screen.mode borderless
+
+using fighter1_native model 
+
+switch to "welcome"

@@ -1,0 +1,49 @@
+audio.play "track1" loop
+add "welcome.code" code
+add "network.code" code
+coin1.turn left 360 in 30 seconds loop while 1==1 async  
+ninja.idle3 loop
+ninja.move down 0.5 in 10 seconds async   
+sys.print "connecting..."
+wait for network.ready
+sys.print ""
+
+// at this point I have all sessions data ready to use and populate the list-view
+
+UI.load "join_session"
+
+var sessions = ["ROME IT", "LONDON ENG"]
+run show_sessions
+
+shared var selected_session = ""
+shared var selected_fighter = 0 [0..1]
+shared var selected_name = ""
+
+var row = 0 [0..1];
+UI.layer1.lv_combats.selected = 0
+  
+when key up is pressed once do
+  row = row - 1
+  UI.layer1.lv_combats.selected = row
+end do
+
+when key down is pressed once do
+  row = row + 1
+  UI.layer1.lv_combats.selected = row
+end do
+
+when key Enter is pressed once do
+  selected_name = UI.layer1.edit_name.text
+  if (selected_name == "") {
+    selected_name = "Anonymous" 
+  }
+  selected_session = sessions[row]
+  switch to "level1"
+end do
+
+show_laser = {
+  audio.play "laser1"
+  laser_effect => effects.effekseer.Laser02_3
+  laser_effect.play pos (0,0,0)
+}
+run show_laser every 5 seconds 

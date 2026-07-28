@@ -1,0 +1,58 @@
+
+switch_player = {
+
+	// remove player from the fight 
+  player.data.is_jumping = 0 
+  player.data.is_fighter = 0
+	recorded_actions.reset(0) 
+	  		
+	// broadcast fight over to all clients
+	if (player.data.is_player1 == 1) {
+	  fighter_slot1 = 0
+	} else if (player.data.is_player2 == 1) {
+		fighter_slot2 = 0
+	}
+
+	player.data.is_player1 = 0
+  player.data.is_player2 = 0
+  player.data.just_played = 1 // TBD use this flag to avoid this player to fight in the next fight 
+  
+  game_status = GAME_STATE_OVER
+  network.broadcast("fight_over")
+	wait 3 Seconds
+	
+	// start the fight 
+	wait for fighter_slot1 == 1 && fighter_slot2 == 1
+	game_status = GAME_STATE_START
+	network.broadcast("fight_start")
+}
+
+network.on("fight_over") = {
+	//sys.print "fight over"
+
+	// already a fighter? just go to you place
+	if ((player.data.is_player1 + player.data.is_player2) > 0 ) {
+	  //player.clear character mode 
+	  if (player.data.is_player1 == 1) {
+	    player.pos (0,5,-7)
+	  } else {
+	    player.pos (0,5,7)
+	  }
+
+    wait 0.5 seconds 
+    player.idle2 loop
+  
+		return;
+	}
+
+	// position player as a fighter if you get lucky
+	wait 0.5 + 0.01 * rnd(100) seconds // wait random amount of time 
+	run set_player_init_position(1) 
+
+  //
+	
+}
+
+network.on("fight_start") = {
+	UI.layer1.txtCounter.text = "START" 
+}

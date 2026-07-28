@@ -1,0 +1,4 @@
+// Auto-generated UI code from: join_session.smui
+// Do not edit manually - changes will be overwritten on save.
+
+UI.load "join_session"

@@ -1,0 +1,28 @@
+Material env_shader1 : environment_shaders/env_shader1/env_shader1.j3md {
+    FogColor : 0.72 0.8 0.9 1.0
+    FogDensity : 0.35
+    FogNearDistance : 12.0
+    FogFarDistance : 80.0
+    RainColor : 0.82 0.9 1.0 1.0
+    RainIntensity : 0.55
+    RainSpeed : 1.2
+    RainAngle : -18.0
+    OverlayOpacity : 0.32
+    SnowColor : 0.95 0.97 1.0 1.0
+    SnowIntensity : 0.2
+    SnowSpeed : 0.1
+    SnowFlakeSize : 0.05
+    WindDirection : 75.0
+    WindStrength : 0.45
+    WindGustiness : 0.35
+    SkyTint : 0.2 0.2 0.2 1.0
+    SkyBrightness : 1.0
+    SkyHorizonBlend : 0.45
+    AmbientColor : 0.58 0.62 0.68 1.0
+    AmbientIntensity : 0.65
+    LightColor : 1.0 0.96 0.88 1.0
+    LightIntensity : 1.1
+    LightPitch : -38.0
+    LightYaw : -32.0
+    Time : 0.0
+}
