@@ -5362,6 +5362,10 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         return inst == null ? 0 : multiplayerNetwork.networkEntityId(inst.getVarRunTimeName());
     }
 
+    public Spatial resolveNetworkEntitySpatial(int networkEntityId) {
+        return multiplayerNetwork == null ? null : multiplayerNetwork.networkEntitySpatial(networkEntityId);
+    }
+
     public void sendNetworkEventToEntity(SceneMaxScope scope, String varName, String eventName, Object message) {
         if (multiplayerNetwork == null || scope == null || varName == null || varName.trim().isEmpty()
                 || eventName == null || eventName.trim().isEmpty()) {

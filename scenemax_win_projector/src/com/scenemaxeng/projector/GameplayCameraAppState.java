@@ -13,6 +13,7 @@ class GameplayCameraAppState {
     private final SceneMaxScope scope;
     private final RuntimeCameraSystemValue settings;
     private final Camera cam;
+    private final Spatial targetSpatial;
 
     private final Vector3f smoothedLookAt = new Vector3f();
     private final Vector3f lastTargetPos = new Vector3f();
@@ -31,6 +32,7 @@ class GameplayCameraAppState {
         this.scope = scope;
         this.settings = settings;
         this.cam = app.getCamera();
+        this.targetSpatial = resolveSpatial(settings.primaryTarget, settings.primaryTargetEntityPos, settings.primaryTargetVar);
     }
 
     void update(float tpf) {
@@ -39,14 +41,13 @@ class GameplayCameraAppState {
             return;
         }
 
-        Spatial target = resolveSpatial(settings.primaryTargetEntityPos, settings.primaryTargetVar);
-        if (target == null) {
-            return;
-        }
-
-        Vector3f targetPos = target.getWorldTranslation().clone();
-        Vector3f targetForward = target.getWorldRotation().mult(Vector3f.UNIT_Z).normalizeLocal();
-        Vector3f targetRight = target.getWorldRotation().mult(Vector3f.UNIT_X).normalizeLocal();
+        Vector3f targetPos = targetSpatial == null ? Vector3f.ZERO.clone() : targetSpatial.getWorldTranslation().clone();
+        Vector3f targetForward = targetSpatial == null
+                ? Vector3f.UNIT_Z.clone()
+                : targetSpatial.getWorldRotation().mult(Vector3f.UNIT_Z).normalizeLocal();
+        Vector3f targetRight = targetSpatial == null
+                ? Vector3f.UNIT_X.clone()
+                : targetSpatial.getWorldRotation().mult(Vector3f.UNIT_X).normalizeLocal();
 
         if (!initialized) {
             initialized = true;
@@ -148,9 +149,8 @@ class GameplayCameraAppState {
 
         float alpha = smoothingAlpha(settings.damping, tpf);
         Vector3f desiredLookAt;
-        if (settings.primaryTargetVar != null) {
-            Spatial target = resolveSpatial(settings.primaryTargetEntityPos, settings.primaryTargetVar);
-            desiredLookAt = target != null ? target.getWorldTranslation().clone() : cam.getLocation().clone();
+        if (settings.primaryTarget != null || settings.primaryTargetVar != null) {
+            desiredLookAt = targetSpatial != null ? targetSpatial.getWorldTranslation().clone() : Vector3f.ZERO.clone();
         } else {
             desiredLookAt = smoothedLookAt.lengthSquared() == 0f ? cam.getLocation().clone() : smoothedLookAt.clone();
         }
@@ -167,6 +167,26 @@ class GameplayCameraAppState {
         app.applySystemCameraFrame(cam.getLocation().clone().interpolateLocal(desiredPos, alpha), smoothedLookAt, settings.fov, tpf);
     }
 
+    private Spatial resolveSpatial(RuntimeCameraTargetValue target, EntityPos entityPos, String varName) {
+        if (target != null) {
+            if (target.networkOwnerVar != null) {
+                return app.resolveNetworkEntitySpatial(app.getEntityNetworkId(scope, target.networkOwnerVar));
+            }
+            if (target.networkEntityId != null) {
+                return app.resolveNetworkEntitySpatial(target.networkEntityId.intValue());
+            }
+            Spatial networkSpatial = resolveNetworkSpatialFromVariable(target.varName);
+            if (networkSpatial != null) {
+                return networkSpatial;
+            }
+            Spatial spatial = resolveSpatial(target.entityPos, target.varName);
+            if (spatial != null) {
+                return spatial;
+            }
+        }
+        return resolveSpatial(entityPos, varName);
+    }
+
     private Spatial resolveSpatial(EntityPos entityPos, String varName) {
         if (entityPos != null) {
             return app.resolveEntityPosSpatial(null, scope, entityPos);
@@ -174,11 +194,38 @@ class GameplayCameraAppState {
         if (varName == null || varName.isBlank()) {
             return null;
         }
+        Spatial networkSpatial = resolveNetworkSpatialFromVariable(varName);
+        if (networkSpatial != null) {
+            return networkSpatial;
+        }
         RunTimeVarDef rt = app.findVarRuntime(null, scope, varName);
         if (rt == null) {
             return null;
         }
         return app.getEntitySpatial(rt.varName, rt.varDef.varType);
+    }
+
+    private Spatial resolveNetworkSpatialFromVariable(String varName) {
+        VarInst var = scope == null ? null : scope.getVar(varName);
+        Integer networkEntityId = networkEntityIdFromValue(var == null ? null : var.value);
+        if (networkEntityId == null) {
+            return null;
+        }
+        return app.resolveNetworkEntitySpatial(networkEntityId.intValue());
+    }
+
+    private Integer networkEntityIdFromValue(Object value) {
+        if (value instanceof Number) {
+            return Integer.valueOf(((Number) value).intValue());
+        }
+        if (value instanceof String) {
+            try {
+                return Integer.valueOf((int) Double.parseDouble(((String) value).trim()));
+            } catch (NumberFormatException ex) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private void applyBounds(Vector3f pos) {

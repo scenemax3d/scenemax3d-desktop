@@ -56,6 +56,23 @@ public class CameraSystemParsingTest {
     }
 
     @Test
+    public void parsesNetworkEntityIdCameraSystemTargets() {
+        String code = "hero=>sinbad: multiplayer\n"
+                + "villain=>sinbad: multiplayer\n"
+                + "Network Var villain_id = villain.Network.id\n"
+                + "fight_cam = camera.system.fighting(hero.Network.id, villain_id, depth 18, height 3)\n"
+                + "literal_id_cam = camera.system.fighting(42, hero, depth 18, height 3)\n"
+                + "follow_cam = camera.system.third_person(hero.Network.id, distance 9, height 3)\n";
+
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(code);
+
+        assertTrue(prg.syntaxErrors.isEmpty());
+        assertNotNull(prg.getVar("fight_cam"));
+        assertNotNull(prg.getVar("literal_id_cam"));
+        assertNotNull(prg.getVar("follow_cam"));
+    }
+
+    @Test
     public void parsesChaseCameraEquippedWeaponTarget() {
         String code = "hero=>sinbad\n"
                 + "camera.chase hero.weapon";

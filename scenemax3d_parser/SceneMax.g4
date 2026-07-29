@@ -282,7 +282,7 @@ pos_axes_2d : print_pos_x ',' print_pos_y ;
 pos_axes : print_pos_x ',' print_pos_y ',' print_pos_z ;
 pos_entity : weapon_collider_ref | weapon_ref | var_decl collision_joint_1? ;
 weapon_ref : var_decl '.' Weapon ;
-camera_target_ref : weapon_ref | var_decl ;
+camera_target_ref : weapon_ref | network_entity_runtime_value | number_expr | var_decl ;
 print_pos_x : logical_expression ;
 print_pos_y : logical_expression ;
 print_pos_z : logical_expression ;

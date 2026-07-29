@@ -15,6 +15,8 @@ class RuntimeCameraSystemValue {
     String secondaryTargetVar;
     EntityPos primaryTargetEntityPos;
     EntityPos secondaryTargetEntityPos;
+    RuntimeCameraTargetValue primaryTarget;
+    RuntimeCameraTargetValue secondaryTarget;
 
     float distance = 12f;
     float depth = 14f;
