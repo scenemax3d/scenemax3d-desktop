@@ -5005,6 +5005,8 @@ public class SceneMaxLanguageParser implements IParser {
             pos.equippedWeapon = true;
         } else if (targetRef.var_decl() != null) {
             pos.entityName = targetRef.var_decl().getText();
+        } else {
+            return null;
         }
         return pos;
     }

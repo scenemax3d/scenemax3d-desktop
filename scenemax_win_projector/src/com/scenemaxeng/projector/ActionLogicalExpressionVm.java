@@ -844,20 +844,44 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                                                  RuntimeCameraSystemValue value,
                                                  int line) {
             if (ctx.camera_system_dual_target_expr() != null) {
-                value.primaryTargetEntityPos = parseCameraTargetRef(ctx.camera_system_dual_target_expr().camera_target_ref(0));
-                value.secondaryTargetEntityPos = parseCameraTargetRef(ctx.camera_system_dual_target_expr().camera_target_ref(1));
-                value.primaryTargetVar = value.primaryTargetEntityPos == null ? null : value.primaryTargetEntityPos.entityName;
-                value.secondaryTargetVar = value.secondaryTargetEntityPos == null ? null : value.secondaryTargetEntityPos.entityName;
+                value.primaryTarget = parseCameraTarget(ctx.camera_system_dual_target_expr().camera_target_ref(0));
+                value.secondaryTarget = parseCameraTarget(ctx.camera_system_dual_target_expr().camera_target_ref(1));
+                applyLegacyTargetFields(value);
                 return;
             }
             if (ctx.camera_system_single_target_expr() != null) {
-                value.primaryTargetEntityPos = parseCameraTargetRef(ctx.camera_system_single_target_expr().camera_target_ref());
-                value.primaryTargetVar = value.primaryTargetEntityPos == null ? null : value.primaryTargetEntityPos.entityName;
+                value.primaryTarget = parseCameraTarget(ctx.camera_system_single_target_expr().camera_target_ref());
+                applyLegacyTargetFields(value);
                 return;
             }
             if (!RuntimeCameraSystemValue.TYPE_RTS.equalsIgnoreCase(value.systemType)) {
                 app.handleRuntimeError("Line " + line + ": camera.system." + value.systemType + " requires a target");
             }
+        }
+
+        private void applyLegacyTargetFields(RuntimeCameraSystemValue value) {
+            value.primaryTargetEntityPos = value.primaryTarget == null ? null : value.primaryTarget.entityPos;
+            value.secondaryTargetEntityPos = value.secondaryTarget == null ? null : value.secondaryTarget.entityPos;
+            value.primaryTargetVar = value.primaryTarget == null ? null : value.primaryTarget.varName;
+            value.secondaryTargetVar = value.secondaryTarget == null ? null : value.secondaryTarget.varName;
+        }
+
+        private RuntimeCameraTargetValue parseCameraTarget(SceneMaxParser.Camera_target_refContext targetRef) {
+            if (targetRef == null) {
+                return null;
+            }
+            RuntimeCameraTargetValue target = new RuntimeCameraTargetValue();
+            if (targetRef.network_entity_runtime_value() != null) {
+                target.networkOwnerVar = targetRef.network_entity_runtime_value().var_decl(0).getText();
+                return target;
+            }
+            if (targetRef.number_expr() != null) {
+                target.networkEntityId = Integer.valueOf((int) Double.parseDouble(targetRef.number_expr().getText()));
+                return target;
+            }
+            target.entityPos = parseCameraTargetRef(targetRef);
+            target.varName = target.entityPos == null ? null : target.entityPos.entityName;
+            return target;
         }
 
         private EntityPos parseCameraTargetRef(SceneMaxParser.Camera_target_refContext targetRef) {
@@ -870,6 +894,8 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                 pos.equippedWeapon = true;
             } else if (targetRef.var_decl() != null) {
                 pos.entityName = targetRef.var_decl().getText();
+            } else {
+                return null;
             }
             return pos;
         }

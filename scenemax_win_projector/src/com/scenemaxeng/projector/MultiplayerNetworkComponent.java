@@ -359,6 +359,19 @@ public class MultiplayerNetworkComponent {
         return remote == null ? 0 : remote.networkEntityId;
     }
 
+    public Spatial networkEntitySpatial(int networkEntityId) {
+        if (networkEntityId == 0 || app == null) {
+            return null;
+        }
+        for (RegisteredEntity entity : localEntities.values()) {
+            if (entity != null && entity.networkEntityId == networkEntityId && entity.runtimeName != null) {
+                return app.getEntitySpatial(entity.runtimeName);
+            }
+        }
+        RemoteEntity remote = remoteEntities.get(networkEntityId);
+        return remote == null || remote.runtimeName == null ? null : app.getEntitySpatial(remote.runtimeName);
+    }
+
     public void sendNetworkEventToEntity(String runtimeName, String eventName, Object message) {
         if (runtimeName == null || eventName == null || eventName.trim().isEmpty()) {
             return;

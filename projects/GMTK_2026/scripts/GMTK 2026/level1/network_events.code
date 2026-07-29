@@ -135,3 +135,6 @@ network.on ("new_player", name) = {
   UI.layer1.panelMsg1.ease("EaseOutBounce", Up, 5)
 }
 
+network.on("set_fighting_camera") = {
+  run set_camera_on_player
+}

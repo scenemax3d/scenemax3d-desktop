@@ -34,28 +34,30 @@ player.data.slot# = 0
 set_player_init_position (slot) = {
   
 	if (fighter_slot1 == 0 || slot == 1) {
-	  fighter_slot1 = 1
+	  fighter_slot1 = player.network.id
 	  player.pos (0.0,5,-7)
 		UI.layer1.player1_name.text = player.data.name 
 		player.data.is_fighter = 1
 		player.data.slot# = 1  
 		fighter_index = 0
 		player1_health = INITIAL_PLAYER_STRENGTH
+		network.broadcast("set_fighting_camera")
 	} else if (fighter_slot2 == 0 || slot == 2) {
-		fighter_slot2 = 1
+		fighter_slot2 = player.network.id
 		player.pos (0.0,5,7)
 	  UI.layer1.player2_name.text = player.data.name
 	  player.data.is_fighter = 1 
 	  player.data.slot# = 2
 	  fighter_index = 1
 	  player2_health = INITIAL_PLAYER_STRENGTH
+	  network.broadcast("set_fighting_camera")
 	} else {
 	
 	  run position_player_in_crowed
 	}
   
   player.idle2 loop
-  camera.chase player
+  //run set_camera_on_player
 	
 }
 

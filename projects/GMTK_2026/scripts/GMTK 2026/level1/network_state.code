@@ -5,6 +5,3 @@ network var total_players_count = 0
 network var player1_health = 1 [0..10]
 network var player2_health = 1 [0..10]
 network var game_status = GAME_STATE_START
-
-//network var player1_name = ""
-//network var player2_name = ""
