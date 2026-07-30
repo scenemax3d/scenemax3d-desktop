@@ -736,27 +736,29 @@ public class EditorTabPanel extends JPanel {
             textAreaRTL.setText(newTab.content);
             suppressDocumentEvents = false;
 
-            // Restore caret position
-            try {
-                if (newTab.caretPosition <= newTab.content.length()) {
-                    if (newTab.isRtlMode) {
-                        textAreaRTL.setCaretPosition(newTab.caretPosition);
-                    } else {
-                        textArea.setCaretPosition(newTab.caretPosition);
-                    }
-                }
-            } catch (IllegalArgumentException e) {
-                // caret position out of bounds, reset to 0
-            }
-
-            // Restore RTL/LTR mode
+            // Restore RTL/LTR mode before setting the caret so the visible
+            // editor receives both the saved position and focus.
+            JTextArea visibleEditor;
             if (newTab.isRtlMode) {
                 textAreaSP.setVisible(false);
                 textAreaRtlSP.setVisible(true);
+                visibleEditor = textAreaRTL;
             } else {
                 textAreaRtlSP.setVisible(false);
                 textAreaSP.setVisible(true);
+                visibleEditor = textArea;
             }
+
+            // Restore caret position
+            try {
+                int caretPosition = Math.max(0, Math.min(newTab.caretPosition, newTab.content.length()));
+                visibleEditor.setCaretPosition(caretPosition);
+            } catch (IllegalArgumentException e) {
+                // caret position out of bounds, reset to 0
+                visibleEditor.setCaretPosition(0);
+            }
+
+            SwingUtilities.invokeLater(visibleEditor::requestFocusInWindow);
         }
 
         centerContainer.revalidate();

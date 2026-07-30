@@ -96,36 +96,36 @@ reduce_health = {
 	
 }
 
-[is_hit == 0]
-network.on ("head_hit_by_foot") = {
+player_hit = {
   is_hit = 1
+  do async 
+  	player.shader ="dramatic_hit_red"
+  	wait 0.2 Seconds
+  	player.shader =""
+  end do 
   audio.play "hurt1"
 	player.back_death1
 	run reduce_health
+}
+
+[is_hit == 0]
+network.on ("head_hit_by_foot") = {
+  run player_hit
 }
 
 [is_hit == 0]
 network.on ("head_hit_by_hand") = {
-  is_hit = 1
-  audio.play "hurt1"
-  player.back_death1
-  run reduce_health
+  run player_hit
 }
 
 [is_hit == 0]
 network.on ("body_hit_by_foot") = {
-  is_hit = 1
-  audio.play "hurt1"
-	player.back_death1
-	run reduce_health
+  run player_hit
 }
 
 [is_hit == 0]
 network.on ("body_hit_by_hand") = {
-  is_hit = 1
-  audio.play "hurt1"
-	player.back_death1
-	run reduce_health
+  run player_hit
 }
 
 network.on ("new_player", name) = {
