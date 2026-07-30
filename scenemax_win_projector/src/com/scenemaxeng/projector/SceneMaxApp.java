@@ -146,6 +146,8 @@ import java.util.regex.Pattern;
 
 
 public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiProxy, IApplicationChannel {
+    public static final String NETWORK_ENTITY_SHADER_FIELD = "shader";
+
     private static final com.jme3.bullet.collision.PhysicsCollisionListener PAIR_TEST_LISTENER =
             new com.jme3.bullet.collision.PhysicsCollisionListener() {
                 @Override
@@ -5543,7 +5545,12 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
                 || fieldName == null || fieldName.trim().isEmpty()) {
             return;
         }
-        setEntityUserData(runtimeName.trim(), fieldName.trim(), value);
+        String normalizedField = fieldName.trim();
+        if (NETWORK_ENTITY_SHADER_FIELD.equalsIgnoreCase(normalizedField)) {
+            setEntityShader(runtimeName.trim(), value == null ? "" : String.valueOf(value));
+            return;
+        }
+        setEntityUserData(runtimeName.trim(), normalizedField, value);
     }
 
     private boolean applyNetworkVariableValue(String varName, Object value) {
@@ -11192,11 +11199,20 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
     }
 
-    public void setEntityShader(String targetVar, int varType, String shaderName) {
+    public boolean setEntityShader(String targetVar, String shaderName) {
+        Spatial target = getEntitySpatial(targetVar);
+        return setEntityShader(targetVar, target, shaderName);
+    }
+
+    public boolean setEntityShader(String targetVar, int varType, String shaderName) {
         Spatial target = getEntitySpatial(targetVar, varType);
+        return setEntityShader(targetVar, target, shaderName);
+    }
+
+    private boolean setEntityShader(String targetVar, Spatial target, String shaderName) {
         if (target == null) {
             handleRuntimeError("Cannot find object '" + targetVar + "'");
-            return;
+            return false;
         }
 
         if (!setSpatialShader(target, shaderName, false)) {
@@ -11205,7 +11221,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             } else {
                 handleRuntimeError("Cannot find shader resource named: '" + shaderName + "'");
             }
+            return false;
         }
+        return true;
     }
 
     public void setUIWidgetShader(com.scenemaxeng.common.ui.widget.UIWidgetNode widget, String shaderName) {

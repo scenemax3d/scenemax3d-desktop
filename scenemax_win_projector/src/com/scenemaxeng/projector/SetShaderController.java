@@ -18,7 +18,10 @@ public class SetShaderController extends SceneMaxBaseController {
         SetShaderCommand cmd = (SetShaderCommand) this.cmd;
         Object shaderValue = new ActionLogicalExpressionVm(cmd.shaderNameExpr, this.scope).evaluate();
         String shaderName = shaderValue == null ? "" : shaderValue.toString();
-        app.setEntityShader(this.targetVar, this.targetVarDef.varType, shaderName);
+        if (app.setEntityShader(this.targetVar, this.targetVarDef.varType, shaderName)
+                && !cmd.fromMultiplayerNetwork) {
+            app.syncNetworkEntityData(this.targetVar, SceneMaxApp.NETWORK_ENTITY_SHADER_FIELD, shaderName);
+        }
         return true;
     }
 }
