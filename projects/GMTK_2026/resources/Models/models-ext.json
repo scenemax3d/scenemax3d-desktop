@@ -206,5 +206,25 @@
     "name": "ninja3_native",
     "sourceModel": "ninja3",
     "rotateY": 0
+  },
+  {
+    "scaleX": 1,
+    "path": "Models/arena1/arena1.j3o",
+    "scaleY": 1,
+    "isStatic": false,
+    "transZ": 0,
+    "transX": 0,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": 0,
+      "capsuleRadius": 2,
+      "capsuleHeight": 2,
+      "stepHeight": 0.05
+    }},
+    "transY": 0,
+    "name": "arena1",
+    "scaleZ": 1,
+    "rotateY": 0
   }
 ]}

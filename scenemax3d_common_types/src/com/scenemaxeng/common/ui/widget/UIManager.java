@@ -17,7 +17,6 @@ import com.scenemaxeng.common.ui.model.UIDocument;
 import com.scenemaxeng.common.ui.model.UILayerDef;
 import com.scenemaxeng.common.ui.model.UIRenderMode;
 import com.scenemaxeng.common.ui.model.UIWidgetDef;
-import com.scenemaxeng.common.ui.model.UIWidgetType;
 
 import com.scenemaxeng.common.types.AssetsMapping;
 
@@ -49,7 +48,7 @@ public class UIManager {
     private boolean ctrlDown;
 
     private Map<String, LoadedUI> loadedUIs = new LinkedHashMap<>();
-    private Map<String, UITextViewNode> multiplayerTextViews = new LinkedHashMap<>();
+    private Map<String, UIWidgetNode> multiplayerWidgets = new LinkedHashMap<>();
 
     private static class LoadedUI {
         String name;
@@ -125,7 +124,7 @@ public class UIManager {
 
             layerNode.setLayerVisible(layerDef.isVisible());
             loadedUI.layerNodes.put(layerDef.getName(), layerNode);
-            registerMultiplayerTextViews(name, layerDef, layerNode);
+            registerMultiplayerWidgets(name, layerDef, layerNode);
         }
 
         loadedUIs.put(name, loadedUI);
@@ -143,7 +142,7 @@ public class UIManager {
         for (UILayerNode layerNode : loaded.layerNodes.values()) {
             layerNode.removeFromParent();
         }
-        multiplayerTextViews.entrySet().removeIf(entry -> entry.getKey().startsWith(multiplayerSyncKeyPrefix(uiName)));
+        multiplayerWidgets.entrySet().removeIf(entry -> entry.getKey().startsWith(multiplayerSyncKeyPrefix(uiName)));
         if (focusedEditText != null) {
             focusedEditText.setFocused(false);
             focusedEditText = null;
@@ -213,6 +212,10 @@ public class UIManager {
     }
 
     public String multiplayerTextSyncKey(String uiName, String layerName, String widgetPath) {
+        return multiplayerWidgetSyncKey(uiName, layerName, widgetPath);
+    }
+
+    public String multiplayerWidgetSyncKey(String uiName, String layerName, String widgetPath) {
         if (uiName == null || uiName.trim().isEmpty()
                 || layerName == null || layerName.trim().isEmpty()
                 || widgetPath == null || widgetPath.trim().isEmpty()) {
@@ -222,19 +225,41 @@ public class UIManager {
     }
 
     public String multiplayerTextSyncKeyForPath(String uiName, String layerName, String widgetPath) {
+        return multiplayerWidgetSyncKeyForPath(uiName, layerName, widgetPath);
+    }
+
+    public String multiplayerWidgetSyncKeyForPath(String uiName, String layerName, String widgetPath) {
         ResolvedUIPath resolved = resolvePath(uiName, layerName, widgetPath);
         if (resolved == null || resolved.uiName == null) {
             return null;
         }
-        return multiplayerTextSyncKey(resolved.uiName, resolved.layerName, resolved.widgetPath);
+        String syncKey = multiplayerWidgetSyncKey(resolved.uiName, resolved.layerName, resolved.widgetPath);
+        UIWidgetNode node = multiplayerWidgets.get(syncKey);
+        return node == null ? null : syncKey;
+    }
+
+    public String multiplayerCommandSyncKeyForPath(String uiName, String layerName, String widgetPath) {
+        String widgetKey = multiplayerWidgetSyncKeyForPath(uiName, layerName, widgetPath);
+        return widgetKey == null ? null : widgetKey + ":cmd";
+    }
+
+    public boolean hasMultiplayerCommandSyncKey(String syncKey) {
+        if (syncKey == null || !syncKey.endsWith(":cmd")) {
+            return false;
+        }
+        return multiplayerWidgets.containsKey(syncKey.substring(0, syncKey.length() - 4));
+    }
+
+    public boolean isMultiplayerWidget(String uiName, String layerName, String widgetPath) {
+        return multiplayerWidgetSyncKeyForPath(uiName, layerName, widgetPath) != null;
     }
 
     public boolean applyMultiplayerTextSync(String syncKey, String text) {
-        UITextViewNode node = multiplayerTextViews.get(syncKey);
-        if (node == null) {
+        UIWidgetNode node = multiplayerWidgets.get(syncKey);
+        if (!(node instanceof UITextViewNode)) {
             return false;
         }
-        node.setText(text == null ? "" : text);
+        ((UITextViewNode) node).setText(text == null ? "" : text);
         return true;
     }
 
@@ -281,31 +306,31 @@ public class UIManager {
         return null;
     }
 
-    private void registerMultiplayerTextViews(String uiName, UILayerDef layerDef, UILayerNode layerNode) {
+    private void registerMultiplayerWidgets(String uiName, UILayerDef layerDef, UILayerNode layerNode) {
         if (uiName == null || layerDef == null || layerNode == null) {
             return;
         }
         for (UIWidgetDef widget : layerDef.getWidgets()) {
-            registerMultiplayerTextViewRecursive(uiName, layerDef.getName(), widget, widget.getName(), layerNode);
+            registerMultiplayerWidgetRecursive(uiName, layerDef.getName(), widget, widget.getName(), layerNode);
         }
     }
 
-    private void registerMultiplayerTextViewRecursive(String uiName, String layerName, UIWidgetDef widget,
+    private void registerMultiplayerWidgetRecursive(String uiName, String layerName, UIWidgetDef widget,
                                                        String widgetPath, UILayerNode layerNode) {
         if (widget == null) {
             return;
         }
-        if (widget.getType() == UIWidgetType.TEXT_VIEW && widget.isMultiplayer()) {
+        if (widget.isMultiplayer()) {
             UIWidgetNode node = layerNode.findWidget(widgetPath);
-            if (node instanceof UITextViewNode) {
-                String key = multiplayerTextSyncKey(uiName, layerName, widgetPath);
+            if (node != null) {
+                String key = multiplayerWidgetSyncKey(uiName, layerName, widgetPath);
                 if (key != null) {
-                    multiplayerTextViews.put(key, (UITextViewNode) node);
+                    multiplayerWidgets.put(key, node);
                 }
             }
         }
         for (UIWidgetDef child : widget.getChildren()) {
-            registerMultiplayerTextViewRecursive(uiName, layerName, child, widgetPath + "." + child.getName(), layerNode);
+            registerMultiplayerWidgetRecursive(uiName, layerName, child, widgetPath + "." + child.getName(), layerNode);
         }
     }
 

@@ -85,14 +85,14 @@
       "shader": "",
       "dynamicModel": false,
       "hidden": false,
-      "shadowMode": "both",
+      "shadowMode": "none",
       "rotation": [
         0,
         0,
         0,
         1
       ],
-      "resourcePath": "arena2",
+      "resourcePath": "arena1",
       "jointMapping": "",
       "scale": [
         0.1,
@@ -101,14 +101,14 @@
       ],
       "modelCollisionShape": "default",
       "type": "MODEL",
-      "sceneMaxCode": "model_1 => static arena2: pos (0.0,-23.650703,0.0), scale 0.3, shadow mode on async",
+      "sceneMaxCode": "model_2 => static arena1: pos (0.0,0.0,0.0), scale 0.1 async",
       "staticModel": true,
-      "name": "model_1",
+      "name": "model_2",
       "vehicleModel": false,
-      "id": "0e6f3d40-754b-4887-ae07-78d541e2c514",
+      "id": "90b05033-0f75-46e6-be09-b36c207e36b1",
       "position": [
         0,
-        -23.650703,
+        0,
         0
       ],
       "multiplayer": false
@@ -129,15 +129,15 @@
   },
   "camera": {
     "rotation": [
-      0.2216874,
-      0.68497175,
-      -0.23217285,
-      0.6540369
+      0.30342302,
+      0.6053336,
+      -0.26800486,
+      0.68533134
     ],
     "position": [
-      -2.3791618,
-      2.3241413,
-      -34.716415
+      -30.351711,
+      33.686165,
+      -3.7770176
     ]
   },
   "version": 1

@@ -117,6 +117,7 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
         LOAD_ANGLE,
         LOAD_JSON_VALUE,
         LOAD_UI_PROPERTY,
+        LOAD_UI_TARGET,
 
         NOT,
         NEGATE,
@@ -421,6 +422,12 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                 return null;
             }
 
+            if (ctx.ui_runtime_target() != null) {
+                code.add(new Instruction(OpCode.LOAD_UI_TARGET,
+                        ctx.ui_runtime_target().ui_dot_path().getText(), line));
+                return null;
+            }
+
             if (ctx.logical_expression_pointer() != null) {
                 String varName = ctx.logical_expression_pointer().var_decl().getText();
                 code.add(new Instruction(OpCode.LOAD_EXPR_POINTER, varName, line));
@@ -592,6 +599,9 @@ public class ActionLogicalExpressionVm extends ActionStatementBase {
                         break;
                     case LOAD_UI_PROPERTY:
                         pushValue(stack, UIRuntimePropertyAccessor.read(app, (String) ins.a, ins.line));
+                        break;
+                    case LOAD_UI_TARGET:
+                        pushValue(stack, new RuntimeUITargetValue((String) ins.a));
                         break;
 
                     case NOT:

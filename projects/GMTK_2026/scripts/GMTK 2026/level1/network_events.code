@@ -11,26 +11,27 @@ network.on ("count", 5) = {
   } else if(rnd(20)==0){
     audio.play "attack1_jap"
   }
-   
+
+  is_opponent_hit = 0 
   run replay_action (recorded_actions[0])
   run replay_action (recorded_actions[1])
   run replay_action (recorded_actions[2])
   run replay_action (recorded_actions[3])
   run replay_action (recorded_actions[4])
-  //recorded_actions.clear  
-  recorded_actions[0] = 0
-  recorded_actions[1] = 0
-  recorded_actions[2] = 0
-  recorded_actions[3] = 0
-  recorded_actions[4] = 0
+  is_opponent_hit = 0
+  
+  recorded_actions.reset(0)
   rec_action_index = 0
-  run display_recorded_actions
+  //run display_recorded_actions
   is_executing = 0
   fight_counter = 6
   player.idle2
 }
 
+[is_opponent_hit == 0]
 replay_action (action) = {
+  
+  effective_hit = 0
   if (action == 1) {
   	audio.play "kick3"
   	anim = animation player.mma_kick1 at speed of 2
@@ -75,6 +76,8 @@ replay_action (action) = {
   	}
     anim.run
   }
+
+  effective_hit = 0
 }
 
 reduce_health = {
@@ -92,40 +95,47 @@ reduce_health = {
 	} else if (player.data.slot == 2 && player2_health <= 0) {
 		run switch_player
 	}
-
 	
 }
 
 [is_hit == 0]
-network.on ("head_hit_by_foot") = {
+player_hit = {
   is_hit = 1
+  do async 
+  	player.shader ="dramatic_hit_red"
+  	wait 0.2 Seconds
+  	player.shader =""
+  end do 
   audio.play "hurt1"
-	player.back_death1
+	player.back_death1 at speed of 1.5
+	do async
+	  wait 0.5 seconds
+	  audio.play "crash1"
+		wait 0.1 second
+		run shake_the_world2
+		//
+	end do
 	run reduce_health
+}
+
+[is_hit == 0]
+network.on ("head_hit_by_foot") = {
+  run player_hit
 }
 
 [is_hit == 0]
 network.on ("head_hit_by_hand") = {
-  is_hit = 1
-  audio.play "hurt1"
-  player.back_death1
-  run reduce_health
+  run player_hit
 }
 
 [is_hit == 0]
 network.on ("body_hit_by_foot") = {
-  is_hit = 1
-  audio.play "hurt1"
-	player.back_death1
-	run reduce_health
+  run player_hit
 }
 
 [is_hit == 0]
 network.on ("body_hit_by_hand") = {
-  is_hit = 1
-  audio.play "hurt1"
-	player.back_death1
-	run reduce_health
+  run player_hit
 }
 
 network.on ("new_player", name) = {

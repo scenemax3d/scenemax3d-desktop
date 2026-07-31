@@ -9,6 +9,7 @@ import com.scenemaxeng.compiler.NetworkJoinSessionCommand;
 import com.scenemaxeng.compiler.NetworkSendCommand;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.SceneMaxLanguageParser;
+import com.scenemaxeng.compiler.SetShaderCommand;
 import com.scenemaxeng.compiler.SetUserDataCommand;
 import com.scenemaxeng.compiler.StatementDef;
 import com.scenemaxeng.compiler.VariableDeclarationCommand;
@@ -45,7 +46,10 @@ public class MultiplayerCommandDispatchParsingTest {
     private static final byte COMMAND_DISPATCH = 20;
     private static final byte ACTIVE_ACTION_START = 22;
     private static final byte NETWORK_EVENT = 24;
+    private static final byte NETWORK_ENTITY_DATA_UPDATE = 27;
     private static final byte INITIAL_SYNC_COMPLETE = 32;
+    private static final int NETWORK_ENTITY_DATA_FIELD_SIZE = 64;
+    private static final int NETWORK_ENTITY_DATA_VALUE_SIZE = 256;
 
     @Test
     public void parsesGeneratedMoveAndRotateDispatchCommands() {
@@ -510,6 +514,70 @@ public class MultiplayerCommandDispatchParsingTest {
         assertEquals("player", command.varName);
         assertEquals("slot", command.fieldName);
         assertTrue(command.syncNetworkEntityData);
+    }
+
+    @Test
+    public void parsesShaderAssignmentAsSetShaderCommand() {
+        ProgramDef program = new SceneMaxLanguageParser(null, "").parse(
+                "player => fighter1_native: multiplayer\n"
+                        + "player.shader = \"dramatic_hit_red\"");
+
+        assertTrue(program.syntaxErrors == null || program.syntaxErrors.isEmpty());
+        assertEquals(2, program.actions.size());
+        SetShaderCommand command = (SetShaderCommand) program.actions.get(1);
+        assertEquals("player", command.targetVar);
+        assertNotNull(command.shaderNameExpr);
+    }
+
+    @Test
+    public void sendsShaderAsNetworkEntityData() throws Exception {
+        MultiplayerNetworkComponent component = new MultiplayerNetworkComponent(null);
+        DatagramChannel client = DatagramChannel.open();
+        DatagramChannel server = DatagramChannel.open();
+        try {
+            client.bind(new InetSocketAddress("127.0.0.1", 0));
+            server.bind(new InetSocketAddress("127.0.0.1", 0));
+            client.configureBlocking(false);
+            server.configureBlocking(false);
+            client.connect(server.getLocalAddress());
+            server.connect(client.getLocalAddress());
+
+            VariableDef varDef = new VariableDef();
+            varDef.varName = "player";
+            varDef.varType = VariableDef.VAR_TYPE_3D;
+            varDef.isMultiplayer = true;
+
+            component.registerEntity("player@1", varDef, "fighter1_native");
+            setField(component, "channel", client);
+            setField(component, "clientId", 7);
+            setField(component, "networkReady", true);
+            setField(component, "initialSyncPending", false);
+            setRegisteredEntityNetworkId(component, "player@1", 101);
+
+            component.syncEntityData("player@1", SceneMaxApp.NETWORK_ENTITY_SHADER_FIELD, "dramatic_hit_red");
+
+            ByteBuffer packet = receiveRequiredPacket(server);
+            assertHeader(packet, NETWORK_ENTITY_DATA_UPDATE);
+            assertEquals(101, packet.getInt());
+            assertEquals(SceneMaxApp.NETWORK_ENTITY_SHADER_FIELD,
+                    readFixedString(packet, NETWORK_ENTITY_DATA_FIELD_SIZE));
+            assertTrue(readFixedString(packet, NETWORK_ENTITY_DATA_VALUE_SIZE).contains("dramatic_hit_red"));
+        } finally {
+            component.close();
+            client.close();
+            server.close();
+        }
+    }
+
+    @Test
+    public void receivedShaderEntityDataAppliesShader() {
+        CapturingSceneMaxApp app = new CapturingSceneMaxApp();
+
+        app.receiveNetworkEntityDataUpdate("mp_remote_101@1", SceneMaxApp.NETWORK_ENTITY_SHADER_FIELD,
+                "dramatic_hit_red");
+
+        assertEquals("mp_remote_101@1", app.shaderRuntimeName);
+        assertEquals("dramatic_hit_red", app.shaderName);
     }
 
     @Test
@@ -1002,6 +1070,8 @@ public class MultiplayerCommandDispatchParsingTest {
     private static class CapturingSceneMaxApp extends SceneMaxApp {
         SceneMaxBaseController registeredController;
         boolean characterControlled;
+        String shaderRuntimeName;
+        String shaderName;
 
         @Override
         public int registerController(SceneMaxBaseController c) {
@@ -1012,6 +1082,13 @@ public class MultiplayerCommandDispatchParsingTest {
         @Override
         public boolean isCharacterControlledModel(String runtimeName) {
             return characterControlled;
+        }
+
+        @Override
+        public boolean setEntityShader(String targetVar, String shaderName) {
+            this.shaderRuntimeName = targetVar;
+            this.shaderName = shaderName;
+            return true;
         }
     }
 }

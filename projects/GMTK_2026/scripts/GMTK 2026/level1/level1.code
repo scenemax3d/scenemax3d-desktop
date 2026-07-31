@@ -9,7 +9,7 @@ camera.rotate(0.0,112.50159,-0.0)
 
 light_1 => Lights.ambient : color warm, intensity 900.0 lumens
 lights.add probe "5"
-model_1 => static arena2: pos (0.0,-23.650703,0.0), scale 0.1, shadow mode on async
+model_2 => static arena1: pos (0.0,0.0,0.0), scale 0.1 async
 
 // Write your finalization code here.
 // This code will be included at the end of the generated .code file.

@@ -107,6 +107,9 @@ public abstract class UIWidgetNode extends Node {
     }
 
     public void setWidgetVisible(boolean visible) {
+        if (widgetDef != null) {
+            widgetDef.setVisible(visible);
+        }
         setCullHint(visible ? CullHint.Inherit : CullHint.Always);
     }
 

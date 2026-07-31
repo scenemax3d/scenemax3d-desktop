@@ -10,6 +10,7 @@ var rec_action_index = 0 [0..4]
 var fighter_index = 0 // who am I? fighter 1 or 2 ?
 var fight_counter = 5 [0..6]
 var effective_hit = 0
+var is_opponent_hit = 0
 var is_hit = 0
 
 var move_forward = 0

@@ -45,6 +45,7 @@ public class UIDesignerCanvas extends JPanel {
     private float zoom = 1.0f;
     private float panX = 20;
     private float panY = 20;
+    private Timer viewportAnimationTimer;
 
     // Drag state
     private Point lastMousePoint;
@@ -56,6 +57,8 @@ public class UIDesignerCanvas extends JPanel {
     private List<Float> columnResizeStartWidths = new ArrayList<>();
     private static final float LIST_COLUMN_RESIZE_TOLERANCE = 5f;
     private static final float MIN_LIST_COLUMN_WIDTH = 24f;
+    private static final int NAVIGATION_PADDING = 80;
+    private static final int NAVIGATION_ANIMATION_MS = 280;
 
     // Colors
     private static final Color COLOR_CANVAS_BG = new Color(45, 45, 48);
@@ -299,6 +302,26 @@ public class UIDesignerCanvas extends JPanel {
         repaint();
     }
 
+    public void navigateToWidget(UIWidgetDef widget) {
+        if (widget == null) {
+            return;
+        }
+
+        LayoutRect rect = layoutResults.get(widget.getName());
+        if (rect == null) {
+            runLayout();
+            rect = layoutResults.get(widget.getName());
+            if (rect == null) {
+                return;
+            }
+        }
+
+        float targetZoom = getZoomForVisibleRect(rect);
+        float targetPanX = getWidth() / 2f - rect.getCenterX() * targetZoom;
+        float targetPanY = getHeight() / 2f - rect.getCenterY() * targetZoom;
+        animateViewportTo(targetPanX, targetPanY, targetZoom);
+    }
+
     public BufferedImage createSnapshot(int width, int height) {
         int captureWidth = getWidth() > 0 ? getWidth() : (width > 0 ? width : 1280);
         int captureHeight = getHeight() > 0 ? getHeight() : (height > 0 ? height : 720);
@@ -321,6 +344,58 @@ public class UIDesignerCanvas extends JPanel {
         }
 
         return capture;
+    }
+
+    private float getZoomForVisibleRect(LayoutRect rect) {
+        float targetZoom = zoom;
+        float availableWidth = Math.max(1f, getWidth() - NAVIGATION_PADDING * 2f);
+        float availableHeight = Math.max(1f, getHeight() - NAVIGATION_PADDING * 2f);
+        float rectWidth = Math.max(1f, rect.width);
+        float rectHeight = Math.max(1f, rect.height);
+
+        if (rectWidth * targetZoom > availableWidth || rectHeight * targetZoom > availableHeight) {
+            targetZoom = Math.min(availableWidth / rectWidth, availableHeight / rectHeight);
+        }
+
+        return Math.max(0.05f, Math.min(5.0f, targetZoom));
+    }
+
+    private void animateViewportTo(float targetPanX, float targetPanY, float targetZoom) {
+        if (viewportAnimationTimer != null && viewportAnimationTimer.isRunning()) {
+            viewportAnimationTimer.stop();
+        }
+
+        if (getWidth() <= 0 || getHeight() <= 0) {
+            panX = targetPanX;
+            panY = targetPanY;
+            zoom = targetZoom;
+            repaint();
+            return;
+        }
+
+        final float startPanX = panX;
+        final float startPanY = panY;
+        final float startZoom = zoom;
+        final long startTime = System.currentTimeMillis();
+
+        viewportAnimationTimer = new Timer(16, e -> {
+            float progress = Math.min(1f, (System.currentTimeMillis() - startTime) / (float) NAVIGATION_ANIMATION_MS);
+            float eased = 1f - (float) Math.pow(1f - progress, 3);
+
+            panX = lerp(startPanX, targetPanX, eased);
+            panY = lerp(startPanY, targetPanY, eased);
+            zoom = lerp(startZoom, targetZoom, eased);
+            repaint();
+
+            if (progress >= 1f) {
+                viewportAnimationTimer.stop();
+            }
+        });
+        viewportAnimationTimer.start();
+    }
+
+    private float lerp(float start, float end, float t) {
+        return start + (end - start) * t;
     }
 
     // --- Layout ---

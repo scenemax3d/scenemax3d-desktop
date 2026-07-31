@@ -9,6 +9,7 @@ fight_cam = camera.system.fighting(0, 0, depth 18, height 3, side 1.5, min dista
 set_camera_on_player = {
   	
   if (player.network.id == fighter_slot1 || player.network.id == fighter_slot2) {
+  sys.print "fight cam: slot1="+fighter_slot1+", slot2=" + fighter_slot2
   	fight_cam = camera.system.fighting(fighter_slot1, fighter_slot2, 
   		depth 18, height 3, side 1.5, min distance 10, max distance 28, damping 8)
   	camera.system = fight_cam

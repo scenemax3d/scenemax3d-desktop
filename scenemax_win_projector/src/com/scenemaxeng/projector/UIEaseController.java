@@ -73,32 +73,15 @@ public class UIEaseController extends SceneMaxBaseController {
             return false;
         }
 
-        String commandPathPrefix = easeCmd.uiName != null && !easeCmd.uiName.isEmpty()
-                ? easeCmd.uiName + "." + easeCmd.layerName
-                : easeCmd.layerName;
-
-        if (easeCmd.widgetPath == null || easeCmd.widgetPath.isEmpty()) {
-            if (easeCmd.uiName != null && !easeCmd.uiName.isEmpty() && !uiManager.isLoaded(easeCmd.uiName)) {
-                UIWidgetNode nestedWidget = uiManager.resolveWidget(null, easeCmd.uiName, easeCmd.layerName);
-                if (nestedWidget != null) {
-                    widgetTarget = nestedWidget;
-                    owningLayer = findOwningLayer(widgetTarget);
-                }
-            }
-
-            if (widgetTarget == null) {
-                layerTarget = uiManager.resolveLayer(easeCmd.uiName, easeCmd.layerName);
-                owningLayer = layerTarget;
-            }
-        } else {
-            widgetTarget = uiManager.resolveWidget(easeCmd.uiName, easeCmd.layerName, easeCmd.widgetPath);
-            owningLayer = findOwningLayer(widgetTarget);
+        RuntimeUITargetValue.Resolved resolvedTarget = resolveTarget(easeCmd, uiManager);
+        if (resolvedTarget != null) {
+            widgetTarget = resolvedTarget.widget;
+            layerTarget = resolvedTarget.layer;
+            owningLayer = widgetTarget != null ? findOwningLayer(widgetTarget) : layerTarget;
         }
 
         if (widgetTarget == null && layerTarget == null) {
-            String targetPath = (easeCmd.widgetPath == null || easeCmd.widgetPath.isEmpty())
-                    ? commandPathPrefix
-                    : commandPathPrefix + "." + easeCmd.widgetPath;
+            String targetPath = describeTarget(easeCmd);
             app.handleRuntimeError("UI ease target not found: " + targetPath);
             return false;
         }
@@ -120,6 +103,7 @@ public class UIEaseController extends SceneMaxBaseController {
         hideAtEnd = normalizedEaseName.startsWith("easeout");
         elapsedSeconds = 0f;
         travelOffset = resolveTravelOffset();
+        syncMultiplayerEase(resolvedTarget, rawEaseName, easeCmd.directionName, durationSeconds);
 
         setTargetVisible(true);
         if (!hideAtEnd) {
@@ -128,6 +112,56 @@ public class UIEaseController extends SceneMaxBaseController {
             resetTargetOffset();
         }
         return true;
+    }
+
+    private RuntimeUITargetValue.Resolved resolveTarget(UIEaseCommand easeCmd, UIManager uiManager) {
+        if (easeCmd.targetVarName != null && !easeCmd.targetVarName.isEmpty()) {
+            RuntimeUITargetValue target = RuntimeUITargetValue.fromVariable(
+                    scope, easeCmd.targetVarName, app, easeCmd.varLineNum);
+            return target == null ? null : target.resolve(uiManager);
+        }
+
+        if (easeCmd.widgetPath == null || easeCmd.widgetPath.isEmpty()) {
+            if (easeCmd.uiName != null && !easeCmd.uiName.isEmpty() && !uiManager.isLoaded(easeCmd.uiName)) {
+                UIWidgetNode nestedWidget = uiManager.resolveWidget(null, easeCmd.uiName, easeCmd.layerName);
+                if (nestedWidget != null) {
+                    return new RuntimeUITargetValue.Resolved(
+                            null, easeCmd.uiName, easeCmd.layerName, null, nestedWidget);
+                }
+            }
+
+            UILayerNode layer = uiManager.resolveLayer(easeCmd.uiName, easeCmd.layerName);
+            return layer == null ? null : new RuntimeUITargetValue.Resolved(
+                    easeCmd.uiName, easeCmd.layerName, "", layer, null);
+        }
+
+        UIWidgetNode widget = uiManager.resolveWidget(easeCmd.uiName, easeCmd.layerName, easeCmd.widgetPath);
+        return widget == null ? null : new RuntimeUITargetValue.Resolved(
+                easeCmd.uiName, easeCmd.layerName, easeCmd.widgetPath, null, widget);
+    }
+
+    private String describeTarget(UIEaseCommand easeCmd) {
+        if (easeCmd.targetVarName != null && !easeCmd.targetVarName.isEmpty()) {
+            return easeCmd.targetVarName;
+        }
+        String commandPathPrefix = easeCmd.uiName != null && !easeCmd.uiName.isEmpty()
+                ? easeCmd.uiName + "." + easeCmd.layerName
+                : easeCmd.layerName;
+        return (easeCmd.widgetPath == null || easeCmd.widgetPath.isEmpty())
+                ? commandPathPrefix
+                : commandPathPrefix + "." + easeCmd.widgetPath;
+    }
+
+    private void syncMultiplayerEase(RuntimeUITargetValue.Resolved resolvedTarget, String easeName,
+                                     String directionName, float durationSeconds) {
+        if (cmd != null && cmd.fromMultiplayerNetwork) {
+            return;
+        }
+        if (resolvedTarget == null || resolvedTarget.widget == null) {
+            return;
+        }
+        app.syncMultiplayerUIEase(resolvedTarget.uiName, resolvedTarget.layerName, resolvedTarget.widgetPath,
+                easeName, directionName, durationSeconds, ((UIEaseCommand) cmd).isAsync);
     }
 
     private String evaluateExpression(com.abware.scenemaxlang.parser.SceneMaxParser.Logical_expressionContext expr) {

@@ -4,6 +4,7 @@ import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.types.ResourceFont;
 import com.scenemaxeng.common.types.ResourceSetup2D;
 import com.scenemaxeng.common.ui.model.*;
+import org.json.JSONObject;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
@@ -60,6 +61,7 @@ public class UIDesignerPanel extends JPanel {
 
     // Property fields — common
     private JTextField txtWidgetName;
+    private JCheckBox chkWidgetVisible;
     private JComboBox<String> cboWidthMode;
     private JComboBox<String> cboHeightMode;
     private JSpinner spnWidth, spnHeight;
@@ -299,6 +301,12 @@ public class UIDesignerPanel extends JPanel {
         widgetTree.addTreeSelectionListener(this::onTreeSelectionChanged);
         widgetTree.addMouseListener(new MouseAdapter() {
             @Override
+            public void mouseClicked(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 2) {
+                    navigateCanvasToTreeWidget(e);
+                }
+            }
+            @Override
             public void mousePressed(MouseEvent e) {
                 if (e.isPopupTrigger()) showTreeContextMenu(e);
             }
@@ -375,6 +383,18 @@ public class UIDesignerPanel extends JPanel {
         txtWidgetName.addActionListener(e -> applyWidgetNameChange());
         installAutoSaveOnFocusLost(txtWidgetName, this::applyWidgetNameChange);
         addFormRow("Name:", txtWidgetName);
+
+        chkWidgetVisible = new JCheckBox("Visible");
+        chkWidgetVisible.setSelected(true);
+        chkWidgetVisible.addActionListener(e -> applyWidgetVisibleChange());
+        installAutoSaveOnFocusLost(chkWidgetVisible, null);
+        addFormRow("Visible:", chkWidgetVisible);
+
+        chkTextMultiplayer = new JCheckBox("Multiplayer");
+        chkTextMultiplayer.setToolTipText("Synchronize this widget's runtime UI actions between multiplayer clients");
+        chkTextMultiplayer.addActionListener(e -> applyWidgetMultiplayerChange());
+        installAutoSaveOnFocusLost(chkTextMultiplayer, null);
+        addFormRow("Sync:", chkTextMultiplayer);
 
         propertiesPanel.add(Box.createVerticalStrut(8));
         propertiesPanel.add(createBoldLabel("Size:"));
@@ -532,12 +552,6 @@ public class UIDesignerPanel extends JPanel {
         cboFont.addActionListener(e -> applyTextChange());
         installAutoSaveOnFocusLost(cboFont, null);
         addFormRowTo(textPropsPanel, "Font:", cboFont);
-
-        chkTextMultiplayer = new JCheckBox("Multiplayer");
-        chkTextMultiplayer.setToolTipText("Synchronize this Text View's text between multiplayer clients");
-        chkTextMultiplayer.addActionListener(e -> applyTextChange());
-        installAutoSaveOnFocusLost(chkTextMultiplayer, null);
-        addFormRowTo(textPropsPanel, "Sync:", chkTextMultiplayer);
 
         textPropsPanel.setVisible(false);
         propertiesPanel.add(textPropsPanel);
@@ -781,6 +795,107 @@ public class UIDesignerPanel extends JPanel {
         clearProperties();
     }
 
+    private void duplicateWidget(UIWidgetDef source) {
+        if (source == null) return;
+
+        UILayerDef layer = getActiveLayer();
+        if (layer == null) return;
+
+        Set<String> usedNames = collectUsedNames();
+        Map<String, String> copiedNames = new HashMap<>();
+        JSONObject copyJson = source.toJSON();
+        rewriteWidgetJsonForDuplicate(copyJson, usedNames, copiedNames);
+        UIWidgetDef copy = UIWidgetDef.fromJSON(copyJson);
+        remapCopiedConstraints(copy, copiedNames);
+
+        if (!insertWidgetCopyBelow(layer.getWidgets(), source, copy)) {
+            return;
+        }
+
+        markDirty();
+        refreshWidgetTree();
+        canvas.refreshLayout();
+        canvas.setSelectedWidget(copy);
+        selectWidgetInTree(copy);
+        showPropertiesForWidget(copy);
+    }
+
+    private Set<String> collectUsedNames() {
+        Set<String> usedNames = new HashSet<>();
+        if (document == null) return usedNames;
+
+        for (UILayerDef layer : document.getLayers()) {
+            usedNames.add(layer.getName());
+            collectWidgetNames(layer.getWidgets(), usedNames);
+        }
+        return usedNames;
+    }
+
+    private void collectWidgetNames(List<UIWidgetDef> widgets, Set<String> usedNames) {
+        for (UIWidgetDef widget : widgets) {
+            usedNames.add(widget.getName());
+            collectWidgetNames(widget.getChildren(), usedNames);
+        }
+    }
+
+    private void rewriteWidgetJsonForDuplicate(JSONObject widgetJson, Set<String> usedNames,
+                                               Map<String, String> copiedNames) {
+        String originalName = widgetJson.getString("name");
+        String copiedName = generateUniqueCopyName(originalName, usedNames);
+        copiedNames.put(originalName, copiedName);
+
+        widgetJson.put("id", UUID.randomUUID().toString());
+        widgetJson.put("name", copiedName);
+
+        if (widgetJson.has("children")) {
+            org.json.JSONArray children = widgetJson.getJSONArray("children");
+            for (int i = 0; i < children.length(); i++) {
+                rewriteWidgetJsonForDuplicate(children.getJSONObject(i), usedNames, copiedNames);
+            }
+        }
+    }
+
+    private String generateUniqueCopyName(String originalName, Set<String> usedNames) {
+        String baseName = "copy_of_" + originalName;
+        String candidate = baseName;
+        for (int i = 2; usedNames.contains(candidate); i++) {
+            candidate = baseName + i;
+        }
+        usedNames.add(candidate);
+        return candidate;
+    }
+
+    private void remapCopiedConstraints(UIWidgetDef widget, Map<String, String> copiedNames) {
+        for (UIConstraint constraint : widget.getConstraints()) {
+            if (UIConstraint.TARGET_PARENT.equals(constraint.getTargetName())) {
+                continue;
+            }
+            String copiedTargetName = copiedNames.get(constraint.getTargetName());
+            if (copiedTargetName != null) {
+                constraint.setTargetName(copiedTargetName);
+            }
+        }
+
+        for (UIWidgetDef child : widget.getChildren()) {
+            remapCopiedConstraints(child, copiedNames);
+        }
+    }
+
+    private boolean insertWidgetCopyBelow(List<UIWidgetDef> siblings, UIWidgetDef source, UIWidgetDef copy) {
+        int sourceIndex = siblings.indexOf(source);
+        if (sourceIndex >= 0) {
+            siblings.add(sourceIndex + 1, copy);
+            return true;
+        }
+
+        for (UIWidgetDef sibling : siblings) {
+            if (insertWidgetCopyBelow(sibling.getChildren(), source, copy)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private boolean removeWidgetRecursive(List<UIWidgetDef> widgets, UIWidgetDef target) {
         for (UIWidgetDef w : widgets) {
             if (w.getChildren().remove(target)) return true;
@@ -961,6 +1076,23 @@ public class UIDesignerPanel extends JPanel {
         }
     }
 
+    private void navigateCanvasToTreeWidget(MouseEvent e) {
+        TreePath path = widgetTree.getPathForLocation(e.getX(), e.getY());
+        if (path == null) return;
+
+        DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
+        Object userObj = node.getUserObject();
+        if (!(userObj instanceof WidgetTreeNodeData)) return;
+
+        UIWidgetDef widget = ((WidgetTreeNodeData) userObj).widget;
+        if (widget == null) return;
+
+        widgetTree.setSelectionPath(path);
+        canvas.setSelectedWidget(widget);
+        showPropertiesForWidget(widget);
+        canvas.navigateToWidget(widget);
+    }
+
     private void showTreeContextMenu(MouseEvent e) {
         TreePath path = widgetTree.getPathForLocation(e.getX(), e.getY());
         if (path == null) return;
@@ -1021,6 +1153,10 @@ public class UIDesignerPanel extends JPanel {
         }
 
         if (widget != null) {
+            JMenuItem miDuplicate = new JMenuItem("Duplicate");
+            miDuplicate.addActionListener(ev -> duplicateWidget(widget));
+            menu.add(miDuplicate);
+
             JMenuItem miDelete = new JMenuItem("Delete");
             miDelete.addActionListener(ev -> {
                 canvas.setSelectedWidget(widget);
@@ -1054,6 +1190,10 @@ public class UIDesignerPanel extends JPanel {
 
         txtWidgetName.setText(widget.getName());
         txtWidgetName.setEnabled(true);
+        chkWidgetVisible.setSelected(widget.isVisible());
+        chkWidgetVisible.setEnabled(true);
+        chkTextMultiplayer.setSelected(widget.isMultiplayer());
+        chkTextMultiplayer.setEnabled(true);
 
         // Size
         cboWidthMode.setSelectedIndex(widget.getWidthMode().ordinal());
@@ -1103,8 +1243,6 @@ public class UIDesignerPanel extends JPanel {
                 } else {
                     cboFont.setSelectedIndex(0);
                 }
-                chkTextMultiplayer.setSelected(widget.getType() == UIWidgetType.TEXT_VIEW && widget.isMultiplayer());
-                chkTextMultiplayer.setEnabled(widget.getType() == UIWidgetType.TEXT_VIEW);
                 if (widget.getType() == UIWidgetType.EDIT_TEXT) {
                     editTextPropsPanel.setVisible(true);
                     txtEditPlaceholder.setText(widget.getEditTextPlaceholder());
@@ -1150,6 +1288,10 @@ public class UIDesignerPanel extends JPanel {
         updatingProperties = true;
         txtWidgetName.setText("");
         txtWidgetName.setEnabled(false);
+        chkWidgetVisible.setSelected(true);
+        chkWidgetVisible.setEnabled(false);
+        chkTextMultiplayer.setSelected(false);
+        chkTextMultiplayer.setEnabled(false);
         cboWidthMode.setSelectedIndex(0);
         cboHeightMode.setSelectedIndex(0);
         spnWidth.setValue(0.0);
@@ -1165,10 +1307,6 @@ public class UIDesignerPanel extends JPanel {
         }
         if (spnListViewTransparency != null) {
             spnListViewTransparency.setValue(0.0);
-        }
-        if (chkTextMultiplayer != null) {
-            chkTextMultiplayer.setSelected(false);
-            chkTextMultiplayer.setEnabled(false);
         }
         textPropsPanel.setVisible(false);
         editTextPropsPanel.setVisible(false);
@@ -1247,6 +1385,25 @@ public class UIDesignerPanel extends JPanel {
         widget.setName(newName);
         markDirty();
         refreshWidgetTree();
+    }
+
+    private void applyWidgetVisibleChange() {
+        if (updatingProperties) return;
+        UIWidgetDef widget = canvas.getSelectedWidget();
+        if (widget == null) return;
+
+        widget.setVisible(chkWidgetVisible.isSelected());
+        markDirty();
+        canvas.repaint();
+    }
+
+    private void applyWidgetMultiplayerChange() {
+        if (updatingProperties) return;
+        UIWidgetDef widget = canvas.getSelectedWidget();
+        if (widget == null) return;
+
+        widget.setMultiplayer(chkTextMultiplayer.isSelected());
+        markDirty();
     }
 
     private void applySizeModeChange() {
@@ -1367,8 +1524,6 @@ public class UIDesignerPanel extends JPanel {
         } else {
             widget.setFontName(selectedFont);
         }
-        widget.setMultiplayer(widget.getType() == UIWidgetType.TEXT_VIEW && chkTextMultiplayer.isSelected());
-
         markDirty();
         canvas.refreshLayout();
     }

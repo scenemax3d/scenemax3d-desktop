@@ -30,19 +30,26 @@ final class UIRuntimePropertyAccessor {
 
         String[] parts = expressionPath == null ? new String[0] : expressionPath.split("\\.");
         if (parts.length < 3) {
-            app.handleRuntimeError("Line " + line + ": UI property path must include layer, widget, and property");
-            return null;
+            return new RuntimeUITargetValue(expressionPath);
         }
 
         String propertyName = parts[parts.length - 1];
         UIWidgetNode widget = resolveWidget(uiManager, parts);
         if (widget == null) {
+            RuntimeUITargetValue target = resolveTarget(uiManager, expressionPath);
+            if (target != null) {
+                return target;
+            }
             app.handleRuntimeError("Line " + line + ": UI widget not found: " + withoutLastSegment(parts));
             return null;
         }
 
         Object value = readProperty(widget, propertyName);
         if (value == UnsupportedProperty.INSTANCE) {
+            RuntimeUITargetValue target = resolveTarget(uiManager, expressionPath);
+            if (target != null) {
+                return target;
+            }
             app.handleRuntimeError("Line " + line + ": Unknown UI property '" + propertyName
                     + "' on widget " + widget.getName());
             return null;
@@ -65,6 +72,11 @@ final class UIRuntimePropertyAccessor {
             widget = uiManager.resolveWidget(uiName, explicitLayerName, explicitWidgetPath);
         }
         return widget;
+    }
+
+    private static RuntimeUITargetValue resolveTarget(UIManager uiManager, String expressionPath) {
+        RuntimeUITargetValue target = new RuntimeUITargetValue(expressionPath);
+        return target.resolve(uiManager) == null ? null : target;
     }
 
     private static Object readProperty(UIWidgetNode widget, String rawPropertyName) {

@@ -131,9 +131,11 @@ SceneMax currently synchronizes the following multiplayer entity behavior:
 - Effekseer `.play` commands, including position, loop, playback speed, and dynamic input
   attributes.
 - IK apply/remove, layer target, weight, blend, play, and stop commands.
+- Entity shader assignments such as `player.shader = "dramatic_hit_red"`.
 - Label text changes with `label_name.text = ...`.
 - Persistent structural commands, such as attach and IK, so late joiners receive the current
   structure in the snapshot.
+- Persistent shader state, so late joiners receive the latest synchronized entity shader.
 - Persistent label text state, so late joiners receive the latest synchronized label text.
 - Variables declared with `network var`, including scalar values and arrays such as
   `network var fighters_count = 0` and `network var recorded_actions = []`.

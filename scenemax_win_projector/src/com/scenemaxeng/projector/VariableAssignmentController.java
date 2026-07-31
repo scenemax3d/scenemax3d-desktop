@@ -145,6 +145,8 @@ public class VariableAssignmentController extends CompositeController {
                     var.varType = VariableDef.VAR_TYPE_NUMBER;
                 } else if (retval instanceof EntityInstBase) {
                     var.varReference = ((EntityInstBase) retval).varDef;
+                } else if (retval instanceof RuntimeUITargetValue) {
+                    var.varType = VariableDef.VAR_TYPE_UI_TARGET;
                 }
             }
 
