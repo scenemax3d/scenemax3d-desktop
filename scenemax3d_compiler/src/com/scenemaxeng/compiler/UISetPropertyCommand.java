@@ -18,6 +18,7 @@ public class UISetPropertyCommand extends ActionStatementBase {
     public String uiName;          // loaded UI system name, or null for the active UI
     public String layerName;       // layer name
     public String widgetPath;      // dot-separated path to the widget
+    public String targetVarName;   // variable containing a runtime UI target
     public String propertyName;    // property to set (text, color, image, fontSize, etc.)
     public boolean implicitWidgetValue; // true when syntax omits the property name
 
@@ -29,6 +30,6 @@ public class UISetPropertyCommand extends ActionStatementBase {
 
     @Override
     public boolean validate(ProgramDef prg) {
-        return layerName != null && (propertyName != null || implicitWidgetValue);
+        return (layerName != null || targetVarName != null) && (propertyName != null || implicitWidgetValue);
     }
 }

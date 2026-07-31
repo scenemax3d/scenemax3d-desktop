@@ -14,6 +14,7 @@ public class UIMessageCommand extends ActionStatementBase {
     public String uiName;
     public String layerName;
     public String widgetPath;
+    public String targetVarName;
     public List<String> effectNames = new ArrayList<>();
 
     public SceneMaxParser.Logical_expressionContext messageExpr;
@@ -21,9 +22,8 @@ public class UIMessageCommand extends ActionStatementBase {
 
     @Override
     public boolean validate(ProgramDef prg) {
-        return layerName != null
-                && widgetPath != null
-                && !widgetPath.isEmpty()
+        return (layerName != null || targetVarName != null)
+                && (targetVarName != null || (widgetPath != null && !widgetPath.isEmpty()))
                 && !effectNames.isEmpty()
                 && messageExpr != null
                 && durationExpr != null;

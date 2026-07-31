@@ -3,6 +3,7 @@ package com.scenemaxeng.projector;
 import com.scenemaxeng.compiler.ActionCommandShowHide;
 import com.scenemaxeng.compiler.ProgramDef;
 import com.scenemaxeng.compiler.VariableDef;
+import com.scenemaxeng.common.ui.widget.UIManager;
 
 public class ShowHideController extends SceneMaxBaseController {
 
@@ -18,6 +19,11 @@ public class ShowHideController extends SceneMaxBaseController {
 
         if (forceStop) return true;
 
+        ActionCommandShowHide cmd = (ActionCommandShowHide)this.cmd;
+        if (tryRunUITargetShowHide(cmd)) {
+            return true;
+        }
+
         if (!targetCalculated) {
 
             targetCalculated = true;
@@ -25,7 +31,10 @@ public class ShowHideController extends SceneMaxBaseController {
 
         }
 
-        ActionCommandShowHide cmd = (ActionCommandShowHide)this.cmd;
+        if (targetVarDef == null) {
+            return true;
+        }
+
         if(targetVarDef.varType== VariableDef.VAR_TYPE_3D) {
             if(cmd.joints){
                 if(cmd.showJointsSizeExpr!=null) {
@@ -46,6 +55,35 @@ public class ShowHideController extends SceneMaxBaseController {
         }
         return true;
 
+    }
+
+    private boolean tryRunUITargetShowHide(ActionCommandShowHide cmd) {
+        if (cmd == null || cmd.varDef == null || cmd.varDef.varName == null) {
+            return false;
+        }
+        VarInst var = scope.getVar(cmd.varDef.varName);
+        if (var == null || !(var.value instanceof RuntimeUITargetValue)) {
+            return false;
+        }
+
+        UIManager uiManager = app.getUIManager();
+        if (uiManager == null) {
+            app.handleRuntimeError("UI system not initialized");
+            return true;
+        }
+
+        RuntimeUITargetValue target = (RuntimeUITargetValue) var.value;
+        RuntimeUITargetValue.Resolved resolved = target.resolve(uiManager);
+        if (resolved == null) {
+            app.handleRuntimeError("UI target not found: " + target.displayPath());
+            return true;
+        }
+        if (resolved.widget != null) {
+            resolved.widget.setWidgetVisible(cmd.show);
+        } else if (resolved.layer != null) {
+            resolved.layer.setLayerVisible(cmd.show);
+        }
+        return true;
     }
 
 }

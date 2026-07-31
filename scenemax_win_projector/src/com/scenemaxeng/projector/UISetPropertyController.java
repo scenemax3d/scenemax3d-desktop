@@ -29,20 +29,17 @@ public class UISetPropertyController extends SceneMaxBaseController {
 
         UISetPropertyCommand propCmd = (UISetPropertyCommand) this.cmd;
         UIManager uiManager = app.getUIManager();
-        String commandPathPrefix = propCmd.uiName != null && !propCmd.uiName.isEmpty()
-                ? propCmd.uiName + "." + propCmd.layerName
-                : propCmd.layerName;
 
         if (uiManager == null) {
             app.handleRuntimeError("UI system not initialized");
             return true;
         }
 
-        // Resolve the target widget by full path when provided.
-        UIWidgetNode widget = uiManager.resolveWidget(propCmd.uiName, propCmd.layerName, propCmd.widgetPath);
+        RuntimeUITargetValue.Resolved resolvedTarget = resolveTarget(propCmd, uiManager);
+        UIWidgetNode widget = resolvedTarget == null ? null : resolvedTarget.widget;
         if (widget == null) {
-            app.handleRuntimeError("UI widget not found: " +
-                    commandPathPrefix + "." + propCmd.widgetPath);
+            String targetPath = resolvedTarget == null ? describeTarget(propCmd) : resolvedTarget.displayPath();
+            app.handleRuntimeError("UI widget not found: " + targetPath);
             return true;
         }
 
@@ -60,15 +57,39 @@ public class UISetPropertyController extends SceneMaxBaseController {
         }
 
         // Apply the property based on widget type and property name
-        applyProperty(widget, propCmd, value);
+        applyProperty(widget, propCmd, value, resolvedTarget);
 
         return true; // one-shot controller
+    }
+
+    private RuntimeUITargetValue.Resolved resolveTarget(UISetPropertyCommand propCmd, UIManager uiManager) {
+        if (propCmd.targetVarName != null && !propCmd.targetVarName.isEmpty()) {
+            RuntimeUITargetValue target = RuntimeUITargetValue.fromVariable(
+                    scope, propCmd.targetVarName, app, propCmd.varLineNum);
+            return target == null ? null : target.resolve(uiManager);
+        }
+
+        UIWidgetNode widget = uiManager.resolveWidget(propCmd.uiName, propCmd.layerName, propCmd.widgetPath);
+        return widget == null ? null
+                : new RuntimeUITargetValue.Resolved(
+                propCmd.uiName, propCmd.layerName, propCmd.widgetPath, null, widget);
+    }
+
+    private String describeTarget(UISetPropertyCommand propCmd) {
+        if (propCmd.targetVarName != null && !propCmd.targetVarName.isEmpty()) {
+            return propCmd.targetVarName;
+        }
+        String commandPathPrefix = propCmd.uiName != null && !propCmd.uiName.isEmpty()
+                ? propCmd.uiName + "." + propCmd.layerName
+                : propCmd.layerName;
+        return commandPathPrefix + "." + propCmd.widgetPath;
     }
 
     /**
      * Applies a named property to the appropriate widget type.
      */
-    private void applyProperty(UIWidgetNode widget, UISetPropertyCommand propCmd, String value) {
+    private void applyProperty(UIWidgetNode widget, UISetPropertyCommand propCmd, String value,
+                               RuntimeUITargetValue.Resolved resolvedTarget) {
         String prop = resolvePropertyName(widget, propCmd);
         if (prop == null || prop.isEmpty()) {
             app.handleRuntimeError("Unknown UI property target on widget " + widget.getName());
@@ -132,7 +153,7 @@ public class UISetPropertyController extends SceneMaxBaseController {
             switch (prop) {
                 case "text":
                     textView.setText(value);
-                    syncMultiplayerTextView(propCmd, textView, value);
+                    syncMultiplayerTextView(propCmd, resolvedTarget, textView, value);
                     break;
                 case "shader":
                     app.setUIWidgetShader(textView, value);
@@ -341,7 +362,8 @@ public class UISetPropertyController extends SceneMaxBaseController {
         return null;
     }
 
-    private void syncMultiplayerTextView(UISetPropertyCommand propCmd, UITextViewNode textView, String value) {
+    private void syncMultiplayerTextView(UISetPropertyCommand propCmd, RuntimeUITargetValue.Resolved resolvedTarget,
+                                         UITextViewNode textView, String value) {
         if (cmd != null && cmd.fromMultiplayerNetwork) {
             return;
         }
@@ -349,7 +371,10 @@ public class UISetPropertyController extends SceneMaxBaseController {
                 || !textView.getWidgetDef().isMultiplayer()) {
             return;
         }
-        app.syncMultiplayerUIText(propCmd.uiName, propCmd.layerName, propCmd.widgetPath, value);
+        String uiName = resolvedTarget != null ? resolvedTarget.uiName : propCmd.uiName;
+        String layerName = resolvedTarget != null ? resolvedTarget.layerName : propCmd.layerName;
+        String widgetPath = resolvedTarget != null ? resolvedTarget.widgetPath : propCmd.widgetPath;
+        app.syncMultiplayerUIText(uiName, layerName, widgetPath, value);
     }
 
     private List<String> parseListCells(String value) {

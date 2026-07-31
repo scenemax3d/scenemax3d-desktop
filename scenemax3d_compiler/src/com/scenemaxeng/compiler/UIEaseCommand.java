@@ -12,6 +12,7 @@ public class UIEaseCommand extends ActionStatementBase {
     public String uiName;
     public String layerName;
     public String widgetPath;
+    public String targetVarName;
     public String directionName;
 
     public SceneMaxParser.Logical_expressionContext easingExpr;
@@ -19,7 +20,7 @@ public class UIEaseCommand extends ActionStatementBase {
 
     @Override
     public boolean validate(ProgramDef prg) {
-        return layerName != null
+        return (layerName != null || targetVarName != null)
                 && directionName != null
                 && easingExpr != null
                 && durationExpr != null;

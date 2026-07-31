@@ -56,7 +56,7 @@
             "verticalBias": 0.5,
             "backgroundColor": "#33333300",
             "widthMode": "FIXED",
-            "visible": true,
+            "visible": false,
             "type": "PANEL",
             "constraints": [],
             "children": [
@@ -95,7 +95,7 @@
                 "horizontalBias": 0.5,
                 "name": "player1_action1_image",
                 "heightMode": "MATCH_CONSTRAINT",
-                "width": 100,
+                "width": 200,
                 "spriteName": "banner1",
                 "id": "0f7139d9-334f-493a-a4ca-180d77390f61",
                 "imageScaleMode": "fit",
@@ -113,10 +113,11 @@
                 "textAlignment": "left",
                 "name": "player1_action1_text",
                 "heightMode": "FIXED",
-                "width": 150,
+                "width": 300,
                 "fontSize": 64,
                 "id": "1b235122-bd75-4c8f-99ab-ad956b9c46ad",
                 "text": "",
+                "centerVertical": true,
                 "multiplayer": true,
                 "height": 30
               }
@@ -124,7 +125,7 @@
             "horizontalBias": 0.5,
             "name": "panel_player1_action1",
             "heightMode": "FIXED",
-            "width": 200,
+            "width": 500,
             "id": "ac396ff9-32aa-4ab4-a98f-7f0c5d7070d9",
             "height": 50
           },
@@ -132,7 +133,7 @@
             "verticalBias": 0.5,
             "backgroundColor": "#33333300",
             "widthMode": "FIXED",
-            "visible": true,
+            "visible": false,
             "type": "PANEL",
             "constraints": [{
               "side": "TOP",
@@ -214,7 +215,7 @@
             "verticalBias": 0.5,
             "backgroundColor": "#33333300",
             "widthMode": "FIXED",
-            "visible": true,
+            "visible": false,
             "type": "PANEL",
             "constraints": [{
               "side": "TOP",
@@ -295,7 +296,7 @@
             "verticalBias": 0.5,
             "backgroundColor": "#33333300",
             "widthMode": "FIXED",
-            "visible": true,
+            "visible": false,
             "type": "PANEL",
             "constraints": [{
               "side": "TOP",
@@ -376,7 +377,7 @@
             "verticalBias": 0.5,
             "backgroundColor": "#33333300",
             "widthMode": "FIXED",
-            "visible": true,
+            "visible": false,
             "type": "PANEL",
             "constraints": [{
               "side": "TOP",
@@ -457,7 +458,7 @@
         "horizontalBias": 0.5,
         "name": "panel1",
         "heightMode": "FIXED",
-        "width": 200,
+        "width": 500,
         "id": "9853fe7d-27b4-4b4f-9e9b-1ef9a7baaf96",
         "centerVertical": true,
         "height": 150

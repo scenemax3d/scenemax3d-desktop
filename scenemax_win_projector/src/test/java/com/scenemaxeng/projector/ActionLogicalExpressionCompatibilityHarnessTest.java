@@ -169,6 +169,21 @@ public class ActionLogicalExpressionCompatibilityHarnessTest {
     }
 
     @Test
+    public void uiWidgetPathCanEvaluateToRuntimeTarget() {
+        SceneMaxScope scope = createScope();
+        UIWidgetDef def = new UIWidgetDef("editText1", UIWidgetType.EDIT_TEXT);
+        UIEditTextNode editText = new UIEditTextNode("editText1", def, null, 100, 100, 100, 100, null);
+        app.uiManager = new StubUIManager(app, editText);
+
+        Object value = new ActionLogicalExpressionVm(parseExpression("UI.layer1.editText1"), scope).evaluate();
+
+        assertTrue(value instanceof RuntimeUITargetValue);
+        RuntimeUITargetValue.Resolved resolved = ((RuntimeUITargetValue) value).resolve(app.uiManager);
+        assertTrue(resolved != null);
+        assertTrue(resolved.widget == editText);
+    }
+
+    @Test
     public void parserKeepsUiRuntimeGetterInVariableAssignment() {
         ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
                 "shared var selected_name = \"\"\n"

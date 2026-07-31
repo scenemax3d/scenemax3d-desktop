@@ -887,6 +887,56 @@ public class SceneMaxLanguageParser implements IParser {
                 return null;
             }
 
+            public StatementDef visitUiVariableStatement(SceneMaxParser.UiVariableStatementContext ctx) {
+                SceneMaxParser.Ui_variable_statementContext uiCtx = ctx.ui_variable_statement();
+
+                if (uiCtx.ui_variable_set_property() != null) {
+                    SceneMaxParser.Ui_variable_set_propertyContext propCtx = uiCtx.ui_variable_set_property();
+                    String targetVarName = propCtx.var_decl().getText();
+                    String propertyName = propCtx.ui_variable_property_name().getText();
+                    VariableDef targetVar = prg.getVar(targetVarName);
+                    if (targetVar != null && targetVar.varType == VariableDef.VAR_TYPE_LABEL
+                            && "text".equalsIgnoreCase(propertyName)) {
+                        LabelTextCommand cmd = new LabelTextCommand();
+                        cmd.varLineNum = propCtx.start != null ? propCtx.start.getLine() : 0;
+                        cmd.targetVar = targetVarName;
+                        cmd.varDef = targetVar;
+                        cmd.textExpr = propCtx.logical_expression();
+                        return cmd;
+                    }
+
+                    UISetPropertyCommand cmd = new UISetPropertyCommand();
+                    cmd.varLineNum = propCtx.start != null ? propCtx.start.getLine() : 0;
+                    cmd.targetVarName = targetVarName;
+                    cmd.propertyName = propertyName;
+                    cmd.valueExpr = propCtx.logical_expression();
+                    return cmd;
+                } else if (uiCtx.ui_variable_message() != null) {
+                    SceneMaxParser.Ui_variable_messageContext msgCtx = uiCtx.ui_variable_message();
+                    UIMessageCommand cmd = new UIMessageCommand();
+                    cmd.varLineNum = msgCtx.start != null ? msgCtx.start.getLine() : 0;
+                    cmd.targetVarName = msgCtx.var_decl().getText();
+                    cmd.messageExpr = msgCtx.logical_expression(0);
+                    cmd.durationExpr = msgCtx.logical_expression(1);
+                    cmd.isAsync = msgCtx.async_expr() != null;
+                    for (SceneMaxParser.Ui_text_effect_flagContext effectCtx : msgCtx.ui_text_effect().ui_text_effect_flag()) {
+                        cmd.effectNames.add(effectCtx.var_decl().getText());
+                    }
+                    return cmd;
+                } else if (uiCtx.ui_variable_ease() != null) {
+                    SceneMaxParser.Ui_variable_easeContext easeCtx = uiCtx.ui_variable_ease();
+                    UIEaseCommand cmd = new UIEaseCommand();
+                    cmd.varLineNum = easeCtx.start != null ? easeCtx.start.getLine() : 0;
+                    cmd.targetVarName = easeCtx.var_decl().getText();
+                    cmd.easingExpr = easeCtx.logical_expression(0);
+                    cmd.durationExpr = easeCtx.logical_expression(1);
+                    cmd.directionName = easeCtx.ui_ease_direction().getText();
+                    return cmd;
+                }
+
+                return null;
+            }
+
             public ActionStatementBase visitWhenStatement(SceneMaxParser.WhenStatementContext ctx) {
                 WhenStateCommand cmd = new WhenStateCommand();
                 cmd.whenExpr.addAll(ctx.when_statement().logical_expression_sequence().logical_expression());

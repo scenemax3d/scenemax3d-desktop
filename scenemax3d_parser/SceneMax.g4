@@ -41,6 +41,7 @@ statement
    | function_statement # functionStatement
    | mini_map_actions # miniMapActions
    | ui_statement # uiStatement
+   | ui_variable_statement # uiVariableStatement
    | action_statement   # actionStatement
    | event_statement # eventStatement
    | do_block           # doBlock
@@ -84,6 +85,11 @@ ui_set_property : UI '.' ui_dot_path '.' ui_property_name Equals logical_express
 ui_set_default_property : UI '.' ui_dot_path Equals logical_expression ;
 ui_message : UI '.' ui_dot_path '.' Message '(' logical_expression ',' ui_text_effect ',' logical_expression ')' (async_expr)? ;
 ui_ease : UI '.' ui_dot_path '.' Ease '(' logical_expression ',' ui_ease_direction ',' logical_expression ')' ;
+ui_variable_statement : ui_variable_set_property | ui_variable_message | ui_variable_ease ;
+ui_variable_set_property : var_decl '.' ui_variable_property_name Equals logical_expression ;
+ui_variable_message : var_decl '.' Message '(' logical_expression ',' ui_text_effect ',' logical_expression ')' (async_expr)? ;
+ui_variable_ease : var_decl '.' Ease '(' logical_expression ',' ui_ease_direction ',' logical_expression ')' ;
+ui_variable_property_name : ID | Text | Color | Font | Style | Transparency | Rows | Cols | Size | Height ;
 ui_ease_direction : Left | Right | Up | Down ;
 ui_text_effect : ui_text_effect_flag ('|' ui_text_effect_flag)* ;
 ui_text_effect_flag : TextEffect '.' var_decl ;
@@ -340,6 +346,7 @@ value    :
     |    network_runtime_value
     |    network_entity_runtime_value
     |    ui_runtime_value
+    |    ui_runtime_target
     |    var_decl
     |    variable_field
     |    variable_data_field
@@ -380,6 +387,7 @@ pool_acquire : var_decl '.' Acquire ;
 network_runtime_value : Network '.' Ready | Network '.' State ('.' Sessions)? ;
 network_entity_runtime_value : var_decl '.' Network '.' var_decl ;
 ui_runtime_value : UI '.' ui_dot_path '.' ui_property_name ;
+ui_runtime_target : UI '.' ui_dot_path ;
 
 // THE LANGUAGE SYNTAX
 

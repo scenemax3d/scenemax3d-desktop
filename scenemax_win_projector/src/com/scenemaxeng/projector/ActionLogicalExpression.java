@@ -685,11 +685,18 @@ public class ActionLogicalExpression extends ActionStatementBase {
                 res = UIRuntimePropertyAccessor.read(app, path, ctx.start.getLine());
                 if (res instanceof String) {
                     turnOnIsString();
-                } else if (res instanceof List || res instanceof JSONObject || res instanceof JSONArray || res instanceof EntityInstBase) {
+                } else if (res instanceof List || res instanceof JSONObject || res instanceof JSONArray
+                        || res instanceof EntityInstBase || res instanceof RuntimeUITargetValue) {
                     isObject = true;
                 } else if (res instanceof Boolean) {
                     isResBool = true;
                 }
+                return res;
+            }
+
+            if (ctx.ui_runtime_target() != null) {
+                res = new RuntimeUITargetValue(ctx.ui_runtime_target().ui_dot_path().getText());
+                isObject = true;
                 return res;
             }
 

@@ -63,17 +63,16 @@ public class UIMessageController extends SceneMaxBaseController {
             return false;
         }
 
-        UIWidgetNode widget = uiManager.resolveWidget(msgCmd.uiName, msgCmd.layerName, msgCmd.widgetPath);
-        String commandPathPrefix = msgCmd.uiName != null && !msgCmd.uiName.isEmpty()
-                ? msgCmd.uiName + "." + msgCmd.layerName
-                : msgCmd.layerName;
+        RuntimeUITargetValue.Resolved resolvedTarget = resolveTarget(msgCmd, uiManager);
+        UIWidgetNode widget = resolvedTarget == null ? null : resolvedTarget.widget;
 
         if (widget == null) {
-            app.handleRuntimeError("UI widget not found: " + commandPathPrefix + "." + msgCmd.widgetPath);
+            app.handleRuntimeError("UI widget not found: " + describeTarget(msgCmd));
             return false;
         }
         if (!(widget instanceof UITextViewNode)) {
-            app.handleRuntimeError("UI message target must be a text widget: " + commandPathPrefix + "." + msgCmd.widgetPath);
+            String targetPath = resolvedTarget == null ? describeTarget(msgCmd) : resolvedTarget.displayPath();
+            app.handleRuntimeError("UI message target must be a text widget: " + targetPath);
             return false;
         }
 
@@ -92,6 +91,29 @@ public class UIMessageController extends SceneMaxBaseController {
         textView.resetVisualAlpha();
         applyProgress(durationSeconds <= 0f ? 1f : 0f);
         return true;
+    }
+
+    private RuntimeUITargetValue.Resolved resolveTarget(UIMessageCommand msgCmd, UIManager uiManager) {
+        if (msgCmd.targetVarName != null && !msgCmd.targetVarName.isEmpty()) {
+            RuntimeUITargetValue target = RuntimeUITargetValue.fromVariable(
+                    scope, msgCmd.targetVarName, app, msgCmd.varLineNum);
+            return target == null ? null : target.resolve(uiManager);
+        }
+
+        UIWidgetNode widget = uiManager.resolveWidget(msgCmd.uiName, msgCmd.layerName, msgCmd.widgetPath);
+        return widget == null ? null
+                : new RuntimeUITargetValue.Resolved(
+                msgCmd.uiName, msgCmd.layerName, msgCmd.widgetPath, null, widget);
+    }
+
+    private String describeTarget(UIMessageCommand msgCmd) {
+        if (msgCmd.targetVarName != null && !msgCmd.targetVarName.isEmpty()) {
+            return msgCmd.targetVarName;
+        }
+        String commandPathPrefix = msgCmd.uiName != null && !msgCmd.uiName.isEmpty()
+                ? msgCmd.uiName + "." + msgCmd.layerName
+                : msgCmd.layerName;
+        return commandPathPrefix + "." + msgCmd.widgetPath;
     }
 
     private String evaluateExpression(com.abware.scenemaxlang.parser.SceneMaxParser.Logical_expressionContext expr) {

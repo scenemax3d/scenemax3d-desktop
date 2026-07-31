@@ -22,7 +22,7 @@ network.on ("count", 5) = {
   
   recorded_actions.reset(0)
   rec_action_index = 0
-  run display_recorded_actions
+  //run display_recorded_actions
   is_executing = 0
   fight_counter = 6
   player.idle2
