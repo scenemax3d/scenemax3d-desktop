@@ -80,6 +80,9 @@ public class ShowHideController extends SceneMaxBaseController {
         }
         if (resolved.widget != null) {
             resolved.widget.setWidgetVisible(cmd.show);
+            if (!cmd.fromMultiplayerNetwork) {
+                app.syncMultiplayerUIShowHide(resolved.uiName, resolved.layerName, resolved.widgetPath, cmd.show);
+            }
         } else if (resolved.layer != null) {
             resolved.layer.setLayerVisible(cmd.show);
         }

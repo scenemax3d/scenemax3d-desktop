@@ -44,6 +44,7 @@ public class UIShowHideController extends SceneMaxBaseController {
                 UIWidgetNode nestedWidget = uiManager.resolveWidget(null, shCmd.uiName, shCmd.layerName);
                 if (nestedWidget != null) {
                     nestedWidget.setWidgetVisible(shCmd.show);
+                    syncMultiplayerShowHide(null, shCmd.uiName, shCmd.layerName, shCmd.show);
                     return true;
                 }
             }
@@ -60,6 +61,7 @@ public class UIShowHideController extends SceneMaxBaseController {
             UIWidgetNode widget = uiManager.resolveWidget(shCmd.uiName, shCmd.layerName, shCmd.widgetPath);
             if (widget != null) {
                 widget.setWidgetVisible(shCmd.show);
+                syncMultiplayerShowHide(shCmd.uiName, shCmd.layerName, shCmd.widgetPath, shCmd.show);
             } else {
                 app.handleRuntimeError("UI widget not found: " +
                         commandPathPrefix + "." + shCmd.widgetPath);
@@ -67,5 +69,12 @@ public class UIShowHideController extends SceneMaxBaseController {
         }
 
         return true; // one-shot controller
+    }
+
+    private void syncMultiplayerShowHide(String uiName, String layerName, String widgetPath, boolean show) {
+        if (cmd != null && cmd.fromMultiplayerNetwork) {
+            return;
+        }
+        app.syncMultiplayerUIShowHide(uiName, layerName, widgetPath, show);
     }
 }

@@ -127,6 +127,7 @@
             "heightMode": "FIXED",
             "width": 500,
             "id": "ac396ff9-32aa-4ab4-a98f-7f0c5d7070d9",
+            "multiplayer": true,
             "height": 50
           },
           {
@@ -181,6 +182,7 @@
                 "spriteName": "banner1",
                 "id": "58d1ba1a-8632-4da1-9d0b-adf53d817a3f",
                 "imageScaleMode": "fit",
+                "multiplayer": true,
                 "height": 100
               },
               {
@@ -209,6 +211,7 @@
             "width": 500,
             "id": "a14c7cfd-9018-4abe-b38c-ca72f4f9d08d",
             "marginTop": 5,
+            "multiplayer": true,
             "height": 50
           },
           {
@@ -290,6 +293,7 @@
             "heightMode": "FIXED",
             "width": 500,
             "id": "2348e38d-79b6-43d0-a239-c9b55a59eb4d",
+            "multiplayer": true,
             "height": 50
           },
           {
@@ -371,6 +375,7 @@
             "heightMode": "FIXED",
             "width": 500,
             "id": "07965bdf-b900-4a25-a50d-0c394a21a9ae",
+            "multiplayer": true,
             "height": 50
           },
           {
@@ -452,6 +457,7 @@
             "heightMode": "FIXED",
             "width": 500,
             "id": "e9863249-1f95-42f6-88a4-a72369fdba8d",
+            "multiplayer": true,
             "height": 50
           }
         ],
@@ -551,6 +557,7 @@
             "heightMode": "FIXED",
             "width": 500,
             "id": "73a4a433-c01b-4685-a7f5-b1f49d3fa6df",
+            "multiplayer": true,
             "height": 50
           },
           {
@@ -633,6 +640,7 @@
             "width": 500,
             "id": "97d7d6ff-ec4c-4549-bb67-442a4b52e3d3",
             "marginTop": 5,
+            "multiplayer": true,
             "height": 50
           },
           {
@@ -714,6 +722,7 @@
             "heightMode": "FIXED",
             "width": 500,
             "id": "0a04789c-aeb6-471f-8c49-faca656fbef0",
+            "multiplayer": true,
             "height": 50
           },
           {
@@ -795,6 +804,7 @@
             "heightMode": "FIXED",
             "width": 500,
             "id": "dcb31148-759a-4d5c-a471-7ce9f89059aa",
+            "multiplayer": true,
             "height": 50
           },
           {
@@ -876,6 +886,7 @@
             "heightMode": "FIXED",
             "width": 500,
             "id": "be27f59d-0e28-427c-abb1-f38e8483d7fe",
+            "multiplayer": true,
             "height": 50
           }
         ],

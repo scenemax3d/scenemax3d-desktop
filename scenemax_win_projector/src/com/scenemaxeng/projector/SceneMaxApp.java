@@ -238,7 +238,9 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     private boolean suppressMultiplayerCommandDispatch;
     private final Map<String, Object> pendingNetworkVariableValues = new HashMap<>();
     private final Map<String, String> pendingMultiplayerUITextValues = new HashMap<>();
+    private final Map<String, String> pendingMultiplayerUICommandValues = new HashMap<>();
     private final Map<String, MultiplayerControllerResumeState> pendingMultiplayerResumeStates = new HashMap<>();
+    private long multiplayerUICommandSequence;
     private float runtimeShaderElapsedTime = 0f;
     private SceneMaxBaseController lastWaitController;
     private SkyControl skyControl;
@@ -1576,6 +1578,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             } else {
                 uiManager.load(uiFile);
                 applyPendingMultiplayerUITextValues();
+                applyPendingMultiplayerUICommandValues();
             }
             logger.log(Level.INFO, "UI.load '{0}' loaded successfully", cmd.uiName);
         } catch (Exception e) {
@@ -2037,6 +2040,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             scope.add(ctl);
         } else if (action instanceof com.scenemaxeng.compiler.UIEaseCommand) {
             UIEaseController ctl = new UIEaseController(this, prg, scope, (com.scenemaxeng.compiler.UIEaseCommand) action);
+            ctl.async = action.isAsync;
             scope.add(ctl);
         }
 
@@ -5522,11 +5526,89 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         syncNetworkVariable(syncName, textValue == null ? "" : textValue, false);
     }
 
+    public void syncMultiplayerUIShowHide(String uiName, String layerName, String widgetPath, boolean show) {
+        String target = multiplayerUICommandTarget(uiName, layerName, widgetPath);
+        if (target == null) {
+            return;
+        }
+        syncMultiplayerUICommand(uiName, layerName, widgetPath, target + "." + (show ? "Show" : "Hide"));
+    }
+
+    public void syncMultiplayerUIProperty(String uiName, String layerName, String widgetPath,
+                                          String propertyName, String value) {
+        if (propertyName == null || propertyName.trim().isEmpty()) {
+            return;
+        }
+        String target = multiplayerUICommandTarget(uiName, layerName, widgetPath);
+        if (target == null) {
+            return;
+        }
+        syncMultiplayerUICommand(uiName, layerName, widgetPath,
+                target + "." + propertyName.trim() + " = \"" + escapeSceneMaxString(value == null ? "" : value) + "\"");
+    }
+
+    public void syncMultiplayerUIEase(String uiName, String layerName, String widgetPath,
+                                      String easeName, String directionName, float durationSeconds, boolean async) {
+        String target = multiplayerUICommandTarget(uiName, layerName, widgetPath);
+        if (target == null || easeName == null || directionName == null) {
+            return;
+        }
+        syncMultiplayerUICommand(uiName, layerName, widgetPath,
+                target + ".ease(\"" + escapeSceneMaxString(easeName) + "\", "
+                        + directionName.trim() + ", " + networkNumber(durationSeconds) + ")"
+                        + (async ? " async" : ""));
+    }
+
+    public boolean isMultiplayerUIWidget(String uiName, String layerName, String widgetPath) {
+        return uiManager != null && uiManager.isMultiplayerWidget(uiName, layerName, widgetPath);
+    }
+
+    private void syncMultiplayerUICommand(String uiName, String layerName, String widgetPath, String commandCode) {
+        if (suppressMultiplayerCommandDispatch || uiManager == null
+                || commandCode == null || commandCode.trim().isEmpty()) {
+            return;
+        }
+        String resolvedUiName = uiName != null && !uiName.trim().isEmpty()
+                ? uiName.trim()
+                : uiManager.getActiveUIName();
+        String syncName = uiManager.multiplayerCommandSyncKeyForPath(resolvedUiName, layerName, widgetPath);
+        if (syncName == null || syncName.trim().isEmpty()) {
+            return;
+        }
+        JSONObject payload = new JSONObject();
+        payload.put("seq", ++multiplayerUICommandSequence);
+        payload.put("code", commandCode.trim());
+        syncNetworkVariable(syncName, payload.toString(), false);
+    }
+
+    private String multiplayerUICommandTarget(String uiName, String layerName, String widgetPath) {
+        if (uiManager == null || layerName == null || layerName.trim().isEmpty()
+                || widgetPath == null || widgetPath.trim().isEmpty()) {
+            return null;
+        }
+        String resolvedUiName = uiName != null && !uiName.trim().isEmpty()
+                ? uiName.trim()
+                : uiManager.getActiveUIName();
+        if (!uiManager.isMultiplayerWidget(resolvedUiName, layerName, widgetPath)) {
+            return null;
+        }
+        StringBuilder target = new StringBuilder("UI.");
+        if (resolvedUiName != null && !resolvedUiName.trim().isEmpty()) {
+            target.append(resolvedUiName.trim()).append('.');
+        }
+        target.append(layerName.trim()).append('.').append(widgetPath.trim());
+        return target.toString();
+    }
+
     public void receiveNetworkVariableUpdate(String varName, Object value) {
         if (varName == null || varName.trim().isEmpty()) {
             return;
         }
         String normalizedName = varName.trim();
+        if (isMultiplayerUICommandSyncName(normalizedName)) {
+            receiveMultiplayerUICommandUpdate(normalizedName, value);
+            return;
+        }
         if (isMultiplayerUITextSyncName(normalizedName)) {
             receiveMultiplayerUITextUpdate(normalizedName, value);
             return;
@@ -5589,7 +5671,11 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
     }
 
     private boolean isMultiplayerUITextSyncName(String varName) {
-        return varName != null && varName.startsWith("$ui:");
+        return varName != null && varName.startsWith("$ui:") && !isMultiplayerUICommandSyncName(varName);
+    }
+
+    private boolean isMultiplayerUICommandSyncName(String varName) {
+        return varName != null && varName.startsWith("$ui:") && varName.endsWith(":cmd");
     }
 
     private void receiveMultiplayerUITextUpdate(String syncName, Object value) {
@@ -5599,8 +5685,41 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
         }
     }
 
+    private void receiveMultiplayerUICommandUpdate(String syncName, Object value) {
+        String payload = value == null ? "" : String.valueOf(value);
+        if (!applyMultiplayerUICommandValue(syncName, payload)) {
+            pendingMultiplayerUICommandValues.put(syncName, payload);
+        }
+    }
+
     private boolean applyMultiplayerUITextValue(String syncName, String text) {
         return uiManager != null && uiManager.applyMultiplayerTextSync(syncName, text);
+    }
+
+    private boolean applyMultiplayerUICommandValue(String syncName, String payload) {
+        if (uiManager == null || !uiManager.hasMultiplayerCommandSyncKey(syncName)) {
+            return false;
+        }
+        String commandCode = decodeMultiplayerUICommand(payload);
+        if (commandCode == null || commandCode.trim().isEmpty()) {
+            return true;
+        }
+        runNetworkMultiplayerCommand(commandCode.trim());
+        return true;
+    }
+
+    private String decodeMultiplayerUICommand(String payload) {
+        if (payload == null || payload.trim().isEmpty()) {
+            return null;
+        }
+        String trimmed = payload.trim();
+        try {
+            JSONObject json = new JSONObject(trimmed);
+            return json.optString("code", null);
+        } catch (Exception ignored) {
+            int separator = trimmed.indexOf('|');
+            return separator >= 0 ? trimmed.substring(separator + 1) : trimmed;
+        }
     }
 
     private void applyPendingMultiplayerUITextValues() {
@@ -5611,6 +5730,19 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
              iterator.hasNext();) {
             Map.Entry<String, String> entry = iterator.next();
             if (applyMultiplayerUITextValue(entry.getKey(), entry.getValue())) {
+                iterator.remove();
+            }
+        }
+    }
+
+    private void applyPendingMultiplayerUICommandValues() {
+        if (pendingMultiplayerUICommandValues.isEmpty()) {
+            return;
+        }
+        for (Iterator<Map.Entry<String, String>> iterator = pendingMultiplayerUICommandValues.entrySet().iterator();
+             iterator.hasNext();) {
+            Map.Entry<String, String> entry = iterator.next();
+            if (applyMultiplayerUICommandValue(entry.getKey(), entry.getValue())) {
                 iterator.remove();
             }
         }
@@ -10416,6 +10548,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             if (uiManager != null) {
                 uiManager.load(uiFile);
                 applyPendingMultiplayerUITextValues();
+                applyPendingMultiplayerUICommandValues();
             }
         } catch (Exception e) {
             handleRuntimeError("Failed to load UI document: " + e.getMessage());
@@ -10427,6 +10560,7 @@ public class SceneMaxApp extends com.jme3.app.SimpleApplication implements IUiPr
             if (uiManager != null && in != null) {
                 uiManager.load(in, "running/" + uiName + ".smui");
                 applyPendingMultiplayerUITextValues();
+                applyPendingMultiplayerUICommandValues();
             }
         } catch (Exception e) {
             handleRuntimeError("Failed to load UI document: " + e.getMessage());

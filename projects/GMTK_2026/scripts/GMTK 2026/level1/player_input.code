@@ -4,7 +4,7 @@
 [player.data.slot == 1 || player.data.slot == 2]
 record_action (action) = {
 	recorded_actions[rec_action_index] = action
-	run display_recorded_action(action) async 
+	run display_recorded_action(action) async
 	if (rec_action_index == 4) {
 	  rec_action_index = 0
 	} else {
@@ -44,9 +44,9 @@ display_recorded_action(action) = {
 	panel.Show
 	txt.text = recorded_actions_desc[action-1] 
 	if(player.data.slot == 1) {
-		panel.ease("EaseOutBounce", Right, 2)
+		panel.ease("EaseOutBounce", Right, 2) async 
 	} else {
-		panel.ease("EaseOutBounce", Left, 2)
+		panel.ease("EaseOutBounce", Left, 2) async 
 	}
 
 }

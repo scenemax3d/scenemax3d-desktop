@@ -863,6 +863,7 @@ public class SceneMaxLanguageParser implements IParser {
                     cmd.easingExpr = easeCtx.logical_expression(0);
                     cmd.durationExpr = easeCtx.logical_expression(1);
                     cmd.directionName = easeCtx.ui_ease_direction().getText();
+                    cmd.isAsync = easeCtx.async_expr() != null;
                     int widgetStartIndex;
 
                     if (pathParts.size() == 1 || pathParts.get(0).getText().toLowerCase().startsWith("layer")) {
@@ -931,6 +932,7 @@ public class SceneMaxLanguageParser implements IParser {
                     cmd.easingExpr = easeCtx.logical_expression(0);
                     cmd.durationExpr = easeCtx.logical_expression(1);
                     cmd.directionName = easeCtx.ui_ease_direction().getText();
+                    cmd.isAsync = easeCtx.async_expr() != null;
                     return cmd;
                 }
 

@@ -56,8 +56,11 @@ public class UISetPropertyController extends SceneMaxBaseController {
             return true;
         }
 
+        String resolvedPropertyName = resolvePropertyName(widget, propCmd);
+
         // Apply the property based on widget type and property name
         applyProperty(widget, propCmd, value, resolvedTarget);
+        syncMultiplayerWidgetProperty(propCmd, resolvedTarget, widget, resolvedPropertyName, value);
 
         return true; // one-shot controller
     }
@@ -375,6 +378,25 @@ public class UISetPropertyController extends SceneMaxBaseController {
         String layerName = resolvedTarget != null ? resolvedTarget.layerName : propCmd.layerName;
         String widgetPath = resolvedTarget != null ? resolvedTarget.widgetPath : propCmd.widgetPath;
         app.syncMultiplayerUIText(uiName, layerName, widgetPath, value);
+    }
+
+    private void syncMultiplayerWidgetProperty(UISetPropertyCommand propCmd, RuntimeUITargetValue.Resolved resolvedTarget,
+                                               UIWidgetNode widget, String propertyName, String value) {
+        if (cmd != null && cmd.fromMultiplayerNetwork) {
+            return;
+        }
+        if (app == null || propCmd == null || widget == null || widget.getWidgetDef() == null
+                || !widget.getWidgetDef().isMultiplayer()
+                || propertyName == null || propertyName.trim().isEmpty()) {
+            return;
+        }
+        if (widget instanceof UITextViewNode && "text".equalsIgnoreCase(propertyName)) {
+            return;
+        }
+        String uiName = resolvedTarget != null ? resolvedTarget.uiName : propCmd.uiName;
+        String layerName = resolvedTarget != null ? resolvedTarget.layerName : propCmd.layerName;
+        String widgetPath = resolvedTarget != null ? resolvedTarget.widgetPath : propCmd.widgetPath;
+        app.syncMultiplayerUIProperty(uiName, layerName, widgetPath, propertyName, value);
     }
 
     private List<String> parseListCells(String value) {

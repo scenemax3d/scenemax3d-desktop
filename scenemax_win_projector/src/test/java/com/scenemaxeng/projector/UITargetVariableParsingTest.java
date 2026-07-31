@@ -21,7 +21,7 @@ public class UITargetVariableParsingTest {
                         + "var txt = arrUI[1]\n"
                         + "panel.Show\n"
                         + "txt.text = \"Ready\"\n"
-                        + "panel.ease(\"EaseOutBounce\", Right, 2)\n"
+                        + "panel.ease(\"EaseOutBounce\", Right, 2) async\n"
                         + "txt.message(\"Go\", TextEffect.fade_in, 1)\n"
         );
 
@@ -38,6 +38,7 @@ public class UITargetVariableParsingTest {
         UIEaseCommand ease = (UIEaseCommand) prg.actions.get(5);
         assertEquals("panel", ease.targetVarName);
         assertEquals("Right", ease.directionName);
+        assertTrue(ease.isAsync);
 
         UIMessageCommand message = (UIMessageCommand) prg.actions.get(6);
         assertEquals("txt", message.targetVarName);

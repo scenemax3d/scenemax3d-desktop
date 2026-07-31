@@ -62,4 +62,33 @@ public class UIEaseParsingTest {
         assertEquals("dialog.panel1", cmd.widgetPath);
         assertEquals("Down", cmd.directionName);
     }
+
+    @Test
+    public void parsesAsyncUiEaseCommand() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "UI.layer1.my_panel.ease(\"EaseOutBounce\", Right, 2) async"
+        );
+
+        assertTrue(String.join("\n", prg.syntaxErrors), prg.syntaxErrors.isEmpty());
+        assertTrue(prg.actions.get(0) instanceof UIEaseCommand);
+
+        UIEaseCommand cmd = (UIEaseCommand) prg.actions.get(0);
+        assertTrue(cmd.isAsync);
+        assertEquals("my_panel", cmd.widgetPath);
+        assertEquals("Right", cmd.directionName);
+    }
+
+    @Test
+    public void asyncUiEaseCommandCreatesAsyncController() {
+        ProgramDef prg = new SceneMaxLanguageParser(null, "").parse(
+                "UI.layer1.my_panel.ease(\"EaseOutBounce\", Right, 2) async"
+        );
+        SceneMaxScope scope = new SceneMaxScope();
+
+        new SceneMaxApp().runAction(prg, (UIEaseCommand) prg.actions.get(0), scope);
+
+        SceneMaxBaseController controller = scope.mainController.getActiveController();
+        assertTrue(controller instanceof UIEaseController);
+        assertTrue(controller.async);
+    }
 }
