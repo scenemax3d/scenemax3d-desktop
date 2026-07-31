@@ -61,6 +61,7 @@ public class UIDesignerPanel extends JPanel {
 
     // Property fields — common
     private JTextField txtWidgetName;
+    private JCheckBox chkWidgetVisible;
     private JComboBox<String> cboWidthMode;
     private JComboBox<String> cboHeightMode;
     private JSpinner spnWidth, spnHeight;
@@ -382,6 +383,12 @@ public class UIDesignerPanel extends JPanel {
         txtWidgetName.addActionListener(e -> applyWidgetNameChange());
         installAutoSaveOnFocusLost(txtWidgetName, this::applyWidgetNameChange);
         addFormRow("Name:", txtWidgetName);
+
+        chkWidgetVisible = new JCheckBox("Visible");
+        chkWidgetVisible.setSelected(true);
+        chkWidgetVisible.addActionListener(e -> applyWidgetVisibleChange());
+        installAutoSaveOnFocusLost(chkWidgetVisible, null);
+        addFormRow("Visible:", chkWidgetVisible);
 
         propertiesPanel.add(Box.createVerticalStrut(8));
         propertiesPanel.add(createBoldLabel("Size:"));
@@ -1183,6 +1190,8 @@ public class UIDesignerPanel extends JPanel {
 
         txtWidgetName.setText(widget.getName());
         txtWidgetName.setEnabled(true);
+        chkWidgetVisible.setSelected(widget.isVisible());
+        chkWidgetVisible.setEnabled(true);
 
         // Size
         cboWidthMode.setSelectedIndex(widget.getWidthMode().ordinal());
@@ -1279,6 +1288,8 @@ public class UIDesignerPanel extends JPanel {
         updatingProperties = true;
         txtWidgetName.setText("");
         txtWidgetName.setEnabled(false);
+        chkWidgetVisible.setSelected(true);
+        chkWidgetVisible.setEnabled(false);
         cboWidthMode.setSelectedIndex(0);
         cboHeightMode.setSelectedIndex(0);
         spnWidth.setValue(0.0);
@@ -1376,6 +1387,16 @@ public class UIDesignerPanel extends JPanel {
         widget.setName(newName);
         markDirty();
         refreshWidgetTree();
+    }
+
+    private void applyWidgetVisibleChange() {
+        if (updatingProperties) return;
+        UIWidgetDef widget = canvas.getSelectedWidget();
+        if (widget == null) return;
+
+        widget.setVisible(chkWidgetVisible.isSelected());
+        markDirty();
+        canvas.repaint();
     }
 
     private void applySizeModeChange() {
