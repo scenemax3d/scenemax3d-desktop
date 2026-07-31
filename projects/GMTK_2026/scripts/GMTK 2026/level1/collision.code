@@ -1,14 +1,16 @@
 // opponent head hit by foot
 [effective_hit == 1 && game_status == GAME_STATE_START]
 when left_foot_collider,right_foot_collider collides with #head_collider do
-	run shake_the_world2
+	run shake_the_world2 async
+	is_opponent_hit = 1
 	network.send ("head_hit_by_foot")
 end do
 
 // opponent head hit by hand
 [effective_hit == 1 && game_status == GAME_STATE_START]
 when left_hand_collider,right_hand_collider collides with #head_collider do
-  run shake_the_world2
+  run shake_the_world2 async
+  is_opponent_hit = 1
 	network.send ("head_hit_by_hand")
 end do
 
@@ -16,13 +18,15 @@ end do
 // opponent body hit by foot
 [effective_hit == 1 && game_status == GAME_STATE_START]
 when left_foot_collider,right_foot_collider collides with #body_collider do
-  run shake_the_world2
+  run shake_the_world2 async
+  is_opponent_hit = 1
 	network.send ("body_hit_by_foot")
 end do
 
 // opponent body hit by hand
 [effective_hit == 1 && game_status == GAME_STATE_START]
 when left_hand_collider,right_hand_collider collides with #body_collider do
-  run shake_the_world2
+  run shake_the_world2 async 
+  is_opponent_hit = 1
 	network.send ("body_hit_by_hand")
 end do

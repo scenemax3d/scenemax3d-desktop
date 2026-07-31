@@ -51,25 +51,409 @@
         "visible": true,
         "type": "PANEL",
         "constraints": [],
-        "children": [{
-          "verticalBias": 0.5,
-          "widthMode": "FIXED",
-          "visible": true,
-          "type": "TEXT_VIEW",
-          "constraints": [],
-          "textColor": "#FFFFFFFF",
-          "fontName": "font_header_white",
-          "horizontalBias": 0.5,
-          "textAlignment": "left",
-          "name": "player1_actions",
-          "heightMode": "FIXED",
-          "width": 150,
-          "fontSize": 64,
-          "id": "1b235122-bd75-4c8f-99ab-ad956b9c46ad",
-          "text": "",
-          "multiplayer": true,
-          "height": 30
-        }],
+        "children": [
+          {
+            "verticalBias": 0.5,
+            "backgroundColor": "#33333300",
+            "widthMode": "FIXED",
+            "visible": true,
+            "type": "PANEL",
+            "constraints": [],
+            "children": [
+              {
+                "verticalBias": 0.5,
+                "widthMode": "MATCH_CONSTRAINT",
+                "visible": true,
+                "spriteFrame": 0,
+                "type": "IMAGE",
+                "constraints": [
+                  {
+                    "side": "LEFT",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "LEFT"
+                  },
+                  {
+                    "side": "RIGHT",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "RIGHT"
+                  },
+                  {
+                    "side": "TOP",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "TOP"
+                  },
+                  {
+                    "side": "BOTTOM",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "BOTTOM"
+                  }
+                ],
+                "horizontalBias": 0.5,
+                "name": "player1_action1_image",
+                "heightMode": "MATCH_CONSTRAINT",
+                "width": 100,
+                "spriteName": "banner1",
+                "id": "0f7139d9-334f-493a-a4ca-180d77390f61",
+                "imageScaleMode": "fit",
+                "height": 100
+              },
+              {
+                "verticalBias": 0.5,
+                "widthMode": "FIXED",
+                "visible": true,
+                "type": "TEXT_VIEW",
+                "constraints": [],
+                "textColor": "#FFFFFFFF",
+                "fontName": "font_header_white",
+                "horizontalBias": 0.5,
+                "textAlignment": "left",
+                "name": "player1_action1_text",
+                "heightMode": "FIXED",
+                "width": 150,
+                "fontSize": 64,
+                "id": "1b235122-bd75-4c8f-99ab-ad956b9c46ad",
+                "text": "",
+                "multiplayer": true,
+                "height": 30
+              }
+            ],
+            "horizontalBias": 0.5,
+            "name": "panel_player1_action1",
+            "heightMode": "FIXED",
+            "width": 200,
+            "id": "ac396ff9-32aa-4ab4-a98f-7f0c5d7070d9",
+            "height": 50
+          },
+          {
+            "verticalBias": 0.5,
+            "backgroundColor": "#33333300",
+            "widthMode": "FIXED",
+            "visible": true,
+            "type": "PANEL",
+            "constraints": [{
+              "side": "TOP",
+              "targetName": "panel_player1_action1",
+              "margin": 0,
+              "targetSide": "BOTTOM"
+            }],
+            "children": [
+              {
+                "verticalBias": 0.5,
+                "widthMode": "MATCH_CONSTRAINT",
+                "visible": true,
+                "spriteFrame": 0,
+                "type": "IMAGE",
+                "constraints": [
+                  {
+                    "side": "LEFT",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "LEFT"
+                  },
+                  {
+                    "side": "RIGHT",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "RIGHT"
+                  },
+                  {
+                    "side": "TOP",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "TOP"
+                  },
+                  {
+                    "side": "BOTTOM",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "BOTTOM"
+                  }
+                ],
+                "horizontalBias": 0.5,
+                "name": "player1_action2_image",
+                "heightMode": "MATCH_CONSTRAINT",
+                "width": 100,
+                "spriteName": "banner1",
+                "id": "58d1ba1a-8632-4da1-9d0b-adf53d817a3f",
+                "imageScaleMode": "fit",
+                "height": 100
+              },
+              {
+                "verticalBias": 0.5,
+                "widthMode": "FIXED",
+                "visible": true,
+                "type": "TEXT_VIEW",
+                "constraints": [],
+                "textColor": "#FFFFFFFF",
+                "fontName": "font_header_white",
+                "horizontalBias": 0.5,
+                "textAlignment": "left",
+                "name": "player1_action2_text",
+                "heightMode": "FIXED",
+                "width": 150,
+                "fontSize": 64,
+                "id": "c9059450-3bbb-404c-aa1e-19c07f0e8a15",
+                "text": "",
+                "multiplayer": true,
+                "height": 30
+              }
+            ],
+            "horizontalBias": 0.5,
+            "name": "panel_player1_action2",
+            "heightMode": "FIXED",
+            "width": 200,
+            "id": "a14c7cfd-9018-4abe-b38c-ca72f4f9d08d",
+            "marginTop": 5,
+            "height": 50
+          },
+          {
+            "verticalBias": 0.5,
+            "backgroundColor": "#33333300",
+            "widthMode": "FIXED",
+            "visible": true,
+            "type": "PANEL",
+            "constraints": [{
+              "side": "TOP",
+              "targetName": "panel_player1_action2",
+              "margin": 0,
+              "targetSide": "BOTTOM"
+            }],
+            "children": [
+              {
+                "verticalBias": 0.5,
+                "widthMode": "MATCH_CONSTRAINT",
+                "visible": true,
+                "spriteFrame": 0,
+                "type": "IMAGE",
+                "constraints": [
+                  {
+                    "side": "LEFT",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "LEFT"
+                  },
+                  {
+                    "side": "RIGHT",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "RIGHT"
+                  },
+                  {
+                    "side": "TOP",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "TOP"
+                  },
+                  {
+                    "side": "BOTTOM",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "BOTTOM"
+                  }
+                ],
+                "horizontalBias": 0.5,
+                "name": "player1_action3_image",
+                "heightMode": "MATCH_CONSTRAINT",
+                "width": 100,
+                "spriteName": "banner1",
+                "id": "b60ae63e-0ff3-4ed2-83f0-af6bed5d2037",
+                "imageScaleMode": "fit",
+                "height": 100
+              },
+              {
+                "verticalBias": 0.5,
+                "widthMode": "FIXED",
+                "visible": true,
+                "type": "TEXT_VIEW",
+                "constraints": [],
+                "textColor": "#FFFFFFFF",
+                "fontName": "font_header_white",
+                "horizontalBias": 0.5,
+                "textAlignment": "left",
+                "name": "player1_action3_text",
+                "heightMode": "FIXED",
+                "width": 150,
+                "fontSize": 64,
+                "id": "de1a4d8c-d4f9-4b38-a0a7-57195b47bf78",
+                "text": "",
+                "multiplayer": true,
+                "height": 30
+              }
+            ],
+            "horizontalBias": 0.5,
+            "name": "panel_player1_action3",
+            "heightMode": "FIXED",
+            "width": 200,
+            "id": "2348e38d-79b6-43d0-a239-c9b55a59eb4d",
+            "height": 50
+          },
+          {
+            "verticalBias": 0.5,
+            "backgroundColor": "#33333300",
+            "widthMode": "FIXED",
+            "visible": true,
+            "type": "PANEL",
+            "constraints": [{
+              "side": "TOP",
+              "targetName": "panel_player1_action3",
+              "margin": 0,
+              "targetSide": "BOTTOM"
+            }],
+            "children": [
+              {
+                "verticalBias": 0.5,
+                "widthMode": "MATCH_CONSTRAINT",
+                "visible": true,
+                "spriteFrame": 0,
+                "type": "IMAGE",
+                "constraints": [
+                  {
+                    "side": "LEFT",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "LEFT"
+                  },
+                  {
+                    "side": "RIGHT",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "RIGHT"
+                  },
+                  {
+                    "side": "TOP",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "TOP"
+                  },
+                  {
+                    "side": "BOTTOM",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "BOTTOM"
+                  }
+                ],
+                "horizontalBias": 0.5,
+                "name": "player1_action4_image",
+                "heightMode": "MATCH_CONSTRAINT",
+                "width": 100,
+                "spriteName": "banner1",
+                "id": "50bde607-ad47-4d75-99f8-92e50a046014",
+                "imageScaleMode": "fit",
+                "height": 100
+              },
+              {
+                "verticalBias": 0.5,
+                "widthMode": "FIXED",
+                "visible": true,
+                "type": "TEXT_VIEW",
+                "constraints": [],
+                "textColor": "#FFFFFFFF",
+                "fontName": "font_header_white",
+                "horizontalBias": 0.5,
+                "textAlignment": "left",
+                "name": "player1_action4_text",
+                "heightMode": "FIXED",
+                "width": 150,
+                "fontSize": 64,
+                "id": "1dc243dd-fbc8-49e5-9655-12f09ee56886",
+                "text": "",
+                "multiplayer": true,
+                "height": 30
+              }
+            ],
+            "horizontalBias": 0.5,
+            "name": "panel_player1_action4",
+            "heightMode": "FIXED",
+            "width": 200,
+            "id": "07965bdf-b900-4a25-a50d-0c394a21a9ae",
+            "height": 50
+          },
+          {
+            "verticalBias": 0.5,
+            "backgroundColor": "#33333300",
+            "widthMode": "FIXED",
+            "visible": true,
+            "type": "PANEL",
+            "constraints": [{
+              "side": "TOP",
+              "targetName": "panel_player1_action4",
+              "margin": 0,
+              "targetSide": "BOTTOM"
+            }],
+            "children": [
+              {
+                "verticalBias": 0.5,
+                "widthMode": "MATCH_CONSTRAINT",
+                "visible": true,
+                "spriteFrame": 0,
+                "type": "IMAGE",
+                "constraints": [
+                  {
+                    "side": "LEFT",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "LEFT"
+                  },
+                  {
+                    "side": "RIGHT",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "RIGHT"
+                  },
+                  {
+                    "side": "TOP",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "TOP"
+                  },
+                  {
+                    "side": "BOTTOM",
+                    "targetName": "parent",
+                    "margin": 0,
+                    "targetSide": "BOTTOM"
+                  }
+                ],
+                "horizontalBias": 0.5,
+                "name": "player1_action5_image",
+                "heightMode": "MATCH_CONSTRAINT",
+                "width": 100,
+                "spriteName": "banner1",
+                "id": "64279b14-41d9-4b26-97f9-4cbf27770b60",
+                "imageScaleMode": "fit",
+                "height": 100
+              },
+              {
+                "verticalBias": 0.5,
+                "widthMode": "FIXED",
+                "visible": true,
+                "type": "TEXT_VIEW",
+                "constraints": [],
+                "textColor": "#FFFFFFFF",
+                "fontName": "font_header_white",
+                "horizontalBias": 0.5,
+                "textAlignment": "left",
+                "name": "player1_action5_text",
+                "heightMode": "FIXED",
+                "width": 150,
+                "fontSize": 64,
+                "id": "026a5126-f9d9-48ce-8012-c0f13439d485",
+                "text": "",
+                "multiplayer": true,
+                "height": 30
+              }
+            ],
+            "horizontalBias": 0.5,
+            "name": "panel_player1_action5",
+            "heightMode": "FIXED",
+            "width": 200,
+            "id": "e9863249-1f95-42f6-88a4-a72369fdba8d",
+            "height": 50
+          }
+        ],
         "horizontalBias": 0.5,
         "name": "panel1",
         "heightMode": "FIXED",

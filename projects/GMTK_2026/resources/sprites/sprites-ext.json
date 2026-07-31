@@ -28,5 +28,13 @@
     "name": "health_bar1",
     "rows": 15,
     "cols": 1
+  },
+  {
+    "frameHeight": 1,
+    "path": "sprites/banner_hanging.png",
+    "frameWidth": 1,
+    "name": "banner1",
+    "rows": 1,
+    "cols": 1
   }
 ]}

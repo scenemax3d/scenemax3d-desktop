@@ -11,18 +11,16 @@ network.on ("count", 5) = {
   } else if(rnd(20)==0){
     audio.play "attack1_jap"
   }
-   
+
+  is_opponent_hit = 0 
   run replay_action (recorded_actions[0])
   run replay_action (recorded_actions[1])
   run replay_action (recorded_actions[2])
   run replay_action (recorded_actions[3])
   run replay_action (recorded_actions[4])
-  //recorded_actions.clear  
-  recorded_actions[0] = 0
-  recorded_actions[1] = 0
-  recorded_actions[2] = 0
-  recorded_actions[3] = 0
-  recorded_actions[4] = 0
+  is_opponent_hit = 0
+  
+  recorded_actions.reset(0)
   rec_action_index = 0
   run display_recorded_actions
   is_executing = 0
@@ -30,7 +28,9 @@ network.on ("count", 5) = {
   player.idle2
 }
 
+[is_opponent_hit == 0]
 replay_action (action) = {
+  effective_hit = 0
   if (action == 1) {
   	audio.play "kick3"
   	anim = animation player.mma_kick1 at speed of 2
@@ -75,6 +75,8 @@ replay_action (action) = {
   	}
     anim.run
   }
+
+  effective_hit = 0
 }
 
 reduce_health = {
@@ -92,10 +94,10 @@ reduce_health = {
 	} else if (player.data.slot == 2 && player2_health <= 0) {
 		run switch_player
 	}
-
 	
 }
 
+[is_hit == 0]
 player_hit = {
   is_hit = 1
   do async 
@@ -104,7 +106,14 @@ player_hit = {
   	player.shader =""
   end do 
   audio.play "hurt1"
-	player.back_death1
+	player.back_death1 at speed of 1.5
+	do async
+	  wait 0.5 seconds
+	  audio.play "crash1"
+		wait 0.1 second
+		run shake_the_world2
+		//
+	end do
 	run reduce_health
 }
 
