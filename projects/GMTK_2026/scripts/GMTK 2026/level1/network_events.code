@@ -30,6 +30,7 @@ network.on ("count", 5) = {
 
 [is_opponent_hit == 0]
 replay_action (action) = {
+  
   effective_hit = 0
   if (action == 1) {
   	audio.play "kick3"

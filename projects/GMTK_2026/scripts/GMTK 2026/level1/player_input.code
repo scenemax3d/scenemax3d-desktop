@@ -4,7 +4,7 @@
 [player.data.slot == 1 || player.data.slot == 2]
 record_action (action) = {
 	recorded_actions[rec_action_index] = action
-	run display_recorded_action(action)
+	run display_recorded_action(action) async 
 	if (rec_action_index == 4) {
 	  rec_action_index = 0
 	} else {
@@ -14,7 +14,8 @@ record_action (action) = {
 	audio.play "coin2"
 }
 
-var arrUI = [UI.layer1.panel1.panel_player1_action1, 
+var arrUI = [
+						 UI.layer1.panel1.panel_player1_action1, 
              UI.layer1.panel1.panel_player1_action1.player1_action1_text,
              UI.layer1.panel1.panel_player1_action2, 
              UI.layer1.panel1.panel_player1_action2.player1_action2_text,
@@ -23,39 +24,33 @@ var arrUI = [UI.layer1.panel1.panel_player1_action1,
              UI.layer1.panel1.panel_player1_action4, 
              UI.layer1.panel1.panel_player1_action4.player1_action4_text,
              UI.layer1.panel1.panel_player1_action5, 
-             UI.layer1.panel1.panel_player1_action5.player1_action5_text]
+             UI.layer1.panel1.panel_player1_action5.player1_action5_text,
+             
+             UI.layer1.panel2.panel_player2_action1, 
+             UI.layer1.panel2.panel_player2_action1.player2_action1_text,
+             UI.layer1.panel2.panel_player2_action2, 
+             UI.layer1.panel2.panel_player2_action2.player2_action2_text,
+             UI.layer1.panel2.panel_player2_action3, 
+             UI.layer1.panel2.panel_player2_action3.player2_action3_text,
+             UI.layer1.panel2.panel_player2_action4, 
+             UI.layer1.panel2.panel_player2_action4.player2_action4_text,
+             UI.layer1.panel2.panel_player2_action5, 
+             UI.layer1.panel2.panel_player2_action5.player2_action5_text
+             ]
 display_recorded_action(action) = {
-	var index = (action-1)*2
-	var panel = arrUI[rec_action_index]
-	var txt = arrUI[rec_action_index+1]
+	var index = (player.data.slot-1)*10 + rec_action_index*2
+	var panel = arrUI[index]
+	var txt = arrUI[index+1]
 	panel.Show
 	txt.text = recorded_actions_desc[action-1] 
-	panel.ease("EaseOutBounce", Right, 2)
+	if(player.data.slot == 1) {
+		panel.ease("EaseOutBounce", Right, 2)
+	} else {
+		panel.ease("EaseOutBounce", Left, 2)
+	}
 
 }
              
-//display_recorded_action(index) = {
-//	UI.layer1.panel1.panel_player1_action1.show 
-//	var text = recorded_actions_desc[index-1]
-//	UI.layer1.panel1.panel_player1_action1.player1_action1_text.text = text
-//	UI.layer1.panel1.panel_player1_action1.ease("EaseOutBounce", Right, 2)
-//
-//}
-
-//display_recorded_actions = {
-//  var disp = ""
-//  for (var i=0;i<recorded_actions.length;i=i+1) {
-//    var action = recorded_actions[i]
-//    if (action - 1 >= 0) {
-//      disp = disp + recorded_actions_desc[action-1]+ newline
-//    }
-//  }
-//  if (fighter_index == 0) {
-//    UI.layer1.panel1.player1_actions.text = disp
-//  } else if (fighter_index == 1) {
-//  	UI.layer1.panel2.player2_actions.text = disp
-//  }
-//}
 
 when key A is pressed once do
   run record_action (1)

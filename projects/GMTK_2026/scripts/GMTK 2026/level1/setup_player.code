@@ -44,7 +44,7 @@ set_player_init_position (slot) = {
 		network.broadcast("set_fighting_camera")
 	} else if (fighter_slot2 == 0 || slot == 2) {
 		fighter_slot2 = player.network.id
-		player.pos (0.0,5,7)
+		player.pos (-13.5,5,6.5)
 	  UI.layer1.player2_name.text = player.data.name
 	  player.data.is_fighter = 1 
 	  player.data.slot# = 2

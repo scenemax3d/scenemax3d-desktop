@@ -101,7 +101,7 @@
       ],
       "modelCollisionShape": "default",
       "type": "MODEL",
-      "sceneMaxCode": "model_2 => static arena1: pos (0,0.0,0) async",
+      "sceneMaxCode": "model_2 => static arena1: pos (0.0,0.0,0.0), scale 0.1 async",
       "staticModel": true,
       "name": "model_2",
       "vehicleModel": false,
@@ -129,15 +129,15 @@
   },
   "camera": {
     "rotation": [
-      0.18867531,
-      0.58801615,
-      -0.14346065,
-      0.77334183
+      0.30342302,
+      0.6053336,
+      -0.26800486,
+      0.68533134
     ],
     "position": [
-      -171.06801,
-      92.10708,
-      -47.45546
+      -30.351711,
+      33.686165,
+      -3.7770176
     ]
   },
   "version": 1
