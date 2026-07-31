@@ -3,6 +3,7 @@
 
 [player.data.slot == 1 || player.data.slot == 2]
 record_action (action) = {
+  run shake_the_world async
 	recorded_actions[rec_action_index] = action
 	run display_recorded_action(action) async
 	if (rec_action_index == 4) {
