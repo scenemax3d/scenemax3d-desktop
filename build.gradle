@@ -58,6 +58,13 @@ def parserJarOutput = file("$buildDir/generated/scenemax-parser/scenemax_parser.
 def parserCompilerLib = file('scenemax3d_compiler/libs/scenemax_parser.jar')
 def parserProjectorLib = file('scenemax_win_projector/libs/scenemax_parser.jar')
 def windowsInstallerScript = file('INNO-SETUP/build-installer.ps1')
+def multiplayerServerDir = file('tools/multiplayer-server')
+def nativeLauncherSource = file('tools/native-launcher/zig/scenemax_launcher.zig')
+def nativeLauncherStub = file('tools/native-launcher/bin/windows-x64/scenemax-selfextract.exe')
+def readApplicationVersion = {
+    def versionMatcher = file('src/com/scenemax/desktop/Util.java').text =~ /APPLICATION_VERSION\s*=\s*"([^"]+)"/
+    versionMatcher.find() ? versionMatcher.group(1) : '2.0.1'
+}
 
 configurations {
     antlrTool
@@ -142,7 +149,21 @@ tasks.register('buildWindowsSetup', Exec) {
     inputs.file(windowsInstallerScript)
     inputs.file(file('INNO-SETUP/scenemax-setup-project.iss'))
     inputs.file(file('src/com/scenemax/desktop/Util.java'))
-    def installerVersion = (project.findProperty('installerAppVersion') ?: '2.0.1').toString()
+    inputs.file(nativeLauncherSource)
+    inputs.file(nativeLauncherStub).optional()
+    inputs.files(fileTree(multiplayerServerDir) {
+        include 'README.md'
+        include 'build-servers.ps1'
+        include 'build.zig'
+        include 'bin/**'
+        include 'zig/**'
+        include 'load-test*.json'
+        include 'load_test.py'
+        exclude '.zig-cache/**'
+        exclude 'zig-cache/**'
+        exclude 'zig-out/**'
+    })
+    def installerVersion = (project.findProperty('installerAppVersion') ?: readApplicationVersion()).toString()
     outputs.file(file("INNO-SETUP/Output/scenemax3d-${installerVersion}-setup.exe"))
 
     doFirst {

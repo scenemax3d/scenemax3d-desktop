@@ -103,17 +103,21 @@ function Ensure-NativeLauncherStub {
         [string]$StubPath
     )
 
+    $source = Join-Path $RepoRoot "tools\native-launcher\zig\scenemax_launcher.zig"
+    Assert-FileExists -Path $source -Description "Native launcher source"
+
     if (Test-Path $StubPath -PathType Leaf) {
-        return
+        $stubInfo = Get-Item -LiteralPath $StubPath
+        $sourceInfo = Get-Item -LiteralPath $source
+        if ($stubInfo.LastWriteTimeUtc -ge $sourceInfo.LastWriteTimeUtc) {
+            return
+        }
     }
 
     $zig = (Get-Command zig.exe -ErrorAction SilentlyContinue).Source
     if (-not $zig) {
         throw "Native launcher stub was not found and zig.exe is not available on PATH: $StubPath"
     }
-
-    $source = Join-Path $RepoRoot "tools\native-launcher\zig\scenemax_launcher.zig"
-    Assert-FileExists -Path $source -Description "Native launcher source"
 
     $stubDir = Split-Path -Parent $StubPath
     if (-not (Test-Path $stubDir)) {
@@ -128,6 +132,46 @@ function Ensure-NativeLauncherStub {
         "-femit-bin=$StubPath",
         $source
     ) -WorkingDirectory $RepoRoot
+}
+
+function Ensure-MultiplayerServerArtifacts {
+    param(
+        [string]$RepoRoot
+    )
+
+    $serverRoot = Join-Path $RepoRoot "tools\multiplayer-server"
+    $buildScript = Join-Path $serverRoot "build-servers.ps1"
+    $buildFile = Join-Path $serverRoot "build.zig"
+    $source = Join-Path $serverRoot "zig\scenemax_multiplayer_server.zig"
+    $executables = @(
+        Join-Path $serverRoot "bin\windows-x64\scenemax-mp-server.exe"
+        Join-Path $serverRoot "bin\linux-x64\scenemax-mp-server"
+        Join-Path $serverRoot "bin\macos-x64\scenemax-mp-server"
+    )
+
+    Assert-FileExists -Path $buildScript -Description "Multiplayer server build script"
+    Assert-FileExists -Path $buildFile -Description "Multiplayer server Zig build file"
+    Assert-FileExists -Path $source -Description "Multiplayer server Zig source"
+
+    $missingExecutables = @($executables | Where-Object { -not (Test-Path $_ -PathType Leaf) })
+    if ($missingExecutables.Count -eq 0) {
+        return
+    }
+
+    $zig = (Get-Command zig.exe -ErrorAction SilentlyContinue).Source
+    if (-not $zig) {
+        throw "Missing multiplayer server executable(s) and zig.exe is not available on PATH:`n  $($missingExecutables -join "`n  ")"
+    }
+
+    Invoke-Step -FilePath "powershell" -Arguments @(
+        "-ExecutionPolicy", "Bypass",
+        "-File", $buildScript,
+        "-ZigPath", $zig
+    ) -WorkingDirectory $RepoRoot
+
+    foreach ($executable in $executables) {
+        Assert-FileExists -Path $executable -Description "Multiplayer server executable"
+    }
 }
 
 function New-SceneMaxNativeJavaExecutable {
@@ -260,6 +304,7 @@ foreach ($projectorJar in $projectorJars) {
     Assert-FileExists -Path $projectorJar -Description "Projector jar"
 }
 
+Ensure-MultiplayerServerArtifacts -RepoRoot $repoRoot
 Ensure-NativeLauncherStub -RepoRoot $repoRoot -StubPath $nativeLauncherStub
 New-SceneMaxNativeJavaExecutable -StubPath $nativeLauncherStub -JarPath $desktopJar -OutputPath $nativeLauncherOutput
 Assert-FileExists -Path $nativeLauncherOutput -Description "Generated native SceneMax3D executable"
