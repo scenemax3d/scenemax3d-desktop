@@ -25,7 +25,7 @@ network.on ("count", 5) = {
   //run display_recorded_actions
   is_executing = 0
   fight_counter = 6
-  player.idle2
+  player.idle2 loop
 }
 
 [is_opponent_hit == 0]
@@ -37,6 +37,7 @@ replay_action (action) = {
   	anim = animation player.mma_kick1 at speed of 2
   	anim.event("mma_kick1", 43) = {
   	  effective_hit = 1
+  	  run shake_the_world async
   	}
   	anim.event("mma_kick1", 50) = {
   	  effective_hit = 0
@@ -45,11 +46,13 @@ replay_action (action) = {
 
   } else if (action == 2) {
     audio.play "kick3"
+    run shake_the_world async
     anim = animation player.hurricane_kick
     effective_hit = 1
     anim.run 
     effective_hit = 0
   } else if (action == 3) {
+		run shake_the_world async
     anim = animation player.quad_punch1
     effective_hit = 1
     anim.run
@@ -58,6 +61,7 @@ replay_action (action) = {
     audio.play "kick3"
     anim = animation player.flying_kick
     anim.event("flying_kick", 22) = {
+      run shake_the_world async
       audio.play "hu_ya1"
   	  effective_hit = 1
   	}
@@ -69,6 +73,7 @@ replay_action (action) = {
     audio.play "kick3"
     anim = animation player.uppercut1
     anim.event("uppercut1", 26) = {
+    	run shake_the_world async
   	  effective_hit = 1
   	}
   	anim.event("uppercut1", 31) = {

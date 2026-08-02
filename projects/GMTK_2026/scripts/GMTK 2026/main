@@ -1,4 +1,5 @@
 canvas.size 800,900
+screen.mode full
 //screen.mode borderless
 
 using fighter1_native model 

@@ -41,6 +41,7 @@ pub fn main(init: std.process.Init) !void {
 
     const install_dir = try resolveInstallDir(allocator, self_path, payload_hash);
     defer allocator.free(install_dir);
+    const app_dir = std.fs.path.dirname(self_path) orelse ".";
 
     const marker_path = try std.fs.path.join(allocator, &.{ install_dir, ".scenemax-payload.sha256" });
     defer allocator.free(marker_path);
@@ -86,7 +87,7 @@ pub fn main(init: std.process.Init) !void {
     var child = if (has_bundled_runtime)
         try std.process.spawn(io, .{
             .argv = &.{ bundled_java_path, "-XX:MaxDirectMemorySize=1024m", "-jar", jar_path },
-            .cwd = .{ .path = install_dir },
+            .cwd = .{ .path = app_dir },
             .stdin = .inherit,
             .stdout = .inherit,
             .stderr = .inherit,
@@ -94,7 +95,7 @@ pub fn main(init: std.process.Init) !void {
     else
         try std.process.spawn(io, .{
             .argv = &.{ java_command, "-XX:MaxDirectMemorySize=1024m", "-jar", jar_path },
-            .cwd = .{ .path = install_dir },
+            .cwd = .{ .path = app_dir },
             .stdin = .inherit,
             .stdout = .inherit,
             .stderr = .inherit,
