@@ -38,6 +38,11 @@ import java.util.Locale;
 import java.util.Set;
 
 public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
+    private static final int RANGE_NAME_COLUMN = 0;
+    private static final int RANGE_SOURCE_ANIMATION_COLUMN = 1;
+    private static final int RANGE_START_COLUMN = 2;
+    private static final int RANGE_END_COLUMN = 3;
+
     private final File resourcesRoot;
     private final ModelAnalyzerPreviewApp app;
     private final Canvas canvas;
@@ -56,7 +61,7 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
     private final JLabel statusLabel = new JLabel("Choose a model to analyze.");
     private final JButton pauseResumeButton = new JButton("Pause");
     private final JButton saveAsNativeModelButton = new JButton("Save As Native Model");
-    private final DefaultTableModel rangeTableModel = new DefaultTableModel(new Object[]{"Name", "Start", "End"}, 0) {
+    private final DefaultTableModel rangeTableModel = new DefaultTableModel(new Object[]{"Name", "Source Animation", "Start", "End"}, 0) {
         @Override
         public boolean isCellEditable(int row, int column) {
             return true;
@@ -290,9 +295,10 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         tableEditor.setClickCountToStart(2);
         rangeTable.setDefaultEditor(Object.class, tableEditor);
         rangeTable.setDefaultEditor(String.class, tableEditor);
-        rangeTable.getColumnModel().getColumn(0).setPreferredWidth(140);
-        rangeTable.getColumnModel().getColumn(1).setPreferredWidth(58);
-        rangeTable.getColumnModel().getColumn(2).setPreferredWidth(58);
+        rangeTable.getColumnModel().getColumn(RANGE_NAME_COLUMN).setPreferredWidth(110);
+        rangeTable.getColumnModel().getColumn(RANGE_SOURCE_ANIMATION_COLUMN).setPreferredWidth(115);
+        rangeTable.getColumnModel().getColumn(RANGE_START_COLUMN).setPreferredWidth(52);
+        rangeTable.getColumnModel().getColumn(RANGE_END_COLUMN).setPreferredWidth(52);
         rangeTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 applySelectedRangeToFrameControls();
@@ -595,14 +601,15 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
 
     private void addRangeRow() {
         commitRangeTableEdit();
-        String name = selectedAnimation();
+        String sourceAnimation = selectedAnimation();
+        String name = sourceAnimation;
         if (name.isEmpty()) {
             name = "range_" + (rangeTableModel.getRowCount() + 1);
         }
         int start = frameValue(startFrameSpinner);
         int end = frameValue(endFrameSpinner);
         updatingRangeTable = true;
-        rangeTableModel.addRow(new Object[]{name, String.valueOf(start), String.valueOf(end)});
+        rangeTableModel.addRow(new Object[]{name, sourceAnimation, String.valueOf(start), String.valueOf(end)});
         int row = rangeTableModel.getRowCount() - 1;
         updatingRangeTable = false;
         rangeTable.getSelectionModel().setSelectionInterval(row, row);
@@ -629,10 +636,14 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
             return;
         }
         int modelRow = rangeTable.convertRowIndexToModel(row);
+        String sourceAnimation = rangeCell(modelRow, RANGE_SOURCE_ANIMATION_COLUMN);
+        if (!sourceAnimation.isEmpty() && !sourceAnimation.equals(selectedAnimation())) {
+            animationCombo.setSelectedItem(sourceAnimation);
+        }
         updatingFrameControls = true;
         updatingRangeSlider = true;
-        startFrameSpinner.setValue(parseInt(rangeTableModel.getValueAt(modelRow, 1), frameValue(startFrameSpinner)));
-        endFrameSpinner.setValue(parseInt(rangeTableModel.getValueAt(modelRow, 2), frameValue(endFrameSpinner)));
+        startFrameSpinner.setValue(parseInt(rangeTableModel.getValueAt(modelRow, RANGE_START_COLUMN), frameValue(startFrameSpinner)));
+        endFrameSpinner.setValue(parseInt(rangeTableModel.getValueAt(modelRow, RANGE_END_COLUMN), frameValue(endFrameSpinner)));
         frameRangeSlider.setRange(frameValue(startFrameSpinner), frameValue(endFrameSpinner));
         frameRangeSlider.setCursorValue(frameValue(startFrameSpinner));
         updatingRangeSlider = false;
@@ -651,8 +662,8 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         int modelRow = rangeTable.convertRowIndexToModel(row);
         updatingRangeTable = true;
         try {
-            rangeTableModel.setValueAt(String.valueOf(start), modelRow, 1);
-            rangeTableModel.setValueAt(String.valueOf(end), modelRow, 2);
+            rangeTableModel.setValueAt(String.valueOf(start), modelRow, RANGE_START_COLUMN);
+            rangeTableModel.setValueAt(String.valueOf(end), modelRow, RANGE_END_COLUMN);
         } finally {
             updatingRangeTable = false;
         }
@@ -664,6 +675,10 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         currentRangeModel = modelName == null ? "" : modelName.trim();
         JSONObject model = findEditableModelJson(modelName);
         if (model != null) {
+            String legacySourceAnimation = model.optString("animationFrameRangesSourceAnimation", "").trim();
+            if (legacySourceAnimation.isEmpty()) {
+                legacySourceAnimation = model.optString("sourceAnimation", "").trim();
+            }
             JSONArray ranges = model.optJSONArray("animationFrameRanges");
             if (ranges != null) {
                 for (int i = 0; i < ranges.length(); i++) {
@@ -671,8 +686,10 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
                     if (range == null) {
                         continue;
                     }
+                    String sourceAnimation = range.optString("sourceAnimation", legacySourceAnimation).trim();
                     rangeTableModel.addRow(new Object[]{
                             range.optString("name", ""),
+                            sourceAnimation,
                             String.valueOf(range.optInt("start", 0)),
                             String.valueOf(range.optInt("end", 0))
                     });
@@ -704,11 +721,9 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
                 statusLabel.setText("Frame ranges can be saved only for editable project model entries.");
                 return;
             }
-            target.put("animationFrameRanges", rangesToJson());
-            String sourceAnimation = selectedAnimation();
-            if (!sourceAnimation.isEmpty()) {
-                target.put("animationFrameRangesSourceAnimation", sourceAnimation);
-            }
+            JSONArray rangeMetadata = rangesToJson();
+            target.put("animationFrameRanges", rangeMetadata);
+            applyRangeSourceAnimationMetadata(target, rangeMetadata);
             Files.write(indexFile.toPath(), root.toString(2).getBytes(StandardCharsets.UTF_8));
             statusLabel.setText("Saved frame ranges for " + modelName + ".");
         } catch (Exception ex) {
@@ -720,7 +735,6 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
     private void saveSelectedModelAsNativeModel() {
         commitRangeTableEdit();
         String modelName = currentRangeModel.isEmpty() ? selectedModel() : currentRangeModel;
-        String sourceAnimation = selectedAnimation();
         File indexFile = findModelsExtJson();
         if (modelName.isEmpty() || indexFile == null || !indexFile.isFile()) {
             statusLabel.setText("Native model export can be saved only for project models in models-ext.json.");
@@ -738,7 +752,7 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         SwingWorker<J3oExportResult, Void> worker = new SwingWorker<>() {
             @Override
             protected J3oExportResult doInBackground() throws Exception {
-                return exportSelectedModelAsNativeModel(indexFile, modelName, sourceAnimation, rangeMetadata, textureOptions);
+                return exportSelectedModelAsNativeModel(indexFile, modelName, rangeMetadata, textureOptions);
             }
 
             @Override
@@ -763,8 +777,7 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         worker.execute();
     }
 
-    private J3oExportResult exportSelectedModelAsNativeModel(File indexFile, String modelName, String sourceAnimation,
-                                                             JSONArray rangeMetadata,
+    private J3oExportResult exportSelectedModelAsNativeModel(File indexFile, String modelName, JSONArray rangeMetadata,
                                                              ModelJ3oClipExporter.TextureOptimizationOptions textureOptions) throws Exception {
         JSONObject root = readJsonObject(indexFile);
         JSONArray models = root.optJSONArray("models");
@@ -783,9 +796,7 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         if (!isNativeSaveSupportedPath(sourcePath)) {
             throw new IOException("Save As Native Model supports GLB, GLTF, FBX, and J3O source models.");
         }
-        String splitSourceAnimation = resolveSplitSourceAnimation(sourceAnimation, sourceModel);
-        List<ModelJ3oClipExporter.AnimationFrameRange> frameRanges =
-                splitSourceAnimation.isEmpty() ? new ArrayList<>() : rangesForJ3oExport();
+        List<ModelJ3oClipExporter.AnimationFrameRange> frameRanges = rangesForJ3oExport();
 
         File sourceFile = resolveResourceFile(sourcePath);
         if (!sourceFile.isFile()) {
@@ -795,26 +806,26 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         String nativeModelName = nativeModelName(modelName);
         String nativeRelativePath = nativeRelativePath(sourcePath);
         File outputFile = resolveResourceFile(nativeRelativePath);
-        ModelJ3oClipExporter.export(sourceFile, outputFile, splitSourceAnimation, frameRanges, textureOptions);
+        ModelJ3oClipExporter.export(sourceFile, outputFile, "", frameRanges, textureOptions);
         File textureFolder = nativeTextureFolder(outputFile);
         long textureBytes = folderSize(textureFolder);
         int textureCount = fileCount(textureFolder);
 
         sourceModel.put("animationFrameRanges", new JSONArray(rangeMetadata.toString()));
-        if (!splitSourceAnimation.isEmpty()) {
-            sourceModel.put("animationFrameRangesSourceAnimation", splitSourceAnimation);
-        }
+        applyRangeSourceAnimationMetadata(sourceModel, rangeMetadata);
 
         JSONObject j3oModel = new JSONObject(sourceModel.toString());
         j3oModel.put("name", nativeModelName);
         j3oModel.put("path", nativeRelativePath);
         j3oModel.put("sourceModel", modelName);
         j3oModel.put("animationFrameRanges", new JSONArray(rangeMetadata.toString()));
-        if (splitSourceAnimation.isEmpty()) {
+        String commonSourceAnimation = commonRangeSourceAnimation(rangeMetadata);
+        if (commonSourceAnimation.isEmpty()) {
             j3oModel.remove("sourceAnimation");
+            j3oModel.remove("animationFrameRangesSourceAnimation");
         } else {
-            j3oModel.put("sourceAnimation", splitSourceAnimation);
-            j3oModel.put("animationFrameRangesSourceAnimation", splitSourceAnimation);
+            j3oModel.put("sourceAnimation", commonSourceAnimation);
+            j3oModel.put("animationFrameRangesSourceAnimation", commonSourceAnimation);
         }
 
         for (int i = 0; i < models.length(); i++) {
@@ -914,36 +925,25 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
         List<ModelJ3oClipExporter.AnimationFrameRange> ranges = new ArrayList<>();
         Set<String> names = new HashSet<>();
         for (int row = 0; row < rangeTableModel.getRowCount(); row++) {
-            String name = String.valueOf(rangeTableModel.getValueAt(row, 0)).trim();
+            String name = rangeCell(row, RANGE_NAME_COLUMN);
             if (name.isEmpty()) {
                 throw new IOException("Every J3O clip row must have a name.");
             }
             if (!names.add(name.toLowerCase(Locale.ROOT))) {
                 throw new IOException("Duplicate J3O clip name: " + name);
             }
-            int start = Math.max(0, parseInt(rangeTableModel.getValueAt(row, 1), 0));
-            int end = Math.max(0, parseInt(rangeTableModel.getValueAt(row, 2), start));
+            String sourceAnimation = rangeCell(row, RANGE_SOURCE_ANIMATION_COLUMN);
+            if (sourceAnimation.isEmpty()) {
+                throw new IOException("J3O clip '" + name + "' must have a source animation.");
+            }
+            int start = Math.max(0, parseInt(rangeTableModel.getValueAt(row, RANGE_START_COLUMN), 0));
+            int end = Math.max(0, parseInt(rangeTableModel.getValueAt(row, RANGE_END_COLUMN), start));
             if (end <= start) {
                 throw new IOException("J3O clip '" + name + "' must have an end frame after its start frame.");
             }
-            ranges.add(new ModelJ3oClipExporter.AnimationFrameRange(name, start, end));
+            ranges.add(new ModelJ3oClipExporter.AnimationFrameRange(name, sourceAnimation, start, end));
         }
         return ranges;
-    }
-
-    private String resolveSplitSourceAnimation(String selectedSourceAnimation, JSONObject sourceModel) {
-        String selected = selectedSourceAnimation == null ? "" : selectedSourceAnimation.trim();
-        if (!selected.isEmpty()) {
-            return selected;
-        }
-        if (sourceModel == null) {
-            return "";
-        }
-        String saved = sourceModel.optString("animationFrameRangesSourceAnimation", "").trim();
-        if (!saved.isEmpty()) {
-            return saved;
-        }
-        return sourceModel.optString("sourceAnimation", "").trim();
     }
 
     private void updateSaveAsNativeModelButtonVisibility() {
@@ -1058,16 +1058,57 @@ public class ModelAnalyzerPanel extends JPanel implements AutoCloseable {
     private JSONArray rangesToJson() {
         JSONArray ranges = new JSONArray();
         for (int row = 0; row < rangeTableModel.getRowCount(); row++) {
-            String name = String.valueOf(rangeTableModel.getValueAt(row, 0)).trim();
-            int start = Math.max(0, parseInt(rangeTableModel.getValueAt(row, 1), 0));
-            int end = Math.max(0, parseInt(rangeTableModel.getValueAt(row, 2), start));
+            String name = rangeCell(row, RANGE_NAME_COLUMN);
+            String sourceAnimation = rangeCell(row, RANGE_SOURCE_ANIMATION_COLUMN);
+            int start = Math.max(0, parseInt(rangeTableModel.getValueAt(row, RANGE_START_COLUMN), 0));
+            int end = Math.max(0, parseInt(rangeTableModel.getValueAt(row, RANGE_END_COLUMN), start));
             JSONObject range = new JSONObject();
             range.put("name", name);
+            if (!sourceAnimation.isEmpty()) {
+                range.put("sourceAnimation", sourceAnimation);
+            }
             range.put("start", start);
             range.put("end", end);
             ranges.put(range);
         }
         return ranges;
+    }
+
+    private void applyRangeSourceAnimationMetadata(JSONObject model, JSONArray ranges) {
+        String commonSourceAnimation = commonRangeSourceAnimation(ranges);
+        if (commonSourceAnimation.isEmpty()) {
+            model.remove("animationFrameRangesSourceAnimation");
+        } else {
+            model.put("animationFrameRangesSourceAnimation", commonSourceAnimation);
+        }
+    }
+
+    private String commonRangeSourceAnimation(JSONArray ranges) {
+        if (ranges == null || ranges.length() == 0) {
+            return "";
+        }
+        String common = "";
+        for (int i = 0; i < ranges.length(); i++) {
+            JSONObject range = ranges.optJSONObject(i);
+            if (range == null) {
+                continue;
+            }
+            String sourceAnimation = range.optString("sourceAnimation", "").trim();
+            if (sourceAnimation.isEmpty()) {
+                return "";
+            }
+            if (common.isEmpty()) {
+                common = sourceAnimation;
+            } else if (!common.equals(sourceAnimation)) {
+                return "";
+            }
+        }
+        return common;
+    }
+
+    private String rangeCell(int row, int column) {
+        Object value = rangeTableModel.getValueAt(row, column);
+        return value == null ? "" : String.valueOf(value).trim();
     }
 
     private JSONObject findEditableModelJson(String modelName) {

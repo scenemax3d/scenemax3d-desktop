@@ -73,16 +73,19 @@ The table on the left documents named animation frame ranges for the selected mo
 Columns:
 
 - `Name`: the range name used later in SceneMax scripts
+- `Source Animation`: the original bundled animation clip this range is cut from
 - `Start`: first frame in the range
 - `End`: last frame in the range
 
-Select a row to apply its start/end values to the slider and spinners. Selecting a row also automatically plays that range.
+Select a row to apply its source animation and start/end values to the preview controls. Selecting a row also automatically plays that range.
 
 Double-click a cell to edit it. Single-clicking a row selects and previews the row.
 
+Each new row captures the currently selected animation as its source. This lets one model keep ranges from multiple bundled source clips without later selections changing older rows.
+
 Use:
 
-- `Add` to create a row from the current animation name and current start/end values
+- `Add` to create a row from the current animation/source name and current start/end values
 - `Delete` to remove the selected row from the table draft
 - `Save` to write the current table to the selected model JSON
 - `Save As Native Model` to save a sibling JME-native `.j3o` model
@@ -101,7 +104,7 @@ Before exporting, the analyzer opens a texture optimization dialog. Leave optimi
 
 Normal, bump, height, alpha, opacity, and mask texture names are treated as lossless maps and stay PNG. PNG textures with an alpha channel also stay PNG. The optimizer uses Java image encoding inside the IDE instead of FFmpeg because the desktop editor intentionally does not bundle FFmpeg native runtime libraries.
 
-If a source animation is selected, such as `Take 001`, and the table has valid rows, `Save As Native Model` also creates one real JME animation clip per table row. If no source animation is selected, the exporter looks for the saved `animationFrameRangesSourceAnimation` metadata. If neither is available, it performs a plain native save without creating split clips.
+If the table has valid rows with source animations, `Save As Native Model` also creates one real JME animation clip per table row. Each generated clip is cut from that row's saved source animation, so rows can come from a mix of source clips. If the table is empty, it performs a plain native save without creating split clips.
 
 The generated J3O model keeps the frame range metadata in its JSON entry, but it also contains real clips named after the table rows. That means you can either continue using named ranges on the original long clip, or use the converted J3O model's real generated clips directly where that is more convenient.
 
@@ -123,21 +126,24 @@ The analyzer writes an `animationFrameRanges` array:
 {
   "name": "horse1",
   "path": "Models/horse/scene.gltf",
-  "animationFrameRangesSourceAnimation": "Take 001",
   "animationFrameRanges": [
     {
       "name": "Walk",
+      "sourceAnimation": "Take 001",
       "start": 720,
       "end": 751
     },
     {
-      "name": "FastWalk",
+      "name": "Attack",
+      "sourceAnimation": "Combat",
       "start": 828,
       "end": 858
     }
   ]
 }
 ```
+
+For older project JSON that has a single `animationFrameRangesSourceAnimation` value, the analyzer migrates that source into the table rows when loading the model. When all saved rows share one source, the analyzer may keep `animationFrameRangesSourceAnimation` as compatibility metadata; mixed-source tables rely on each row's `sourceAnimation`.
 
 Names are matched case-insensitively by the SceneMax parser.
 

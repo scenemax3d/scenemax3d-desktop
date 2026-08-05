@@ -100,6 +100,7 @@ class ModelAnalyzerPreviewApp extends SceneMaxApp {
     private float cameraDistance = 6f;
     private float yaw = (float) Math.toRadians(35);
     private float pitch = (float) Math.toRadians(18);
+    private Vector3f cameraTarget = Vector3f.ZERO.clone();
     private boolean orbiting;
     private boolean pendingCameraFit;
     private final Vector2f lastMouse = new Vector2f();
@@ -326,7 +327,7 @@ class ModelAnalyzerPreviewApp extends SceneMaxApp {
             lastMouse.set(current);
             yaw -= dx * 0.006f;
             pitch = FastMath.clamp(pitch + dy * 0.006f, (float) Math.toRadians(-70), (float) Math.toRadians(70));
-            updateCamera(currentCenter());
+            updateCamera(cameraTarget);
         }
 
         if (running && !paused && rangeMode) {
@@ -766,10 +767,10 @@ class ModelAnalyzerPreviewApp extends SceneMaxApp {
         inputManager.addListener((AnalogListener) (name, value, tpf) -> {
             if (ACTION_SCROLL_UP.equals(name)) {
                 cameraDistance = Math.max(0.6f, cameraDistance - value * 16f);
-                updateCamera(currentCenter());
+                updateCamera(cameraTarget);
             } else if (ACTION_SCROLL_DOWN.equals(name)) {
                 cameraDistance = Math.min(160f, cameraDistance + value * 16f);
-                updateCamera(currentCenter());
+                updateCamera(cameraTarget);
             }
         }, ACTION_SCROLL_UP, ACTION_SCROLL_DOWN);
     }
@@ -788,6 +789,7 @@ class ModelAnalyzerPreviewApp extends SceneMaxApp {
             center = sphere.getCenter().clone();
             radius = Math.max(0.5f, sphere.getRadius());
         }
+        cameraTarget = center.clone();
         float aspect = canvasAspect();
         float verticalFov = 45f * FastMath.DEG_TO_RAD;
         float horizontalFov = 2f * FastMath.atan(FastMath.tan(verticalFov * 0.5f) * Math.max(0.1f, aspect));

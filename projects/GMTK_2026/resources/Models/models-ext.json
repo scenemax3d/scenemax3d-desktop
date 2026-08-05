@@ -50,31 +50,6 @@
     "animationFrameRanges": [],
     "hasArmature": true,
     "ikCompatibilityScanned": true,
-    "scaleZ": 3,
-    "scaleX": 3,
-    "path": "Models/fighter1/fighter1_native.j3o",
-    "scaleY": 3,
-    "transZ": 0,
-    "transX": 0,
-    "hasSkeleton": true,
-    "ikReady": true,
-    "physics": {"character": {
-      "calibrateX": 0,
-      "calibrateZ": 0,
-      "calibrateY": -2.5,
-      "capsuleRadius": 1,
-      "capsuleHeight": 3,
-      "stepHeight": 0.05
-    }},
-    "transY": 0,
-    "name": "fighter1_native",
-    "sourceModel": "fighter1",
-    "rotateY": 0
-  },
-  {
-    "animationFrameRanges": [],
-    "hasArmature": true,
-    "ikCompatibilityScanned": true,
     "sourceAnimation": "pull_start",
     "scaleZ": 3,
     "scaleX": 3,
@@ -225,6 +200,44 @@
     "transY": 0,
     "name": "arena1",
     "scaleZ": 1,
+    "rotateY": 0
+  },
+  {
+    "animationFrameRanges": [
+      {
+        "name": "hurricane_kick_short",
+        "start": 0,
+        "sourceAnimation": "hurricane_kick",
+        "end": 15
+      },
+      {
+        "name": "quad_punch_short",
+        "start": 0,
+        "sourceAnimation": "quad_punch1",
+        "end": 25
+      }
+    ],
+    "hasArmature": true,
+    "ikCompatibilityScanned": true,
+    "scaleZ": 3,
+    "scaleX": 3,
+    "path": "Models/fighter1/fighter1_native.j3o",
+    "scaleY": 3,
+    "transZ": 0,
+    "transX": 0,
+    "hasSkeleton": true,
+    "ikReady": true,
+    "physics": {"character": {
+      "calibrateX": 0,
+      "calibrateZ": 0,
+      "calibrateY": -2.5,
+      "capsuleRadius": 1,
+      "capsuleHeight": 3,
+      "stepHeight": 0.05
+    }},
+    "transY": 0,
+    "name": "fighter1_native",
+    "sourceModel": "fighter1_native",
     "rotateY": 0
   }
 ]}
