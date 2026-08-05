@@ -1,0 +1,13 @@
+[package]
+name = "scenemax_parser"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[dependencies]
+antlr-rust = "0.3.0-beta"
+thiserror.workspace = true
+
+[build-dependencies]
+anyhow.workspace = true

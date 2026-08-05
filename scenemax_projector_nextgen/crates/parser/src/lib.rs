@@ -30,6 +30,17 @@ pub enum Statement {
         options: EntityOptions,
     },
     Animate(AnimationStatement),
+    Visibility {
+        target: String,
+        visible: bool,
+    },
+    LookAt {
+        target: String,
+        subject: String,
+    },
+    Turn(TurnStatement),
+    Move(MoveStatement),
+    KeyEvent(KeyEventStatement),
     CameraPosition(SceneMaxVec3),
     CameraRotation(SceneMaxVec3),
     WaitForKey {
@@ -51,6 +62,7 @@ pub struct EntityOptions {
     pub position: Option<SceneMaxVec3>,
     pub rotation_degrees: Option<SceneMaxVec3>,
     pub scale: Option<SceneMaxVec3>,
+    pub size: Option<SceneMaxVec3>,
     pub hidden: bool,
 }
 
@@ -69,6 +81,41 @@ pub struct AnimationStatement {
     pub looped: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct TurnStatement {
+    pub target: String,
+    pub degrees: f32,
+    pub duration_seconds: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MoveStatement {
+    pub target: String,
+    pub direction: MoveDirection,
+    pub distance: f32,
+    pub duration_seconds: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MoveDirection {
+    Forward,
+    Backward,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyEventStatement {
+    pub key: String,
+    pub trigger: KeyTrigger,
+    pub actions: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum KeyTrigger {
+    Pressed,
+    PressedOnce,
+    Released,
+}
+
 #[derive(Debug, Error, PartialEq)]
 pub enum ParseError {
     #[error("invalid number '{0}'")]
@@ -79,10 +126,35 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
     let logical_lines = logical_lines(source);
     let mut statements = Vec::new();
     let mut index = 0;
+    let mut block_depth = 0usize;
 
     while index < logical_lines.len() {
         let line = logical_lines[index].trim();
         if line.is_empty() {
+            index += 1;
+            continue;
+        }
+
+        if is_condition_guard(line) {
+            index += 1;
+            continue;
+        }
+
+        if block_depth > 0 {
+            block_depth = update_block_depth(block_depth, line);
+            index += 1;
+            continue;
+        }
+
+        if let Some((event, next_index)) = parse_key_event_block(&logical_lines, index)? {
+            statements.push(Statement::KeyEvent(event));
+            index = next_index;
+            continue;
+        }
+
+        if opens_runtime_block(line) {
+            block_depth = update_block_depth(block_depth, line);
+            statements.push(unsupported(line));
             index += 1;
             continue;
         }
@@ -111,6 +183,123 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
     Ok(Program { statements })
 }
 
+fn opens_runtime_block(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower == "do async"
+        || lower == "do"
+        || lower.starts_with("do ")
+        || (lower.starts_with("when ") && lower.ends_with(" do"))
+        || line.ends_with('{')
+}
+
+fn parse_key_event_block(
+    logical_lines: &[String],
+    index: usize,
+) -> Result<Option<(KeyEventStatement, usize)>, ParseError> {
+    let Some((key, trigger)) = parse_key_event_header(logical_lines[index].trim()) else {
+        return Ok(None);
+    };
+
+    let mut depth = 1usize;
+    let mut actions = Vec::new();
+    let mut cursor = index + 1;
+    while cursor < logical_lines.len() {
+        let line = logical_lines[cursor].trim();
+        let lower = line.to_ascii_lowercase();
+
+        if lower == "end do" {
+            depth = depth.saturating_sub(1);
+            cursor += 1;
+            if depth == 0 {
+                break;
+            }
+            continue;
+        }
+
+        if lower == "}" {
+            depth = depth.saturating_sub(1);
+            cursor += 1;
+            continue;
+        }
+
+        if should_parse_key_action_line(line) {
+            let action = parse_statement(line)?;
+            if !matches!(action, Statement::Unsupported { .. }) {
+                actions.push(action);
+            }
+        }
+
+        if opens_runtime_block(line) {
+            depth += 1;
+        }
+        cursor += 1;
+    }
+
+    Ok(Some((
+        KeyEventStatement {
+            key,
+            trigger,
+            actions,
+        },
+        cursor,
+    )))
+}
+
+fn parse_key_event_header(line: &str) -> Option<(String, KeyTrigger)> {
+    let lower = line.to_ascii_lowercase();
+    if !lower.starts_with("when key ") || !(lower.ends_with(" do") || lower.ends_with(" do async"))
+    {
+        return None;
+    }
+
+    let after_key = line["when key ".len()..].trim();
+    let key = after_key.split_whitespace().next()?.to_ascii_lowercase();
+    let trigger = if lower.contains(" is released do") {
+        KeyTrigger::Released
+    } else if lower.contains(" is pressed once do") {
+        KeyTrigger::PressedOnce
+    } else if lower.contains(" is pressed do") {
+        KeyTrigger::Pressed
+    } else {
+        return None;
+    };
+
+    Some((key, trigger))
+}
+
+fn should_parse_key_action_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty()
+        || is_condition_guard(trimmed)
+        || trimmed.eq_ignore_ascii_case("do")
+        || trimmed.eq_ignore_ascii_case("do async")
+        || trimmed.to_ascii_lowercase().starts_with("do ")
+        || trimmed.to_ascii_lowercase().starts_with("if ")
+        || trimmed.to_ascii_lowercase().starts_with("else")
+        || trimmed.ends_with('{')
+    {
+        return false;
+    }
+    true
+}
+
+fn is_condition_guard(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.starts_with('[') || trimmed.starts_with("#[")
+}
+
+fn update_block_depth(current: usize, line: &str) -> usize {
+    let mut depth = current;
+    let lower = line.to_ascii_lowercase();
+    if opens_runtime_block(line) {
+        depth += 1;
+    }
+    if lower == "end do" || lower == "}" {
+        depth = depth.saturating_sub(1);
+    }
+    depth
+}
+
 fn parse_statement(line: &str) -> Result<Statement, ParseError> {
     if let Some(scene) = parse_switch(line) {
         return Ok(Statement::SwitchTo { scene });
@@ -130,6 +319,22 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
 
     if let Some(statement) = parse_model_decl(line)? {
         return Ok(statement);
+    }
+
+    if let Some(visibility) = parse_visibility(line) {
+        return Ok(visibility);
+    }
+
+    if let Some(look_at) = parse_look_at(line) {
+        return Ok(look_at);
+    }
+
+    if let Some(turn) = parse_turn(line)? {
+        return Ok(Statement::Turn(turn));
+    }
+
+    if let Some(movement) = parse_move(line)? {
+        return Ok(Statement::Move(movement));
     }
 
     if let Some(animation) = parse_animation(line)? {
@@ -173,9 +378,13 @@ fn parse_camera_command(line: &str, command: &str) -> Result<Option<SceneMaxVec3
 fn parse_model_decl(line: &str) -> Result<Option<Statement>, ParseError> {
     if let Some((name, rest)) = line.split_once("=>") {
         let (resource, options_text) = split_resource_and_options(rest);
+        let resource = normalize_resource(resource);
+        if is_deferred_or_non_model_resource(rest, &resource) {
+            return Ok(Some(unsupported(line)));
+        }
         return Ok(Some(Statement::ModelDecl {
             name: name.trim().to_owned(),
-            resource: normalize_resource(resource),
+            resource,
             options: parse_entity_options(options_text)?,
         }));
     }
@@ -185,9 +394,13 @@ fn parse_model_decl(line: &str) -> Result<Option<Statement>, ParseError> {
         let name = line[..index].trim();
         let rest = &line[index + " is a ".len()..];
         let (resource, options_text) = split_resource_and_options(rest);
+        let resource = normalize_resource(resource);
+        if is_deferred_or_non_model_resource(rest, &resource) {
+            return Ok(Some(unsupported(line)));
+        }
         return Ok(Some(Statement::ModelDecl {
             name: name.to_owned(),
-            resource: normalize_resource(resource),
+            resource,
             options: parse_entity_options(options_text)?,
         }));
     }
@@ -195,15 +408,119 @@ fn parse_model_decl(line: &str) -> Result<Option<Statement>, ParseError> {
     Ok(None)
 }
 
-fn parse_animation(line: &str) -> Result<Option<AnimationStatement>, ParseError> {
-    let Some((target, rest)) = line.split_once('.') else {
+fn parse_visibility(line: &str) -> Option<Statement> {
+    let (target, command) = split_dot_command(line)?;
+    match command.to_ascii_lowercase().as_str() {
+        "show" => Some(Statement::Visibility {
+            target,
+            visible: true,
+        }),
+        "hide" => Some(Statement::Visibility {
+            target,
+            visible: false,
+        }),
+        _ => None,
+    }
+}
+
+fn parse_look_at(line: &str) -> Option<Statement> {
+    let (target, rest) = line.split_once(".look at ")?;
+    let target = target.trim();
+    if target.is_empty() {
+        return None;
+    }
+    let subject = rest
+        .trim()
+        .strip_prefix('(')
+        .and_then(|value| value.strip_suffix(')'))
+        .unwrap_or_else(|| rest.trim())
+        .trim();
+    if subject.is_empty() {
+        None
+    } else {
+        Some(Statement::LookAt {
+            target: target.to_owned(),
+            subject: subject.to_owned(),
+        })
+    }
+}
+
+fn parse_turn(line: &str) -> Result<Option<TurnStatement>, ParseError> {
+    let Some((target, rest)) = line.split_once(".turn") else {
         return Ok(None);
     };
     let target = target.trim();
+    if target.is_empty() {
+        return Ok(None);
+    }
+
+    let parts = rest.split_whitespace().collect::<Vec<_>>();
+    let Some(degree_index) = parts.iter().position(|part| part.parse::<f32>().is_ok()) else {
+        return Ok(None);
+    };
+    let mut degrees = parts[degree_index]
+        .parse::<f32>()
+        .map_err(|_| ParseError::InvalidNumber(parts[degree_index].to_owned()))?;
+    if parts
+        .get(degree_index.saturating_sub(1))
+        .is_some_and(|part| part.eq_ignore_ascii_case("right"))
+    {
+        degrees = -degrees;
+    }
+
+    let duration_seconds = parse_duration_seconds(rest)?.unwrap_or(0.0);
+    Ok(Some(TurnStatement {
+        target: target.to_owned(),
+        degrees,
+        duration_seconds,
+    }))
+}
+
+fn parse_move(line: &str) -> Result<Option<MoveStatement>, ParseError> {
+    let Some((target, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
+    let rest = rest.trim();
+    let lower = rest.to_ascii_lowercase();
+    if !lower.starts_with("move ") {
+        return Ok(None);
+    }
+
+    let parts = rest.split_whitespace().collect::<Vec<_>>();
+    let Some(direction_text) = parts.get(1) else {
+        return Ok(None);
+    };
+    let direction = match direction_text.to_ascii_lowercase().as_str() {
+        "forward" => MoveDirection::Forward,
+        "backward" => MoveDirection::Backward,
+        _ => return Ok(None),
+    };
+    let raw_distance = parts.get(2).copied().unwrap_or_default();
+    let distance = raw_distance
+        .parse::<f32>()
+        .map_err(|_| ParseError::InvalidNumber(raw_distance.to_owned()))?;
+    let duration_seconds = parse_for_duration_seconds(rest)?.unwrap_or(0.0);
+
+    Ok(Some(MoveStatement {
+        target,
+        direction,
+        distance,
+        duration_seconds,
+    }))
+}
+
+fn parse_animation(line: &str) -> Result<Option<AnimationStatement>, ParseError> {
+    let Some((target, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
     if target.is_empty()
         || target.eq_ignore_ascii_case("camera")
         || target.eq_ignore_ascii_case("scene")
         || target.eq_ignore_ascii_case("ui")
+        || target.eq_ignore_ascii_case("screen")
+        || target.eq_ignore_ascii_case("audio")
+        || target.eq_ignore_ascii_case("lights")
+        || target.eq_ignore_ascii_case("skybox")
         || target.contains(' ')
     {
         return Ok(None);
@@ -252,6 +569,42 @@ fn parse_speed(text: &str) -> Result<f32, ParseError> {
         .map_err(|_| ParseError::InvalidNumber(raw.to_owned()))
 }
 
+fn parse_for_duration_seconds(text: &str) -> Result<Option<f32>, ParseError> {
+    let lower = text.to_ascii_lowercase();
+    let Some(for_index) = lower.find(" for ") else {
+        return Ok(None);
+    };
+    let raw = text[for_index + " for ".len()..]
+        .trim()
+        .split_whitespace()
+        .next()
+        .unwrap_or_default();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    raw.parse::<f32>()
+        .map(Some)
+        .map_err(|_| ParseError::InvalidNumber(raw.to_owned()))
+}
+
+fn parse_duration_seconds(text: &str) -> Result<Option<f32>, ParseError> {
+    let lower = text.to_ascii_lowercase();
+    let Some(in_index) = lower.find(" in ") else {
+        return Ok(None);
+    };
+    let raw = text[in_index + " in ".len()..]
+        .trim()
+        .split_whitespace()
+        .next()
+        .unwrap_or_default();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    raw.parse::<f32>()
+        .map(Some)
+        .map_err(|_| ParseError::InvalidNumber(raw.to_owned()))
+}
+
 fn split_resource_and_options(rest: &str) -> (&str, &str) {
     if let Some((resource, options)) = rest.split_once(':') {
         (resource.trim(), options.trim())
@@ -278,6 +631,15 @@ fn normalize_resource(resource: &str) -> String {
     parts.next().unwrap_or(resource.trim()).trim().to_owned()
 }
 
+fn is_deferred_or_non_model_resource(raw_resource: &str, resource: &str) -> bool {
+    let raw_lower = raw_resource.to_ascii_lowercase();
+    let resource_lower = resource.to_ascii_lowercase();
+    raw_lower.contains(" sprite")
+        || resource_lower.starts_with("videos.")
+        || resource_lower.starts_with("cinematic.camera.")
+        || resource_lower.starts_with("object.pool")
+}
+
 fn parse_entity_options(text: &str) -> Result<EntityOptions, ParseError> {
     let scale = parse_scalar_after(text, "scale")?.map(|value| SceneMaxVec3 {
         x: value,
@@ -288,6 +650,7 @@ fn parse_entity_options(text: &str) -> Result<EntityOptions, ParseError> {
         position: parse_vec3_after(text, "pos").ok(),
         rotation_degrees: parse_vec3_after(text, "rotate").ok(),
         scale,
+        size: parse_vec3_after(text, "size").ok(),
         hidden: contains_keyword(text, "hidden"),
     })
 }
@@ -427,6 +790,24 @@ fn starts_with_keyword(text: &str, keyword: &str) -> bool {
             .is_none_or(|value| value.is_whitespace() || value == '"' || value == '(')
 }
 
+fn split_dot_command(line: &str) -> Option<(String, String)> {
+    let (target, rest) = split_dot_command_rest(line)?;
+    let command = rest
+        .split(|value: char| value.is_whitespace() || value == ':' || value == '(')
+        .next()
+        .unwrap_or_default();
+    if command.is_empty() {
+        None
+    } else {
+        Some((target, command.to_owned()))
+    }
+}
+
+fn split_dot_command_rest(line: &str) -> Option<(String, &str)> {
+    let (target, rest) = line.split_once('.')?;
+    Some((target.trim().to_owned(), rest.trim()))
+}
+
 fn contains_keyword(text: &str, keyword: &str) -> bool {
     text.split(|value: char| !value.is_ascii_alphanumeric() && value != '_')
         .any(|part| part.eq_ignore_ascii_case(keyword))
@@ -539,6 +920,7 @@ mod tests {
                         y: 3.0,
                         z: 3.0,
                     }),
+                    size: None,
                     hidden: true,
                 },
             }]
@@ -581,6 +963,136 @@ mod tests {
             vec![Statement::WaitForKey {
                 key: "space".to_owned(),
             }]
+        );
+    }
+
+    #[test]
+    fn parses_visibility_look_at_turn_and_size() {
+        let program = parse_program(
+            "floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0)\nplayer1.show\nplayer1.look at (player2)\nring.turn left 360 in 50 seconds async",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::ModelDecl {
+                    name: "floor".to_owned(),
+                    resource: "box".to_owned(),
+                    options: EntityOptions {
+                        position: Some(SceneMaxVec3 {
+                            x: 0.0,
+                            y: -15.0,
+                            z: 0.0,
+                        }),
+                        rotation_degrees: None,
+                        scale: None,
+                        size: Some(SceneMaxVec3 {
+                            x: 100.0,
+                            y: 1.0,
+                            z: 100.0,
+                        }),
+                        hidden: false,
+                    },
+                },
+                Statement::Visibility {
+                    target: "player1".to_owned(),
+                    visible: true,
+                },
+                Statement::LookAt {
+                    target: "player1".to_owned(),
+                    subject: "player2".to_owned(),
+                },
+                Statement::Turn(TurnStatement {
+                    target: "ring".to_owned(),
+                    degrees: 360.0,
+                    duration_seconds: 50.0,
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_move_statement() {
+        let program = parse_program("player1.move forward 0.5 for 0.25 seconds async").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::Move(MoveStatement {
+                target: "player1".to_owned(),
+                direction: MoveDirection::Forward,
+                distance: 0.5,
+                duration_seconds: 0.25,
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_key_event_actions_for_runtime_execution() {
+        let program = parse_program(
+            "[@allow_move]\nwhen key A is pressed once do async\n  player1.look at (player2)\n  player1.move forward 0.3 for 0.2 seconds async\n  player1.mma_kick1 at speed of 2.5 async\nend do",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::KeyEvent(KeyEventStatement {
+                key: "a".to_owned(),
+                trigger: KeyTrigger::PressedOnce,
+                actions: vec![
+                    Statement::LookAt {
+                        target: "player1".to_owned(),
+                        subject: "player2".to_owned(),
+                    },
+                    Statement::Move(MoveStatement {
+                        target: "player1".to_owned(),
+                        direction: MoveDirection::Forward,
+                        distance: 0.3,
+                        duration_seconds: 0.2,
+                    }),
+                    Statement::Animate(AnimationStatement {
+                        target: "player1".to_owned(),
+                        clip: "mma_kick1".to_owned(),
+                        speed: 2.5,
+                        looped: false,
+                    }),
+                ],
+            })]
+        );
+    }
+
+    #[test]
+    fn does_not_extract_statements_inside_deferred_blocks() {
+        let program =
+            parse_program("enemy_knockout = {\nwin1 => you_win1 sprite : scale 3\n}\nplayer1.show")
+                .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::Unsupported {
+                    text: "enemy_knockout = {".to_owned(),
+                },
+                Statement::Visibility {
+                    target: "player1".to_owned(),
+                    visible: true,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn leaves_non_model_entity_systems_unsupported_for_now() {
+        let program = parse_program(
+            "intro_camera=>cinematic.camera.cinematic_rig_1\nthrow_text => throw_text sprite : hidden\nvid=>videos.foggy_day1\nrocks => Object.Pool(create_rock, size 5)",
+        )
+        .unwrap();
+
+        assert!(
+            program
+                .statements
+                .iter()
+                .all(|statement| matches!(statement, Statement::Unsupported { .. }))
         );
     }
 }

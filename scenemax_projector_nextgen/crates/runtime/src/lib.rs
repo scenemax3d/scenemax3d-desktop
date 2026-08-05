@@ -12,9 +12,10 @@ use bevy::{
     prelude::*,
     window::{PresentMode, WindowResolution},
     winit::WinitSettings,
-    world_serialization::WorldInstanceReady,
 };
-use scenemax_parser::{AnimationStatement, EntityOptions, Program, SceneMaxVec3, Statement};
+use scenemax_parser::{
+    AnimationStatement, EntityOptions, KeyTrigger, MoveDirection, Program, SceneMaxVec3, Statement,
+};
 
 #[derive(Debug, Clone)]
 pub struct ProjectorLaunch {
@@ -79,7 +80,17 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             Startup,
             (setup_camera_and_lights, setup_scenemax_program).chain(),
         )
-        .add_systems(Update, switch_scene_on_key)
+        .add_systems(
+            Update,
+            (
+                switch_scene_on_key,
+                apply_key_events,
+                update_timed_turns,
+                update_timed_moves,
+                play_pending_animations,
+            )
+                .chain(),
+        )
         .run();
 }
 
@@ -111,6 +122,23 @@ struct AnimationToPlay {
     looped: bool,
     speed: f32,
     gltf: Handle<Gltf>,
+}
+
+#[derive(Debug, Component)]
+struct SceneMaxGltf {
+    gltf: Handle<Gltf>,
+}
+
+#[derive(Debug, Component)]
+struct TimedTurn {
+    remaining_seconds: f32,
+    radians_per_second: f32,
+}
+
+#[derive(Debug, Component)]
+struct TimedMove {
+    remaining_seconds: f32,
+    velocity: Vec3,
 }
 
 fn load_startup_program(launch: &ProjectorLaunch) -> SceneMaxStartupProgram {
@@ -291,7 +319,11 @@ fn spawn_scenemax_program(
     materials: &mut ResMut<Assets<StandardMaterial>>,
 ) {
     let animations_by_target = collect_animations_by_target(program);
+    let visibility_by_target = collect_visibility_by_target(program);
+    let turn_by_target = collect_turn_by_target(program);
     let mut spawned_any = false;
+    let mut entities_by_name = HashMap::new();
+    let mut transforms_by_name = HashMap::new();
 
     for statement in &program.statements {
         let Statement::ModelDecl {
@@ -304,15 +336,21 @@ fn spawn_scenemax_program(
         };
 
         if let Some(primitive) = primitive_mesh(resource, meshes, materials) {
-            commands.spawn((
-                SceneMaxEntity {
-                    name: name.clone(),
-                    runtime_name: format!("{name}@1"),
-                },
-                primitive.0,
-                primitive.1,
-                transform_from_options(options, None),
-            ));
+            let transform = primitive_transform_from_options(options);
+            let entity = commands
+                .spawn((
+                    SceneMaxEntity {
+                        name: name.clone(),
+                        runtime_name: format!("{name}@1"),
+                    },
+                    primitive.0,
+                    primitive.1,
+                    transform,
+                    initial_visibility(name, options, &visibility_by_target),
+                ))
+                .id();
+            entities_by_name.insert(name.clone(), entity);
+            transforms_by_name.insert(name.clone(), transform);
             spawned_any = true;
             tracing::info!(name, resource, "spawned SceneMax primitive");
             continue;
@@ -326,25 +364,31 @@ fn spawn_scenemax_program(
                 let scene = WorldAssetRoot(
                     asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())),
                 );
-                let mut entity = commands.spawn((
-                    SceneMaxEntity {
-                        name: name.clone(),
-                        runtime_name,
-                    },
-                    scene,
-                    transform_from_options(options, model.scale),
-                ));
+                let transform = transform_from_options(options, model.scale);
+                let entity_id = commands
+                    .spawn((
+                        SceneMaxEntity {
+                            name: name.clone(),
+                            runtime_name,
+                        },
+                        SceneMaxGltf { gltf: gltf.clone() },
+                        scene,
+                        transform,
+                        initial_visibility(name, options, &visibility_by_target),
+                    ))
+                    .id();
 
                 if let Some(animation) = animations_by_target.get(name) {
-                    entity.insert(AnimationToPlay {
+                    commands.entity(entity_id).insert(AnimationToPlay {
                         clip: animation.clip.clone(),
                         looped: animation.looped,
                         speed: animation.speed,
                         gltf,
                     });
-                    entity.observe(play_animation_when_ready);
                 }
 
+                entities_by_name.insert(name.clone(), entity_id);
+                transforms_by_name.insert(name.clone(), transform);
                 spawned_any = true;
                 tracing::info!(
                     name,
@@ -356,6 +400,20 @@ fn spawn_scenemax_program(
             Err(error) => {
                 tracing::error!(name, resource, %error, "failed to resolve SceneMax model");
             }
+        }
+    }
+
+    apply_look_at_commands(
+        program,
+        commands,
+        &entities_by_name,
+        &mut transforms_by_name,
+    );
+    for (target, turn) in turn_by_target {
+        if let Some(entity) = entities_by_name.get(&target) {
+            commands
+                .entity(*entity)
+                .insert(timed_turn_from_statement(&turn));
         }
     }
 
@@ -376,6 +434,55 @@ fn primitive_mesh(
     };
     let material = materials.add(Color::srgb_u8(120, 135, 150));
     Some((Mesh3d(mesh), MeshMaterial3d(material)))
+}
+
+fn initial_visibility(
+    name: &str,
+    options: &EntityOptions,
+    visibility_by_target: &HashMap<String, bool>,
+) -> Visibility {
+    match visibility_by_target.get(name).copied() {
+        Some(true) => Visibility::Inherited,
+        Some(false) => Visibility::Hidden,
+        None if options.hidden => Visibility::Hidden,
+        None => Visibility::Inherited,
+    }
+}
+
+fn primitive_transform_from_options(options: &EntityOptions) -> Transform {
+    let mut transform = transform_from_options(options, None);
+    if options.scale.is_none() {
+        if let Some(size) = options.size {
+            transform.scale = vec3_from_scenemax(size);
+        }
+    }
+    transform
+}
+
+fn apply_look_at_commands(
+    program: &Program,
+    commands: &mut Commands,
+    entities_by_name: &HashMap<String, Entity>,
+    transforms_by_name: &mut HashMap<String, Transform>,
+) {
+    for statement in &program.statements {
+        let Statement::LookAt { target, subject } = statement else {
+            continue;
+        };
+        let Some(entity) = entities_by_name.get(target).copied() else {
+            continue;
+        };
+        let (Some(target_transform), Some(subject_transform)) = (
+            transforms_by_name.get(target).copied(),
+            transforms_by_name.get(subject).copied(),
+        ) else {
+            continue;
+        };
+        let mut updated = target_transform;
+        updated.look_at(subject_transform.translation, Vec3::Y);
+        commands.entity(entity).insert(updated);
+        transforms_by_name.insert(target.clone(), updated);
+    }
 }
 
 fn switch_scene_on_key(
@@ -435,6 +542,115 @@ fn switch_scene_on_key(
     }
 }
 
+fn apply_key_events(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    startup_program: Res<SceneMaxStartupProgram>,
+    mut commands: Commands,
+    mut scene_entities: ParamSet<(
+        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&mut Visibility>,
+        )>,
+    )>,
+) {
+    let Some(program) = startup_program.0.as_ref() else {
+        return;
+    };
+    if pending_key_switch(program, &keyboard).is_some() {
+        return;
+    }
+
+    let transforms_by_name = scene_entities
+        .p0()
+        .iter()
+        .map(|(entity, transform)| (entity.name.clone(), *transform))
+        .collect::<HashMap<_, _>>();
+
+    for statement in &program.statements {
+        let Statement::KeyEvent(event) = statement else {
+            continue;
+        };
+        if !key_event_matches(&event.key, event.trigger, &keyboard) {
+            continue;
+        }
+
+        for action in &event.actions {
+            apply_key_action(
+                action,
+                &transforms_by_name,
+                &mut commands,
+                &mut scene_entities,
+            );
+        }
+    }
+}
+
+fn apply_key_action(
+    action: &Statement,
+    transforms_by_name: &HashMap<String, Transform>,
+    commands: &mut Commands,
+    scene_entities: &mut ParamSet<(
+        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&mut Visibility>,
+        )>,
+    )>,
+) {
+    for (entity, scene_entity, mut transform, gltf, visibility) in &mut scene_entities.p1() {
+        match action {
+            Statement::Animate(animation) if animation.target == scene_entity.name => {
+                if let Some(gltf) = gltf {
+                    commands.entity(entity).insert(AnimationToPlay {
+                        clip: animation.clip.clone(),
+                        looped: animation.looped,
+                        speed: animation.speed,
+                        gltf: gltf.gltf.clone(),
+                    });
+                }
+            }
+            Statement::LookAt { target, subject } if target == &scene_entity.name => {
+                if let Some(subject_transform) = transforms_by_name.get(subject) {
+                    transform.look_at(subject_transform.translation, Vec3::Y);
+                }
+            }
+            Statement::Turn(turn) if turn.target == scene_entity.name => {
+                commands
+                    .entity(entity)
+                    .insert(timed_turn_from_statement(turn));
+            }
+            Statement::Move(movement) if movement.target == scene_entity.name => {
+                commands
+                    .entity(entity)
+                    .insert(timed_move_from_statement(movement, &transform));
+            }
+            Statement::Visibility { target, visible } if target == &scene_entity.name => {
+                if let Some(mut visibility) = visibility {
+                    *visibility = if *visible {
+                        Visibility::Inherited
+                    } else {
+                        Visibility::Hidden
+                    };
+                } else {
+                    commands.entity(entity).insert(if *visible {
+                        Visibility::Inherited
+                    } else {
+                        Visibility::Hidden
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn pending_key_switch<'a>(
     program: &'a Program,
     keyboard: &ButtonInput<KeyCode>,
@@ -453,10 +669,41 @@ fn pending_key_switch<'a>(
 }
 
 fn is_pressed_key(key: &str, keyboard: &ButtonInput<KeyCode>) -> bool {
+    let Some(key_code) = key_code_from_scenemax(key) else {
+        return false;
+    };
+    keyboard.just_pressed(key_code)
+}
+
+fn key_event_matches(key: &str, trigger: KeyTrigger, keyboard: &ButtonInput<KeyCode>) -> bool {
+    let Some(key_code) = key_code_from_scenemax(key) else {
+        return false;
+    };
+    match trigger {
+        KeyTrigger::Pressed => keyboard.pressed(key_code),
+        KeyTrigger::PressedOnce => keyboard.just_pressed(key_code),
+        KeyTrigger::Released => keyboard.just_released(key_code),
+    }
+}
+
+fn key_code_from_scenemax(key: &str) -> Option<KeyCode> {
     match key.to_ascii_lowercase().as_str() {
-        "space" => keyboard.just_pressed(KeyCode::Space),
-        "enter" | "return" => keyboard.just_pressed(KeyCode::Enter),
-        _ => false,
+        "space" => Some(KeyCode::Space),
+        "enter" | "return" => Some(KeyCode::Enter),
+        "up" => Some(KeyCode::ArrowUp),
+        "down" => Some(KeyCode::ArrowDown),
+        "left" => Some(KeyCode::ArrowLeft),
+        "right" => Some(KeyCode::ArrowRight),
+        "a" => Some(KeyCode::KeyA),
+        "b" => Some(KeyCode::KeyB),
+        "c" => Some(KeyCode::KeyC),
+        "d" => Some(KeyCode::KeyD),
+        "q" => Some(KeyCode::KeyQ),
+        "s" => Some(KeyCode::KeyS),
+        "w" => Some(KeyCode::KeyW),
+        "x" => Some(KeyCode::KeyX),
+        "z" => Some(KeyCode::KeyZ),
+        _ => None,
     }
 }
 
@@ -479,6 +726,65 @@ fn transform_from_options(options: &EntityOptions, asset_scale: Option<[f32; 3]>
         translation,
         rotation,
         scale,
+    }
+}
+
+fn timed_turn_from_statement(turn: &scenemax_parser::TurnStatement) -> TimedTurn {
+    let duration = turn.duration_seconds.max(0.001);
+    TimedTurn {
+        remaining_seconds: duration,
+        radians_per_second: turn.degrees.to_radians() / duration,
+    }
+}
+
+fn timed_move_from_statement(
+    movement: &scenemax_parser::MoveStatement,
+    transform: &Transform,
+) -> TimedMove {
+    let duration = movement.duration_seconds.max(0.001);
+    let mut direction = transform.rotation * Vec3::NEG_Z;
+    direction.y = 0.0;
+    if direction.length_squared() <= f32::EPSILON {
+        direction = Vec3::NEG_Z;
+    }
+    direction = direction.normalize();
+    if movement.direction == MoveDirection::Backward {
+        direction = -direction;
+    }
+
+    TimedMove {
+        remaining_seconds: duration,
+        velocity: direction * (movement.distance / duration),
+    }
+}
+
+fn update_timed_turns(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut turns: Query<(Entity, &mut Transform, &mut TimedTurn)>,
+) {
+    for (entity, mut transform, mut turn) in &mut turns {
+        let delta = time.delta_secs().min(turn.remaining_seconds);
+        transform.rotate_y(turn.radians_per_second * delta);
+        turn.remaining_seconds -= delta;
+        if turn.remaining_seconds <= 0.0 {
+            commands.entity(entity).remove::<TimedTurn>();
+        }
+    }
+}
+
+fn update_timed_moves(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut moves: Query<(Entity, &mut Transform, &mut TimedMove)>,
+) {
+    for (entity, mut transform, mut movement) in &mut moves {
+        let delta = time.delta_secs().min(movement.remaining_seconds);
+        transform.translation += movement.velocity * delta;
+        movement.remaining_seconds -= delta;
+        if movement.remaining_seconds <= 0.0 {
+            commands.entity(entity).remove::<TimedMove>();
+        }
     }
 }
 
@@ -506,50 +812,78 @@ fn collect_animations_by_target(program: &Program) -> HashMap<String, AnimationS
         .collect()
 }
 
-fn play_animation_when_ready(
-    scene_ready: On<WorldInstanceReady>,
+fn collect_visibility_by_target(program: &Program) -> HashMap<String, bool> {
+    program
+        .statements
+        .iter()
+        .filter_map(|statement| match statement {
+            Statement::Visibility { target, visible } => Some((target.clone(), *visible)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn collect_turn_by_target(program: &Program) -> HashMap<String, scenemax_parser::TurnStatement> {
+    program
+        .statements
+        .iter()
+        .filter_map(|statement| match statement {
+            Statement::Turn(turn) => Some((turn.target.clone(), turn.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+fn play_pending_animations(
     mut commands: Commands,
     children: Query<&Children>,
-    animations_to_play: Query<&AnimationToPlay>,
+    animations_to_play: Query<(Entity, &AnimationToPlay)>,
     gltfs: Res<Assets<Gltf>>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     mut players: Query<&mut AnimationPlayer>,
 ) {
-    let Ok(animation_to_play) = animations_to_play.get(scene_ready.entity) else {
-        return;
-    };
+    for (root, animation_to_play) in &animations_to_play {
+        let Some(gltf) = gltfs.get(&animation_to_play.gltf) else {
+            continue;
+        };
 
-    let Some(gltf) = gltfs.get(&animation_to_play.gltf) else {
-        tracing::warn!(
-            clip = %animation_to_play.clip,
-            "GLTF asset was not ready when the scene reported ready"
-        );
-        return;
-    };
+        let Some(clip) = gltf
+            .named_animations
+            .get(animation_to_play.clip.as_str())
+            .or_else(|| gltf.animations.first())
+        else {
+            tracing::warn!(clip = %animation_to_play.clip, "GLTF model has no animation clips");
+            commands.entity(root).remove::<AnimationToPlay>();
+            continue;
+        };
 
-    let Some(clip) = gltf
-        .named_animations
-        .get(animation_to_play.clip.as_str())
-        .or_else(|| gltf.animations.first())
-    else {
-        tracing::warn!(clip = %animation_to_play.clip, "GLTF model has no animation clips");
-        return;
-    };
-
-    let (graph, index) = AnimationGraph::from_clip(clip.clone());
-    let graph_handle = graphs.add(graph);
-
-    for child in children.iter_descendants(scene_ready.entity) {
-        if let Ok(mut player) = players.get_mut(child) {
-            let active = player.start(index).set_speed(animation_to_play.speed);
-            if animation_to_play.looped {
-                active.repeat();
+        let mut animation_players = Vec::new();
+        for child in children.iter_descendants(root) {
+            if players.get(child).is_ok() {
+                animation_players.push(child);
             }
+        }
 
+        if animation_players.is_empty() {
+            continue;
+        }
+
+        let (graph, index) = AnimationGraph::from_clip(clip.clone());
+        let graph_handle = graphs.add(graph);
+
+        for child in animation_players {
+            if let Ok(mut player) = players.get_mut(child) {
+                let active = player.start(index).set_speed(animation_to_play.speed);
+                if animation_to_play.looped {
+                    active.repeat();
+                }
+            }
             commands
                 .entity(child)
                 .insert(AnimationGraphHandle(graph_handle.clone()));
         }
+
+        commands.entity(root).remove::<AnimationToPlay>();
     }
 }
 
