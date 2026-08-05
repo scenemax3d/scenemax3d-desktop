@@ -14,7 +14,8 @@ use bevy::{
     winit::WinitSettings,
 };
 use scenemax_parser::{
-    AnimationStatement, EntityOptions, KeyTrigger, MoveDirection, Program, SceneMaxVec3, Statement,
+    AnimationStatement, AssignmentValue, Condition, EntityOptions, KeyTrigger, MoveDirection,
+    Program, SceneMaxVec3, Statement,
 };
 
 #[derive(Debug, Clone)]
@@ -51,6 +52,8 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             asset_root: asset_root.clone(),
         })
         .insert_resource(scene_program)
+        .init_resource::<SceneMaxVars>()
+        .init_resource::<SceneMaxCameraSystem>()
         .add_plugins(
             DefaultPlugins
                 .build()
@@ -85,8 +88,10 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             (
                 switch_scene_on_key,
                 apply_key_events,
+                apply_when_events,
                 update_timed_turns,
                 update_timed_moves,
+                update_fighting_camera,
                 play_pending_animations,
             )
                 .chain(),
@@ -109,6 +114,27 @@ struct SceneMaxLaunchContext {
 #[derive(Debug, Resource, Default)]
 struct SceneMaxStartupProgram(Option<Program>);
 
+#[derive(Debug, Resource, Default)]
+struct SceneMaxVars(HashMap<String, f32>);
+
+#[derive(Debug, Resource, Default)]
+struct SceneMaxCameraSystem {
+    fighting: Option<FightingCameraRuntime>,
+}
+
+#[derive(Debug, Clone)]
+struct FightingCameraRuntime {
+    name: String,
+    target_a: String,
+    target_b: String,
+    depth: f32,
+    height: f32,
+    side: f32,
+    min_distance: f32,
+    max_distance: f32,
+    damping: f32,
+}
+
 #[derive(Debug, Component)]
 #[allow(dead_code)]
 struct SceneMaxEntity {
@@ -127,6 +153,12 @@ struct AnimationToPlay {
 #[derive(Debug, Component)]
 struct SceneMaxGltf {
     gltf: Handle<Gltf>,
+}
+
+#[derive(Debug, Component)]
+struct CurrentAnimation {
+    clip: String,
+    looped: bool,
 }
 
 #[derive(Debug, Component)]
@@ -286,6 +318,8 @@ fn setup_scenemax_program(
     asset_server: Res<AssetServer>,
     context: Res<SceneMaxLaunchContext>,
     startup_program: Res<SceneMaxStartupProgram>,
+    mut vars: ResMut<SceneMaxVars>,
+    mut camera_system: ResMut<SceneMaxCameraSystem>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -300,6 +334,8 @@ fn setup_scenemax_program(
         return;
     };
 
+    apply_initial_assignments(program, &mut vars);
+    apply_camera_systems(program, &mut camera_system);
     spawn_scenemax_program(
         &mut commands,
         &asset_server,
@@ -491,6 +527,8 @@ fn switch_scene_on_key(
     asset_server: Res<AssetServer>,
     context: Res<SceneMaxLaunchContext>,
     mut startup_program: ResMut<SceneMaxStartupProgram>,
+    mut vars: ResMut<SceneMaxVars>,
+    mut camera_system: ResMut<SceneMaxCameraSystem>,
     scene_entities: Query<Entity, With<SceneMaxEntity>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -522,6 +560,9 @@ fn switch_scene_on_key(
                 *camera = camera_transform_from_program(&program);
             }
 
+            vars.0.clear();
+            apply_initial_assignments(&program, &mut vars);
+            apply_camera_systems(&program, &mut camera_system);
             spawn_scenemax_program(
                 &mut commands,
                 &asset_server,
@@ -545,6 +586,7 @@ fn switch_scene_on_key(
 fn apply_key_events(
     keyboard: Res<ButtonInput<KeyCode>>,
     startup_program: Res<SceneMaxStartupProgram>,
+    mut vars: ResMut<SceneMaxVars>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
         Query<(&SceneMaxEntity, &Transform)>,
@@ -553,6 +595,7 @@ fn apply_key_events(
             &SceneMaxEntity,
             &mut Transform,
             Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
             Option<&mut Visibility>,
         )>,
     )>,
@@ -582,6 +625,53 @@ fn apply_key_events(
             apply_key_action(
                 action,
                 &transforms_by_name,
+                &mut vars,
+                &mut commands,
+                &mut scene_entities,
+            );
+        }
+    }
+}
+
+fn apply_when_events(
+    startup_program: Res<SceneMaxStartupProgram>,
+    mut vars: ResMut<SceneMaxVars>,
+    mut commands: Commands,
+    mut scene_entities: ParamSet<(
+        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
+            Option<&mut Visibility>,
+        )>,
+    )>,
+) {
+    let Some(program) = startup_program.0.as_ref() else {
+        return;
+    };
+
+    let transforms_by_name = scene_entities
+        .p0()
+        .iter()
+        .map(|(entity, transform)| (entity.name.clone(), *transform))
+        .collect::<HashMap<_, _>>();
+
+    for statement in &program.statements {
+        let Statement::WhenEvent(event) = statement else {
+            continue;
+        };
+        if !condition_matches(&event.condition, &vars) {
+            continue;
+        }
+
+        for action in &event.actions {
+            apply_key_action(
+                action,
+                &transforms_by_name,
+                &mut vars,
                 &mut commands,
                 &mut scene_entities,
             );
@@ -592,6 +682,7 @@ fn apply_key_events(
 fn apply_key_action(
     action: &Statement,
     transforms_by_name: &HashMap<String, Transform>,
+    vars: &mut SceneMaxVars,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
         Query<(&SceneMaxEntity, &Transform)>,
@@ -600,13 +691,26 @@ fn apply_key_action(
             &SceneMaxEntity,
             &mut Transform,
             Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
             Option<&mut Visibility>,
         )>,
     )>,
 ) {
-    for (entity, scene_entity, mut transform, gltf, visibility) in &mut scene_entities.p1() {
+    if let Statement::Assignment(assignment) = action {
+        apply_assignment(assignment, vars);
+        return;
+    }
+
+    for (entity, scene_entity, mut transform, gltf, current_animation, visibility) in
+        &mut scene_entities.p1()
+    {
         match action {
             Statement::Animate(animation) if animation.target == scene_entity.name => {
+                if current_animation.is_some_and(|current| {
+                    current.looped == animation.looped && current.clip == animation.clip
+                }) {
+                    continue;
+                }
                 if let Some(gltf) = gltf {
                     commands.entity(entity).insert(AnimationToPlay {
                         clip: animation.clip.clone(),
@@ -707,6 +811,61 @@ fn key_code_from_scenemax(key: &str) -> Option<KeyCode> {
     }
 }
 
+fn apply_initial_assignments(program: &Program, vars: &mut SceneMaxVars) {
+    for statement in &program.statements {
+        if let Statement::Assignment(assignment) = statement {
+            apply_assignment(assignment, vars);
+        }
+    }
+}
+
+fn apply_camera_systems(program: &Program, camera_system: &mut SceneMaxCameraSystem) {
+    camera_system.fighting = program.statements.iter().find_map(|statement| {
+        let Statement::FightingCamera(camera) = statement else {
+            return None;
+        };
+        Some(FightingCameraRuntime {
+            name: camera.name.clone(),
+            target_a: camera.target_a.clone(),
+            target_b: camera.target_b.clone(),
+            depth: camera.depth,
+            height: camera.height,
+            side: camera.side,
+            min_distance: camera.min_distance,
+            max_distance: camera.max_distance,
+            damping: camera.damping,
+        })
+    });
+
+    if let Some(camera) = &camera_system.fighting {
+        tracing::info!(
+            name = %camera.name,
+            target_a = %camera.target_a,
+            target_b = %camera.target_b,
+            "activated SceneMax fighting camera"
+        );
+    }
+}
+
+fn apply_assignment(assignment: &scenemax_parser::AssignmentStatement, vars: &mut SceneMaxVars) {
+    match assignment.value {
+        AssignmentValue::Number(value) => {
+            vars.0.insert(assignment.name.clone(), value);
+        }
+    }
+}
+
+fn condition_matches(condition: &Condition, vars: &SceneMaxVars) -> bool {
+    match condition {
+        Condition::EqualsNumber { name, value } => {
+            (vars.0.get(name).copied().unwrap_or_default() - *value).abs() <= f32::EPSILON
+        }
+        Condition::NotEqualsNumber { name, value } => {
+            (vars.0.get(name).copied().unwrap_or_default() - *value).abs() > f32::EPSILON
+        }
+    }
+}
+
 fn transform_from_options(options: &EntityOptions, asset_scale: Option<[f32; 3]>) -> Transform {
     let translation = options
         .position
@@ -786,6 +945,59 @@ fn update_timed_moves(
             commands.entity(entity).remove::<TimedMove>();
         }
     }
+}
+
+fn update_fighting_camera(
+    time: Res<Time>,
+    camera_system: Res<SceneMaxCameraSystem>,
+    entities: Query<(&SceneMaxEntity, &Transform)>,
+    mut cameras: Query<&mut Transform, (With<Camera3d>, Without<SceneMaxEntity>)>,
+) {
+    let Some(camera_settings) = camera_system.fighting.as_ref() else {
+        return;
+    };
+
+    let mut target_a = None;
+    let mut target_b = None;
+    for (entity, transform) in &entities {
+        if entity.name == camera_settings.target_a {
+            target_a = Some(*transform);
+        } else if entity.name == camera_settings.target_b {
+            target_b = Some(*transform);
+        }
+    }
+
+    let (Some(target_a), Some(target_b)) = (target_a, target_b) else {
+        return;
+    };
+    let Ok(mut camera) = cameras.single_mut() else {
+        return;
+    };
+
+    let midpoint = (target_a.translation + target_b.translation) * 0.5;
+    let mut fighter_axis = target_b.translation - target_a.translation;
+    fighter_axis.y = 0.0;
+    if fighter_axis.length_squared() <= f32::EPSILON {
+        fighter_axis = Vec3::Z;
+    }
+    fighter_axis = fighter_axis.normalize();
+
+    let view_axis = Vec3::new(fighter_axis.z, 0.0, -fighter_axis.x).normalize();
+    let fighter_distance = target_a
+        .translation
+        .distance(target_b.translation)
+        .clamp(camera_settings.min_distance, camera_settings.max_distance);
+    let desired_depth = camera_settings.depth.max(fighter_distance * 0.65);
+    let look_target = midpoint + Vec3::Y * camera_settings.height.max(1.0) * 0.35;
+    let desired_translation = midpoint
+        + view_axis * desired_depth
+        + fighter_axis * camera_settings.side
+        + Vec3::Y * camera_settings.height;
+
+    let damping = camera_settings.damping.max(0.001);
+    let blend = 1.0 - (-damping * time.delta_secs()).exp();
+    camera.translation = camera.translation.lerp(desired_translation, blend);
+    camera.look_at(look_target, Vec3::Y);
 }
 
 fn vec3_from_scenemax(value: SceneMaxVec3) -> Vec3 {
@@ -884,6 +1096,10 @@ fn play_pending_animations(
         }
 
         commands.entity(root).remove::<AnimationToPlay>();
+        commands.entity(root).insert(CurrentAnimation {
+            clip: animation_to_play.clip.clone(),
+            looped: animation_to_play.looped,
+        });
     }
 }
 

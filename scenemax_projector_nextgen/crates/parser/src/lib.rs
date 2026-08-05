@@ -41,6 +41,9 @@ pub enum Statement {
     Turn(TurnStatement),
     Move(MoveStatement),
     KeyEvent(KeyEventStatement),
+    WhenEvent(WhenEventStatement),
+    Assignment(AssignmentStatement),
+    FightingCamera(FightingCameraStatement),
     CameraPosition(SceneMaxVec3),
     CameraRotation(SceneMaxVec3),
     WaitForKey {
@@ -116,6 +119,42 @@ pub enum KeyTrigger {
     Released,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct WhenEventStatement {
+    pub condition: Condition,
+    pub actions: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Condition {
+    EqualsNumber { name: String, value: f32 },
+    NotEqualsNumber { name: String, value: f32 },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssignmentStatement {
+    pub name: String,
+    pub value: AssignmentValue,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AssignmentValue {
+    Number(f32),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FightingCameraStatement {
+    pub name: String,
+    pub target_a: String,
+    pub target_b: String,
+    pub depth: f32,
+    pub height: f32,
+    pub side: f32,
+    pub min_distance: f32,
+    pub max_distance: f32,
+    pub damping: f32,
+}
+
 #[derive(Debug, Error, PartialEq)]
 pub enum ParseError {
     #[error("invalid number '{0}'")]
@@ -152,6 +191,12 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
             continue;
         }
 
+        if let Some((event, next_index)) = parse_when_event_block(&logical_lines, index)? {
+            statements.push(Statement::WhenEvent(event));
+            index = next_index;
+            continue;
+        }
+
         if opens_runtime_block(line) {
             block_depth = update_block_depth(block_depth, line);
             statements.push(unsupported(line));
@@ -172,6 +217,11 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
             } else {
                 statements.extend(paths.into_iter().map(|path| Statement::AddCode { path }));
             }
+            index += 1;
+            continue;
+        }
+
+        if is_ignored_symbolic_assignment(line) {
             index += 1;
             continue;
         }
@@ -245,6 +295,62 @@ fn parse_key_event_block(
     )))
 }
 
+fn parse_when_event_block(
+    logical_lines: &[String],
+    index: usize,
+) -> Result<Option<(WhenEventStatement, usize)>, ParseError> {
+    let line = logical_lines[index].trim();
+    if line.to_ascii_lowercase().starts_with("when key ") {
+        return Ok(None);
+    }
+    let Some(condition) = parse_when_event_header(line)? else {
+        return Ok(None);
+    };
+
+    let (actions, next_index) = parse_action_block(logical_lines, index + 1)?;
+    Ok(Some((
+        WhenEventStatement { condition, actions },
+        next_index,
+    )))
+}
+
+fn parse_when_event_header(line: &str) -> Result<Option<Condition>, ParseError> {
+    let lower = line.to_ascii_lowercase();
+    if !lower.starts_with("when ") || !(lower.ends_with(" do") || lower.ends_with(" do async")) {
+        return Ok(None);
+    }
+    let condition_text = line["when ".len()..line.len() - trailing_do_len(&lower)].trim();
+    parse_condition(condition_text)
+}
+
+fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
+    if let Some((name, value)) = parse_number_comparison(text, "!=")? {
+        return Ok(Some(Condition::NotEqualsNumber { name, value }));
+    }
+    if let Some((name, value)) = parse_number_comparison(text, "==")? {
+        return Ok(Some(Condition::EqualsNumber { name, value }));
+    }
+    Ok(None)
+}
+
+fn parse_number_comparison(
+    text: &str,
+    operator: &str,
+) -> Result<Option<(String, f32)>, ParseError> {
+    let Some((left, right)) = text.split_once(operator) else {
+        return Ok(None);
+    };
+    let name = left.trim();
+    if !is_variable_name(name) {
+        return Ok(None);
+    }
+    let raw_value = right.trim().trim_end_matches('{').trim();
+    let Ok(value) = raw_value.parse::<f32>() else {
+        return Ok(None);
+    };
+    Ok(Some((name.to_owned(), value)))
+}
+
 fn parse_key_event_header(line: &str) -> Option<(String, KeyTrigger)> {
     let lower = line.to_ascii_lowercase();
     if !lower.starts_with("when key ") || !(lower.ends_with(" do") || lower.ends_with(" do async"))
@@ -265,6 +371,55 @@ fn parse_key_event_header(line: &str) -> Option<(String, KeyTrigger)> {
     };
 
     Some((key, trigger))
+}
+
+fn parse_action_block(
+    logical_lines: &[String],
+    mut cursor: usize,
+) -> Result<(Vec<Statement>, usize), ParseError> {
+    let mut depth = 1usize;
+    let mut actions = Vec::new();
+    while cursor < logical_lines.len() {
+        let line = logical_lines[cursor].trim();
+        let lower = line.to_ascii_lowercase();
+
+        if lower == "end do" {
+            depth = depth.saturating_sub(1);
+            cursor += 1;
+            if depth == 0 {
+                break;
+            }
+            continue;
+        }
+
+        if lower == "}" {
+            depth = depth.saturating_sub(1);
+            cursor += 1;
+            continue;
+        }
+
+        if should_parse_key_action_line(line) {
+            let action = parse_statement(line)?;
+            if !matches!(action, Statement::Unsupported { .. }) {
+                actions.push(action);
+            }
+        }
+
+        if opens_runtime_block(line) {
+            depth += 1;
+        }
+        cursor += 1;
+    }
+
+    Ok((actions, cursor))
+}
+
+fn trailing_do_len(lower: &str) -> usize {
+    if lower.ends_with(" do async") {
+        " do async".len()
+    } else {
+        " do".len()
+    }
 }
 
 fn should_parse_key_action_line(line: &str) -> bool {
@@ -301,6 +456,14 @@ fn update_block_depth(current: usize, line: &str) -> usize {
 }
 
 fn parse_statement(line: &str) -> Result<Statement, ParseError> {
+    if let Some(camera) = parse_fighting_camera(line)? {
+        return Ok(Statement::FightingCamera(camera));
+    }
+
+    if let Some(assignment) = parse_assignment(line)? {
+        return Ok(Statement::Assignment(assignment));
+    }
+
     if let Some(scene) = parse_switch(line) {
         return Ok(Statement::SwitchTo { scene });
     }
@@ -342,6 +505,141 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
     }
 
     Ok(unsupported(line))
+}
+
+fn parse_fighting_camera(line: &str) -> Result<Option<FightingCameraStatement>, ParseError> {
+    let Some((name, rest)) = line.split_once('=') else {
+        return Ok(None);
+    };
+    let rest = rest.trim();
+    let Some(args_text) = rest
+        .strip_prefix("camera.system.fighting")
+        .and_then(|after| after.trim().strip_prefix('('))
+        .and_then(|after| after.strip_suffix(')'))
+    else {
+        return Ok(None);
+    };
+
+    let args = args_text.split(',').map(str::trim).collect::<Vec<_>>();
+    let (Some(target_a), Some(target_b)) = (args.first(), args.get(1)) else {
+        return Ok(None);
+    };
+    if !is_variable_name(name.trim()) || !is_variable_name(target_a) || !is_variable_name(target_b)
+    {
+        return Ok(None);
+    }
+
+    Ok(Some(FightingCameraStatement {
+        name: name.trim().to_owned(),
+        target_a: (*target_a).to_owned(),
+        target_b: (*target_b).to_owned(),
+        depth: parse_named_argument(args_text, "depth")?.unwrap_or(18.0),
+        height: parse_named_argument(args_text, "height")?.unwrap_or(3.0),
+        side: parse_named_argument(args_text, "side")?.unwrap_or(0.0),
+        min_distance: parse_named_argument(args_text, "min distance")?.unwrap_or(8.0),
+        max_distance: parse_named_argument(args_text, "max distance")?.unwrap_or(28.0),
+        damping: parse_named_argument(args_text, "damping")?.unwrap_or(8.0),
+    }))
+}
+
+fn parse_named_argument(text: &str, name: &str) -> Result<Option<f32>, ParseError> {
+    let lower = text.to_ascii_lowercase();
+    let Some(index) = lower.find(&name.to_ascii_lowercase()) else {
+        return Ok(None);
+    };
+    let raw = text[index + name.len()..]
+        .trim()
+        .split(|value: char| value.is_whitespace() || value == ',')
+        .find(|part| !part.is_empty())
+        .unwrap_or_default();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    raw.parse::<f32>()
+        .map(Some)
+        .map_err(|_| ParseError::InvalidNumber(raw.to_owned()))
+}
+
+fn parse_assignment(line: &str) -> Result<Option<AssignmentStatement>, ParseError> {
+    let line = line.trim();
+    if line.contains("=>")
+        || line.contains("==")
+        || line.contains("!=")
+        || line.contains(">=")
+        || line.contains("<=")
+        || line.contains('.')
+        || line.starts_with('[')
+    {
+        return Ok(None);
+    }
+
+    let line = line
+        .strip_prefix("shared var ")
+        .or_else(|| line.strip_prefix("var "))
+        .unwrap_or(line);
+    let Some((name, raw_value)) = line.split_once('=') else {
+        return Ok(None);
+    };
+    let name = name.split(',').next_back().unwrap_or_default().trim();
+    if !is_variable_name(name) {
+        return Ok(None);
+    }
+    let raw_value = raw_value
+        .split(',')
+        .next()
+        .unwrap_or_default()
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .trim();
+    if raw_value.is_empty() {
+        return Ok(None);
+    }
+    let Ok(value) = raw_value.parse::<f32>() else {
+        return Ok(None);
+    };
+    Ok(Some(AssignmentStatement {
+        name: name.to_owned(),
+        value: AssignmentValue::Number(value),
+    }))
+}
+
+fn is_variable_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|value| value.is_ascii_alphabetic() || value == '_')
+        && chars.all(|value| value.is_ascii_alphanumeric() || value == '_')
+}
+
+fn is_ignored_symbolic_assignment(line: &str) -> bool {
+    let line = line.trim();
+    if line.contains("=>")
+        || line.contains("==")
+        || line.contains("!=")
+        || line.contains(">=")
+        || line.contains("<=")
+        || line.contains('.')
+    {
+        return false;
+    }
+    let Some((name, raw_value)) = line
+        .strip_prefix("shared var ")
+        .or_else(|| line.strip_prefix("var "))
+        .unwrap_or(line)
+        .split_once('=')
+    else {
+        return false;
+    };
+    let name = name.split(',').next_back().unwrap_or_default().trim();
+    let raw_value = raw_value
+        .split(',')
+        .next()
+        .unwrap_or_default()
+        .split_whitespace()
+        .next()
+        .unwrap_or_default();
+    is_variable_name(name) && !raw_value.is_empty() && raw_value.parse::<f32>().is_err()
 }
 
 fn parse_switch(line: &str) -> Option<String> {
@@ -1057,6 +1355,74 @@ mod tests {
                         looped: false,
                     }),
                 ],
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_numeric_assignments_and_ignores_symbolic_assignments() {
+        let program = parse_program("move_forward=1\naction=PLAYER_ACTION_IDLE").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::Assignment(AssignmentStatement {
+                name: "move_forward".to_owned(),
+                value: AssignmentValue::Number(1.0),
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_simple_when_condition_actions() {
+        let program = parse_program(
+            "when move_forward == 1 do\n  player1.\"run_sword\" loop\n  player1.move forward 0.2 for 0.5 seconds\nend do",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::WhenEvent(WhenEventStatement {
+                condition: Condition::EqualsNumber {
+                    name: "move_forward".to_owned(),
+                    value: 1.0,
+                },
+                actions: vec![
+                    Statement::Animate(AnimationStatement {
+                        target: "player1".to_owned(),
+                        clip: "run_sword".to_owned(),
+                        speed: 1.0,
+                        looped: true,
+                    }),
+                    Statement::Move(MoveStatement {
+                        target: "player1".to_owned(),
+                        direction: MoveDirection::Forward,
+                        distance: 0.2,
+                        duration_seconds: 0.5,
+                    }),
+                ],
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_fighting_camera_system_declaration() {
+        let program = parse_program(
+            "fight_cam = camera.system.fighting(player1, player2, depth 18, height 3, side 1.5, min distance 10, max distance 28, damping 8)",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::FightingCamera(FightingCameraStatement {
+                name: "fight_cam".to_owned(),
+                target_a: "player1".to_owned(),
+                target_b: "player2".to_owned(),
+                depth: 18.0,
+                height: 3.0,
+                side: 1.5,
+                min_distance: 10.0,
+                max_distance: 28.0,
+                damping: 8.0,
             })]
         );
     }
