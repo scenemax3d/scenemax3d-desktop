@@ -54,6 +54,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .insert_resource(scene_program)
         .init_resource::<SceneMaxVars>()
         .init_resource::<SceneMaxCameraSystem>()
+        .init_resource::<DelayedActionQueue>()
         .add_plugins(
             DefaultPlugins
                 .build()
@@ -87,8 +88,10 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             Update,
             (
                 switch_scene_on_key,
+                update_delayed_actions,
                 apply_key_events,
                 apply_when_events,
+                apply_builtin_navigation_controls,
                 update_timed_turns,
                 update_timed_moves,
                 update_fighting_camera,
@@ -120,6 +123,18 @@ struct SceneMaxVars(HashMap<String, f32>);
 #[derive(Debug, Resource, Default)]
 struct SceneMaxCameraSystem {
     fighting: Option<FightingCameraRuntime>,
+    selected: Option<String>,
+}
+
+#[derive(Debug, Resource, Default)]
+struct DelayedActionQueue {
+    actions: Vec<DelayedActions>,
+}
+
+#[derive(Debug)]
+struct DelayedActions {
+    remaining_seconds: f32,
+    actions: Vec<Statement>,
 }
 
 #[derive(Debug, Clone)]
@@ -172,6 +187,9 @@ struct TimedMove {
     remaining_seconds: f32,
     velocity: Vec3,
 }
+
+const BUILTIN_PLAYER_MOVE_SPEED: f32 = 4.0;
+const BUILTIN_PLAYER_TURN_SPEED_RADIANS: f32 = std::f32::consts::FRAC_PI_2;
 
 fn load_startup_program(launch: &ProjectorLaunch) -> SceneMaxStartupProgram {
     let Some(script_path) = launch
@@ -341,6 +359,8 @@ fn setup_scenemax_program(
         &asset_server,
         asset_root,
         program,
+        &mut vars,
+        &mut camera_system,
         &mut meshes,
         &mut materials,
     );
@@ -351,15 +371,19 @@ fn spawn_scenemax_program(
     asset_server: &AssetServer,
     asset_root: &Path,
     program: &Program,
+    vars: &mut SceneMaxVars,
+    camera_system: &mut SceneMaxCameraSystem,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
 ) {
     let animations_by_target = collect_animations_by_target(program);
     let visibility_by_target = collect_visibility_by_target(program);
     let turn_by_target = collect_turn_by_target(program);
+    let functions_by_name = collect_functions_by_name(program);
     let mut spawned_any = false;
     let mut entities_by_name = HashMap::new();
     let mut transforms_by_name = HashMap::new();
+    let mut gltfs_by_name = HashMap::new();
 
     for statement in &program.statements {
         let Statement::ModelDecl {
@@ -419,12 +443,13 @@ fn spawn_scenemax_program(
                         clip: animation.clip.clone(),
                         looped: animation.looped,
                         speed: animation.speed,
-                        gltf,
+                        gltf: gltf.clone(),
                     });
                 }
 
                 entities_by_name.insert(name.clone(), entity_id);
                 transforms_by_name.insert(name.clone(), transform);
+                gltfs_by_name.insert(name.clone(), gltf);
                 spawned_any = true;
                 tracing::info!(
                     name,
@@ -452,6 +477,17 @@ fn spawn_scenemax_program(
                 .insert(timed_turn_from_statement(&turn));
         }
     }
+
+    apply_startup_runs(
+        program,
+        commands,
+        vars,
+        camera_system,
+        &functions_by_name,
+        &entities_by_name,
+        &mut transforms_by_name,
+        &gltfs_by_name,
+    );
 
     if !spawned_any {
         spawn_placeholder_model(commands, meshes, materials);
@@ -521,6 +557,172 @@ fn apply_look_at_commands(
     }
 }
 
+fn apply_startup_runs(
+    program: &Program,
+    commands: &mut Commands,
+    vars: &mut SceneMaxVars,
+    camera_system: &mut SceneMaxCameraSystem,
+    functions_by_name: &HashMap<String, Vec<Statement>>,
+    entities_by_name: &HashMap<String, Entity>,
+    transforms_by_name: &mut HashMap<String, Transform>,
+    gltfs_by_name: &HashMap<String, Handle<Gltf>>,
+) {
+    for statement in &program.statements {
+        if let Statement::RunFunction { name } = statement {
+            apply_startup_function_by_name(
+                name,
+                commands,
+                vars,
+                camera_system,
+                functions_by_name,
+                entities_by_name,
+                transforms_by_name,
+                gltfs_by_name,
+                0,
+            );
+        }
+    }
+}
+
+fn apply_startup_function_by_name(
+    name: &str,
+    commands: &mut Commands,
+    vars: &mut SceneMaxVars,
+    camera_system: &mut SceneMaxCameraSystem,
+    functions_by_name: &HashMap<String, Vec<Statement>>,
+    entities_by_name: &HashMap<String, Entity>,
+    transforms_by_name: &mut HashMap<String, Transform>,
+    gltfs_by_name: &HashMap<String, Handle<Gltf>>,
+    depth: usize,
+) {
+    if depth > 8 {
+        tracing::warn!(name, "skipping deeply recursive startup SceneMax run");
+        return;
+    }
+    let Some(actions) = functions_by_name.get(name) else {
+        tracing::debug!(name, "startup SceneMax function was not parsed");
+        return;
+    };
+
+    tracing::info!(name, "running SceneMax startup function");
+    for action in actions {
+        apply_startup_action(
+            action,
+            commands,
+            vars,
+            camera_system,
+            functions_by_name,
+            entities_by_name,
+            transforms_by_name,
+            gltfs_by_name,
+            depth,
+        );
+    }
+}
+
+fn apply_startup_action(
+    action: &Statement,
+    commands: &mut Commands,
+    vars: &mut SceneMaxVars,
+    camera_system: &mut SceneMaxCameraSystem,
+    functions_by_name: &HashMap<String, Vec<Statement>>,
+    entities_by_name: &HashMap<String, Entity>,
+    transforms_by_name: &mut HashMap<String, Transform>,
+    gltfs_by_name: &HashMap<String, Handle<Gltf>>,
+    depth: usize,
+) {
+    match action {
+        Statement::Assignment(assignment) => {
+            apply_assignment(assignment, vars);
+        }
+        Statement::CameraSystemSelect { name } => select_camera_system(name, camera_system),
+        Statement::RunFunction { name } => apply_startup_function_by_name(
+            name,
+            commands,
+            vars,
+            camera_system,
+            functions_by_name,
+            entities_by_name,
+            transforms_by_name,
+            gltfs_by_name,
+            depth + 1,
+        ),
+        Statement::If(statement) => {
+            let selected_actions = if condition_matches(&statement.condition, vars) {
+                &statement.actions
+            } else {
+                &statement.else_actions
+            };
+            for nested_action in selected_actions {
+                apply_startup_action(
+                    nested_action,
+                    commands,
+                    vars,
+                    camera_system,
+                    functions_by_name,
+                    entities_by_name,
+                    transforms_by_name,
+                    gltfs_by_name,
+                    depth,
+                );
+            }
+        }
+        Statement::Visibility { target, visible } => {
+            if let Some(entity) = entities_by_name.get(target) {
+                commands.entity(*entity).insert(if *visible {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                });
+            }
+        }
+        Statement::Animate(animation) => {
+            if let (Some(entity), Some(gltf)) = (
+                entities_by_name.get(&animation.target),
+                gltfs_by_name.get(&animation.target),
+            ) {
+                commands.entity(*entity).insert(AnimationToPlay {
+                    clip: animation.clip.clone(),
+                    looped: animation.looped,
+                    speed: animation.speed,
+                    gltf: gltf.clone(),
+                });
+            }
+        }
+        Statement::LookAt { target, subject } => {
+            let (Some(entity), Some(target_transform), Some(subject_transform)) = (
+                entities_by_name.get(target),
+                transforms_by_name.get(target).copied(),
+                transforms_by_name.get(subject).copied(),
+            ) else {
+                return;
+            };
+            let mut updated = target_transform;
+            updated.look_at(subject_transform.translation, Vec3::Y);
+            commands.entity(*entity).insert(updated);
+            transforms_by_name.insert(target.clone(), updated);
+        }
+        Statement::Turn(turn) => {
+            if let Some(entity) = entities_by_name.get(&turn.target) {
+                commands
+                    .entity(*entity)
+                    .insert(timed_turn_from_statement(turn));
+            }
+        }
+        Statement::Move(movement) => {
+            if let (Some(entity), Some(transform)) = (
+                entities_by_name.get(&movement.target),
+                transforms_by_name.get(&movement.target),
+            ) {
+                commands
+                    .entity(*entity)
+                    .insert(timed_move_from_statement(movement, transform));
+            }
+        }
+        _ => {}
+    }
+}
+
 fn switch_scene_on_key(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut commands: Commands,
@@ -529,6 +731,7 @@ fn switch_scene_on_key(
     mut startup_program: ResMut<SceneMaxStartupProgram>,
     mut vars: ResMut<SceneMaxVars>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
+    mut delayed_actions: ResMut<DelayedActionQueue>,
     scene_entities: Query<Entity, With<SceneMaxEntity>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -561,6 +764,7 @@ fn switch_scene_on_key(
             }
 
             vars.0.clear();
+            delayed_actions.actions.clear();
             apply_initial_assignments(&program, &mut vars);
             apply_camera_systems(&program, &mut camera_system);
             spawn_scenemax_program(
@@ -568,6 +772,8 @@ fn switch_scene_on_key(
                 &asset_server,
                 asset_root,
                 &program,
+                &mut vars,
+                &mut camera_system,
                 &mut meshes,
                 &mut materials,
             );
@@ -584,9 +790,12 @@ fn switch_scene_on_key(
 }
 
 fn apply_key_events(
+    time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
     startup_program: Res<SceneMaxStartupProgram>,
     mut vars: ResMut<SceneMaxVars>,
+    mut camera_system: ResMut<SceneMaxCameraSystem>,
+    mut delayed_actions: ResMut<DelayedActionQueue>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
         Query<(&SceneMaxEntity, &Transform)>,
@@ -612,6 +821,7 @@ fn apply_key_events(
         .iter()
         .map(|(entity, transform)| (entity.name.clone(), *transform))
         .collect::<HashMap<_, _>>();
+    let functions_by_name = collect_functions_by_name(program);
 
     for statement in &program.statements {
         let Statement::KeyEvent(event) = statement else {
@@ -621,21 +831,30 @@ fn apply_key_events(
             continue;
         }
 
-        for action in &event.actions {
-            apply_key_action(
-                action,
-                &transforms_by_name,
-                &mut vars,
-                &mut commands,
-                &mut scene_entities,
-            );
-        }
+        let mut queued_animations = HashMap::new();
+        let continuous_delta_seconds =
+            (event.trigger == KeyTrigger::Pressed).then_some(time.delta_secs());
+        apply_action_sequence(
+            &event.actions,
+            &transforms_by_name,
+            &mut vars,
+            Some(&mut camera_system),
+            &functions_by_name,
+            &mut queued_animations,
+            Some(&mut delayed_actions),
+            continuous_delta_seconds,
+            &mut commands,
+            &mut scene_entities,
+        );
     }
 }
 
 fn apply_when_events(
+    time: Res<Time>,
     startup_program: Res<SceneMaxStartupProgram>,
     mut vars: ResMut<SceneMaxVars>,
+    mut camera_system: ResMut<SceneMaxCameraSystem>,
+    mut delayed_actions: ResMut<DelayedActionQueue>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
         Query<(&SceneMaxEntity, &Transform)>,
@@ -658,6 +877,7 @@ fn apply_when_events(
         .iter()
         .map(|(entity, transform)| (entity.name.clone(), *transform))
         .collect::<HashMap<_, _>>();
+    let functions_by_name = collect_functions_by_name(program);
 
     for statement in &program.statements {
         let Statement::WhenEvent(event) = statement else {
@@ -667,14 +887,168 @@ fn apply_when_events(
             continue;
         }
 
-        for action in &event.actions {
-            apply_key_action(
+        let mut queued_animations = HashMap::new();
+        apply_action_sequence(
+            &event.actions,
+            &transforms_by_name,
+            &mut vars,
+            Some(&mut camera_system),
+            &functions_by_name,
+            &mut queued_animations,
+            Some(&mut delayed_actions),
+            Some(time.delta_secs()),
+            &mut commands,
+            &mut scene_entities,
+        );
+    }
+}
+
+fn update_delayed_actions(
+    time: Res<Time>,
+    startup_program: Res<SceneMaxStartupProgram>,
+    mut vars: ResMut<SceneMaxVars>,
+    mut camera_system: ResMut<SceneMaxCameraSystem>,
+    mut delayed_actions: ResMut<DelayedActionQueue>,
+    mut commands: Commands,
+    mut scene_entities: ParamSet<(
+        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
+            Option<&mut Visibility>,
+        )>,
+    )>,
+) {
+    let Some(program) = startup_program.0.as_ref() else {
+        delayed_actions.actions.clear();
+        return;
+    };
+
+    let delta = time.delta_secs();
+    let mut ready_actions = Vec::new();
+    let mut pending_actions = Vec::new();
+    for mut delayed in delayed_actions.actions.drain(..) {
+        delayed.remaining_seconds -= delta;
+        if delayed.remaining_seconds <= 0.0 {
+            ready_actions.push(delayed.actions);
+        } else {
+            pending_actions.push(delayed);
+        }
+    }
+    delayed_actions.actions = pending_actions;
+
+    if ready_actions.is_empty() {
+        return;
+    }
+
+    let transforms_by_name = scene_entities
+        .p0()
+        .iter()
+        .map(|(entity, transform)| (entity.name.clone(), *transform))
+        .collect::<HashMap<_, _>>();
+    let functions_by_name = collect_functions_by_name(program);
+
+    for actions in ready_actions {
+        let mut queued_animations = HashMap::new();
+        apply_action_sequence(
+            &actions,
+            &transforms_by_name,
+            &mut vars,
+            Some(&mut camera_system),
+            &functions_by_name,
+            &mut queued_animations,
+            Some(&mut delayed_actions),
+            None,
+            &mut commands,
+            &mut scene_entities,
+        );
+    }
+}
+
+fn apply_action_sequence(
+    actions: &[Statement],
+    transforms_by_name: &HashMap<String, Transform>,
+    vars: &mut SceneMaxVars,
+    mut camera_system: Option<&mut SceneMaxCameraSystem>,
+    functions_by_name: &HashMap<String, Vec<Statement>>,
+    queued_animations: &mut HashMap<Entity, (String, bool)>,
+    mut delayed_actions: Option<&mut DelayedActionQueue>,
+    continuous_delta_seconds: Option<f32>,
+    commands: &mut Commands,
+    scene_entities: &mut ParamSet<(
+        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
+            Option<&mut Visibility>,
+        )>,
+    )>,
+) {
+    for (index, action) in actions.iter().enumerate() {
+        match action {
+            Statement::Wait { seconds } => {
+                if let Some(delayed_actions) = delayed_actions.as_deref_mut() {
+                    let remaining = actions[index + 1..].to_vec();
+                    if !remaining.is_empty() {
+                        delayed_actions.actions.push(DelayedActions {
+                            remaining_seconds: *seconds,
+                            actions: remaining,
+                        });
+                    }
+                }
+                break;
+            }
+            Statement::Async { actions } => {
+                apply_action_sequence(
+                    actions,
+                    transforms_by_name,
+                    vars,
+                    camera_system.as_deref_mut(),
+                    functions_by_name,
+                    queued_animations,
+                    delayed_actions.as_deref_mut(),
+                    continuous_delta_seconds,
+                    commands,
+                    scene_entities,
+                );
+            }
+            Statement::If(statement) => {
+                let selected_actions = if condition_matches(&statement.condition, vars) {
+                    &statement.actions
+                } else {
+                    &statement.else_actions
+                };
+                apply_action_sequence(
+                    selected_actions,
+                    transforms_by_name,
+                    vars,
+                    camera_system.as_deref_mut(),
+                    functions_by_name,
+                    queued_animations,
+                    delayed_actions.as_deref_mut(),
+                    continuous_delta_seconds,
+                    commands,
+                    scene_entities,
+                );
+            }
+            action => apply_key_action(
                 action,
-                &transforms_by_name,
-                &mut vars,
-                &mut commands,
-                &mut scene_entities,
-            );
+                transforms_by_name,
+                vars,
+                camera_system.as_deref_mut(),
+                functions_by_name,
+                queued_animations,
+                delayed_actions.as_deref_mut(),
+                continuous_delta_seconds,
+                commands,
+                scene_entities,
+            ),
         }
     }
 }
@@ -683,6 +1057,11 @@ fn apply_key_action(
     action: &Statement,
     transforms_by_name: &HashMap<String, Transform>,
     vars: &mut SceneMaxVars,
+    mut camera_system: Option<&mut SceneMaxCameraSystem>,
+    functions_by_name: &HashMap<String, Vec<Statement>>,
+    queued_animations: &mut HashMap<Entity, (String, bool)>,
+    delayed_actions: Option<&mut DelayedActionQueue>,
+    continuous_delta_seconds: Option<f32>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
         Query<(&SceneMaxEntity, &Transform)>,
@@ -697,7 +1076,79 @@ fn apply_key_action(
     )>,
 ) {
     if let Statement::Assignment(assignment) = action {
-        apply_assignment(assignment, vars);
+        let assigned_value = apply_assignment(assignment, vars);
+        if assignment.name == "action"
+            && assigned_value.is_some_and(|value| value.abs() <= f32::EPSILON)
+        {
+            for (entity, scene_entity, _, gltf, current_animation, _) in &mut scene_entities.p1() {
+                if scene_entity.name != "player1" {
+                    continue;
+                }
+                let already_queued = queued_animations
+                    .get(&entity)
+                    .is_some_and(|(clip, looped)| *looped && clip.eq_ignore_ascii_case("idle2"));
+                let already_current = queued_animations.get(&entity).is_none()
+                    && current_animation.is_some_and(|current| {
+                        current.looped && current.clip.eq_ignore_ascii_case("idle2")
+                    });
+                if already_queued || already_current {
+                    continue;
+                }
+                if let Some(gltf) = gltf {
+                    commands.entity(entity).insert(AnimationToPlay {
+                        clip: "idle2".to_owned(),
+                        looped: true,
+                        speed: 1.0,
+                        gltf: gltf.gltf.clone(),
+                    });
+                    queued_animations.insert(entity, ("idle2".to_owned(), true));
+                }
+            }
+        }
+        return;
+    }
+    if let Statement::CameraSystemSelect { name } = action {
+        if let Some(camera_system) = camera_system {
+            select_camera_system(name, camera_system);
+        }
+        return;
+    }
+    if let Statement::RunFunction { name } = action {
+        apply_function_by_name(
+            name,
+            transforms_by_name,
+            vars,
+            camera_system,
+            functions_by_name,
+            queued_animations,
+            delayed_actions,
+            continuous_delta_seconds,
+            commands,
+            scene_entities,
+            0,
+        );
+        return;
+    }
+    if let Statement::If(statement) = action {
+        let selected_actions = if condition_matches(&statement.condition, vars) {
+            &statement.actions
+        } else {
+            &statement.else_actions
+        };
+        for nested_action in selected_actions {
+            apply_key_action(
+                nested_action,
+                transforms_by_name,
+                vars,
+                camera_system.as_deref_mut(),
+                functions_by_name,
+                queued_animations,
+                None,
+                continuous_delta_seconds,
+                commands,
+                scene_entities,
+            );
+        }
         return;
     }
 
@@ -706,9 +1157,17 @@ fn apply_key_action(
     {
         match action {
             Statement::Animate(animation) if animation.target == scene_entity.name => {
-                if current_animation.is_some_and(|current| {
-                    current.looped == animation.looped && current.clip == animation.clip
-                }) {
+                let already_queued =
+                    queued_animations
+                        .get(&entity)
+                        .is_some_and(|(clip, looped)| {
+                            *looped == animation.looped && clip == &animation.clip
+                        });
+                let already_current = queued_animations.get(&entity).is_none()
+                    && current_animation.is_some_and(|current| {
+                        current.looped == animation.looped && current.clip == animation.clip
+                    });
+                if already_queued || already_current {
                     continue;
                 }
                 if let Some(gltf) = gltf {
@@ -718,6 +1177,7 @@ fn apply_key_action(
                         speed: animation.speed,
                         gltf: gltf.gltf.clone(),
                     });
+                    queued_animations.insert(entity, (animation.clip.clone(), animation.looped));
                 }
             }
             Statement::LookAt { target, subject } if target == &scene_entity.name => {
@@ -726,14 +1186,22 @@ fn apply_key_action(
                 }
             }
             Statement::Turn(turn) if turn.target == scene_entity.name => {
-                commands
-                    .entity(entity)
-                    .insert(timed_turn_from_statement(turn));
+                if let Some(delta_seconds) = continuous_delta_seconds {
+                    let timed_turn = timed_turn_from_statement(turn);
+                    transform.rotate_y(timed_turn.radians_per_second * delta_seconds);
+                } else {
+                    commands
+                        .entity(entity)
+                        .insert(timed_turn_from_statement(turn));
+                }
             }
             Statement::Move(movement) if movement.target == scene_entity.name => {
-                commands
-                    .entity(entity)
-                    .insert(timed_move_from_statement(movement, &transform));
+                let timed_move = timed_move_from_statement(movement, &transform);
+                if let Some(delta_seconds) = continuous_delta_seconds {
+                    transform.translation += timed_move.velocity * delta_seconds;
+                } else {
+                    commands.entity(entity).insert(timed_move);
+                }
             }
             Statement::Visibility { target, visible } if target == &scene_entity.name => {
                 if let Some(mut visibility) = visibility {
@@ -751,6 +1219,97 @@ fn apply_key_action(
                 }
             }
             _ => {}
+        }
+    }
+}
+
+fn apply_function_by_name(
+    name: &str,
+    transforms_by_name: &HashMap<String, Transform>,
+    vars: &mut SceneMaxVars,
+    mut camera_system: Option<&mut SceneMaxCameraSystem>,
+    functions_by_name: &HashMap<String, Vec<Statement>>,
+    queued_animations: &mut HashMap<Entity, (String, bool)>,
+    delayed_actions: Option<&mut DelayedActionQueue>,
+    continuous_delta_seconds: Option<f32>,
+    commands: &mut Commands,
+    scene_entities: &mut ParamSet<(
+        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
+            Option<&mut Visibility>,
+        )>,
+    )>,
+    depth: usize,
+) {
+    if depth > 8 {
+        tracing::warn!(name, "skipping deeply recursive SceneMax run");
+        return;
+    }
+    let Some(actions) = functions_by_name.get(name) else {
+        tracing::debug!(
+            name,
+            "SceneMax function is not implemented or was not parsed"
+        );
+        return;
+    };
+
+    apply_action_sequence(
+        actions,
+        transforms_by_name,
+        vars,
+        camera_system.as_deref_mut(),
+        functions_by_name,
+        queued_animations,
+        delayed_actions,
+        continuous_delta_seconds,
+        commands,
+        scene_entities,
+    );
+}
+
+fn apply_builtin_navigation_controls(
+    time: Res<Time>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut players: Query<(&SceneMaxEntity, &mut Transform)>,
+) {
+    let delta_seconds = time.delta_secs();
+    let turn_delta = if keyboard.pressed(KeyCode::ArrowLeft) {
+        BUILTIN_PLAYER_TURN_SPEED_RADIANS * delta_seconds
+    } else if keyboard.pressed(KeyCode::ArrowRight) {
+        -BUILTIN_PLAYER_TURN_SPEED_RADIANS * delta_seconds
+    } else {
+        0.0
+    };
+
+    let move_direction = if keyboard.pressed(KeyCode::ArrowUp) {
+        1.0
+    } else if keyboard.pressed(KeyCode::ArrowDown) {
+        -1.0
+    } else {
+        0.0
+    };
+
+    if turn_delta == 0.0 && move_direction == 0.0 {
+        return;
+    }
+
+    for (entity, mut transform) in &mut players {
+        if entity.name != "player1" {
+            continue;
+        }
+
+        if turn_delta != 0.0 {
+            transform.rotate_y(turn_delta);
+        }
+
+        if move_direction != 0.0 {
+            let direction = horizontal_forward(&transform) * move_direction;
+            transform.translation += direction * BUILTIN_PLAYER_MOVE_SPEED * delta_seconds;
         }
     }
 }
@@ -836,6 +1395,10 @@ fn apply_camera_systems(program: &Program, camera_system: &mut SceneMaxCameraSys
             damping: camera.damping,
         })
     });
+    camera_system.selected = camera_system
+        .fighting
+        .as_ref()
+        .map(|camera| camera.name.clone());
 
     if let Some(camera) = &camera_system.fighting {
         tracing::info!(
@@ -847,11 +1410,39 @@ fn apply_camera_systems(program: &Program, camera_system: &mut SceneMaxCameraSys
     }
 }
 
-fn apply_assignment(assignment: &scenemax_parser::AssignmentStatement, vars: &mut SceneMaxVars) {
-    match assignment.value {
-        AssignmentValue::Number(value) => {
-            vars.0.insert(assignment.name.clone(), value);
-        }
+fn select_camera_system(name: &str, camera_system: &mut SceneMaxCameraSystem) {
+    if camera_system
+        .fighting
+        .as_ref()
+        .is_some_and(|camera| camera.name == name)
+    {
+        camera_system.selected = Some(name.to_owned());
+        tracing::info!(name, "selected SceneMax camera system");
+    } else {
+        tracing::debug!(name, "SceneMax camera system is not implemented");
+    }
+}
+
+fn apply_assignment(
+    assignment: &scenemax_parser::AssignmentStatement,
+    vars: &mut SceneMaxVars,
+) -> Option<f32> {
+    let Some(value) = resolve_assignment_value(&assignment.value, vars) else {
+        tracing::debug!(
+            name = %assignment.name,
+            value = ?assignment.value,
+            "SceneMax assignment value is not known yet"
+        );
+        return None;
+    };
+    vars.0.insert(assignment.name.clone(), value);
+    Some(value)
+}
+
+fn resolve_assignment_value(value: &AssignmentValue, vars: &SceneMaxVars) -> Option<f32> {
+    match value {
+        AssignmentValue::Number(value) => Some(*value),
+        AssignmentValue::Symbol(name) => vars.0.get(name).copied(),
     }
 }
 
@@ -862,6 +1453,18 @@ fn condition_matches(condition: &Condition, vars: &SceneMaxVars) -> bool {
         }
         Condition::NotEqualsNumber { name, value } => {
             (vars.0.get(name).copied().unwrap_or_default() - *value).abs() > f32::EPSILON
+        }
+        Condition::EqualsSymbol { name, value } => {
+            let Some(value) = vars.0.get(value).copied() else {
+                return false;
+            };
+            (vars.0.get(name).copied().unwrap_or_default() - value).abs() <= f32::EPSILON
+        }
+        Condition::NotEqualsSymbol { name, value } => {
+            let Some(value) = vars.0.get(value).copied() else {
+                return false;
+            };
+            (vars.0.get(name).copied().unwrap_or_default() - value).abs() > f32::EPSILON
         }
     }
 }
@@ -901,12 +1504,7 @@ fn timed_move_from_statement(
     transform: &Transform,
 ) -> TimedMove {
     let duration = movement.duration_seconds.max(0.001);
-    let mut direction = transform.rotation * Vec3::NEG_Z;
-    direction.y = 0.0;
-    if direction.length_squared() <= f32::EPSILON {
-        direction = Vec3::NEG_Z;
-    }
-    direction = direction.normalize();
+    let mut direction = horizontal_forward(transform);
     if movement.direction == MoveDirection::Backward {
         direction = -direction;
     }
@@ -915,6 +1513,15 @@ fn timed_move_from_statement(
         remaining_seconds: duration,
         velocity: direction * (movement.distance / duration),
     }
+}
+
+fn horizontal_forward(transform: &Transform) -> Vec3 {
+    let mut direction = transform.rotation * Vec3::Z;
+    direction.y = 0.0;
+    if direction.length_squared() <= f32::EPSILON {
+        return Vec3::Z;
+    }
+    direction.normalize()
 }
 
 fn update_timed_turns(
@@ -956,6 +1563,13 @@ fn update_fighting_camera(
     let Some(camera_settings) = camera_system.fighting.as_ref() else {
         return;
     };
+    if camera_system
+        .selected
+        .as_ref()
+        .is_some_and(|selected| selected != &camera_settings.name)
+    {
+        return;
+    }
 
     let mut target_a = None;
     let mut target_b = None;
@@ -1046,6 +1660,19 @@ fn collect_turn_by_target(program: &Program) -> HashMap<String, scenemax_parser:
         .collect()
 }
 
+fn collect_functions_by_name(program: &Program) -> HashMap<String, Vec<Statement>> {
+    program
+        .statements
+        .iter()
+        .filter_map(|statement| match statement {
+            Statement::FunctionDef(function) => {
+                Some((function.name.clone(), function.actions.clone()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 fn play_pending_animations(
     mut commands: Commands,
     children: Query<&Children>,
@@ -1059,12 +1686,16 @@ fn play_pending_animations(
             continue;
         };
 
-        let Some(clip) = gltf
-            .named_animations
-            .get(animation_to_play.clip.as_str())
-            .or_else(|| gltf.animations.first())
-        else {
-            tracing::warn!(clip = %animation_to_play.clip, "GLTF model has no animation clips");
+        let Some(clip) = gltf.named_animations.get(animation_to_play.clip.as_str()) else {
+            if gltf.animations.is_empty() {
+                tracing::warn!(clip = %animation_to_play.clip, "GLTF model has no animation clips");
+            } else {
+                tracing::warn!(
+                    clip = %animation_to_play.clip,
+                    available = gltf.named_animations.len(),
+                    "GLTF animation clip was not found; skipping fallback"
+                );
+            }
             commands.entity(root).remove::<AnimationToPlay>();
             continue;
         };
