@@ -47,13 +47,13 @@ replay_action (action) = {
   } else if (action == 2) {
     audio.play "kick3"
     run shake_the_world async
-    anim = animation player.hurricane_kick
+    anim = animation player.hurricane_kick_short at speed of 2
     effective_hit = 1
     anim.run 
     effective_hit = 0
   } else if (action == 3) {
 		run shake_the_world async
-    anim = animation player.quad_punch1
+    anim = animation player.quad_punch_short at speed of 2
     effective_hit = 1
     anim.run
     effective_hit = 0

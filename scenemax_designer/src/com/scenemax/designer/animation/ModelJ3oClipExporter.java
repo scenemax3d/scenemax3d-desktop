@@ -81,8 +81,7 @@ public final class ModelJ3oClipExporter {
         LoadedSource loadedSource = prepareSource(sourceFile);
         try {
             Spatial spatial = loadModel(loadedSource.file);
-            if (sourceClipName != null && !sourceClipName.trim().isEmpty()
-                    && frameRanges != null && !frameRanges.isEmpty()) {
+            if (hasSplitClipInput(sourceClipName, frameRanges)) {
                 addSplitAnimClips(spatial, sourceClipName, frameRanges);
             }
             rebuildSkinningControlsForBinaryExport(spatial);
@@ -145,51 +144,92 @@ public final class ModelJ3oClipExporter {
 
     private static void addSplitAnimClips(Spatial spatial, String requestedSourceClipName,
                                           List<AnimationFrameRange> frameRanges) throws IOException {
-        String sourceClipName = requestedSourceClipName == null ? "" : requestedSourceClipName.trim();
-        AnimComposer composer = findComposerWithClip(spatial, sourceClipName);
-        if (composer == null || sourceClipName == null || sourceClipName.isBlank()) {
-            throw new IOException("Source animation clip was not found for splitting: " + sourceClipName);
-        }
-
-        AnimClip sourceClip = composer.getAnimClip(sourceClipName);
-        if (sourceClip == null) {
-            throw new IOException("Source animation clip was not found: " + sourceClipName);
-        }
-
-        ClipTimeline timeline = new ClipTimeline(sourceClip.getLength(), timesFromClip(sourceClip));
-        int maxFrame = timeline.maxFrame();
+        String defaultSourceClipName = requestedSourceClipName == null ? "" : requestedSourceClipName.trim();
+        Map<String, SourceClipContext> sourceClips = new HashMap<>();
         Set<String> seen = new LinkedHashSet<>();
-        TweenTransforms tweenTransforms = new TweenTransforms();
+        Set<String> sourceClipKeys = new LinkedHashSet<>();
         for (AnimationFrameRange range : frameRanges) {
             String clipName = range.name.trim();
+            String sourceClipName = sourceClipName(range, defaultSourceClipName);
+            if (sourceClipName.isEmpty()) {
+                throw new IOException("No source animation clip was selected for splitting: " + clipName);
+            }
             String key = clipName.toLowerCase(Locale.ROOT);
             if (!seen.add(key)) {
                 throw new IOException("Duplicate split clip name: " + clipName);
             }
-            if (clipName.equals(sourceClipName)) {
-                throw new IOException("Split clip name matches the source clip: " + clipName);
+            sourceClipKeys.add(sourceClipName.toLowerCase(Locale.ROOT));
+            if (!sourceClips.containsKey(sourceClipName)) {
+                sourceClips.put(sourceClipName, sourceClipContext(spatial, sourceClipName));
             }
+        }
+        for (AnimationFrameRange range : frameRanges) {
+            String clipName = range.name.trim();
+            if (sourceClipKeys.contains(clipName.toLowerCase(Locale.ROOT))) {
+                throw new IOException("Split clip name matches a source clip: " + clipName);
+            }
+        }
 
-            int start = Math.max(0, Math.min(range.startFrame, maxFrame));
-            int end = Math.max(start, Math.min(range.endFrame, maxFrame));
+        TweenTransforms tweenTransforms = new TweenTransforms();
+        for (AnimationFrameRange range : frameRanges) {
+            String clipName = range.name.trim();
+            String sourceClipName = sourceClipName(range, defaultSourceClipName);
+            SourceClipContext source = sourceClips.get(sourceClipName);
+
+            int start = Math.max(0, Math.min(range.startFrame, source.maxFrame));
+            int end = Math.max(start, Math.min(range.endFrame, source.maxFrame));
             if (end <= start) {
                 throw new IOException("Frame range for '" + clipName + "' must contain at least 2 frames.");
             }
 
-            float startTime = (float) timeline.timeAtFrame(start);
-            float endTime = (float) timeline.timeAtFrame(end);
+            float startTime = (float) source.timeline.timeAtFrame(start);
+            float endTime = (float) source.timeline.timeAtFrame(end);
             if (endTime <= startTime) {
                 throw new IOException("Frame range for '" + clipName + "' resolved to an empty time range.");
             }
 
-            if (composer.hasAnimClip(clipName)) {
-                composer.removeAnimClip(composer.getAnimClip(clipName));
+            if (source.composer.hasAnimClip(clipName)) {
+                source.composer.removeAnimClip(source.composer.getAnimClip(clipName));
             }
-            if (composer.hasAction(clipName)) {
-                composer.removeAction(clipName);
+            if (source.composer.hasAction(clipName)) {
+                source.composer.removeAction(clipName);
             }
-            composer.addAnimClip(AnimationEdit.extractAnimation(sourceClip, startTime, endTime, tweenTransforms, clipName));
+            source.composer.addAnimClip(AnimationEdit.extractAnimation(source.clip, startTime, endTime, tweenTransforms, clipName));
         }
+    }
+
+    private static String sourceClipName(AnimationFrameRange range, String defaultSourceClipName) {
+        return range.sourceClipName == null || range.sourceClipName.trim().isEmpty()
+                ? defaultSourceClipName
+                : range.sourceClipName.trim();
+    }
+
+    private static boolean hasSplitClipInput(String sourceClipName, List<AnimationFrameRange> frameRanges) {
+        if (frameRanges == null || frameRanges.isEmpty()) {
+            return false;
+        }
+        if (sourceClipName != null && !sourceClipName.trim().isEmpty()) {
+            return true;
+        }
+        for (AnimationFrameRange range : frameRanges) {
+            if (range != null && range.sourceClipName != null && !range.sourceClipName.trim().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static SourceClipContext sourceClipContext(Spatial spatial, String sourceClipName) throws IOException {
+        AnimComposer composer = findComposerWithClip(spatial, sourceClipName);
+        if (composer == null || sourceClipName == null || sourceClipName.isBlank()) {
+            throw new IOException("Source animation clip was not found for splitting: " + sourceClipName);
+        }
+        AnimClip sourceClip = composer.getAnimClip(sourceClipName);
+        if (sourceClip == null) {
+            throw new IOException("Source animation clip was not found: " + sourceClipName);
+        }
+        ClipTimeline timeline = new ClipTimeline(sourceClip.getLength(), timesFromClip(sourceClip));
+        return new SourceClipContext(composer, sourceClip, timeline);
     }
 
     private static AnimComposer findComposerWithClip(Spatial spatial, String clipName) {
@@ -785,13 +825,33 @@ public final class ModelJ3oClipExporter {
 
     public static class AnimationFrameRange {
         public final String name;
+        public final String sourceClipName;
         public final int startFrame;
         public final int endFrame;
 
         public AnimationFrameRange(String name, int startFrame, int endFrame) {
+            this(name, "", startFrame, endFrame);
+        }
+
+        public AnimationFrameRange(String name, String sourceClipName, int startFrame, int endFrame) {
             this.name = name;
+            this.sourceClipName = sourceClipName == null ? "" : sourceClipName.trim();
             this.startFrame = startFrame;
             this.endFrame = endFrame;
+        }
+    }
+
+    private static class SourceClipContext {
+        final AnimComposer composer;
+        final AnimClip clip;
+        final ClipTimeline timeline;
+        final int maxFrame;
+
+        SourceClipContext(AnimComposer composer, AnimClip clip, ClipTimeline timeline) {
+            this.composer = composer;
+            this.clip = clip;
+            this.timeline = timeline;
+            this.maxFrame = timeline.maxFrame();
         }
     }
 
