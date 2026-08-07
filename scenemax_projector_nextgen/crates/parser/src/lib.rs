@@ -100,6 +100,7 @@ pub enum Statement {
         value: AssignmentValue,
     },
     Assignment(AssignmentStatement),
+    LocalAssignment(AssignmentStatement),
     FightingCamera(FightingCameraStatement),
     ThirdPersonCamera(ThirdPersonCameraStatement),
     CameraSystemSelect {
@@ -1524,6 +1525,12 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(run_function);
     }
 
+    if is_local_assignment_line(line) {
+        if let Some(assignment) = parse_assignment(line)? {
+            return Ok(Statement::LocalAssignment(assignment));
+        }
+    }
+
     if let Some(assignment) = parse_assignment(line)? {
         return Ok(Statement::Assignment(assignment));
     }
@@ -1872,6 +1879,12 @@ fn parse_assignment(line: &str) -> Result<Option<AssignmentStatement>, ParseErro
     } else {
         Ok(None)
     }
+}
+
+fn is_local_assignment_line(line: &str) -> bool {
+    let line = line.trim();
+    (starts_with_keyword(line, "var") || starts_with_two_keywords(line, "shared", "var"))
+        && !strip_var_prefix(line).trim_start().starts_with('@')
 }
 
 fn parse_assignment_list(line: &str) -> Result<Option<Vec<AssignmentStatement>>, ParseError> {
@@ -3136,7 +3149,10 @@ fn is_open_assignment_list(line: &str) -> bool {
 
 fn is_open_guard_definition(line: &str) -> bool {
     let trimmed = line.trim();
-    strip_var_prefix(trimmed).starts_with('@') && unclosed_paren_count(trimmed) > 0
+    strip_var_prefix(trimmed).starts_with('@')
+        && (unclosed_paren_count(trimmed) > 0
+            || trimmed.ends_with("&&")
+            || trimmed.ends_with("||"))
 }
 
 fn unclosed_paren_count(text: &str) -> usize {
@@ -4194,6 +4210,32 @@ mod tests {
     }
 
     #[test]
+    fn parses_multiline_guard_definition_after_trailing_operator() {
+        let program = parse_program(
+            "var @player1_grabs_for_throwing_player2 = @player1_can_hit &&\n  player1.data.hand_attack_hit == 1 && action == PLAYER_ACTION_X_1",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::GuardDef {
+                name: "player1_grabs_for_throwing_player2".to_owned(),
+                condition: Condition::And(vec![
+                    Condition::Alias("player1_can_hit".to_owned()),
+                    Condition::EqualsNumber {
+                        name: "player1.data.hand_attack_hit".to_owned(),
+                        value: 1.0,
+                    },
+                    Condition::EqualsSymbol {
+                        name: "action".to_owned(),
+                        value: "PLAYER_ACTION_X_1".to_owned(),
+                    },
+                ]),
+            }]
+        );
+    }
+
+    #[test]
     fn parses_guarded_action_block() {
         let program = parse_program(
             "when key D is pressed once do\n  [player1.data.is_jumping==0]\n  do\n    player1.flying_kick at speed of 2\n  end do\nend do",
@@ -4391,20 +4433,20 @@ mod tests {
                 params: vec!["p1".to_owned(), "p2".to_owned()],
                 guard: None,
                 actions: vec![
-                    Statement::Assignment(AssignmentStatement {
+                    Statement::LocalAssignment(AssignmentStatement {
                         name: "dist".to_owned(),
                         value: AssignmentValue::Distance {
                             left: "p1".to_owned(),
                             right: "p2".to_owned(),
                         },
                     }),
-                    Statement::Assignment(AssignmentStatement {
+                    Statement::LocalAssignment(AssignmentStatement {
                         name: "dchoice".to_owned(),
                         value: AssignmentValue::RandomInt {
                             max: Box::new(AssignmentValue::Number(2.0)),
                         },
                     }),
-                    Statement::Assignment(AssignmentStatement {
+                    Statement::LocalAssignment(AssignmentStatement {
                         name: "is_desperate".to_owned(),
                         value: AssignmentValue::Condition(Box::new(Condition::Compare {
                             name: "life2".to_owned(),
@@ -4441,20 +4483,20 @@ mod tests {
                 params: vec!["p1".to_owned(), "p2".to_owned()],
                 guard: None,
                 actions: vec![
-                    Statement::Assignment(AssignmentStatement {
+                    Statement::LocalAssignment(AssignmentStatement {
                         name: "dist".to_owned(),
                         value: AssignmentValue::Distance {
                             left: "p1".to_owned(),
                             right: "p2".to_owned(),
                         },
                     }),
-                    Statement::Assignment(AssignmentStatement {
+                    Statement::LocalAssignment(AssignmentStatement {
                         name: "dchoice".to_owned(),
                         value: AssignmentValue::RandomInt {
                             max: Box::new(AssignmentValue::Number(2.0)),
                         },
                     }),
-                    Statement::Assignment(AssignmentStatement {
+                    Statement::LocalAssignment(AssignmentStatement {
                         name: "frame1".to_owned(),
                         value: AssignmentValue::Round {
                             value: Box::new(AssignmentValue::Binary {
@@ -4506,7 +4548,7 @@ mod tests {
                 params: Vec::new(),
                 guard: None,
                 actions: vec![
-                    Statement::Assignment(AssignmentStatement {
+                    Statement::LocalAssignment(AssignmentStatement {
                         name: "flag".to_owned(),
                         value: AssignmentValue::Condition(Box::new(Condition::Boolean(true))),
                     }),
@@ -4546,7 +4588,7 @@ mod tests {
                     params: vec!["p1".to_owned(), "p2".to_owned()],
                     guard: None,
                     actions: vec![
-                        Statement::Assignment(AssignmentStatement {
+                        Statement::LocalAssignment(AssignmentStatement {
                             name: "dist".to_owned(),
                             value: AssignmentValue::Distance {
                                 left: "p1".to_owned(),
@@ -4560,7 +4602,7 @@ mod tests {
                                 value: AssignmentValue::Number(5.5),
                             },
                             actions: vec![
-                                Statement::Assignment(AssignmentStatement {
+                                Statement::LocalAssignment(AssignmentStatement {
                                     name: "mid_choice".to_owned(),
                                     value: AssignmentValue::RandomInt {
                                         max: Box::new(AssignmentValue::Number(3.0)),

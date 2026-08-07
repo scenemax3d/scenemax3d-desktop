@@ -1907,7 +1907,7 @@ fn apply_startup_action(
     depth: usize,
 ) -> ActionSequenceResult {
     match action {
-        Statement::Assignment(assignment) => {
+        Statement::Assignment(assignment) | Statement::LocalAssignment(assignment) => {
             apply_assignment(
                 assignment,
                 vars,
@@ -1940,20 +1940,27 @@ fn apply_startup_action(
             );
             ActionSequenceResult::Completed
         }
-        Statement::RunFunction { name, args } => apply_startup_function_by_name(
-            name,
-            args,
-            commands,
-            vars,
-            object_pools,
-            camera_system,
-            functions_by_name,
-            entities_by_name,
-            transforms_by_name,
-            gltfs_by_name,
-            guards_by_name,
-            depth + 1,
-        ),
+        Statement::RunFunction { name, args } => {
+            match apply_startup_function_by_name(
+                name,
+                args,
+                commands,
+                vars,
+                object_pools,
+                camera_system,
+                functions_by_name,
+                entities_by_name,
+                transforms_by_name,
+                gltfs_by_name,
+                guards_by_name,
+                depth + 1,
+            ) {
+                ActionSequenceResult::Suspended => ActionSequenceResult::Suspended,
+                ActionSequenceResult::Completed | ActionSequenceResult::Returned => {
+                    ActionSequenceResult::Completed
+                }
+            }
+        }
         Statement::Async { actions } => {
             for nested_action in actions {
                 let result = apply_startup_action(
@@ -3379,7 +3386,7 @@ fn apply_key_action(
         );
         return ActionSequenceResult::Completed;
     }
-    if let Statement::Assignment(assignment) = action {
+    if let Statement::Assignment(assignment) | Statement::LocalAssignment(assignment) = action {
         if let AssignmentValue::PoolAcquire { pool } = &assignment.value {
             let Some(member) = acquire_pool_member(pool, object_pools) else {
                 tracing::debug!(pool, "SceneMax object pool has no available members");
@@ -3425,6 +3432,7 @@ fn apply_key_action(
             Some(transforms_by_name),
             guards_by_name,
             Some(collider_bounds),
+            matches!(action, Statement::LocalAssignment(_)),
         );
         if assignment.name == "action"
             && assigned_value.is_some_and(|value| value.abs() <= f32::EPSILON)
@@ -3488,7 +3496,7 @@ fn apply_key_action(
         return ActionSequenceResult::Completed;
     }
     if let Statement::RunFunction { name, args } = action {
-        return apply_function_by_name(
+        return match apply_function_by_name(
             name,
             args,
             transforms_by_name,
@@ -3507,7 +3515,12 @@ fn apply_key_action(
             commands,
             scene_entities,
             0,
-        );
+        ) {
+            ActionSequenceResult::Suspended => ActionSequenceResult::Suspended,
+            ActionSequenceResult::Completed | ActionSequenceResult::Returned => {
+                ActionSequenceResult::Completed
+            }
+        };
     }
     if let Statement::PoolRelease(release) = action {
         release_pool_action(
@@ -4200,11 +4213,16 @@ fn substitute_statement(statement: &Statement, bindings: &HashMap<String, String
         Statement::Async { actions } => Statement::Async {
             actions: substitute_statements(actions, bindings),
         },
-        Statement::Assignment(assignment) => {
-            Statement::Assignment(scenemax_parser::AssignmentStatement {
+        Statement::Assignment(assignment) | Statement::LocalAssignment(assignment) => {
+            let assignment = scenemax_parser::AssignmentStatement {
                 name: substitute_path(&assignment.name, bindings),
                 value: substitute_assignment_value(&assignment.value, bindings),
-            })
+            };
+            if matches!(statement, Statement::LocalAssignment(_)) {
+                Statement::LocalAssignment(assignment)
+            } else {
+                Statement::Assignment(assignment)
+            }
         }
         Statement::RunFunction { name, args } => Statement::RunFunction {
             name: name.clone(),
@@ -4982,6 +5000,7 @@ fn apply_assignment(
         transforms_by_name,
         guards_by_name,
         collider_bounds,
+        false,
     )
 }
 
@@ -4992,6 +5011,7 @@ fn apply_assignment_scoped(
     transforms_by_name: Option<&HashMap<String, Transform>>,
     guards_by_name: &HashMap<String, Condition>,
     collider_bounds: Option<&SceneMaxColliderBounds>,
+    force_local: bool,
 ) -> Option<f32> {
     let Some(value) = resolve_assignment_value_scoped_with_guards(
         &assignment.value,
@@ -5008,7 +5028,13 @@ fn apply_assignment_scoped(
         );
         return None;
     };
-    assign_symbol_value(&assignment.name, value, vars, scope.as_deref_mut());
+    assign_symbol_value(
+        &assignment.name,
+        value,
+        vars,
+        scope.as_deref_mut(),
+        force_local,
+    );
     Some(value)
 }
 
@@ -5017,12 +5043,15 @@ fn assign_symbol_value(
     value: f32,
     vars: &mut SceneMaxVars,
     scope: Option<&mut SceneMaxScopeFrame>,
+    force_local: bool,
 ) {
     let Some(scope) = scope else {
         vars.0.insert(name.to_owned(), value);
         return;
     };
-    if scope.vars.contains_key(name) {
+    if force_local {
+        scope.vars.insert(name.to_owned(), value);
+    } else if scope.vars.contains_key(name) {
         scope.vars.insert(name.to_owned(), value);
     } else if vars.0.contains_key(name) || is_runtime_field_path(name) {
         vars.0.insert(name.to_owned(), value);
@@ -6814,6 +6843,7 @@ mod tests {
             None,
             &guards,
             None,
+            false,
         );
         apply_assignment_scoped(
             &scenemax_parser::AssignmentStatement {
@@ -6825,6 +6855,7 @@ mod tests {
             None,
             &guards,
             None,
+            false,
         );
 
         assert_eq!(scope.vars.get("dist").copied(), Some(4.25));
