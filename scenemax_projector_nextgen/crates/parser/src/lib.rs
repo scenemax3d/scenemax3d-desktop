@@ -89,6 +89,9 @@ pub enum Statement {
     Wait {
         seconds: f32,
     },
+    WaitValue {
+        value: AssignmentValue,
+    },
     WaitUntil {
         condition: Condition,
     },
@@ -787,11 +790,14 @@ fn parse_guard_def(line: &str) -> Result<Option<(String, Condition)>, ParseError
 fn parse_when_event_header(
     line: &str,
 ) -> Result<Option<(Condition, Option<Condition>)>, ParseError> {
-    let lower = line.to_ascii_lowercase();
-    if !lower.starts_with("when ") || !(lower.ends_with(" do") || lower.ends_with(" do async")) {
+    let trimmed = line.trim();
+    if !starts_with_keyword(trimmed, "when") {
         return Ok(None);
     }
-    let condition_text = line["when ".len()..line.len() - trailing_do_len(&lower)].trim();
+    let after_when = trimmed["when".len()..].trim_start();
+    let Some(condition_text) = strip_event_header_suffix(after_when) else {
+        return Ok(None);
+    };
     let (condition_text, after_text) = split_once_case_insensitive(condition_text, " after ")
         .map(|(condition, after)| (condition.trim(), Some(after.trim())))
         .unwrap_or((condition_text, None));
@@ -984,20 +990,46 @@ fn parse_expression_comparison_values(
 }
 
 fn parse_key_event_header(line: &str) -> Option<(String, KeyTrigger)> {
-    let lower = line.to_ascii_lowercase();
-    if !lower.starts_with("when key ") || !(lower.ends_with(" do") || lower.ends_with(" do async"))
+    let words = line.split_whitespace().collect::<Vec<_>>();
+    if words.len() < 6
+        || !words[0].eq_ignore_ascii_case("when")
+        || !words[1].eq_ignore_ascii_case("key")
     {
         return None;
     }
-
-    let after_key = line["when key ".len()..].trim();
-    let key = after_key.split_whitespace().next()?.to_ascii_lowercase();
-    let trigger = if lower.contains(" is released do") {
+    let key = words[2].to_ascii_lowercase();
+    if !words[3].eq_ignore_ascii_case("is") {
+        return None;
+    }
+    let trigger = if words[4].eq_ignore_ascii_case("released") {
+        if !words
+            .get(5)
+            .is_some_and(|word| word.eq_ignore_ascii_case("do"))
+        {
+            return None;
+        }
         KeyTrigger::Released
-    } else if lower.contains(" is pressed once do") {
-        KeyTrigger::PressedOnce
-    } else if lower.contains(" is pressed do") {
-        KeyTrigger::Pressed
+    } else if words[4].eq_ignore_ascii_case("pressed") {
+        if words
+            .get(5)
+            .is_some_and(|word| word.eq_ignore_ascii_case("once"))
+        {
+            if !words
+                .get(6)
+                .is_some_and(|word| word.eq_ignore_ascii_case("do"))
+            {
+                return None;
+            }
+            KeyTrigger::PressedOnce
+        } else {
+            if !words
+                .get(5)
+                .is_some_and(|word| word.eq_ignore_ascii_case("do"))
+            {
+                return None;
+            }
+            KeyTrigger::Pressed
+        }
     } else {
         return None;
     };
@@ -1321,12 +1353,21 @@ fn skip_control_block(logical_lines: &[String], index: usize) -> usize {
     cursor
 }
 
-fn trailing_do_len(lower: &str) -> usize {
-    if lower.ends_with(" do async") {
-        " do async".len()
-    } else {
-        " do".len()
+fn strip_event_header_suffix(text: &str) -> Option<&str> {
+    let trimmed = text.trim_end();
+    if let Some(prefix) = trimmed.strip_suffix('{') {
+        return Some(prefix.trim_end());
     }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.ends_with("do async") {
+        let prefix = &trimmed[..trimmed.len() - "do async".len()];
+        return Some(prefix.trim_end());
+    }
+    if lower.ends_with("do") {
+        let prefix = &trimmed[..trimmed.len() - "do".len()];
+        return Some(prefix.trim_end());
+    }
+    None
 }
 
 fn parse_repeat_header(line: &str) -> Option<usize> {
@@ -1438,11 +1479,14 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(Statement::WaitUntil { condition });
     }
 
-    if let Some(seconds) = parse_wait(line) {
-        return Ok(Statement::Wait { seconds });
+    if let Some(value) = parse_wait(line)? {
+        return Ok(match value {
+            AssignmentValue::Number(seconds) => Statement::Wait { seconds },
+            value => Statement::WaitValue { value },
+        });
     }
 
-    if line.trim().eq_ignore_ascii_case("return") {
+    if starts_with_keyword(line, "return") {
         return Ok(Statement::Return);
     }
 
@@ -1948,13 +1992,15 @@ fn parse_wait_until(line: &str) -> Result<Option<Condition>, ParseError> {
     parse_condition(line["wait for ".len()..].trim())
 }
 
-fn parse_wait(line: &str) -> Option<f32> {
+fn parse_wait(line: &str) -> Result<Option<AssignmentValue>, ParseError> {
     let lower = line.to_ascii_lowercase();
     if !lower.starts_with("wait ") {
-        return None;
+        return Ok(None);
     }
-    let raw_seconds = line["wait ".len()..].split_whitespace().next()?;
-    raw_seconds.parse::<f32>().ok()
+    let Some(raw_seconds) = line["wait ".len()..].split_whitespace().next() else {
+        return Ok(None);
+    };
+    parse_assignment_value(raw_seconds)
 }
 
 fn parse_camera_command(line: &str, command: &str) -> Result<Option<SceneMaxVec3>, ParseError> {
@@ -4349,6 +4395,61 @@ mod tests {
                     },
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn parses_whitespace_tolerant_key_event_header() {
+        let program = parse_program(
+            "[@allow_move]\nwhen key left is pressed  do\n  player1.turn left 3 in 0.1 seconds async\nend do",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::KeyEvent(KeyEventStatement {
+                key: "left".to_owned(),
+                trigger: KeyTrigger::Pressed,
+                guard: Some(Condition::Alias("allow_move".to_owned())),
+                actions: vec![Statement::Turn(TurnStatement {
+                    target: "player1".to_owned(),
+                    degrees: 3.0,
+                    duration_seconds: 0.1,
+                })],
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_brace_when_symbolic_wait_and_return_value() {
+        let program = parse_program(
+            "when (life2 < 5 && rocks_started==0) {\n  wait tm seconds\n  return rock1\n}",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::WhenEvent(WhenEventStatement {
+                condition: Condition::And(vec![
+                    Condition::Compare {
+                        name: "life2".to_owned(),
+                        operator: ComparisonOperator::Less,
+                        value: AssignmentValue::Number(5.0),
+                    },
+                    Condition::EqualsNumber {
+                        name: "rocks_started".to_owned(),
+                        value: 0.0,
+                    },
+                ]),
+                after_condition: None,
+                guard: None,
+                actions: vec![
+                    Statement::WaitValue {
+                        value: AssignmentValue::Symbol("tm".to_owned()),
+                    },
+                    Statement::Return,
+                ],
+            })]
         );
     }
 
