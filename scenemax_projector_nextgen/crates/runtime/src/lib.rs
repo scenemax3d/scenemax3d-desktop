@@ -79,6 +79,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<SceneMaxVars>()
         .init_resource::<SceneMaxObjectPools>()
         .init_resource::<SceneMaxCameraSystem>()
+        .init_resource::<SceneMaxRuntimeAssets>()
         .init_resource::<DelayedActionQueue>()
         .init_resource::<RecurringRunTimers>()
         .init_resource::<ActiveCollisionEvents>()
@@ -200,11 +201,18 @@ struct RecurringRunTimers {
 #[derive(Debug, Resource, Default)]
 struct ActiveCollisionEvents {
     active_by_statement: HashSet<usize>,
+    transition_armed_by_statement: HashSet<usize>,
 }
 
 #[derive(Debug, Resource, Default)]
 struct SceneMaxPhysicsContacts {
     active_pairs: HashSet<(String, String)>,
+}
+
+#[derive(Debug, Resource, Default)]
+struct SceneMaxRuntimeAssets {
+    placeholder_mesh: Option<Handle<Mesh>>,
+    placeholder_material: Option<Handle<StandardMaterial>>,
 }
 
 #[derive(Debug)]
@@ -688,8 +696,27 @@ fn spawn_scenemax_program(
                     "spawned placeholder for unsupported SceneMax model format"
                 );
             }
-            Err(error) => {
-                tracing::error!(name, resource, %error, "failed to resolve SceneMax model");
+            Err(scenemax_assets::AssetLookupError::ModelNotFound(_)) => {
+                let transform = transform_from_options(options, None);
+                let entity_id = spawn_unsupported_model_placeholder(
+                    commands,
+                    meshes,
+                    materials,
+                    name,
+                    resource,
+                    options,
+                    transform,
+                    &visibility_by_target,
+                );
+                insert_physics_components(commands, entity_id, name, resource, options, &transform);
+                entities_by_name.insert(name.clone(), entity_id);
+                transforms_by_name.insert(name.clone(), transform);
+                spawned_any = true;
+                tracing::warn!(
+                    name,
+                    resource,
+                    "spawned placeholder for unresolved SceneMax model resource"
+                );
             }
         }
     }
@@ -1956,6 +1983,7 @@ fn apply_key_events(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
     startup_program: Res<SceneMaxStartupProgram>,
+    runtime_assets: Res<SceneMaxRuntimeAssets>,
     mut vars: ResMut<SceneMaxVars>,
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
@@ -2016,6 +2044,7 @@ fn apply_key_events(
             &functions_by_name,
             &guards_by_name,
             &mut queued_animations,
+            &runtime_assets,
             Some(&mut delayed_actions),
             continuous_delta_seconds,
             &mut commands,
@@ -2080,6 +2109,7 @@ fn collision_event_entity_name(
 fn apply_when_events(
     time: Res<Time>,
     startup_program: Res<SceneMaxStartupProgram>,
+    runtime_assets: Res<SceneMaxRuntimeAssets>,
     mut vars: ResMut<SceneMaxVars>,
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
@@ -2130,6 +2160,35 @@ fn apply_when_events(
             &physics_contacts,
             &object_pools,
         );
+        if let Some(after_condition) = &event.after_condition {
+            let after_matches = when_condition_matches(
+                after_condition,
+                &vars,
+                &guards_by_name,
+                Some(&transforms_by_name),
+                &physics_contacts,
+                &object_pools,
+            );
+            if !guard_matches {
+                active_collisions
+                    .transition_armed_by_statement
+                    .remove(&statement_index);
+                continue;
+            }
+            if after_matches {
+                active_collisions
+                    .transition_armed_by_statement
+                    .insert(statement_index);
+                continue;
+            }
+            if !condition_matches_now
+                || !active_collisions
+                    .transition_armed_by_statement
+                    .remove(&statement_index)
+            {
+                continue;
+            }
+        }
         if matches!(event.condition, Condition::Collision { .. }) {
             if !guard_matches || !condition_matches_now {
                 active_collisions
@@ -2157,6 +2216,7 @@ fn apply_when_events(
             &functions_by_name,
             &guards_by_name,
             &mut queued_animations,
+            &runtime_assets,
             Some(&mut delayed_actions),
             Some(time.delta_secs()),
             &mut commands,
@@ -2168,6 +2228,7 @@ fn apply_when_events(
 fn update_recurring_runs(
     time: Res<Time>,
     startup_program: Res<SceneMaxStartupProgram>,
+    runtime_assets: Res<SceneMaxRuntimeAssets>,
     mut vars: ResMut<SceneMaxVars>,
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
@@ -2243,6 +2304,7 @@ fn update_recurring_runs(
             &functions_by_name,
             &guards_by_name,
             &mut queued_animations,
+            &runtime_assets,
             Some(&mut delayed_actions),
             None,
             &mut commands,
@@ -2255,6 +2317,7 @@ fn update_recurring_runs(
 fn update_delayed_actions(
     time: Res<Time>,
     startup_program: Res<SceneMaxStartupProgram>,
+    runtime_assets: Res<SceneMaxRuntimeAssets>,
     mut vars: ResMut<SceneMaxVars>,
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
@@ -2316,6 +2379,7 @@ fn update_delayed_actions(
             &functions_by_name,
             &guards_by_name,
             &mut queued_animations,
+            &runtime_assets,
             Some(&mut delayed_actions),
             None,
             &mut commands,
@@ -2333,6 +2397,7 @@ fn apply_action_sequence(
     functions_by_name: &HashMap<String, FunctionRuntime>,
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
+    runtime_assets: &SceneMaxRuntimeAssets,
     mut delayed_actions: Option<&mut DelayedActionQueue>,
     continuous_delta_seconds: Option<f32>,
     commands: &mut Commands,
@@ -2352,6 +2417,10 @@ fn apply_action_sequence(
 ) -> bool {
     for (index, action) in actions.iter().enumerate() {
         match action {
+            Statement::NoOp { .. } => {}
+            Statement::Unsupported { text } => {
+                tracing::debug!(text, "skipping unsupported SceneMax runtime action");
+            }
             Statement::Return => return true,
             Statement::Wait { seconds } => {
                 if let Some(delayed_actions) = delayed_actions.as_deref_mut() {
@@ -2365,8 +2434,19 @@ fn apply_action_sequence(
                 }
                 break;
             }
+            Statement::WaitUntil { condition } => {
+                if !condition_matches(condition, vars, guards_by_name, Some(transforms_by_name)) {
+                    if let Some(delayed_actions) = delayed_actions.as_deref_mut() {
+                        delayed_actions.actions.push(DelayedActions {
+                            remaining_seconds: LOOP_CONTINUE_DELAY_SECONDS,
+                            actions: actions[index..].to_vec(),
+                        });
+                    }
+                    break;
+                }
+            }
             Statement::Async { actions } => {
-                if apply_action_sequence(
+                let _ = apply_action_sequence(
                     actions,
                     transforms_by_name,
                     vars,
@@ -2375,13 +2455,12 @@ fn apply_action_sequence(
                     functions_by_name,
                     guards_by_name,
                     queued_animations,
+                    runtime_assets,
                     delayed_actions.as_deref_mut(),
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
-                ) {
-                    return true;
-                }
+                );
             }
             Statement::Repeat { times, actions } => {
                 let repeated_actions = repeat_actions(actions, *times);
@@ -2394,6 +2473,7 @@ fn apply_action_sequence(
                     functions_by_name,
                     guards_by_name,
                     queued_animations,
+                    runtime_assets,
                     delayed_actions.as_deref_mut(),
                     continuous_delta_seconds,
                     commands,
@@ -2417,6 +2497,7 @@ fn apply_action_sequence(
                     functions_by_name,
                     guards_by_name,
                     queued_animations,
+                    runtime_assets,
                     delayed_actions.as_deref_mut(),
                     continuous_delta_seconds,
                     commands,
@@ -2458,6 +2539,7 @@ fn apply_action_sequence(
                     functions_by_name,
                     guards_by_name,
                     queued_animations,
+                    runtime_assets,
                     delayed_actions.as_deref_mut(),
                     continuous_delta_seconds,
                     commands,
@@ -2477,6 +2559,7 @@ fn apply_action_sequence(
                         functions_by_name,
                         guards_by_name,
                         queued_animations,
+                        runtime_assets,
                         delayed_actions.as_deref_mut(),
                         continuous_delta_seconds,
                         commands,
@@ -2496,6 +2579,7 @@ fn apply_action_sequence(
                     functions_by_name,
                     guards_by_name,
                     queued_animations,
+                    runtime_assets,
                     delayed_actions.as_deref_mut(),
                     continuous_delta_seconds,
                     commands,
@@ -2523,6 +2607,7 @@ fn apply_action_sequence(
                 functions_by_name,
                 guards_by_name,
                 queued_animations,
+                runtime_assets,
                 delayed_actions.as_deref_mut(),
                 continuous_delta_seconds,
                 commands,
@@ -2537,6 +2622,86 @@ fn estimated_animation_seconds(animation: &AnimationStatement) -> f32 {
     (0.65 / animation.speed.max(0.1)).clamp(0.15, 1.2)
 }
 
+fn apply_runtime_model_decl(
+    name: &str,
+    resource: &str,
+    options: &EntityOptions,
+    transforms_by_name: &mut HashMap<String, Transform>,
+    runtime_assets: &SceneMaxRuntimeAssets,
+    commands: &mut Commands,
+    scene_entities: &mut ParamSet<(
+        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
+            Option<&mut Visibility>,
+            Option<&SceneMaxCharacterController>,
+            Option<&mut SceneMaxCharacterMotor>,
+        )>,
+    )>,
+) {
+    let transform = primitive_transform_from_options(options);
+    for (entity, scene_entity, mut existing_transform, _, _, visibility, _, _) in
+        &mut scene_entities.p1()
+    {
+        if scene_entity.name != name {
+            continue;
+        }
+        *existing_transform = transform;
+        if let Some(mut visibility) = visibility {
+            *visibility = if options.hidden {
+                Visibility::Hidden
+            } else {
+                Visibility::Inherited
+            };
+        } else {
+            commands.entity(entity).insert(if options.hidden {
+                Visibility::Hidden
+            } else {
+                Visibility::Inherited
+            });
+        }
+        transforms_by_name.insert(name.to_owned(), transform);
+        tracing::debug!(
+            name,
+            resource,
+            "updated runtime SceneMax placeholder entity"
+        );
+        return;
+    }
+
+    let visibility = if options.hidden {
+        Visibility::Hidden
+    } else {
+        Visibility::Inherited
+    };
+    let mut entity = commands.spawn((
+        SceneMaxEntity {
+            name: name.to_owned(),
+            runtime_name: format!("{name}@runtime"),
+        },
+        transform,
+        visibility,
+    ));
+    if let (Some(mesh), Some(material)) = (
+        runtime_assets.placeholder_mesh.as_ref(),
+        runtime_assets.placeholder_material.as_ref(),
+    ) {
+        entity.insert((Mesh3d(mesh.clone()), MeshMaterial3d(material.clone())));
+    }
+    let entity_id = entity.id();
+    insert_physics_components(commands, entity_id, name, resource, options, &transform);
+    transforms_by_name.insert(name.to_owned(), transform);
+    tracing::info!(
+        name,
+        resource,
+        "spawned runtime SceneMax placeholder entity"
+    );
+}
+
 fn apply_key_action(
     action: &Statement,
     transforms_by_name: &mut HashMap<String, Transform>,
@@ -2546,6 +2711,7 @@ fn apply_key_action(
     functions_by_name: &HashMap<String, FunctionRuntime>,
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
+    runtime_assets: &SceneMaxRuntimeAssets,
     delayed_actions: Option<&mut DelayedActionQueue>,
     continuous_delta_seconds: Option<f32>,
     commands: &mut Commands,
@@ -2563,6 +2729,30 @@ fn apply_key_action(
         )>,
     )>,
 ) {
+    if matches!(action, Statement::NoOp { .. }) {
+        return;
+    }
+    if let Statement::Unsupported { text } = action {
+        tracing::debug!(text, "skipping unsupported SceneMax runtime action");
+        return;
+    }
+    if let Statement::ModelDecl {
+        name,
+        resource,
+        options,
+    } = action
+    {
+        apply_runtime_model_decl(
+            name,
+            resource,
+            options,
+            transforms_by_name,
+            runtime_assets,
+            commands,
+            scene_entities,
+        );
+        return;
+    }
     if let Statement::Assignment(assignment) = action {
         if let AssignmentValue::PoolAcquire { pool } = &assignment.value {
             let Some(member) = acquire_pool_member(pool, object_pools) else {
@@ -2657,6 +2847,7 @@ fn apply_key_action(
             functions_by_name,
             guards_by_name,
             queued_animations,
+            runtime_assets,
             delayed_actions,
             continuous_delta_seconds,
             commands,
@@ -2694,6 +2885,7 @@ fn apply_key_action(
                 functions_by_name,
                 guards_by_name,
                 queued_animations,
+                runtime_assets,
                 None,
                 continuous_delta_seconds,
                 commands,
@@ -2937,6 +3129,7 @@ fn apply_function_by_name(
     functions_by_name: &HashMap<String, FunctionRuntime>,
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
+    runtime_assets: &SceneMaxRuntimeAssets,
     delayed_actions: Option<&mut DelayedActionQueue>,
     continuous_delta_seconds: Option<f32>,
     commands: &mut Commands,
@@ -2987,6 +3180,7 @@ fn apply_function_by_name(
         functions_by_name,
         guards_by_name,
         queued_animations,
+        runtime_assets,
         delayed_actions,
         continuous_delta_seconds,
         commands,
@@ -3153,6 +3347,9 @@ fn substitute_statement(statement: &Statement, bindings: &HashMap<String, String
             condition: substitute_condition(condition, bindings),
             actions: substitute_statements(actions, bindings),
         },
+        Statement::WaitUntil { condition } => Statement::WaitUntil {
+            condition: substitute_condition(condition, bindings),
+        },
         Statement::LoopContinue { condition, actions } => Statement::LoopContinue {
             condition: substitute_condition(condition, bindings),
             actions: substitute_statements(actions, bindings),
@@ -3278,6 +3475,15 @@ fn substitute_condition(condition: &Condition, bindings: &HashMap<String, String
             name: substitute_path(name, bindings),
             operator: *operator,
             value: substitute_assignment_value(value, bindings),
+        },
+        Condition::CompareValue {
+            left,
+            operator,
+            right,
+        } => Condition::CompareValue {
+            left: substitute_assignment_value(left, bindings),
+            operator: *operator,
+            right: substitute_assignment_value(right, bindings),
         },
         Condition::Truthy { name } => Condition::Truthy {
             name: substitute_path(name, bindings),
@@ -3920,6 +4126,24 @@ fn condition_matches(
                 return false;
             };
             let left = resolve_symbol_value(name, vars, transforms_by_name).unwrap_or_default();
+            match operator {
+                ComparisonOperator::Greater => left > right,
+                ComparisonOperator::GreaterOrEqual => left >= right,
+                ComparisonOperator::Less => left < right,
+                ComparisonOperator::LessOrEqual => left <= right,
+            }
+        }
+        Condition::CompareValue {
+            left,
+            operator,
+            right,
+        } => {
+            let (Some(left), Some(right)) = (
+                resolve_assignment_value(left, vars, transforms_by_name),
+                resolve_assignment_value(right, vars, transforms_by_name),
+            ) else {
+                return false;
+            };
             match operator {
                 ComparisonOperator::Greater => left > right,
                 ComparisonOperator::GreaterOrEqual => left >= right,
@@ -4848,7 +5072,16 @@ fn set_active_animation_speeds(player: &mut AnimationPlayer, speed: f32) {
     }
 }
 
-fn setup_camera_and_lights(mut commands: Commands, startup_program: Res<SceneMaxStartupProgram>) {
+fn setup_camera_and_lights(
+    mut commands: Commands,
+    startup_program: Res<SceneMaxStartupProgram>,
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    runtime_assets.placeholder_mesh = Some(meshes.add(Cuboid::new(1.0, 1.0, 1.0)));
+    runtime_assets.placeholder_material = Some(materials.add(Color::srgb_u8(185, 150, 65)));
+
     commands.insert_resource(GlobalAmbientLight {
         color: Color::WHITE,
         brightness: 800.0,
@@ -5046,6 +5279,19 @@ mod tests {
             ),
             Some(1.0)
         );
+        assert!(condition_matches(
+            &Condition::CompareValue {
+                left: AssignmentValue::Distance {
+                    left: "player1".to_owned(),
+                    right: "player2".to_owned(),
+                },
+                operator: ComparisonOperator::LessOrEqual,
+                right: AssignmentValue::Number(5.0),
+            },
+            &vars,
+            &HashMap::new(),
+            Some(&transforms)
+        ));
     }
 
     #[test]

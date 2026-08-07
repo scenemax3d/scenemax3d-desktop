@@ -89,6 +89,9 @@ pub enum Statement {
     Wait {
         seconds: f32,
     },
+    WaitUntil {
+        condition: Condition,
+    },
     Return,
     Assignment(AssignmentStatement),
     FightingCamera(FightingCameraStatement),
@@ -118,6 +121,9 @@ pub enum Statement {
     },
     AddCode {
         path: String,
+    },
+    NoOp {
+        text: String,
     },
     Unsupported {
         text: String,
@@ -318,6 +324,7 @@ pub enum KeyTrigger {
 #[derive(Debug, Clone, PartialEq)]
 pub struct WhenEventStatement {
     pub condition: Condition,
+    pub after_condition: Option<Condition>,
     pub guard: Option<Condition>,
     pub actions: Vec<Statement>,
 }
@@ -352,6 +359,11 @@ pub enum Condition {
         name: String,
         operator: ComparisonOperator,
         value: AssignmentValue,
+    },
+    CompareValue {
+        left: AssignmentValue,
+        operator: ComparisonOperator,
+        right: AssignmentValue,
     },
     Truthy {
         name: String,
@@ -670,9 +682,7 @@ fn parse_key_event_block(
 
         if should_parse_key_action_line(line) {
             let action = parse_statement(line)?;
-            if !matches!(action, Statement::Unsupported { .. }) {
-                actions.push(action);
-            }
+            actions.push(action);
         }
 
         if opens_runtime_block(line) {
@@ -700,7 +710,7 @@ fn parse_when_event_block(
     if line.to_ascii_lowercase().starts_with("when key ") {
         return Ok(None);
     }
-    let Some(condition) = parse_when_event_header(line)? else {
+    let Some((condition, after_condition)) = parse_when_event_header(line)? else {
         return Ok(None);
     };
 
@@ -708,6 +718,7 @@ fn parse_when_event_block(
     Ok(Some((
         WhenEventStatement {
             condition,
+            after_condition,
             guard: None,
             actions,
         },
@@ -773,13 +784,26 @@ fn parse_guard_def(line: &str) -> Result<Option<(String, Condition)>, ParseError
     Ok(Some((name.to_owned(), condition)))
 }
 
-fn parse_when_event_header(line: &str) -> Result<Option<Condition>, ParseError> {
+fn parse_when_event_header(
+    line: &str,
+) -> Result<Option<(Condition, Option<Condition>)>, ParseError> {
     let lower = line.to_ascii_lowercase();
     if !lower.starts_with("when ") || !(lower.ends_with(" do") || lower.ends_with(" do async")) {
         return Ok(None);
     }
     let condition_text = line["when ".len()..line.len() - trailing_do_len(&lower)].trim();
-    parse_condition(condition_text)
+    let (condition_text, after_text) = split_once_case_insensitive(condition_text, " after ")
+        .map(|(condition, after)| (condition.trim(), Some(after.trim())))
+        .unwrap_or((condition_text, None));
+    let Some(condition) = parse_condition(condition_text)? else {
+        return Ok(None);
+    };
+    let after_condition = if let Some(after_text) = after_text {
+        parse_condition(after_text)?
+    } else {
+        None
+    };
+    Ok(Some((condition, after_condition)))
 }
 
 fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
@@ -850,6 +874,13 @@ fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
                 name,
                 operator,
                 value,
+            }));
+        }
+        if let Some((left, right)) = parse_expression_comparison_values(text, operator_text)? {
+            return Ok(Some(Condition::CompareValue {
+                left,
+                operator,
+                right,
             }));
         }
     }
@@ -1099,9 +1130,7 @@ fn parse_action_block(
 
         if should_parse_key_action_line(line) {
             let action = parse_statement(line)?;
-            if !matches!(action, Statement::Unsupported { .. }) {
-                actions.push(action);
-            }
+            actions.push(action);
         }
 
         if opens_runtime_block(line) {
@@ -1197,12 +1226,7 @@ fn parse_guarded_actions_after(
         return Ok((Vec::new(), skip_control_block(logical_lines, cursor)));
     }
     let action = parse_statement(line)?;
-    let actions = if matches!(action, Statement::Unsupported { .. }) {
-        Vec::new()
-    } else {
-        vec![action]
-    };
-    Ok((actions, cursor + 1))
+    Ok((vec![action], cursor + 1))
 }
 
 fn parse_if_header(line: &str) -> Result<Option<Condition>, ParseError> {
@@ -1410,6 +1434,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(Statement::WaitForKey { key });
     }
 
+    if let Some(condition) = parse_wait_until(line)? {
+        return Ok(Statement::WaitUntil { condition });
+    }
+
     if let Some(seconds) = parse_wait(line) {
         return Ok(Statement::Wait { seconds });
     }
@@ -1484,6 +1512,12 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
 
     if let Some(throw_at) = parse_throw_at(line)? {
         return Ok(Statement::PhysicsThrowAt(throw_at));
+    }
+
+    if is_runtime_noop_command(line) {
+        return Ok(Statement::NoOp {
+            text: line.to_owned(),
+        });
     }
 
     if is_unsupported_dotted_runtime_command(line) {
@@ -1904,6 +1938,14 @@ fn parse_wait_for_key(line: &str) -> Option<String> {
     } else {
         Some(key.to_ascii_lowercase())
     }
+}
+
+fn parse_wait_until(line: &str) -> Result<Option<Condition>, ParseError> {
+    let lower = line.to_ascii_lowercase();
+    if !lower.starts_with("wait for ") || lower.starts_with("wait for key ") {
+        return Ok(None);
+    }
+    parse_condition(line["wait for ".len()..].trim())
 }
 
 fn parse_wait(line: &str) -> Option<f32> {
@@ -2647,6 +2689,36 @@ fn is_unsupported_dotted_runtime_command(line: &str) -> bool {
         || lower.starts_with("clear ")
 }
 
+fn is_runtime_noop_command(line: &str) -> bool {
+    let line = line.trim();
+    let lower = line.to_ascii_lowercase();
+    if lower.starts_with("audio.play ") || lower.starts_with("audio.stop ") {
+        return true;
+    }
+    if lower.starts_with("camera.chase ") || lower == "camera.chase stop" {
+        return true;
+    }
+    if lower == "anim.stop"
+        || lower.starts_with("motion.apply ")
+        || lower.starts_with("anim.event(")
+        || lower.starts_with("motion.event(")
+    {
+        return true;
+    }
+
+    let Some((_target, rest)) = split_dot_command_rest(line) else {
+        return false;
+    };
+    let rest = rest.trim().to_ascii_lowercase();
+    rest.starts_with("play pos")
+        || rest.starts_with("play : target")
+        || rest.starts_with("apply ")
+        || rest == "stop"
+        || rest.starts_with("stop ")
+        || rest == "clear"
+        || rest.starts_with("clear ")
+}
+
 fn parse_speed(text: &str) -> Result<f32, ParseError> {
     let lower = text.to_ascii_lowercase();
     let Some(index) = lower.find("speed of") else {
@@ -2732,13 +2804,9 @@ fn normalize_resource(resource: &str) -> String {
     parts.next().unwrap_or(resource.trim()).trim().to_owned()
 }
 
-fn is_deferred_or_non_model_resource(raw_resource: &str, resource: &str) -> bool {
-    let raw_lower = raw_resource.to_ascii_lowercase();
+fn is_deferred_or_non_model_resource(_raw_resource: &str, resource: &str) -> bool {
     let resource_lower = resource.to_ascii_lowercase();
-    raw_lower.contains(" sprite")
-        || resource_lower.starts_with("videos.")
-        || resource_lower.starts_with("cinematic.camera.")
-        || resource_lower.starts_with("object.pool")
+    resource_lower.starts_with("object.pool")
 }
 
 fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseError> {
@@ -4090,6 +4158,7 @@ mod tests {
                     name: "move_forward".to_owned(),
                     value: 1.0,
                 },
+                after_condition: None,
                 guard: None,
                 actions: vec![
                     Statement::Animate(AnimationStatement {
@@ -4124,6 +4193,7 @@ mod tests {
                     name: "player1.data.attack_legs".to_owned(),
                     value: 1.0,
                 },
+                after_condition: None,
                 guard: None,
                 actions: vec![Statement::Animate(AnimationStatement {
                     target: "player1".to_owned(),
@@ -4153,6 +4223,7 @@ mod tests {
                     ],
                     target: "player1_head_collider".to_owned(),
                 },
+                after_condition: None,
                 guard: Some(Condition::Alias("player2_can_hit".to_owned())),
                 actions: vec![Statement::Assignment(AssignmentStatement {
                     name: "player2.data.hand_attack_hit".to_owned(),
@@ -4178,6 +4249,7 @@ mod tests {
                     },
                     right: AssignmentValue::Number(0.0),
                 },
+                after_condition: None,
                 guard: None,
                 actions: vec![Statement::Animate(AnimationStatement {
                     target: "player1".to_owned(),
@@ -4187,6 +4259,96 @@ mod tests {
                     blocking: true,
                 })],
             })]
+        );
+    }
+
+    #[test]
+    fn parses_computed_comparison_conditions() {
+        let program = parse_program(
+            "when distance(player1, player2) < 5 do\n  player2.CrossPunch\nend do\nopponent_ai = {\n  if (rnd(6) >= 3) {\n    player2.HighKick\n  }\n}",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::WhenEvent(WhenEventStatement {
+                    condition: Condition::CompareValue {
+                        left: AssignmentValue::Distance {
+                            left: "player1".to_owned(),
+                            right: "player2".to_owned(),
+                        },
+                        operator: ComparisonOperator::Less,
+                        right: AssignmentValue::Number(5.0),
+                    },
+                    after_condition: None,
+                    guard: None,
+                    actions: vec![Statement::Animate(AnimationStatement {
+                        target: "player2".to_owned(),
+                        clip: "CrossPunch".to_owned(),
+                        speed: 1.0,
+                        looped: false,
+                        blocking: true,
+                    })],
+                }),
+                Statement::FunctionDef(FunctionDefStatement {
+                    name: "opponent_ai".to_owned(),
+                    params: Vec::new(),
+                    guard: None,
+                    actions: vec![Statement::If(IfStatement {
+                        condition: Condition::CompareValue {
+                            left: AssignmentValue::RandomInt {
+                                max: Box::new(AssignmentValue::Number(6.0)),
+                            },
+                            operator: ComparisonOperator::GreaterOrEqual,
+                            right: AssignmentValue::Number(3.0),
+                        },
+                        actions: vec![Statement::Animate(AnimationStatement {
+                            target: "player2".to_owned(),
+                            clip: "HighKick".to_owned(),
+                            speed: 1.0,
+                            looped: false,
+                            blocking: true,
+                        })],
+                        else_actions: Vec::new(),
+                    })],
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_transition_when_and_wait_until() {
+        let program = parse_program(
+            "when op_hit==0 after op_hit==1 do\n  life1=INITIAL_PLAYER_STRENGTH\nend do\nwait for camera_mode==CAMERA_MODE_DEFAULT",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::WhenEvent(WhenEventStatement {
+                    condition: Condition::EqualsNumber {
+                        name: "op_hit".to_owned(),
+                        value: 0.0,
+                    },
+                    after_condition: Some(Condition::EqualsNumber {
+                        name: "op_hit".to_owned(),
+                        value: 1.0,
+                    }),
+                    guard: None,
+                    actions: vec![Statement::Assignment(AssignmentStatement {
+                        name: "life1".to_owned(),
+                        value: AssignmentValue::Symbol("INITIAL_PLAYER_STRENGTH".to_owned()),
+                    })],
+                }),
+                Statement::WaitUntil {
+                    condition: Condition::EqualsSymbol {
+                        name: "camera_mode".to_owned(),
+                        value: "CAMERA_MODE_DEFAULT".to_owned(),
+                    },
+                },
+            ]
         );
     }
 
@@ -4385,6 +4547,50 @@ mod tests {
     }
 
     #[test]
+    fn preserves_runtime_noop_commands_in_action_flow() {
+        let program = parse_program(
+            "fx_test = {\n  audio.play \"kick1\"\n  laser_effect.play pos (player1)\n  fight_cam.apply hit_fx : duration 0.35\n  axe_throw_cam.play : target axe, duration 1.5\n  camera.chase player1\n  camera.chase stop\n  player2.HighKick at speed of 2.4\n}",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::FunctionDef(FunctionDefStatement {
+                name: "fx_test".to_owned(),
+                params: Vec::new(),
+                guard: None,
+                actions: vec![
+                    Statement::NoOp {
+                        text: "audio.play \"kick1\"".to_owned(),
+                    },
+                    Statement::NoOp {
+                        text: "laser_effect.play pos (player1)".to_owned(),
+                    },
+                    Statement::NoOp {
+                        text: "fight_cam.apply hit_fx : duration 0.35".to_owned(),
+                    },
+                    Statement::NoOp {
+                        text: "axe_throw_cam.play : target axe, duration 1.5".to_owned(),
+                    },
+                    Statement::NoOp {
+                        text: "camera.chase player1".to_owned(),
+                    },
+                    Statement::NoOp {
+                        text: "camera.chase stop".to_owned(),
+                    },
+                    Statement::Animate(AnimationStatement {
+                        target: "player2".to_owned(),
+                        clip: "HighKick".to_owned(),
+                        speed: 2.4,
+                        looped: false,
+                        blocking: true,
+                    }),
+                ],
+            })]
+        );
+    }
+
+    #[test]
     fn function_block_handles_else_lines_without_swallowing_next_statement() {
         let program = parse_program(
             "set_camera_on_player = {\n  if(enemy_ko==1) {\n    camera.system = crystal_hunt_cam\n  } else {\n    camera.system = fight_cam\n  }\n}\nrun set_camera_on_player",
@@ -4420,7 +4626,7 @@ mod tests {
     }
 
     #[test]
-    fn does_not_extract_statements_inside_deferred_blocks() {
+    fn preserves_runtime_declarations_inside_function_blocks() {
         let program =
             parse_program("enemy_knockout = {\nwin1 => you_win1 sprite : scale 3\n}\nplayer1.show")
                 .unwrap();
@@ -4432,7 +4638,18 @@ mod tests {
                     name: "enemy_knockout".to_owned(),
                     params: Vec::new(),
                     guard: None,
-                    actions: Vec::new(),
+                    actions: vec![Statement::ModelDecl {
+                        name: "win1".to_owned(),
+                        resource: "you_win1".to_owned(),
+                        options: EntityOptions {
+                            scale: Some(SceneMaxVec3 {
+                                x: 3.0,
+                                y: 3.0,
+                                z: 3.0,
+                            }),
+                            ..Default::default()
+                        },
+                    }],
                 }),
                 Statement::Visibility {
                     target: "player1".to_owned(),
@@ -4443,18 +4660,38 @@ mod tests {
     }
 
     #[test]
-    fn leaves_non_model_entity_systems_unsupported_for_now() {
+    fn parses_non_gltf_entity_systems_as_placeholder_declarations() {
         let program = parse_program(
             "intro_camera=>cinematic.camera.cinematic_rig_1\nthrow_text => throw_text sprite : hidden\nvid=>videos.foggy_day1\nrocks => Object.Pool(create_rock, size 5)",
         )
         .unwrap();
 
-        assert!(
-            program
-                .statements
-                .iter()
-                .take(3)
-                .all(|statement| matches!(statement, Statement::Unsupported { .. }))
+        assert_eq!(
+            program.statements[0],
+            Statement::ModelDecl {
+                name: "intro_camera".to_owned(),
+                resource: "cinematic.camera.cinematic_rig_1".to_owned(),
+                options: EntityOptions::default(),
+            }
+        );
+        assert_eq!(
+            program.statements[1],
+            Statement::ModelDecl {
+                name: "throw_text".to_owned(),
+                resource: "throw_text".to_owned(),
+                options: EntityOptions {
+                    hidden: true,
+                    ..Default::default()
+                },
+            }
+        );
+        assert_eq!(
+            program.statements[2],
+            Statement::ModelDecl {
+                name: "vid".to_owned(),
+                resource: "videos.foggy_day1".to_owned(),
+                options: EntityOptions::default(),
+            }
         );
         assert_eq!(
             program.statements[3],
