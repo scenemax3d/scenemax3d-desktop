@@ -134,6 +134,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_avian_collision_contacts,
                 apply_key_events,
                 update_virtual_colliders,
+                update_current_animation_vars,
                 apply_when_events,
                 apply_builtin_navigation_controls,
                 update_timed_turns,
@@ -321,6 +322,9 @@ struct SceneMaxGltf {
 struct CurrentAnimation {
     clip: String,
     looped: bool,
+    speed: f32,
+    elapsed_seconds: f32,
+    duration_seconds: f32,
 }
 
 #[derive(Debug, Component)]
@@ -397,6 +401,7 @@ const DEFAULT_CHARACTER_VISUAL_DROP: f32 = 1.25;
 const DEFAULT_STAGE_SUPPORT_HALF_SIZE: f32 = 160.0;
 const CHARACTER_INPUT_TTL_SECONDS: f32 = 0.12;
 const CHARACTER_JUMP_FEED_SECONDS: f32 = 0.2;
+const DEFAULT_ANIMATION_CLIP_SECONDS: f32 = 0.65;
 const LOOP_CONTINUE_DELAY_SECONDS: f32 = 0.001;
 const PHYSICS_LAYER_WORLD: u32 = 1 << 0;
 const PHYSICS_LAYER_CHARACTER: u32 = 1 << 1;
@@ -2795,7 +2800,22 @@ fn apply_action_sequence(
 }
 
 fn estimated_animation_seconds(animation: &AnimationStatement) -> f32 {
-    (0.65 / animation.speed.max(0.1)).clamp(0.15, 1.2)
+    estimated_animation_seconds_from_speed(animation.speed)
+}
+
+fn estimated_animation_seconds_from_speed(speed: f32) -> f32 {
+    (DEFAULT_ANIMATION_CLIP_SECONDS / speed.max(0.1)).clamp(0.15, 1.2)
+}
+
+fn animation_clip_duration_seconds(
+    animation_clips: &Assets<AnimationClip>,
+    clip: &Handle<AnimationClip>,
+) -> f32 {
+    animation_clips
+        .get(clip)
+        .map(AnimationClip::duration)
+        .filter(|duration| *duration > 0.0)
+        .unwrap_or(DEFAULT_ANIMATION_CLIP_SECONDS)
 }
 
 fn apply_runtime_model_decl(
@@ -4491,10 +4511,20 @@ fn collision_condition_matches(
     let Some(transforms_by_name) = transforms_by_name else {
         return false;
     };
-    let Some(target_transform) = collision_owner_transform(target, transforms_by_name) else {
+    let target_exact = transforms_by_name.get(target).copied();
+    let Some(target_transform) =
+        target_exact.or_else(|| collision_owner_transform(target, transforms_by_name))
+    else {
         return false;
     };
     sources.iter().any(|source| {
+        let source_exact = transforms_by_name.get(source).copied();
+        if let (Some(source_transform), Some(target_transform)) = (source_exact, target_exact) {
+            return source_transform
+                .translation
+                .distance(target_transform.translation)
+                <= exact_collision_threshold(source, target);
+        }
         collision_owner_transform(source, transforms_by_name).is_some_and(|source_transform| {
             source_transform
                 .translation
@@ -4550,6 +4580,23 @@ fn collision_threshold(source: &str, target: &str) -> f32 {
         4.25
     } else {
         2.5
+    }
+}
+
+fn exact_collision_threshold(source: &str, target: &str) -> f32 {
+    collision_part_radius(source) + collision_part_radius(target)
+}
+
+fn collision_part_radius(reference: &str) -> f32 {
+    let lower = reference.to_ascii_lowercase();
+    if lower.contains("body") {
+        0.85
+    } else if lower.contains("head") {
+        0.65
+    } else if lower.contains("hand") || lower.contains("foot") {
+        0.55
+    } else {
+        1.25
     }
 }
 
@@ -5165,6 +5212,7 @@ fn play_pending_animations(
     children: Query<&Children>,
     animations_to_play: Query<(Entity, &AnimationToPlay)>,
     gltfs: Res<Assets<Gltf>>,
+    animation_clips: Res<Assets<AnimationClip>>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     mut players: Query<&mut AnimationPlayer>,
 ) {
@@ -5200,6 +5248,7 @@ fn play_pending_animations(
 
         let (graph, index) = AnimationGraph::from_clip(clip.clone());
         let graph_handle = graphs.add(graph);
+        let duration_seconds = animation_clip_duration_seconds(&animation_clips, clip);
 
         for child in animation_players {
             if let Ok(mut player) = players.get_mut(child) {
@@ -5217,7 +5266,34 @@ fn play_pending_animations(
         commands.entity(root).insert(CurrentAnimation {
             clip: animation_to_play.clip.clone(),
             looped: animation_to_play.looped,
+            speed: animation_to_play.speed.max(0.001),
+            elapsed_seconds: 0.0,
+            duration_seconds,
         });
+    }
+}
+
+fn update_current_animation_vars(
+    time: Res<Time>,
+    mut vars: ResMut<SceneMaxVars>,
+    mut animations: Query<(&SceneMaxEntity, &mut CurrentAnimation)>,
+) {
+    let delta = time.delta_secs();
+    for (entity, mut animation) in &mut animations {
+        let duration = animation.duration_seconds.max(0.001);
+        animation.elapsed_seconds += delta * animation.speed.max(0.001);
+        let elapsed = if animation.looped {
+            animation.elapsed_seconds % duration
+        } else {
+            animation.elapsed_seconds.min(duration)
+        };
+        let percent = ((elapsed / duration) * 100.0).clamp(0.0, 100.0);
+        vars.0
+            .insert(format!("{}.anim_percent", entity.name), percent);
+        vars.0.insert(
+            format!("{}.anim_finished", entity.name),
+            (!animation.looped && animation.elapsed_seconds >= duration) as u8 as f32,
+        );
     }
 }
 
@@ -5559,6 +5635,34 @@ mod tests {
     }
 
     #[test]
+    fn exact_collider_distance_takes_precedence_over_owner_fallback() {
+        let transforms = HashMap::from([
+            (
+                "player1".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+            ),
+            (
+                "player2".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 1.0)),
+            ),
+            (
+                "player1_head_collider".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 1.6, 0.0)),
+            ),
+            (
+                "player2_left_hand_collider".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 1.5, 3.0)),
+            ),
+        ]);
+
+        assert!(!collision_condition_matches(
+            &["player2_left_hand_collider".to_owned()],
+            "player1_head_collider",
+            Some(&transforms)
+        ));
+    }
+
+    #[test]
     fn matches_collision_condition_from_avian_contact_pair() {
         let contacts = SceneMaxPhysicsContacts {
             active_pairs: HashSet::from([normalized_collision_pair("player1", "player2")]),
@@ -5754,6 +5858,9 @@ mod tests {
         let current = CurrentAnimation {
             clip: "Run_Sword".to_owned(),
             looped: true,
+            speed: 1.0,
+            elapsed_seconds: 0.0,
+            duration_seconds: 0.65,
         };
 
         assert!(current.clip.eq_ignore_ascii_case("run_sword"));
