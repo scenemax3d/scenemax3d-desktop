@@ -6,7 +6,10 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+avian3d.workspace = true
 bevy.workspace = true
+bevy-tnua.workspace = true
+bevy-tnua-avian3d.workspace = true
 scenemax_assets = { path = "../assets" }
 scenemax_ir = { path = "../ir" }
 scenemax_multiplayer = { path = "../multiplayer" }
