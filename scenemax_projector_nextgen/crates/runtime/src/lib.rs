@@ -1806,7 +1806,13 @@ fn apply_startup_action(
 ) {
     match action {
         Statement::Assignment(assignment) => {
-            apply_assignment(assignment, vars, Some(transforms_by_name));
+            apply_assignment(
+                assignment,
+                vars,
+                Some(transforms_by_name),
+                guards_by_name,
+                None,
+            );
         }
         Statement::CameraSystemSelect { name } => select_camera_system(name, camera_system),
         Statement::CameraAttach(attach) => attach_camera(attach, object_pools, camera_system),
@@ -2680,8 +2686,14 @@ fn apply_action_sequence(
                 return ActionSequenceResult::Completed;
             }
             Statement::WaitValue { value } => {
-                let seconds = resolve_assignment_value(value, vars, Some(transforms_by_name))
-                    .unwrap_or_default();
+                let seconds = resolve_assignment_value_with_guards(
+                    value,
+                    vars,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                )
+                .unwrap_or_default();
                 let remaining = actions[index + 1..].to_vec();
                 if enqueue_delayed_actions(
                     delayed_actions.as_deref_mut(),
@@ -3149,7 +3161,13 @@ fn apply_key_action(
             }
             return ActionSequenceResult::Completed;
         }
-        let assigned_value = apply_assignment(assignment, vars, Some(transforms_by_name));
+        let assigned_value = apply_assignment(
+            assignment,
+            vars,
+            Some(transforms_by_name),
+            guards_by_name,
+            Some(collider_bounds),
+        );
         if assignment.name == "action"
             && assigned_value.is_some_and(|value| value.abs() <= f32::EPSILON)
         {
@@ -4378,9 +4396,10 @@ fn key_code_from_scenemax(key: &str) -> Option<KeyCode> {
 }
 
 fn apply_initial_assignments(program: &Program, vars: &mut SceneMaxVars) {
+    let guards_by_name = collect_guards_by_name(program);
     for statement in &program.statements {
         if let Statement::Assignment(assignment) = statement {
-            apply_assignment(assignment, vars, None);
+            apply_assignment(assignment, vars, None, &guards_by_name, None);
         }
     }
 }
@@ -4487,8 +4506,16 @@ fn apply_assignment(
     assignment: &scenemax_parser::AssignmentStatement,
     vars: &mut SceneMaxVars,
     transforms_by_name: Option<&HashMap<String, Transform>>,
+    guards_by_name: &HashMap<String, Condition>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> Option<f32> {
-    let Some(value) = resolve_assignment_value(&assignment.value, vars, transforms_by_name) else {
+    let Some(value) = resolve_assignment_value_with_guards(
+        &assignment.value,
+        vars,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    ) else {
         tracing::debug!(
             name = %assignment.name,
             value = ?assignment.value,
@@ -4505,18 +4532,35 @@ fn resolve_assignment_value(
     vars: &SceneMaxVars,
     transforms_by_name: Option<&HashMap<String, Transform>>,
 ) -> Option<f32> {
+    resolve_assignment_value_with_guards(value, vars, &HashMap::new(), transforms_by_name, None)
+}
+
+fn resolve_assignment_value_with_guards(
+    value: &AssignmentValue,
+    vars: &SceneMaxVars,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<f32> {
     match value {
         AssignmentValue::Number(value) => Some(*value),
         AssignmentValue::Symbol(name) => resolve_symbol_value(name, vars, transforms_by_name),
-        AssignmentValue::Condition(condition) => {
-            let guards_by_name = HashMap::new();
-            Some(
-                condition_matches(condition, vars, &guards_by_name, transforms_by_name, None) as u8
-                    as f32,
-            )
-        }
+        AssignmentValue::Condition(condition) => Some(condition_matches(
+            condition,
+            vars,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ) as u8 as f32),
         AssignmentValue::RandomInt { max } => {
-            let max = resolve_assignment_value(max, vars, transforms_by_name)?.max(1.0) as u32;
+            let max = resolve_assignment_value_with_guards(
+                max,
+                vars,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?
+            .max(1.0) as u32;
             Some((pseudo_random_u32() % max) as f32)
         }
         AssignmentValue::Distance { left, right } => {
@@ -4531,8 +4575,20 @@ fn resolve_assignment_value(
             operator,
             right,
         } => {
-            let left = resolve_assignment_value(left, vars, transforms_by_name)?;
-            let right = resolve_assignment_value(right, vars, transforms_by_name)?;
+            let left = resolve_assignment_value_with_guards(
+                left,
+                vars,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?;
+            let right = resolve_assignment_value_with_guards(
+                right,
+                vars,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?;
             Some(match operator {
                 ArithmeticOperator::Add => left + right,
                 ArithmeticOperator::Subtract => left - right,
@@ -4583,7 +4639,13 @@ fn condition_matches(
             operator,
             value,
         } => {
-            let Some(right) = resolve_assignment_value(value, vars, transforms_by_name) else {
+            let Some(right) = resolve_assignment_value_with_guards(
+                value,
+                vars,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            ) else {
                 return false;
             };
             let left = resolve_symbol_value(name, vars, transforms_by_name).unwrap_or_default();
@@ -4600,8 +4662,20 @@ fn condition_matches(
             right,
         } => {
             let (Some(left), Some(right)) = (
-                resolve_assignment_value(left, vars, transforms_by_name),
-                resolve_assignment_value(right, vars, transforms_by_name),
+                resolve_assignment_value_with_guards(
+                    left,
+                    vars,
+                    guards_by_name,
+                    transforms_by_name,
+                    collider_bounds,
+                ),
+                resolve_assignment_value_with_guards(
+                    right,
+                    vars,
+                    guards_by_name,
+                    transforms_by_name,
+                    collider_bounds,
+                ),
             ) else {
                 return false;
             };
@@ -4614,8 +4688,20 @@ fn condition_matches(
         }
         Condition::EqualsValue { left, right } => {
             let (Some(left), Some(right)) = (
-                resolve_assignment_value(left, vars, transforms_by_name),
-                resolve_assignment_value(right, vars, transforms_by_name),
+                resolve_assignment_value_with_guards(
+                    left,
+                    vars,
+                    guards_by_name,
+                    transforms_by_name,
+                    collider_bounds,
+                ),
+                resolve_assignment_value_with_guards(
+                    right,
+                    vars,
+                    guards_by_name,
+                    transforms_by_name,
+                    collider_bounds,
+                ),
             ) else {
                 return false;
             };
@@ -4623,8 +4709,20 @@ fn condition_matches(
         }
         Condition::NotEqualsValue { left, right } => {
             let (Some(left), Some(right)) = (
-                resolve_assignment_value(left, vars, transforms_by_name),
-                resolve_assignment_value(right, vars, transforms_by_name),
+                resolve_assignment_value_with_guards(
+                    left,
+                    vars,
+                    guards_by_name,
+                    transforms_by_name,
+                    collider_bounds,
+                ),
+                resolve_assignment_value_with_guards(
+                    right,
+                    vars,
+                    guards_by_name,
+                    transforms_by_name,
+                    collider_bounds,
+                ),
             ) else {
                 return false;
             };
@@ -5582,7 +5680,9 @@ fn play_pending_animations(
             continue;
         };
 
-        let Some(clip) = gltf.named_animations.get(animation_to_play.clip.as_str()) else {
+        let Some((resolved_clip_name, clip)) =
+            find_named_animation_clip(gltf.named_animations.iter(), &animation_to_play.clip)
+        else {
             if gltf.animations.is_empty() {
                 tracing::warn!(clip = %animation_to_play.clip, "GLTF model has no animation clips");
             } else {
@@ -5625,13 +5725,49 @@ fn play_pending_animations(
 
         commands.entity(root).remove::<AnimationToPlay>();
         commands.entity(root).insert(CurrentAnimation {
-            clip: animation_to_play.clip.clone(),
+            clip: resolved_clip_name.to_owned(),
             looped: animation_to_play.looped,
             speed: animation_to_play.speed.max(0.001),
             elapsed_seconds: 0.0,
             duration_seconds,
         });
     }
+}
+
+fn find_named_animation_clip<'a>(
+    named_animations: impl IntoIterator<Item = (&'a Box<str>, &'a Handle<AnimationClip>)>,
+    requested: &str,
+) -> Option<(&'a str, &'a Handle<AnimationClip>)> {
+    let requested_key = normalized_animation_name(requested);
+    let mut case_match = None;
+    let mut normalized_match = None;
+    for (name, clip) in named_animations {
+        let name = name.as_ref();
+        if name == requested {
+            return Some((name, clip));
+        }
+        if case_match.is_none() && name.eq_ignore_ascii_case(requested) {
+            case_match = Some((name, clip));
+        }
+        if normalized_match.is_none() && animation_name_matches(name, &requested_key) {
+            normalized_match = Some((name, clip));
+        }
+    }
+    case_match.or(normalized_match)
+}
+
+fn animation_name_matches(candidate: &str, requested_key: &str) -> bool {
+    normalized_animation_name(candidate) == requested_key
+        || candidate
+            .split(['|', ':', '/', '\\'])
+            .any(|part| normalized_animation_name(part) == requested_key)
+}
+
+fn normalized_animation_name(name: &str) -> String {
+    name.chars()
+        .filter(|value| value.is_ascii_alphanumeric())
+        .flat_map(|value| value.to_lowercase())
+        .collect()
 }
 
 fn update_current_animation_vars(
@@ -5861,6 +5997,38 @@ mod tests {
     }
 
     #[test]
+    fn evaluates_guard_alias_inside_condition_assignment() {
+        let program = scenemax_parser::parse_program(
+            "var @can_attack = enemy_ko==0 && op_hit==0\nvar should_attack = @can_attack",
+        )
+        .unwrap();
+        let mut vars = SceneMaxVars::default();
+        vars.0.insert("enemy_ko".to_owned(), 0.0);
+        vars.0.insert("op_hit".to_owned(), 0.0);
+
+        apply_initial_assignments(&program, &mut vars);
+
+        assert_eq!(vars.0.get("should_attack").copied(), Some(1.0));
+
+        vars.0.insert("op_hit".to_owned(), 1.0);
+        let guards = collect_guards_by_name(&program);
+        apply_assignment(
+            &scenemax_parser::AssignmentStatement {
+                name: "should_attack".to_owned(),
+                value: AssignmentValue::Condition(Box::new(Condition::Alias(
+                    "can_attack".to_owned(),
+                ))),
+            },
+            &mut vars,
+            None,
+            &guards,
+            None,
+        );
+
+        assert_eq!(vars.0.get("should_attack").copied(), Some(0.0));
+    }
+
+    #[test]
     fn evaluates_parameterized_function_guard() {
         let program = scenemax_parser::parse_program(
             "[p2.data.is_jumping == 0 && enemy_ko == 0]\nopponent_ai(p1, p2) = {\n  p2.look at (p1)\n}",
@@ -5928,6 +6096,30 @@ mod tests {
                 })),
                 &vars,
                 Some(&transforms),
+            ),
+            Some(1.0)
+        );
+        assert_eq!(
+            resolve_assignment_value_with_guards(
+                &AssignmentValue::Condition(Box::new(Condition::Or(vec![
+                    Condition::Compare {
+                        name: "life2".to_owned(),
+                        operator: ComparisonOperator::LessOrEqual,
+                        value: AssignmentValue::Number(6.0),
+                    },
+                    Condition::Compare {
+                        name: "life1".to_owned(),
+                        operator: ComparisonOperator::LessOrEqual,
+                        value: AssignmentValue::Number(4.0),
+                    },
+                ]))),
+                &SceneMaxVars(HashMap::from([
+                    ("life1".to_owned(), 10.0),
+                    ("life2".to_owned(), 5.0),
+                ])),
+                &HashMap::new(),
+                Some(&transforms),
+                None,
             ),
             Some(1.0)
         );
@@ -6379,6 +6571,18 @@ mod tests {
 
         assert!(current.clip.eq_ignore_ascii_case("run_sword"));
         assert!(current.looped);
+    }
+
+    #[test]
+    fn normalizes_scene_max_animation_names_for_gltf_lookup() {
+        assert_eq!(
+            normalized_animation_name("Fly_Kick"),
+            normalized_animation_name("fly kick")
+        );
+        assert!(animation_name_matches(
+            "mixamo.com|High-Kick",
+            &normalized_animation_name("HighKick")
+        ));
     }
 
     #[test]
