@@ -3150,9 +3150,7 @@ fn is_open_assignment_list(line: &str) -> bool {
 fn is_open_guard_definition(line: &str) -> bool {
     let trimmed = line.trim();
     strip_var_prefix(trimmed).starts_with('@')
-        && (unclosed_paren_count(trimmed) > 0
-            || trimmed.ends_with("&&")
-            || trimmed.ends_with("||"))
+        && (unclosed_paren_count(trimmed) > 0 || trimmed.ends_with("&&") || trimmed.ends_with("||"))
 }
 
 fn unclosed_paren_count(text: &str) -> usize {

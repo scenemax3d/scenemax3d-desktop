@@ -3443,13 +3443,15 @@ fn apply_key_action(
                 if scene_entity.name != "player1" {
                     continue;
                 }
-                let already_queued = queued_animations
-                    .get(&entity)
-                    .is_some_and(|(clip, looped)| *looped && clip.eq_ignore_ascii_case("idle2"));
+                let already_queued =
+                    queued_animations
+                        .get(&entity)
+                        .is_some_and(|(clip, looped)| {
+                            *looped && requested_animation_names_match(clip, "idle2")
+                        });
                 let already_current = queued_animations.get(&entity).is_none()
-                    && current_animation.is_some_and(|current| {
-                        current.looped && current.clip.eq_ignore_ascii_case("idle2")
-                    });
+                    && current_animation
+                        .is_some_and(|current| current_animation_matches(current, "idle2", true));
                 if already_queued || already_current {
                     continue;
                 }
@@ -3605,11 +3607,12 @@ fn apply_key_action(
                     queued_animations
                         .get(&entity)
                         .is_some_and(|(clip, looped)| {
-                            *looped == animation.looped && clip == &animation.clip
+                            *looped == animation.looped
+                                && requested_animation_names_match(clip, &animation.clip)
                         });
                 let already_current = queued_animations.get(&entity).is_none()
                     && current_animation.is_some_and(|current| {
-                        current.looped == animation.looped && current.clip == animation.clip
+                        current_animation_matches(current, &animation.clip, animation.looped)
                     });
                 if already_queued || already_current {
                     continue;
@@ -3709,6 +3712,7 @@ fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
+                let timed_move = timed_move_from_statement(movement, &transform);
                 if let (Some(character_controller), Some(character_motor)) =
                     (character_controller, character_motor.as_deref_mut())
                 {
@@ -3719,8 +3723,19 @@ fn apply_key_action(
                         &transform,
                         continuous_delta_seconds,
                     );
+                    if let Some(delta_seconds) = continuous_delta_seconds {
+                        transform.translation += timed_move.velocity * delta_seconds;
+                        sync_live_transform(
+                            transforms_by_name,
+                            object_pools,
+                            scope.as_deref(),
+                            &scene_entity.name,
+                            *transform,
+                        );
+                    } else {
+                        commands.entity(entity).insert(timed_move);
+                    }
                 } else {
-                    let timed_move = timed_move_from_statement(movement, &transform);
                     if let Some(delta_seconds) = continuous_delta_seconds {
                         transform.translation += timed_move.velocity * delta_seconds;
                         sync_live_transform(
@@ -4774,9 +4789,7 @@ fn queue_builtin_player_animation(
     clip: &str,
     looped: bool,
 ) {
-    if current_animation
-        .is_some_and(|current| current.looped == looped && current.clip.eq_ignore_ascii_case(clip))
-    {
+    if current_animation.is_some_and(|current| current_animation_matches(current, clip, looped)) {
         return;
     }
     let Some(gltf) = gltf else {
@@ -4788,6 +4801,19 @@ fn queue_builtin_player_animation(
         speed: 1.0,
         gltf: gltf.gltf.clone(),
     });
+}
+
+fn current_animation_matches(
+    current: &CurrentAnimation,
+    requested_clip: &str,
+    looped: bool,
+) -> bool {
+    current.looped == looped
+        && animation_name_matches(&current.clip, &normalized_animation_name(requested_clip))
+}
+
+fn requested_animation_names_match(left: &str, right: &str) -> bool {
+    normalized_animation_name(left) == normalized_animation_name(right)
 }
 
 fn pending_key_switch<'a>(
@@ -7636,17 +7662,18 @@ mod tests {
     }
 
     #[test]
-    fn detects_matching_current_animation_case_insensitively() {
+    fn detects_matching_current_animation_like_gltf_lookup() {
         let current = CurrentAnimation {
-            clip: "Run_Sword".to_owned(),
+            clip: "Armature|Run_Sword".to_owned(),
             looped: true,
             speed: 1.0,
             elapsed_seconds: 0.0,
             duration_seconds: 0.65,
         };
 
-        assert!(current.clip.eq_ignore_ascii_case("run_sword"));
-        assert!(current.looped);
+        assert!(current_animation_matches(&current, "run_sword", true));
+        assert!(!current_animation_matches(&current, "idle2", true));
+        assert!(requested_animation_names_match("idle2", "Idle 2"));
     }
 
     #[test]
