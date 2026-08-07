@@ -85,6 +85,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<ActiveCollisionEvents>()
         .init_resource::<ActiveActionControllers>()
         .init_resource::<SceneMaxPhysicsContacts>()
+        .init_resource::<SceneMaxColliderBounds>()
         .add_plugins(
             DefaultPlugins
                 .build()
@@ -220,6 +221,11 @@ struct ActiveCollisionEvents {
 #[derive(Debug, Resource, Default)]
 struct SceneMaxPhysicsContacts {
     active_pairs: HashSet<(String, String)>,
+}
+
+#[derive(Debug, Resource, Default)]
+struct SceneMaxColliderBounds {
+    radius_by_name: HashMap<String, f32>,
 }
 
 #[derive(Debug, Resource, Default)]
@@ -609,6 +615,7 @@ fn setup_scenemax_program(
     mut vars: ResMut<SceneMaxVars>,
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
+    mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut character_configs: ResMut<Assets<SceneMaxControlSchemeConfig>>,
@@ -626,6 +633,7 @@ fn setup_scenemax_program(
 
     object_pools.aliases.clear();
     object_pools.pools.clear();
+    collider_bounds.radius_by_name.clear();
     apply_initial_assignments(program, &mut vars);
     apply_camera_systems(program, &mut camera_system);
     spawn_scenemax_program(
@@ -636,6 +644,7 @@ fn setup_scenemax_program(
         &mut vars,
         &mut object_pools,
         &mut camera_system,
+        &mut collider_bounds,
         &mut meshes,
         &mut materials,
         &mut character_configs,
@@ -650,6 +659,7 @@ fn spawn_scenemax_program(
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
+    collider_bounds: &mut SceneMaxColliderBounds,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
     character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
@@ -688,6 +698,7 @@ fn spawn_scenemax_program(
                 transform,
                 attaches_by_target.get(name),
             );
+            register_collider_bounds(collider_bounds, name, options, transform);
             entities_by_name.insert(name.clone(), entity);
             transforms_by_name.insert(name.clone(), transform);
             spawned_any = true;
@@ -823,7 +834,12 @@ fn spawn_scenemax_program(
         &transforms_by_name,
         character_configs,
     );
-    spawn_default_virtual_colliders(commands, &mut entities_by_name, &mut transforms_by_name);
+    spawn_default_virtual_colliders(
+        commands,
+        &mut entities_by_name,
+        &mut transforms_by_name,
+        collider_bounds,
+    );
     for (target, turn) in turn_by_target {
         if let Some(entity) = entities_by_name.get(&target) {
             commands
@@ -1192,10 +1208,40 @@ fn collider_dimensions(options: &EntityOptions, transform: &Transform) -> Vec3 {
         .max(Vec3::splat(0.1))
 }
 
+fn collider_bounding_radius(options: &EntityOptions, transform: Transform) -> f32 {
+    let dimensions = collider_dimensions(options, &transform);
+    match options
+        .collision_shape
+        .unwrap_or(SceneMaxCollisionShape::Box)
+    {
+        SceneMaxCollisionShape::Sphere => dimensions.max_element() * 0.5,
+        SceneMaxCollisionShape::Box => dimensions.length() * 0.5,
+        SceneMaxCollisionShape::Capsule => {
+            let radius = dimensions.x.max(dimensions.z).max(0.2) * 0.3;
+            let height = dimensions.y.max(radius * 2.0);
+            radius + height * 0.5
+        }
+        SceneMaxCollisionShape::None => 0.0,
+    }
+}
+
+fn register_collider_bounds(
+    collider_bounds: &mut SceneMaxColliderBounds,
+    name: &str,
+    options: &EntityOptions,
+    transform: Transform,
+) {
+    let radius = collider_bounding_radius(options, transform).max(0.01);
+    collider_bounds
+        .radius_by_name
+        .insert(name.to_owned(), radius);
+}
+
 fn spawn_default_virtual_colliders(
     commands: &mut Commands,
     entities_by_name: &mut HashMap<String, Entity>,
     transforms_by_name: &mut HashMap<String, Transform>,
+    collider_bounds: &mut SceneMaxColliderBounds,
 ) {
     let owners = ["player1", "player2"];
     for owner in owners {
@@ -1207,6 +1253,7 @@ fn spawn_default_virtual_colliders(
                 continue;
             }
             let transform = virtual_collider_transform(owner_transform, spec.local_offset);
+            let radius = virtual_collider_bounding_radius(spec.shape);
             let entity = commands
                 .spawn((
                     SceneMaxEntity {
@@ -1230,6 +1277,9 @@ fn spawn_default_virtual_colliders(
                 .id();
             entities_by_name.insert(spec.name.clone(), entity);
             transforms_by_name.insert(spec.name.clone(), transform);
+            collider_bounds
+                .radius_by_name
+                .insert(spec.name.clone(), radius);
         }
     }
 }
@@ -1291,6 +1341,13 @@ fn virtual_collider_shape(shape: VirtualColliderShape) -> AvianCollider {
             AvianCollider::cuboid(half_extents.x, half_extents.y, half_extents.z)
         }
         VirtualColliderShape::Sphere { radius } => AvianCollider::sphere(radius),
+    }
+}
+
+fn virtual_collider_bounding_radius(shape: VirtualColliderShape) -> f32 {
+    match shape {
+        VirtualColliderShape::Box { half_extents } => half_extents.length(),
+        VirtualColliderShape::Sphere { radius } => radius,
     }
 }
 
@@ -1704,6 +1761,7 @@ fn apply_startup_function_by_name(
         vars,
         guards_by_name,
         Some(transforms_by_name),
+        None,
     ) {
         tracing::debug!(name, "startup SceneMax function guard is false");
         return;
@@ -1785,6 +1843,7 @@ fn apply_startup_action(
                 vars,
                 guards_by_name,
                 Some(transforms_by_name),
+                None,
             ) {
                 &statement.actions
             } else {
@@ -1807,7 +1866,13 @@ fn apply_startup_action(
             }
         }
         Statement::Guarded { condition, actions } => {
-            if condition_matches(condition, vars, guards_by_name, Some(transforms_by_name)) {
+            if condition_matches(
+                condition,
+                vars,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            ) {
                 for nested_action in actions {
                     apply_startup_action(
                         nested_action,
@@ -2004,10 +2069,13 @@ fn switch_scene_on_key(
     mut delayed_actions: ResMut<DelayedActionQueue>,
     mut recurring_timers: ResMut<RecurringRunTimers>,
     mut physics_contacts: ResMut<SceneMaxPhysicsContacts>,
-    scene_entities: Query<Entity, With<SceneMaxEntity>>,
+    mut collider_bounds: ResMut<SceneMaxColliderBounds>,
+    mut scene_queries: ParamSet<(
+        Query<Entity, With<SceneMaxEntity>>,
+        Query<&mut Transform, With<Camera3d>>,
+    )>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut cameras: Query<&mut Transform, With<Camera3d>>,
     mut character_configs: ResMut<Assets<SceneMaxControlSchemeConfig>>,
 ) {
     let Some(program) = startup_program.0.as_ref() else {
@@ -2028,11 +2096,11 @@ fn switch_scene_on_key(
     let scene_main = script_root.join(&scene).join("main");
     match load_script_with_adds(&scene_main, &mut HashSet::new()) {
         Ok(program) => {
-            for entity in &scene_entities {
+            for entity in &scene_queries.p0() {
                 commands.entity(entity).despawn();
             }
 
-            if let Ok(mut camera) = cameras.single_mut() {
+            if let Ok(mut camera) = scene_queries.p1().single_mut() {
                 *camera = camera_transform_from_program(&program);
             }
 
@@ -2042,6 +2110,7 @@ fn switch_scene_on_key(
             delayed_actions.actions.clear();
             recurring_timers.remaining_by_statement.clear();
             physics_contacts.active_pairs.clear();
+            collider_bounds.radius_by_name.clear();
             apply_initial_assignments(&program, &mut vars);
             apply_camera_systems(&program, &mut camera_system);
             spawn_scenemax_program(
@@ -2052,6 +2121,7 @@ fn switch_scene_on_key(
                 &mut vars,
                 &mut object_pools,
                 &mut camera_system,
+                &mut collider_bounds,
                 &mut meshes,
                 &mut materials,
                 &mut character_configs,
@@ -2073,6 +2143,7 @@ fn apply_key_events(
     keyboard: Res<ButtonInput<KeyCode>>,
     startup_program: Res<SceneMaxStartupProgram>,
     runtime_assets: Res<SceneMaxRuntimeAssets>,
+    mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
@@ -2116,7 +2187,13 @@ fn apply_key_events(
             continue;
         }
         if event.guard.as_ref().is_some_and(|guard| {
-            !condition_matches(guard, &vars, &guards_by_name, Some(&transforms_by_name))
+            !condition_matches(
+                guard,
+                &vars,
+                &guards_by_name,
+                Some(&transforms_by_name),
+                Some(&collider_bounds),
+            )
         }) {
             continue;
         }
@@ -2134,6 +2211,7 @@ fn apply_key_events(
             &guards_by_name,
             &mut queued_animations,
             &runtime_assets,
+            &mut collider_bounds,
             Some(&mut delayed_actions),
             None,
             continuous_delta_seconds,
@@ -2200,6 +2278,7 @@ fn apply_when_events(
     time: Res<Time>,
     startup_program: Res<SceneMaxStartupProgram>,
     runtime_assets: Res<SceneMaxRuntimeAssets>,
+    mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
@@ -2242,13 +2321,20 @@ fn apply_when_events(
             continue;
         };
         let guard_matches = event.guard.as_ref().is_none_or(|guard| {
-            condition_matches(guard, &vars, &guards_by_name, Some(&transforms_by_name))
+            condition_matches(
+                guard,
+                &vars,
+                &guards_by_name,
+                Some(&transforms_by_name),
+                Some(&collider_bounds),
+            )
         });
         let condition_matches_now = when_condition_matches(
             &event.condition,
             &vars,
             &guards_by_name,
             Some(&transforms_by_name),
+            Some(&collider_bounds),
             &physics_contacts,
             &object_pools,
         );
@@ -2258,6 +2344,7 @@ fn apply_when_events(
                 &vars,
                 &guards_by_name,
                 Some(&transforms_by_name),
+                Some(&collider_bounds),
                 &physics_contacts,
                 &object_pools,
             );
@@ -2312,6 +2399,7 @@ fn apply_when_events(
             &guards_by_name,
             &mut queued_animations,
             &runtime_assets,
+            &mut collider_bounds,
             Some(&mut delayed_actions),
             Some(owner.clone()),
             Some(time.delta_secs()),
@@ -2328,6 +2416,7 @@ fn update_recurring_runs(
     time: Res<Time>,
     startup_program: Res<SceneMaxStartupProgram>,
     runtime_assets: Res<SceneMaxRuntimeAssets>,
+    mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
@@ -2413,6 +2502,7 @@ fn update_recurring_runs(
             &guards_by_name,
             &mut queued_animations,
             &runtime_assets,
+            &mut collider_bounds,
             Some(&mut delayed_actions),
             Some(owner.clone()),
             None,
@@ -2430,6 +2520,7 @@ fn update_delayed_actions(
     time: Res<Time>,
     startup_program: Res<SceneMaxStartupProgram>,
     runtime_assets: Res<SceneMaxRuntimeAssets>,
+    mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
@@ -2500,6 +2591,7 @@ fn update_delayed_actions(
             &guards_by_name,
             &mut queued_animations,
             &runtime_assets,
+            &mut collider_bounds,
             Some(&mut delayed_actions),
             delayed.owner.clone(),
             None,
@@ -2544,6 +2636,7 @@ fn apply_action_sequence(
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
     runtime_assets: &SceneMaxRuntimeAssets,
+    collider_bounds: &mut SceneMaxColliderBounds,
     mut delayed_actions: Option<&mut DelayedActionQueue>,
     owner: Option<SceneMaxControllerKey>,
     continuous_delta_seconds: Option<f32>,
@@ -2596,7 +2689,13 @@ fn apply_action_sequence(
                 return ActionSequenceResult::Completed;
             }
             Statement::WaitUntil { condition } => {
-                if !condition_matches(condition, vars, guards_by_name, Some(transforms_by_name)) {
+                if !condition_matches(
+                    condition,
+                    vars,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                ) {
                     if enqueue_delayed_actions(
                         delayed_actions.as_deref_mut(),
                         LOOP_CONTINUE_DELAY_SECONDS,
@@ -2619,6 +2718,7 @@ fn apply_action_sequence(
                     guards_by_name,
                     queued_animations,
                     runtime_assets,
+                    collider_bounds,
                     delayed_actions.as_deref_mut(),
                     None,
                     continuous_delta_seconds,
@@ -2638,6 +2738,7 @@ fn apply_action_sequence(
                     guards_by_name,
                     queued_animations,
                     runtime_assets,
+                    collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
                     continuous_delta_seconds,
@@ -2664,6 +2765,7 @@ fn apply_action_sequence(
                     guards_by_name,
                     queued_animations,
                     runtime_assets,
+                    collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
                     continuous_delta_seconds,
@@ -2675,7 +2777,13 @@ fn apply_action_sequence(
                 }
             }
             Statement::LoopContinue { condition, actions } => {
-                if condition_matches(condition, vars, guards_by_name, Some(transforms_by_name)) {
+                if condition_matches(
+                    condition,
+                    vars,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                ) {
                     if enqueue_delayed_actions(
                         delayed_actions.as_deref_mut(),
                         LOOP_CONTINUE_DELAY_SECONDS,
@@ -2695,6 +2803,7 @@ fn apply_action_sequence(
                     vars,
                     guards_by_name,
                     Some(transforms_by_name),
+                    Some(collider_bounds),
                 ) {
                     &statement.actions
                 } else {
@@ -2710,6 +2819,7 @@ fn apply_action_sequence(
                     guards_by_name,
                     queued_animations,
                     runtime_assets,
+                    collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
                     continuous_delta_seconds,
@@ -2721,7 +2831,13 @@ fn apply_action_sequence(
                 }
             }
             Statement::Guarded { condition, actions } => {
-                if condition_matches(condition, vars, guards_by_name, Some(transforms_by_name)) {
+                if condition_matches(
+                    condition,
+                    vars,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                ) {
                     let result = apply_action_sequence(
                         actions,
                         transforms_by_name,
@@ -2732,6 +2848,7 @@ fn apply_action_sequence(
                         guards_by_name,
                         queued_animations,
                         runtime_assets,
+                        collider_bounds,
                         delayed_actions.as_deref_mut(),
                         owner.clone(),
                         continuous_delta_seconds,
@@ -2754,6 +2871,7 @@ fn apply_action_sequence(
                     guards_by_name,
                     queued_animations,
                     runtime_assets,
+                    collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
                     continuous_delta_seconds,
@@ -2784,6 +2902,7 @@ fn apply_action_sequence(
                     guards_by_name,
                     queued_animations,
                     runtime_assets,
+                    collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
                     continuous_delta_seconds,
@@ -2824,6 +2943,7 @@ fn apply_runtime_model_decl(
     options: &EntityOptions,
     transforms_by_name: &mut HashMap<String, Transform>,
     runtime_assets: &SceneMaxRuntimeAssets,
+    collider_bounds: &mut SceneMaxColliderBounds,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
         Query<(&SceneMaxEntity, &Transform)>,
@@ -2861,6 +2981,9 @@ fn apply_runtime_model_decl(
             });
         }
         transforms_by_name.insert(name.to_owned(), transform);
+        if options.collider {
+            register_collider_bounds(collider_bounds, name, options, transform);
+        }
         tracing::debug!(
             name,
             resource,
@@ -2874,6 +2997,13 @@ fn apply_runtime_model_decl(
     } else {
         Visibility::Inherited
     };
+    if options.collider {
+        spawn_scenemax_collider_decl(commands, name, resource, options, transform, None);
+        register_collider_bounds(collider_bounds, name, options, transform);
+        transforms_by_name.insert(name.to_owned(), transform);
+        tracing::info!(name, resource, "spawned runtime SceneMax collider");
+        return;
+    }
     let mut entity = commands.spawn((
         SceneMaxEntity {
             name: name.to_owned(),
@@ -2908,6 +3038,7 @@ fn apply_key_action(
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
     runtime_assets: &SceneMaxRuntimeAssets,
+    collider_bounds: &mut SceneMaxColliderBounds,
     delayed_actions: Option<&mut DelayedActionQueue>,
     owner: Option<SceneMaxControllerKey>,
     continuous_delta_seconds: Option<f32>,
@@ -2945,6 +3076,7 @@ fn apply_key_action(
             options,
             transforms_by_name,
             runtime_assets,
+            collider_bounds,
             commands,
             scene_entities,
         );
@@ -3045,6 +3177,7 @@ fn apply_key_action(
             guards_by_name,
             queued_animations,
             runtime_assets,
+            collider_bounds,
             delayed_actions,
             owner,
             continuous_delta_seconds,
@@ -3067,6 +3200,7 @@ fn apply_key_action(
             vars,
             guards_by_name,
             Some(transforms_by_name),
+            Some(collider_bounds),
         ) {
             &statement.actions
         } else {
@@ -3083,6 +3217,7 @@ fn apply_key_action(
                 guards_by_name,
                 queued_animations,
                 runtime_assets,
+                collider_bounds,
                 None,
                 owner.clone(),
                 continuous_delta_seconds,
@@ -3332,6 +3467,7 @@ fn apply_function_by_name(
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
     runtime_assets: &SceneMaxRuntimeAssets,
+    collider_bounds: &mut SceneMaxColliderBounds,
     delayed_actions: Option<&mut DelayedActionQueue>,
     owner: Option<SceneMaxControllerKey>,
     continuous_delta_seconds: Option<f32>,
@@ -3368,6 +3504,7 @@ fn apply_function_by_name(
         vars,
         guards_by_name,
         Some(transforms_by_name),
+        Some(collider_bounds),
     ) {
         tracing::debug!(name, "SceneMax function guard is false");
         return ActionSequenceResult::Completed;
@@ -3384,6 +3521,7 @@ fn apply_function_by_name(
         guards_by_name,
         queued_animations,
         runtime_assets,
+        collider_bounds,
         delayed_actions,
         owner,
         continuous_delta_seconds,
@@ -3415,12 +3553,19 @@ fn function_guard_matches(
     vars: &SceneMaxVars,
     guards_by_name: &HashMap<String, Condition>,
     transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> bool {
     let Some(guard) = &function.guard else {
         return true;
     };
     let guard = substitute_function_condition(function, args, guard);
-    condition_matches(&guard, vars, guards_by_name, transforms_by_name)
+    condition_matches(
+        &guard,
+        vars,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
 }
 
 fn substitute_function_condition(
@@ -4268,7 +4413,7 @@ fn resolve_assignment_value(
         AssignmentValue::Condition(condition) => {
             let guards_by_name = HashMap::new();
             Some(
-                condition_matches(condition, vars, &guards_by_name, transforms_by_name) as u8
+                condition_matches(condition, vars, &guards_by_name, transforms_by_name, None) as u8
                     as f32,
             )
         }
@@ -4308,6 +4453,7 @@ fn condition_matches(
     vars: &SceneMaxVars,
     guards_by_name: &HashMap<String, Condition>,
     transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> bool {
     match condition {
         Condition::EqualsNumber { name, value } => {
@@ -4393,16 +4539,34 @@ fn condition_matches(
                 > f32::EPSILON
         }
         Condition::Collision { sources, target } => {
-            collision_condition_matches(sources, target, transforms_by_name)
+            collision_condition_matches(sources, target, transforms_by_name, collider_bounds)
         }
         Condition::Alias(name) => guards_by_name.get(name).is_some_and(|condition| {
-            condition_matches(condition, vars, guards_by_name, transforms_by_name)
+            condition_matches(
+                condition,
+                vars,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
         }),
         Condition::And(conditions) => conditions.iter().all(|condition| {
-            condition_matches(condition, vars, guards_by_name, transforms_by_name)
+            condition_matches(
+                condition,
+                vars,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
         }),
         Condition::Or(conditions) => conditions.iter().any(|condition| {
-            condition_matches(condition, vars, guards_by_name, transforms_by_name)
+            condition_matches(
+                condition,
+                vars,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
         }),
     }
 }
@@ -4412,13 +4576,14 @@ fn when_condition_matches(
     vars: &SceneMaxVars,
     guards_by_name: &HashMap<String, Condition>,
     transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
     physics_contacts: &SceneMaxPhysicsContacts,
     object_pools: &SceneMaxObjectPools,
 ) -> bool {
     match condition {
         Condition::Collision { sources, target } => {
             physics_contact_matches(sources, target, physics_contacts, object_pools)
-                || collision_condition_matches(sources, target, transforms_by_name)
+                || collision_condition_matches(sources, target, transforms_by_name, collider_bounds)
         }
         Condition::And(conditions) => conditions.iter().all(|condition| {
             when_condition_matches(
@@ -4426,6 +4591,7 @@ fn when_condition_matches(
                 vars,
                 guards_by_name,
                 transforms_by_name,
+                collider_bounds,
                 physics_contacts,
                 object_pools,
             )
@@ -4436,11 +4602,18 @@ fn when_condition_matches(
                 vars,
                 guards_by_name,
                 transforms_by_name,
+                collider_bounds,
                 physics_contacts,
                 object_pools,
             )
         }),
-        condition => condition_matches(condition, vars, guards_by_name, transforms_by_name),
+        condition => condition_matches(
+            condition,
+            vars,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
     }
 }
 
@@ -4507,6 +4680,7 @@ fn collision_condition_matches(
     sources: &[String],
     target: &str,
     transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> bool {
     let Some(transforms_by_name) = transforms_by_name else {
         return false;
@@ -4523,7 +4697,7 @@ fn collision_condition_matches(
             return source_transform
                 .translation
                 .distance(target_transform.translation)
-                <= exact_collision_threshold(source, target);
+                <= exact_collision_threshold(source, target, collider_bounds);
         }
         collision_owner_transform(source, transforms_by_name).is_some_and(|source_transform| {
             source_transform
@@ -4583,8 +4757,18 @@ fn collision_threshold(source: &str, target: &str) -> f32 {
     }
 }
 
-fn exact_collision_threshold(source: &str, target: &str) -> f32 {
-    collision_part_radius(source) + collision_part_radius(target)
+fn exact_collision_threshold(
+    source: &str,
+    target: &str,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> f32 {
+    collider_radius(source, collider_bounds) + collider_radius(target, collider_bounds)
+}
+
+fn collider_radius(reference: &str, collider_bounds: Option<&SceneMaxColliderBounds>) -> f32 {
+    collider_bounds
+        .and_then(|bounds| bounds.radius_by_name.get(reference).copied())
+        .unwrap_or_else(|| collision_part_radius(reference))
 }
 
 fn collision_part_radius(reference: &str) -> f32 {
@@ -5471,7 +5655,8 @@ mod tests {
             &Condition::Alias("allow_move".to_owned()),
             &vars,
             &guards,
-            None
+            None,
+            None,
         ));
 
         vars.0.insert("game_status".to_owned(), 2.0);
@@ -5479,7 +5664,8 @@ mod tests {
             &Condition::Alias("allow_move".to_owned()),
             &vars,
             &guards,
-            None
+            None,
+            None,
         ));
     }
 
@@ -5501,7 +5687,8 @@ mod tests {
             &["player1".to_owned(), "player2".to_owned()],
             &vars,
             &guards,
-            None
+            None,
+            None,
         ));
 
         vars.0.insert("player2.data.is_jumping".to_owned(), 0.0);
@@ -5510,7 +5697,8 @@ mod tests {
             &["player1".to_owned(), "player2".to_owned()],
             &vars,
             &guards,
-            None
+            None,
+            None,
         ));
     }
 
@@ -5563,7 +5751,8 @@ mod tests {
             },
             &vars,
             &HashMap::new(),
-            Some(&transforms)
+            Some(&transforms),
+            None,
         ));
     }
 
@@ -5602,7 +5791,8 @@ mod tests {
         assert!(collision_condition_matches(
             &["player2_left_hand_collider".to_owned()],
             "player1_head_collider",
-            Some(&transforms)
+            Some(&transforms),
+            None,
         ));
     }
 
@@ -5630,8 +5820,85 @@ mod tests {
         assert!(collision_condition_matches(
             &["player2_left_hand_collider".to_owned()],
             "player1_head_collider",
-            Some(&transforms)
+            Some(&transforms),
+            None,
         ));
+    }
+
+    #[test]
+    fn declared_collider_bounds_drive_exact_collision_fallback() {
+        let transforms = HashMap::from([
+            (
+                "wide_box".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+            ),
+            (
+                "small_sphere".to_owned(),
+                Transform::from_translation(Vec3::new(1.4, 0.0, 0.0)),
+            ),
+        ]);
+        let collider_bounds = SceneMaxColliderBounds {
+            radius_by_name: HashMap::from([
+                ("wide_box".to_owned(), 1.0),
+                ("small_sphere".to_owned(), 0.5),
+            ]),
+        };
+
+        assert!(collision_condition_matches(
+            &["wide_box".to_owned()],
+            "small_sphere",
+            Some(&transforms),
+            Some(&collider_bounds),
+        ));
+    }
+
+    #[test]
+    fn registers_declared_box_and_sphere_collider_bounds() {
+        let mut collider_bounds = SceneMaxColliderBounds::default();
+        let box_options = EntityOptions {
+            position: None,
+            rotation_degrees: None,
+            scale: None,
+            size: Some(SceneMaxVec3 {
+                x: 2.0,
+                y: 2.0,
+                z: 2.0,
+            }),
+            hidden: false,
+            collider: true,
+            radius: None,
+            body_kind: None,
+            collision_shape: Some(SceneMaxCollisionShape::Box),
+        };
+        let sphere_options = EntityOptions {
+            position: None,
+            rotation_degrees: None,
+            scale: None,
+            size: None,
+            hidden: false,
+            collider: true,
+            radius: Some(0.4),
+            body_kind: None,
+            collision_shape: Some(SceneMaxCollisionShape::Sphere),
+        };
+
+        register_collider_bounds(
+            &mut collider_bounds,
+            "box_hit",
+            &box_options,
+            Transform::IDENTITY,
+        );
+        register_collider_bounds(
+            &mut collider_bounds,
+            "sphere_hit",
+            &sphere_options,
+            Transform::IDENTITY,
+        );
+
+        assert!(
+            (collider_bounds.radius_by_name["box_hit"] - Vec3::splat(1.0).length()).abs() < 0.001
+        );
+        assert!((collider_bounds.radius_by_name["sphere_hit"] - 0.4).abs() < 0.001);
     }
 
     #[test]
@@ -5658,7 +5925,8 @@ mod tests {
         assert!(!collision_condition_matches(
             &["player2_left_hand_collider".to_owned()],
             "player1_head_collider",
-            Some(&transforms)
+            Some(&transforms),
+            None,
         ));
     }
 
