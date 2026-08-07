@@ -182,6 +182,7 @@ pub struct AnimationSpeedStatement {
     pub target: String,
     pub speed: f32,
     pub duration_seconds: Option<f32>,
+    pub condition: Option<Condition>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -189,6 +190,7 @@ pub struct TurnStatement {
     pub target: String,
     pub degrees: f32,
     pub duration_seconds: f32,
+    pub loop_condition: Option<Condition>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -197,6 +199,7 @@ pub struct MoveStatement {
     pub direction: MoveDirection,
     pub distance: f32,
     pub duration_seconds: f32,
+    pub loop_condition: Option<Condition>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2341,10 +2344,12 @@ fn parse_turn(line: &str) -> Result<Option<TurnStatement>, ParseError> {
     }
 
     let duration_seconds = parse_duration_seconds(rest)?.unwrap_or(0.0);
+    let loop_condition = parse_loop_while_condition(rest)?;
     Ok(Some(TurnStatement {
         target: target.to_owned(),
         degrees,
         duration_seconds,
+        loop_condition,
     }))
 }
 
@@ -2363,11 +2368,20 @@ fn parse_rotate_turn(line: &str) -> Result<Option<TurnStatement>, ParseError> {
         return Ok(None);
     };
     let duration_seconds = parse_duration_seconds(after_rotate)?.unwrap_or(0.0);
+    let loop_condition = parse_loop_while_condition(after_rotate)?;
     Ok(Some(TurnStatement {
         target: target.to_owned(),
         degrees,
         duration_seconds,
+        loop_condition,
     }))
+}
+
+fn parse_loop_while_condition(text: &str) -> Result<Option<Condition>, ParseError> {
+    let Some((_, condition_text)) = split_once_case_insensitive(text, "loop while") else {
+        return Ok(None);
+    };
+    parse_condition(condition_text.trim())
 }
 
 fn parse_relative_y_rotation(text: &str) -> Result<Option<f32>, ParseError> {
@@ -2417,12 +2431,14 @@ fn parse_move(line: &str) -> Result<Option<MoveStatement>, ParseError> {
         .parse::<f32>()
         .map_err(|_| ParseError::InvalidNumber(raw_distance.to_owned()))?;
     let duration_seconds = parse_for_duration_seconds(rest)?.unwrap_or(0.0);
+    let loop_condition = parse_loop_while_condition(rest)?;
 
     Ok(Some(MoveStatement {
         target,
         direction,
         distance,
         duration_seconds,
+        loop_condition,
     }))
 }
 
@@ -2714,10 +2730,15 @@ fn parse_animation_speed(line: &str) -> Result<Option<AnimationSpeedStatement>, 
         .parse::<f32>()
         .map_err(|_| ParseError::InvalidNumber(raw_speed.to_owned()))?;
     let duration_seconds = parse_for_duration_seconds_tolerant(rest);
+    let condition = split_once_case_insensitive(rest, " when ")
+        .map(|(_, condition_text)| parse_condition(condition_text.trim()))
+        .transpose()?
+        .flatten();
     Ok(Some(AnimationSpeedStatement {
         target: target.to_owned(),
         speed,
         duration_seconds,
+        condition,
     }))
 }
 
@@ -3221,6 +3242,11 @@ mod tests {
                 target: "player2".to_owned(),
                 speed: 3.0,
                 duration_seconds: Some(0.2),
+                condition: Some(Condition::Compare {
+                    name: "frames".to_owned(),
+                    operator: ComparisonOperator::Greater,
+                    value: AssignmentValue::Number(10.0),
+                }),
             })]
         );
     }
@@ -3235,6 +3261,7 @@ mod tests {
                 target: "player1".to_owned(),
                 speed: 0.01,
                 duration_seconds: None,
+                condition: None,
             })]
         );
     }
@@ -3507,8 +3534,27 @@ mod tests {
                     target: "ring".to_owned(),
                     degrees: 360.0,
                     duration_seconds: 50.0,
+                    loop_condition: None,
                 }),
             ]
+        );
+    }
+
+    #[test]
+    fn parses_loop_while_turn_condition() {
+        let program = parse_program("axe.turn 360 in 1 second loop while 1==1").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::Turn(TurnStatement {
+                target: "axe".to_owned(),
+                degrees: 360.0,
+                duration_seconds: 1.0,
+                loop_condition: Some(Condition::EqualsValue {
+                    left: AssignmentValue::Number(1.0),
+                    right: AssignmentValue::Number(1.0),
+                }),
+            })]
         );
     }
 
@@ -3523,6 +3569,28 @@ mod tests {
                 direction: MoveDirection::Forward,
                 distance: 0.5,
                 duration_seconds: 0.25,
+                loop_condition: None,
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_loop_while_move_condition() {
+        let program =
+            parse_program("player1.move forward 0.2 for 0.5 seconds loop while move_forward==1")
+                .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::Move(MoveStatement {
+                target: "player1".to_owned(),
+                direction: MoveDirection::Forward,
+                distance: 0.2,
+                duration_seconds: 0.5,
+                loop_condition: Some(Condition::EqualsNumber {
+                    name: "move_forward".to_owned(),
+                    value: 1.0,
+                }),
             })]
         );
     }
@@ -3640,6 +3708,7 @@ mod tests {
                 target: "player2".to_owned(),
                 degrees: 360.0,
                 duration_seconds: 0.5,
+                loop_condition: None,
             })]
         );
     }
@@ -3713,6 +3782,7 @@ mod tests {
                         direction: MoveDirection::Forward,
                         distance: 0.3,
                         duration_seconds: 0.2,
+                        loop_condition: None,
                     }),
                     Statement::Animate(AnimationStatement {
                         target: "player1".to_owned(),
@@ -3764,6 +3834,7 @@ mod tests {
                                     target: "player1".to_owned(),
                                     degrees: 360.0,
                                     duration_seconds: 0.5,
+                                    loop_condition: None,
                                 })],
                                 else_actions: Vec::new(),
                             }),
@@ -4219,6 +4290,7 @@ mod tests {
                         direction: MoveDirection::Forward,
                         distance: 0.2,
                         duration_seconds: 0.5,
+                        loop_condition: None,
                     }),
                 ],
             })]
@@ -4415,6 +4487,7 @@ mod tests {
                     target: "player1".to_owned(),
                     degrees: 3.0,
                     duration_seconds: 0.1,
+                    loop_condition: None,
                 })],
             })]
         );
@@ -4550,6 +4623,7 @@ mod tests {
                             direction: MoveDirection::Forward,
                             distance: 0.2,
                             duration_seconds: 0.2,
+                            loop_condition: None,
                         }),
                         Statement::Animate(AnimationStatement {
                             target: "p2".to_owned(),

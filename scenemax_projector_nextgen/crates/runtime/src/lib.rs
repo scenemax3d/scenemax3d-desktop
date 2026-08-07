@@ -336,14 +336,18 @@ struct CurrentAnimation {
 #[derive(Debug, Component)]
 struct TimedTurn {
     remaining_seconds: f32,
+    duration_seconds: f32,
     radians_per_second: f32,
+    loop_condition: Option<Condition>,
 }
 
 #[derive(Debug, Component)]
 struct TimedMove {
     remaining_seconds: f32,
+    duration_seconds: f32,
     velocity: Vec3,
     final_translation: Option<Vec3>,
+    loop_condition: Option<Condition>,
 }
 
 #[derive(Debug, Component)]
@@ -367,6 +371,7 @@ struct SceneMaxCharacterMotor {
     timed_motion: Vec3,
     timed_motion_remaining_seconds: f32,
     jump_hold_seconds: f32,
+    pending_jump_speed: Option<f32>,
 }
 
 #[derive(Debug, Component)]
@@ -2707,6 +2712,28 @@ fn apply_action_sequence(
                     return ActionSequenceResult::Completed;
                 }
             }
+            Statement::AnimationSpeed(animation_speed)
+                if animation_speed.condition.is_some()
+                    && !animation_speed_condition_matches(
+                        animation_speed,
+                        vars,
+                        object_pools,
+                        guards_by_name,
+                        Some(transforms_by_name),
+                        Some(collider_bounds),
+                        scene_entities,
+                    ) =>
+            {
+                if enqueue_delayed_actions(
+                    delayed_actions.as_deref_mut(),
+                    LOOP_CONTINUE_DELAY_SECONDS,
+                    actions[index..].to_vec(),
+                    owner.clone(),
+                ) {
+                    return ActionSequenceResult::Suspended;
+                }
+                return ActionSequenceResult::Completed;
+            }
             Statement::Async { actions } => {
                 let _ = apply_action_sequence(
                     actions,
@@ -2919,7 +2946,15 @@ fn apply_action_sequence(
 }
 
 fn estimated_animation_seconds(animation: &AnimationStatement) -> f32 {
+    if is_jump_animation_clip(&animation.clip) {
+        return (jump_duration_seconds(35.0) / animation.speed.max(0.1)).clamp(0.65, 1.15);
+    }
     estimated_animation_seconds_from_speed(animation.speed)
+}
+
+fn is_jump_animation_clip(clip: &str) -> bool {
+    let lower = clip.to_ascii_lowercase();
+    lower.contains("jump") || lower.contains("fly_kick") || lower.contains("flying_kick")
 }
 
 fn estimated_animation_seconds_from_speed(speed: f32) -> f32 {
@@ -3456,6 +3491,57 @@ fn apply_key_action(
     ActionSequenceResult::Completed
 }
 
+fn animation_speed_condition_matches(
+    animation_speed: &AnimationSpeedStatement,
+    vars: &SceneMaxVars,
+    object_pools: &SceneMaxObjectPools,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+    scene_entities: &mut ParamSet<(
+        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
+            Option<&mut Visibility>,
+            Option<&SceneMaxCharacterController>,
+            Option<&mut SceneMaxCharacterMotor>,
+        )>,
+    )>,
+) -> bool {
+    let Some(condition) = animation_speed.condition.as_ref() else {
+        return true;
+    };
+    let mut scoped_vars = SceneMaxVars(vars.0.clone());
+    let frames = scene_entities
+        .p1()
+        .iter()
+        .find_map(|(_, scene_entity, _, _, current_animation, _, _, _)| {
+            target_matches_alias(&animation_speed.target, &scene_entity.name, object_pools).then(
+                || {
+                    current_animation
+                        .map(current_animation_percent)
+                        .unwrap_or_default()
+                },
+            )
+        })
+        .unwrap_or_default();
+    scoped_vars.0.insert("frames".to_owned(), frames);
+    scoped_vars
+        .0
+        .insert(format!("{}.frames", animation_speed.target), frames);
+    condition_matches(
+        condition,
+        &scoped_vars,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
+}
+
 fn apply_function_by_name(
     name: &str,
     args: &[String],
@@ -3599,6 +3685,10 @@ fn substitute_statement(statement: &Statement, bindings: &HashMap<String, String
                 target: substitute_path(&animation_speed.target, bindings),
                 speed: animation_speed.speed,
                 duration_seconds: animation_speed.duration_seconds,
+                condition: animation_speed
+                    .condition
+                    .as_ref()
+                    .map(|condition| substitute_condition(condition, bindings)),
             })
         }
         Statement::Visibility { target, visible } => Statement::Visibility {
@@ -3617,12 +3707,20 @@ fn substitute_statement(statement: &Statement, bindings: &HashMap<String, String
             target: substitute_path(&turn.target, bindings),
             degrees: turn.degrees,
             duration_seconds: turn.duration_seconds,
+            loop_condition: turn
+                .loop_condition
+                .as_ref()
+                .map(|condition| substitute_condition(condition, bindings)),
         }),
         Statement::Move(movement) => Statement::Move(scenemax_parser::MoveStatement {
             target: substitute_path(&movement.target, bindings),
             direction: movement.direction,
             distance: movement.distance,
             duration_seconds: movement.duration_seconds,
+            loop_condition: movement
+                .loop_condition
+                .as_ref()
+                .map(|condition| substitute_condition(condition, bindings)),
         }),
         Statement::MoveTo(move_to) => Statement::MoveTo(scenemax_parser::MoveToStatement {
             target: substitute_path(&move_to.target, bindings),
@@ -4842,7 +4940,9 @@ fn timed_turn_from_statement(turn: &scenemax_parser::TurnStatement) -> TimedTurn
     let duration = turn.duration_seconds.max(0.001);
     TimedTurn {
         remaining_seconds: duration,
+        duration_seconds: duration,
         radians_per_second: turn.degrees.to_radians() / duration,
+        loop_condition: turn.loop_condition.clone(),
     }
 }
 
@@ -4858,8 +4958,10 @@ fn timed_move_from_statement(
 
     TimedMove {
         remaining_seconds: duration,
+        duration_seconds: duration,
         velocity: direction * (movement.distance / duration),
         final_translation: None,
+        loop_condition: movement.loop_condition.clone(),
     }
 }
 
@@ -4872,8 +4974,10 @@ fn timed_move_to_from_statement(
     let duration = movement.duration_seconds.max(0.001);
     Some(TimedMove {
         remaining_seconds: duration,
+        duration_seconds: duration,
         velocity: (destination - transform.translation) / duration,
         final_translation: Some(destination),
+        loop_condition: None,
     })
 }
 
@@ -4992,8 +5096,11 @@ fn set_character_motion(
     motor.motion_ttl_seconds = ttl_seconds;
 }
 
-fn set_character_jump_intent(motor: &mut SceneMaxCharacterMotor, _jump: &CharacterJumpStatement) {
-    motor.jump_hold_seconds = motor.jump_hold_seconds.max(CHARACTER_JUMP_FEED_SECONDS);
+fn set_character_jump_intent(motor: &mut SceneMaxCharacterMotor, jump: &CharacterJumpStatement) {
+    motor.pending_jump_speed = Some(jump.speed);
+    motor.jump_hold_seconds = motor
+        .jump_hold_seconds
+        .max(character_jump_feed_seconds(jump.speed));
 }
 
 fn jump_height(speed: f32) -> f32 {
@@ -5002,6 +5109,10 @@ fn jump_height(speed: f32) -> f32 {
 
 fn jump_duration_seconds(speed: f32) -> f32 {
     (speed * 0.025).clamp(0.45, 1.15)
+}
+
+fn character_jump_feed_seconds(speed: f32) -> f32 {
+    jump_duration_seconds(speed).max(CHARACTER_JUMP_FEED_SECONDS)
 }
 
 fn jump_y_offset(progress: f32, height: f32) -> f32 {
@@ -5096,14 +5207,43 @@ fn look_at_scenemax_forward(transform: &mut Transform, target_translation: Vec3)
 
 fn update_timed_turns(
     time: Res<Time>,
+    startup_program: Res<SceneMaxStartupProgram>,
+    vars: Res<SceneMaxVars>,
+    collider_bounds: Res<SceneMaxColliderBounds>,
     mut commands: Commands,
-    mut turns: Query<(Entity, &mut Transform, &mut TimedTurn)>,
+    mut scene_entities: ParamSet<(
+        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &mut Transform, &mut TimedTurn)>,
+    )>,
 ) {
-    for (entity, mut transform, mut turn) in &mut turns {
+    let transforms_by_name = scene_entities
+        .p0()
+        .iter()
+        .map(|(entity, transform)| (entity.name.clone(), *transform))
+        .collect::<HashMap<_, _>>();
+    let guards_by_name = startup_program
+        .0
+        .as_ref()
+        .map(collect_guards_by_name)
+        .unwrap_or_default();
+
+    for (entity, mut transform, mut turn) in &mut scene_entities.p1() {
         let delta = time.delta_secs().min(turn.remaining_seconds);
         transform.rotate_y(turn.radians_per_second * delta);
         turn.remaining_seconds -= delta;
         if turn.remaining_seconds <= 0.0 {
+            if turn.loop_condition.as_ref().is_some_and(|condition| {
+                condition_matches(
+                    condition,
+                    &vars,
+                    &guards_by_name,
+                    Some(&transforms_by_name),
+                    Some(&collider_bounds),
+                )
+            }) {
+                turn.remaining_seconds = turn.duration_seconds;
+                continue;
+            }
             commands.entity(entity).remove::<TimedTurn>();
         }
     }
@@ -5111,16 +5251,46 @@ fn update_timed_turns(
 
 fn update_timed_moves(
     time: Res<Time>,
+    startup_program: Res<SceneMaxStartupProgram>,
+    vars: Res<SceneMaxVars>,
+    collider_bounds: Res<SceneMaxColliderBounds>,
     mut commands: Commands,
-    mut moves: Query<(Entity, &mut Transform, &mut TimedMove)>,
+    mut scene_entities: ParamSet<(
+        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &mut Transform, &mut TimedMove)>,
+    )>,
 ) {
-    for (entity, mut transform, mut movement) in &mut moves {
+    let transforms_by_name = scene_entities
+        .p0()
+        .iter()
+        .map(|(entity, transform)| (entity.name.clone(), *transform))
+        .collect::<HashMap<_, _>>();
+    let guards_by_name = startup_program
+        .0
+        .as_ref()
+        .map(collect_guards_by_name)
+        .unwrap_or_default();
+
+    for (entity, mut transform, mut movement) in &mut scene_entities.p1() {
         let delta = time.delta_secs().min(movement.remaining_seconds);
         transform.translation += movement.velocity * delta;
         movement.remaining_seconds -= delta;
         if movement.remaining_seconds <= 0.0 {
             if let Some(final_translation) = movement.final_translation {
                 transform.translation = final_translation;
+            }
+            if movement.loop_condition.as_ref().is_some_and(|condition| {
+                condition_matches(
+                    condition,
+                    &vars,
+                    &guards_by_name,
+                    Some(&transforms_by_name),
+                    Some(&collider_bounds),
+                )
+            }) {
+                movement.remaining_seconds = movement.duration_seconds;
+                movement.final_translation = None;
+                continue;
             }
             commands.entity(entity).remove::<TimedMove>();
         }
@@ -5145,14 +5315,16 @@ fn update_timed_jumps(
 
 fn feed_tnua_character_controllers(
     time: Res<Time>,
+    mut character_configs: ResMut<Assets<SceneMaxControlSchemeConfig>>,
     mut characters: Query<(
         &SceneMaxCharacterController,
         &mut SceneMaxCharacterMotor,
+        &TnuaConfig<SceneMaxControlScheme>,
         &mut TnuaController<SceneMaxControlScheme>,
     )>,
 ) {
     let delta = time.delta_secs();
-    for (settings, mut motor, mut controller) in &mut characters {
+    for (settings, mut motor, config_handle, mut controller) in &mut characters {
         controller.initiate_action_feeding();
 
         let mut desired_motion = Vec3::ZERO;
@@ -5172,6 +5344,11 @@ fn feed_tnua_character_controllers(
         };
 
         if motor.jump_hold_seconds > 0.0 {
+            if let Some(speed) = motor.pending_jump_speed.take() {
+                if let Some(mut config) = character_configs.get_mut(&config_handle.0) {
+                    config.jump.height = jump_height(speed);
+                }
+            }
             controller.action(SceneMaxControlScheme::Jump(Default::default()));
             motor.jump_hold_seconds = (motor.jump_hold_seconds - delta).max(0.0);
         }
@@ -5471,7 +5648,7 @@ fn update_current_animation_vars(
         } else {
             animation.elapsed_seconds.min(duration)
         };
-        let percent = ((elapsed / duration) * 100.0).clamp(0.0, 100.0);
+        let percent = animation_percent_from_elapsed(elapsed, duration);
         vars.0
             .insert(format!("{}.anim_percent", entity.name), percent);
         vars.0.insert(
@@ -5479,6 +5656,20 @@ fn update_current_animation_vars(
             (!animation.looped && animation.elapsed_seconds >= duration) as u8 as f32,
         );
     }
+}
+
+fn current_animation_percent(animation: &CurrentAnimation) -> f32 {
+    let duration = animation.duration_seconds.max(0.001);
+    let elapsed = if animation.looped {
+        animation.elapsed_seconds % duration
+    } else {
+        animation.elapsed_seconds.min(duration)
+    };
+    animation_percent_from_elapsed(elapsed, duration)
+}
+
+fn animation_percent_from_elapsed(elapsed: f32, duration: f32) -> f32 {
+    ((elapsed / duration.max(0.001)) * 100.0).clamp(0.0, 100.0)
 }
 
 fn animation_speed_override(animation_speed: &AnimationSpeedStatement) -> AnimationSpeedOverride {
@@ -6035,6 +6226,61 @@ mod tests {
         assert!((jump.duration_seconds - 0.875).abs() < 0.001);
         assert!((jump_y_offset(0.5, jump.height) - jump.height).abs() < 0.001);
         assert_eq!(jump_y_offset(1.0, jump.height), 0.0);
+        assert!((character_jump_feed_seconds(35.0) - 0.875).abs() < 0.001);
+    }
+
+    #[test]
+    fn jump_animation_blocks_long_enough_for_character_jump() {
+        let jump_animation = AnimationStatement {
+            target: "player1".to_owned(),
+            clip: "big_jump".to_owned(),
+            speed: 1.0,
+            looped: false,
+            blocking: true,
+        };
+        let punch_animation = AnimationStatement {
+            clip: "CrossPunch".to_owned(),
+            ..jump_animation.clone()
+        };
+
+        assert!(estimated_animation_seconds(&jump_animation) >= jump_duration_seconds(35.0));
+        assert!(estimated_animation_seconds(&punch_animation) < jump_duration_seconds(35.0));
+    }
+
+    #[test]
+    fn timed_turn_preserves_loop_condition() {
+        let turn = timed_turn_from_statement(&scenemax_parser::TurnStatement {
+            target: "axe".to_owned(),
+            degrees: 360.0,
+            duration_seconds: 1.0,
+            loop_condition: Some(Condition::EqualsValue {
+                left: AssignmentValue::Number(1.0),
+                right: AssignmentValue::Number(1.0),
+            }),
+        });
+
+        assert_eq!(turn.duration_seconds, 1.0);
+        assert!(turn.loop_condition.is_some());
+    }
+
+    #[test]
+    fn timed_move_preserves_loop_condition() {
+        let movement = timed_move_from_statement(
+            &scenemax_parser::MoveStatement {
+                target: "player1".to_owned(),
+                direction: MoveDirection::Forward,
+                distance: 0.2,
+                duration_seconds: 0.5,
+                loop_condition: Some(Condition::EqualsNumber {
+                    name: "move_forward".to_owned(),
+                    value: 1.0,
+                }),
+            },
+            &Transform::default(),
+        );
+
+        assert_eq!(movement.duration_seconds, 0.5);
+        assert!(movement.loop_condition.is_some());
     }
 
     #[test]
@@ -6164,6 +6410,7 @@ mod tests {
                     direction: MoveDirection::Forward,
                     distance: 0.2,
                     duration_seconds: 0.2,
+                    loop_condition: None,
                 }),
                 Statement::LookAt {
                     target: "player2".to_owned(),
