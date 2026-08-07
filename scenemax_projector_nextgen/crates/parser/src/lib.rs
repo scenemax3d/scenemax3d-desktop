@@ -405,6 +405,9 @@ pub enum AssignmentValue {
     RandomInt {
         max: Box<AssignmentValue>,
     },
+    Round {
+        value: Box<AssignmentValue>,
+    },
     Distance {
         left: String,
         right: String,
@@ -768,12 +771,7 @@ fn parse_function_def_header(line: &str) -> Option<(String, Vec<String>)> {
 }
 
 fn parse_guard_def(line: &str) -> Result<Option<(String, Condition)>, ParseError> {
-    let normalized = line
-        .trim()
-        .strip_prefix("shared var ")
-        .or_else(|| line.trim().strip_prefix("var "))
-        .unwrap_or(line.trim())
-        .trim();
+    let normalized = strip_var_prefix(line.trim());
     let Some(after_at) = normalized.strip_prefix('@') else {
         return Ok(None);
     };
@@ -851,6 +849,7 @@ fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
             AssignmentValue::Binary { .. } => return Ok(None),
             AssignmentValue::Condition(_)
             | AssignmentValue::RandomInt { .. }
+            | AssignmentValue::Round { .. }
             | AssignmentValue::Distance { .. }
             | AssignmentValue::PoolAcquire { .. } => return Ok(None),
         }));
@@ -865,6 +864,7 @@ fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
             AssignmentValue::Binary { .. } => return Ok(None),
             AssignmentValue::Condition(_)
             | AssignmentValue::RandomInt { .. }
+            | AssignmentValue::Round { .. }
             | AssignmentValue::Distance { .. }
             | AssignmentValue::PoolAcquire { .. } => return Ok(None),
         }));
@@ -1780,11 +1780,7 @@ fn parse_assignment_list(line: &str) -> Result<Option<Vec<AssignmentStatement>>,
         return Ok(None);
     }
 
-    let normalized = line
-        .strip_prefix("shared var ")
-        .or_else(|| line.strip_prefix("var "))
-        .unwrap_or(line)
-        .trim();
+    let normalized = strip_var_prefix(line);
     if normalized.starts_with('@') || normalized.to_ascii_lowercase().starts_with("camera.system") {
         return Ok(None);
     }
@@ -1863,6 +1859,14 @@ fn parse_assignment_value(raw_value: &str) -> Result<Option<AssignmentValue>, Pa
         };
         return Ok(Some(AssignmentValue::RandomInt { max: Box::new(max) }));
     }
+    if let Some(raw_value) = parse_function_assignment_arg(raw_value, "round") {
+        let Some(value) = parse_assignment_value(raw_value)? else {
+            return Ok(None);
+        };
+        return Ok(Some(AssignmentValue::Round {
+            value: Box::new(value),
+        }));
+    }
     if let Some(args) = parse_function_assignment_args(raw_value, "distance") {
         if args.len() == 2 && is_variable_path(args[0]) && is_variable_path(args[1]) {
             return Ok(Some(AssignmentValue::Distance {
@@ -1908,17 +1912,12 @@ fn parse_function_assignment_arg<'a>(text: &'a str, name: &str) -> Option<&'a st
 
 fn parse_function_assignment_args<'a>(text: &'a str, name: &str) -> Option<Vec<&'a str>> {
     let trimmed = strip_wrapping_parens(text.trim());
-    let prefix = format!("{name}(");
-    let inner = trimmed
-        .strip_prefix(&prefix)
-        .and_then(|value| value.strip_suffix(')'))?;
-    Some(
-        inner
-            .split(',')
-            .map(str::trim)
-            .filter(|arg| !arg.is_empty())
-            .collect(),
-    )
+    let open_index = trimmed.find('(')?;
+    if !trimmed[..open_index].trim().eq_ignore_ascii_case(name) {
+        return None;
+    }
+    let inner = trimmed[open_index + 1..].strip_suffix(')')?.trim();
+    Some(split_top_level_comma(inner))
 }
 
 fn split_assignment_binary(text: &str) -> Option<(&str, ArithmeticOperator, &str)> {
@@ -3020,13 +3019,13 @@ fn logical_lines(source: &str) -> Vec<String> {
 
 fn is_open_assignment_list(line: &str) -> bool {
     let trimmed = line.trim();
-    (trimmed.starts_with("var ") || trimmed.starts_with("shared var ")) && trimmed.ends_with(',')
+    (starts_with_keyword(trimmed, "var") || starts_with_two_keywords(trimmed, "shared", "var"))
+        && trimmed.ends_with(',')
 }
 
 fn is_open_guard_definition(line: &str) -> bool {
     let trimmed = line.trim();
-    (trimmed.starts_with("var @") || trimmed.starts_with("shared var @"))
-        && unclosed_paren_count(trimmed) > 0
+    strip_var_prefix(trimmed).starts_with('@') && unclosed_paren_count(trimmed) > 0
 }
 
 fn unclosed_paren_count(text: &str) -> usize {
@@ -3098,6 +3097,25 @@ fn starts_with_keyword(text: &str, keyword: &str) -> bool {
             .chars()
             .next()
             .is_none_or(|value| value.is_whitespace() || value == '"' || value == '(')
+}
+
+fn starts_with_two_keywords(text: &str, first: &str, second: &str) -> bool {
+    let text = text.trim_start();
+    if !starts_with_keyword(text, first) {
+        return false;
+    }
+    starts_with_keyword(text[first.len()..].trim_start(), second)
+}
+
+fn strip_var_prefix(text: &str) -> &str {
+    let text = text.trim();
+    if starts_with_two_keywords(text, "shared", "var") {
+        return text["shared".len()..].trim_start()["var".len()..].trim_start();
+    }
+    if starts_with_keyword(text, "var") {
+        return text["var".len()..].trim_start();
+    }
+    text
 }
 
 fn split_dot_command(line: &str) -> Option<(String, String)> {
@@ -4002,6 +4020,36 @@ mod tests {
     }
 
     #[test]
+    fn parses_var_prefix_with_original_whitespace_and_casing() {
+        let program = parse_program(
+            "VAR PLAYER_ACTION_IDLE = 0,\n    PLAYER_ACTION_X_1 = 7,\n    PLAYER_ACTION_X_2 = 8\nSHARED   VAR @enemy_ai_allowed = enemy_ko==0 && op_hit==0",
+        )
+        .unwrap();
+
+        assert!(
+            program
+                .statements
+                .contains(&Statement::Assignment(AssignmentStatement {
+                    name: "PLAYER_ACTION_X_2".to_owned(),
+                    value: AssignmentValue::Number(8.0),
+                },))
+        );
+        assert!(program.statements.contains(&Statement::GuardDef {
+            name: "enemy_ai_allowed".to_owned(),
+            condition: Condition::And(vec![
+                Condition::EqualsNumber {
+                    name: "enemy_ko".to_owned(),
+                    value: 0.0,
+                },
+                Condition::EqualsNumber {
+                    name: "op_hit".to_owned(),
+                    value: 0.0,
+                },
+            ]),
+        }));
+    }
+
+    #[test]
     fn parses_multiline_guard_definition() {
         let program = parse_program(
             "var @allow_move = player1.data.is_jumping==0\n  && slow_motion==0\n  && game_status!=GAME_STATE_OVER",
@@ -4261,6 +4309,169 @@ mod tests {
                     }),
                 ],
             })]
+        );
+    }
+
+    #[test]
+    fn parses_spaced_case_insensitive_expression_functions() {
+        let program = parse_program(
+            "opponent_ai(p1, p2) = {\n  VAR dist = Distance ( p1 , p2 )\n  var dchoice = RND ( 2 )\n  var frame1 = round ( life1*16/INITIAL_PLAYER_STRENGTH )\n  if ( RND ( 6 ) == 0 && dist < 4.5 ) {\n    return\n  }\n}\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::FunctionDef(FunctionDefStatement {
+                name: "opponent_ai".to_owned(),
+                params: vec!["p1".to_owned(), "p2".to_owned()],
+                guard: None,
+                actions: vec![
+                    Statement::Assignment(AssignmentStatement {
+                        name: "dist".to_owned(),
+                        value: AssignmentValue::Distance {
+                            left: "p1".to_owned(),
+                            right: "p2".to_owned(),
+                        },
+                    }),
+                    Statement::Assignment(AssignmentStatement {
+                        name: "dchoice".to_owned(),
+                        value: AssignmentValue::RandomInt {
+                            max: Box::new(AssignmentValue::Number(2.0)),
+                        },
+                    }),
+                    Statement::Assignment(AssignmentStatement {
+                        name: "frame1".to_owned(),
+                        value: AssignmentValue::Round {
+                            value: Box::new(AssignmentValue::Binary {
+                                left: Box::new(AssignmentValue::Binary {
+                                    left: Box::new(AssignmentValue::Symbol("life1".to_owned())),
+                                    operator: ArithmeticOperator::Multiply,
+                                    right: Box::new(AssignmentValue::Number(16.0)),
+                                }),
+                                operator: ArithmeticOperator::Divide,
+                                right: Box::new(AssignmentValue::Symbol(
+                                    "INITIAL_PLAYER_STRENGTH".to_owned(),
+                                )),
+                            }),
+                        },
+                    }),
+                    Statement::If(IfStatement {
+                        condition: Condition::And(vec![
+                            Condition::EqualsValue {
+                                left: AssignmentValue::RandomInt {
+                                    max: Box::new(AssignmentValue::Number(6.0)),
+                                },
+                                right: AssignmentValue::Number(0.0),
+                            },
+                            Condition::Compare {
+                                name: "dist".to_owned(),
+                                operator: ComparisonOperator::Less,
+                                value: AssignmentValue::Number(4.5),
+                            },
+                        ]),
+                        actions: vec![Statement::Return],
+                        else_actions: Vec::new(),
+                    }),
+                ],
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_reference_ai_else_if_choice_tree_and_recurring_args() {
+        let program = parse_program(
+            "opponent_ai (p1, p2) = {\n  var dist = distance(p1, p2)\n  if (dist < 5.5) {\n    var mid_choice = rnd(3)\n    if (mid_choice == 0 || is_aggressive == 1) {\n      run op_rush_attack(p2)\n    } else if (mid_choice == 1) {\n      op_action = 3\n      p2.FlyKick at speed of 2.9\n    } else {\n      op_action = 2\n      p2.HighKick at speed of 2.3\n    }\n    return\n  }\n}\nrun opponent_ai(player1,player2) every 0.65 seconds",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::FunctionDef(FunctionDefStatement {
+                    name: "opponent_ai".to_owned(),
+                    params: vec!["p1".to_owned(), "p2".to_owned()],
+                    guard: None,
+                    actions: vec![
+                        Statement::Assignment(AssignmentStatement {
+                            name: "dist".to_owned(),
+                            value: AssignmentValue::Distance {
+                                left: "p1".to_owned(),
+                                right: "p2".to_owned(),
+                            },
+                        }),
+                        Statement::If(IfStatement {
+                            condition: Condition::Compare {
+                                name: "dist".to_owned(),
+                                operator: ComparisonOperator::Less,
+                                value: AssignmentValue::Number(5.5),
+                            },
+                            actions: vec![
+                                Statement::Assignment(AssignmentStatement {
+                                    name: "mid_choice".to_owned(),
+                                    value: AssignmentValue::RandomInt {
+                                        max: Box::new(AssignmentValue::Number(3.0)),
+                                    },
+                                }),
+                                Statement::If(IfStatement {
+                                    condition: Condition::Or(vec![
+                                        Condition::EqualsNumber {
+                                            name: "mid_choice".to_owned(),
+                                            value: 0.0,
+                                        },
+                                        Condition::EqualsNumber {
+                                            name: "is_aggressive".to_owned(),
+                                            value: 1.0,
+                                        },
+                                    ]),
+                                    actions: vec![Statement::RunFunction {
+                                        name: "op_rush_attack".to_owned(),
+                                        args: vec!["p2".to_owned()],
+                                    }],
+                                    else_actions: vec![Statement::If(IfStatement {
+                                        condition: Condition::EqualsNumber {
+                                            name: "mid_choice".to_owned(),
+                                            value: 1.0,
+                                        },
+                                        actions: vec![
+                                            Statement::Assignment(AssignmentStatement {
+                                                name: "op_action".to_owned(),
+                                                value: AssignmentValue::Number(3.0),
+                                            }),
+                                            Statement::Animate(AnimationStatement {
+                                                target: "p2".to_owned(),
+                                                clip: "FlyKick".to_owned(),
+                                                speed: 2.9,
+                                                looped: false,
+                                                blocking: true,
+                                            }),
+                                        ],
+                                        else_actions: vec![
+                                            Statement::Assignment(AssignmentStatement {
+                                                name: "op_action".to_owned(),
+                                                value: AssignmentValue::Number(2.0),
+                                            }),
+                                            Statement::Animate(AnimationStatement {
+                                                target: "p2".to_owned(),
+                                                clip: "HighKick".to_owned(),
+                                                speed: 2.3,
+                                                looped: false,
+                                                blocking: true,
+                                            }),
+                                        ],
+                                    })],
+                                }),
+                                Statement::Return,
+                            ],
+                            else_actions: Vec::new(),
+                        }),
+                    ],
+                }),
+                Statement::RunEvery {
+                    name: "opponent_ai".to_owned(),
+                    args: vec!["player1".to_owned(), "player2".to_owned()],
+                    interval_seconds: 0.65,
+                },
+            ]
         );
     }
 

@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -408,6 +409,7 @@ const DEFAULT_CHARACTER_MOVE_SPEED: f32 = 7.0;
 const DEFAULT_CHARACTER_CAPSULE_RADIUS: f32 = 0.35;
 const DEFAULT_CHARACTER_CAPSULE_HEIGHT: f32 = 0.9;
 const DEFAULT_CHARACTER_FLOAT_HEIGHT: f32 = 0.95;
+const DEFAULT_CHARACTER_SENSOR_HEIGHT: f32 = 0.08;
 const DEFAULT_CHARACTER_VISUAL_DROP: f32 = 1.25;
 const DEFAULT_STAGE_SUPPORT_HALF_SIZE: f32 = 160.0;
 const CHARACTER_INPUT_TTL_SECONDS: f32 = 0.12;
@@ -417,6 +419,7 @@ const LOOP_CONTINUE_DELAY_SECONDS: f32 = 0.001;
 const PHYSICS_LAYER_WORLD: u32 = 1 << 0;
 const PHYSICS_LAYER_CHARACTER: u32 = 1 << 1;
 const PHYSICS_LAYER_HITBOX: u32 = 1 << 2;
+static SCENEMAX_RANDOM_STATE: AtomicU64 = AtomicU64::new(0);
 
 fn load_startup_program(launch: &ProjectorLaunch) -> SceneMaxStartupProgram {
     let Some(script_path) = launch
@@ -1582,7 +1585,10 @@ fn insert_tnua_character_controller(
         character_collision_layers(),
         TnuaController::<SceneMaxControlScheme>::default(),
         TnuaConfig::<SceneMaxControlScheme>(config),
-        TnuaAvian3dSensorShape(AvianCollider::cylinder(radius * 0.95, 0.0)),
+        TnuaAvian3dSensorShape(AvianCollider::cylinder(
+            radius * 0.98,
+            DEFAULT_CHARACTER_SENSOR_HEIGHT,
+        )),
         LockedAxes::ROTATION_LOCKED.unlock_rotation_y(),
         CollisionEventsEnabled,
     ));
@@ -3991,6 +3997,9 @@ fn substitute_assignment_value(
         AssignmentValue::RandomInt { max } => AssignmentValue::RandomInt {
             max: Box::new(substitute_assignment_value(max, bindings)),
         },
+        AssignmentValue::Round { value } => AssignmentValue::Round {
+            value: Box::new(substitute_assignment_value(value, bindings)),
+        },
         AssignmentValue::Distance { left, right } => AssignmentValue::Distance {
             left: substitute_path(left, bindings),
             right: substitute_path(right, bindings),
@@ -4563,6 +4572,16 @@ fn resolve_assignment_value_with_guards(
             .max(1.0) as u32;
             Some((pseudo_random_u32() % max) as f32)
         }
+        AssignmentValue::Round { value } => {
+            let value = resolve_assignment_value_with_guards(
+                value,
+                vars,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?;
+            Some(value.round())
+        }
         AssignmentValue::Distance { left, right } => {
             let transforms_by_name = transforms_by_name?;
             let left = transforms_by_name.get(left)?;
@@ -4981,10 +5000,54 @@ fn collision_part_radius(reference: &str) -> f32 {
 }
 
 fn pseudo_random_u32() -> u32 {
+    let mut state = SCENEMAX_RANDOM_STATE.load(Ordering::Relaxed);
+    if state == 0 {
+        let seed = random_seed();
+        let _ =
+            SCENEMAX_RANDOM_STATE.compare_exchange(0, seed, Ordering::Relaxed, Ordering::Relaxed);
+        state = SCENEMAX_RANDOM_STATE.load(Ordering::Relaxed);
+    }
+
+    loop {
+        let next = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        match SCENEMAX_RANDOM_STATE.compare_exchange_weak(
+            state,
+            next,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return (next >> 32) as u32,
+            Err(updated) if updated != 0 => state = updated,
+            Err(_) => state = random_seed(),
+        }
+    }
+}
+
+fn random_seed() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.subsec_nanos())
-        .unwrap_or_default()
+        .map(|duration| {
+            (duration.as_nanos() as u64)
+                ^ 0x9E37_79B9_7F4A_7C15
+                ^ ((std::process::id() as u64) << 32)
+        })
+        .ok()
+        .filter(|seed| *seed != 0)
+        .unwrap_or(0xA076_1D64_78BD_642F)
+}
+
+#[cfg(test)]
+fn reset_pseudo_random_for_test(seed: u64) {
+    SCENEMAX_RANDOM_STATE.store(seed.max(1), Ordering::Relaxed);
+}
+
+#[cfg(test)]
+fn sample_pseudo_random_moduli(max: u32, count: usize) -> HashSet<u32> {
+    (0..count)
+        .map(|_| pseudo_random_u32() % max.max(1))
+        .collect()
 }
 
 fn resolve_symbol_value(
@@ -6101,6 +6164,53 @@ mod tests {
     }
 
     #[test]
+    fn evaluates_reference_enemy_ai_guard_with_constants_and_params() {
+        let program = scenemax_parser::parse_program(
+            "var GAME_STATE_START = 1, GAME_STATE_OVER = 2\nvar @enemy_ai_allowed = enemy_ko==0 && op_hit==0 && player1_ko==0 && game_status!=GAME_STATE_OVER && slow_motion==0 && player2.data.trapped == 0\n[op_hit!=1 && player1_ko==0 && enemy_ko==0 && op_action==0 && game_status==GAME_STATE_START && slow_motion==0 && player2.data.trapped == 0 && p2.data.is_jumping == 0]\nopponent_ai(p1, p2) = {\n  p2.look at (p1)\n}",
+        )
+        .unwrap();
+        let functions = collect_functions_by_name(&program);
+        let guards = collect_guards_by_name(&program);
+        let function = functions.get("opponent_ai").unwrap();
+        let mut vars = SceneMaxVars::default();
+        apply_initial_assignments(&program, &mut vars);
+        vars.0.insert("enemy_ko".to_owned(), 0.0);
+        vars.0.insert("op_hit".to_owned(), 0.0);
+        vars.0.insert("player1_ko".to_owned(), 0.0);
+        vars.0.insert("op_action".to_owned(), 0.0);
+        vars.0.insert("game_status".to_owned(), 1.0);
+        vars.0.insert("slow_motion".to_owned(), 0.0);
+        vars.0.insert("player2.data.trapped".to_owned(), 0.0);
+        vars.0.insert("player2.data.is_jumping".to_owned(), 0.0);
+
+        assert!(condition_matches(
+            &Condition::Alias("enemy_ai_allowed".to_owned()),
+            &vars,
+            &guards,
+            None,
+            None,
+        ));
+        assert!(function_guard_matches(
+            function,
+            &["player1".to_owned(), "player2".to_owned()],
+            &vars,
+            &guards,
+            None,
+            None,
+        ));
+
+        vars.0.insert("player2.data.is_jumping".to_owned(), 1.0);
+        assert!(!function_guard_matches(
+            function,
+            &["player1".to_owned(), "player2".to_owned()],
+            &vars,
+            &guards,
+            None,
+            None,
+        ));
+    }
+
+    #[test]
     fn evaluates_distance_and_condition_assignment_values() {
         let mut vars = SceneMaxVars::default();
         vars.0.insert("life2".to_owned(), 3.0);
@@ -6195,6 +6305,42 @@ mod tests {
             ),
             Some(0.0)
         );
+    }
+
+    #[test]
+    fn evaluates_round_assignment_value() {
+        let mut vars = SceneMaxVars::default();
+        vars.0.insert("life1".to_owned(), 73.0);
+        vars.0.insert("INITIAL_PLAYER_STRENGTH".to_owned(), 100.0);
+
+        assert_eq!(
+            resolve_assignment_value(
+                &AssignmentValue::Round {
+                    value: Box::new(AssignmentValue::Binary {
+                        left: Box::new(AssignmentValue::Binary {
+                            left: Box::new(AssignmentValue::Symbol("life1".to_owned())),
+                            operator: ArithmeticOperator::Multiply,
+                            right: Box::new(AssignmentValue::Number(16.0)),
+                        }),
+                        operator: ArithmeticOperator::Divide,
+                        right: Box::new(AssignmentValue::Symbol(
+                            "INITIAL_PLAYER_STRENGTH".to_owned(),
+                        )),
+                    }),
+                },
+                &vars,
+                None,
+            ),
+            Some(12.0)
+        );
+    }
+
+    #[test]
+    fn pseudo_random_varies_low_modulo_branches() {
+        reset_pseudo_random_for_test(0x1234_5678_9ABC_DEF0);
+
+        assert!(sample_pseudo_random_moduli(4, 16).len() > 1);
+        assert!(sample_pseudo_random_moduli(2, 16).len() > 1);
     }
 
     #[test]
