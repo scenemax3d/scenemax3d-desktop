@@ -1,8 +1,12 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs,
+    io::Write,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -32,9 +36,10 @@ use bevy_tnua_avian3d::prelude::{TnuaAvian3dPlugin, TnuaAvian3dSensorShape};
 use scenemax_parser::{
     AnimationSpeedStatement, AnimationStatement, ArithmeticOperator, AssignmentValue,
     AttachStatement, CameraAttachStatement, CharacterJumpStatement, CharacterModeStatement,
-    ComparisonOperator, Condition, EntityOptions, KeyTrigger, MoveDirection, ObjectPoolStatement,
-    PoolReleaseStatement, PositionExpr, PositionStatement, PositionValue, Program, SceneMaxAxis,
-    SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3, Statement,
+    ComparisonOperator, Condition, EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage,
+    LoggerStatement, MoveDirection, ObjectPoolStatement, PoolReleaseStatement, PositionExpr,
+    PositionStatement, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
+    SceneMaxCollisionShape, SceneMaxVec3, Statement,
 };
 
 #[derive(TnuaScheme)]
@@ -69,6 +74,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .as_ref()
         .map(|root| root.join("resources"))
         .filter(|path| path.is_dir());
+    initialize_runtime_logger(project_root.as_deref(), script_root.as_deref());
 
     App::new()
         .insert_resource(WinitSettings::continuous())
@@ -171,6 +177,12 @@ struct SceneMaxStartupProgram(Option<Program>);
 #[derive(Debug, Resource, Default)]
 struct SceneMaxVars(HashMap<String, f32>);
 
+#[derive(Debug, Clone, Default)]
+struct SceneMaxScopeFrame {
+    vars: HashMap<String, f32>,
+    aliases: HashMap<String, String>,
+}
+
 #[derive(Debug, Resource, Default)]
 struct SceneMaxObjectPools {
     aliases: HashMap<String, String>,
@@ -240,6 +252,7 @@ struct DelayedActions {
     remaining_seconds: f32,
     actions: Vec<Statement>,
     owner: Option<SceneMaxControllerKey>,
+    scope: Option<SceneMaxScopeFrame>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -420,6 +433,42 @@ const PHYSICS_LAYER_WORLD: u32 = 1 << 0;
 const PHYSICS_LAYER_CHARACTER: u32 = 1 << 1;
 const PHYSICS_LAYER_HITBOX: u32 = 1 << 2;
 static SCENEMAX_RANDOM_STATE: AtomicU64 = AtomicU64::new(0);
+static SCENEMAX_RUNTIME_LOG_FILE: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+fn initialize_runtime_logger(project_root: Option<&Path>, script_root: Option<&Path>) {
+    let base = project_root
+        .or(script_root)
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let path = base.join("scenemax-nextgen-runtime.log");
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::remove_file(&path);
+    if let Ok(mut log_file) = SCENEMAX_RUNTIME_LOG_FILE.lock() {
+        *log_file = Some(path);
+    }
+}
+
+fn write_runtime_log_line(level: LoggerLevel, message: &str) {
+    let level_text = match level {
+        LoggerLevel::Info => "INFO",
+        LoggerLevel::Debug => "DEBUG",
+        LoggerLevel::Error => "ERROR",
+    };
+    tracing::info!(level = level_text, message, "SceneMax logger");
+    let Some(path) = SCENEMAX_RUNTIME_LOG_FILE
+        .lock()
+        .ok()
+        .and_then(|path| path.clone())
+    else {
+        return;
+    };
+    let line = format!("[{level_text}] {message}\n");
+    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = file.write_all(line.as_bytes());
+    }
+}
 
 fn load_startup_program(launch: &ProjectorLaunch) -> SceneMaxStartupProgram {
     let Some(script_path) = launch
@@ -1016,13 +1065,25 @@ fn object_pool_prototype(
     let function = functions_by_name.get(&pool.factory)?;
     function.actions.iter().find_map(|action| {
         let Statement::ModelDecl {
-            name: _,
+            name,
             resource,
             options,
         } = action
         else {
             return None;
         };
+        let returned_name = function.actions.iter().find_map(|action| {
+            let Statement::ReturnValue {
+                value: AssignmentValue::Symbol(value),
+            } = action
+            else {
+                return None;
+            };
+            Some(value)
+        });
+        if returned_name.is_some_and(|returned_name| returned_name != name) {
+            return None;
+        }
         Some(ModelRuntimeDecl {
             name: String::new(),
             resource: resource.clone(),
@@ -1583,6 +1644,8 @@ fn insert_tnua_character_controller(
         AvianRigidBody::Dynamic,
         AvianCollider::capsule(radius, height),
         character_collision_layers(),
+        LinearVelocity::ZERO,
+        AngularVelocity::ZERO,
         TnuaController::<SceneMaxControlScheme>::default(),
         TnuaConfig::<SceneMaxControlScheme>(config),
         TnuaAvian3dSensorShape(AvianCollider::cylinder(
@@ -1603,17 +1666,37 @@ fn apply_pending_character_modes(
     mut commands: Commands,
     mut character_configs: ResMut<Assets<SceneMaxControlSchemeConfig>>,
     pending: Query<(Entity, &Transform, &PendingCharacterMode)>,
+    active_characters: Query<
+        (&SceneMaxEntity, &Transform),
+        (
+            With<SceneMaxCharacterController>,
+            Without<PendingCharacterMode>,
+        ),
+    >,
     supports: Query<Entity, With<SceneMaxStageSupport>>,
 ) {
-    if supports.is_empty() {
-        let support_samples = pending
-            .iter()
-            .map(|(_, transform, pending_mode)| (pending_mode.0.target.clone(), *transform))
-            .collect::<Vec<_>>();
+    let pending_modes = pending.iter().collect::<Vec<_>>();
+    if pending_modes.is_empty() {
+        return;
+    }
+
+    for support_entity in &supports {
+        commands.entity(support_entity).despawn();
+    }
+    let support_samples = pending_modes
+        .iter()
+        .map(|(_, transform, pending_mode)| (pending_mode.0.target.clone(), **transform))
+        .chain(
+            active_characters
+                .iter()
+                .map(|(scene_entity, transform)| (scene_entity.name.clone(), *transform)),
+        )
+        .collect::<Vec<_>>();
+    if !support_samples.is_empty() {
         spawn_character_stage_support(&mut commands, &support_samples);
     }
 
-    for (entity, _transform, pending_mode) in &pending {
+    for (entity, _transform, pending_mode) in pending_modes {
         insert_tnua_character_controller(
             &mut commands,
             entity,
@@ -1651,7 +1734,12 @@ fn clear_character_mode(commands: &mut Commands, entity: Entity) {
     entity_commands.remove::<TnuaConfig<SceneMaxControlScheme>>();
     entity_commands.remove::<TnuaAvian3dSensorShape>();
     entity_commands.remove::<LockedAxes>();
-    entity_commands.insert((AvianRigidBody::Kinematic, character_collision_layers()));
+    entity_commands.insert((
+        AvianRigidBody::Kinematic,
+        character_collision_layers(),
+        LinearVelocity::ZERO,
+        AngularVelocity::ZERO,
+    ));
 }
 
 fn spawn_character_stage_support(commands: &mut Commands, samples: &[(String, Transform)]) {
@@ -1666,7 +1754,7 @@ fn spawn_character_stage_support(commands: &mut Commands, samples: &[(String, Tr
         .map(|(_, transform)| transform.translation)
         .fold(Vec3::ZERO, |sum, translation| sum + translation)
         / sample_count;
-    let support_y = center.y - DEFAULT_CHARACTER_FLOAT_HEIGHT - DEFAULT_CHARACTER_VISUAL_DROP;
+    let support_y = character_stage_support_y(center.y);
     let spread = support_samples
         .iter()
         .map(|(_, transform)| {
@@ -1697,6 +1785,10 @@ fn spawn_character_stage_support(commands: &mut Commands, samples: &[(String, Tr
         samples = support_samples.len(),
         "spawned coarse SceneMax character stage support"
     );
+}
+
+fn character_stage_support_y(center_y: f32) -> f32 {
+    center_y - DEFAULT_CHARACTER_FLOAT_HEIGHT - DEFAULT_CHARACTER_VISUAL_DROP
 }
 
 fn preferred_stage_support_samples(samples: &[(String, Transform)]) -> Vec<(String, Transform)> {
@@ -1757,14 +1849,14 @@ fn apply_startup_function_by_name(
     gltfs_by_name: &HashMap<String, Handle<Gltf>>,
     guards_by_name: &HashMap<String, Condition>,
     depth: usize,
-) {
+) -> ActionSequenceResult {
     if depth > 8 {
         tracing::warn!(name, "skipping deeply recursive startup SceneMax run");
-        return;
+        return ActionSequenceResult::Completed;
     }
     let Some(function) = functions_by_name.get(name) else {
         tracing::debug!(name, "startup SceneMax function was not parsed");
-        return;
+        return ActionSequenceResult::Completed;
     };
     if !function_guard_matches(
         function,
@@ -1775,13 +1867,13 @@ fn apply_startup_function_by_name(
         None,
     ) {
         tracing::debug!(name, "startup SceneMax function guard is false");
-        return;
+        return ActionSequenceResult::Completed;
     }
 
     tracing::info!(name, "running SceneMax startup function");
     let actions = instantiate_function_actions(function, args);
     for action in &actions {
-        apply_startup_action(
+        let result = apply_startup_action(
             action,
             commands,
             vars,
@@ -1794,7 +1886,11 @@ fn apply_startup_function_by_name(
             guards_by_name,
             depth,
         );
+        if result.should_stop_parent() {
+            return result;
+        }
     }
+    ActionSequenceResult::Completed
 }
 
 fn apply_startup_action(
@@ -1809,7 +1905,7 @@ fn apply_startup_action(
     gltfs_by_name: &HashMap<String, Handle<Gltf>>,
     guards_by_name: &HashMap<String, Condition>,
     depth: usize,
-) {
+) -> ActionSequenceResult {
     match action {
         Statement::Assignment(assignment) => {
             apply_assignment(
@@ -1819,10 +1915,31 @@ fn apply_startup_action(
                 guards_by_name,
                 None,
             );
+            ActionSequenceResult::Completed
         }
-        Statement::CameraSystemSelect { name } => select_camera_system(name, camera_system),
-        Statement::CameraAttach(attach) => attach_camera(attach, object_pools, camera_system),
-        Statement::CameraAttachStop => stop_camera_attachment(camera_system),
+        Statement::CameraSystemSelect { name } => {
+            select_camera_system(name, camera_system);
+            ActionSequenceResult::Completed
+        }
+        Statement::CameraAttach(attach) => {
+            attach_camera(attach, object_pools, None, camera_system);
+            ActionSequenceResult::Completed
+        }
+        Statement::CameraAttachStop => {
+            stop_camera_attachment(camera_system);
+            ActionSequenceResult::Completed
+        }
+        Statement::Logger(logger) => {
+            apply_logger_statement(
+                logger,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            ActionSequenceResult::Completed
+        }
         Statement::RunFunction { name, args } => apply_startup_function_by_name(
             name,
             args,
@@ -1839,7 +1956,7 @@ fn apply_startup_action(
         ),
         Statement::Async { actions } => {
             for nested_action in actions {
-                apply_startup_action(
+                let result = apply_startup_action(
                     nested_action,
                     commands,
                     vars,
@@ -1852,7 +1969,11 @@ fn apply_startup_action(
                     guards_by_name,
                     depth,
                 );
+                if result.should_stop_parent() {
+                    return result;
+                }
             }
+            ActionSequenceResult::Completed
         }
         Statement::If(statement) => {
             let selected_actions = if condition_matches(
@@ -1867,7 +1988,7 @@ fn apply_startup_action(
                 &statement.else_actions
             };
             for nested_action in selected_actions {
-                apply_startup_action(
+                let result = apply_startup_action(
                     nested_action,
                     commands,
                     vars,
@@ -1880,7 +2001,11 @@ fn apply_startup_action(
                     guards_by_name,
                     depth,
                 );
+                if result.should_stop_parent() {
+                    return result;
+                }
             }
+            ActionSequenceResult::Completed
         }
         Statement::Guarded { condition, actions } => {
             if condition_matches(
@@ -1891,7 +2016,7 @@ fn apply_startup_action(
                 None,
             ) {
                 for nested_action in actions {
-                    apply_startup_action(
+                    let result = apply_startup_action(
                         nested_action,
                         commands,
                         vars,
@@ -1904,13 +2029,17 @@ fn apply_startup_action(
                         guards_by_name,
                         depth,
                     );
+                    if result.should_stop_parent() {
+                        return result;
+                    }
                 }
             }
+            ActionSequenceResult::Completed
         }
         Statement::Repeat { times, actions } => {
             for _ in 0..*times {
                 for nested_action in actions {
-                    apply_startup_action(
+                    let result = apply_startup_action(
                         nested_action,
                         commands,
                         vars,
@@ -1923,8 +2052,44 @@ fn apply_startup_action(
                         guards_by_name,
                         depth,
                     );
+                    if result.should_stop_parent() {
+                        return result;
+                    }
                 }
             }
+            ActionSequenceResult::Completed
+        }
+        Statement::DoWhile { condition, actions } => {
+            for _ in 0..128 {
+                for nested_action in actions {
+                    let result = apply_startup_action(
+                        nested_action,
+                        commands,
+                        vars,
+                        object_pools,
+                        camera_system,
+                        functions_by_name,
+                        entities_by_name,
+                        transforms_by_name,
+                        gltfs_by_name,
+                        guards_by_name,
+                        depth,
+                    );
+                    if result.should_stop_parent() {
+                        return result;
+                    }
+                }
+                if !condition_matches(
+                    condition,
+                    vars,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                ) {
+                    break;
+                }
+            }
+            ActionSequenceResult::Completed
         }
         Statement::Visibility { target, visible } => {
             if let Some(entity) = entities_by_name.get(target) {
@@ -1934,6 +2099,7 @@ fn apply_startup_action(
                     Visibility::Hidden
                 });
             }
+            ActionSequenceResult::Completed
         }
         Statement::Animate(animation) => {
             if let (Some(entity), Some(gltf)) = (
@@ -1947,6 +2113,7 @@ fn apply_startup_action(
                     gltf: gltf.clone(),
                 });
             }
+            ActionSequenceResult::Completed
         }
         Statement::AnimationSpeed(animation_speed) => {
             if let Some(entity) = entities_by_name.get(&animation_speed.target) {
@@ -1954,6 +2121,7 @@ fn apply_startup_action(
                     .entity(*entity)
                     .insert(animation_speed_override(animation_speed));
             }
+            ActionSequenceResult::Completed
         }
         Statement::CharacterMode(character_mode) => {
             if let Some(entity) = entities_by_name.get(&character_mode.target) {
@@ -1961,11 +2129,13 @@ fn apply_startup_action(
                     .entity(*entity)
                     .insert(PendingCharacterMode(character_mode.clone()));
             }
+            ActionSequenceResult::Completed
         }
         Statement::ClearCharacterMode { target } => {
             if let Some(entity) = entities_by_name.get(target) {
                 clear_character_mode(commands, *entity);
             }
+            ActionSequenceResult::Completed
         }
         Statement::CharacterIgnore(ignore) => {
             tracing::debug!(
@@ -1973,6 +2143,7 @@ fn apply_startup_action(
                 ignored = ignore.ignored,
                 "SceneMax character.ignore is handled by collision layers"
             );
+            ActionSequenceResult::Completed
         }
         Statement::LookAt { target, subject } => {
             let (Some(entity), Some(target_transform), Some(subject_transform)) = (
@@ -1980,20 +2151,21 @@ fn apply_startup_action(
                 transforms_by_name.get(target).copied(),
                 lookup_subject_transform(subject, transforms_by_name),
             ) else {
-                return;
+                return ActionSequenceResult::Completed;
             };
             let mut updated = target_transform;
             look_at_scenemax_forward(&mut updated, subject_transform.translation);
             commands.entity(*entity).insert(updated);
             transforms_by_name.insert(target.clone(), updated);
+            ActionSequenceResult::Completed
         }
         Statement::Position(position) => {
             let Some(entity) = entities_by_name.get(&position.target) else {
-                return;
+                return ActionSequenceResult::Completed;
             };
             let Some(translation) = evaluate_position_statement(position, transforms_by_name)
             else {
-                return;
+                return ActionSequenceResult::Completed;
             };
             let mut transform = transforms_by_name
                 .get(&position.target)
@@ -2002,6 +2174,7 @@ fn apply_startup_action(
             transform.translation = translation;
             commands.entity(*entity).insert(transform);
             transforms_by_name.insert(position.target.clone(), transform);
+            ActionSequenceResult::Completed
         }
         Statement::Turn(turn) => {
             if let Some(entity) = entities_by_name.get(&turn.target) {
@@ -2009,6 +2182,7 @@ fn apply_startup_action(
                     .entity(*entity)
                     .insert(timed_turn_from_statement(turn));
             }
+            ActionSequenceResult::Completed
         }
         Statement::Move(movement) => {
             if let (Some(entity), Some(transform)) = (
@@ -2019,6 +2193,7 @@ fn apply_startup_action(
                     .entity(*entity)
                     .insert(timed_move_from_statement(movement, transform));
             }
+            ActionSequenceResult::Completed
         }
         Statement::MoveTo(move_to) => {
             if let (Some(entity), Some(transform)) = (
@@ -2031,6 +2206,7 @@ fn apply_startup_action(
                     commands.entity(*entity).insert(timed_move);
                 }
             }
+            ActionSequenceResult::Completed
         }
         Statement::CharacterJump(jump) => {
             if let (Some(entity), Some(transform)) = (
@@ -2041,6 +2217,7 @@ fn apply_startup_action(
                     .entity(*entity)
                     .insert(timed_jump_from_statement(jump, transform));
             }
+            ActionSequenceResult::Completed
         }
         Statement::PhysicsImpulse(impulse) => {
             if let (Some(entity), Some(transform)) = (
@@ -2049,11 +2226,13 @@ fn apply_startup_action(
             ) {
                 apply_physics_impulse(commands, *entity, transform, impulse);
             }
+            ActionSequenceResult::Completed
         }
         Statement::PhysicsStop { target } => {
             if let Some(entity) = entities_by_name.get(target) {
                 apply_physics_stop(commands, *entity);
             }
+            ActionSequenceResult::Completed
         }
         Statement::PhysicsThrowAt(throw_at) => {
             if let (Some(entity), Some(transform)) = (
@@ -2069,8 +2248,10 @@ fn apply_startup_action(
                     transforms_by_name,
                 );
             }
+            ActionSequenceResult::Completed
         }
-        _ => {}
+        Statement::Return | Statement::ReturnValue { .. } => ActionSequenceResult::Returned,
+        _ => ActionSequenceResult::Completed,
     }
 }
 
@@ -2230,6 +2411,7 @@ fn apply_key_events(
             &runtime_assets,
             &mut collider_bounds,
             Some(&mut delayed_actions),
+            None,
             None,
             continuous_delta_seconds,
             &mut commands,
@@ -2419,6 +2601,7 @@ fn apply_when_events(
             &mut collider_bounds,
             Some(&mut delayed_actions),
             Some(owner.clone()),
+            None,
             Some(time.delta_secs()),
             &mut commands,
             &mut scene_entities,
@@ -2523,6 +2706,7 @@ fn update_recurring_runs(
             Some(&mut delayed_actions),
             Some(owner.clone()),
             None,
+            None,
             &mut commands,
             &mut scene_entities,
             0,
@@ -2590,7 +2774,7 @@ fn update_delayed_actions(
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
 
-    for delayed in ready_actions {
+    for mut delayed in ready_actions {
         if delayed.actions.is_empty() {
             if let Some(owner) = delayed.owner {
                 active_controllers.running.remove(&owner);
@@ -2611,6 +2795,7 @@ fn update_delayed_actions(
             &mut collider_bounds,
             Some(&mut delayed_actions),
             delayed.owner.clone(),
+            delayed.scope.as_mut(),
             None,
             &mut commands,
             &mut scene_entities,
@@ -2628,6 +2813,7 @@ fn enqueue_delayed_actions(
     seconds: f32,
     actions: Vec<Statement>,
     owner: Option<SceneMaxControllerKey>,
+    scope: Option<SceneMaxScopeFrame>,
 ) -> bool {
     let Some(delayed_actions) = delayed_actions else {
         return false;
@@ -2639,6 +2825,7 @@ fn enqueue_delayed_actions(
         remaining_seconds: seconds.max(0.0),
         actions,
         owner,
+        scope,
     });
     true
 }
@@ -2656,6 +2843,7 @@ fn apply_action_sequence(
     collider_bounds: &mut SceneMaxColliderBounds,
     mut delayed_actions: Option<&mut DelayedActionQueue>,
     owner: Option<SceneMaxControllerKey>,
+    mut scope: Option<&mut SceneMaxScopeFrame>,
     continuous_delta_seconds: Option<f32>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
@@ -2672,13 +2860,17 @@ fn apply_action_sequence(
         )>,
     )>,
 ) -> ActionSequenceResult {
+    apply_scoped_transform_aliases(transforms_by_name, scope.as_deref());
+
     for (index, action) in actions.iter().enumerate() {
         match action {
             Statement::NoOp { .. } => {}
             Statement::Unsupported { text } => {
                 tracing::debug!(text, "skipping unsupported SceneMax runtime action");
             }
-            Statement::Return => return ActionSequenceResult::Returned,
+            Statement::Return | Statement::ReturnValue { .. } => {
+                return ActionSequenceResult::Returned;
+            }
             Statement::Wait { seconds } => {
                 let remaining = actions[index + 1..].to_vec();
                 if enqueue_delayed_actions(
@@ -2686,15 +2878,17 @@ fn apply_action_sequence(
                     *seconds,
                     remaining,
                     owner.clone(),
+                    scope.as_deref().cloned(),
                 ) {
                     return ActionSequenceResult::Suspended;
                 }
                 return ActionSequenceResult::Completed;
             }
             Statement::WaitValue { value } => {
-                let seconds = resolve_assignment_value_with_guards(
+                let seconds = resolve_assignment_value_scoped_with_guards(
                     value,
                     vars,
+                    scope.as_deref(),
                     guards_by_name,
                     Some(transforms_by_name),
                     Some(collider_bounds),
@@ -2706,15 +2900,17 @@ fn apply_action_sequence(
                     seconds,
                     remaining,
                     owner.clone(),
+                    scope.as_deref().cloned(),
                 ) {
                     return ActionSequenceResult::Suspended;
                 }
                 return ActionSequenceResult::Completed;
             }
             Statement::WaitUntil { condition } => {
-                if !condition_matches(
+                if !condition_matches_scoped(
                     condition,
                     vars,
+                    scope.as_deref(),
                     guards_by_name,
                     Some(transforms_by_name),
                     Some(collider_bounds),
@@ -2724,6 +2920,7 @@ fn apply_action_sequence(
                         LOOP_CONTINUE_DELAY_SECONDS,
                         actions[index..].to_vec(),
                         owner.clone(),
+                        scope.as_deref().cloned(),
                     ) {
                         return ActionSequenceResult::Suspended;
                     }
@@ -2747,6 +2944,7 @@ fn apply_action_sequence(
                     LOOP_CONTINUE_DELAY_SECONDS,
                     actions[index..].to_vec(),
                     owner.clone(),
+                    scope.as_deref().cloned(),
                 ) {
                     return ActionSequenceResult::Suspended;
                 }
@@ -2766,13 +2964,20 @@ fn apply_action_sequence(
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     None,
+                    scope.as_deref_mut(),
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
                 );
             }
-            Statement::Repeat { times, actions } => {
-                let repeated_actions = repeat_actions(actions, *times);
+            Statement::Repeat {
+                times,
+                actions: block_actions,
+            } => {
+                let repeated_actions = actions_with_parent_continuation(
+                    repeat_actions(block_actions, *times),
+                    parent_action_tail(actions, index),
+                );
                 let result = apply_action_sequence(
                     &repeated_actions,
                     transforms_by_name,
@@ -2786,6 +2991,7 @@ fn apply_action_sequence(
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
+                    scope.as_deref_mut(),
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
@@ -2793,13 +2999,21 @@ fn apply_action_sequence(
                 if result.should_stop_parent() {
                     return result;
                 }
+                return ActionSequenceResult::Completed;
             }
-            Statement::DoWhile { condition, actions } => {
-                let mut loop_actions = actions.clone();
+            Statement::DoWhile {
+                condition,
+                actions: block_actions,
+            } => {
+                let mut loop_actions = block_actions.clone();
                 loop_actions.push(Statement::LoopContinue {
                     condition: condition.clone(),
-                    actions: actions.clone(),
+                    actions: block_actions.clone(),
                 });
+                loop_actions = actions_with_parent_continuation(
+                    loop_actions,
+                    parent_action_tail(actions, index),
+                );
                 let result = apply_action_sequence(
                     &loop_actions,
                     transforms_by_name,
@@ -2813,6 +3027,7 @@ fn apply_action_sequence(
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
+                    scope.as_deref_mut(),
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
@@ -2820,32 +3035,41 @@ fn apply_action_sequence(
                 if result.should_stop_parent() {
                     return result;
                 }
+                return ActionSequenceResult::Completed;
             }
-            Statement::LoopContinue { condition, actions } => {
-                if condition_matches(
+            Statement::LoopContinue {
+                condition,
+                actions: block_actions,
+            } => {
+                if condition_matches_scoped(
                     condition,
                     vars,
+                    scope.as_deref(),
                     guards_by_name,
                     Some(transforms_by_name),
                     Some(collider_bounds),
                 ) {
+                    let mut loop_and_tail = vec![Statement::DoWhile {
+                        condition: condition.clone(),
+                        actions: block_actions.clone(),
+                    }];
+                    loop_and_tail.extend_from_slice(parent_action_tail(actions, index));
                     if enqueue_delayed_actions(
                         delayed_actions.as_deref_mut(),
                         LOOP_CONTINUE_DELAY_SECONDS,
-                        vec![Statement::DoWhile {
-                            condition: condition.clone(),
-                            actions: actions.clone(),
-                        }],
+                        loop_and_tail,
                         owner.clone(),
+                        scope.as_deref().cloned(),
                     ) {
                         return ActionSequenceResult::Suspended;
                     }
                 }
             }
             Statement::If(statement) => {
-                let selected_actions = if condition_matches(
+                let selected_actions = if condition_matches_scoped(
                     &statement.condition,
                     vars,
+                    scope.as_deref(),
                     guards_by_name,
                     Some(transforms_by_name),
                     Some(collider_bounds),
@@ -2854,8 +3078,12 @@ fn apply_action_sequence(
                 } else {
                     &statement.else_actions
                 };
+                let selected_actions = actions_with_parent_continuation(
+                    selected_actions.clone(),
+                    parent_action_tail(actions, index),
+                );
                 let result = apply_action_sequence(
-                    selected_actions,
+                    &selected_actions,
                     transforms_by_name,
                     vars,
                     object_pools,
@@ -2867,6 +3095,7 @@ fn apply_action_sequence(
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
+                    scope.as_deref_mut(),
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
@@ -2874,17 +3103,26 @@ fn apply_action_sequence(
                 if result.should_stop_parent() {
                     return result;
                 }
+                return ActionSequenceResult::Completed;
             }
-            Statement::Guarded { condition, actions } => {
-                if condition_matches(
+            Statement::Guarded {
+                condition,
+                actions: block_actions,
+            } => {
+                if condition_matches_scoped(
                     condition,
                     vars,
+                    scope.as_deref(),
                     guards_by_name,
                     Some(transforms_by_name),
                     Some(collider_bounds),
                 ) {
+                    let guarded_actions = actions_with_parent_continuation(
+                        block_actions.clone(),
+                        parent_action_tail(actions, index),
+                    );
                     let result = apply_action_sequence(
-                        actions,
+                        &guarded_actions,
                         transforms_by_name,
                         vars,
                         object_pools,
@@ -2896,6 +3134,7 @@ fn apply_action_sequence(
                         collider_bounds,
                         delayed_actions.as_deref_mut(),
                         owner.clone(),
+                        scope.as_deref_mut(),
                         continuous_delta_seconds,
                         commands,
                         scene_entities,
@@ -2903,6 +3142,7 @@ fn apply_action_sequence(
                     if result.should_stop_parent() {
                         return result;
                     }
+                    return ActionSequenceResult::Completed;
                 }
             }
             Statement::Animate(animation) => {
@@ -2919,6 +3159,7 @@ fn apply_action_sequence(
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
+                    scope.as_deref_mut(),
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
@@ -2930,6 +3171,7 @@ fn apply_action_sequence(
                         estimated_animation_seconds(animation),
                         remaining,
                         owner.clone(),
+                        scope.as_deref().cloned(),
                     ) {
                         return ActionSequenceResult::Suspended;
                     }
@@ -2950,6 +3192,7 @@ fn apply_action_sequence(
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
+                    scope.as_deref_mut(),
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
@@ -3094,6 +3337,7 @@ fn apply_key_action(
     collider_bounds: &mut SceneMaxColliderBounds,
     delayed_actions: Option<&mut DelayedActionQueue>,
     owner: Option<SceneMaxControllerKey>,
+    mut scope: Option<&mut SceneMaxScopeFrame>,
     continuous_delta_seconds: Option<f32>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
@@ -3141,9 +3385,15 @@ fn apply_key_action(
                 tracing::debug!(pool, "SceneMax object pool has no available members");
                 return ActionSequenceResult::Completed;
             };
-            object_pools
-                .aliases
-                .insert(assignment.name.clone(), member.clone());
+            if let Some(scope) = scope.as_deref_mut() {
+                scope
+                    .aliases
+                    .insert(assignment.name.clone(), member.clone());
+            } else {
+                object_pools
+                    .aliases
+                    .insert(assignment.name.clone(), member.clone());
+            }
             for (entity, scene_entity, transform, _, _, visibility, _, _) in
                 &mut scene_entities.p1()
             {
@@ -3156,6 +3406,7 @@ fn apply_key_action(
                     sync_live_transform(
                         transforms_by_name,
                         object_pools,
+                        scope.as_deref(),
                         &scene_entity.name,
                         *transform,
                     );
@@ -3167,9 +3418,10 @@ fn apply_key_action(
             }
             return ActionSequenceResult::Completed;
         }
-        let assigned_value = apply_assignment(
+        let assigned_value = apply_assignment_scoped(
             assignment,
             vars,
+            scope.as_deref_mut(),
             Some(transforms_by_name),
             guards_by_name,
             Some(collider_bounds),
@@ -3214,7 +3466,7 @@ fn apply_key_action(
     }
     if let Statement::CameraAttach(attach) = action {
         if let Some(camera_system) = camera_system {
-            attach_camera(attach, object_pools, camera_system);
+            attach_camera(attach, object_pools, scope.as_deref(), camera_system);
         }
         return ActionSequenceResult::Completed;
     }
@@ -3222,6 +3474,17 @@ fn apply_key_action(
         if let Some(camera_system) = camera_system {
             stop_camera_attachment(camera_system);
         }
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::Logger(logger) = action {
+        apply_logger_statement(
+            logger,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
         return ActionSequenceResult::Completed;
     }
     if let Statement::RunFunction { name, args } = action {
@@ -3239,6 +3502,7 @@ fn apply_key_action(
             collider_bounds,
             delayed_actions,
             owner,
+            scope,
             continuous_delta_seconds,
             commands,
             scene_entities,
@@ -3246,17 +3510,30 @@ fn apply_key_action(
         );
     }
     if let Statement::PoolRelease(release) = action {
-        release_pool_action(release, object_pools, commands, scene_entities);
+        release_pool_action(
+            release,
+            object_pools,
+            scope.as_deref_mut(),
+            commands,
+            scene_entities,
+        );
         return ActionSequenceResult::Completed;
     }
     if let Statement::Delete { target } = action {
-        delete_scene_object(target, object_pools, commands, scene_entities);
+        delete_scene_object(
+            target,
+            object_pools,
+            scope.as_deref_mut(),
+            commands,
+            scene_entities,
+        );
         return ActionSequenceResult::Completed;
     }
     if let Statement::If(statement) = action {
-        let selected_actions = if condition_matches(
+        let selected_actions = if condition_matches_scoped(
             &statement.condition,
             vars,
+            scope.as_deref(),
             guards_by_name,
             Some(transforms_by_name),
             Some(collider_bounds),
@@ -3279,6 +3556,7 @@ fn apply_key_action(
                 collider_bounds,
                 None,
                 owner.clone(),
+                scope.as_deref_mut(),
                 continuous_delta_seconds,
                 commands,
                 scene_entities,
@@ -3303,7 +3581,12 @@ fn apply_key_action(
     {
         match action {
             Statement::Animate(animation)
-                if target_matches_alias(&animation.target, &scene_entity.name, object_pools) =>
+                if target_matches_alias(
+                    &animation.target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
             {
                 let already_queued =
                     queued_animations
@@ -3333,6 +3616,7 @@ fn apply_key_action(
                     &animation_speed.target,
                     &scene_entity.name,
                     object_pools,
+                    scope.as_deref(),
                 ) =>
             {
                 commands
@@ -3340,7 +3624,12 @@ fn apply_key_action(
                     .insert(animation_speed_override(animation_speed));
             }
             Statement::LookAt { target, subject }
-                if target_matches_alias(target, &scene_entity.name, object_pools) =>
+                if target_matches_alias(
+                    target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
             {
                 if let Some(subject_transform) =
                     lookup_subject_transform(subject, transforms_by_name)
@@ -3349,13 +3638,19 @@ fn apply_key_action(
                     sync_live_transform(
                         transforms_by_name,
                         object_pools,
+                        scope.as_deref(),
                         &scene_entity.name,
                         *transform,
                     );
                 }
             }
             Statement::Position(position)
-                if target_matches_alias(&position.target, &scene_entity.name, object_pools) =>
+                if target_matches_alias(
+                    &position.target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
             {
                 if let Some(translation) = evaluate_position_statement(position, transforms_by_name)
                 {
@@ -3363,13 +3658,19 @@ fn apply_key_action(
                     sync_live_transform(
                         transforms_by_name,
                         object_pools,
+                        scope.as_deref(),
                         &scene_entity.name,
                         *transform,
                     );
                 }
             }
             Statement::Turn(turn)
-                if target_matches_alias(&turn.target, &scene_entity.name, object_pools) =>
+                if target_matches_alias(
+                    &turn.target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
             {
                 if let Some(delta_seconds) = continuous_delta_seconds {
                     let timed_turn = timed_turn_from_statement(turn);
@@ -3377,6 +3678,7 @@ fn apply_key_action(
                     sync_live_transform(
                         transforms_by_name,
                         object_pools,
+                        scope.as_deref(),
                         &scene_entity.name,
                         *transform,
                     );
@@ -3387,7 +3689,12 @@ fn apply_key_action(
                 }
             }
             Statement::Move(movement)
-                if target_matches_alias(&movement.target, &scene_entity.name, object_pools) =>
+                if target_matches_alias(
+                    &movement.target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
             {
                 if let (Some(character_controller), Some(character_motor)) =
                     (character_controller, character_motor.as_deref_mut())
@@ -3406,6 +3713,7 @@ fn apply_key_action(
                         sync_live_transform(
                             transforms_by_name,
                             object_pools,
+                            scope.as_deref(),
                             &scene_entity.name,
                             *transform,
                         );
@@ -3415,7 +3723,12 @@ fn apply_key_action(
                 }
             }
             Statement::MoveTo(move_to)
-                if target_matches_alias(&move_to.target, &scene_entity.name, object_pools) =>
+                if target_matches_alias(
+                    &move_to.target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
             {
                 if let Some(timed_move) =
                     timed_move_to_from_statement(move_to, &transform, transforms_by_name)
@@ -3426,6 +3739,7 @@ fn apply_key_action(
                         sync_live_transform(
                             transforms_by_name,
                             object_pools,
+                            scope.as_deref(),
                             &scene_entity.name,
                             *transform,
                         );
@@ -3435,7 +3749,12 @@ fn apply_key_action(
                 }
             }
             Statement::CharacterJump(jump)
-                if target_matches_alias(&jump.target, &scene_entity.name, object_pools) =>
+                if target_matches_alias(
+                    &jump.target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
             {
                 if let Some(character_motor) = character_motor.as_deref_mut() {
                     set_character_jump_intent(character_motor, jump);
@@ -3450,6 +3769,7 @@ fn apply_key_action(
                     &character_mode.target,
                     &scene_entity.name,
                     object_pools,
+                    scope.as_deref(),
                 ) =>
             {
                 commands
@@ -3457,12 +3777,22 @@ fn apply_key_action(
                     .insert(PendingCharacterMode(character_mode.clone()));
             }
             Statement::ClearCharacterMode { target }
-                if target_matches_alias(target, &scene_entity.name, object_pools) =>
+                if target_matches_alias(
+                    target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
             {
                 clear_character_mode(commands, entity);
             }
             Statement::CharacterIgnore(ignore)
-                if target_matches_alias(&ignore.target, &scene_entity.name, object_pools) =>
+                if target_matches_alias(
+                    &ignore.target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
             {
                 tracing::debug!(
                     target = ignore.target,
@@ -3471,17 +3801,32 @@ fn apply_key_action(
                 );
             }
             Statement::PhysicsImpulse(impulse)
-                if target_matches_alias(&impulse.target, &scene_entity.name, object_pools) =>
+                if target_matches_alias(
+                    &impulse.target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
             {
                 apply_physics_impulse(commands, entity, &transform, impulse);
             }
             Statement::PhysicsStop { target }
-                if target_matches_alias(target, &scene_entity.name, object_pools) =>
+                if target_matches_alias(
+                    target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
             {
                 apply_physics_stop(commands, entity);
             }
             Statement::PhysicsThrowAt(throw_at)
-                if target_matches_alias(&throw_at.target, &scene_entity.name, object_pools) =>
+                if target_matches_alias(
+                    &throw_at.target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
             {
                 apply_physics_throw_at(
                     commands,
@@ -3493,7 +3838,12 @@ fn apply_key_action(
                 );
             }
             Statement::Visibility { target, visible }
-                if target_matches_alias(target, &scene_entity.name, object_pools) =>
+                if target_matches_alias(
+                    target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
             {
                 if let Some(mut visibility) = visibility {
                     *visibility = if *visible {
@@ -3544,13 +3894,17 @@ fn animation_speed_condition_matches(
         .p1()
         .iter()
         .find_map(|(_, scene_entity, _, _, current_animation, _, _, _)| {
-            target_matches_alias(&animation_speed.target, &scene_entity.name, object_pools).then(
-                || {
-                    current_animation
-                        .map(current_animation_percent)
-                        .unwrap_or_default()
-                },
+            target_matches_alias(
+                &animation_speed.target,
+                &scene_entity.name,
+                object_pools,
+                None,
             )
+            .then(|| {
+                current_animation
+                    .map(current_animation_percent)
+                    .unwrap_or_default()
+            })
         })
         .unwrap_or_default();
     scoped_vars.0.insert("frames".to_owned(), frames);
@@ -3580,6 +3934,7 @@ fn apply_function_by_name(
     collider_bounds: &mut SceneMaxColliderBounds,
     delayed_actions: Option<&mut DelayedActionQueue>,
     owner: Option<SceneMaxControllerKey>,
+    scope: Option<&mut SceneMaxScopeFrame>,
     continuous_delta_seconds: Option<f32>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
@@ -3621,6 +3976,7 @@ fn apply_function_by_name(
     }
 
     let actions = instantiate_function_actions(function, args);
+    let mut function_scope = scope.cloned().unwrap_or_default();
     apply_action_sequence(
         &actions,
         transforms_by_name,
@@ -3634,6 +3990,7 @@ fn apply_function_by_name(
         collider_bounds,
         delayed_actions,
         owner,
+        Some(&mut function_scope),
         continuous_delta_seconds,
         commands,
         scene_entities,
@@ -3756,6 +4113,15 @@ fn substitute_statement(statement: &Statement, bindings: &HashMap<String, String
             offset: attach.offset,
         }),
         Statement::CameraAttachStop => Statement::CameraAttachStop,
+        Statement::Logger(logger) => Statement::Logger(LoggerStatement {
+            level: logger.level,
+            message: match &logger.message {
+                LoggerMessage::Text(text) => LoggerMessage::Text(text.clone()),
+                LoggerMessage::Value(value) => {
+                    LoggerMessage::Value(substitute_assignment_value(value, bindings))
+                }
+            },
+        }),
         Statement::CharacterMode(character_mode) => {
             Statement::CharacterMode(CharacterModeStatement {
                 target: substitute_path(&character_mode.target, bindings),
@@ -3823,6 +4189,9 @@ fn substitute_statement(statement: &Statement, bindings: &HashMap<String, String
         },
         Statement::WaitUntil { condition } => Statement::WaitUntil {
             condition: substitute_condition(condition, bindings),
+        },
+        Statement::ReturnValue { value } => Statement::ReturnValue {
+            value: substitute_assignment_value(value, bindings),
         },
         Statement::LoopContinue { condition, actions } => Statement::LoopContinue {
             condition: substitute_condition(condition, bindings),
@@ -3969,6 +4338,10 @@ fn substitute_condition(condition: &Condition, bindings: &HashMap<String, String
                 .collect(),
             target: substitute_path(target, bindings),
         },
+        Condition::Boolean(value) => Condition::Boolean(*value),
+        Condition::Not(condition) => {
+            Condition::Not(Box::new(substitute_condition(condition, bindings)))
+        }
         Condition::Alias(name) => Condition::Alias(name.clone()),
         Condition::And(conditions) => Condition::And(
             conditions
@@ -4060,11 +4433,28 @@ fn apply_transform_aliases(
     }
 }
 
-fn resolve_object_alias(name: &str, object_pools: &SceneMaxObjectPools) -> String {
-    object_pools
-        .aliases
-        .get(name)
-        .cloned()
+fn apply_scoped_transform_aliases(
+    transforms_by_name: &mut HashMap<String, Transform>,
+    scope: Option<&SceneMaxScopeFrame>,
+) {
+    let Some(scope) = scope else {
+        return;
+    };
+    for (alias, target) in &scope.aliases {
+        if let Some(transform) = transforms_by_name.get(target).copied() {
+            transforms_by_name.insert(alias.clone(), transform);
+        }
+    }
+}
+
+fn resolve_object_alias(
+    name: &str,
+    object_pools: &SceneMaxObjectPools,
+    scope: Option<&SceneMaxScopeFrame>,
+) -> String {
+    scope
+        .and_then(|scope| scope.aliases.get(name).cloned())
+        .or_else(|| object_pools.aliases.get(name).cloned())
         .unwrap_or_else(|| name.to_owned())
 }
 
@@ -4072,13 +4462,15 @@ fn target_matches_alias(
     target: &str,
     scene_name: &str,
     object_pools: &SceneMaxObjectPools,
+    scope: Option<&SceneMaxScopeFrame>,
 ) -> bool {
-    resolve_object_alias(target, object_pools) == scene_name
+    resolve_object_alias(target, object_pools, scope) == scene_name
 }
 
 fn sync_live_transform(
     transforms_by_name: &mut HashMap<String, Transform>,
     object_pools: &SceneMaxObjectPools,
+    scope: Option<&SceneMaxScopeFrame>,
     scene_name: &str,
     transform: Transform,
 ) {
@@ -4086,6 +4478,13 @@ fn sync_live_transform(
     for (alias, target) in &object_pools.aliases {
         if target == scene_name {
             transforms_by_name.insert(alias.clone(), transform);
+        }
+    }
+    if let Some(scope) = scope {
+        for (alias, target) in &scope.aliases {
+            if target == scene_name {
+                transforms_by_name.insert(alias.clone(), transform);
+            }
         }
     }
 }
@@ -4100,6 +4499,7 @@ fn acquire_pool_member(pool: &str, object_pools: &mut SceneMaxObjectPools) -> Op
 fn release_pool_action(
     release: &PoolReleaseStatement,
     object_pools: &mut SceneMaxObjectPools,
+    scope: Option<&mut SceneMaxScopeFrame>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
         Query<(&SceneMaxEntity, &Transform)>,
@@ -4115,8 +4515,12 @@ fn release_pool_action(
         )>,
     )>,
 ) {
-    let target = resolve_object_alias(&release.target, object_pools);
+    let mut scope = scope;
+    let target = resolve_object_alias(&release.target, object_pools, scope.as_deref());
     if release_pool_member(&release.pool, &target, object_pools) {
+        if let Some(scope) = scope.as_deref_mut() {
+            scope.aliases.retain(|_, value| value != &target);
+        }
         hide_and_stop_scene_entity(&target, commands, scene_entities);
     }
 }
@@ -4124,6 +4528,7 @@ fn release_pool_action(
 fn delete_scene_object(
     target: &str,
     object_pools: &mut SceneMaxObjectPools,
+    scope: Option<&mut SceneMaxScopeFrame>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
         Query<(&SceneMaxEntity, &Transform)>,
@@ -4139,12 +4544,19 @@ fn delete_scene_object(
         )>,
     )>,
 ) {
-    let target = resolve_object_alias(target, object_pools);
+    let mut scope = scope;
+    let target = resolve_object_alias(target, object_pools, scope.as_deref());
     if release_pooled_member_by_name(&target, object_pools) {
+        if let Some(scope) = scope.as_deref_mut() {
+            scope.aliases.retain(|_, value| value != &target);
+        }
         hide_and_stop_scene_entity(&target, commands, scene_entities);
         return;
     }
     object_pools.aliases.retain(|_, value| value != &target);
+    if let Some(scope) = scope.as_deref_mut() {
+        scope.aliases.retain(|_, value| value != &target);
+    }
     for (entity, scene_entity, _, _, _, _, _, _) in &mut scene_entities.p1() {
         if scene_entity.name == target {
             commands.entity(entity).despawn();
@@ -4219,6 +4631,18 @@ fn repeat_actions(actions: &[Statement], times: usize) -> Vec<Statement> {
         repeated.extend(actions.iter().cloned());
     }
     repeated
+}
+
+fn actions_with_parent_continuation(
+    mut block_actions: Vec<Statement>,
+    parent_tail: &[Statement],
+) -> Vec<Statement> {
+    block_actions.extend(parent_tail.iter().cloned());
+    block_actions
+}
+
+fn parent_action_tail(actions: &[Statement], index: usize) -> &[Statement] {
+    actions.get(index + 1..).unwrap_or_default()
 }
 
 fn apply_builtin_navigation_controls(
@@ -4495,9 +4919,10 @@ fn select_camera_system(name: &str, camera_system: &mut SceneMaxCameraSystem) {
 fn attach_camera(
     attach: &CameraAttachStatement,
     object_pools: &SceneMaxObjectPools,
+    scope: Option<&SceneMaxScopeFrame>,
     camera_system: &mut SceneMaxCameraSystem,
 ) {
-    let target = resolve_object_alias(&attach.target, object_pools);
+    let target = resolve_object_alias(&attach.target, object_pools, scope);
     camera_system.attached = Some(CameraAttachmentRuntime {
         target: target.clone(),
         offset: vec3_from_scenemax(attach.offset),
@@ -4511,6 +4936,38 @@ fn stop_camera_attachment(camera_system: &mut SceneMaxCameraSystem) {
     }
 }
 
+fn apply_logger_statement(
+    logger: &LoggerStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) {
+    let message = match &logger.message {
+        LoggerMessage::Text(text) => text.clone(),
+        LoggerMessage::Value(value) => resolve_assignment_value_scoped_with_guards(
+            value,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        )
+        .map(format_scenemax_number)
+        .unwrap_or_else(|| "null".to_owned()),
+    };
+    write_runtime_log_line(logger.level, &message);
+}
+
+fn format_scenemax_number(value: f32) -> String {
+    if value.is_finite() && (value - value.round()).abs() <= f32::EPSILON {
+        format!("{}", value.round() as i64)
+    } else {
+        format!("{value}")
+    }
+}
+
 fn apply_assignment(
     assignment: &scenemax_parser::AssignmentStatement,
     vars: &mut SceneMaxVars,
@@ -4518,9 +4975,28 @@ fn apply_assignment(
     guards_by_name: &HashMap<String, Condition>,
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> Option<f32> {
-    let Some(value) = resolve_assignment_value_with_guards(
+    apply_assignment_scoped(
+        assignment,
+        vars,
+        None,
+        transforms_by_name,
+        guards_by_name,
+        collider_bounds,
+    )
+}
+
+fn apply_assignment_scoped(
+    assignment: &scenemax_parser::AssignmentStatement,
+    vars: &mut SceneMaxVars,
+    mut scope: Option<&mut SceneMaxScopeFrame>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    guards_by_name: &HashMap<String, Condition>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<f32> {
+    let Some(value) = resolve_assignment_value_scoped_with_guards(
         &assignment.value,
         vars,
+        scope.as_deref(),
         guards_by_name,
         transforms_by_name,
         collider_bounds,
@@ -4532,8 +5008,31 @@ fn apply_assignment(
         );
         return None;
     };
-    vars.0.insert(assignment.name.clone(), value);
+    assign_symbol_value(&assignment.name, value, vars, scope.as_deref_mut());
     Some(value)
+}
+
+fn assign_symbol_value(
+    name: &str,
+    value: f32,
+    vars: &mut SceneMaxVars,
+    scope: Option<&mut SceneMaxScopeFrame>,
+) {
+    let Some(scope) = scope else {
+        vars.0.insert(name.to_owned(), value);
+        return;
+    };
+    if scope.vars.contains_key(name) {
+        scope.vars.insert(name.to_owned(), value);
+    } else if vars.0.contains_key(name) || is_runtime_field_path(name) {
+        vars.0.insert(name.to_owned(), value);
+    } else {
+        scope.vars.insert(name.to_owned(), value);
+    }
+}
+
+fn is_runtime_field_path(name: &str) -> bool {
+    name.contains('.')
 }
 
 fn resolve_assignment_value(
@@ -4551,20 +5050,42 @@ fn resolve_assignment_value_with_guards(
     transforms_by_name: Option<&HashMap<String, Transform>>,
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> Option<f32> {
+    resolve_assignment_value_scoped_with_guards(
+        value,
+        vars,
+        None,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
+}
+
+fn resolve_assignment_value_scoped_with_guards(
+    value: &AssignmentValue,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<f32> {
     match value {
         AssignmentValue::Number(value) => Some(*value),
-        AssignmentValue::Symbol(name) => resolve_symbol_value(name, vars, transforms_by_name),
-        AssignmentValue::Condition(condition) => Some(condition_matches(
+        AssignmentValue::Symbol(name) => {
+            resolve_symbol_value_scoped(name, vars, scope, transforms_by_name)
+        }
+        AssignmentValue::Condition(condition) => Some(condition_matches_scoped(
             condition,
             vars,
+            scope,
             guards_by_name,
             transforms_by_name,
             collider_bounds,
         ) as u8 as f32),
         AssignmentValue::RandomInt { max } => {
-            let max = resolve_assignment_value_with_guards(
+            let max = resolve_assignment_value_scoped_with_guards(
                 max,
                 vars,
+                scope,
                 guards_by_name,
                 transforms_by_name,
                 collider_bounds,
@@ -4573,9 +5094,10 @@ fn resolve_assignment_value_with_guards(
             Some((pseudo_random_u32() % max) as f32)
         }
         AssignmentValue::Round { value } => {
-            let value = resolve_assignment_value_with_guards(
+            let value = resolve_assignment_value_scoped_with_guards(
                 value,
                 vars,
+                scope,
                 guards_by_name,
                 transforms_by_name,
                 collider_bounds,
@@ -4594,16 +5116,18 @@ fn resolve_assignment_value_with_guards(
             operator,
             right,
         } => {
-            let left = resolve_assignment_value_with_guards(
+            let left = resolve_assignment_value_scoped_with_guards(
                 left,
                 vars,
+                scope,
                 guards_by_name,
                 transforms_by_name,
                 collider_bounds,
             )?;
-            let right = resolve_assignment_value_with_guards(
+            let right = resolve_assignment_value_scoped_with_guards(
                 right,
                 vars,
+                scope,
                 guards_by_name,
                 transforms_by_name,
                 collider_bounds,
@@ -4628,29 +5152,55 @@ fn condition_matches(
     transforms_by_name: Option<&HashMap<String, Transform>>,
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> bool {
+    condition_matches_scoped(
+        condition,
+        vars,
+        None,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
+}
+
+fn condition_matches_scoped(
+    condition: &Condition,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> bool {
     match condition {
         Condition::EqualsNumber { name, value } => {
-            (resolve_symbol_value(name, vars, transforms_by_name).unwrap_or_default() - *value)
+            (resolve_symbol_value_scoped(name, vars, scope, transforms_by_name).unwrap_or_default()
+                - *value)
                 .abs()
                 <= f32::EPSILON
         }
         Condition::NotEqualsNumber { name, value } => {
-            (resolve_symbol_value(name, vars, transforms_by_name).unwrap_or_default() - *value)
+            (resolve_symbol_value_scoped(name, vars, scope, transforms_by_name).unwrap_or_default()
+                - *value)
                 .abs()
                 > f32::EPSILON
         }
         Condition::EqualsSymbol { name, value } => {
-            let Some(value) = resolve_symbol_value(value, vars, transforms_by_name) else {
+            let Some(value) = resolve_symbol_value_scoped(value, vars, scope, transforms_by_name)
+            else {
                 return false;
             };
-            (resolve_symbol_value(name, vars, transforms_by_name).unwrap_or_default() - value).abs()
+            (resolve_symbol_value_scoped(name, vars, scope, transforms_by_name).unwrap_or_default()
+                - value)
+                .abs()
                 <= f32::EPSILON
         }
         Condition::NotEqualsSymbol { name, value } => {
-            let Some(value) = resolve_symbol_value(value, vars, transforms_by_name) else {
+            let Some(value) = resolve_symbol_value_scoped(value, vars, scope, transforms_by_name)
+            else {
                 return false;
             };
-            (resolve_symbol_value(name, vars, transforms_by_name).unwrap_or_default() - value).abs()
+            (resolve_symbol_value_scoped(name, vars, scope, transforms_by_name).unwrap_or_default()
+                - value)
+                .abs()
                 > f32::EPSILON
         }
         Condition::Compare {
@@ -4658,16 +5208,18 @@ fn condition_matches(
             operator,
             value,
         } => {
-            let Some(right) = resolve_assignment_value_with_guards(
+            let Some(right) = resolve_assignment_value_scoped_with_guards(
                 value,
                 vars,
+                scope,
                 guards_by_name,
                 transforms_by_name,
                 collider_bounds,
             ) else {
                 return false;
             };
-            let left = resolve_symbol_value(name, vars, transforms_by_name).unwrap_or_default();
+            let left = resolve_symbol_value_scoped(name, vars, scope, transforms_by_name)
+                .unwrap_or_default();
             match operator {
                 ComparisonOperator::Greater => left > right,
                 ComparisonOperator::GreaterOrEqual => left >= right,
@@ -4681,16 +5233,18 @@ fn condition_matches(
             right,
         } => {
             let (Some(left), Some(right)) = (
-                resolve_assignment_value_with_guards(
+                resolve_assignment_value_scoped_with_guards(
                     left,
                     vars,
+                    scope,
                     guards_by_name,
                     transforms_by_name,
                     collider_bounds,
                 ),
-                resolve_assignment_value_with_guards(
+                resolve_assignment_value_scoped_with_guards(
                     right,
                     vars,
+                    scope,
                     guards_by_name,
                     transforms_by_name,
                     collider_bounds,
@@ -4707,16 +5261,18 @@ fn condition_matches(
         }
         Condition::EqualsValue { left, right } => {
             let (Some(left), Some(right)) = (
-                resolve_assignment_value_with_guards(
+                resolve_assignment_value_scoped_with_guards(
                     left,
                     vars,
+                    scope,
                     guards_by_name,
                     transforms_by_name,
                     collider_bounds,
                 ),
-                resolve_assignment_value_with_guards(
+                resolve_assignment_value_scoped_with_guards(
                     right,
                     vars,
+                    scope,
                     guards_by_name,
                     transforms_by_name,
                     collider_bounds,
@@ -4728,16 +5284,18 @@ fn condition_matches(
         }
         Condition::NotEqualsValue { left, right } => {
             let (Some(left), Some(right)) = (
-                resolve_assignment_value_with_guards(
+                resolve_assignment_value_scoped_with_guards(
                     left,
                     vars,
+                    scope,
                     guards_by_name,
                     transforms_by_name,
                     collider_bounds,
                 ),
-                resolve_assignment_value_with_guards(
+                resolve_assignment_value_scoped_with_guards(
                     right,
                     vars,
+                    scope,
                     guards_by_name,
                     transforms_by_name,
                     collider_bounds,
@@ -4748,7 +5306,7 @@ fn condition_matches(
             (left - right).abs() > f32::EPSILON
         }
         Condition::Truthy { name } => {
-            resolve_symbol_value(name, vars, transforms_by_name)
+            resolve_symbol_value_scoped(name, vars, scope, transforms_by_name)
                 .unwrap_or_default()
                 .abs()
                 > f32::EPSILON
@@ -4756,28 +5314,40 @@ fn condition_matches(
         Condition::Collision { sources, target } => {
             collision_condition_matches(sources, target, transforms_by_name, collider_bounds)
         }
+        Condition::Boolean(value) => *value,
+        Condition::Not(condition) => !condition_matches_scoped(
+            condition,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
         Condition::Alias(name) => guards_by_name.get(name).is_some_and(|condition| {
-            condition_matches(
+            condition_matches_scoped(
                 condition,
                 vars,
+                scope,
                 guards_by_name,
                 transforms_by_name,
                 collider_bounds,
             )
         }),
         Condition::And(conditions) => conditions.iter().all(|condition| {
-            condition_matches(
+            condition_matches_scoped(
                 condition,
                 vars,
+                scope,
                 guards_by_name,
                 transforms_by_name,
                 collider_bounds,
             )
         }),
         Condition::Or(conditions) => conditions.iter().any(|condition| {
-            condition_matches(
+            condition_matches_scoped(
                 condition,
                 vars,
+                scope,
                 guards_by_name,
                 transforms_by_name,
                 collider_bounds,
@@ -4800,6 +5370,16 @@ fn when_condition_matches(
             physics_contact_matches(sources, target, physics_contacts, object_pools)
                 || collision_condition_matches(sources, target, transforms_by_name, collider_bounds)
         }
+        Condition::Boolean(value) => *value,
+        Condition::Not(condition) => !when_condition_matches(
+            condition,
+            vars,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+            physics_contacts,
+            object_pools,
+        ),
         Condition::And(conditions) => conditions.iter().all(|condition| {
             when_condition_matches(
                 condition,
@@ -4854,7 +5434,7 @@ fn collision_reference_candidates_with_alias(
     object_pools: &SceneMaxObjectPools,
 ) -> Vec<String> {
     let mut candidates = collision_reference_candidates(reference);
-    let resolved = resolve_object_alias(reference, object_pools);
+    let resolved = resolve_object_alias(reference, object_pools, None);
     if resolved != reference {
         candidates.extend(collision_reference_candidates(&resolved));
     }
@@ -5050,15 +5630,20 @@ fn sample_pseudo_random_moduli(max: u32, count: usize) -> HashSet<u32> {
         .collect()
 }
 
-fn resolve_symbol_value(
+fn resolve_symbol_value_scoped(
     name: &str,
     vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
     transforms_by_name: Option<&HashMap<String, Transform>>,
 ) -> Option<f32> {
-    vars.0
-        .get(name)
-        .copied()
-        .or_else(|| coordinate_value_from_name(name, transforms_by_name?))
+    scope
+        .and_then(|scope| scope.vars.get(name).copied())
+        .or_else(|| {
+            vars.0
+                .get(name)
+                .copied()
+                .or_else(|| coordinate_value_from_name(name, transforms_by_name?))
+        })
 }
 
 fn coordinate_value_from_name(
@@ -6207,6 +6792,281 @@ mod tests {
             &guards,
             None,
             None,
+        ));
+    }
+
+    #[test]
+    fn scoped_expression_vm_keeps_function_locals_out_of_global_state() {
+        let mut vars = SceneMaxVars(HashMap::from([
+            ("op_action".to_owned(), 0.0),
+            ("counter".to_owned(), 2.0),
+        ]));
+        let mut scope = SceneMaxScopeFrame::default();
+        let guards = HashMap::new();
+
+        apply_assignment_scoped(
+            &scenemax_parser::AssignmentStatement {
+                name: "dist".to_owned(),
+                value: AssignmentValue::Number(4.25),
+            },
+            &mut vars,
+            Some(&mut scope),
+            None,
+            &guards,
+            None,
+        );
+        apply_assignment_scoped(
+            &scenemax_parser::AssignmentStatement {
+                name: "op_action".to_owned(),
+                value: AssignmentValue::Number(3.0),
+            },
+            &mut vars,
+            Some(&mut scope),
+            None,
+            &guards,
+            None,
+        );
+
+        assert_eq!(scope.vars.get("dist").copied(), Some(4.25));
+        assert_eq!(vars.0.get("dist"), None);
+        assert_eq!(vars.0.get("op_action").copied(), Some(3.0));
+        assert!(condition_matches_scoped(
+            &Condition::Compare {
+                name: "dist".to_owned(),
+                operator: ComparisonOperator::Less,
+                value: AssignmentValue::Number(5.5),
+            },
+            &vars,
+            Some(&scope),
+            &guards,
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn scoped_object_aliases_override_global_pool_aliases() {
+        let mut object_pools = SceneMaxObjectPools::default();
+        object_pools
+            .aliases
+            .insert("rock".to_owned(), "__global_rock".to_owned());
+        let mut scope = SceneMaxScopeFrame::default();
+        scope
+            .aliases
+            .insert("rock".to_owned(), "__local_rock".to_owned());
+
+        assert_eq!(
+            resolve_object_alias("rock", &object_pools, Some(&scope)),
+            "__local_rock"
+        );
+        assert!(target_matches_alias(
+            "rock",
+            "__local_rock",
+            &object_pools,
+            Some(&scope)
+        ));
+        assert!(!target_matches_alias(
+            "rock",
+            "__global_rock",
+            &object_pools,
+            Some(&scope)
+        ));
+    }
+
+    #[test]
+    fn expression_vm_evaluates_not_boolean_and_angle_bracket_inequality() {
+        let mut vars = SceneMaxVars(HashMap::from([
+            ("flag".to_owned(), 0.0),
+            ("enemy_ko".to_owned(), 0.0),
+        ]));
+        let guards = HashMap::new();
+
+        apply_assignment(
+            &scenemax_parser::AssignmentStatement {
+                name: "flag".to_owned(),
+                value: AssignmentValue::Condition(Box::new(Condition::Boolean(true))),
+            },
+            &mut vars,
+            None,
+            &guards,
+            None,
+        );
+
+        assert_eq!(vars.0.get("flag").copied(), Some(1.0));
+        assert!(condition_matches(
+            &Condition::Or(vec![
+                Condition::Not(Box::new(Condition::Truthy {
+                    name: "missing_flag".to_owned(),
+                })),
+                Condition::NotEqualsValue {
+                    left: AssignmentValue::Symbol("enemy_ko".to_owned()),
+                    right: AssignmentValue::Number(1.0),
+                },
+            ]),
+            &vars,
+            &guards,
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn logger_writes_literal_and_expression_messages_to_runtime_file() {
+        let log_dir =
+            std::env::temp_dir().join(format!("scenemax_logger_test_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&log_dir);
+        fs::create_dir_all(&log_dir).unwrap();
+        initialize_runtime_logger(Some(&log_dir), None);
+        let vars = SceneMaxVars(HashMap::from([("counter".to_owned(), 7.0)]));
+        let guards = HashMap::new();
+
+        apply_logger_statement(
+            &LoggerStatement {
+                level: LoggerLevel::Info,
+                message: LoggerMessage::Text("flow-start".to_owned()),
+            },
+            &vars,
+            None,
+            &guards,
+            None,
+            None,
+        );
+        apply_logger_statement(
+            &LoggerStatement {
+                level: LoggerLevel::Debug,
+                message: LoggerMessage::Value(AssignmentValue::Symbol("counter".to_owned())),
+            },
+            &vars,
+            None,
+            &guards,
+            None,
+            None,
+        );
+
+        let log_path = log_dir.join("scenemax-nextgen-runtime.log");
+        let log = fs::read_to_string(log_path).unwrap();
+        assert!(log.contains("[INFO] flow-start"));
+        assert!(log.contains("[DEBUG] 7"));
+        let _ = fs::remove_dir_all(log_dir);
+    }
+
+    #[test]
+    fn object_pool_prototype_uses_returned_factory_symbol() {
+        let functions = HashMap::from([(
+            "create_rock".to_owned(),
+            FunctionRuntime {
+                params: Vec::new(),
+                guard: None,
+                actions: vec![
+                    Statement::ModelDecl {
+                        name: "ignored".to_owned(),
+                        resource: "wrong_resource".to_owned(),
+                        options: EntityOptions::default(),
+                    },
+                    Statement::ModelDecl {
+                        name: "rock1".to_owned(),
+                        resource: "meshy_rock1_native".to_owned(),
+                        options: EntityOptions {
+                            hidden: true,
+                            ..Default::default()
+                        },
+                    },
+                    Statement::ReturnValue {
+                        value: AssignmentValue::Symbol("rock1".to_owned()),
+                    },
+                ],
+            },
+        )]);
+        let pool = ObjectPoolStatement {
+            name: "rocks".to_owned(),
+            factory: "create_rock".to_owned(),
+            size: 5,
+        };
+
+        let prototype = object_pool_prototype(&pool, &functions).unwrap();
+
+        assert_eq!(prototype.resource, "meshy_rock1_native");
+        assert!(prototype.options.hidden);
+    }
+
+    #[test]
+    fn scoped_transform_aliases_follow_live_transform_sync() {
+        let object_pools = SceneMaxObjectPools::default();
+        let mut scope = SceneMaxScopeFrame::default();
+        scope
+            .aliases
+            .insert("spawned".to_owned(), "__pool_enemy_0".to_owned());
+        let mut transforms = HashMap::new();
+        let transform = Transform::from_translation(Vec3::new(1.0, 2.0, 3.0));
+
+        sync_live_transform(
+            &mut transforms,
+            &object_pools,
+            Some(&scope),
+            "__pool_enemy_0",
+            transform,
+        );
+
+        assert_eq!(transforms.get("__pool_enemy_0").copied(), Some(transform));
+        assert_eq!(transforms.get("spawned").copied(), Some(transform));
+    }
+
+    #[test]
+    fn character_support_y_tracks_current_character_height() {
+        assert_eq!(
+            character_stage_support_y(-88.03695),
+            -88.03695 - DEFAULT_CHARACTER_FLOAT_HEIGHT - DEFAULT_CHARACTER_VISUAL_DROP
+        );
+    }
+
+    #[test]
+    fn nested_branch_continuation_keeps_ai_parent_tail_after_blocking_action() {
+        let branch_actions = vec![Statement::Animate(AnimationStatement {
+            target: "player2".to_owned(),
+            clip: "FlyKick".to_owned(),
+            speed: 2.9,
+            looped: false,
+            blocking: true,
+        })];
+        let parent_actions = vec![
+            Statement::If(scenemax_parser::IfStatement {
+                condition: Condition::EqualsNumber {
+                    name: "far_choice".to_owned(),
+                    value: 1.0,
+                },
+                actions: branch_actions.clone(),
+                else_actions: Vec::new(),
+            }),
+            Statement::Assignment(scenemax_parser::AssignmentStatement {
+                name: "op_action".to_owned(),
+                value: AssignmentValue::Number(0.0),
+            }),
+            Statement::Guarded {
+                condition: Condition::EqualsNumber {
+                    name: "enemy_ko".to_owned(),
+                    value: 0.0,
+                },
+                actions: vec![Statement::Animate(AnimationStatement {
+                    target: "player2".to_owned(),
+                    clip: "Idle".to_owned(),
+                    speed: 1.0,
+                    looped: true,
+                    blocking: false,
+                })],
+            },
+        ];
+
+        let continuation = actions_with_parent_continuation(
+            branch_actions,
+            parent_action_tail(&parent_actions, 0),
+        );
+
+        assert_eq!(continuation.len(), 3);
+        assert!(matches!(
+            &continuation[1],
+            Statement::Assignment(assignment)
+                if assignment.name == "op_action"
+                    && assignment.value == AssignmentValue::Number(0.0)
         ));
     }
 

@@ -96,6 +96,9 @@ pub enum Statement {
         condition: Condition,
     },
     Return,
+    ReturnValue {
+        value: AssignmentValue,
+    },
     Assignment(AssignmentStatement),
     FightingCamera(FightingCameraStatement),
     ThirdPersonCamera(ThirdPersonCameraStatement),
@@ -104,6 +107,7 @@ pub enum Statement {
     },
     CameraAttach(CameraAttachStatement),
     CameraAttachStop,
+    Logger(LoggerStatement),
     FunctionDef(FunctionDefStatement),
     RunFunction {
         name: String,
@@ -378,6 +382,8 @@ pub enum Condition {
         sources: Vec<String>,
         target: String,
     },
+    Boolean(bool),
+    Not(Box<Condition>),
     Alias(String),
     And(Vec<Condition>),
     Or(Vec<Condition>),
@@ -461,6 +467,25 @@ pub struct ThirdPersonCameraStatement {
 pub struct CameraAttachStatement {
     pub target: String,
     pub offset: SceneMaxVec3,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoggerStatement {
+    pub level: LoggerLevel,
+    pub message: LoggerMessage,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoggerLevel {
+    Info,
+    Debug,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LoggerMessage {
+    Text(String),
+    Value(AssignmentValue),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -834,6 +859,22 @@ fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
             .collect::<Result<Vec<_>, _>>()?;
         return Ok((!conditions.is_empty()).then_some(Condition::And(conditions)));
     }
+    if let Some(rest) = text.strip_prefix('!') {
+        if let Some(condition) = parse_condition(rest.trim())? {
+            return Ok(Some(Condition::Not(Box::new(condition))));
+        }
+    }
+    if let Some(rest) = strip_keyword_prefix(text, "not") {
+        if let Some(condition) = parse_condition(rest.trim())? {
+            return Ok(Some(Condition::Not(Box::new(condition))));
+        }
+    }
+    if text.eq_ignore_ascii_case("true") {
+        return Ok(Some(Condition::Boolean(true)));
+    }
+    if text.eq_ignore_ascii_case("false") {
+        return Ok(Some(Condition::Boolean(false)));
+    }
     if let Some(alias) = text.strip_prefix('@') {
         if is_variable_name(alias.trim()) {
             return Ok(Some(Condition::Alias(alias.trim().to_owned())));
@@ -853,6 +894,9 @@ fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
             | AssignmentValue::Distance { .. }
             | AssignmentValue::PoolAcquire { .. } => return Ok(None),
         }));
+    }
+    if let Some((left, right)) = parse_expression_comparison_values(text, "<>")? {
+        return Ok(Some(Condition::NotEqualsValue { left, right }));
     }
     if let Some((left, right)) = parse_expression_comparison_values(text, "!=")? {
         return Ok(Some(Condition::NotEqualsValue { left, right }));
@@ -962,7 +1006,7 @@ fn parse_comparison_value(
     text: &str,
     operator: &str,
 ) -> Result<Option<(String, AssignmentValue)>, ParseError> {
-    let Some((left, right)) = text.split_once(operator) else {
+    let Some((left, right)) = split_once_top_level_operator(text, operator) else {
         return Ok(None);
     };
     let name = left.trim();
@@ -980,7 +1024,7 @@ fn parse_expression_comparison_values(
     text: &str,
     operator: &str,
 ) -> Result<Option<(AssignmentValue, AssignmentValue)>, ParseError> {
-    let Some((left, right)) = text.split_once(operator) else {
+    let Some((left, right)) = split_once_top_level_operator(text, operator) else {
         return Ok(None);
     };
     let Some(left) = parse_assignment_value(left.trim())? else {
@@ -990,6 +1034,24 @@ fn parse_expression_comparison_values(
         return Ok(None);
     };
     Ok(Some((left, right)))
+}
+
+fn split_once_top_level_operator<'a>(text: &'a str, operator: &str) -> Option<(&'a str, &'a str)> {
+    let mut depth = 0usize;
+    let mut index = 0usize;
+    while index < text.len() {
+        let value = text[index..].chars().next().unwrap_or_default();
+        match value {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        if depth == 0 && text[index..].starts_with(operator) {
+            return Some((text[..index].trim(), text[index + operator.len()..].trim()));
+        }
+        index += value.len_utf8();
+    }
+    None
 }
 
 fn parse_key_event_header(line: &str) -> Option<(String, KeyTrigger)> {
@@ -1454,6 +1516,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         });
     }
 
+    if let Some(logger) = parse_logger_statement(line)? {
+        return Ok(Statement::Logger(logger));
+    }
+
     if let Some(run_function) = parse_run_function_statement(line) {
         return Ok(run_function);
     }
@@ -1489,7 +1555,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         });
     }
 
-    if starts_with_keyword(line, "return") {
+    if let Some(return_text) = strip_keyword_prefix(line, "return") {
+        if let Some(value) = parse_assignment_value(return_text.trim())? {
+            return Ok(Statement::ReturnValue { value });
+        }
         return Ok(Statement::Return);
     }
 
@@ -1593,6 +1662,37 @@ fn parse_camera_system_select(line: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+fn parse_logger_statement(line: &str) -> Result<Option<LoggerStatement>, ParseError> {
+    let line = line.trim();
+    let lower = line.to_ascii_lowercase();
+    if !lower.starts_with("logger.") {
+        return Ok(None);
+    }
+    let Some((level_text, message_text)) = line["logger.".len()..].split_once(char::is_whitespace)
+    else {
+        return Ok(None);
+    };
+    let level = match level_text.to_ascii_lowercase().as_str() {
+        "info" => LoggerLevel::Info,
+        "debug" => LoggerLevel::Debug,
+        "error" => LoggerLevel::Error,
+        _ => return Ok(None),
+    };
+    let message_text = message_text.trim();
+    if message_text.is_empty() {
+        return Ok(None);
+    }
+    let message = if let Some(text) = parse_quoted_strings(message_text).into_iter().next() {
+        LoggerMessage::Text(text)
+    } else {
+        let Some(value) = parse_assignment_value(message_text)? else {
+            return Ok(None);
+        };
+        LoggerMessage::Value(value)
+    };
+    Ok(Some(LoggerStatement { level, message }))
 }
 
 fn parse_run_function_statement(line: &str) -> Option<Statement> {
@@ -1847,6 +1947,7 @@ fn clean_assignment_value(raw_value: &str) -> &str {
 }
 
 fn parse_assignment_value(raw_value: &str) -> Result<Option<AssignmentValue>, ParseError> {
+    let raw_value = strip_wrapping_parens(raw_value.trim());
     if raw_value.is_empty() {
         return Ok(None);
     }
@@ -1895,6 +1996,16 @@ fn parse_assignment_value(raw_value: &str) -> Result<Option<AssignmentValue>, Pa
             operator,
             right: Box::new(right),
         }));
+    }
+    if raw_value.eq_ignore_ascii_case("true") {
+        return Ok(Some(AssignmentValue::Condition(Box::new(
+            Condition::Boolean(true),
+        ))));
+    }
+    if raw_value.eq_ignore_ascii_case("false") {
+        return Ok(Some(AssignmentValue::Condition(Box::new(
+            Condition::Boolean(false),
+        ))));
     }
     if is_variable_path(raw_value) {
         return Ok(Some(AssignmentValue::Symbol(raw_value.to_owned())));
@@ -3097,6 +3208,10 @@ fn starts_with_keyword(text: &str, keyword: &str) -> bool {
             .chars()
             .next()
             .is_none_or(|value| value.is_whitespace() || value == '"' || value == '(')
+}
+
+fn strip_keyword_prefix<'a>(text: &'a str, keyword: &str) -> Option<&'a str> {
+    starts_with_keyword(text, keyword).then(|| text.trim_start()[keyword.len()..].trim_start())
 }
 
 fn starts_with_two_keywords(text: &str, first: &str, second: &str) -> bool {
@@ -4378,6 +4493,45 @@ mod tests {
     }
 
     #[test]
+    fn parses_java_vm_boolean_not_inequality_and_return_value_forms() {
+        let program = parse_program(
+            "test_vm = {\n  var flag = true\n  if (!flag || not false || enemy_ko <> 1) {\n    return flag\n  }\n}\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::FunctionDef(FunctionDefStatement {
+                name: "test_vm".to_owned(),
+                params: Vec::new(),
+                guard: None,
+                actions: vec![
+                    Statement::Assignment(AssignmentStatement {
+                        name: "flag".to_owned(),
+                        value: AssignmentValue::Condition(Box::new(Condition::Boolean(true))),
+                    }),
+                    Statement::If(IfStatement {
+                        condition: Condition::Or(vec![
+                            Condition::Not(Box::new(Condition::Truthy {
+                                name: "flag".to_owned(),
+                            })),
+                            Condition::Not(Box::new(Condition::Boolean(false))),
+                            Condition::NotEqualsValue {
+                                left: AssignmentValue::Symbol("enemy_ko".to_owned()),
+                                right: AssignmentValue::Number(1.0),
+                            },
+                        ]),
+                        actions: vec![Statement::ReturnValue {
+                            value: AssignmentValue::Symbol("flag".to_owned()),
+                        }],
+                        else_actions: Vec::new(),
+                    }),
+                ],
+            })]
+        );
+    }
+
+    #[test]
     fn parses_reference_ai_else_if_choice_tree_and_recurring_args() {
         let program = parse_program(
             "opponent_ai (p1, p2) = {\n  var dist = distance(p1, p2)\n  if (dist < 5.5) {\n    var mid_choice = rnd(3)\n    if (mid_choice == 0 || is_aggressive == 1) {\n      run op_rush_attack(p2)\n    } else if (mid_choice == 1) {\n      op_action = 3\n      p2.FlyKick at speed of 2.9\n    } else {\n      op_action = 2\n      p2.HighKick at speed of 2.3\n    }\n    return\n  }\n}\nrun opponent_ai(player1,player2) every 0.65 seconds",
@@ -4688,6 +4842,42 @@ mod tests {
     }
 
     #[test]
+    fn parses_parenthesized_arithmetic_comparison_condition() {
+        let program = parse_program(
+            "math_case = {\n  if ((a + b) * c == 18) {\n    Logger.info \"PASS:parentheses\"\n  }\n}",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::FunctionDef(FunctionDefStatement {
+                name: "math_case".to_owned(),
+                params: Vec::new(),
+                guard: None,
+                actions: vec![Statement::If(IfStatement {
+                    condition: Condition::EqualsValue {
+                        left: AssignmentValue::Binary {
+                            left: Box::new(AssignmentValue::Binary {
+                                left: Box::new(AssignmentValue::Symbol("a".to_owned())),
+                                operator: ArithmeticOperator::Add,
+                                right: Box::new(AssignmentValue::Symbol("b".to_owned())),
+                            }),
+                            operator: ArithmeticOperator::Multiply,
+                            right: Box::new(AssignmentValue::Symbol("c".to_owned())),
+                        },
+                        right: AssignmentValue::Number(18.0),
+                    },
+                    actions: vec![Statement::Logger(LoggerStatement {
+                        level: LoggerLevel::Info,
+                        message: LoggerMessage::Text("PASS:parentheses".to_owned()),
+                    })],
+                    else_actions: Vec::new(),
+                })],
+            })]
+        );
+    }
+
+    #[test]
     fn parses_transition_when_and_wait_until() {
         let program = parse_program(
             "when op_hit==0 after op_hit==1 do\n  life1=INITIAL_PLAYER_STRENGTH\nend do\nwait for camera_mode==CAMERA_MODE_DEFAULT",
@@ -4772,7 +4962,9 @@ mod tests {
                     Statement::WaitValue {
                         value: AssignmentValue::Symbol("tm".to_owned()),
                     },
-                    Statement::Return,
+                    Statement::ReturnValue {
+                        value: AssignmentValue::Symbol("rock1".to_owned()),
+                    },
                 ],
             })]
         );
@@ -4936,6 +5128,31 @@ mod tests {
             vec![Statement::CameraSystemSelect {
                 name: "fight_cam".to_owned(),
             }]
+        );
+    }
+
+    #[test]
+    fn parses_logger_commands() {
+        let program =
+            parse_program("Logger.info \"ready\"\nLogger.debug counter\nLogger.error enemy_ko")
+                .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::Logger(LoggerStatement {
+                    level: LoggerLevel::Info,
+                    message: LoggerMessage::Text("ready".to_owned()),
+                }),
+                Statement::Logger(LoggerStatement {
+                    level: LoggerLevel::Debug,
+                    message: LoggerMessage::Value(AssignmentValue::Symbol("counter".to_owned())),
+                }),
+                Statement::Logger(LoggerStatement {
+                    level: LoggerLevel::Error,
+                    message: LoggerMessage::Value(AssignmentValue::Symbol("enemy_ko".to_owned())),
+                }),
+            ]
         );
     }
 
