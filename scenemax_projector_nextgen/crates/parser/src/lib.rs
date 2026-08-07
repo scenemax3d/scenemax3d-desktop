@@ -3002,6 +3002,9 @@ fn logical_lines(source: &str) -> Vec<String> {
             || result.last().is_some_and(|previous| is_open_add(previous))
             || result
                 .last()
+                .is_some_and(|previous| is_open_assignment_list(previous))
+            || result
+                .last()
                 .is_some_and(|previous| is_open_guard_definition(previous))
         {
             if let Some(previous) = result.last_mut() {
@@ -3013,6 +3016,11 @@ fn logical_lines(source: &str) -> Vec<String> {
         }
     }
     result
+}
+
+fn is_open_assignment_list(line: &str) -> bool {
+    let trimmed = line.trim();
+    (trimmed.starts_with("var ") || trimmed.starts_with("shared var ")) && trimmed.ends_with(',')
 }
 
 fn is_open_guard_definition(line: &str) -> bool {
@@ -3957,6 +3965,39 @@ mod tests {
                     value: AssignmentValue::Number(8.0),
                 }),
             ]
+        );
+    }
+
+    #[test]
+    fn parses_multiline_comma_separated_constants() {
+        let program = parse_program(
+            "var PLAYER_ACTION_IDLE = 0,\n    PLAYER_ACTION_D = 1,\n    PLAYER_ACTION_X_1 = 7, PLAYER_ACTION_X_2 = 8,\n    PLAYER_ACTION_C = 9\n\nvar GAME_STATE_BEFORE_START = 0,\n    GAME_STATE_START = 1,\n    GAME_STATE_OVER = 2",
+        )
+        .unwrap();
+
+        assert!(
+            program
+                .statements
+                .contains(&Statement::Assignment(AssignmentStatement {
+                    name: "PLAYER_ACTION_X_2".to_owned(),
+                    value: AssignmentValue::Number(8.0),
+                },))
+        );
+        assert!(
+            program
+                .statements
+                .contains(&Statement::Assignment(AssignmentStatement {
+                    name: "GAME_STATE_START".to_owned(),
+                    value: AssignmentValue::Number(1.0),
+                },))
+        );
+        assert!(
+            program
+                .statements
+                .contains(&Statement::Assignment(AssignmentStatement {
+                    name: "GAME_STATE_OVER".to_owned(),
+                    value: AssignmentValue::Number(2.0),
+                },))
         );
     }
 

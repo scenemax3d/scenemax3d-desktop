@@ -5868,17 +5868,41 @@ fn setup_camera_and_lights(
 
     commands.insert_resource(GlobalAmbientLight {
         color: Color::WHITE,
-        brightness: 800.0,
+        brightness: 220.0,
         ..default()
     });
 
     commands.spawn((
+        DirectionalLight {
+            illuminance: 24_000.0,
+            shadow_maps_enabled: true,
+            shadow_depth_bias: 0.08,
+            shadow_normal_bias: 1.8,
+            ..default()
+        },
+        Transform::from_xyz(-8.0, 14.0, 8.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
+
+    commands.spawn((
         PointLight {
-            intensity: 4_000.0,
+            color: Color::srgb(1.0, 0.86, 0.68),
+            intensity: 55_000.0,
+            range: 45.0,
             shadow_maps_enabled: true,
             ..default()
         },
-        Transform::from_xyz(4.0, 6.0, 4.0),
+        Transform::from_xyz(-7.0, 8.0, 8.0),
+    ));
+
+    commands.spawn((
+        PointLight {
+            color: Color::srgb(0.55, 0.7, 1.0),
+            intensity: 18_000.0,
+            range: 55.0,
+            shadow_maps_enabled: false,
+            ..default()
+        },
+        Transform::from_xyz(9.0, 5.0, -9.0),
     ));
 
     commands.spawn((
@@ -5994,6 +6018,21 @@ mod tests {
             None,
             None,
         ));
+    }
+
+    #[test]
+    fn initializes_multiline_scene_max_constants() {
+        let program = scenemax_parser::parse_program(
+            "var PLAYER_ACTION_IDLE = 0,\n    PLAYER_ACTION_X_1 = 7, PLAYER_ACTION_X_2 = 8,\n    PLAYER_ACTION_C = 9\nvar GAME_STATE_BEFORE_START = 0,\n    GAME_STATE_START = 1,\n    GAME_STATE_OVER = 2\nvar game_status=GAME_STATE_START",
+        )
+        .unwrap();
+        let mut vars = SceneMaxVars::default();
+
+        apply_initial_assignments(&program, &mut vars);
+
+        assert_eq!(vars.0.get("PLAYER_ACTION_X_2").copied(), Some(8.0));
+        assert_eq!(vars.0.get("GAME_STATE_START").copied(), Some(1.0));
+        assert_eq!(vars.0.get("game_status").copied(), Some(1.0));
     }
 
     #[test]
