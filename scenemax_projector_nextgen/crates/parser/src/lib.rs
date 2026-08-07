@@ -3119,9 +3119,7 @@ fn logical_lines(source: &str) -> Vec<String> {
             continue;
         }
 
-        if line.starts_with(',')
-            || line.starts_with("&&")
-            || line.starts_with("||")
+        if starts_continuation_line(line)
             || result.last().is_some_and(|previous| is_open_add(previous))
             || result
                 .last()
@@ -3129,6 +3127,9 @@ fn logical_lines(source: &str) -> Vec<String> {
             || result
                 .last()
                 .is_some_and(|previous| is_open_guard_definition(previous))
+            || result
+                .last()
+                .is_some_and(|previous| is_open_multiline_statement(previous))
         {
             if let Some(previous) = result.last_mut() {
                 previous.push(' ');
@@ -3139,6 +3140,42 @@ fn logical_lines(source: &str) -> Vec<String> {
         }
     }
     result
+}
+
+fn starts_continuation_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with(',')
+        || trimmed.starts_with('.')
+        || trimmed.starts_with("&&")
+        || trimmed.starts_with("||")
+        || trimmed.starts_with("==")
+        || trimmed.starts_with("!=")
+        || trimmed.starts_with("<=")
+        || trimmed.starts_with(">=")
+        || trimmed.starts_with('+')
+        || trimmed.starts_with('*')
+        || trimmed.starts_with('/')
+}
+
+fn is_open_multiline_statement(line: &str) -> bool {
+    let trimmed = line.trim_end();
+    if trimmed.ends_with('{') || trimmed.eq_ignore_ascii_case("do") {
+        return false;
+    }
+    unclosed_paren_count(trimmed) > 0
+        || unclosed_bracket_count(trimmed) > 0
+        || trimmed.ends_with('.')
+        || trimmed.ends_with(',')
+        || trimmed.ends_with("&&")
+        || trimmed.ends_with("||")
+        || trimmed.ends_with("==")
+        || trimmed.ends_with("!=")
+        || trimmed.ends_with("<=")
+        || trimmed.ends_with(">=")
+        || trimmed.ends_with('+')
+        || trimmed.ends_with('-')
+        || trimmed.ends_with('*')
+        || trimmed.ends_with('/')
 }
 
 fn is_open_assignment_list(line: &str) -> bool {
@@ -3159,6 +3196,18 @@ fn unclosed_paren_count(text: &str) -> usize {
         match value {
             '(' => depth += 1,
             ')' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    depth
+}
+
+fn unclosed_bracket_count(text: &str) -> usize {
+    let mut depth = 0usize;
+    for value in text.chars() {
+        match value {
+            '[' => depth += 1,
+            ']' => depth = depth.saturating_sub(1),
             _ => {}
         }
     }
@@ -5384,6 +5433,37 @@ mod tests {
                 factory: "create_rock".to_owned(),
                 size: 5,
             })
+        );
+    }
+
+    #[test]
+    fn parses_multiline_assignment_expression_after_trailing_operator() {
+        let program = parse_program(
+            "var can_go = player1.data.is_jumping == 0 &&\n    game_status != GAME_STATE_OVER",
+        )
+        .unwrap();
+
+        assert_eq!(program.statements.len(), 1);
+        assert!(matches!(
+            &program.statements[0],
+            Statement::Assignment(AssignmentStatement { name, .. }) if name == "can_go"
+        ));
+    }
+
+    #[test]
+    fn parses_whitespace_heavy_split_dot_command() {
+        let program =
+            parse_program("player1.\n    move    forward    0.2   for   0.5   seconds").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::Move(MoveStatement {
+                target: "player1".to_owned(),
+                direction: MoveDirection::Forward,
+                distance: 0.2,
+                duration_seconds: 0.5,
+                loop_condition: None,
+            })]
         );
     }
 }

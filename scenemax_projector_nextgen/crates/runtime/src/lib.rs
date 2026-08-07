@@ -87,6 +87,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<SceneMaxObjectPools>()
         .init_resource::<SceneMaxCameraSystem>()
         .init_resource::<SceneMaxRuntimeAssets>()
+        .init_resource::<SceneMaxAnimationDurations>()
         .init_resource::<DelayedActionQueue>()
         .init_resource::<RecurringRunTimers>()
         .init_resource::<ActiveCollisionEvents>()
@@ -245,6 +246,38 @@ struct SceneMaxColliderBounds {
 struct SceneMaxRuntimeAssets {
     placeholder_mesh: Option<Handle<Mesh>>,
     placeholder_material: Option<Handle<StandardMaterial>>,
+}
+
+#[derive(Debug, Resource, Default)]
+struct SceneMaxAnimationDurations {
+    by_target_clip: HashMap<(String, String), f32>,
+    by_clip: HashMap<String, f32>,
+}
+
+impl SceneMaxAnimationDurations {
+    fn insert(&mut self, target: &str, requested_clip: &str, resolved_clip: &str, duration: f32) {
+        let duration = duration.max(0.001);
+        self.by_target_clip.insert(
+            (target.to_owned(), normalized_animation_name(requested_clip)),
+            duration,
+        );
+        self.by_target_clip.insert(
+            (target.to_owned(), normalized_animation_name(resolved_clip)),
+            duration,
+        );
+        self.by_clip
+            .insert(normalized_animation_name(requested_clip), duration);
+        self.by_clip
+            .insert(normalized_animation_name(resolved_clip), duration);
+    }
+
+    fn lookup(&self, target: &str, requested_clip: &str) -> Option<f32> {
+        let clip_key = normalized_animation_name(requested_clip);
+        self.by_target_clip
+            .get(&(target.to_owned(), clip_key.clone()))
+            .copied()
+            .or_else(|| self.by_clip.get(&clip_key).copied())
+    }
 }
 
 #[derive(Debug)]
@@ -427,7 +460,8 @@ const DEFAULT_CHARACTER_VISUAL_DROP: f32 = 1.25;
 const DEFAULT_STAGE_SUPPORT_HALF_SIZE: f32 = 160.0;
 const CHARACTER_INPUT_TTL_SECONDS: f32 = 0.12;
 const CHARACTER_JUMP_FEED_SECONDS: f32 = 0.2;
-const DEFAULT_ANIMATION_CLIP_SECONDS: f32 = 0.65;
+const DEFAULT_ANIMATION_CLIP_SECONDS: f32 = 1.5;
+const SCENEMAX_DIRECTIONAL_MOVE_SPEED_SCALE: f32 = 12.0;
 const LOOP_CONTINUE_DELAY_SECONDS: f32 = 0.001;
 const PHYSICS_LAYER_WORLD: u32 = 1 << 0;
 const PHYSICS_LAYER_CHARACTER: u32 = 1 << 1;
@@ -2348,6 +2382,7 @@ fn apply_key_events(
     keyboard: Res<ButtonInput<KeyCode>>,
     startup_program: Res<SceneMaxStartupProgram>,
     runtime_assets: Res<SceneMaxRuntimeAssets>,
+    animation_durations: Res<SceneMaxAnimationDurations>,
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
     mut object_pools: ResMut<SceneMaxObjectPools>,
@@ -2416,6 +2451,7 @@ fn apply_key_events(
             &guards_by_name,
             &mut queued_animations,
             &runtime_assets,
+            &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
             None,
@@ -2484,6 +2520,7 @@ fn apply_when_events(
     time: Res<Time>,
     startup_program: Res<SceneMaxStartupProgram>,
     runtime_assets: Res<SceneMaxRuntimeAssets>,
+    animation_durations: Res<SceneMaxAnimationDurations>,
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
     mut object_pools: ResMut<SceneMaxObjectPools>,
@@ -2605,6 +2642,7 @@ fn apply_when_events(
             &guards_by_name,
             &mut queued_animations,
             &runtime_assets,
+            &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
             Some(owner.clone()),
@@ -2623,6 +2661,7 @@ fn update_recurring_runs(
     time: Res<Time>,
     startup_program: Res<SceneMaxStartupProgram>,
     runtime_assets: Res<SceneMaxRuntimeAssets>,
+    animation_durations: Res<SceneMaxAnimationDurations>,
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
     mut object_pools: ResMut<SceneMaxObjectPools>,
@@ -2709,6 +2748,7 @@ fn update_recurring_runs(
             &guards_by_name,
             &mut queued_animations,
             &runtime_assets,
+            &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
             Some(owner.clone()),
@@ -2728,6 +2768,7 @@ fn update_delayed_actions(
     time: Res<Time>,
     startup_program: Res<SceneMaxStartupProgram>,
     runtime_assets: Res<SceneMaxRuntimeAssets>,
+    animation_durations: Res<SceneMaxAnimationDurations>,
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
     mut object_pools: ResMut<SceneMaxObjectPools>,
@@ -2799,6 +2840,7 @@ fn update_delayed_actions(
             &guards_by_name,
             &mut queued_animations,
             &runtime_assets,
+            &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
             delayed.owner.clone(),
@@ -2847,6 +2889,7 @@ fn apply_action_sequence(
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
     runtime_assets: &SceneMaxRuntimeAssets,
+    animation_durations: &SceneMaxAnimationDurations,
     collider_bounds: &mut SceneMaxColliderBounds,
     mut delayed_actions: Option<&mut DelayedActionQueue>,
     owner: Option<SceneMaxControllerKey>,
@@ -2968,6 +3011,7 @@ fn apply_action_sequence(
                     guards_by_name,
                     queued_animations,
                     runtime_assets,
+                    animation_durations,
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     None,
@@ -2995,6 +3039,7 @@ fn apply_action_sequence(
                     guards_by_name,
                     queued_animations,
                     runtime_assets,
+                    animation_durations,
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
@@ -3031,6 +3076,7 @@ fn apply_action_sequence(
                     guards_by_name,
                     queued_animations,
                     runtime_assets,
+                    animation_durations,
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
@@ -3099,6 +3145,7 @@ fn apply_action_sequence(
                     guards_by_name,
                     queued_animations,
                     runtime_assets,
+                    animation_durations,
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
@@ -3138,6 +3185,7 @@ fn apply_action_sequence(
                         guards_by_name,
                         queued_animations,
                         runtime_assets,
+                        animation_durations,
                         collider_bounds,
                         delayed_actions.as_deref_mut(),
                         owner.clone(),
@@ -3163,6 +3211,7 @@ fn apply_action_sequence(
                     guards_by_name,
                     queued_animations,
                     runtime_assets,
+                    animation_durations,
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
@@ -3175,7 +3224,7 @@ fn apply_action_sequence(
                     let remaining = actions[index + 1..].to_vec();
                     if enqueue_delayed_actions(
                         delayed_actions.as_deref_mut(),
-                        estimated_animation_seconds(animation),
+                        estimated_animation_seconds(animation, animation_durations),
                         remaining,
                         owner.clone(),
                         scope.as_deref().cloned(),
@@ -3196,6 +3245,7 @@ fn apply_action_sequence(
                     guards_by_name,
                     queued_animations,
                     runtime_assets,
+                    animation_durations,
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     owner.clone(),
@@ -3213,9 +3263,15 @@ fn apply_action_sequence(
     ActionSequenceResult::Completed
 }
 
-fn estimated_animation_seconds(animation: &AnimationStatement) -> f32 {
+fn estimated_animation_seconds(
+    animation: &AnimationStatement,
+    animation_durations: &SceneMaxAnimationDurations,
+) -> f32 {
+    if let Some(duration) = animation_durations.lookup(&animation.target, &animation.clip) {
+        return (duration / animation.speed.max(0.1)).clamp(0.08, 3.5);
+    }
     if is_jump_animation_clip(&animation.clip) {
-        return (jump_duration_seconds(35.0) / animation.speed.max(0.1)).clamp(0.65, 1.15);
+        return (jump_duration_seconds(35.0) / animation.speed.max(0.1)).clamp(0.65, 1.4);
     }
     estimated_animation_seconds_from_speed(animation.speed)
 }
@@ -3226,7 +3282,7 @@ fn is_jump_animation_clip(clip: &str) -> bool {
 }
 
 fn estimated_animation_seconds_from_speed(speed: f32) -> f32 {
-    (DEFAULT_ANIMATION_CLIP_SECONDS / speed.max(0.1)).clamp(0.15, 1.2)
+    (DEFAULT_ANIMATION_CLIP_SECONDS / speed.max(0.1)).clamp(0.25, 2.0)
 }
 
 fn animation_clip_duration_seconds(
@@ -3341,6 +3397,7 @@ fn apply_key_action(
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
     runtime_assets: &SceneMaxRuntimeAssets,
+    animation_durations: &SceneMaxAnimationDurations,
     collider_bounds: &mut SceneMaxColliderBounds,
     delayed_actions: Option<&mut DelayedActionQueue>,
     owner: Option<SceneMaxControllerKey>,
@@ -3509,6 +3566,7 @@ fn apply_key_action(
             guards_by_name,
             queued_animations,
             runtime_assets,
+            animation_durations,
             collider_bounds,
             delayed_actions,
             owner,
@@ -3568,6 +3626,7 @@ fn apply_key_action(
                 guards_by_name,
                 queued_animations,
                 runtime_assets,
+                animation_durations,
                 collider_bounds,
                 None,
                 owner.clone(),
@@ -3959,6 +4018,7 @@ fn apply_function_by_name(
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
     runtime_assets: &SceneMaxRuntimeAssets,
+    animation_durations: &SceneMaxAnimationDurations,
     collider_bounds: &mut SceneMaxColliderBounds,
     delayed_actions: Option<&mut DelayedActionQueue>,
     owner: Option<SceneMaxControllerKey>,
@@ -4015,6 +4075,7 @@ fn apply_function_by_name(
         guards_by_name,
         queued_animations,
         runtime_assets,
+        animation_durations,
         collider_bounds,
         delayed_actions,
         owner,
@@ -5760,9 +5821,17 @@ fn timed_move_from_statement(
     TimedMove {
         remaining_seconds: duration,
         duration_seconds: duration,
-        velocity: direction * (movement.distance / duration),
+        velocity: direction * directional_move_speed(movement),
         final_translation: None,
         loop_condition: movement.loop_condition.clone(),
+    }
+}
+
+fn directional_move_speed(movement: &scenemax_parser::MoveStatement) -> f32 {
+    if movement.duration_seconds > 0.0 {
+        movement.distance * SCENEMAX_DIRECTIONAL_MOVE_SPEED_SCALE
+    } else {
+        movement.distance / 0.001
     }
 }
 
@@ -5872,7 +5941,7 @@ fn set_character_move_intent(
     continuous_delta_seconds: Option<f32>,
 ) {
     let duration = movement.duration_seconds.max(0.001);
-    let speed = movement.distance / duration;
+    let speed = directional_move_speed(movement);
     let mut direction = horizontal_forward(transform);
     if movement.direction == MoveDirection::Backward {
         direction = -direction;
@@ -6372,9 +6441,11 @@ fn collect_guards_by_name(program: &Program) -> HashMap<String, Condition> {
 fn play_pending_animations(
     mut commands: Commands,
     children: Query<&Children>,
+    root_entities: Query<&SceneMaxEntity>,
     animations_to_play: Query<(Entity, &AnimationToPlay)>,
     gltfs: Res<Assets<Gltf>>,
     animation_clips: Res<Assets<AnimationClip>>,
+    mut animation_durations: ResMut<SceneMaxAnimationDurations>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     mut players: Query<&mut AnimationPlayer>,
 ) {
@@ -6413,6 +6484,14 @@ fn play_pending_animations(
         let (graph, index) = AnimationGraph::from_clip(clip.clone());
         let graph_handle = graphs.add(graph);
         let duration_seconds = animation_clip_duration_seconds(&animation_clips, clip);
+        if let Ok(scene_entity) = root_entities.get(root) {
+            animation_durations.insert(
+                &scene_entity.name,
+                &animation_to_play.clip,
+                resolved_clip_name,
+                duration_seconds,
+            );
+        }
 
         for child in animation_players {
             if let Ok(mut player) = players.get_mut(child) {
@@ -7534,11 +7613,28 @@ mod tests {
         };
         let punch_animation = AnimationStatement {
             clip: "CrossPunch".to_owned(),
+            speed: 2.5,
             ..jump_animation.clone()
         };
 
-        assert!(estimated_animation_seconds(&jump_animation) >= jump_duration_seconds(35.0));
-        assert!(estimated_animation_seconds(&punch_animation) < jump_duration_seconds(35.0));
+        let durations = SceneMaxAnimationDurations::default();
+        assert!(estimated_animation_seconds(&jump_animation, &durations) >= 0.65);
+        assert!(estimated_animation_seconds(&punch_animation, &durations) < 1.0);
+    }
+
+    #[test]
+    fn cached_animation_duration_drives_blocking_estimate() {
+        let mut durations = SceneMaxAnimationDurations::default();
+        durations.insert("player2", "HighKick", "Armature|High-Kick", 2.4);
+        let animation = AnimationStatement {
+            target: "player2".to_owned(),
+            clip: "HighKick".to_owned(),
+            speed: 3.0,
+            looped: false,
+            blocking: true,
+        };
+
+        assert!((estimated_animation_seconds(&animation, &durations) - 0.8).abs() < 0.001);
     }
 
     #[test]
@@ -7574,6 +7670,7 @@ mod tests {
         );
 
         assert_eq!(movement.duration_seconds, 0.5);
+        assert!((movement.velocity.length() - 2.4).abs() < 0.001);
         assert!(movement.loop_condition.is_some());
     }
 
