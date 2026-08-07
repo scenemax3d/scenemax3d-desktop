@@ -152,6 +152,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_fighting_camera,
                 update_third_person_camera,
                 update_attached_camera,
+                restore_default_idle_animations,
                 play_pending_animations,
                 apply_animation_speed_overrides,
             )
@@ -240,6 +241,34 @@ struct SceneMaxPhysicsContacts {
 #[derive(Debug, Resource, Default)]
 struct SceneMaxColliderBounds {
     radius_by_name: HashMap<String, f32>,
+    shape_by_name: HashMap<String, ColliderBoundShape>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ColliderBoundShape {
+    Box { half_extents: Vec3 },
+    Sphere { radius: f32 },
+    Capsule { radius: f32, half_height: f32 },
+}
+
+impl ColliderBoundShape {
+    fn bounding_radius(self) -> f32 {
+        match self {
+            ColliderBoundShape::Box { half_extents } => half_extents.length(),
+            ColliderBoundShape::Sphere { radius } => radius,
+            ColliderBoundShape::Capsule {
+                radius,
+                half_height,
+            } => radius + half_height,
+        }
+    }
+}
+
+impl SceneMaxColliderBounds {
+    fn clear(&mut self) {
+        self.radius_by_name.clear();
+        self.shape_by_name.clear();
+    }
 }
 
 #[derive(Debug, Resource, Default)]
@@ -462,6 +491,7 @@ const CHARACTER_INPUT_TTL_SECONDS: f32 = 0.12;
 const CHARACTER_JUMP_FEED_SECONDS: f32 = 0.2;
 const DEFAULT_ANIMATION_CLIP_SECONDS: f32 = 1.5;
 const SCENEMAX_DIRECTIONAL_MOVE_SPEED_SCALE: f32 = 12.0;
+const MAX_PLAYER_HITBOX_OWNER_DISTANCE: f32 = 3.75;
 const LOOP_CONTINUE_DELAY_SECONDS: f32 = 0.001;
 const PHYSICS_LAYER_WORLD: u32 = 1 << 0;
 const PHYSICS_LAYER_CHARACTER: u32 = 1 << 1;
@@ -501,6 +531,85 @@ fn write_runtime_log_line(level: LoggerLevel, message: &str) {
     let line = format!("[{level_text}] {message}\n");
     if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = file.write_all(line.as_bytes());
+    }
+}
+
+fn write_key_event_probe(
+    prefix: &str,
+    key: &str,
+    trigger: KeyTrigger,
+    vars: &SceneMaxVars,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: &SceneMaxColliderBounds,
+) {
+    let message = format!(
+        "{prefix} key={} trigger={} action={} move_forward={} player_hit={} player1_ko={} \
+         game_status={} p1_jump={} p2_down={} p1_attack_legs={} allow_move={} asd_go={}",
+        key,
+        key_trigger_label(trigger),
+        key_probe_var(vars, "action"),
+        key_probe_var(vars, "move_forward"),
+        key_probe_var(vars, "player_hit"),
+        key_probe_var(vars, "player1_ko"),
+        key_probe_var(vars, "game_status"),
+        key_probe_var(vars, "player1.data.is_jumping"),
+        key_probe_var(vars, "player2.data.is_down"),
+        key_probe_var(vars, "player1.data.attack_legs"),
+        key_probe_guard(
+            "allow_move",
+            vars,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds
+        ),
+        key_probe_guard(
+            "asd_go_condition",
+            vars,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds
+        ),
+    );
+    write_runtime_log_line(LoggerLevel::Info, &message);
+}
+
+fn key_probe_var(vars: &SceneMaxVars, name: &str) -> String {
+    vars.0
+        .get(name)
+        .copied()
+        .map(format_scenemax_number)
+        .unwrap_or_else(|| "null".to_owned())
+}
+
+fn key_probe_guard(
+    name: &str,
+    vars: &SceneMaxVars,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: &SceneMaxColliderBounds,
+) -> &'static str {
+    let Some(guard) = guards_by_name.get(name) else {
+        return "missing";
+    };
+    if condition_matches(
+        guard,
+        vars,
+        guards_by_name,
+        Some(transforms_by_name),
+        Some(collider_bounds),
+    ) {
+        "true"
+    } else {
+        "false"
+    }
+}
+
+fn key_trigger_label(trigger: KeyTrigger) -> &'static str {
+    match trigger {
+        KeyTrigger::Pressed => "pressed",
+        KeyTrigger::PressedOnce => "pressed_once",
+        KeyTrigger::Released => "released",
     }
 }
 
@@ -724,7 +833,7 @@ fn setup_scenemax_program(
 
     object_pools.aliases.clear();
     object_pools.pools.clear();
-    collider_bounds.radius_by_name.clear();
+    collider_bounds.clear();
     apply_initial_assignments(program, &mut vars);
     apply_camera_systems(program, &mut camera_system);
     spawn_scenemax_program(
@@ -1311,20 +1420,27 @@ fn collider_dimensions(options: &EntityOptions, transform: &Transform) -> Vec3 {
         .max(Vec3::splat(0.1))
 }
 
-fn collider_bounding_radius(options: &EntityOptions, transform: Transform) -> f32 {
+fn collider_bound_shape(options: &EntityOptions, transform: Transform) -> ColliderBoundShape {
     let dimensions = collider_dimensions(options, &transform);
     match options
         .collision_shape
         .unwrap_or(SceneMaxCollisionShape::Box)
     {
-        SceneMaxCollisionShape::Sphere => dimensions.max_element() * 0.5,
-        SceneMaxCollisionShape::Box => dimensions.length() * 0.5,
+        SceneMaxCollisionShape::Sphere => ColliderBoundShape::Sphere {
+            radius: dimensions.max_element() * 0.5,
+        },
+        SceneMaxCollisionShape::Box => ColliderBoundShape::Box {
+            half_extents: dimensions * 0.5,
+        },
         SceneMaxCollisionShape::Capsule => {
             let radius = dimensions.x.max(dimensions.z).max(0.2) * 0.3;
             let height = dimensions.y.max(radius * 2.0);
-            radius + height * 0.5
+            ColliderBoundShape::Capsule {
+                radius,
+                half_height: height * 0.5,
+            }
         }
-        SceneMaxCollisionShape::None => 0.0,
+        SceneMaxCollisionShape::None => ColliderBoundShape::Sphere { radius: 0.0 },
     }
 }
 
@@ -1334,10 +1450,12 @@ fn register_collider_bounds(
     options: &EntityOptions,
     transform: Transform,
 ) {
-    let radius = collider_bounding_radius(options, transform).max(0.01);
+    let shape = collider_bound_shape(options, transform);
+    let radius = shape.bounding_radius().max(0.01);
     collider_bounds
         .radius_by_name
         .insert(name.to_owned(), radius);
+    collider_bounds.shape_by_name.insert(name.to_owned(), shape);
 }
 
 fn spawn_default_virtual_colliders(
@@ -1356,7 +1474,8 @@ fn spawn_default_virtual_colliders(
                 continue;
             }
             let transform = virtual_collider_transform(owner_transform, spec.local_offset);
-            let radius = virtual_collider_bounding_radius(spec.shape);
+            let shape = virtual_collider_bound_shape(spec.shape);
+            let radius = shape.bounding_radius();
             let entity = commands
                 .spawn((
                     SceneMaxEntity {
@@ -1383,6 +1502,9 @@ fn spawn_default_virtual_colliders(
             collider_bounds
                 .radius_by_name
                 .insert(spec.name.clone(), radius);
+            collider_bounds
+                .shape_by_name
+                .insert(spec.name.clone(), shape);
         }
     }
 }
@@ -1447,10 +1569,10 @@ fn virtual_collider_shape(shape: VirtualColliderShape) -> AvianCollider {
     }
 }
 
-fn virtual_collider_bounding_radius(shape: VirtualColliderShape) -> f32 {
+fn virtual_collider_bound_shape(shape: VirtualColliderShape) -> ColliderBoundShape {
     match shape {
-        VirtualColliderShape::Box { half_extents } => half_extents.length(),
-        VirtualColliderShape::Sphere { radius } => radius,
+        VirtualColliderShape::Box { half_extents } => ColliderBoundShape::Box { half_extents },
+        VirtualColliderShape::Sphere { radius } => ColliderBoundShape::Sphere { radius },
     }
 }
 
@@ -1483,7 +1605,7 @@ fn virtual_collider_transform(owner_transform: Transform, local_offset: Vec3) ->
         translation: owner_transform.translation
             + owner_transform.rotation * (local_offset * owner_transform.scale.abs()),
         rotation: owner_transform.rotation,
-        scale: owner_transform.scale.abs(),
+        scale: Vec3::ONE,
     }
 }
 
@@ -1585,7 +1707,7 @@ fn attachment_node_transform(node_transform: Transform, local_offset: Vec3) -> T
         translation: node_transform.translation
             + node_transform.rotation * (local_offset * node_transform.scale.abs()),
         rotation: node_transform.rotation,
-        scale: node_transform.scale.abs(),
+        scale: Vec3::ONE,
     }
 }
 
@@ -1957,6 +2079,10 @@ fn apply_startup_action(
         }
         Statement::CameraAttach(attach) => {
             attach_camera(attach, object_pools, None, camera_system);
+            ActionSequenceResult::Completed
+        }
+        Statement::CameraChase { target } => {
+            chase_camera(target, object_pools, None, camera_system);
             ActionSequenceResult::Completed
         }
         Statement::CameraAttachStop => {
@@ -2349,7 +2475,7 @@ fn switch_scene_on_key(
             delayed_actions.actions.clear();
             recurring_timers.remaining_by_statement.clear();
             physics_contacts.active_pairs.clear();
-            collider_bounds.radius_by_name.clear();
+            collider_bounds.clear();
             apply_initial_assignments(&program, &mut vars);
             apply_camera_systems(&program, &mut camera_system);
             spawn_scenemax_program(
@@ -2426,17 +2552,36 @@ fn apply_key_events(
         if !key_event_matches(&event.key, event.trigger, &keyboard) {
             continue;
         }
-        if event.guard.as_ref().is_some_and(|guard| {
-            !condition_matches(
+        let guard_matches = event.guard.as_ref().is_none_or(|guard| {
+            condition_matches(
                 guard,
                 &vars,
                 &guards_by_name,
                 Some(&transforms_by_name),
                 Some(&collider_bounds),
             )
-        }) {
+        });
+        if !guard_matches {
+            write_key_event_probe(
+                "KEY:SKIP",
+                &event.key,
+                event.trigger,
+                &vars,
+                &guards_by_name,
+                &transforms_by_name,
+                &collider_bounds,
+            );
             continue;
         }
+        write_key_event_probe(
+            "KEY:FIRE",
+            &event.key,
+            event.trigger,
+            &vars,
+            &guards_by_name,
+            &transforms_by_name,
+            &collider_bounds,
+        );
 
         let mut queued_animations = HashMap::new();
         let continuous_delta_seconds =
@@ -2619,11 +2764,34 @@ fn apply_when_events(
                 continue;
             }
         }
+        let is_collision_event = condition_contains_collision(&event.condition);
         if !guard_matches || !condition_matches_now {
+            if is_collision_event {
+                active_collisions
+                    .active_by_statement
+                    .remove(&statement_index);
+            }
             active_controllers
                 .running
                 .remove(&SceneMaxControllerKey::When(statement_index));
             continue;
+        }
+        if is_collision_event
+            && !active_collisions
+                .active_by_statement
+                .insert(statement_index)
+        {
+            continue;
+        }
+        if is_collision_event {
+            write_collision_event_probe(
+                statement_index,
+                &event.condition,
+                &transforms_by_name,
+                &collider_bounds,
+                &physics_contacts,
+                &object_pools,
+            );
         }
         let owner = SceneMaxControllerKey::When(statement_index);
         if active_controllers.running.contains(&owner) {
@@ -2655,6 +2823,198 @@ fn apply_when_events(
             active_controllers.running.remove(&owner);
         }
     }
+    clear_transient_hit_flags(&mut vars);
+}
+
+fn clear_transient_hit_flags(vars: &mut SceneMaxVars) {
+    for field in [
+        "player1.data.hand_attack_hit",
+        "player1.data.foot_attack_hit",
+        "player1.data.head_hit",
+        "player1.data.body_hit",
+        "player2.data.hand_attack_hit",
+        "player2.data.foot_attack_hit",
+        "player2.data.head_hit",
+        "player2.data.body_hit",
+    ] {
+        vars.0.insert(field.to_owned(), 0.0);
+    }
+}
+
+fn write_collision_event_probe(
+    statement_index: usize,
+    condition: &Condition,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: &SceneMaxColliderBounds,
+    physics_contacts: &SceneMaxPhysicsContacts,
+    object_pools: &SceneMaxObjectPools,
+) {
+    let Some(report) = collision_condition_report(
+        condition,
+        transforms_by_name,
+        collider_bounds,
+        physics_contacts,
+        object_pools,
+    ) else {
+        return;
+    };
+    write_runtime_log_line(
+        LoggerLevel::Info,
+        &format!(
+            "COLL:FIRE stmt={} source={} target={} avian={} fallback={} distance={} threshold={} owner_distance={}",
+            statement_index,
+            report.source,
+            report.target,
+            report.avian_contact as u8,
+            report.fallback_match as u8,
+            format_scenemax_number(report.distance),
+            format_scenemax_number(report.threshold),
+            format_scenemax_number(report.owner_distance),
+        ),
+    );
+}
+
+#[derive(Debug)]
+struct CollisionConditionReport {
+    source: String,
+    target: String,
+    avian_contact: bool,
+    fallback_match: bool,
+    distance: f32,
+    threshold: f32,
+    owner_distance: f32,
+}
+
+fn collision_condition_report(
+    condition: &Condition,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: &SceneMaxColliderBounds,
+    physics_contacts: &SceneMaxPhysicsContacts,
+    object_pools: &SceneMaxObjectPools,
+) -> Option<CollisionConditionReport> {
+    match condition {
+        Condition::Collision { sources, target } => collision_pair_report(
+            sources,
+            target,
+            transforms_by_name,
+            collider_bounds,
+            physics_contacts,
+            object_pools,
+        ),
+        Condition::And(conditions) | Condition::Or(conditions) => {
+            conditions.iter().find_map(|condition| {
+                collision_condition_report(
+                    condition,
+                    transforms_by_name,
+                    collider_bounds,
+                    physics_contacts,
+                    object_pools,
+                )
+            })
+        }
+        Condition::Not(condition) => collision_condition_report(
+            condition,
+            transforms_by_name,
+            collider_bounds,
+            physics_contacts,
+            object_pools,
+        ),
+        _ => None,
+    }
+}
+
+fn collision_pair_report(
+    sources: &[String],
+    target: &str,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: &SceneMaxColliderBounds,
+    physics_contacts: &SceneMaxPhysicsContacts,
+    object_pools: &SceneMaxObjectPools,
+) -> Option<CollisionConditionReport> {
+    let target_candidates = collision_reference_candidates_with_alias(target, object_pools);
+    let mut best: Option<CollisionConditionReport> = None;
+    for source in sources {
+        let source_candidates = collision_reference_candidates_with_alias(source, object_pools);
+        for source_name in &source_candidates {
+            for target_name in &target_candidates {
+                let avian_contact =
+                    active_physics_contact_matches(source_name, target_name, physics_contacts);
+                let (distance, threshold, fallback_match, owner_distance) =
+                    collision_pair_distance_report(
+                        source_name,
+                        target_name,
+                        transforms_by_name,
+                        collider_bounds,
+                    );
+                let report = CollisionConditionReport {
+                    source: source_name.clone(),
+                    target: target_name.clone(),
+                    avian_contact,
+                    fallback_match,
+                    distance,
+                    threshold,
+                    owner_distance,
+                };
+                if report.avian_contact || report.fallback_match {
+                    return Some(report);
+                }
+                if best
+                    .as_ref()
+                    .is_none_or(|best| report.distance < best.distance)
+                {
+                    best = Some(report);
+                }
+            }
+        }
+    }
+    best
+}
+
+fn collision_pair_distance_report(
+    source: &str,
+    target: &str,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: &SceneMaxColliderBounds,
+) -> (f32, f32, bool, f32) {
+    let source_exact = transforms_by_name.get(source).copied();
+    let target_exact = transforms_by_name.get(target).copied();
+    let owner_distance = collision_owner_distance(source, target, transforms_by_name);
+    let Some(source_transform) =
+        source_exact.or_else(|| collision_owner_transform(source, transforms_by_name))
+    else {
+        return (f32::INFINITY, 0.0, false, owner_distance);
+    };
+    let Some(target_transform) =
+        target_exact.or_else(|| collision_owner_transform(target, transforms_by_name))
+    else {
+        return (f32::INFINITY, 0.0, false, owner_distance);
+    };
+    let threshold = if source_exact.is_some() && target_exact.is_some() {
+        exact_collision_threshold(source, target, Some(collider_bounds))
+    } else {
+        collision_threshold(source, target)
+    };
+    let distance = source_transform
+        .translation
+        .distance(target_transform.translation);
+    let matches =
+        if let (Some(source_transform), Some(target_transform)) = (source_exact, target_exact) {
+            if !player_hitbox_owner_distance_allows(source, target, transforms_by_name) {
+                false
+            } else {
+                exact_collider_shapes_overlap(
+                    source,
+                    source_transform,
+                    target,
+                    target_transform,
+                    Some(collider_bounds),
+                )
+                .unwrap_or(distance <= threshold)
+            }
+        } else {
+            distance <= threshold
+        };
+    (distance, threshold, matches, owner_distance)
 }
 
 fn update_recurring_runs(
@@ -3000,6 +3360,55 @@ fn apply_action_sequence(
                 }
                 return ActionSequenceResult::Completed;
             }
+            Statement::RunFunction { name, args } => {
+                let Some(function) = functions_by_name.get(name) else {
+                    tracing::debug!(
+                        name,
+                        "SceneMax function is not implemented or was not parsed"
+                    );
+                    continue;
+                };
+                if !function_guard_matches(
+                    function,
+                    args,
+                    vars,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                ) {
+                    tracing::debug!(name, "SceneMax function guard is false");
+                    continue;
+                }
+
+                let function_actions = actions_with_parent_continuation(
+                    instantiate_function_actions(function, args),
+                    parent_action_tail(actions, index),
+                );
+                let mut function_scope = scope.as_deref().cloned().unwrap_or_default();
+                let result = apply_action_sequence(
+                    &function_actions,
+                    transforms_by_name,
+                    vars,
+                    object_pools,
+                    camera_system.as_deref_mut(),
+                    functions_by_name,
+                    guards_by_name,
+                    queued_animations,
+                    runtime_assets,
+                    animation_durations,
+                    collider_bounds,
+                    delayed_actions.as_deref_mut(),
+                    owner.clone(),
+                    Some(&mut function_scope),
+                    continuous_delta_seconds,
+                    commands,
+                    scene_entities,
+                );
+                if result.should_stop_parent() {
+                    return result;
+                }
+                return ActionSequenceResult::Completed;
+            }
             Statement::Async { actions } => {
                 let _ = apply_action_sequence(
                     actions,
@@ -3200,6 +3609,39 @@ fn apply_action_sequence(
                     return ActionSequenceResult::Completed;
                 }
             }
+            action if blocking_timed_action_seconds(action).is_some() => {
+                let seconds = blocking_timed_action_seconds(action).unwrap_or_default();
+                apply_key_action(
+                    action,
+                    transforms_by_name,
+                    vars,
+                    object_pools,
+                    camera_system.as_deref_mut(),
+                    functions_by_name,
+                    guards_by_name,
+                    queued_animations,
+                    runtime_assets,
+                    animation_durations,
+                    collider_bounds,
+                    delayed_actions.as_deref_mut(),
+                    owner.clone(),
+                    scope.as_deref_mut(),
+                    None,
+                    commands,
+                    scene_entities,
+                );
+                let remaining = actions[index + 1..].to_vec();
+                if enqueue_delayed_actions(
+                    delayed_actions.as_deref_mut(),
+                    seconds,
+                    remaining,
+                    owner.clone(),
+                    scope.as_deref().cloned(),
+                ) {
+                    return ActionSequenceResult::Suspended;
+                }
+                return ActionSequenceResult::Completed;
+            }
             Statement::Animate(animation) => {
                 apply_key_action(
                     action,
@@ -3261,6 +3703,28 @@ fn apply_action_sequence(
         }
     }
     ActionSequenceResult::Completed
+}
+
+fn blocking_timed_action_seconds(action: &Statement) -> Option<f32> {
+    match action {
+        Statement::Turn(turn) if !turn.async_run && turn.duration_seconds > f32::EPSILON => {
+            Some(turn.duration_seconds.max(0.001))
+        }
+        Statement::Move(movement)
+            if !movement.async_run && movement.duration_seconds > f32::EPSILON =>
+        {
+            Some(movement.duration_seconds.max(0.001))
+        }
+        Statement::MoveTo(move_to)
+            if !move_to.async_run && move_to.duration_seconds > f32::EPSILON =>
+        {
+            Some(move_to.duration_seconds.max(0.001))
+        }
+        Statement::CharacterJump(jump) if !jump.async_run => {
+            Some(jump_duration_seconds(jump.speed))
+        }
+        _ => None,
+    }
 }
 
 fn estimated_animation_seconds(
@@ -3537,6 +4001,12 @@ fn apply_key_action(
         }
         return ActionSequenceResult::Completed;
     }
+    if let Statement::CameraChase { target } = action {
+        if let Some(camera_system) = camera_system {
+            chase_camera(target, object_pools, scope.as_deref(), camera_system);
+        }
+        return ActionSequenceResult::Completed;
+    }
     if matches!(action, Statement::CameraAttachStop) {
         if let Some(camera_system) = camera_system {
             stop_camera_attachment(camera_system);
@@ -3669,7 +4139,8 @@ fn apply_key_action(
                             *looped == animation.looped
                                 && requested_animation_names_match(clip, &animation.clip)
                         });
-                let already_current = queued_animations.get(&entity).is_none()
+                let already_current = animation.looped
+                    && queued_animations.get(&entity).is_none()
                     && current_animation.is_some_and(|current| {
                         current_animation_matches(current, &animation.clip, animation.looped)
                     });
@@ -3845,6 +4316,9 @@ fn apply_key_action(
             {
                 if let Some(character_motor) = character_motor.as_deref_mut() {
                     set_character_jump_intent(character_motor, jump);
+                    commands
+                        .entity(entity)
+                        .insert(timed_jump_from_statement(jump, &transform));
                 } else {
                     commands
                         .entity(entity)
@@ -4181,6 +4655,7 @@ fn substitute_statement(statement: &Statement, bindings: &HashMap<String, String
                 .loop_condition
                 .as_ref()
                 .map(|condition| substitute_condition(condition, bindings)),
+            async_run: turn.async_run,
         }),
         Statement::Move(movement) => Statement::Move(scenemax_parser::MoveStatement {
             target: substitute_path(&movement.target, bindings),
@@ -4191,12 +4666,17 @@ fn substitute_statement(statement: &Statement, bindings: &HashMap<String, String
                 .loop_condition
                 .as_ref()
                 .map(|condition| substitute_condition(condition, bindings)),
+            async_run: movement.async_run,
         }),
         Statement::MoveTo(move_to) => Statement::MoveTo(scenemax_parser::MoveToStatement {
             target: substitute_path(&move_to.target, bindings),
             destination: substitute_move_to_destination(&move_to.destination, bindings),
             duration_seconds: move_to.duration_seconds,
+            async_run: move_to.async_run,
         }),
+        Statement::CameraChase { target } => Statement::CameraChase {
+            target: substitute_path(target, bindings),
+        },
         Statement::CameraAttach(attach) => Statement::CameraAttach(CameraAttachStatement {
             target: substitute_path(&attach.target, bindings),
             offset: attach.offset,
@@ -4229,6 +4709,7 @@ fn substitute_statement(statement: &Statement, bindings: &HashMap<String, String
         Statement::CharacterJump(jump) => Statement::CharacterJump(CharacterJumpStatement {
             target: substitute_path(&jump.target, bindings),
             speed: jump.speed,
+            async_run: jump.async_run,
         }),
         Statement::PhysicsImpulse(impulse) => {
             Statement::PhysicsImpulse(scenemax_parser::PhysicsImpulseStatement {
@@ -5035,6 +5516,20 @@ fn attach_camera(
     tracing::info!(target, "attached SceneMax camera");
 }
 
+fn chase_camera(
+    target: &str,
+    object_pools: &SceneMaxObjectPools,
+    scope: Option<&SceneMaxScopeFrame>,
+    camera_system: &mut SceneMaxCameraSystem,
+) {
+    let target = resolve_object_alias(target, object_pools, scope);
+    camera_system.attached = Some(CameraAttachmentRuntime {
+        target: target.clone(),
+        offset: Vec3::new(0.0, 3.0, -12.0),
+    });
+    tracing::info!(target, "chasing SceneMax camera target");
+}
+
 fn stop_camera_attachment(camera_system: &mut SceneMaxCameraSystem) {
     if camera_system.attached.take().is_some() {
         tracing::info!("stopped SceneMax camera attachment");
@@ -5483,8 +5978,13 @@ fn when_condition_matches(
 ) -> bool {
     match condition {
         Condition::Collision { sources, target } => {
-            physics_contact_matches(sources, target, physics_contacts, object_pools)
-                || collision_condition_matches(sources, target, transforms_by_name, collider_bounds)
+            physics_contact_condition_matches(
+                sources,
+                target,
+                physics_contacts,
+                object_pools,
+                transforms_by_name,
+            ) || collision_condition_matches(sources, target, transforms_by_name, collider_bounds)
         }
         Condition::Boolean(value) => *value,
         Condition::Not(condition) => !when_condition_matches(
@@ -5528,6 +6028,18 @@ fn when_condition_matches(
     }
 }
 
+fn condition_contains_collision(condition: &Condition) -> bool {
+    match condition {
+        Condition::Collision { .. } => true,
+        Condition::Not(condition) => condition_contains_collision(condition),
+        Condition::And(conditions) | Condition::Or(conditions) => {
+            conditions.iter().any(condition_contains_collision)
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
 fn physics_contact_matches(
     sources: &[String],
     target: &str,
@@ -5540,6 +6052,31 @@ fn physics_contact_matches(
         source_candidates.iter().any(|source_name| {
             target_candidates.iter().any(|target_name| {
                 active_physics_contact_matches(source_name, target_name, physics_contacts)
+            })
+        })
+    })
+}
+
+fn physics_contact_condition_matches(
+    sources: &[String],
+    target: &str,
+    physics_contacts: &SceneMaxPhysicsContacts,
+    object_pools: &SceneMaxObjectPools,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+) -> bool {
+    let target_candidates = collision_reference_candidates_with_alias(target, object_pools);
+    sources.iter().any(|source| {
+        let source_candidates = collision_reference_candidates_with_alias(source, object_pools);
+        source_candidates.iter().any(|source_name| {
+            target_candidates.iter().any(|target_name| {
+                active_physics_contact_matches(source_name, target_name, physics_contacts)
+                    && transforms_by_name.is_none_or(|transforms_by_name| {
+                        player_hitbox_owner_distance_allows(
+                            source_name,
+                            target_name,
+                            transforms_by_name,
+                        )
+                    })
             })
         })
     })
@@ -5571,12 +6108,21 @@ fn active_physics_contact_matches(
         return true;
     }
 
+    if !is_owner_level_collision_reference(source) && !is_owner_level_collision_reference(target) {
+        return false;
+    }
+
     let expected_owner_pair =
         normalized_collision_pair(&collision_owner(source), &collision_owner(target));
     physics_contacts.active_pairs.iter().any(|(left, right)| {
         normalized_collision_pair(&collision_owner(left), &collision_owner(right))
             == expected_owner_pair
     })
+}
+
+fn is_owner_level_collision_reference(reference: &str) -> bool {
+    let normalized = reference.trim().trim_matches('"');
+    collision_owner(normalized) == normalized
 }
 
 fn normalized_collision_pair(left: &str, right: &str) -> (String, String) {
@@ -5605,6 +6151,18 @@ fn collision_condition_matches(
     sources.iter().any(|source| {
         let source_exact = transforms_by_name.get(source).copied();
         if let (Some(source_transform), Some(target_transform)) = (source_exact, target_exact) {
+            if !player_hitbox_owner_distance_allows(source, target, transforms_by_name) {
+                return false;
+            }
+            if let Some(matches) = exact_collider_shapes_overlap(
+                source,
+                source_transform,
+                target,
+                target_transform,
+                collider_bounds,
+            ) {
+                return matches;
+            }
             return source_transform
                 .translation
                 .distance(target_transform.translation)
@@ -5630,14 +6188,46 @@ fn collision_owner_transform(
         .or_else(|| transforms_by_name.get(&owner).copied())
 }
 
-fn collision_reference_candidates(reference: &str) -> Vec<String> {
-    let normalized = reference.trim().trim_matches('"').to_owned();
-    let owner = collision_owner(&normalized);
-    if owner == normalized {
-        vec![normalized]
-    } else {
-        vec![normalized, owner]
+fn collision_owner_distance(
+    source: &str,
+    target: &str,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> f32 {
+    let source_owner = collision_owner(source);
+    let target_owner = collision_owner(target);
+    let (Some(source_transform), Some(target_transform)) = (
+        transforms_by_name.get(&source_owner),
+        transforms_by_name.get(&target_owner),
+    ) else {
+        return f32::INFINITY;
+    };
+    source_transform
+        .translation
+        .distance(target_transform.translation)
+}
+
+fn player_hitbox_owner_distance_allows(
+    source: &str,
+    target: &str,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> bool {
+    let source_owner = collision_owner(source);
+    let target_owner = collision_owner(target);
+    if source_owner == target_owner {
+        return true;
     }
+    if !source_owner.starts_with("player") || !target_owner.starts_with("player") {
+        return true;
+    }
+    if !source.contains("_collider") || !target.contains("_collider") {
+        return true;
+    }
+    let owner_distance = collision_owner_distance(source, target, transforms_by_name);
+    !owner_distance.is_finite() || owner_distance <= MAX_PLAYER_HITBOX_OWNER_DISTANCE
+}
+
+fn collision_reference_candidates(reference: &str) -> Vec<String> {
+    vec![reference.trim().trim_matches('"').to_owned()]
 }
 
 fn collision_owner(reference: &str) -> String {
@@ -5666,6 +6256,83 @@ fn collision_threshold(source: &str, target: &str) -> f32 {
     } else {
         2.5
     }
+}
+
+fn exact_collider_shapes_overlap(
+    source: &str,
+    source_transform: Transform,
+    target: &str,
+    target_transform: Transform,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<bool> {
+    let collider_bounds = collider_bounds?;
+    let source_shape = collider_bounds.shape_by_name.get(source).copied()?;
+    let target_shape = collider_bounds.shape_by_name.get(target).copied()?;
+    Some(collider_shapes_overlap(
+        source_shape,
+        source_transform,
+        target_shape,
+        target_transform,
+    ))
+}
+
+fn collider_shapes_overlap(
+    source_shape: ColliderBoundShape,
+    source_transform: Transform,
+    target_shape: ColliderBoundShape,
+    target_transform: Transform,
+) -> bool {
+    match (source_shape, target_shape) {
+        (
+            ColliderBoundShape::Sphere {
+                radius: source_radius,
+            },
+            ColliderBoundShape::Sphere {
+                radius: target_radius,
+            },
+        ) => {
+            source_transform
+                .translation
+                .distance(target_transform.translation)
+                <= source_radius + target_radius
+        }
+        (ColliderBoundShape::Box { half_extents }, ColliderBoundShape::Sphere { radius }) => {
+            sphere_overlaps_box(
+                target_transform.translation,
+                radius,
+                source_transform,
+                half_extents,
+            )
+        }
+        (ColliderBoundShape::Sphere { radius }, ColliderBoundShape::Box { half_extents }) => {
+            sphere_overlaps_box(
+                source_transform.translation,
+                radius,
+                target_transform,
+                half_extents,
+            )
+        }
+        _ => {
+            source_transform
+                .translation
+                .distance(target_transform.translation)
+                <= source_shape.bounding_radius() + target_shape.bounding_radius()
+        }
+    }
+}
+
+fn sphere_overlaps_box(
+    sphere_center: Vec3,
+    sphere_radius: f32,
+    box_transform: Transform,
+    half_extents: Vec3,
+) -> bool {
+    let local_center = box_transform
+        .rotation
+        .inverse()
+        .mul_vec3(sphere_center - box_transform.translation);
+    let closest = local_center.clamp(-half_extents, half_extents);
+    local_center.distance_squared(closest) <= sphere_radius * sphere_radius
 }
 
 fn exact_collision_threshold(
@@ -5974,7 +6641,7 @@ fn set_character_jump_intent(motor: &mut SceneMaxCharacterMotor, jump: &Characte
 }
 
 fn jump_height(speed: f32) -> f32 {
-    (speed * 0.08).clamp(1.0, 4.5)
+    (speed * 0.16).clamp(1.2, 8.0)
 }
 
 fn jump_duration_seconds(speed: f32) -> f32 {
@@ -6219,7 +6886,10 @@ fn feed_tnua_character_controllers(
                     config.jump.height = jump_height(speed);
                 }
             }
-            controller.action(SceneMaxControlScheme::Jump(Default::default()));
+            controller.action(SceneMaxControlScheme::Jump(TnuaBuiltinJump {
+                allow_in_air: true,
+                ..Default::default()
+            }));
             motor.jump_hold_seconds = (motor.jump_hold_seconds - delta).max(0.0);
         }
 
@@ -6438,6 +7108,54 @@ fn collect_guards_by_name(program: &Program) -> HashMap<String, Condition> {
         .collect()
 }
 
+fn restore_default_idle_animations(
+    mut commands: Commands,
+    vars: Res<SceneMaxVars>,
+    characters: Query<(
+        Entity,
+        &SceneMaxEntity,
+        Option<&SceneMaxGltf>,
+        Option<&CurrentAnimation>,
+        Option<&AnimationToPlay>,
+    )>,
+) {
+    if !scene_is_ready_for_player_idle(&vars) {
+        return;
+    }
+    for (entity, scene_entity, gltf, current_animation, pending_animation) in &characters {
+        if scene_entity.name != "player1" || pending_animation.is_some() {
+            continue;
+        }
+        if current_animation.is_some_and(|current| {
+            current_animation_matches(current, "idle2", true)
+                || (!current.looped && current.elapsed_seconds < current.duration_seconds)
+        }) {
+            continue;
+        }
+        let Some(gltf) = gltf else {
+            continue;
+        };
+        commands.entity(entity).insert(AnimationToPlay {
+            clip: "idle2".to_owned(),
+            looped: true,
+            speed: 1.0,
+            gltf: gltf.gltf.clone(),
+        });
+    }
+}
+
+fn scene_is_ready_for_player_idle(vars: &SceneMaxVars) -> bool {
+    variable_is_zero(vars, "action")
+        && variable_is_zero(vars, "move_forward")
+        && variable_is_zero(vars, "player_hit")
+        && variable_is_zero(vars, "player1_ko")
+        && variable_is_zero(vars, "player1.data.is_jumping")
+}
+
+fn variable_is_zero(vars: &SceneMaxVars, name: &str) -> bool {
+    vars.0.get(name).copied().unwrap_or_default().abs() <= f32::EPSILON
+}
+
 fn play_pending_animations(
     mut commands: Commands,
     children: Query<&Children>,
@@ -6447,9 +7165,13 @@ fn play_pending_animations(
     animation_clips: Res<Assets<AnimationClip>>,
     mut animation_durations: ResMut<SceneMaxAnimationDurations>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
-    mut players: Query<&mut AnimationPlayer>,
+    mut players: Query<(&mut AnimationPlayer, Option<&mut AnimationGraphHandle>)>,
 ) {
     for (root, animation_to_play) in &animations_to_play {
+        let target_name = root_entities
+            .get(root)
+            .map(|entity| entity.name.as_str())
+            .unwrap_or("<unknown>");
         let Some(gltf) = gltfs.get(&animation_to_play.gltf) else {
             continue;
         };
@@ -6457,6 +7179,15 @@ fn play_pending_animations(
         let Some((resolved_clip_name, clip)) =
             find_named_animation_clip(gltf.named_animations.iter(), &animation_to_play.clip)
         else {
+            write_runtime_log_line(
+                LoggerLevel::Info,
+                &format!(
+                    "ANIM:MISS target={} requested={} available={}",
+                    target_name,
+                    animation_to_play.clip,
+                    animation_names_summary(gltf)
+                ),
+            );
             if gltf.animations.is_empty() {
                 tracing::warn!(clip = %animation_to_play.clip, "GLTF model has no animation clips");
             } else {
@@ -6478,33 +7209,58 @@ fn play_pending_animations(
         }
 
         if animation_players.is_empty() {
+            tracing::debug!(
+                target = target_name,
+                clip = %animation_to_play.clip,
+                "waiting for GLTF AnimationPlayer entity"
+            );
             continue;
         }
 
         let (graph, index) = AnimationGraph::from_clip(clip.clone());
         let graph_handle = graphs.add(graph);
         let duration_seconds = animation_clip_duration_seconds(&animation_clips, clip);
-        if let Ok(scene_entity) = root_entities.get(root) {
-            animation_durations.insert(
-                &scene_entity.name,
-                &animation_to_play.clip,
-                resolved_clip_name,
-                duration_seconds,
-            );
-        }
+        animation_durations.insert(
+            target_name,
+            &animation_to_play.clip,
+            resolved_clip_name,
+            duration_seconds,
+        );
 
+        let animation_player_count = animation_players.len();
         for child in animation_players {
-            if let Ok(mut player) = players.get_mut(child) {
-                let active = player.start(index).set_speed(animation_to_play.speed);
+            if let Ok((mut player, graph_component)) = players.get_mut(child) {
+                if let Some(mut graph_component) = graph_component {
+                    graph_component.0 = graph_handle.clone();
+                } else {
+                    commands
+                        .entity(child)
+                        .insert(AnimationGraphHandle(graph_handle.clone()));
+                }
+                let active = player
+                    .stop_all()
+                    .start(index)
+                    .set_speed(animation_to_play.speed)
+                    .set_weight(1.0);
                 if animation_to_play.looped {
                     active.repeat();
                 }
             }
-            commands
-                .entity(child)
-                .insert(AnimationGraphHandle(graph_handle.clone()));
         }
 
+        write_runtime_log_line(
+            LoggerLevel::Info,
+            &format!(
+                "ANIM:PLAY target={} requested={} resolved={} looped={} speed={} duration={} players={}",
+                target_name,
+                animation_to_play.clip,
+                resolved_clip_name,
+                animation_to_play.looped as u8,
+                format_scenemax_number(animation_to_play.speed),
+                format_scenemax_number(duration_seconds),
+                animation_player_count,
+            ),
+        );
         commands.entity(root).remove::<AnimationToPlay>();
         commands.entity(root).insert(CurrentAnimation {
             clip: resolved_clip_name.to_owned(),
@@ -6514,6 +7270,20 @@ fn play_pending_animations(
             duration_seconds,
         });
     }
+}
+
+fn animation_names_summary(gltf: &Gltf) -> String {
+    let mut names = gltf
+        .named_animations
+        .keys()
+        .take(16)
+        .map(|name| name.as_ref())
+        .collect::<Vec<_>>()
+        .join(",");
+    if gltf.named_animations.len() > 16 {
+        names.push_str(",...");
+    }
+    names
 }
 
 fn find_named_animation_clip<'a>(
@@ -7207,6 +7977,24 @@ mod tests {
     }
 
     #[test]
+    fn clears_collision_hit_pulses_after_when_pass() {
+        let mut vars = SceneMaxVars(HashMap::from([
+            ("player1.data.head_hit".to_owned(), 1.0),
+            ("player2.data.hand_attack_hit".to_owned(), 1.0),
+            ("player1.data.is_jumping".to_owned(), 1.0),
+        ]));
+
+        clear_transient_hit_flags(&mut vars);
+
+        assert_eq!(vars.0.get("player1.data.head_hit").copied(), Some(0.0));
+        assert_eq!(
+            vars.0.get("player2.data.hand_attack_hit").copied(),
+            Some(0.0)
+        );
+        assert_eq!(vars.0.get("player1.data.is_jumping").copied(), Some(1.0));
+    }
+
+    #[test]
     fn evaluates_distance_and_condition_assignment_values() {
         let mut vars = SceneMaxVars::default();
         vars.0.insert("life2".to_owned(), 3.0);
@@ -7365,11 +8153,11 @@ mod tests {
         let transforms = HashMap::from([
             (
                 "player1".to_owned(),
-                Transform::from_translation(Vec3::new(0.0, 0.0, 100.0)),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
             ),
             (
                 "player2".to_owned(),
-                Transform::from_translation(Vec3::new(0.0, 0.0, -100.0)),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 2.0)),
             ),
             (
                 "player1_head_collider".to_owned(),
@@ -7406,6 +8194,7 @@ mod tests {
                 ("wide_box".to_owned(), 1.0),
                 ("small_sphere".to_owned(), 0.5),
             ]),
+            shape_by_name: HashMap::new(),
         };
 
         assert!(collision_condition_matches(
@@ -7495,6 +8284,119 @@ mod tests {
     }
 
     #[test]
+    fn player_hitbox_collision_is_gated_by_owner_distance() {
+        let transforms = HashMap::from([
+            (
+                "player1".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+            ),
+            (
+                "player2".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 4.5)),
+            ),
+            (
+                "player1_head_collider".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 1.6, 0.0)),
+            ),
+            (
+                "player2_left_hand_collider".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 1.5, 0.4)),
+            ),
+        ]);
+
+        assert!(!collision_condition_matches(
+            &["player2_left_hand_collider".to_owned()],
+            "player1_head_collider",
+            Some(&transforms),
+            None,
+        ));
+    }
+
+    #[test]
+    fn exact_box_sphere_collision_uses_box_shape_not_bounding_sphere() {
+        let transforms = HashMap::from([
+            (
+                "player1_body_collider".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
+            ),
+            (
+                "player2_left_hand_collider".to_owned(),
+                Transform::from_translation(Vec3::new(1.0, 1.0, 0.75)),
+            ),
+        ]);
+        let collider_bounds = SceneMaxColliderBounds {
+            radius_by_name: HashMap::from([
+                (
+                    "player1_body_collider".to_owned(),
+                    Vec3::new(0.55, 0.9, 0.35).length(),
+                ),
+                ("player2_left_hand_collider".to_owned(), 0.24),
+            ]),
+            shape_by_name: HashMap::from([
+                (
+                    "player1_body_collider".to_owned(),
+                    ColliderBoundShape::Box {
+                        half_extents: Vec3::new(0.55, 0.9, 0.35),
+                    },
+                ),
+                (
+                    "player2_left_hand_collider".to_owned(),
+                    ColliderBoundShape::Sphere { radius: 0.24 },
+                ),
+            ]),
+        };
+
+        assert!(!collision_condition_matches(
+            &["player2_left_hand_collider".to_owned()],
+            "player1_body_collider",
+            Some(&transforms),
+            Some(&collider_bounds),
+        ));
+    }
+
+    #[test]
+    fn exact_box_sphere_collision_matches_when_sphere_reaches_box() {
+        let transforms = HashMap::from([
+            (
+                "player1_body_collider".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
+            ),
+            (
+                "player2_left_hand_collider".to_owned(),
+                Transform::from_translation(Vec3::new(0.7, 1.0, 0.2)),
+            ),
+        ]);
+        let collider_bounds = SceneMaxColliderBounds {
+            radius_by_name: HashMap::from([
+                (
+                    "player1_body_collider".to_owned(),
+                    Vec3::new(0.55, 0.9, 0.35).length(),
+                ),
+                ("player2_left_hand_collider".to_owned(), 0.24),
+            ]),
+            shape_by_name: HashMap::from([
+                (
+                    "player1_body_collider".to_owned(),
+                    ColliderBoundShape::Box {
+                        half_extents: Vec3::new(0.55, 0.9, 0.35),
+                    },
+                ),
+                (
+                    "player2_left_hand_collider".to_owned(),
+                    ColliderBoundShape::Sphere { radius: 0.24 },
+                ),
+            ]),
+        };
+
+        assert!(collision_condition_matches(
+            &["player2_left_hand_collider".to_owned()],
+            "player1_body_collider",
+            Some(&transforms),
+            Some(&collider_bounds),
+        ));
+    }
+
+    #[test]
     fn matches_collision_condition_from_avian_contact_pair() {
         let contacts = SceneMaxPhysicsContacts {
             active_pairs: HashSet::from([normalized_collision_pair("player1", "player2")]),
@@ -7502,6 +8404,12 @@ mod tests {
         let object_pools = SceneMaxObjectPools::default();
 
         assert!(physics_contact_matches(
+            &["player2".to_owned()],
+            "player1",
+            &contacts,
+            &object_pools,
+        ));
+        assert!(!physics_contact_matches(
             &["player2_left_hand_collider".to_owned()],
             "player1_head_collider",
             &contacts,
@@ -7536,6 +8444,35 @@ mod tests {
             "player1_head_collider",
             &contacts,
             &object_pools,
+        ));
+    }
+
+    #[test]
+    fn exact_avian_player_hitbox_contact_is_gated_by_owner_distance() {
+        let contacts = SceneMaxPhysicsContacts {
+            active_pairs: HashSet::from([normalized_collision_pair(
+                "player2_left_hand_collider",
+                "player1_head_collider",
+            )]),
+        };
+        let object_pools = SceneMaxObjectPools::default();
+        let transforms = HashMap::from([
+            (
+                "player1".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+            ),
+            (
+                "player2".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 4.5)),
+            ),
+        ]);
+
+        assert!(!physics_contact_condition_matches(
+            &["player2_left_hand_collider".to_owned()],
+            "player1_head_collider",
+            &contacts,
+            &object_pools,
+            Some(&transforms),
         ));
     }
 
@@ -7581,7 +8518,7 @@ mod tests {
 
         assert_eq!(attached.translation, Vec3::new(1.0, 3.0, 3.0));
         assert_eq!(attached.rotation, Quat::IDENTITY);
-        assert_eq!(attached.scale, Vec3::splat(2.0));
+        assert_eq!(attached.scale, Vec3::ONE);
     }
 
     #[test]
@@ -7590,12 +8527,13 @@ mod tests {
             &CharacterJumpStatement {
                 target: "player1".to_owned(),
                 speed: 35.0,
+                async_run: false,
             },
             &Transform::from_translation(Vec3::new(0.0, 10.0, 0.0)),
         );
 
         assert_eq!(jump.start_y, 10.0);
-        assert!((jump.height - 2.8).abs() < 0.001);
+        assert!((jump.height - 5.6).abs() < 0.001);
         assert!((jump.duration_seconds - 0.875).abs() < 0.001);
         assert!((jump_y_offset(0.5, jump.height) - jump.height).abs() < 0.001);
         assert_eq!(jump_y_offset(1.0, jump.height), 0.0);
@@ -7647,6 +8585,7 @@ mod tests {
                 left: AssignmentValue::Number(1.0),
                 right: AssignmentValue::Number(1.0),
             }),
+            async_run: false,
         });
 
         assert_eq!(turn.duration_seconds, 1.0);
@@ -7665,6 +8604,7 @@ mod tests {
                     name: "move_forward".to_owned(),
                     value: 1.0,
                 }),
+                async_run: false,
             },
             &Transform::default(),
         );
@@ -7815,6 +8755,7 @@ mod tests {
                     distance: 0.2,
                     duration_seconds: 0.2,
                     loop_condition: None,
+                    async_run: false,
                 }),
                 Statement::LookAt {
                     target: "player2".to_owned(),

@@ -106,6 +106,9 @@ pub enum Statement {
     CameraSystemSelect {
         name: String,
     },
+    CameraChase {
+        target: String,
+    },
     CameraAttach(CameraAttachStatement),
     CameraAttachStop,
     Logger(LoggerStatement),
@@ -196,6 +199,7 @@ pub struct TurnStatement {
     pub degrees: f32,
     pub duration_seconds: f32,
     pub loop_condition: Option<Condition>,
+    pub async_run: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -205,6 +209,7 @@ pub struct MoveStatement {
     pub distance: f32,
     pub duration_seconds: f32,
     pub loop_condition: Option<Condition>,
+    pub async_run: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -212,6 +217,7 @@ pub struct MoveToStatement {
     pub target: String,
     pub destination: MoveToDestination,
     pub duration_seconds: f32,
+    pub async_run: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -236,6 +242,7 @@ pub struct CharacterIgnoreStatement {
 pub struct CharacterJumpStatement {
     pub target: String,
     pub speed: f32,
+    pub async_run: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1577,6 +1584,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(Statement::CameraRotation(rotation));
     }
 
+    if let Some(chase) = parse_camera_chase(line)? {
+        return Ok(chase);
+    }
+
     if let Some(attach) = parse_camera_attach(line)? {
         return Ok(attach);
     }
@@ -2166,6 +2177,23 @@ fn parse_camera_attach(line: &str) -> Result<Option<Statement>, ParseError> {
     })))
 }
 
+fn parse_camera_chase(line: &str) -> Result<Option<Statement>, ParseError> {
+    let line = line.trim();
+    if line.eq_ignore_ascii_case("camera.chase stop") {
+        return Ok(Some(Statement::CameraAttachStop));
+    }
+
+    let lower = line.to_ascii_lowercase();
+    if !lower.starts_with("camera.chase ") {
+        return Ok(None);
+    }
+    let target = normalize_entity_reference(&line["camera.chase ".len()..]);
+    if !is_variable_path(&target) {
+        return Ok(None);
+    }
+    Ok(Some(Statement::CameraChase { target }))
+}
+
 fn parse_model_decl(line: &str) -> Result<Option<Statement>, ParseError> {
     if let Some((name, rest)) = line.split_once("=>") {
         if let Some(pool) = parse_object_pool(name.trim(), rest)? {
@@ -2473,6 +2501,7 @@ fn parse_turn(line: &str) -> Result<Option<TurnStatement>, ParseError> {
         degrees,
         duration_seconds,
         loop_condition,
+        async_run: contains_keyword(rest, "async"),
     }))
 }
 
@@ -2497,6 +2526,7 @@ fn parse_rotate_turn(line: &str) -> Result<Option<TurnStatement>, ParseError> {
         degrees,
         duration_seconds,
         loop_condition,
+        async_run: contains_keyword(after_rotate, "async"),
     }))
 }
 
@@ -2562,6 +2592,7 @@ fn parse_move(line: &str) -> Result<Option<MoveStatement>, ParseError> {
         distance,
         duration_seconds,
         loop_condition,
+        async_run: contains_keyword(rest, "async"),
     }))
 }
 
@@ -2583,6 +2614,7 @@ fn parse_move_to(line: &str) -> Result<Option<MoveToStatement>, ParseError> {
         target,
         destination,
         duration_seconds,
+        async_run: contains_keyword(rest, "async"),
     }))
 }
 
@@ -2709,6 +2741,7 @@ fn parse_character_jump(line: &str) -> Result<Option<CharacterJumpStatement>, Pa
     Ok(Some(CharacterJumpStatement {
         target: target.to_owned(),
         speed,
+        async_run: contains_keyword(rest, "async"),
     }))
 }
 
@@ -3479,6 +3512,7 @@ mod tests {
             vec![Statement::CharacterJump(CharacterJumpStatement {
                 target: "player1".to_owned(),
                 speed: 35.0,
+                async_run: true,
             })]
         );
     }
@@ -3739,6 +3773,7 @@ mod tests {
                     degrees: 360.0,
                     duration_seconds: 50.0,
                     loop_condition: None,
+                    async_run: true,
                 }),
             ]
         );
@@ -3758,6 +3793,7 @@ mod tests {
                     left: AssignmentValue::Number(1.0),
                     right: AssignmentValue::Number(1.0),
                 }),
+                async_run: false,
             })]
         );
     }
@@ -3774,6 +3810,7 @@ mod tests {
                 distance: 0.5,
                 duration_seconds: 0.25,
                 loop_condition: None,
+                async_run: true,
             })]
         );
     }
@@ -3795,6 +3832,7 @@ mod tests {
                     name: "move_forward".to_owned(),
                     value: 1.0,
                 }),
+                async_run: false,
             })]
         );
     }
@@ -3813,6 +3851,7 @@ mod tests {
                     PositionExpr::Number(99.0),
                 ])),
                 duration_seconds: 0.36,
+                async_run: false,
             })]
         );
     }
@@ -3831,6 +3870,7 @@ mod tests {
                     distance: 4.0,
                 },
                 duration_seconds: 0.5,
+                async_run: true,
             })]
         );
     }
@@ -3913,6 +3953,7 @@ mod tests {
                 degrees: 360.0,
                 duration_seconds: 0.5,
                 loop_condition: None,
+                async_run: false,
             })]
         );
     }
@@ -3987,6 +4028,7 @@ mod tests {
                         distance: 0.3,
                         duration_seconds: 0.2,
                         loop_condition: None,
+                        async_run: true,
                     }),
                     Statement::Animate(AnimationStatement {
                         target: "player1".to_owned(),
@@ -4039,6 +4081,7 @@ mod tests {
                                     degrees: 360.0,
                                     duration_seconds: 0.5,
                                     loop_condition: None,
+                                    async_run: true,
                                 })],
                                 else_actions: Vec::new(),
                             }),
@@ -4786,6 +4829,7 @@ mod tests {
                         distance: 0.2,
                         duration_seconds: 0.5,
                         loop_condition: None,
+                        async_run: false,
                     }),
                 ],
             })]
@@ -5019,6 +5063,7 @@ mod tests {
                     degrees: 3.0,
                     duration_seconds: 0.1,
                     loop_condition: None,
+                    async_run: true,
                 })],
             })]
         );
@@ -5157,6 +5202,7 @@ mod tests {
                             distance: 0.2,
                             duration_seconds: 0.2,
                             loop_condition: None,
+                            async_run: true,
                         }),
                         Statement::Animate(AnimationStatement {
                             target: "p2".to_owned(),
@@ -5305,12 +5351,10 @@ mod tests {
                     Statement::NoOp {
                         text: "axe_throw_cam.play : target axe, duration 1.5".to_owned(),
                     },
-                    Statement::NoOp {
-                        text: "camera.chase player1".to_owned(),
+                    Statement::CameraChase {
+                        target: "player1".to_owned(),
                     },
-                    Statement::NoOp {
-                        text: "camera.chase stop".to_owned(),
-                    },
+                    Statement::CameraAttachStop,
                     Statement::Animate(AnimationStatement {
                         target: "player2".to_owned(),
                         clip: "HighKick".to_owned(),
@@ -5463,6 +5507,7 @@ mod tests {
                 distance: 0.2,
                 duration_seconds: 0.5,
                 loop_condition: None,
+                async_run: false,
             })]
         );
     }
