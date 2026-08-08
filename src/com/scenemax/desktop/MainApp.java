@@ -4909,22 +4909,51 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     private void createNewProjectScriptsFolder() {
         //List<File> folders = Util.getScriptFolders();
-        String folderName = (String) JOptionPane.showInputDialog(
-                null,
-                "Type new project name",
-                "Project Name",
-                JOptionPane.PLAIN_MESSAGE,
-                null,
-                null,
-                "");
+        JTextField txtProjectName = new JTextField(28);
+        JComboBox<String> cmbProjector = new JComboBox<>(new String[]{
+                SceneMaxProject.PROJECTOR_CLASSIC_LABEL,
+                SceneMaxProject.PROJECTOR_NEXTGEN_LABEL
+        });
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        panel.add(new JLabel("Project name"), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1;
+        panel.add(txtProjectName, gbc);
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.weightx = 0;
+        panel.add(new JLabel("Projector"), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1;
+        panel.add(cmbProjector, gbc);
 
-        if (folderName == null || folderName.trim().length() == 0) {
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                panel,
+                "New Project",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE);
+
+        if (choice != JOptionPane.OK_OPTION) {
             return;
         }
 
+        String folderName = txtProjectName.getText();
+        if (folderName == null || folderName.trim().length() == 0) {
+            return;
+        }
         folderName = folderName.trim();
+        String projectorType = SceneMaxProject.projectorTypeFromLabel(String.valueOf(cmbProjector.getSelectedItem()));
 
-        Util.createProject(folderName, folderName);
+        if (!Util.createProject(folderName, folderName, projectorType)) {
+            return;
+        }
         refreshScriptsFolder();
         refreshAppTitle();
         refreshAssetsMenu();

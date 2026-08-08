@@ -242,6 +242,8 @@ public class Util {
             p.itchWindowsChannel = o.optString("itchWindowsChannel", "");
             p.itchLinuxChannel = o.optString("itchLinuxChannel", "");
             p.itchMacChannel = o.optString("itchMacChannel", "");
+            p.projectorType = SceneMaxProject.normalizeProjectorType(
+                    o.optString("projectorType", o.optString("projector_type", SceneMaxProject.PROJECTOR_CLASSIC)));
             p.multiplayerServerIp = o.optString("multiplayerServerIp", "127.0.0.1");
             p.multiplayerServerPort = o.optInt("multiplayerServerPort", SceneMaxProject.DEFAULT_MULTIPLAYER_PORT);
             p.multiplayerDeployOs = o.optString("multiplayerDeployOs", "Windows");
@@ -267,6 +269,10 @@ public class Util {
 
 
     public static boolean createProject(String name, String defaultFolderName) {
+        return createProject(name, defaultFolderName, SceneMaxProject.PROJECTOR_CLASSIC);
+    }
+
+    public static boolean createProject(String name, String defaultFolderName, String projectorType) {
 
         File projectsFolder = new File("projects");
         if(!projectsFolder.exists()) {
@@ -340,6 +346,7 @@ public class Util {
         pr.put("path","projects/"+folderName);
         pr.put("selectedParent",defaultFolderName);
         pr.put("selectedNode","main");
+        pr.put("projectorType", SceneMaxProject.normalizeProjectorType(projectorType));
         pr.put("projectGuid", UUID.randomUUID().toString());
         arr.put(pr);
 
@@ -421,6 +428,7 @@ public class Util {
                 obj.put("itchWindowsChannel", safeProjectValue(p.itchWindowsChannel));
                 obj.put("itchLinuxChannel", safeProjectValue(p.itchLinuxChannel));
                 obj.put("itchMacChannel", safeProjectValue(p.itchMacChannel));
+                obj.put("projectorType", SceneMaxProject.normalizeProjectorType(p.projectorType));
                 obj.put("multiplayerServerIp", safeProjectValue(p.multiplayerServerIp));
                 obj.put("multiplayerServerPort", p.multiplayerServerPort <= 0 ? SceneMaxProject.DEFAULT_MULTIPLAYER_PORT : p.multiplayerServerPort);
                 obj.put("multiplayerDeployOs", safeProjectValue(p.multiplayerDeployOs).isEmpty() ? "Windows" : safeProjectValue(p.multiplayerDeployOs));
@@ -514,6 +522,8 @@ public class Util {
             p.path=projectFolder.getAbsolutePath();
             p.selectedParent=attr.getString("selected_parent");
             p.selectedNode=attr.getString("selected_node");
+            p.projectorType = SceneMaxProject.normalizeProjectorType(
+                    attr.optString("projector_type", attr.optString("projectorType", SceneMaxProject.PROJECTOR_CLASSIC)));
             return p;
         } catch(Exception e) {
             e.printStackTrace();
@@ -552,6 +562,8 @@ public class Util {
                 try {
                     p.selectedParent = json.getString("selected_parent");
                     p.selectedNode = json.getString("selected_node");
+                    p.projectorType = SceneMaxProject.normalizeProjectorType(
+                            json.optString("projector_type", json.optString("projectorType", SceneMaxProject.PROJECTOR_CLASSIC)));
                 } catch(JSONException e) {
                     //e.printStackTrace();
                 }

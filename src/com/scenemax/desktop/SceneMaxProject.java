@@ -5,9 +5,14 @@ import org.json.JSONObject;
 public class SceneMaxProject {
 
     public static final int DEFAULT_MULTIPLAYER_PORT = 9001;
+    public static final String PROJECTOR_CLASSIC = "classic";
+    public static final String PROJECTOR_NEXTGEN = "nextgen";
+    public static final String PROJECTOR_CLASSIC_LABEL = "Classic - Java / JME3";
+    public static final String PROJECTOR_NEXTGEN_LABEL = "NextGen - Rust / Bevy";
 
     public String selectedParent;
     public String selectedNode;
+    public String projectorType = PROJECTOR_CLASSIC;
     public String itchGamePage;
     public String itchButlerPath;
     public String itchWindowsChannel;
@@ -29,12 +34,44 @@ public class SceneMaxProject {
         return path + "/scripts";
     }
 
+    public boolean isNextGenProjector() {
+        return PROJECTOR_NEXTGEN.equals(normalizeProjectorType(projectorType));
+    }
+
+    public String getProjectorLabel() {
+        return isNextGenProjector() ? PROJECTOR_NEXTGEN_LABEL : PROJECTOR_CLASSIC_LABEL;
+    }
+
+    public static String normalizeProjectorType(String value) {
+        if (value == null) {
+            return PROJECTOR_CLASSIC;
+        }
+        String normalized = value.trim().toLowerCase();
+        if (PROJECTOR_NEXTGEN.equals(normalized)
+                || "rust".equals(normalized)
+                || "bevy".equals(normalized)
+                || "rust_bevy".equals(normalized)
+                || "nextgen_rust_bevy".equals(normalized)) {
+            return PROJECTOR_NEXTGEN;
+        }
+        return PROJECTOR_CLASSIC;
+    }
+
+    public static String projectorTypeFromLabel(String label) {
+        if (label != null && label.toLowerCase().contains("nextgen")) {
+            return PROJECTOR_NEXTGEN;
+        }
+        return PROJECTOR_CLASSIC;
+    }
+
     public JSONObject toJSON() {
 
         JSONObject obj = new JSONObject();
         obj.put("name",this.name);
         obj.put("selected_parent",this.selectedParent);
         obj.put("selected_node",this.selectedNode);
+        obj.put("projector_type", normalizeProjectorType(this.projectorType));
+        obj.put("projectorType", normalizeProjectorType(this.projectorType));
         obj.put("itch_game_page", this.itchGamePage == null ? "" : this.itchGamePage);
         obj.put("itch_windows_channel", this.itchWindowsChannel == null ? "" : this.itchWindowsChannel);
         obj.put("itch_linux_channel", this.itchLinuxChannel == null ? "" : this.itchLinuxChannel);
