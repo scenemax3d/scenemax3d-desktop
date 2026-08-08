@@ -20,6 +20,7 @@ use avian3d::{
     schedule::PhysicsSchedule,
 };
 use bevy::{
+    animation::AnimationTargetId,
     asset::AssetPlugin,
     gltf::Gltf,
     log::LogPlugin,
@@ -611,6 +612,41 @@ fn key_trigger_label(trigger: KeyTrigger) -> &'static str {
         KeyTrigger::PressedOnce => "pressed_once",
         KeyTrigger::Released => "released",
     }
+}
+
+fn write_state_assignment_probe(name: &str, previous: Option<f32>, value: f32, force_local: bool) {
+    const WATCHED_ASSIGNMENTS: &[&str] = &[
+        "action",
+        "op_action",
+        "player_hit",
+        "op_hit",
+        "player1_ko",
+        "enemy_ko",
+        "slow_motion",
+        "game_status",
+        "player1.data.is_jumping",
+        "player2.data.is_jumping",
+        "player2.data.is_down",
+        "player1.data.attack_legs",
+        "player1.data.hand_attack_hit",
+        "player2.data.trapped",
+    ];
+    if !WATCHED_ASSIGNMENTS.contains(&name) {
+        return;
+    }
+    let previous = previous
+        .map(format_scenemax_number)
+        .unwrap_or_else(|| "null".to_owned());
+    write_runtime_log_line(
+        LoggerLevel::Info,
+        &format!(
+            "STATE:SET name={} from={} to={} local={}",
+            name,
+            previous,
+            format_scenemax_number(value),
+            force_local as u8
+        ),
+    );
 }
 
 fn load_startup_program(launch: &ProjectorLaunch) -> SceneMaxStartupProgram {
@@ -4684,12 +4720,7 @@ fn substitute_statement(statement: &Statement, bindings: &HashMap<String, String
         Statement::CameraAttachStop => Statement::CameraAttachStop,
         Statement::Logger(logger) => Statement::Logger(LoggerStatement {
             level: logger.level,
-            message: match &logger.message {
-                LoggerMessage::Text(text) => LoggerMessage::Text(text.clone()),
-                LoggerMessage::Value(value) => {
-                    LoggerMessage::Value(substitute_assignment_value(value, bindings))
-                }
-            },
+            message: substitute_logger_message(&logger.message, bindings),
         }),
         Statement::CharacterMode(character_mode) => {
             Statement::CharacterMode(CharacterModeStatement {
@@ -4801,6 +4832,32 @@ fn substitute_statement(statement: &Statement, bindings: &HashMap<String, String
             interval_seconds: *interval_seconds,
         },
         statement => statement.clone(),
+    }
+}
+
+fn substitute_logger_message(
+    message: &LoggerMessage,
+    bindings: &HashMap<String, String>,
+) -> LoggerMessage {
+    match message {
+        LoggerMessage::Text(text) => LoggerMessage::Text(text.clone()),
+        LoggerMessage::Value(AssignmentValue::Symbol(name)) => bindings
+            .get(name)
+            .and_then(|arg| {
+                arg.parse::<f32>()
+                    .ok()
+                    .map(|value| LoggerMessage::Value(AssignmentValue::Number(value)))
+                    .or_else(|| Some(LoggerMessage::Text(arg.clone())))
+            })
+            .unwrap_or_else(|| {
+                LoggerMessage::Value(substitute_assignment_value(
+                    &AssignmentValue::Symbol(name.clone()),
+                    bindings,
+                ))
+            }),
+        LoggerMessage::Value(value) => {
+            LoggerMessage::Value(substitute_assignment_value(value, bindings))
+        }
     }
 }
 
@@ -5595,6 +5652,8 @@ fn apply_assignment_scoped(
     collider_bounds: Option<&SceneMaxColliderBounds>,
     force_local: bool,
 ) -> Option<f32> {
+    let previous =
+        resolve_symbol_value_scoped(&assignment.name, vars, scope.as_deref(), transforms_by_name);
     let Some(value) = resolve_assignment_value_scoped_with_guards(
         &assignment.value,
         vars,
@@ -5617,6 +5676,7 @@ fn apply_assignment_scoped(
         scope.as_deref_mut(),
         force_local,
     );
+    write_state_assignment_probe(&assignment.name, previous, value, force_local);
     Some(value)
 }
 
@@ -7162,10 +7222,15 @@ fn play_pending_animations(
     root_entities: Query<&SceneMaxEntity>,
     animations_to_play: Query<(Entity, &AnimationToPlay)>,
     gltfs: Res<Assets<Gltf>>,
-    animation_clips: Res<Assets<AnimationClip>>,
+    mut animation_clips: ResMut<Assets<AnimationClip>>,
     mut animation_durations: ResMut<SceneMaxAnimationDurations>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
-    mut players: Query<(&mut AnimationPlayer, Option<&mut AnimationGraphHandle>)>,
+    animation_targets: Query<(&AnimationTargetId, Option<&Name>)>,
+    mut players: Query<(
+        &mut AnimationPlayer,
+        Option<&mut AnimationGraphHandle>,
+        Option<&Name>,
+    )>,
 ) {
     for (root, animation_to_play) in &animations_to_play {
         let target_name = root_entities
@@ -7217,9 +7282,27 @@ fn play_pending_animations(
             continue;
         }
 
-        let (graph, index) = AnimationGraph::from_clip(clip.clone());
+        let retargeted_clip = animation_clips.get(clip).and_then(|source_clip| {
+            retarget_clip_to_visible_animation_player(
+                source_clip,
+                resolved_clip_name,
+                &animation_players,
+                &children,
+                &animation_targets,
+                &players,
+            )
+        });
+        let (clip_to_play, playback_players, retargeted_curve_count) =
+            if let Some((retargeted_clip, destination_player, curve_count)) = retargeted_clip {
+                let handle = animation_clips.add(retargeted_clip);
+                (handle, vec![destination_player], curve_count)
+            } else {
+                (clip.clone(), animation_players.clone(), 0)
+            };
+
+        let (graph, index) = AnimationGraph::from_clip(clip_to_play.clone());
         let graph_handle = graphs.add(graph);
-        let duration_seconds = animation_clip_duration_seconds(&animation_clips, clip);
+        let duration_seconds = animation_clip_duration_seconds(&animation_clips, &clip_to_play);
         animation_durations.insert(
             target_name,
             &animation_to_play.clip,
@@ -7227,9 +7310,14 @@ fn play_pending_animations(
             duration_seconds,
         );
 
-        let animation_player_count = animation_players.len();
-        for child in animation_players {
-            if let Ok((mut player, graph_component)) = players.get_mut(child) {
+        let animation_player_count = playback_players.len();
+        let mut animation_player_names = Vec::new();
+        for child in playback_players {
+            if let Ok((mut player, graph_component, name)) = players.get_mut(child) {
+                animation_player_names.push(
+                    name.map(|name| name.as_str().to_owned())
+                        .unwrap_or_else(|| format!("{child:?}")),
+                );
                 if let Some(mut graph_component) = graph_component {
                     graph_component.0 = graph_handle.clone();
                 } else {
@@ -7261,6 +7349,15 @@ fn play_pending_animations(
                 animation_player_count,
             ),
         );
+        write_runtime_log_line(
+            LoggerLevel::Info,
+            &format!(
+                "ANIM:PLAYERS target={} names={} retargeted_curves={}",
+                target_name,
+                animation_player_names.join("|"),
+                retargeted_curve_count
+            ),
+        );
         commands.entity(root).remove::<AnimationToPlay>();
         commands.entity(root).insert(CurrentAnimation {
             clip: resolved_clip_name.to_owned(),
@@ -7269,6 +7366,100 @@ fn play_pending_animations(
             elapsed_seconds: 0.0,
             duration_seconds,
         });
+    }
+}
+
+fn retarget_clip_to_visible_animation_player(
+    source_clip: &AnimationClip,
+    resolved_clip_name: &str,
+    animation_players: &[Entity],
+    children: &Query<&Children>,
+    animation_targets: &Query<(&AnimationTargetId, Option<&Name>)>,
+    players: &Query<(
+        &mut AnimationPlayer,
+        Option<&mut AnimationGraphHandle>,
+        Option<&Name>,
+    )>,
+) -> Option<(AnimationClip, Entity, usize)> {
+    let destination_player = animation_players.first().copied()?;
+    let source_player = animation_players.iter().copied().find(|entity| {
+        players
+            .get(*entity)
+            .ok()
+            .and_then(|(_, _, name)| name)
+            .is_some_and(|name| {
+                animation_name_matches(
+                    name.as_str(),
+                    &normalized_animation_name(resolved_clip_name),
+                )
+            })
+    })?;
+    if source_player == destination_player {
+        return None;
+    }
+
+    let source_targets =
+        collect_animation_targets_by_name(source_player, children, animation_targets);
+    let destination_targets =
+        collect_animation_targets_by_name(destination_player, children, animation_targets);
+    if source_targets.is_empty() || destination_targets.is_empty() {
+        return None;
+    }
+
+    let mut source_to_destination = HashMap::new();
+    for (bone_name, source_target) in source_targets {
+        if let Some(destination_target) = destination_targets.get(&bone_name).copied() {
+            source_to_destination.insert(source_target, destination_target);
+        }
+    }
+    if source_to_destination.is_empty() {
+        return None;
+    }
+
+    let mut retargeted = AnimationClip::default();
+    retargeted.set_duration(source_clip.duration());
+    let mut curve_count = 0usize;
+    for (source_target, curves) in source_clip.curves() {
+        let Some(destination_target) = source_to_destination.get(source_target).copied() else {
+            continue;
+        };
+        for curve in curves {
+            retargeted.add_variable_curve_to_target(destination_target, curve.clone());
+            curve_count += 1;
+        }
+    }
+
+    (curve_count > 0).then_some((retargeted, destination_player, curve_count))
+}
+
+fn collect_animation_targets_by_name(
+    root: Entity,
+    children: &Query<&Children>,
+    animation_targets: &Query<(&AnimationTargetId, Option<&Name>)>,
+) -> HashMap<String, AnimationTargetId> {
+    let mut targets = HashMap::new();
+    collect_animation_targets_by_name_recursive(root, children, animation_targets, &mut targets);
+    targets
+}
+
+fn collect_animation_targets_by_name_recursive(
+    entity: Entity,
+    children: &Query<&Children>,
+    animation_targets: &Query<(&AnimationTargetId, Option<&Name>)>,
+    targets: &mut HashMap<String, AnimationTargetId>,
+) {
+    if let Ok((target_id, Some(name))) = animation_targets.get(entity) {
+        targets.insert(normalized_animation_name(name.as_str()), *target_id);
+    }
+    if let Ok(child_list) = children.get(entity) {
+        for child in child_list {
+            collect_animation_targets_by_name_recursive(
+                *child,
+                children,
+                animation_targets,
+                targets,
+            );
+        }
     }
 }
 
@@ -7296,22 +7487,53 @@ fn find_named_animation_clip<'a>(
     for (name, clip) in named_animations {
         let name = name.as_ref();
         if name == requested {
-            return Some((name, clip));
+            case_match = preferred_animation_match(case_match, (name, clip), &requested_key);
+            continue;
         }
-        if case_match.is_none() && name.eq_ignore_ascii_case(requested) {
-            case_match = Some((name, clip));
+        if name.eq_ignore_ascii_case(requested) {
+            case_match = preferred_animation_match(case_match, (name, clip), &requested_key);
         }
-        if normalized_match.is_none() && animation_name_matches(name, &requested_key) {
-            normalized_match = Some((name, clip));
+        if animation_name_matches(name, &requested_key) {
+            normalized_match =
+                preferred_animation_match(normalized_match, (name, clip), &requested_key);
         }
     }
     case_match.or(normalized_match)
 }
 
+fn preferred_animation_match<'a>(
+    current: Option<(&'a str, &'a Handle<AnimationClip>)>,
+    candidate: (&'a str, &'a Handle<AnimationClip>),
+    requested_key: &str,
+) -> Option<(&'a str, &'a Handle<AnimationClip>)> {
+    let Some(current) = current else {
+        return Some(candidate);
+    };
+    (animation_candidate_score(candidate.0, requested_key)
+        >= animation_candidate_score(current.0, requested_key))
+    .then_some(candidate)
+    .or(Some(current))
+}
+
+fn animation_candidate_score(candidate: &str, requested_key: &str) -> usize {
+    let normalized = normalized_animation_name(candidate);
+    let mut score = usize::from(normalized == requested_key) * 10;
+    score += candidate
+        .split(['|', ':', '/', '\\', '.'])
+        .filter(|part| normalized_animation_name(part) == requested_key)
+        .count()
+        * 20;
+    score += candidate
+        .rsplit_once('.')
+        .and_then(|(_, suffix)| suffix.parse::<usize>().ok())
+        .unwrap_or_default();
+    score
+}
+
 fn animation_name_matches(candidate: &str, requested_key: &str) -> bool {
     normalized_animation_name(candidate) == requested_key
         || candidate
-            .split(['|', ':', '/', '\\'])
+            .split(['|', ':', '/', '\\', '.'])
             .any(|part| normalized_animation_name(part) == requested_key)
 }
 
@@ -8774,6 +8996,33 @@ mod tests {
                         blocking: true,
                     })],
                     else_actions: Vec::new(),
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn instantiates_logger_string_function_args_as_text() {
+        let program = scenemax_parser::parse_program(
+            "log_key(name, clip) = {\n  Logger.info name\n  Logger.info clip\n}\nrun log_key(\"A\", \"mma_kick1\")",
+        )
+        .unwrap();
+        let functions = collect_functions_by_name(&program);
+        let function = functions.get("log_key").unwrap();
+
+        let actions =
+            instantiate_function_actions(function, &["A".to_owned(), "mma_kick1".to_owned()]);
+
+        assert_eq!(
+            actions,
+            vec![
+                Statement::Logger(LoggerStatement {
+                    level: LoggerLevel::Info,
+                    message: LoggerMessage::Text("A".to_owned()),
+                }),
+                Statement::Logger(LoggerStatement {
+                    level: LoggerLevel::Info,
+                    message: LoggerMessage::Text("mma_kick1".to_owned()),
                 }),
             ]
         );
