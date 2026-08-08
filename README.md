@@ -46,6 +46,18 @@ For hands-on examples, see the demo projects guide in [`projects/readme.md`](pro
 
 If you want to try SceneMax3D without building from source, download the Windows setup binaries from the [latest GitHub release](https://github.com/scenemax3d/scenemax3d-desktop/releases/latest).
 
+## Next Generation Rust/Bevy Projector
+
+SceneMax3D is adding a next generation runtime projector based on [Rust](https://www.rust-lang.org/) and [Bevy](https://bevyengine.org/). The existing Java/JMonkeyEngine projector remains the stable "Classic" runtime and the reference implementation. The new Rust/Bevy projector is being developed beside it so the same SceneMax language and project structure can eventually run on either backend.
+
+The first NextGen milestone focuses on runtime execution, not replacing the Java Swing IDE. The IDE stays in Java Swing, while projects can choose between the Classic projector and the NextGen projector. In the current development build, `F10` runs the active project with the Classic Java projector and `F12` runs it with the Rust/Bevy projector.
+
+When it is ready, the NextGen projector is expected to unlock several important benefits: ultra-high-performance native runtime execution, a modern data-oriented game engine architecture, smoother handling of large animated scenes, stronger long-term portability, and a cleaner path toward web games through Bevy's Rust/WebAssembly ecosystem. The goal is that SceneMax games authored in the familiar IDE and scripting language will be able to target modern desktop runtimes and, eventually, browser-based delivery without changing the core SceneMax authoring workflow.
+
+NextGen is not feature-complete yet. The roadmap is to implement the Java projector's behavior step by step in Rust/Bevy: SceneMax parsing, controller execution, variables and scoping, flow control, animation, movement and rotation, lighting, cameras, multiplayer, physics character control, collision/collider objects, UI-facing runtime features, and packaging/export support. GLTF/GLB assets are the first supported model format. JME-specific pieces such as Minie physics and Effekseer effects will receive Bevy/Rust-native replacements as the runtime matures.
+
+This work is intended to preserve the SceneMax authoring model: developers write SceneMax code, and the selected projector decides whether that code runs on the Classic Java runtime or the NextGen Rust/Bevy runtime.
+
 ## Features
 
 - **Visual 3D Scene Designer** -- drag-and-drop scene composition with real-time preview
@@ -255,6 +267,7 @@ Effect objects support placement, show/hide/delete, attachment, look-at behavior
 scenemax_desktop/            -- Main desktop application (Swing UI)
 scenemax_designer/           -- 3D scene designer/editor module
 scenemax_win_projector/      -- 3D runtime/playback engine
+scenemax_projector_nextgen/  -- Next generation Rust/Bevy runtime projector
 scenemax_effekseer_runtime/  -- Effekseer JNI/native runtime bridge
 scenemax3d_compiler/         -- Script compilation engine
 scenemax3d_parser/           -- ANTLR4 grammar & parser for SceneMax scripting language
@@ -271,7 +284,8 @@ third_party/Effekseer/       -- Local Effekseer source/sample corpus used by the
 | Component | Technology |
 |-----------|-----------|
 | Desktop Language / Runtime | Java 11 |
-| Graphics Engine | JMonkeyEngine 3 |
+| Classic Runtime / Graphics Engine | Java + JMonkeyEngine 3 |
+| NextGen Runtime / Graphics Engine | Rust + Bevy, currently in active development |
 | Physics | Minie (Bullet) |
 | Visual Effects | Effekseer native runtime integration |
 | Video Decoding / Rendering | JavaCV with FFmpeg platform bindings |
@@ -288,6 +302,7 @@ third_party/Effekseer/       -- Local Effekseer source/sample corpus used by the
 ## Third-Party Libraries
 
 - [JMonkeyEngine 3](https://github.com/jMonkeyEngine/jmonkeyengine) -- 3D engine
+- [Bevy](https://github.com/bevyengine/bevy) -- Rust game engine used by the NextGen projector
 - [Minie](https://github.com/stephengold/Minie) -- physics library
 - [JME-Vehicles](https://github.com/stephengold/jme-vehicles) -- vehicle physics
 - [ANTLR4](https://www.antlr.org/) -- parser generator
@@ -337,6 +352,7 @@ The items below are planned future areas. They will not necessarily be implement
 - **Android Package & Deployment** -- streamlined Android build packaging and deployment
 - **Move to Jolt Physics** -- transition from the current physics backend to the Jolt physics engine
 - **Debugger** -- easier runtime breakpoints and debugging information
+- **NextGen Rust/Bevy Projector Parity** -- continue implementing the Java projector's SceneMax parser/runtime controller behavior, animation, movement, cameras, lighting, multiplayer, physics, collisions, UI-facing runtime features, and packaging path in the Rust/Bevy projector
 - **Web Browser Projector** -- run exported projects directly in the browser
 - **Scene Sharing**
 
