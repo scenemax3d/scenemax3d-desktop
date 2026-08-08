@@ -20,7 +20,13 @@ import java.util.regex.Pattern;
 
 public class RunLauncherTask extends SwingWorker<Integer, String> {
 
+    public enum RuntimeTarget {
+        CLASSIC,
+        NEXTGEN
+    }
+
     private final String launcherName;
+    private final RuntimeTarget runtimeTarget;
     private final MacroFilter macroFilter;
     private File scriptFolder=null;
     private File sourceScriptFile = null;
@@ -32,9 +38,14 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
     private int exitCode;
 
     public RunLauncherTask(String scriptFilePath, String prg, Runnable finish)  {
+        this(scriptFilePath, prg, finish, RuntimeTarget.CLASSIC);
+    }
+
+    public RunLauncherTask(String scriptFilePath, String prg, Runnable finish, RuntimeTarget runtimeTarget)  {
 
         String ver = Util.getAppVersion();
         this.launcherName = "launcher"+ver+".jar";
+        this.runtimeTarget = runtimeTarget == null ? RuntimeTarget.CLASSIC : runtimeTarget;
 
         this.macroFilter = new MacroFilter();
         this.macroFilter.loadMacroRulesFromMacroFolder(new File("macro"));
@@ -224,6 +235,11 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             }
         }
 
+        if (runtimeTarget == RuntimeTarget.NEXTGEN) {
+            runNextGenProjector();
+            return exitCode;
+        }
+
         // make sure there is a launcher for the current version exists in the main folder
         File f = new File(launcherName);
         if(!f.exists()) {
@@ -389,6 +405,135 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             e.printStackTrace();
         }
 
+    }
+
+    private void runNextGenProjector() {
+
+        try {
+            File nextGenRoot = resolveNextGenProjectorRoot();
+            File debugExe = new File(nextGenRoot, "target/debug/scenemax_projector_nextgen.exe");
+            File releaseExe = new File(nextGenRoot, "target/release/scenemax_projector_nextgen.exe");
+            File stagedMain = new File(this.runningFolder, "main");
+            File projectRoot = resolveProjectRoot();
+
+            List<String> command = new ArrayList<>();
+            File processDirectory;
+            if (debugExe.isFile()) {
+                command.add(debugExe.getAbsolutePath());
+                processDirectory = nextGenRoot;
+            } else if (releaseExe.isFile()) {
+                command.add(releaseExe.getAbsolutePath());
+                processDirectory = nextGenRoot;
+            } else {
+                File cargoExe = resolveCargoExecutable();
+                if (!cargoExe.isFile()) {
+                    throw new IOException("SceneMax NextGen projector is not built and Cargo was not found at: "
+                            + cargoExe.getAbsolutePath());
+                }
+                command.add(cargoExe.getAbsolutePath());
+                command.add("run");
+                command.add("-p");
+                command.add("scenemax_projector_nextgen");
+                command.add("--");
+                processDirectory = nextGenRoot;
+            }
+
+            command.add("run");
+            command.add("--script");
+            command.add(stagedMain.getAbsolutePath());
+            if (projectRoot != null) {
+                command.add("--project-root");
+                command.add(projectRoot.getAbsolutePath());
+            }
+            command.add("--width");
+            command.add("1600");
+            command.add("--height");
+            command.add("900");
+
+            ProcessBuilder processBuilder = new ProcessBuilder();
+            processBuilder.command(command);
+            processBuilder.directory(processDirectory);
+            File log = new File("log");
+            if(log.exists()) {
+                log.delete();
+            }
+            processBuilder.redirectErrorStream(true);
+            processBuilder.redirectOutput(ProcessBuilder.Redirect.appendTo(log));
+            Process process = processBuilder.start();
+
+            StreamGobbler sg = new StreamGobbler(process.getInputStream(),System.out::println);
+            Executors.newSingleThreadExecutor().submit(sg);
+            exitCode = process.waitFor();
+            System.out.printf("NextGen projector ended with exitCode %d", exitCode);
+        } catch (Exception e) {
+            e.printStackTrace();
+            exitCode = -1;
+            try {
+                FileUtils.writeStringToFile(new File("log"), formatExceptionMessage(e), StandardCharsets.UTF_8);
+            } catch (IOException ioException) {
+                ioException.printStackTrace();
+            }
+        }
+
+    }
+
+    private File resolveNextGenProjectorRoot() {
+        String configuredPath = AppDB.getInstance().getParam("nextgen_projector_path");
+        if (configuredPath != null && !configuredPath.isBlank()) {
+            File configured = new File(configuredPath.trim());
+            if (configured.isFile()) {
+                File targetDir = configured.getParentFile();
+                if (targetDir != null && "debug".equalsIgnoreCase(targetDir.getName())
+                        && targetDir.getParentFile() != null
+                        && targetDir.getParentFile().getParentFile() != null) {
+                    return targetDir.getParentFile().getParentFile();
+                }
+                if (targetDir != null && "release".equalsIgnoreCase(targetDir.getName())
+                        && targetDir.getParentFile() != null
+                        && targetDir.getParentFile().getParentFile() != null) {
+                    return targetDir.getParentFile().getParentFile();
+                }
+                return configured.getParentFile();
+            }
+            return configured;
+        }
+        return new File(Util.getWorkingDir(), "scenemax_projector_nextgen");
+    }
+
+    private File resolveCargoExecutable() {
+        String configuredPath = AppDB.getInstance().getParam("rust_cargo_path");
+        if (configuredPath != null && !configuredPath.isBlank()) {
+            return new File(configuredPath.trim());
+        }
+        return new File(System.getProperty("user.home"), ".cargo/bin/cargo.exe");
+    }
+
+    private File resolveProjectRoot() {
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject != null && activeProject.path != null && !activeProject.path.isBlank()) {
+            File projectRoot = new File(activeProject.path);
+            if (projectRoot.isDirectory()) {
+                return projectRoot;
+            }
+        }
+
+        File current = sourceScriptFile != null ? sourceScriptFile.getParentFile() : scriptFolder;
+        while (current != null) {
+            File resourcesFolder = new File(current, "resources");
+            File scriptsFolder = new File(current, "scripts");
+            if (resourcesFolder.isDirectory() && scriptsFolder.isDirectory()) {
+                return current;
+            }
+            current = current.getParentFile();
+        }
+
+        if (scriptFolder != null
+                && scriptFolder.getParentFile() != null
+                && "scripts".equalsIgnoreCase(scriptFolder.getParentFile().getName())
+                && scriptFolder.getParentFile().getParentFile() != null) {
+            return scriptFolder.getParentFile().getParentFile();
+        }
+        return null;
     }
 
     private int nextAvailableDebugPort() {

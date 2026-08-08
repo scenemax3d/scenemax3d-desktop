@@ -1304,6 +1304,14 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             }
         });
 
+        inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_F12, 0), "run_project_main_nextgen");
+        actionMap.put("run_project_main_nextgen", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                prepareAndRunNextGenLauncher();
+            }
+        });
+
         inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_F8, 0), "run_active_script_file");
         actionMap.put("run_active_script_file", new AbstractAction() {
             @Override
@@ -1329,6 +1337,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             }
             if (e.getKeyCode() == KeyEvent.VK_F10) {
                 prepareAndRunLauncher();
+                return true;
+            }
+            if (e.getKeyCode() == KeyEvent.VK_F12) {
+                prepareAndRunNextGenLauncher();
                 return true;
             }
             if (e.getKeyCode() == KeyEvent.VK_F8) {
@@ -4713,6 +4725,14 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     protected boolean prepareAndRunLauncher() {
+        return prepareAndRunLauncher(RunLauncherTask.RuntimeTarget.CLASSIC);
+    }
+
+    protected boolean prepareAndRunNextGenLauncher() {
+        return prepareAndRunLauncher(RunLauncherTask.RuntimeTarget.NEXTGEN);
+    }
+
+    private boolean prepareAndRunLauncher(RunLauncherTask.RuntimeTarget runtimeTarget) {
         if (launcherRunInProgress) {
             return false;
         }
@@ -4735,7 +4755,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             return false;
         }
 
-        return runScriptFile(rootMain);
+        return runScriptFile(rootMain, runtimeTarget);
     }
 
     private boolean runActiveEditorScriptFile() {
@@ -4766,6 +4786,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     private boolean runScriptFile(File scriptFile) {
+        return runScriptFile(scriptFile, RunLauncherTask.RuntimeTarget.CLASSIC);
+    }
+
+    private boolean runScriptFile(File scriptFile, RunLauncherTask.RuntimeTarget runtimeTarget) {
         if (launcherRunInProgress) {
             return false;
         }
@@ -4801,7 +4825,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 launcherRunInProgress = false;
                 btnRunScript.setEnabled(true);
             }
-        }).execute();
+        }, runtimeTarget).execute();
 
         return true;
     }

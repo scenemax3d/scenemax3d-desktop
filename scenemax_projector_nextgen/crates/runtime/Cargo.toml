@@ -1,0 +1,17 @@
+[package]
+name = "scenemax_runtime"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+avian3d.workspace = true
+bevy.workspace = true
+bevy-tnua.workspace = true
+bevy-tnua-avian3d.workspace = true
+scenemax_assets = { path = "../assets" }
+scenemax_ir = { path = "../ir" }
+scenemax_multiplayer = { path = "../multiplayer" }
+scenemax_parser = { path = "../parser" }
+tracing.workspace = true
