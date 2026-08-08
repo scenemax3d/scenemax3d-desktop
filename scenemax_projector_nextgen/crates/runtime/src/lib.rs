@@ -7832,7 +7832,7 @@ fn camera_transform_from_program(program: &Program) -> Transform {
 }
 
 fn default_camera_transform() -> Transform {
-    Transform::from_xyz(-3.0, 3.0, 7.0).looking_at(Vec3::ZERO, Vec3::Y)
+    Transform::from_xyz(0.0, 0.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y)
 }
 
 fn setup_placeholder_model(
@@ -7875,6 +7875,19 @@ mod tests {
                 looped: true,
                 blocking: false,
             })
+        );
+    }
+
+    #[test]
+    fn default_camera_matches_classic_projector_start_view() {
+        let transform = default_camera_transform();
+
+        assert_eq!(transform.translation, Vec3::new(0.0, 0.0, 10.0));
+        assert!(
+            transform
+                .forward()
+                .as_vec3()
+                .abs_diff_eq(Vec3::new(0.0, 0.0, -1.0), 0.0001)
         );
     }
 
