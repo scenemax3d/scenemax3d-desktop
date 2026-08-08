@@ -579,7 +579,6 @@ const DEFAULT_STAGE_SUPPORT_HALF_SIZE: f32 = 160.0;
 const CHARACTER_INPUT_TTL_SECONDS: f32 = 0.12;
 const CHARACTER_JUMP_FEED_SECONDS: f32 = 0.2;
 const DEFAULT_ANIMATION_CLIP_SECONDS: f32 = 1.5;
-const SCENEMAX_DIRECTIONAL_MOVE_SPEED_SCALE: f32 = 12.0;
 const MAX_PLAYER_HITBOX_OWNER_DISTANCE: f32 = 3.75;
 const LOOP_CONTINUE_DELAY_SECONDS: f32 = 0.001;
 const PHYSICS_LAYER_WORLD: u32 = 1 << 0;
@@ -954,6 +953,7 @@ fn setup_scenemax_program(
     mut vars: ResMut<SceneMaxVars>,
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
+    mut delayed_actions: ResMut<DelayedActionQueue>,
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -972,6 +972,7 @@ fn setup_scenemax_program(
 
     object_pools.aliases.clear();
     object_pools.pools.clear();
+    delayed_actions.actions.clear();
     collider_bounds.clear();
     apply_initial_assignments(program, &mut vars);
     apply_camera_systems(program, &mut camera_system);
@@ -984,6 +985,7 @@ fn setup_scenemax_program(
         &mut vars,
         &mut object_pools,
         &mut camera_system,
+        &mut delayed_actions,
         &mut collider_bounds,
         &mut meshes,
         &mut materials,
@@ -1000,6 +1002,7 @@ fn spawn_scenemax_program(
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
+    delayed_actions: &mut DelayedActionQueue,
     collider_bounds: &mut SceneMaxColliderBounds,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
@@ -1212,6 +1215,7 @@ fn spawn_scenemax_program(
         vars,
         object_pools,
         camera_system,
+        delayed_actions,
         &functions_by_name,
         &entities_by_name,
         &mut transforms_by_name,
@@ -2127,30 +2131,320 @@ fn apply_startup_runs(
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
+    delayed_actions: &mut DelayedActionQueue,
     functions_by_name: &HashMap<String, FunctionRuntime>,
     entities_by_name: &HashMap<String, Entity>,
     transforms_by_name: &mut HashMap<String, Transform>,
     gltfs_by_name: &HashMap<String, Handle<Gltf>>,
     guards_by_name: &HashMap<String, Condition>,
 ) {
-    for statement in &program.statements {
-        if let Statement::RunFunction { name, args } = statement {
-            apply_startup_function_by_name(
-                name,
-                args,
-                commands,
-                vars,
-                object_pools,
-                camera_system,
-                functions_by_name,
-                entities_by_name,
-                transforms_by_name,
-                gltfs_by_name,
-                guards_by_name,
-                0,
-            );
+    let actions = program
+        .statements
+        .iter()
+        .filter(|statement| is_startup_action(statement))
+        .cloned()
+        .collect::<Vec<_>>();
+    let _ = apply_startup_action_sequence(
+        &actions,
+        commands,
+        vars,
+        object_pools,
+        camera_system,
+        delayed_actions,
+        functions_by_name,
+        entities_by_name,
+        transforms_by_name,
+        gltfs_by_name,
+        guards_by_name,
+        0,
+    );
+}
+
+fn is_startup_action(statement: &Statement) -> bool {
+    !matches!(
+        statement,
+        Statement::ModelDecl { .. }
+            | Statement::ObjectPool(_)
+            | Statement::KeyEvent(_)
+            | Statement::WhenEvent(_)
+            | Statement::GuardDef { .. }
+            | Statement::FightingCamera(_)
+            | Statement::ThirdPersonCamera(_)
+            | Statement::FunctionDef(_)
+            | Statement::RunEvery { .. }
+            | Statement::CameraPosition(_)
+            | Statement::CameraRotation(_)
+            | Statement::WaitForKey { .. }
+            | Statement::SwitchTo { .. }
+            | Statement::AddCode { .. }
+            | Statement::NoOp { .. }
+            | Statement::Unsupported { .. }
+    )
+}
+
+fn apply_startup_action_sequence(
+    actions: &[Statement],
+    commands: &mut Commands,
+    vars: &mut SceneMaxVars,
+    object_pools: &mut SceneMaxObjectPools,
+    camera_system: &mut SceneMaxCameraSystem,
+    delayed_actions: &mut DelayedActionQueue,
+    functions_by_name: &HashMap<String, FunctionRuntime>,
+    entities_by_name: &HashMap<String, Entity>,
+    transforms_by_name: &mut HashMap<String, Transform>,
+    gltfs_by_name: &HashMap<String, Handle<Gltf>>,
+    guards_by_name: &HashMap<String, Condition>,
+    depth: usize,
+) -> ActionSequenceResult {
+    if depth > 8 {
+        tracing::warn!("skipping deeply recursive startup SceneMax action sequence");
+        return ActionSequenceResult::Completed;
+    }
+
+    for (index, action) in actions.iter().enumerate() {
+        match action {
+            Statement::NoOp { .. } | Statement::Unsupported { .. } => {}
+            Statement::Return | Statement::ReturnValue { .. } => {
+                return ActionSequenceResult::Returned;
+            }
+            Statement::Wait { seconds } => {
+                if enqueue_delayed_actions(
+                    Some(delayed_actions),
+                    *seconds,
+                    actions[index + 1..].to_vec(),
+                    None,
+                    None,
+                ) {
+                    return ActionSequenceResult::Suspended;
+                }
+                return ActionSequenceResult::Completed;
+            }
+            Statement::WaitValue { value } => {
+                let seconds = resolve_assignment_value_scoped_with_guards(
+                    value,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                )
+                .unwrap_or_default();
+                if enqueue_delayed_actions(
+                    Some(delayed_actions),
+                    seconds,
+                    actions[index + 1..].to_vec(),
+                    None,
+                    None,
+                ) {
+                    return ActionSequenceResult::Suspended;
+                }
+                return ActionSequenceResult::Completed;
+            }
+            Statement::RunFunction { name, args } => {
+                let Some(function) = functions_by_name.get(name) else {
+                    tracing::debug!(name, "startup SceneMax function was not parsed");
+                    continue;
+                };
+                if !function_guard_matches(
+                    function,
+                    args,
+                    vars,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                ) {
+                    tracing::debug!(name, "startup SceneMax function guard is false");
+                    continue;
+                }
+                let function_actions = actions_with_parent_continuation(
+                    instantiate_function_actions(function, args),
+                    parent_action_tail(actions, index),
+                );
+                let result = apply_startup_action_sequence(
+                    &function_actions,
+                    commands,
+                    vars,
+                    object_pools,
+                    camera_system,
+                    delayed_actions,
+                    functions_by_name,
+                    entities_by_name,
+                    transforms_by_name,
+                    gltfs_by_name,
+                    guards_by_name,
+                    depth + 1,
+                );
+                if result.should_stop_parent() {
+                    return result;
+                }
+                return ActionSequenceResult::Completed;
+            }
+            Statement::Async {
+                actions: async_actions,
+            } => {
+                let _ = apply_startup_action_sequence(
+                    async_actions,
+                    commands,
+                    vars,
+                    object_pools,
+                    camera_system,
+                    delayed_actions,
+                    functions_by_name,
+                    entities_by_name,
+                    transforms_by_name,
+                    gltfs_by_name,
+                    guards_by_name,
+                    depth + 1,
+                );
+            }
+            Statement::Repeat {
+                times,
+                actions: block_actions,
+            } => {
+                let repeated_actions = actions_with_parent_continuation(
+                    repeat_actions(block_actions, *times),
+                    parent_action_tail(actions, index),
+                );
+                let result = apply_startup_action_sequence(
+                    &repeated_actions,
+                    commands,
+                    vars,
+                    object_pools,
+                    camera_system,
+                    delayed_actions,
+                    functions_by_name,
+                    entities_by_name,
+                    transforms_by_name,
+                    gltfs_by_name,
+                    guards_by_name,
+                    depth + 1,
+                );
+                if result.should_stop_parent() {
+                    return result;
+                }
+                return ActionSequenceResult::Completed;
+            }
+            Statement::If(statement) => {
+                let selected_actions = if condition_matches(
+                    &statement.condition,
+                    vars,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                ) {
+                    &statement.actions
+                } else {
+                    &statement.else_actions
+                };
+                let selected_actions = actions_with_parent_continuation(
+                    selected_actions.clone(),
+                    parent_action_tail(actions, index),
+                );
+                let result = apply_startup_action_sequence(
+                    &selected_actions,
+                    commands,
+                    vars,
+                    object_pools,
+                    camera_system,
+                    delayed_actions,
+                    functions_by_name,
+                    entities_by_name,
+                    transforms_by_name,
+                    gltfs_by_name,
+                    guards_by_name,
+                    depth + 1,
+                );
+                if result.should_stop_parent() {
+                    return result;
+                }
+                return ActionSequenceResult::Completed;
+            }
+            Statement::Guarded {
+                condition,
+                actions: block_actions,
+            } => {
+                if condition_matches(
+                    condition,
+                    vars,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                ) {
+                    let guarded_actions = actions_with_parent_continuation(
+                        block_actions.clone(),
+                        parent_action_tail(actions, index),
+                    );
+                    let result = apply_startup_action_sequence(
+                        &guarded_actions,
+                        commands,
+                        vars,
+                        object_pools,
+                        camera_system,
+                        delayed_actions,
+                        functions_by_name,
+                        entities_by_name,
+                        transforms_by_name,
+                        gltfs_by_name,
+                        guards_by_name,
+                        depth + 1,
+                    );
+                    if result.should_stop_parent() {
+                        return result;
+                    }
+                    return ActionSequenceResult::Completed;
+                }
+            }
+            action if blocking_timed_action_seconds(action).is_some() => {
+                let seconds = blocking_timed_action_seconds(action).unwrap_or_default();
+                let result = apply_startup_action(
+                    action,
+                    commands,
+                    vars,
+                    object_pools,
+                    camera_system,
+                    functions_by_name,
+                    entities_by_name,
+                    transforms_by_name,
+                    gltfs_by_name,
+                    guards_by_name,
+                    depth,
+                );
+                if result.should_stop_parent() {
+                    return result;
+                }
+                if enqueue_delayed_actions(
+                    Some(delayed_actions),
+                    seconds,
+                    actions[index + 1..].to_vec(),
+                    None,
+                    None,
+                ) {
+                    return ActionSequenceResult::Suspended;
+                }
+                return ActionSequenceResult::Completed;
+            }
+            action => {
+                let result = apply_startup_action(
+                    action,
+                    commands,
+                    vars,
+                    object_pools,
+                    camera_system,
+                    functions_by_name,
+                    entities_by_name,
+                    transforms_by_name,
+                    gltfs_by_name,
+                    guards_by_name,
+                    depth,
+                );
+                if result.should_stop_parent() {
+                    return result;
+                }
+            }
         }
     }
+
+    ActionSequenceResult::Completed
 }
 
 fn apply_startup_function_by_name(
@@ -2648,6 +2942,7 @@ fn switch_scene_on_key(
                 &mut vars,
                 &mut object_pools,
                 &mut camera_system,
+                &mut delayed_actions,
                 &mut collider_bounds,
                 &mut meshes,
                 &mut materials,
@@ -6666,10 +6961,7 @@ fn timed_move_from_statement(
     transform: &Transform,
 ) -> TimedMove {
     let duration = movement.duration_seconds.max(0.001);
-    let mut direction = horizontal_forward(transform);
-    if movement.direction == MoveDirection::Backward {
-        direction = -direction;
-    }
+    let direction = movement_direction_vector(movement.direction, transform);
 
     TimedMove {
         remaining_seconds: duration,
@@ -6682,7 +6974,7 @@ fn timed_move_from_statement(
 
 fn directional_move_speed(movement: &scenemax_parser::MoveStatement) -> f32 {
     if movement.duration_seconds > 0.0 {
-        movement.distance * SCENEMAX_DIRECTIONAL_MOVE_SPEED_SCALE
+        movement.distance / movement.duration_seconds.max(0.001)
     } else {
         movement.distance / 0.001
     }
@@ -6795,10 +7087,7 @@ fn set_character_move_intent(
 ) {
     let duration = movement.duration_seconds.max(0.001);
     let speed = directional_move_speed(movement);
-    let mut direction = horizontal_forward(transform);
-    if movement.direction == MoveDirection::Backward {
-        direction = -direction;
-    }
+    let direction = movement_direction_vector(movement.direction, transform);
     let speed_ratio = speed / controller.move_speed.max(0.001);
 
     if continuous_delta_seconds.is_some() {
@@ -6806,6 +7095,17 @@ fn set_character_move_intent(
     } else {
         motor.timed_motion = direction.normalize_or_zero() * speed_ratio;
         motor.timed_motion_remaining_seconds = duration;
+    }
+}
+
+fn movement_direction_vector(direction: MoveDirection, transform: &Transform) -> Vec3 {
+    match direction {
+        MoveDirection::Forward => horizontal_forward(transform),
+        MoveDirection::Backward => -horizontal_forward(transform),
+        MoveDirection::Left => -horizontal_right(transform),
+        MoveDirection::Right => horizontal_right(transform),
+        MoveDirection::Up => Vec3::Y,
+        MoveDirection::Down => -Vec3::Y,
     }
 }
 
@@ -8971,8 +9271,52 @@ mod tests {
         );
 
         assert_eq!(movement.duration_seconds, 0.5);
-        assert!((movement.velocity.length() - 2.4).abs() < 0.001);
+        assert!((movement.velocity.length() - 0.4).abs() < 0.001);
         assert!(movement.loop_condition.is_some());
+    }
+
+    #[test]
+    fn timed_move_uses_lateral_direction_and_duration() {
+        let movement = timed_move_from_statement(
+            &scenemax_parser::MoveStatement {
+                target: "gemini".to_owned(),
+                direction: MoveDirection::Left,
+                distance: 4.0,
+                duration_seconds: 2.0,
+                loop_condition: None,
+                async_run: false,
+            },
+            &Transform::default(),
+        );
+
+        assert_eq!(movement.duration_seconds, 2.0);
+        assert!(
+            movement
+                .velocity
+                .abs_diff_eq(Vec3::new(-2.0, 0.0, 0.0), 0.001)
+        );
+    }
+
+    #[test]
+    fn timed_move_uses_vertical_direction_and_duration() {
+        let movement = timed_move_from_statement(
+            &scenemax_parser::MoveStatement {
+                target: "gemini".to_owned(),
+                direction: MoveDirection::Up,
+                distance: 3.0,
+                duration_seconds: 1.5,
+                loop_condition: None,
+                async_run: false,
+            },
+            &Transform::default(),
+        );
+
+        assert_eq!(movement.duration_seconds, 1.5);
+        assert!(
+            movement
+                .velocity
+                .abs_diff_eq(Vec3::new(0.0, 2.0, 0.0), 0.001)
+        );
     }
 
     #[test]

@@ -322,6 +322,10 @@ pub enum SceneMaxAxis {
 pub enum MoveDirection {
     Forward,
     Backward,
+    Left,
+    Right,
+    Up,
+    Down,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -560,6 +564,43 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
         if let Some((mut function, next_index)) = parse_function_def_block(&logical_lines, index)? {
             function.guard = pending_guard.take();
             statements.push(Statement::FunctionDef(function));
+            index = next_index;
+            continue;
+        }
+
+        let lower = line.to_ascii_lowercase();
+        if let Some(times) = parse_repeat_header(line) {
+            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1)?;
+            let repeated = Statement::Repeat {
+                times,
+                actions: nested_actions,
+            };
+            if lower.ends_with(" async") {
+                statements.push(Statement::Async {
+                    actions: vec![repeated],
+                });
+            } else {
+                statements.push(repeated);
+            }
+            pending_guard = None;
+            index = next_index;
+            continue;
+        }
+
+        if lower == "do async" {
+            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1)?;
+            statements.push(Statement::Async {
+                actions: nested_actions,
+            });
+            pending_guard = None;
+            index = next_index;
+            continue;
+        }
+
+        if lower == "do" {
+            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1)?;
+            statements.extend(nested_actions);
+            pending_guard = None;
             index = next_index;
             continue;
         }
@@ -2576,14 +2617,18 @@ fn parse_move(line: &str) -> Result<Option<MoveStatement>, ParseError> {
     };
     let direction = match direction_text.to_ascii_lowercase().as_str() {
         "forward" => MoveDirection::Forward,
-        "backward" => MoveDirection::Backward,
+        "backward" | "back" => MoveDirection::Backward,
+        "left" => MoveDirection::Left,
+        "right" => MoveDirection::Right,
+        "up" => MoveDirection::Up,
+        "down" => MoveDirection::Down,
         _ => return Ok(None),
     };
     let raw_distance = parts.get(2).copied().unwrap_or_default();
     let distance = raw_distance
         .parse::<f32>()
         .map_err(|_| ParseError::InvalidNumber(raw_distance.to_owned()))?;
-    let duration_seconds = parse_for_duration_seconds(rest)?.unwrap_or(0.0);
+    let duration_seconds = parse_directional_move_duration_seconds(rest)?.unwrap_or(0.0);
     let loop_condition = parse_loop_while_condition(rest)?;
 
     Ok(Some(MoveStatement {
@@ -2970,6 +3015,13 @@ fn parse_for_duration_seconds(text: &str) -> Result<Option<f32>, ParseError> {
         return Ok(None);
     }
     Ok(raw.parse::<f32>().ok())
+}
+
+fn parse_directional_move_duration_seconds(text: &str) -> Result<Option<f32>, ParseError> {
+    match parse_for_duration_seconds(text)? {
+        Some(seconds) => Ok(Some(seconds)),
+        None => parse_duration_seconds(text),
+    }
 }
 
 fn parse_for_duration_seconds_tolerant(text: &str) -> Option<f32> {
@@ -3812,6 +3864,79 @@ mod tests {
                 loop_condition: None,
                 async_run: true,
             })]
+        );
+    }
+
+    #[test]
+    fn parses_classic_directional_move_statement() {
+        let program = parse_program("g.move up 4 in 3 Seconds").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::Move(MoveStatement {
+                target: "g".to_owned(),
+                direction: MoveDirection::Up,
+                distance: 4.0,
+                duration_seconds: 3.0,
+                loop_condition: None,
+                async_run: false,
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_top_level_classic_repeat_move_block() {
+        let program = parse_program(
+            "g=>gemini\n\ndo 3 Times\n  g.move left 4 in 3 Seconds\n  g.move right 4 in 2 seconds \n  g.move up 2 in 1 Seconds\n  g.move down 3 in 2 seconds \nend do ",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::ModelDecl {
+                    name: "g".to_owned(),
+                    resource: "gemini".to_owned(),
+                    options: EntityOptions::default(),
+                },
+                Statement::Repeat {
+                    times: 3,
+                    actions: vec![
+                        Statement::Move(MoveStatement {
+                            target: "g".to_owned(),
+                            direction: MoveDirection::Left,
+                            distance: 4.0,
+                            duration_seconds: 3.0,
+                            loop_condition: None,
+                            async_run: false,
+                        }),
+                        Statement::Move(MoveStatement {
+                            target: "g".to_owned(),
+                            direction: MoveDirection::Right,
+                            distance: 4.0,
+                            duration_seconds: 2.0,
+                            loop_condition: None,
+                            async_run: false,
+                        }),
+                        Statement::Move(MoveStatement {
+                            target: "g".to_owned(),
+                            direction: MoveDirection::Up,
+                            distance: 2.0,
+                            duration_seconds: 1.0,
+                            loop_condition: None,
+                            async_run: false,
+                        }),
+                        Statement::Move(MoveStatement {
+                            target: "g".to_owned(),
+                            direction: MoveDirection::Down,
+                            distance: 3.0,
+                            duration_seconds: 2.0,
+                            loop_condition: None,
+                            async_run: false,
+                        }),
+                    ],
+                },
+            ]
         );
     }
 
