@@ -516,6 +516,11 @@ struct TimedMove {
 }
 
 #[derive(Debug, Component)]
+struct TimedMoves {
+    moves: Vec<TimedMove>,
+}
+
+#[derive(Debug, Component)]
 struct TimedJump {
     elapsed_seconds: f32,
     duration_seconds: f32,
@@ -2811,9 +2816,11 @@ fn apply_startup_action(
                 entities_by_name.get(&movement.target),
                 transforms_by_name.get(&movement.target),
             ) {
-                commands
-                    .entity(*entity)
-                    .insert(timed_move_from_statement(movement, transform));
+                append_timed_move(
+                    commands,
+                    *entity,
+                    timed_move_from_statement(movement, transform),
+                );
             }
             ActionSequenceResult::Completed
         }
@@ -2825,7 +2832,7 @@ fn apply_startup_action(
                 if let Some(timed_move) =
                     timed_move_to_from_statement(move_to, transform, transforms_by_name)
                 {
-                    commands.entity(*entity).insert(timed_move);
+                    append_timed_move(commands, *entity, timed_move);
                 }
             }
             ActionSequenceResult::Completed
@@ -4726,7 +4733,7 @@ fn apply_key_action(
                             *transform,
                         );
                     } else {
-                        commands.entity(entity).insert(timed_move);
+                        append_timed_move(commands, entity, timed_move);
                     }
                 } else {
                     if let Some(delta_seconds) = continuous_delta_seconds {
@@ -4739,7 +4746,7 @@ fn apply_key_action(
                             *transform,
                         );
                     } else {
-                        commands.entity(entity).insert(timed_move);
+                        append_timed_move(commands, entity, timed_move);
                     }
                 }
             }
@@ -4765,7 +4772,7 @@ fn apply_key_action(
                             *transform,
                         );
                     } else {
-                        commands.entity(entity).insert(timed_move);
+                        append_timed_move(commands, entity, timed_move);
                     }
                 }
             }
@@ -7002,6 +7009,22 @@ fn timed_move_to_from_statement(
     })
 }
 
+fn append_timed_move(commands: &mut Commands, entity: Entity, timed_move: TimedMove) {
+    commands.queue(move |world: &mut World| {
+        let Ok(mut entity_mut) = world.get_entity_mut(entity) else {
+            return;
+        };
+        let mut timed_move = Some(timed_move);
+        if let Some(mut moves) = entity_mut.get_mut::<TimedMoves>() {
+            moves.moves.push(timed_move.take().unwrap());
+        } else {
+            entity_mut.insert(TimedMoves {
+                moves: vec![timed_move.take().unwrap()],
+            });
+        }
+    });
+}
+
 fn timed_jump_from_statement(jump: &CharacterJumpStatement, transform: &Transform) -> TimedJump {
     TimedJump {
         elapsed_seconds: 0.0,
@@ -7108,8 +7131,8 @@ fn movement_direction_vector(direction: MoveDirection, transform: &Transform) ->
     match direction {
         MoveDirection::Forward => horizontal_forward(transform),
         MoveDirection::Backward => -horizontal_forward(transform),
-        MoveDirection::Left => -horizontal_right(transform),
-        MoveDirection::Right => horizontal_right(transform),
+        MoveDirection::Left => horizontal_right(transform),
+        MoveDirection::Right => -horizontal_right(transform),
         MoveDirection::Up => Vec3::Y,
         MoveDirection::Down => -Vec3::Y,
     }
@@ -7286,7 +7309,7 @@ fn update_timed_moves(
     mut commands: Commands,
     mut scene_entities: ParamSet<(
         Query<(&SceneMaxEntity, &Transform)>,
-        Query<(Entity, &mut Transform, &mut TimedMove)>,
+        Query<(Entity, &mut Transform, &mut TimedMoves)>,
     )>,
 ) {
     let transforms_by_name = scene_entities
@@ -7300,28 +7323,36 @@ fn update_timed_moves(
         .map(collect_guards_by_name)
         .unwrap_or_default();
 
-    for (entity, mut transform, mut movement) in &mut scene_entities.p1() {
-        let delta = time.delta_secs().min(movement.remaining_seconds);
-        transform.translation += movement.velocity * delta;
-        movement.remaining_seconds -= delta;
-        if movement.remaining_seconds <= 0.0 {
-            if let Some(final_translation) = movement.final_translation {
-                transform.translation = final_translation;
+    for (entity, mut transform, mut movements) in &mut scene_entities.p1() {
+        let mut active_moves = Vec::with_capacity(movements.moves.len());
+        for mut movement in movements.moves.drain(..) {
+            let delta = time.delta_secs().min(movement.remaining_seconds);
+            transform.translation += movement.velocity * delta;
+            movement.remaining_seconds -= delta;
+            if movement.remaining_seconds <= 0.0 {
+                if let Some(final_translation) = movement.final_translation {
+                    transform.translation = final_translation;
+                }
+                if movement.loop_condition.as_ref().is_some_and(|condition| {
+                    condition_matches(
+                        condition,
+                        &vars,
+                        &guards_by_name,
+                        Some(&transforms_by_name),
+                        Some(&collider_bounds),
+                    )
+                }) {
+                    movement.remaining_seconds = movement.duration_seconds;
+                    movement.final_translation = None;
+                    active_moves.push(movement);
+                }
+            } else {
+                active_moves.push(movement);
             }
-            if movement.loop_condition.as_ref().is_some_and(|condition| {
-                condition_matches(
-                    condition,
-                    &vars,
-                    &guards_by_name,
-                    Some(&transforms_by_name),
-                    Some(&collider_bounds),
-                )
-            }) {
-                movement.remaining_seconds = movement.duration_seconds;
-                movement.final_translation = None;
-                continue;
-            }
-            commands.entity(entity).remove::<TimedMove>();
+        }
+        movements.moves = active_moves;
+        if movements.moves.is_empty() {
+            commands.entity(entity).remove::<TimedMoves>();
         }
     }
 }
@@ -9307,7 +9338,7 @@ mod tests {
 
     #[test]
     fn timed_move_uses_lateral_direction_and_duration() {
-        let movement = timed_move_from_statement(
+        let left = timed_move_from_statement(
             &scenemax_parser::MoveStatement {
                 target: "gemini".to_owned(),
                 direction: MoveDirection::Left,
@@ -9318,13 +9349,21 @@ mod tests {
             },
             &Transform::default(),
         );
-
-        assert_eq!(movement.duration_seconds, 2.0);
-        assert!(
-            movement
-                .velocity
-                .abs_diff_eq(Vec3::new(-2.0, 0.0, 0.0), 0.001)
+        let right = timed_move_from_statement(
+            &scenemax_parser::MoveStatement {
+                target: "gemini".to_owned(),
+                direction: MoveDirection::Right,
+                distance: 4.0,
+                duration_seconds: 2.0,
+                loop_condition: None,
+                async_run: false,
+            },
+            &Transform::default(),
         );
+
+        assert_eq!(left.duration_seconds, 2.0);
+        assert!(left.velocity.abs_diff_eq(Vec3::new(2.0, 0.0, 0.0), 0.001));
+        assert!(right.velocity.abs_diff_eq(Vec3::new(-2.0, 0.0, 0.0), 0.001));
     }
 
     #[test]
