@@ -4164,11 +4164,17 @@ fn apply_action_sequence(
 
 fn blocking_timed_action_seconds(action: &Statement) -> Option<f32> {
     match action {
-        Statement::Turn(turn) if !turn.async_run && turn.duration_seconds > f32::EPSILON => {
+        Statement::Turn(turn)
+            if !turn.async_run
+                && turn.loop_condition.is_none()
+                && turn.duration_seconds > f32::EPSILON =>
+        {
             Some(turn.duration_seconds.max(0.001))
         }
         Statement::Move(movement)
-            if !movement.async_run && movement.duration_seconds > f32::EPSILON =>
+            if !movement.async_run
+                && movement.loop_condition.is_none()
+                && movement.duration_seconds > f32::EPSILON =>
         {
             Some(movement.duration_seconds.max(0.001))
         }
@@ -9251,6 +9257,30 @@ mod tests {
 
         assert_eq!(turn.duration_seconds, 1.0);
         assert!(turn.loop_condition.is_some());
+    }
+
+    #[test]
+    fn looped_timed_turns_do_not_block_following_startup_actions() {
+        let blocking_turn = Statement::Turn(scenemax_parser::TurnStatement {
+            target: "gemini".to_owned(),
+            degrees: 360.0,
+            duration_seconds: 3.0,
+            loop_condition: None,
+            async_run: false,
+        });
+        let looped_turn = Statement::Turn(scenemax_parser::TurnStatement {
+            target: "gemini".to_owned(),
+            degrees: 360.0,
+            duration_seconds: 3.0,
+            loop_condition: Some(Condition::EqualsValue {
+                left: AssignmentValue::Number(1.0),
+                right: AssignmentValue::Number(1.0),
+            }),
+            async_run: false,
+        });
+
+        assert_eq!(blocking_timed_action_seconds(&blocking_turn), Some(3.0));
+        assert_eq!(blocking_timed_action_seconds(&looped_turn), None);
     }
 
     #[test]
