@@ -3,103 +3,125 @@
 #![allow(nonstandard_style)]
 #![allow(unused_imports)]
 #![allow(unused_variables)]
+use antlr_rust::PredictionContextCache;
+use antlr_rust::TokenSource;
 use antlr_rust::atn::ATN;
+use antlr_rust::atn_deserializer::ATNDeserializer;
 use antlr_rust::char_stream::CharStream;
+use antlr_rust::dfa::DFA;
+use antlr_rust::error_listener::ErrorListener;
 use antlr_rust::int_stream::IntStream;
 use antlr_rust::lexer::{BaseLexer, Lexer, LexerRecog};
-use antlr_rust::atn_deserializer::ATNDeserializer;
-use antlr_rust::dfa::DFA;
-use antlr_rust::lexer_atn_simulator::{LexerATNSimulator, ILexerATNSimulator};
-use antlr_rust::PredictionContextCache;
-use antlr_rust::recognizer::{Recognizer,Actions};
-use antlr_rust::error_listener::ErrorListener;
-use antlr_rust::TokenSource;
-use antlr_rust::token_factory::{TokenFactory,CommonTokenFactory,TokenAware};
+use antlr_rust::lexer_atn_simulator::{ILexerATNSimulator, LexerATNSimulator};
+use antlr_rust::parser_rule_context::{BaseParserRuleContext, ParserRuleContext, cast};
+use antlr_rust::recognizer::{Actions, Recognizer};
+use antlr_rust::rule_context::{BaseRuleContext, EmptyContext, EmptyCustomRuleContext};
 use antlr_rust::token::*;
-use antlr_rust::rule_context::{BaseRuleContext,EmptyCustomRuleContext,EmptyContext};
-use antlr_rust::parser_rule_context::{ParserRuleContext,BaseParserRuleContext,cast};
-use antlr_rust::vocabulary::{Vocabulary,VocabularyImpl};
+use antlr_rust::token_factory::{CommonTokenFactory, TokenAware, TokenFactory};
+use antlr_rust::vocabulary::{Vocabulary, VocabularyImpl};
 
-use antlr_rust::{lazy_static,Tid,TidAble,TidExt};
+use antlr_rust::{Tid, TidAble, TidExt, lazy_static};
 
-use std::sync::Arc;
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
+use std::sync::Arc;
 
+pub const ISA: isize = 1;
+pub const LOOP: isize = 2;
+pub const ADD: isize = 3;
+pub const CODE: isize = 4;
+pub const AT: isize = 5;
+pub const SPEED: isize = 6;
+pub const OF: isize = 7;
+pub const DOT: isize = 8;
+pub const SIGN: isize = 9;
+pub const DECIMAL: isize = 10;
+pub const IDENT: isize = 11;
+pub const QUOTED_STRING: isize = 12;
+pub const LINE_COMMENT: isize = 13;
+pub const BLOCK_COMMENT: isize = 14;
+pub const WS: isize = 15;
+pub const channelNames: [&'static str; 0 + 2] = ["DEFAULT_TOKEN_CHANNEL", "HIDDEN"];
 
-	pub const ISA:isize=1; 
-	pub const LOOP:isize=2; 
-	pub const ADD:isize=3; 
-	pub const CODE:isize=4; 
-	pub const AT:isize=5; 
-	pub const SPEED:isize=6; 
-	pub const OF:isize=7; 
-	pub const DOT:isize=8; 
-	pub const SIGN:isize=9; 
-	pub const DECIMAL:isize=10; 
-	pub const IDENT:isize=11; 
-	pub const QUOTED_STRING:isize=12; 
-	pub const LINE_COMMENT:isize=13; 
-	pub const BLOCK_COMMENT:isize=14; 
-	pub const WS:isize=15;
-	pub const channelNames: [&'static str;0+2] = [
-		"DEFAULT_TOKEN_CHANNEL", "HIDDEN"
-	];
+pub const modeNames: [&'static str; 1] = ["DEFAULT_MODE"];
 
-	pub const modeNames: [&'static str;1] = [
-		"DEFAULT_MODE"
-	];
+pub const ruleNames: [&'static str; 15] = [
+    "ISA",
+    "LOOP",
+    "ADD",
+    "CODE",
+    "AT",
+    "SPEED",
+    "OF",
+    "DOT",
+    "SIGN",
+    "DECIMAL",
+    "IDENT",
+    "QUOTED_STRING",
+    "LINE_COMMENT",
+    "BLOCK_COMMENT",
+    "WS",
+];
 
-	pub const ruleNames: [&'static str;15] = [
-		"ISA", "LOOP", "ADD", "CODE", "AT", "SPEED", "OF", "DOT", "SIGN", "DECIMAL", 
-		"IDENT", "QUOTED_STRING", "LINE_COMMENT", "BLOCK_COMMENT", "WS"
-	];
+pub const _LITERAL_NAMES: [Option<&'static str>; 9] =
+    [None, None, None, None, None, None, None, None, Some("'.'")];
+pub const _SYMBOLIC_NAMES: [Option<&'static str>; 16] = [
+    None,
+    Some("ISA"),
+    Some("LOOP"),
+    Some("ADD"),
+    Some("CODE"),
+    Some("AT"),
+    Some("SPEED"),
+    Some("OF"),
+    Some("DOT"),
+    Some("SIGN"),
+    Some("DECIMAL"),
+    Some("IDENT"),
+    Some("QUOTED_STRING"),
+    Some("LINE_COMMENT"),
+    Some("BLOCK_COMMENT"),
+    Some("WS"),
+];
+lazy_static! {
+    static ref _shared_context_cache: Arc<PredictionContextCache> =
+        Arc::new(PredictionContextCache::new());
+    static ref VOCABULARY: Box<dyn Vocabulary> = Box::new(VocabularyImpl::new(
+        _LITERAL_NAMES.iter(),
+        _SYMBOLIC_NAMES.iter(),
+        None
+    ));
+}
 
-
-	pub const _LITERAL_NAMES: [Option<&'static str>;9] = [
-		None, None, None, None, None, None, None, None, Some("'.'")
-	];
-	pub const _SYMBOLIC_NAMES: [Option<&'static str>;16]  = [
-		None, Some("ISA"), Some("LOOP"), Some("ADD"), Some("CODE"), Some("AT"), 
-		Some("SPEED"), Some("OF"), Some("DOT"), Some("SIGN"), Some("DECIMAL"), 
-		Some("IDENT"), Some("QUOTED_STRING"), Some("LINE_COMMENT"), Some("BLOCK_COMMENT"), 
-		Some("WS")
-	];
-	lazy_static!{
-	    static ref _shared_context_cache: Arc<PredictionContextCache> = Arc::new(PredictionContextCache::new());
-		static ref VOCABULARY: Box<dyn Vocabulary> = Box::new(VocabularyImpl::new(_LITERAL_NAMES.iter(), _SYMBOLIC_NAMES.iter(), None));
-	}
-
-
-pub type LexerContext<'input> = BaseRuleContext<'input,EmptyCustomRuleContext<'input,LocalTokenFactory<'input> >>;
+pub type LexerContext<'input> =
+    BaseRuleContext<'input, EmptyCustomRuleContext<'input, LocalTokenFactory<'input>>>;
 pub type LocalTokenFactory<'input> = CommonTokenFactory;
 
-type From<'a> = <LocalTokenFactory<'a> as TokenFactory<'a> >::From;
+type From<'a> = <LocalTokenFactory<'a> as TokenFactory<'a>>::From;
 
-pub struct SceneMaxNextGenLexer<'input, Input:CharStream<From<'input> >> {
-	base: BaseLexer<'input,SceneMaxNextGenLexerActions,Input,LocalTokenFactory<'input>>,
+pub struct SceneMaxNextGenLexer<'input, Input: CharStream<From<'input>>> {
+    base: BaseLexer<'input, SceneMaxNextGenLexerActions, Input, LocalTokenFactory<'input>>,
 }
 
 antlr_rust::tid! { impl<'input,Input> TidAble<'input> for SceneMaxNextGenLexer<'input,Input> where Input:CharStream<From<'input> > }
 
-impl<'input, Input:CharStream<From<'input> >> Deref for SceneMaxNextGenLexer<'input,Input>{
-	type Target = BaseLexer<'input,SceneMaxNextGenLexerActions,Input,LocalTokenFactory<'input>>;
+impl<'input, Input: CharStream<From<'input>>> Deref for SceneMaxNextGenLexer<'input, Input> {
+    type Target = BaseLexer<'input, SceneMaxNextGenLexerActions, Input, LocalTokenFactory<'input>>;
 
-	fn deref(&self) -> &Self::Target {
-		&self.base
-	}
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
 }
 
-impl<'input, Input:CharStream<From<'input> >> DerefMut for SceneMaxNextGenLexer<'input,Input>{
-	fn deref_mut(&mut self) -> &mut Self::Target {
-		&mut self.base
-	}
+impl<'input, Input: CharStream<From<'input>>> DerefMut for SceneMaxNextGenLexer<'input, Input> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
 }
 
-
-impl<'input, Input:CharStream<From<'input> >> SceneMaxNextGenLexer<'input,Input>{
+impl<'input, Input: CharStream<From<'input>>> SceneMaxNextGenLexer<'input, Input> {
     fn get_rule_names(&self) -> &'static [&'static str] {
         &ruleNames
     }
@@ -115,50 +137,64 @@ impl<'input, Input:CharStream<From<'input> >> SceneMaxNextGenLexer<'input,Input>
         "SceneMaxNextGenLexer.g4"
     }
 
-	pub fn new_with_token_factory(input: Input, tf: &'input LocalTokenFactory<'input>) -> Self {
-		antlr_rust::recognizer::check_version("0","3");
-    	Self {
-			base: BaseLexer::new_base_lexer(
-				input,
-				LexerATNSimulator::new_lexer_atnsimulator(
-					_ATN.clone(),
-					_decision_to_DFA.clone(),
-					_shared_context_cache.clone(),
-				),
-				SceneMaxNextGenLexerActions{},
-				tf
-			)
-	    }
-	}
+    pub fn new_with_token_factory(input: Input, tf: &'input LocalTokenFactory<'input>) -> Self {
+        antlr_rust::recognizer::check_version("0", "3");
+        Self {
+            base: BaseLexer::new_base_lexer(
+                input,
+                LexerATNSimulator::new_lexer_atnsimulator(
+                    _ATN.clone(),
+                    _decision_to_DFA.clone(),
+                    _shared_context_cache.clone(),
+                ),
+                SceneMaxNextGenLexerActions {},
+                tf,
+            ),
+        }
+    }
 }
 
-impl<'input, Input:CharStream<From<'input> >> SceneMaxNextGenLexer<'input,Input> where &'input LocalTokenFactory<'input>:Default{
-	pub fn new(input: Input) -> Self{
-		SceneMaxNextGenLexer::new_with_token_factory(input, <&LocalTokenFactory<'input> as Default>::default())
-	}
+impl<'input, Input: CharStream<From<'input>>> SceneMaxNextGenLexer<'input, Input>
+where
+    &'input LocalTokenFactory<'input>: Default,
+{
+    pub fn new(input: Input) -> Self {
+        SceneMaxNextGenLexer::new_with_token_factory(
+            input,
+            <&LocalTokenFactory<'input> as Default>::default(),
+        )
+    }
 }
 
-pub struct SceneMaxNextGenLexerActions {
+pub struct SceneMaxNextGenLexerActions {}
+
+impl SceneMaxNextGenLexerActions {}
+
+impl<'input, Input: CharStream<From<'input>>>
+    Actions<
+        'input,
+        BaseLexer<'input, SceneMaxNextGenLexerActions, Input, LocalTokenFactory<'input>>,
+    > for SceneMaxNextGenLexerActions
+{
 }
 
-impl SceneMaxNextGenLexerActions{
+impl<'input, Input: CharStream<From<'input>>> SceneMaxNextGenLexer<'input, Input> {}
+
+impl<'input, Input: CharStream<From<'input>>>
+    LexerRecog<
+        'input,
+        BaseLexer<'input, SceneMaxNextGenLexerActions, Input, LocalTokenFactory<'input>>,
+    > for SceneMaxNextGenLexerActions
+{
+}
+impl<'input> TokenAware<'input> for SceneMaxNextGenLexerActions {
+    type TF = LocalTokenFactory<'input>;
 }
 
-impl<'input, Input:CharStream<From<'input> >> Actions<'input,BaseLexer<'input,SceneMaxNextGenLexerActions,Input,LocalTokenFactory<'input>>> for SceneMaxNextGenLexerActions{
-	}
-
-	impl<'input, Input:CharStream<From<'input> >> SceneMaxNextGenLexer<'input,Input>{
-
-}
-
-impl<'input, Input:CharStream<From<'input> >> LexerRecog<'input,BaseLexer<'input,SceneMaxNextGenLexerActions,Input,LocalTokenFactory<'input>>> for SceneMaxNextGenLexerActions{
-}
-impl<'input> TokenAware<'input> for SceneMaxNextGenLexerActions{
-	type TF = LocalTokenFactory<'input>;
-}
-
-impl<'input, Input:CharStream<From<'input> >> TokenSource<'input> for SceneMaxNextGenLexer<'input,Input>{
-	type TF = LocalTokenFactory<'input>;
+impl<'input, Input: CharStream<From<'input>>> TokenSource<'input>
+    for SceneMaxNextGenLexer<'input, Input>
+{
+    type TF = LocalTokenFactory<'input>;
 
     fn next_token(&mut self) -> <Self::TF as TokenFactory<'input>>::Tok {
         self.base.next_token()
@@ -176,38 +212,29 @@ impl<'input, Input:CharStream<From<'input> >> TokenSource<'input> for SceneMaxNe
         self.base.get_input_stream()
     }
 
-	fn get_source_name(&self) -> String {
-		self.base.get_source_name()
-	}
+    fn get_source_name(&self) -> String {
+        self.base.get_source_name()
+    }
 
     fn get_token_factory(&self) -> &'input Self::TF {
         self.base.get_token_factory()
     }
 }
 
+lazy_static! {
+    static ref _ATN: Arc<ATN> =
+        Arc::new(ATNDeserializer::new(None).deserialize(_serializedATN.chars()));
+    static ref _decision_to_DFA: Arc<Vec<antlr_rust::RwLock<DFA>>> = {
+        let mut dfa = Vec::new();
+        let size = _ATN.decision_to_state.len();
+        for i in 0..size {
+            dfa.push(DFA::new(_ATN.clone(), _ATN.get_decision_state(i), i as isize).into())
+        }
+        Arc::new(dfa)
+    };
+}
 
-
-	lazy_static! {
-	    static ref _ATN: Arc<ATN> =
-	        Arc::new(ATNDeserializer::new(None).deserialize(_serializedATN.chars()));
-	    static ref _decision_to_DFA: Arc<Vec<antlr_rust::RwLock<DFA>>> = {
-	        let mut dfa = Vec::new();
-	        let size = _ATN.decision_to_state.len();
-	        for i in 0..size {
-	            dfa.push(DFA::new(
-	                _ATN.clone(),
-	                _ATN.get_decision_state(i),
-	                i as isize,
-	            ).into())
-	        }
-	        Arc::new(dfa)
-	    };
-	}
-
-
-
-	const _serializedATN:&'static str =
-		"\x03\u{608b}\u{a72a}\u{8133}\u{b9ed}\u{417c}\u{3be7}\u{7786}\u{5964}\x02\
+const _serializedATN: &'static str = "\x03\u{608b}\u{a72a}\u{8133}\u{b9ed}\u{417c}\u{3be7}\u{7786}\u{5964}\x02\
 		\x11\u{ac}\x08\x01\x04\x02\x09\x02\x04\x03\x09\x03\x04\x04\x09\x04\x04\
 		\x05\x09\x05\x04\x06\x09\x06\x04\x07\x09\x07\x04\x08\x09\x08\x04\x09\x09\
 		\x09\x04\x0a\x09\x0a\x04\x0b\x09\x0b\x04\x0c\x09\x0c\x04\x0d\x09\x0d\x04\

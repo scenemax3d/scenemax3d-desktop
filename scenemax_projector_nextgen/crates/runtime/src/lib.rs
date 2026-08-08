@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fs,
+    env, fs,
     io::Write,
     path::{Path, PathBuf},
     sync::{
@@ -21,7 +21,7 @@ use avian3d::{
 };
 use bevy::{
     animation::AnimationTargetId,
-    asset::AssetPlugin,
+    asset::{AssetApp, AssetPlugin, io::AssetSourceBuilder},
     gltf::Gltf,
     log::LogPlugin,
     prelude::*,
@@ -75,13 +75,37 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .as_ref()
         .map(|root| root.join("resources"))
         .filter(|path| path.is_dir());
+    let builtin_asset_root = find_builtin_resources_root(
+        project_root.as_deref(),
+        script_root.as_deref(),
+        asset_root.as_deref(),
+    );
     initialize_runtime_logger(project_root.as_deref(), script_root.as_deref());
 
-    App::new()
-        .insert_resource(WinitSettings::continuous())
+    let mut app = App::new();
+    if let Some(builtin_asset_root) = builtin_asset_root.as_ref() {
+        let source_path = builtin_asset_root.to_string_lossy().to_string();
+        app.register_asset_source(
+            "builtin",
+            AssetSourceBuilder::platform_default(&source_path, None),
+        );
+        tracing::info!(
+            path = %builtin_asset_root.display(),
+            "registered SceneMax built-in asset source"
+        );
+        write_runtime_diagnostic_line(format!(
+            "registered built-in resources at {}",
+            builtin_asset_root.display()
+        ));
+    } else {
+        write_runtime_diagnostic_line("no separate built-in resources folder was discovered");
+    }
+
+    app.insert_resource(WinitSettings::continuous())
         .insert_resource(SceneMaxLaunchContext {
             script_root,
             asset_root: asset_root.clone(),
+            builtin_asset_root,
         })
         .insert_resource(scene_program)
         .init_resource::<SceneMaxVars>()
@@ -168,10 +192,74 @@ pub fn audit_assets(project: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn resolve_model_asset_for_project(project: &Path, model_name: &str) -> Result<String> {
+    let asset_root = project.join("resources");
+    let builtin_asset_root = find_builtin_resources_root(Some(project), None, Some(&asset_root));
+    let model = scenemax_assets::resolve_model_resource_with_builtin_fallback(
+        &asset_root,
+        builtin_asset_root.as_deref(),
+        model_name,
+    )
+    .map_err(anyhow::Error::from)?;
+    Ok(model.asset_path)
+}
+
+fn find_builtin_resources_root(
+    project_root: Option<&Path>,
+    script_root: Option<&Path>,
+    active_asset_root: Option<&Path>,
+) -> Option<PathBuf> {
+    let active_asset_root = active_asset_root.and_then(canonicalize_existing);
+    let mut candidates = Vec::new();
+
+    if let Ok(path) = env::var("SCENEMAX_BUILTIN_RESOURCES") {
+        candidates.push(PathBuf::from(path));
+    }
+    if let Ok(current_dir) = env::current_dir() {
+        add_resources_ancestor_candidates(&current_dir, &mut candidates);
+    }
+    if let Ok(current_exe) = env::current_exe()
+        && let Some(parent) = current_exe.parent()
+    {
+        add_resources_ancestor_candidates(parent, &mut candidates);
+    }
+    if let Some(project_root) = project_root {
+        add_resources_ancestor_candidates(project_root, &mut candidates);
+    }
+    if let Some(script_root) = script_root {
+        add_resources_ancestor_candidates(script_root, &mut candidates);
+    }
+
+    let mut seen = HashSet::new();
+    candidates.into_iter().find(|candidate| {
+        let Some(canonical) = canonicalize_existing(candidate) else {
+            return false;
+        };
+        if !seen.insert(canonical.clone()) {
+            return false;
+        }
+        if active_asset_root.as_ref() == Some(&canonical) {
+            return false;
+        }
+        canonical.join("Models").is_dir() || canonical.join("models").is_dir()
+    })
+}
+
+fn add_resources_ancestor_candidates(base: &Path, candidates: &mut Vec<PathBuf>) {
+    for ancestor in base.ancestors() {
+        candidates.push(ancestor.join("resources"));
+    }
+}
+
+fn canonicalize_existing(path: impl AsRef<Path>) -> Option<PathBuf> {
+    path.as_ref().canonicalize().ok()
+}
+
 #[derive(Debug, Resource)]
 struct SceneMaxLaunchContext {
     script_root: Option<PathBuf>,
     asset_root: Option<PathBuf>,
+    builtin_asset_root: Option<PathBuf>,
 }
 
 #[derive(Debug, Resource, Default)]
@@ -512,6 +600,21 @@ fn initialize_runtime_logger(project_root: Option<&Path>, script_root: Option<&P
     let _ = fs::remove_file(&path);
     if let Ok(mut log_file) = SCENEMAX_RUNTIME_LOG_FILE.lock() {
         *log_file = Some(path);
+    }
+    write_runtime_diagnostic_line("initialized SceneMax NextGen runtime log");
+}
+
+fn write_runtime_diagnostic_line(message: impl AsRef<str>) {
+    let Some(path) = SCENEMAX_RUNTIME_LOG_FILE
+        .lock()
+        .ok()
+        .and_then(|path| path.clone())
+    else {
+        return;
+    };
+    let line = format!("[RUNTIME] {}\n", message.as_ref());
+    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = file.write_all(line.as_bytes());
     }
 }
 
@@ -876,6 +979,7 @@ fn setup_scenemax_program(
         &mut commands,
         &asset_server,
         asset_root,
+        context.builtin_asset_root.as_deref(),
         program,
         &mut vars,
         &mut object_pools,
@@ -891,6 +995,7 @@ fn spawn_scenemax_program(
     commands: &mut Commands,
     asset_server: &AssetServer,
     asset_root: &Path,
+    builtin_asset_root: Option<&Path>,
     program: &Program,
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
@@ -964,7 +1069,11 @@ fn spawn_scenemax_program(
             continue;
         }
 
-        match scenemax_assets::resolve_model_resource(asset_root, resource) {
+        match scenemax_assets::resolve_model_resource_with_builtin_fallback(
+            asset_root,
+            builtin_asset_root,
+            resource,
+        ) {
             Ok(model) => {
                 let runtime_name = format!("{name}@1");
                 let asset_path = model.asset_path;
@@ -1006,6 +1115,9 @@ fn spawn_scenemax_program(
                     path = %asset_path,
                     "spawned SceneMax GLTF model"
                 );
+                write_runtime_diagnostic_line(format!(
+                    "resolved GLTF model {name}=>{resource} at {asset_path}"
+                ));
             }
             Err(scenemax_assets::AssetLookupError::UnsupportedModelFormat {
                 asset_path, ..
@@ -1031,6 +1143,9 @@ fn spawn_scenemax_program(
                     path = %asset_path,
                     "spawned placeholder for unsupported SceneMax model format"
                 );
+                write_runtime_diagnostic_line(format!(
+                    "placeholder for unsupported model {name}=>{resource}; path={asset_path}"
+                ));
             }
             Err(scenemax_assets::AssetLookupError::ModelNotFound(_)) => {
                 let transform = transform_from_options(options, None);
@@ -1053,6 +1168,13 @@ fn spawn_scenemax_program(
                     resource,
                     "spawned placeholder for unresolved SceneMax model resource"
                 );
+                write_runtime_diagnostic_line(format!(
+                    "placeholder for unresolved model {name}=>{resource}; project assets={}; builtin assets={}",
+                    asset_root.display(),
+                    builtin_asset_root
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| "<none>".to_owned())
+                ));
             }
         }
     }
@@ -1098,6 +1220,9 @@ fn spawn_scenemax_program(
     );
 
     if !spawned_any {
+        write_runtime_diagnostic_line(
+            "spawned default placeholder because the program produced no renderable entities",
+        );
         spawn_placeholder_model(commands, meshes, materials);
     }
 }
@@ -2518,6 +2643,7 @@ fn switch_scene_on_key(
                 &mut commands,
                 &asset_server,
                 asset_root,
+                context.builtin_asset_root.as_deref(),
                 &program,
                 &mut vars,
                 &mut object_pools,

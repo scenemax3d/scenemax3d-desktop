@@ -41,6 +41,15 @@ enum Command {
         #[arg(long)]
         project: PathBuf,
     },
+
+    /// Resolve a SceneMax model name without opening a Bevy window.
+    ResolveModel {
+        #[arg(long)]
+        project: PathBuf,
+
+        #[arg(long)]
+        model: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -75,6 +84,10 @@ fn main() -> Result<()> {
         }
         Command::AuditAssets { project } => {
             scenemax_runtime::audit_assets(&project)?;
+        }
+        Command::ResolveModel { project, model } => {
+            let path = scenemax_runtime::resolve_model_asset_for_project(&project, &model)?;
+            println!("{model} -> {path}");
         }
     }
 
