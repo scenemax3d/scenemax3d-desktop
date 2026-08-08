@@ -134,6 +134,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private float DEFAULT_FONT_SIZE;
     private float EXTRA_FONT_SIZE = 12;
     private PackageProgramDialog packageProgramDialog;
+    private PackageBevyProgramDialog packageBevyProgramDialog;
     private ActionListener menuActionListener;
     private Integer originalTreeFontSize;
     private String lastSelectedFilePath;
@@ -4692,17 +4693,26 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             } else {
 
                 packageBrogramButton.setEnabled(false);
-                packageProgramDialog = new PackageProgramDialog();
-                packageProgramDialog.pack();
-                packageProgramDialog.setLocationRelativeTo(null);
-                packageProgramDialog.run(lastSelectedFilePath, mr.finalPrg, new Runnable() {
+                SceneMaxProject activeProject = Util.getActiveProject();
+                Runnable onPackageDone = new Runnable() {
                     @Override
                     public void run() {
                         packageBrogramButton.setEnabled(true);
                     }
-                });
-
-                packageProgramDialog.setVisible(true);
+                };
+                if (activeProject != null && activeProject.isNextGenProjector()) {
+                    packageBevyProgramDialog = new PackageBevyProgramDialog();
+                    packageBevyProgramDialog.pack();
+                    packageBevyProgramDialog.setLocationRelativeTo(null);
+                    packageBevyProgramDialog.run(lastSelectedFilePath, mr.finalPrg, onPackageDone);
+                    packageBevyProgramDialog.setVisible(true);
+                } else {
+                    packageProgramDialog = new PackageProgramDialog();
+                    packageProgramDialog.pack();
+                    packageProgramDialog.setLocationRelativeTo(null);
+                    packageProgramDialog.run(lastSelectedFilePath, mr.finalPrg, onPackageDone);
+                    packageProgramDialog.setVisible(true);
+                }
             }
 
         } else if (actionEvent.getActionCommand().equals("save")) {
