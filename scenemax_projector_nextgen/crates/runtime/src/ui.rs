@@ -675,6 +675,19 @@ pub(super) fn spawn_scenemax_ui_widget(
                 .id();
             (entity, None)
         }
+        "PANEL" => {
+            let entity = commands
+                .spawn((
+                    Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
+                    node,
+                    UiTransform::default(),
+                    visibility,
+                    ZIndex(widget.z_order),
+                    base_marker,
+                ))
+                .id();
+            (entity, None)
+        }
         "LIST_VIEW" => {
             let text = list_view_text(widget);
             let text_color = parse_ui_color(&widget.text_color);
