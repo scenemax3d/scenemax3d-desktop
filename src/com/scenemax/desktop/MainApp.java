@@ -707,6 +707,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private void addProjectsToMenu(JMenu menu) {
         menu.addSeparator();
         List<SceneMaxProject> projects = Util.getProjects_New();
+        projects.sort(Comparator
+                .comparingLong((SceneMaxProject project) -> project.lastActiveAt)
+                .reversed()
+                .thenComparing(project -> project.name.toLowerCase(Locale.ROOT)));
         for (SceneMaxProject p : projects) {
             addProjectMenuItem(menu, p);
         }
@@ -3749,6 +3753,11 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         if (p == null) {
             Util.createProject("default project", null);
             migrateToDefaultProject();
+            p = Util.getActiveProject();
+        }
+
+        if (p != null) {
+            Util.markProjectOpened(p.name);
         }
 
         loadScriptsFolder();

@@ -23,6 +23,7 @@ public class SceneMaxProject {
     public String multiplayerDeployOs = "Windows";
     public String multiplayerPassword = "";
     public String projectGuid = "";
+    public long lastActiveAt;
     String name;
     String path;
 
@@ -81,6 +82,7 @@ public class SceneMaxProject {
         obj.put("multiplayer_deploy_os", this.multiplayerDeployOs == null ? "Windows" : this.multiplayerDeployOs);
         obj.put("project_guid", this.projectGuid == null ? "" : this.projectGuid);
         obj.put("projectGuid", this.projectGuid == null ? "" : this.projectGuid);
+        obj.put("lastActiveAt", this.lastActiveAt);
 
         return obj;
     }

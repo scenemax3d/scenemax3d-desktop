@@ -249,6 +249,7 @@ public class Util {
             p.multiplayerDeployOs = o.optString("multiplayerDeployOs", "Windows");
             p.multiplayerPassword = o.optString("multiplayerPassword", "");
             p.projectGuid = o.optString("projectGuid", "");
+            p.lastActiveAt = o.optLong("lastActiveAt", 0L);
             if (p.projectGuid == null || p.projectGuid.trim().isEmpty()) {
                 p.projectGuid = UUID.randomUUID().toString();
                 o.put("projectGuid", p.projectGuid);
@@ -348,6 +349,7 @@ public class Util {
         pr.put("selectedNode","main");
         pr.put("projectorType", SceneMaxProject.normalizeProjectorType(projectorType));
         pr.put("projectGuid", UUID.randomUUID().toString());
+        pr.put("lastActiveAt", System.currentTimeMillis());
         arr.put(pr);
 
         obj.put("selectedProject",name);
@@ -402,6 +404,7 @@ public class Util {
                 }
                 JSONObject obj = new JSONObject(projectsSetup);
                 obj.put("selectedProject",name);
+                updateProjectLastActive(obj, name, System.currentTimeMillis());
                 try {
                     FileUtils.write(f,obj.toString(4),StandardCharsets.UTF_8);
                 } catch (IOException e) {
@@ -415,6 +418,41 @@ public class Util {
 
         return false;
 
+    }
+
+    public static synchronized boolean markProjectOpened(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            return false;
+        }
+
+        JSONObject conf = getProjectsConfig();
+        if (conf == null) {
+            return false;
+        }
+
+        if (!updateProjectLastActive(conf, name, System.currentTimeMillis())) {
+            return false;
+        }
+
+        try {
+            writeProjectsConfig(conf);
+            return true;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private static boolean updateProjectLastActive(JSONObject conf, String name, long timestamp) {
+        JSONArray projects = conf.getJSONArray("projects");
+        for (int i = 0; i < projects.length(); ++i) {
+            JSONObject project = projects.getJSONObject(i);
+            if (project.getString("name").equals(name)) {
+                project.put("lastActiveAt", timestamp);
+                return true;
+            }
+        }
+        return false;
     }
 
     public static synchronized boolean renameProject(String oldName, String newName) throws IOException {
@@ -500,6 +538,7 @@ public class Util {
         if (name.equals(selectedProject) && remaining.length() > 0) {
             JSONObject nextProject = remaining.getJSONObject(0);
             conf.put("selectedProject", nextProject.getString("name"));
+            updateProjectLastActive(conf, nextProject.getString("name"), System.currentTimeMillis());
             AppDB.getInstance().setParam("selected_tree_node_parent", nextProject.optString("selectedParent", ""));
             AppDB.getInstance().setParam("selected_tree_node", nextProject.optString("selectedNode", ""));
         }
@@ -624,6 +663,7 @@ public class Util {
                 obj.put("multiplayerDeployOs", safeProjectValue(p.multiplayerDeployOs).isEmpty() ? "Windows" : safeProjectValue(p.multiplayerDeployOs));
                 obj.put("multiplayerPassword", p.multiplayerPassword == null ? "" : p.multiplayerPassword);
                 obj.put("projectGuid", safeProjectValue(p.projectGuid).isEmpty() ? UUID.randomUUID().toString() : safeProjectValue(p.projectGuid));
+                obj.put("lastActiveAt", p.lastActiveAt);
 
                 try {
                     File f = new File("projects/projects.json");
