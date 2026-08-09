@@ -17,6 +17,12 @@ pub(super) fn apply_startup_runs(
     let actions = program
         .statements
         .iter()
+        .take_while(|statement| {
+            !matches!(
+                statement,
+                Statement::WaitForKey { .. } | Statement::SwitchTo { .. }
+            )
+        })
         .filter(|statement| is_startup_action(statement))
         .cloned()
         .collect::<Vec<_>>();
@@ -839,7 +845,7 @@ pub(super) fn switch_scene_on_key(
     let Some(scene) = pending_key_switch(program, &keyboard).map(str::to_owned) else {
         return;
     };
-    let Some(script_root) = context.script_root.as_ref() else {
+    let Some(script_root) = startup_program.1.as_ref().or(context.script_root.as_ref()) else {
         tracing::warn!(scene, "cannot switch scene without a startup script root");
         return;
     };
@@ -848,7 +854,11 @@ pub(super) fn switch_scene_on_key(
         return;
     };
 
-    let scene_main = script_root.join(&scene).join("main");
+    let scene_main = scene_main_path(script_root, &scene);
+    write_runtime_diagnostic_line(format!(
+        "switch key accepted; loading scene {scene} from {}",
+        scene_main.display()
+    ));
     match load_script_with_adds(&scene_main, &mut HashSet::new()) {
         Ok(program) => {
             for entity in &scene_queries.p0() {
@@ -886,15 +896,34 @@ pub(super) fn switch_scene_on_key(
                 &mut character_configs,
             );
             startup_program.0 = Some(program);
+            startup_program.1 = scene_main.parent().map(Path::to_path_buf);
             tracing::info!(scene, path = %scene_main.display(), "switched SceneMax scene");
+            write_runtime_diagnostic_line(format!(
+                "switched SceneMax scene {scene} from {}",
+                scene_main.display()
+            ));
         }
-        Err(error) => tracing::error!(
-            scene,
-            path = %scene_main.display(),
-            %error,
-            "failed to switch SceneMax scene"
-        ),
+        Err(error) => {
+            tracing::error!(
+                scene,
+                path = %scene_main.display(),
+                %error,
+                "failed to switch SceneMax scene"
+            );
+            write_runtime_diagnostic_line(format!(
+                "failed to switch SceneMax scene {scene} from {}: {error}",
+                scene_main.display()
+            ));
+        }
     }
+}
+
+pub(super) fn scene_main_path(current_script_root: &Path, scene: &str) -> PathBuf {
+    current_script_root
+        .parent()
+        .unwrap_or(current_script_root)
+        .join(scene)
+        .join("main")
 }
 
 pub(super) fn apply_key_events(
