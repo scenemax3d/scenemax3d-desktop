@@ -874,7 +874,7 @@ pub(super) fn spawn_character_stage_support(
             name: "__tnua_stage_support".to_owned(),
             runtime_name: "__tnua_stage_support@physics".to_owned(),
         },
-        SceneMaxStageSupport,
+        SceneMaxStageSupport { half_size },
         Transform::from_translation(Vec3::new(center.x, support_y, center.z)),
         Visibility::Hidden,
         AvianRigidBody::Static,
@@ -891,6 +891,144 @@ pub(super) fn spawn_character_stage_support(
 
 pub(super) fn character_stage_support_y(center_y: f32) -> f32 {
     center_y - DEFAULT_CHARACTER_FLOAT_HEIGHT - DEFAULT_CHARACTER_VISUAL_DROP
+}
+
+pub(super) fn update_scenemax_debug_gizmos(
+    debug_mode: Res<SceneMaxDebugMode>,
+    collider_bounds: Res<SceneMaxColliderBounds>,
+    mut gizmos: Gizmos,
+    mut debug_helpers: Query<
+        &mut Visibility,
+        Or<(With<SceneMaxVirtualCollider>, With<SceneMaxStageSupport>)>,
+    >,
+    scene_entities: Query<(Entity, &SceneMaxEntity, &Transform)>,
+    stage_supports: Query<(&SceneMaxStageSupport, &Transform)>,
+    characters: Query<(&SceneMaxEntity, &Transform), With<SceneMaxCharacterController>>,
+    virtual_colliders: Query<(), With<SceneMaxVirtualCollider>>,
+) {
+    let target_visibility = if debug_mode.enabled {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+    for mut visibility in &mut debug_helpers {
+        if *visibility != target_visibility {
+            *visibility = target_visibility;
+        }
+    }
+
+    if !debug_mode.enabled {
+        return;
+    }
+
+    let collider_color = Color::srgb(0.2, 0.75, 1.0);
+    let virtual_collider_color = Color::srgb(1.0, 0.78, 0.15);
+    let support_color = Color::srgb(0.2, 1.0, 0.35);
+    let character_color = Color::srgb(1.0, 0.25, 0.9);
+    let float_color = Color::srgb(0.6, 1.0, 0.95);
+
+    for (entity, scene_entity, transform) in &scene_entities {
+        let Some(shape) = collider_bounds
+            .shape_by_name
+            .get(&scene_entity.name)
+            .copied()
+        else {
+            continue;
+        };
+        let color = if virtual_colliders.get(entity).is_ok() {
+            virtual_collider_color
+        } else {
+            collider_color
+        };
+        draw_debug_collider_shape(&mut gizmos, *transform, shape, color);
+    }
+
+    for (support, transform) in &stage_supports {
+        let mut support_transform = *transform;
+        support_transform.scale = Vec3::new(support.half_size * 2.0, 0.4, support.half_size * 2.0);
+        gizmos.cube(support_transform, support_color);
+    }
+
+    for (_scene_entity, transform) in &characters {
+        draw_debug_capsule(
+            &mut gizmos,
+            transform.translation,
+            transform.rotation,
+            DEFAULT_CHARACTER_CAPSULE_RADIUS,
+            DEFAULT_CHARACTER_CAPSULE_HEIGHT * 0.5,
+            character_color,
+        );
+
+        let float_bottom = transform.translation - Vec3::Y * DEFAULT_CHARACTER_FLOAT_HEIGHT;
+        gizmos.line(transform.translation, float_bottom, float_color);
+
+        let mut sensor_transform = Transform::from_translation(float_bottom);
+        sensor_transform.scale = Vec3::new(
+            DEFAULT_CHARACTER_CAPSULE_RADIUS * 2.0,
+            DEFAULT_CHARACTER_SENSOR_HEIGHT,
+            DEFAULT_CHARACTER_CAPSULE_RADIUS * 2.0,
+        );
+        gizmos.cube(sensor_transform, float_color);
+    }
+}
+
+fn draw_debug_collider_shape(
+    gizmos: &mut Gizmos,
+    transform: Transform,
+    shape: ColliderBoundShape,
+    color: Color,
+) {
+    match shape {
+        ColliderBoundShape::Box { half_extents } => {
+            let mut cube_transform = transform;
+            cube_transform.scale = transform.scale * (half_extents * 2.0);
+            gizmos.cube(cube_transform, color);
+        }
+        ColliderBoundShape::Sphere { radius } => {
+            gizmos
+                .sphere(
+                    Isometry3d::new(transform.translation, transform.rotation),
+                    radius,
+                    color,
+                )
+                .resolution(24);
+        }
+        ColliderBoundShape::Capsule {
+            radius,
+            half_height,
+        } => draw_debug_capsule(
+            gizmos,
+            transform.translation,
+            transform.rotation,
+            radius,
+            half_height,
+            color,
+        ),
+    }
+}
+
+fn draw_debug_capsule(
+    gizmos: &mut Gizmos,
+    center: Vec3,
+    rotation: Quat,
+    radius: f32,
+    half_height: f32,
+    color: Color,
+) {
+    let axis = rotation * Vec3::Y;
+    let top = center + axis * half_height;
+    let bottom = center - axis * half_height;
+    gizmos
+        .sphere(Isometry3d::new(top, rotation), radius, color)
+        .resolution(18);
+    gizmos
+        .sphere(Isometry3d::new(bottom, rotation), radius, color)
+        .resolution(18);
+
+    for direction in [Vec3::X, -Vec3::X, Vec3::Z, -Vec3::Z] {
+        let radial = rotation * direction * radius;
+        gizmos.line(top + radial, bottom + radial, color);
+    }
 }
 
 pub(super) fn preferred_stage_support_samples(

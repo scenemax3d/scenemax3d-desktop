@@ -449,6 +449,10 @@ pub(super) fn apply_startup_action(
             );
             ActionSequenceResult::Completed
         }
+        Statement::DebugMode { enabled } => {
+            set_debug_mode(commands, *enabled);
+            ActionSequenceResult::Completed
+        }
         Statement::UiLoad { name } => {
             ui_queue
                 .actions
@@ -2364,6 +2368,10 @@ pub(super) fn apply_key_action(
         );
         return ActionSequenceResult::Completed;
     }
+    if let Statement::DebugMode { enabled } = action {
+        set_debug_mode(commands, *enabled);
+        return ActionSequenceResult::Completed;
+    }
     if let Statement::UiSetProperty(property) = action {
         if let Some(ui_queue) = ui_queue.as_deref_mut() {
             let value = resolve_ui_property_value(
@@ -2810,6 +2818,11 @@ pub(super) fn apply_key_action(
         }
     }
     ActionSequenceResult::Completed
+}
+
+fn set_debug_mode(commands: &mut Commands, enabled: bool) {
+    commands.insert_resource(SceneMaxDebugMode { enabled });
+    write_runtime_diagnostic_line(format!("debug mode {}", if enabled { "on" } else { "off" }));
 }
 
 pub(super) fn animation_speed_condition_matches(

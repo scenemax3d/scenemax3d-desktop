@@ -150,6 +150,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<ActiveActionControllers>()
         .init_resource::<SceneMaxPhysicsContacts>()
         .init_resource::<SceneMaxColliderBounds>()
+        .init_resource::<SceneMaxDebugMode>()
         .init_resource::<SceneMaxUiRuntime>()
         .init_resource::<SceneMaxUiActionQueue>()
         .init_resource::<SceneMaxPerfDebug>()
@@ -202,6 +203,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_avian_collision_contacts,
                 apply_key_events,
                 update_virtual_colliders,
+                update_scenemax_debug_gizmos,
                 update_current_animation_vars,
                 apply_when_events,
             )
@@ -280,6 +282,11 @@ struct SceneMaxBoneAliasTarget {
 struct SceneMaxPerfDebug {
     elapsed_seconds: f32,
     frames: u32,
+}
+
+#[derive(Debug, Resource, Default)]
+struct SceneMaxDebugMode {
+    enabled: bool,
 }
 
 static PERF_BONE_ALIAS_NS: AtomicU64 = AtomicU64::new(0);
@@ -731,7 +738,9 @@ struct SceneMaxCharacterMotor {
 struct PendingCharacterMode(CharacterModeStatement);
 
 #[derive(Debug, Component)]
-struct SceneMaxStageSupport;
+struct SceneMaxStageSupport {
+    half_size: f32,
+}
 
 #[derive(Debug, Component)]
 struct SceneMaxVirtualCollider {

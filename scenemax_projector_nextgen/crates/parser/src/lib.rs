@@ -113,6 +113,9 @@ pub enum Statement {
     CameraAttach(CameraAttachStatement),
     CameraAttachStop,
     Logger(LoggerStatement),
+    DebugMode {
+        enabled: bool,
+    },
     FunctionDef(FunctionDefStatement),
     RunFunction {
         name: String,
@@ -1669,6 +1672,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(Statement::Logger(logger));
     }
 
+    if let Some(debug_mode) = parse_debug_mode_statement(line) {
+        return Ok(debug_mode);
+    }
+
     if let Some(run_function) = parse_run_function_statement(line) {
         return Ok(run_function);
     }
@@ -2005,6 +2012,14 @@ fn parse_logger_statement(line: &str) -> Result<Option<LoggerStatement>, ParseEr
         LoggerMessage::Value(value)
     };
     Ok(Some(LoggerStatement { level, message }))
+}
+
+fn parse_debug_mode_statement(line: &str) -> Option<Statement> {
+    match line.trim().to_ascii_lowercase().as_str() {
+        "debug.on" => Some(Statement::DebugMode { enabled: true }),
+        "debug.off" => Some(Statement::DebugMode { enabled: false }),
+        _ => None,
+    }
 }
 
 fn parse_run_function_statement(line: &str) -> Option<Statement> {
@@ -5879,6 +5894,19 @@ mod tests {
                     level: LoggerLevel::Error,
                     message: LoggerMessage::Value(AssignmentValue::Symbol("enemy_ko".to_owned())),
                 }),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_debug_mode_commands() {
+        let program = parse_program("debug.on\ndebug.off").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::DebugMode { enabled: true },
+                Statement::DebugMode { enabled: false },
             ]
         );
     }
