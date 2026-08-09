@@ -5012,6 +5012,7 @@ dependencies = [
  "scenemax_parser",
  "scenemax_runtime_script_core",
  "scenemax_runtime_ui_core",
+ "scenemax_runtime_vm_core",
  "serde",
  "serde_json",
  "tracing",
@@ -5030,6 +5031,15 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "scenemax_runtime_vm_core"
+version = "0.1.0"
+dependencies = [
+ "bevy_ecs",
+ "scenemax_parser",
+ "scenemax_runtime_script_core",
 ]
 
 [[package]]

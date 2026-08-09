@@ -8,6 +8,7 @@ members = [
     "crates/runtime",
     "crates/runtime_script_core",
     "crates/runtime_ui_core",
+    "crates/runtime_vm_core",
 ]
 resolver = "3"
 

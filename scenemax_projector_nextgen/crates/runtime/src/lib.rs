@@ -3,11 +3,7 @@ use std::{
     env, fs,
     io::Write,
     path::{Path, PathBuf},
-    sync::{
-        Mutex,
-        atomic::{AtomicU64, Ordering},
-    },
-    time::{SystemTime, UNIX_EPOCH},
+    sync::Mutex,
 };
 
 use anyhow::Result;
@@ -36,12 +32,12 @@ use bevy_tnua::{
 };
 use bevy_tnua_avian3d::prelude::{TnuaAvian3dPlugin, TnuaAvian3dSensorShape};
 use scenemax_parser::{
-    AnimationSpeedStatement, AnimationStatement, ArithmeticOperator, AssignmentValue,
-    AttachStatement, CameraAttachStatement, CharacterJumpStatement, CharacterModeStatement,
-    ComparisonOperator, Condition, EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage,
-    LoggerStatement, MoveDirection, ObjectPoolStatement, PoolReleaseStatement, PositionExpr,
-    PositionStatement, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
-    SceneMaxCollisionShape, SceneMaxVec3, Statement, UiEaseDirection, UiTargetPath,
+    AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement,
+    CameraAttachStatement, CharacterJumpStatement, CharacterModeStatement, Condition,
+    EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage, LoggerStatement, MoveDirection,
+    ObjectPoolStatement, PoolReleaseStatement, PositionExpr, PositionStatement, PositionValue,
+    Program, SceneMaxAxis, SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3, Statement,
+    UiEaseDirection, UiTargetPath,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
@@ -54,6 +50,7 @@ use scenemax_runtime_ui_core::{
     SceneMaxSpriteAsset, SceneMaxUiDocument, SceneMaxUiWidgetDef, UiLayoutRect, document_scale,
     list_view_text, percent, scaled_font_size, solve_widget_layout, sorted_widgets, target_key,
 };
+use scenemax_runtime_vm_core::{SceneMaxScopeFrame, SceneMaxVars, SceneMaxVmSpatial};
 
 #[derive(TnuaScheme)]
 #[scheme(basis = TnuaBuiltinWalk)]
@@ -297,15 +294,6 @@ struct SceneMaxLaunchContext {
 
 #[derive(Debug, Resource, Default)]
 struct SceneMaxStartupProgram(Option<Program>);
-
-#[derive(Debug, Resource, Default)]
-struct SceneMaxVars(HashMap<String, f32>);
-
-#[derive(Debug, Clone, Default)]
-struct SceneMaxScopeFrame {
-    vars: HashMap<String, f32>,
-    aliases: HashMap<String, String>,
-}
 
 #[derive(Debug, Resource, Default)]
 struct SceneMaxObjectPools {
@@ -701,7 +689,6 @@ const LOOP_CONTINUE_DELAY_SECONDS: f32 = 0.001;
 const PHYSICS_LAYER_WORLD: u32 = 1 << 0;
 const PHYSICS_LAYER_CHARACTER: u32 = 1 << 1;
 const PHYSICS_LAYER_HITBOX: u32 = 1 << 2;
-static SCENEMAX_RANDOM_STATE: AtomicU64 = AtomicU64::new(0);
 static SCENEMAX_RUNTIME_LOG_FILE: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 fn initialize_runtime_logger(project_root: Option<&Path>, script_root: Option<&Path>) {
@@ -4268,18 +4255,7 @@ fn apply_when_events(
 }
 
 fn clear_transient_hit_flags(vars: &mut SceneMaxVars) {
-    for field in [
-        "player1.data.hand_attack_hit",
-        "player1.data.foot_attack_hit",
-        "player1.data.head_hit",
-        "player1.data.body_hit",
-        "player2.data.hand_attack_hit",
-        "player2.data.foot_attack_hit",
-        "player2.data.head_hit",
-        "player2.data.body_hit",
-    ] {
-        vars.0.insert(field.to_owned(), 0.0);
-    }
+    scenemax_runtime_vm_core::clear_transient_hit_flags(vars);
 }
 
 fn write_collision_event_probe(
@@ -6595,12 +6571,35 @@ fn apply_logger_statement(
     write_runtime_log_line(logger.level, &message);
 }
 
-fn format_scenemax_number(value: f32) -> String {
-    if value.is_finite() && (value - value.round()).abs() <= f32::EPSILON {
-        format!("{}", value.round() as i64)
-    } else {
-        format!("{value}")
+struct RuntimeVmSpatial<'a> {
+    transforms_by_name: Option<&'a HashMap<String, Transform>>,
+    collider_bounds: Option<&'a SceneMaxColliderBounds>,
+}
+
+impl SceneMaxVmSpatial for RuntimeVmSpatial<'_> {
+    fn symbol_value(&self, name: &str) -> Option<f32> {
+        coordinate_value_from_name(name, self.transforms_by_name?)
     }
+
+    fn distance(&self, left: &str, right: &str) -> Option<f32> {
+        let transforms_by_name = self.transforms_by_name?;
+        let left = transforms_by_name.get(left)?;
+        let right = transforms_by_name.get(right)?;
+        Some(left.translation.distance(right.translation))
+    }
+
+    fn collision_matches(&self, sources: &[String], target: &str) -> bool {
+        collision_condition_matches(
+            sources,
+            target,
+            self.transforms_by_name,
+            self.collider_bounds,
+        )
+    }
+}
+
+fn format_scenemax_number(value: f32) -> String {
+    scenemax_runtime_vm_core::format_scenemax_number(value)
 }
 
 fn apply_assignment(
@@ -6630,15 +6629,17 @@ fn apply_assignment_scoped(
     collider_bounds: Option<&SceneMaxColliderBounds>,
     force_local: bool,
 ) -> Option<f32> {
-    let previous =
-        resolve_symbol_value_scoped(&assignment.name, vars, scope.as_deref(), transforms_by_name);
-    let Some(value) = resolve_assignment_value_scoped_with_guards(
-        &assignment.value,
-        vars,
-        scope.as_deref(),
-        guards_by_name,
+    let spatial = RuntimeVmSpatial {
         transforms_by_name,
         collider_bounds,
+    };
+    let Some(result) = scenemax_runtime_vm_core::apply_assignment_with_spatial(
+        assignment,
+        vars,
+        scope.as_deref_mut(),
+        guards_by_name,
+        &spatial,
+        force_local,
     ) else {
         tracing::debug!(
             name = %assignment.name,
@@ -6647,41 +6648,8 @@ fn apply_assignment_scoped(
         );
         return None;
     };
-    assign_symbol_value(
-        &assignment.name,
-        value,
-        vars,
-        scope.as_deref_mut(),
-        force_local,
-    );
-    write_state_assignment_probe(&assignment.name, previous, value, force_local);
-    Some(value)
-}
-
-fn assign_symbol_value(
-    name: &str,
-    value: f32,
-    vars: &mut SceneMaxVars,
-    scope: Option<&mut SceneMaxScopeFrame>,
-    force_local: bool,
-) {
-    let Some(scope) = scope else {
-        vars.0.insert(name.to_owned(), value);
-        return;
-    };
-    if force_local {
-        scope.vars.insert(name.to_owned(), value);
-    } else if scope.vars.contains_key(name) {
-        scope.vars.insert(name.to_owned(), value);
-    } else if vars.0.contains_key(name) || is_runtime_field_path(name) {
-        vars.0.insert(name.to_owned(), value);
-    } else {
-        scope.vars.insert(name.to_owned(), value);
-    }
-}
-
-fn is_runtime_field_path(name: &str) -> bool {
-    name.contains('.')
+    write_state_assignment_probe(&assignment.name, result.previous, result.value, force_local);
+    Some(result.value)
 }
 
 fn resolve_assignment_value(
@@ -6699,13 +6667,15 @@ fn resolve_assignment_value_with_guards(
     transforms_by_name: Option<&HashMap<String, Transform>>,
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> Option<f32> {
-    resolve_assignment_value_scoped_with_guards(
-        value,
-        vars,
-        None,
-        guards_by_name,
+    let spatial = RuntimeVmSpatial {
         transforms_by_name,
         collider_bounds,
+    };
+    scenemax_runtime_vm_core::resolve_assignment_value_with_guards(
+        value,
+        vars,
+        guards_by_name,
+        &spatial,
     )
 }
 
@@ -6717,81 +6687,17 @@ fn resolve_assignment_value_scoped_with_guards(
     transforms_by_name: Option<&HashMap<String, Transform>>,
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> Option<f32> {
-    match value {
-        AssignmentValue::Number(value) => Some(*value),
-        AssignmentValue::Symbol(name) => {
-            resolve_symbol_value_scoped(name, vars, scope, transforms_by_name)
-        }
-        AssignmentValue::Condition(condition) => Some(condition_matches_scoped(
-            condition,
-            vars,
-            scope,
-            guards_by_name,
-            transforms_by_name,
-            collider_bounds,
-        ) as u8 as f32),
-        AssignmentValue::RandomInt { max } => {
-            let max = resolve_assignment_value_scoped_with_guards(
-                max,
-                vars,
-                scope,
-                guards_by_name,
-                transforms_by_name,
-                collider_bounds,
-            )?
-            .max(1.0) as u32;
-            Some((pseudo_random_u32() % max) as f32)
-        }
-        AssignmentValue::Round { value } => {
-            let value = resolve_assignment_value_scoped_with_guards(
-                value,
-                vars,
-                scope,
-                guards_by_name,
-                transforms_by_name,
-                collider_bounds,
-            )?;
-            Some(value.round())
-        }
-        AssignmentValue::Distance { left, right } => {
-            let transforms_by_name = transforms_by_name?;
-            let left = transforms_by_name.get(left)?;
-            let right = transforms_by_name.get(right)?;
-            Some(left.translation.distance(right.translation))
-        }
-        AssignmentValue::PoolAcquire { .. } => None,
-        AssignmentValue::Binary {
-            left,
-            operator,
-            right,
-        } => {
-            let left = resolve_assignment_value_scoped_with_guards(
-                left,
-                vars,
-                scope,
-                guards_by_name,
-                transforms_by_name,
-                collider_bounds,
-            )?;
-            let right = resolve_assignment_value_scoped_with_guards(
-                right,
-                vars,
-                scope,
-                guards_by_name,
-                transforms_by_name,
-                collider_bounds,
-            )?;
-            Some(match operator {
-                ArithmeticOperator::Add => left + right,
-                ArithmeticOperator::Subtract => left - right,
-                ArithmeticOperator::Multiply => left * right,
-                ArithmeticOperator::Divide if right.abs() > f32::EPSILON => left / right,
-                ArithmeticOperator::Divide => return None,
-                ArithmeticOperator::Modulo if right.abs() > f32::EPSILON => left % right,
-                ArithmeticOperator::Modulo => return None,
-            })
-        }
-    }
+    let spatial = RuntimeVmSpatial {
+        transforms_by_name,
+        collider_bounds,
+    };
+    scenemax_runtime_vm_core::resolve_assignment_value_scoped_with_guards(
+        value,
+        vars,
+        scope,
+        guards_by_name,
+        &spatial,
+    )
 }
 
 fn condition_matches(
@@ -6801,14 +6707,11 @@ fn condition_matches(
     transforms_by_name: Option<&HashMap<String, Transform>>,
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> bool {
-    condition_matches_scoped(
-        condition,
-        vars,
-        None,
-        guards_by_name,
+    let spatial = RuntimeVmSpatial {
         transforms_by_name,
         collider_bounds,
-    )
+    };
+    scenemax_runtime_vm_core::condition_matches(condition, vars, guards_by_name, &spatial)
 }
 
 fn condition_matches_scoped(
@@ -6819,190 +6722,17 @@ fn condition_matches_scoped(
     transforms_by_name: Option<&HashMap<String, Transform>>,
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> bool {
-    match condition {
-        Condition::EqualsNumber { name, value } => {
-            (resolve_symbol_value_scoped(name, vars, scope, transforms_by_name).unwrap_or_default()
-                - *value)
-                .abs()
-                <= f32::EPSILON
-        }
-        Condition::NotEqualsNumber { name, value } => {
-            (resolve_symbol_value_scoped(name, vars, scope, transforms_by_name).unwrap_or_default()
-                - *value)
-                .abs()
-                > f32::EPSILON
-        }
-        Condition::EqualsSymbol { name, value } => {
-            let Some(value) = resolve_symbol_value_scoped(value, vars, scope, transforms_by_name)
-            else {
-                return false;
-            };
-            (resolve_symbol_value_scoped(name, vars, scope, transforms_by_name).unwrap_or_default()
-                - value)
-                .abs()
-                <= f32::EPSILON
-        }
-        Condition::NotEqualsSymbol { name, value } => {
-            let Some(value) = resolve_symbol_value_scoped(value, vars, scope, transforms_by_name)
-            else {
-                return false;
-            };
-            (resolve_symbol_value_scoped(name, vars, scope, transforms_by_name).unwrap_or_default()
-                - value)
-                .abs()
-                > f32::EPSILON
-        }
-        Condition::Compare {
-            name,
-            operator,
-            value,
-        } => {
-            let Some(right) = resolve_assignment_value_scoped_with_guards(
-                value,
-                vars,
-                scope,
-                guards_by_name,
-                transforms_by_name,
-                collider_bounds,
-            ) else {
-                return false;
-            };
-            let left = resolve_symbol_value_scoped(name, vars, scope, transforms_by_name)
-                .unwrap_or_default();
-            match operator {
-                ComparisonOperator::Greater => left > right,
-                ComparisonOperator::GreaterOrEqual => left >= right,
-                ComparisonOperator::Less => left < right,
-                ComparisonOperator::LessOrEqual => left <= right,
-            }
-        }
-        Condition::CompareValue {
-            left,
-            operator,
-            right,
-        } => {
-            let (Some(left), Some(right)) = (
-                resolve_assignment_value_scoped_with_guards(
-                    left,
-                    vars,
-                    scope,
-                    guards_by_name,
-                    transforms_by_name,
-                    collider_bounds,
-                ),
-                resolve_assignment_value_scoped_with_guards(
-                    right,
-                    vars,
-                    scope,
-                    guards_by_name,
-                    transforms_by_name,
-                    collider_bounds,
-                ),
-            ) else {
-                return false;
-            };
-            match operator {
-                ComparisonOperator::Greater => left > right,
-                ComparisonOperator::GreaterOrEqual => left >= right,
-                ComparisonOperator::Less => left < right,
-                ComparisonOperator::LessOrEqual => left <= right,
-            }
-        }
-        Condition::EqualsValue { left, right } => {
-            let (Some(left), Some(right)) = (
-                resolve_assignment_value_scoped_with_guards(
-                    left,
-                    vars,
-                    scope,
-                    guards_by_name,
-                    transforms_by_name,
-                    collider_bounds,
-                ),
-                resolve_assignment_value_scoped_with_guards(
-                    right,
-                    vars,
-                    scope,
-                    guards_by_name,
-                    transforms_by_name,
-                    collider_bounds,
-                ),
-            ) else {
-                return false;
-            };
-            (left - right).abs() <= f32::EPSILON
-        }
-        Condition::NotEqualsValue { left, right } => {
-            let (Some(left), Some(right)) = (
-                resolve_assignment_value_scoped_with_guards(
-                    left,
-                    vars,
-                    scope,
-                    guards_by_name,
-                    transforms_by_name,
-                    collider_bounds,
-                ),
-                resolve_assignment_value_scoped_with_guards(
-                    right,
-                    vars,
-                    scope,
-                    guards_by_name,
-                    transforms_by_name,
-                    collider_bounds,
-                ),
-            ) else {
-                return false;
-            };
-            (left - right).abs() > f32::EPSILON
-        }
-        Condition::Truthy { name } => {
-            resolve_symbol_value_scoped(name, vars, scope, transforms_by_name)
-                .unwrap_or_default()
-                .abs()
-                > f32::EPSILON
-        }
-        Condition::Collision { sources, target } => {
-            collision_condition_matches(sources, target, transforms_by_name, collider_bounds)
-        }
-        Condition::Boolean(value) => *value,
-        Condition::Not(condition) => !condition_matches_scoped(
-            condition,
-            vars,
-            scope,
-            guards_by_name,
-            transforms_by_name,
-            collider_bounds,
-        ),
-        Condition::Alias(name) => guards_by_name.get(name).is_some_and(|condition| {
-            condition_matches_scoped(
-                condition,
-                vars,
-                scope,
-                guards_by_name,
-                transforms_by_name,
-                collider_bounds,
-            )
-        }),
-        Condition::And(conditions) => conditions.iter().all(|condition| {
-            condition_matches_scoped(
-                condition,
-                vars,
-                scope,
-                guards_by_name,
-                transforms_by_name,
-                collider_bounds,
-            )
-        }),
-        Condition::Or(conditions) => conditions.iter().any(|condition| {
-            condition_matches_scoped(
-                condition,
-                vars,
-                scope,
-                guards_by_name,
-                transforms_by_name,
-                collider_bounds,
-            )
-        }),
-    }
+    let spatial = RuntimeVmSpatial {
+        transforms_by_name,
+        collider_bounds,
+    };
+    scenemax_runtime_vm_core::condition_matches_scoped(
+        condition,
+        vars,
+        scope,
+        guards_by_name,
+        &spatial,
+    )
 }
 
 fn when_condition_matches(
@@ -7398,73 +7128,6 @@ fn collision_part_radius(reference: &str) -> f32 {
     } else {
         1.25
     }
-}
-
-fn pseudo_random_u32() -> u32 {
-    let mut state = SCENEMAX_RANDOM_STATE.load(Ordering::Relaxed);
-    if state == 0 {
-        let seed = random_seed();
-        let _ =
-            SCENEMAX_RANDOM_STATE.compare_exchange(0, seed, Ordering::Relaxed, Ordering::Relaxed);
-        state = SCENEMAX_RANDOM_STATE.load(Ordering::Relaxed);
-    }
-
-    loop {
-        let next = state
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(1_442_695_040_888_963_407);
-        match SCENEMAX_RANDOM_STATE.compare_exchange_weak(
-            state,
-            next,
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-        ) {
-            Ok(_) => return (next >> 32) as u32,
-            Err(updated) if updated != 0 => state = updated,
-            Err(_) => state = random_seed(),
-        }
-    }
-}
-
-fn random_seed() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| {
-            (duration.as_nanos() as u64)
-                ^ 0x9E37_79B9_7F4A_7C15
-                ^ ((std::process::id() as u64) << 32)
-        })
-        .ok()
-        .filter(|seed| *seed != 0)
-        .unwrap_or(0xA076_1D64_78BD_642F)
-}
-
-#[cfg(test)]
-fn reset_pseudo_random_for_test(seed: u64) {
-    SCENEMAX_RANDOM_STATE.store(seed.max(1), Ordering::Relaxed);
-}
-
-#[cfg(test)]
-fn sample_pseudo_random_moduli(max: u32, count: usize) -> HashSet<u32> {
-    (0..count)
-        .map(|_| pseudo_random_u32() % max.max(1))
-        .collect()
-}
-
-fn resolve_symbol_value_scoped(
-    name: &str,
-    vars: &SceneMaxVars,
-    scope: Option<&SceneMaxScopeFrame>,
-    transforms_by_name: Option<&HashMap<String, Transform>>,
-) -> Option<f32> {
-    scope
-        .and_then(|scope| scope.vars.get(name).copied())
-        .or_else(|| {
-            vars.0
-                .get(name)
-                .copied()
-                .or_else(|| coordinate_value_from_name(name, transforms_by_name?))
-        })
 }
 
 fn coordinate_value_from_name(
@@ -8147,7 +7810,7 @@ fn scene_is_ready_for_player_idle(vars: &SceneMaxVars) -> bool {
 }
 
 fn variable_is_zero(vars: &SceneMaxVars, name: &str) -> bool {
-    vars.0.get(name).copied().unwrap_or_default().abs() <= f32::EPSILON
+    scenemax_runtime_vm_core::variable_is_zero(vars, name)
 }
 
 fn play_pending_animations(
@@ -8697,53 +8360,6 @@ mod tests {
     }
 
     #[test]
-    fn initializes_multiline_scene_max_constants() {
-        let program = scenemax_parser::parse_program(
-            "var PLAYER_ACTION_IDLE = 0,\n    PLAYER_ACTION_X_1 = 7, PLAYER_ACTION_X_2 = 8,\n    PLAYER_ACTION_C = 9\nvar GAME_STATE_BEFORE_START = 0,\n    GAME_STATE_START = 1,\n    GAME_STATE_OVER = 2\nvar game_status=GAME_STATE_START",
-        )
-        .unwrap();
-        let mut vars = SceneMaxVars::default();
-
-        apply_initial_assignments(&program, &mut vars);
-
-        assert_eq!(vars.0.get("PLAYER_ACTION_X_2").copied(), Some(8.0));
-        assert_eq!(vars.0.get("GAME_STATE_START").copied(), Some(1.0));
-        assert_eq!(vars.0.get("game_status").copied(), Some(1.0));
-    }
-
-    #[test]
-    fn evaluates_guard_alias_inside_condition_assignment() {
-        let program = scenemax_parser::parse_program(
-            "var @can_attack = enemy_ko==0 && op_hit==0\nvar should_attack = @can_attack",
-        )
-        .unwrap();
-        let mut vars = SceneMaxVars::default();
-        vars.0.insert("enemy_ko".to_owned(), 0.0);
-        vars.0.insert("op_hit".to_owned(), 0.0);
-
-        apply_initial_assignments(&program, &mut vars);
-
-        assert_eq!(vars.0.get("should_attack").copied(), Some(1.0));
-
-        vars.0.insert("op_hit".to_owned(), 1.0);
-        let guards = collect_guards_by_name(&program);
-        apply_assignment(
-            &scenemax_parser::AssignmentStatement {
-                name: "should_attack".to_owned(),
-                value: AssignmentValue::Condition(Box::new(Condition::Alias(
-                    "can_attack".to_owned(),
-                ))),
-            },
-            &mut vars,
-            None,
-            &guards,
-            None,
-        );
-
-        assert_eq!(vars.0.get("should_attack").copied(), Some(0.0));
-    }
-
-    #[test]
     fn evaluates_parameterized_function_guard() {
         let program = scenemax_parser::parse_program(
             "[p2.data.is_jumping == 0 && enemy_ko == 0]\nopponent_ai(p1, p2) = {\n  p2.look at (p1)\n}",
@@ -8824,57 +8440,6 @@ mod tests {
     }
 
     #[test]
-    fn scoped_expression_vm_keeps_function_locals_out_of_global_state() {
-        let mut vars = SceneMaxVars(HashMap::from([
-            ("op_action".to_owned(), 0.0),
-            ("counter".to_owned(), 2.0),
-        ]));
-        let mut scope = SceneMaxScopeFrame::default();
-        let guards = HashMap::new();
-
-        apply_assignment_scoped(
-            &scenemax_parser::AssignmentStatement {
-                name: "dist".to_owned(),
-                value: AssignmentValue::Number(4.25),
-            },
-            &mut vars,
-            Some(&mut scope),
-            None,
-            &guards,
-            None,
-            false,
-        );
-        apply_assignment_scoped(
-            &scenemax_parser::AssignmentStatement {
-                name: "op_action".to_owned(),
-                value: AssignmentValue::Number(3.0),
-            },
-            &mut vars,
-            Some(&mut scope),
-            None,
-            &guards,
-            None,
-            false,
-        );
-
-        assert_eq!(scope.vars.get("dist").copied(), Some(4.25));
-        assert_eq!(vars.0.get("dist"), None);
-        assert_eq!(vars.0.get("op_action").copied(), Some(3.0));
-        assert!(condition_matches_scoped(
-            &Condition::Compare {
-                name: "dist".to_owned(),
-                operator: ComparisonOperator::Less,
-                value: AssignmentValue::Number(5.5),
-            },
-            &vars,
-            Some(&scope),
-            &guards,
-            None,
-            None,
-        ));
-    }
-
-    #[test]
     fn scoped_object_aliases_override_global_pool_aliases() {
         let mut object_pools = SceneMaxObjectPools::default();
         object_pools
@@ -8900,43 +8465,6 @@ mod tests {
             "__global_rock",
             &object_pools,
             Some(&scope)
-        ));
-    }
-
-    #[test]
-    fn expression_vm_evaluates_not_boolean_and_angle_bracket_inequality() {
-        let mut vars = SceneMaxVars(HashMap::from([
-            ("flag".to_owned(), 0.0),
-            ("enemy_ko".to_owned(), 0.0),
-        ]));
-        let guards = HashMap::new();
-
-        apply_assignment(
-            &scenemax_parser::AssignmentStatement {
-                name: "flag".to_owned(),
-                value: AssignmentValue::Condition(Box::new(Condition::Boolean(true))),
-            },
-            &mut vars,
-            None,
-            &guards,
-            None,
-        );
-
-        assert_eq!(vars.0.get("flag").copied(), Some(1.0));
-        assert!(condition_matches(
-            &Condition::Or(vec![
-                Condition::Not(Box::new(Condition::Truthy {
-                    name: "missing_flag".to_owned(),
-                })),
-                Condition::NotEqualsValue {
-                    left: AssignmentValue::Symbol("enemy_ko".to_owned()),
-                    right: AssignmentValue::Number(1.0),
-                },
-            ]),
-            &vars,
-            &guards,
-            None,
-            None,
         ));
     }
 
@@ -9047,157 +8575,6 @@ mod tests {
             character_stage_support_y(-88.03695),
             -88.03695 - DEFAULT_CHARACTER_FLOAT_HEIGHT - DEFAULT_CHARACTER_VISUAL_DROP
         );
-    }
-
-    #[test]
-    fn clears_collision_hit_pulses_after_when_pass() {
-        let mut vars = SceneMaxVars(HashMap::from([
-            ("player1.data.head_hit".to_owned(), 1.0),
-            ("player2.data.hand_attack_hit".to_owned(), 1.0),
-            ("player1.data.is_jumping".to_owned(), 1.0),
-        ]));
-
-        clear_transient_hit_flags(&mut vars);
-
-        assert_eq!(vars.0.get("player1.data.head_hit").copied(), Some(0.0));
-        assert_eq!(
-            vars.0.get("player2.data.hand_attack_hit").copied(),
-            Some(0.0)
-        );
-        assert_eq!(vars.0.get("player1.data.is_jumping").copied(), Some(1.0));
-    }
-
-    #[test]
-    fn evaluates_distance_and_condition_assignment_values() {
-        let mut vars = SceneMaxVars::default();
-        vars.0.insert("life2".to_owned(), 3.0);
-        let transforms = HashMap::from([
-            (
-                "player1".to_owned(),
-                Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
-            ),
-            (
-                "player2".to_owned(),
-                Transform::from_translation(Vec3::new(3.0, 0.0, 4.0)),
-            ),
-        ]);
-
-        assert_eq!(
-            resolve_assignment_value(
-                &AssignmentValue::Distance {
-                    left: "player1".to_owned(),
-                    right: "player2".to_owned(),
-                },
-                &vars,
-                Some(&transforms),
-            ),
-            Some(5.0)
-        );
-        assert_eq!(
-            resolve_assignment_value(
-                &AssignmentValue::Condition(Box::new(Condition::Compare {
-                    name: "life2".to_owned(),
-                    operator: ComparisonOperator::LessOrEqual,
-                    value: AssignmentValue::Number(3.0),
-                })),
-                &vars,
-                Some(&transforms),
-            ),
-            Some(1.0)
-        );
-        assert_eq!(
-            resolve_assignment_value_with_guards(
-                &AssignmentValue::Condition(Box::new(Condition::Or(vec![
-                    Condition::Compare {
-                        name: "life2".to_owned(),
-                        operator: ComparisonOperator::LessOrEqual,
-                        value: AssignmentValue::Number(6.0),
-                    },
-                    Condition::Compare {
-                        name: "life1".to_owned(),
-                        operator: ComparisonOperator::LessOrEqual,
-                        value: AssignmentValue::Number(4.0),
-                    },
-                ]))),
-                &SceneMaxVars(HashMap::from([
-                    ("life1".to_owned(), 10.0),
-                    ("life2".to_owned(), 5.0),
-                ])),
-                &HashMap::new(),
-                Some(&transforms),
-                None,
-            ),
-            Some(1.0)
-        );
-        assert!(condition_matches(
-            &Condition::CompareValue {
-                left: AssignmentValue::Distance {
-                    left: "player1".to_owned(),
-                    right: "player2".to_owned(),
-                },
-                operator: ComparisonOperator::LessOrEqual,
-                right: AssignmentValue::Number(5.0),
-            },
-            &vars,
-            &HashMap::new(),
-            Some(&transforms),
-            None,
-        ));
-    }
-
-    #[test]
-    fn evaluates_modulo_assignment_value() {
-        let mut vars = SceneMaxVars::default();
-        vars.0.insert("high_kick_counter".to_owned(), 6.0);
-
-        assert_eq!(
-            resolve_assignment_value(
-                &AssignmentValue::Binary {
-                    left: Box::new(AssignmentValue::Symbol("high_kick_counter".to_owned())),
-                    operator: ArithmeticOperator::Modulo,
-                    right: Box::new(AssignmentValue::Number(3.0)),
-                },
-                &vars,
-                None,
-            ),
-            Some(0.0)
-        );
-    }
-
-    #[test]
-    fn evaluates_round_assignment_value() {
-        let mut vars = SceneMaxVars::default();
-        vars.0.insert("life1".to_owned(), 73.0);
-        vars.0.insert("INITIAL_PLAYER_STRENGTH".to_owned(), 100.0);
-
-        assert_eq!(
-            resolve_assignment_value(
-                &AssignmentValue::Round {
-                    value: Box::new(AssignmentValue::Binary {
-                        left: Box::new(AssignmentValue::Binary {
-                            left: Box::new(AssignmentValue::Symbol("life1".to_owned())),
-                            operator: ArithmeticOperator::Multiply,
-                            right: Box::new(AssignmentValue::Number(16.0)),
-                        }),
-                        operator: ArithmeticOperator::Divide,
-                        right: Box::new(AssignmentValue::Symbol(
-                            "INITIAL_PLAYER_STRENGTH".to_owned(),
-                        )),
-                    }),
-                },
-                &vars,
-                None,
-            ),
-            Some(12.0)
-        );
-    }
-
-    #[test]
-    fn pseudo_random_varies_low_modulo_branches() {
-        reset_pseudo_random_for_test(0x1234_5678_9ABC_DEF0);
-
-        assert!(sample_pseudo_random_moduli(4, 16).len() > 1);
-        assert!(sample_pseudo_random_moduli(2, 16).len() > 1);
     }
 
     #[test]
@@ -9859,15 +9236,5 @@ mod tests {
 
         assert!(current_animation_matches(&current, "run_sword", true));
         assert!(!current_animation_matches(&current, "idle2", true));
-    }
-
-    #[test]
-    fn evaluates_arithmetic_assignment_value() {
-        let program = scenemax_parser::parse_program("score = 5\nscore = score + 10").unwrap();
-        let mut vars = SceneMaxVars::default();
-
-        apply_initial_assignments(&program, &mut vars);
-
-        assert_eq!(vars.0.get("score").copied(), Some(15.0));
     }
 }

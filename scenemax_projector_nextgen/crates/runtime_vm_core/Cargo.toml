@@ -1,0 +1,10 @@
+[package]
+name = "scenemax_runtime_vm_core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bevy_ecs = "0.19.0"
+scenemax_parser = { path = "../parser" }
+scenemax_runtime_script_core = { path = "../runtime_script_core" }
