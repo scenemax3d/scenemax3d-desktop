@@ -1,0 +1,1713 @@
+use super::*;
+
+pub(super) fn collider_decl_transform(
+    name: &str,
+    options: &EntityOptions,
+    attaches_by_target: &HashMap<String, AttachStatement>,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Transform {
+    if let Some(attach) = attaches_by_target.get(name) {
+        let owner = attach_owner(&attach.subject);
+        if let Some(owner_transform) = transforms_by_name.get(&owner).copied() {
+            return virtual_collider_transform(owner_transform, attach_fallback_offset(attach));
+        }
+    }
+    primitive_transform_from_options(options)
+}
+
+pub(super) fn spawn_scenemax_collider_decl(
+    commands: &mut Commands,
+    name: &str,
+    resource: &str,
+    options: &EntityOptions,
+    transform: Transform,
+    attach: Option<&AttachStatement>,
+) -> Entity {
+    let shape = options
+        .collision_shape
+        .unwrap_or_else(|| default_collision_shape(name, resource, SceneMaxBodyKind::Static));
+    let body = if attach.is_some() {
+        AvianRigidBody::Kinematic
+    } else {
+        AvianRigidBody::Static
+    };
+    let mut entity = commands.spawn((
+        SceneMaxEntity {
+            name: name.to_owned(),
+            runtime_name: format!("{name}@collider"),
+        },
+        transform,
+        Visibility::Hidden,
+        body,
+        avian_collider(shape, options, &transform),
+        hitbox_collision_layers(),
+        Sensor,
+        CollisionEventsEnabled,
+    ));
+    if let Some(attach) = attach {
+        entity.insert(SceneMaxVirtualCollider {
+            owner: attach_owner(&attach.subject),
+            bone: attach_bone_name(&attach.subject),
+            local_offset: vec3_from_scenemax(attach.offset),
+            fallback_offset: attach_fallback_offset(attach),
+        });
+    }
+    entity.id()
+}
+
+pub(super) fn primitive_mesh(
+    resource: &str,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+) -> Option<(Mesh3d, MeshMaterial3d<StandardMaterial>)> {
+    let mesh = match resource.to_ascii_lowercase().as_str() {
+        "box" | "quad" => meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+        "sphere" => meshes.add(Sphere::new(1.0)),
+        _ => return None,
+    };
+    let material = materials.add(Color::srgb_u8(120, 135, 150));
+    Some((Mesh3d(mesh), MeshMaterial3d(material)))
+}
+
+pub(super) fn collect_model_declarations(program: &Program) -> Vec<ModelRuntimeDecl> {
+    program
+        .statements
+        .iter()
+        .filter_map(|statement| {
+            let Statement::ModelDecl {
+                name,
+                resource,
+                options,
+            } = statement
+            else {
+                return None;
+            };
+            Some(ModelRuntimeDecl {
+                name: name.clone(),
+                resource: resource.clone(),
+                options: *options,
+            })
+        })
+        .collect()
+}
+
+pub(super) fn instantiate_object_pool_declarations(
+    program: &Program,
+    functions_by_name: &HashMap<String, FunctionRuntime>,
+    object_pools: &mut SceneMaxObjectPools,
+) -> Vec<ModelRuntimeDecl> {
+    let mut declarations = Vec::new();
+    for statement in &program.statements {
+        let Statement::ObjectPool(pool) = statement else {
+            continue;
+        };
+        let Some(prototype) = object_pool_prototype(pool, functions_by_name) else {
+            tracing::warn!(
+                pool = %pool.name,
+                factory = %pool.factory,
+                "SceneMax object pool factory has no model declaration"
+            );
+            continue;
+        };
+
+        let mut runtime = ObjectPoolRuntime::default();
+        for index in 0..pool.size.min(256) {
+            let member_name = format!("__pool_{}_{}", pool.name, index);
+            runtime.available.push(member_name.clone());
+            runtime.members.insert(member_name.clone());
+            let mut options = prototype.options;
+            options.hidden = true;
+            declarations.push(ModelRuntimeDecl {
+                name: member_name,
+                resource: prototype.resource.clone(),
+                options,
+            });
+        }
+        runtime.available.reverse();
+        object_pools.pools.insert(pool.name.clone(), runtime);
+        tracing::info!(
+            pool = %pool.name,
+            factory = %pool.factory,
+            size = pool.size,
+            "prepared SceneMax object pool"
+        );
+    }
+    declarations
+}
+
+pub(super) fn object_pool_prototype(
+    pool: &ObjectPoolStatement,
+    functions_by_name: &HashMap<String, FunctionRuntime>,
+) -> Option<ModelRuntimeDecl> {
+    let function = functions_by_name.get(&pool.factory)?;
+    function.actions.iter().find_map(|action| {
+        let Statement::ModelDecl {
+            name,
+            resource,
+            options,
+        } = action
+        else {
+            return None;
+        };
+        let returned_name = function.actions.iter().find_map(|action| {
+            let Statement::ReturnValue {
+                value: AssignmentValue::Symbol(value),
+            } = action
+            else {
+                return None;
+            };
+            Some(value)
+        });
+        if returned_name.is_some_and(|returned_name| returned_name != name) {
+            return None;
+        }
+        Some(ModelRuntimeDecl {
+            name: String::new(),
+            resource: resource.clone(),
+            options: *options,
+        })
+    })
+}
+
+pub(super) fn spawn_unsupported_model_placeholder(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    name: &str,
+    resource: &str,
+    options: &EntityOptions,
+    transform: Transform,
+    visibility_by_target: &HashMap<String, bool>,
+) -> Entity {
+    let (mesh, material) = unsupported_model_placeholder_mesh(resource, meshes, materials);
+    commands
+        .spawn((
+            SceneMaxEntity {
+                name: name.to_owned(),
+                runtime_name: format!("{name}@placeholder"),
+            },
+            mesh,
+            material,
+            transform,
+            initial_visibility(name, options, visibility_by_target),
+        ))
+        .id()
+}
+
+pub(super) fn unsupported_model_placeholder_mesh(
+    resource: &str,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+) -> (Mesh3d, MeshMaterial3d<StandardMaterial>) {
+    let lower = resource.to_ascii_lowercase();
+    let (mesh, color) = if lower.contains("crystal") {
+        (meshes.add(Sphere::new(0.8)), Color::srgb_u8(75, 210, 255))
+    } else if lower.contains("axe") {
+        (
+            meshes.add(Cuboid::new(0.25, 0.12, 1.2)),
+            Color::srgb_u8(150, 150, 160),
+        )
+    } else if lower.contains("wooden_box") || lower.contains("box") {
+        (
+            meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+            Color::srgb_u8(150, 95, 45),
+        )
+    } else if lower.contains("gate") {
+        (
+            meshes.add(Cuboid::new(1.0, 2.0, 0.25)),
+            Color::srgb_u8(80, 110, 150),
+        )
+    } else {
+        (
+            meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+            Color::srgb_u8(120, 135, 150),
+        )
+    };
+    (Mesh3d(mesh), MeshMaterial3d(materials.add(color)))
+}
+
+pub(super) fn initial_visibility(
+    name: &str,
+    options: &EntityOptions,
+    visibility_by_target: &HashMap<String, bool>,
+) -> Visibility {
+    match visibility_by_target.get(name).copied() {
+        Some(true) => Visibility::Inherited,
+        Some(false) => Visibility::Hidden,
+        None if options.hidden => Visibility::Hidden,
+        None => Visibility::Inherited,
+    }
+}
+
+pub(super) fn primitive_transform_from_options(options: &EntityOptions) -> Transform {
+    let mut transform = transform_from_options(options, None);
+    if options.scale.is_none() {
+        if let Some(size) = options.size {
+            transform.scale = vec3_from_scenemax(size);
+        }
+    }
+    transform
+}
+
+pub(super) fn insert_physics_components(
+    commands: &mut Commands,
+    entity: Entity,
+    name: &str,
+    resource: &str,
+    options: &EntityOptions,
+    transform: &Transform,
+) {
+    let Some(body_kind) = physics_body_kind(options) else {
+        return;
+    };
+    let Some(shape) = physics_collision_shape(name, resource, options, body_kind) else {
+        return;
+    };
+    let body = match body_kind {
+        SceneMaxBodyKind::Static => AvianRigidBody::Static,
+        SceneMaxBodyKind::Kinematic => AvianRigidBody::Kinematic,
+        SceneMaxBodyKind::Dynamic => AvianRigidBody::Dynamic,
+    };
+    let collider = avian_collider(shape, options, transform);
+    commands.entity(entity).insert((
+        body,
+        collider,
+        solid_collision_layers(body_kind),
+        CollisionEventsEnabled,
+    ));
+    tracing::debug!(
+        name,
+        resource,
+        ?body_kind,
+        ?shape,
+        "attached Avian physics body"
+    );
+}
+
+pub(super) fn physics_body_kind(options: &EntityOptions) -> Option<SceneMaxBodyKind> {
+    options.body_kind.or_else(|| {
+        options
+            .collision_shape
+            .is_some_and(|shape| shape != SceneMaxCollisionShape::None)
+            .then_some(SceneMaxBodyKind::Static)
+    })
+}
+
+pub(super) fn physics_collision_shape(
+    name: &str,
+    resource: &str,
+    options: &EntityOptions,
+    body_kind: SceneMaxBodyKind,
+) -> Option<SceneMaxCollisionShape> {
+    match options.collision_shape {
+        Some(SceneMaxCollisionShape::None) => None,
+        Some(shape) => Some(shape),
+        None => Some(default_collision_shape(name, resource, body_kind)),
+    }
+}
+
+pub(super) fn default_collision_shape(
+    name: &str,
+    resource: &str,
+    body_kind: SceneMaxBodyKind,
+) -> SceneMaxCollisionShape {
+    let lower = format!("{} {}", name, resource).to_ascii_lowercase();
+    if body_kind == SceneMaxBodyKind::Kinematic
+        && (lower.contains("player") || lower.contains("fighter") || lower.contains("boss"))
+    {
+        SceneMaxCollisionShape::Capsule
+    } else if resource.eq_ignore_ascii_case("sphere") {
+        SceneMaxCollisionShape::Sphere
+    } else {
+        SceneMaxCollisionShape::Box
+    }
+}
+
+pub(super) fn avian_collider(
+    shape: SceneMaxCollisionShape,
+    options: &EntityOptions,
+    transform: &Transform,
+) -> AvianCollider {
+    let dimensions = collider_dimensions(options, transform);
+    match shape {
+        SceneMaxCollisionShape::None => AvianCollider::cuboid(0.1, 0.1, 0.1),
+        SceneMaxCollisionShape::Box => {
+            AvianCollider::cuboid(dimensions.x, dimensions.y, dimensions.z)
+        }
+        SceneMaxCollisionShape::Sphere => AvianCollider::sphere(dimensions.max_element() * 0.5),
+        SceneMaxCollisionShape::Capsule => {
+            let radius = dimensions.x.max(dimensions.z).max(0.2) * 0.3;
+            let height = dimensions.y.max(radius * 2.0);
+            AvianCollider::capsule(radius, height)
+        }
+    }
+}
+
+pub(super) fn collider_dimensions(options: &EntityOptions, transform: &Transform) -> Vec3 {
+    if let Some(radius) = options.radius {
+        return Vec3::splat((radius * 2.0).max(0.1));
+    }
+    options
+        .size
+        .map(vec3_from_scenemax)
+        .unwrap_or_else(|| transform.scale.abs())
+        .max(Vec3::splat(0.1))
+}
+
+pub(super) fn collider_bound_shape(
+    options: &EntityOptions,
+    transform: Transform,
+) -> ColliderBoundShape {
+    let dimensions = collider_dimensions(options, &transform);
+    match options
+        .collision_shape
+        .unwrap_or(SceneMaxCollisionShape::Box)
+    {
+        SceneMaxCollisionShape::Sphere => ColliderBoundShape::Sphere {
+            radius: dimensions.max_element() * 0.5,
+        },
+        SceneMaxCollisionShape::Box => ColliderBoundShape::Box {
+            half_extents: dimensions * 0.5,
+        },
+        SceneMaxCollisionShape::Capsule => {
+            let radius = dimensions.x.max(dimensions.z).max(0.2) * 0.3;
+            let height = dimensions.y.max(radius * 2.0);
+            ColliderBoundShape::Capsule {
+                radius,
+                half_height: height * 0.5,
+            }
+        }
+        SceneMaxCollisionShape::None => ColliderBoundShape::Sphere { radius: 0.0 },
+    }
+}
+
+pub(super) fn register_collider_bounds(
+    collider_bounds: &mut SceneMaxColliderBounds,
+    name: &str,
+    options: &EntityOptions,
+    transform: Transform,
+) {
+    let shape = collider_bound_shape(options, transform);
+    let radius = shape.bounding_radius().max(0.01);
+    collider_bounds
+        .radius_by_name
+        .insert(name.to_owned(), radius);
+    collider_bounds.shape_by_name.insert(name.to_owned(), shape);
+}
+
+pub(super) fn spawn_default_virtual_colliders(
+    commands: &mut Commands,
+    entities_by_name: &mut HashMap<String, Entity>,
+    transforms_by_name: &mut HashMap<String, Transform>,
+    collider_bounds: &mut SceneMaxColliderBounds,
+) {
+    let owners = ["player1", "player2"];
+    for owner in owners {
+        let Some(owner_transform) = transforms_by_name.get(owner).copied() else {
+            continue;
+        };
+        for spec in default_fighter_virtual_colliders(owner) {
+            if entities_by_name.contains_key(&spec.name) {
+                continue;
+            }
+            let transform = virtual_collider_transform(owner_transform, spec.local_offset);
+            let shape = virtual_collider_bound_shape(spec.shape);
+            let radius = shape.bounding_radius();
+            let entity = commands
+                .spawn((
+                    SceneMaxEntity {
+                        name: spec.name.clone(),
+                        runtime_name: format!("{}@virtual", spec.name),
+                    },
+                    SceneMaxVirtualCollider {
+                        owner: owner.to_owned(),
+                        bone: spec.bone.map(str::to_owned),
+                        local_offset: Vec3::ZERO,
+                        fallback_offset: spec.local_offset,
+                    },
+                    transform,
+                    Visibility::Hidden,
+                    AvianRigidBody::Kinematic,
+                    virtual_collider_shape(spec.shape),
+                    hitbox_collision_layers(),
+                    Sensor,
+                    CollisionEventsEnabled,
+                ))
+                .id();
+            entities_by_name.insert(spec.name.clone(), entity);
+            transforms_by_name.insert(spec.name.clone(), transform);
+            collider_bounds
+                .radius_by_name
+                .insert(spec.name.clone(), radius);
+            collider_bounds
+                .shape_by_name
+                .insert(spec.name.clone(), shape);
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct VirtualColliderSpec {
+    name: String,
+    bone: Option<&'static str>,
+    local_offset: Vec3,
+    shape: VirtualColliderShape,
+}
+
+pub(super) fn default_fighter_virtual_colliders(owner: &str) -> Vec<VirtualColliderSpec> {
+    vec![
+        VirtualColliderSpec {
+            name: format!("{owner}_body_collider"),
+            bone: None,
+            local_offset: Vec3::new(0.0, 1.0, 0.0),
+            shape: VirtualColliderShape::Box {
+                half_extents: Vec3::new(0.55, 0.9, 0.35),
+            },
+        },
+        VirtualColliderSpec {
+            name: format!("{owner}_head_collider"),
+            bone: Some("mixamorig:Head"),
+            local_offset: Vec3::new(0.0, 1.65, 0.0),
+            shape: VirtualColliderShape::Sphere { radius: 0.28 },
+        },
+        VirtualColliderSpec {
+            name: format!("{owner}_left_hand_collider"),
+            bone: Some("mixamorig:LeftHand"),
+            local_offset: Vec3::new(-0.45, 1.15, 0.2),
+            shape: VirtualColliderShape::Sphere { radius: 0.24 },
+        },
+        VirtualColliderSpec {
+            name: format!("{owner}_right_hand_collider"),
+            bone: Some("mixamorig:RightHand"),
+            local_offset: Vec3::new(0.45, 1.15, 0.2),
+            shape: VirtualColliderShape::Sphere { radius: 0.24 },
+        },
+        VirtualColliderSpec {
+            name: format!("{owner}_left_foot_collider"),
+            bone: Some("mixamorig:LeftFoot"),
+            local_offset: Vec3::new(-0.22, 0.18, 0.18),
+            shape: VirtualColliderShape::Sphere { radius: 0.26 },
+        },
+        VirtualColliderSpec {
+            name: format!("{owner}_right_foot_collider"),
+            bone: Some("mixamorig:RightFoot"),
+            local_offset: Vec3::new(0.22, 0.18, 0.18),
+            shape: VirtualColliderShape::Sphere { radius: 0.26 },
+        },
+    ]
+}
+
+pub(super) fn virtual_collider_shape(shape: VirtualColliderShape) -> AvianCollider {
+    match shape {
+        VirtualColliderShape::Box { half_extents } => {
+            AvianCollider::cuboid(half_extents.x, half_extents.y, half_extents.z)
+        }
+        VirtualColliderShape::Sphere { radius } => AvianCollider::sphere(radius),
+    }
+}
+
+pub(super) fn virtual_collider_bound_shape(shape: VirtualColliderShape) -> ColliderBoundShape {
+    match shape {
+        VirtualColliderShape::Box { half_extents } => ColliderBoundShape::Box { half_extents },
+        VirtualColliderShape::Sphere { radius } => ColliderBoundShape::Sphere { radius },
+    }
+}
+
+pub(super) fn solid_collision_layers(body_kind: SceneMaxBodyKind) -> CollisionLayers {
+    match body_kind {
+        SceneMaxBodyKind::Static => world_collision_layers(),
+        SceneMaxBodyKind::Kinematic | SceneMaxBodyKind::Dynamic => {
+            CollisionLayers::from_bits(PHYSICS_LAYER_WORLD, PHYSICS_LAYER_CHARACTER)
+        }
+    }
+}
+
+pub(super) fn world_collision_layers() -> CollisionLayers {
+    CollisionLayers::from_bits(
+        PHYSICS_LAYER_WORLD,
+        PHYSICS_LAYER_WORLD | PHYSICS_LAYER_CHARACTER,
+    )
+}
+
+pub(super) fn character_collision_layers() -> CollisionLayers {
+    CollisionLayers::from_bits(PHYSICS_LAYER_CHARACTER, PHYSICS_LAYER_WORLD)
+}
+
+pub(super) fn hitbox_collision_layers() -> CollisionLayers {
+    CollisionLayers::from_bits(PHYSICS_LAYER_HITBOX, PHYSICS_LAYER_HITBOX)
+}
+
+pub(super) fn virtual_collider_transform(
+    owner_transform: Transform,
+    local_offset: Vec3,
+) -> Transform {
+    Transform {
+        translation: owner_transform.translation
+            + owner_transform.rotation * (local_offset * owner_transform.scale.abs()),
+        rotation: owner_transform.rotation,
+        scale: Vec3::ONE,
+    }
+}
+
+pub(super) fn attach_owner(subject: &str) -> String {
+    collision_owner(subject)
+}
+
+pub(super) fn attach_fallback_offset(attach: &AttachStatement) -> Vec3 {
+    attachment_bone_offset(&attach.subject) + vec3_from_scenemax(attach.offset)
+}
+
+pub(super) fn attach_bone_name(subject: &str) -> Option<String> {
+    let start = subject.find('"')?;
+    let after_start = &subject[start + 1..];
+    let end = after_start.find('"')?;
+    let bone = after_start[..end].trim();
+    (!bone.is_empty()).then(|| bone.to_owned())
+}
+
+pub(super) fn attachment_bone_offset(subject: &str) -> Vec3 {
+    let lower = subject.to_ascii_lowercase();
+    if lower.contains("head") {
+        Vec3::new(0.0, 1.65, 0.0)
+    } else if lower.contains("lefthand") {
+        Vec3::new(-0.45, 1.15, 0.2)
+    } else if lower.contains("righthand") {
+        Vec3::new(0.45, 1.15, 0.2)
+    } else if lower.contains("leftfoot") {
+        Vec3::new(-0.22, 0.18, 0.18)
+    } else if lower.contains("rightfoot") {
+        Vec3::new(0.22, 0.18, 0.18)
+    } else {
+        Vec3::ZERO
+    }
+}
+
+pub(super) fn update_virtual_colliders(
+    owners: Query<(Entity, &SceneMaxEntity, &Transform), Without<SceneMaxVirtualCollider>>,
+    children: Query<&Children>,
+    named_nodes: Query<(&Name, &GlobalTransform)>,
+    mut colliders: Query<(&SceneMaxVirtualCollider, &mut Transform)>,
+) {
+    let owner_transforms = owners
+        .iter()
+        .map(|(owner_entity, scene_entity, transform)| {
+            (scene_entity.name.clone(), (owner_entity, *transform))
+        })
+        .collect::<HashMap<_, _>>();
+
+    for (collider, mut transform) in &mut colliders {
+        let Some((owner_entity, owner_transform)) =
+            owner_transforms.get(collider.owner.as_str()).copied()
+        else {
+            continue;
+        };
+        if let Some(bone) = collider.bone.as_deref() {
+            if let Some(bone_transform) =
+                find_descendant_transform_by_name(owner_entity, bone, &children, &named_nodes)
+            {
+                *transform = attachment_node_transform(bone_transform, collider.local_offset);
+                continue;
+            }
+        }
+        *transform = virtual_collider_transform(owner_transform, collider.fallback_offset);
+    }
+}
+
+pub(super) fn find_descendant_transform_by_name(
+    root: Entity,
+    wanted_name: &str,
+    children: &Query<&Children>,
+    named_nodes: &Query<(&Name, &GlobalTransform)>,
+) -> Option<Transform> {
+    for child in children.get(root).ok()?.iter() {
+        if let Ok((name, transform)) = named_nodes.get(child) {
+            if names_match(name.as_str(), wanted_name) {
+                return Some(transform.compute_transform());
+            }
+        }
+        if let Some(transform) =
+            find_descendant_transform_by_name(child, wanted_name, children, named_nodes)
+        {
+            return Some(transform);
+        }
+    }
+    None
+}
+
+pub(super) fn names_match(actual: &str, wanted: &str) -> bool {
+    actual.eq_ignore_ascii_case(wanted)
+        || actual
+            .rsplit(['/', '.'])
+            .next()
+            .is_some_and(|tail| tail.eq_ignore_ascii_case(wanted))
+}
+
+pub(super) fn attachment_node_transform(
+    node_transform: Transform,
+    local_offset: Vec3,
+) -> Transform {
+    Transform {
+        translation: node_transform.translation
+            + node_transform.rotation * (local_offset * node_transform.scale.abs()),
+        rotation: node_transform.rotation,
+        scale: Vec3::ONE,
+    }
+}
+
+pub(super) fn apply_look_at_commands(
+    program: &Program,
+    commands: &mut Commands,
+    entities_by_name: &HashMap<String, Entity>,
+    transforms_by_name: &mut HashMap<String, Transform>,
+) {
+    for statement in &program.statements {
+        let Statement::LookAt { target, subject } = statement else {
+            continue;
+        };
+        let Some(entity) = entities_by_name.get(target).copied() else {
+            continue;
+        };
+        let (Some(target_transform), Some(subject_transform)) = (
+            transforms_by_name.get(target).copied(),
+            lookup_subject_transform(subject, transforms_by_name),
+        ) else {
+            continue;
+        };
+        let mut updated = target_transform;
+        look_at_scenemax_forward(&mut updated, subject_transform.translation);
+        commands.entity(entity).insert(updated);
+        transforms_by_name.insert(target.clone(), updated);
+    }
+}
+
+pub(super) fn apply_character_modes(
+    program: &Program,
+    commands: &mut Commands,
+    entities_by_name: &HashMap<String, Entity>,
+    transforms_by_name: &HashMap<String, Transform>,
+    character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
+) {
+    let mut support_samples = Vec::new();
+    for statement in &program.statements {
+        let Statement::CharacterMode(character_mode) = statement else {
+            continue;
+        };
+        let Some(entity) = entities_by_name.get(&character_mode.target).copied() else {
+            tracing::warn!(
+                target = character_mode.target,
+                "SceneMax character mode target was not spawned"
+            );
+            continue;
+        };
+        let transform = transforms_by_name
+            .get(&character_mode.target)
+            .copied()
+            .unwrap_or_default();
+        support_samples.push((character_mode.target.clone(), transform));
+        insert_tnua_character_controller(commands, entity, character_mode, character_configs);
+    }
+    spawn_character_stage_support(commands, &support_samples);
+}
+
+pub(super) fn insert_tnua_character_controller(
+    commands: &mut Commands,
+    entity: Entity,
+    character_mode: &CharacterModeStatement,
+    character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
+) {
+    let gravity = character_mode.gravity.unwrap_or(DEFAULT_CHARACTER_GRAVITY);
+    let radius = DEFAULT_CHARACTER_CAPSULE_RADIUS;
+    let height = DEFAULT_CHARACTER_CAPSULE_HEIGHT;
+    let float_height = DEFAULT_CHARACTER_FLOAT_HEIGHT;
+    let config = character_configs.add(SceneMaxControlSchemeConfig {
+        basis: TnuaBuiltinWalkConfig {
+            speed: DEFAULT_CHARACTER_MOVE_SPEED,
+            float_height,
+            free_fall_extra_gravity: gravity,
+            ..Default::default()
+        },
+        jump: TnuaBuiltinJumpConfig {
+            height: jump_height(35.0),
+            fall_extra_gravity: gravity * 0.35,
+            shorten_extra_gravity: gravity,
+            ..Default::default()
+        },
+    });
+
+    commands.entity(entity).insert((
+        SceneMaxCharacterController {
+            move_speed: DEFAULT_CHARACTER_MOVE_SPEED,
+            gravity,
+        },
+        SceneMaxCharacterMotor::default(),
+        AvianRigidBody::Dynamic,
+        AvianCollider::capsule(radius, height),
+        character_collision_layers(),
+        LinearVelocity::ZERO,
+        AngularVelocity::ZERO,
+        TnuaController::<SceneMaxControlScheme>::default(),
+        TnuaConfig::<SceneMaxControlScheme>(config),
+        TnuaAvian3dSensorShape(AvianCollider::cylinder(
+            radius * 0.98,
+            DEFAULT_CHARACTER_SENSOR_HEIGHT,
+        )),
+        LockedAxes::ROTATION_LOCKED.unlock_rotation_y(),
+        CollisionEventsEnabled,
+    ));
+    tracing::info!(
+        target = character_mode.target,
+        gravity,
+        "enabled Tnua SceneMax character mode"
+    );
+}
+
+pub(super) fn apply_pending_character_modes(
+    mut commands: Commands,
+    mut character_configs: ResMut<Assets<SceneMaxControlSchemeConfig>>,
+    pending: Query<(Entity, &Transform, &PendingCharacterMode)>,
+    active_characters: Query<
+        (&SceneMaxEntity, &Transform),
+        (
+            With<SceneMaxCharacterController>,
+            Without<PendingCharacterMode>,
+        ),
+    >,
+    supports: Query<Entity, With<SceneMaxStageSupport>>,
+) {
+    let pending_modes = pending.iter().collect::<Vec<_>>();
+    if pending_modes.is_empty() {
+        return;
+    }
+
+    for support_entity in &supports {
+        commands.entity(support_entity).despawn();
+    }
+    let support_samples = pending_modes
+        .iter()
+        .map(|(_, transform, pending_mode)| (pending_mode.0.target.clone(), **transform))
+        .chain(
+            active_characters
+                .iter()
+                .map(|(scene_entity, transform)| (scene_entity.name.clone(), *transform)),
+        )
+        .collect::<Vec<_>>();
+    if !support_samples.is_empty() {
+        spawn_character_stage_support(&mut commands, &support_samples);
+    }
+
+    for (entity, _transform, pending_mode) in pending_modes {
+        insert_tnua_character_controller(
+            &mut commands,
+            entity,
+            &pending_mode.0,
+            &mut character_configs,
+        );
+        commands.entity(entity).remove::<PendingCharacterMode>();
+    }
+}
+
+pub(super) fn cleanup_character_supports(
+    mut commands: Commands,
+    supports: Query<Entity, With<SceneMaxStageSupport>>,
+    character_owners: Query<
+        &SceneMaxEntity,
+        Or<(
+            With<SceneMaxCharacterController>,
+            With<PendingCharacterMode>,
+        )>,
+    >,
+) {
+    if character_owners.is_empty() {
+        for support_entity in &supports {
+            commands.entity(support_entity).despawn();
+        }
+    }
+}
+
+pub(super) fn clear_character_mode(commands: &mut Commands, entity: Entity) {
+    let mut entity_commands = commands.entity(entity);
+    entity_commands.remove::<SceneMaxCharacterController>();
+    entity_commands.remove::<SceneMaxCharacterMotor>();
+    entity_commands.remove::<PendingCharacterMode>();
+    entity_commands.remove::<TnuaController<SceneMaxControlScheme>>();
+    entity_commands.remove::<TnuaConfig<SceneMaxControlScheme>>();
+    entity_commands.remove::<TnuaAvian3dSensorShape>();
+    entity_commands.remove::<LockedAxes>();
+    entity_commands.insert((
+        AvianRigidBody::Kinematic,
+        character_collision_layers(),
+        LinearVelocity::ZERO,
+        AngularVelocity::ZERO,
+    ));
+}
+
+pub(super) fn spawn_character_stage_support(
+    commands: &mut Commands,
+    samples: &[(String, Transform)],
+) {
+    let support_samples = preferred_stage_support_samples(samples);
+    if support_samples.is_empty() {
+        return;
+    }
+
+    let sample_count = support_samples.len() as f32;
+    let center = support_samples
+        .iter()
+        .map(|(_, transform)| transform.translation)
+        .fold(Vec3::ZERO, |sum, translation| sum + translation)
+        / sample_count;
+    let support_y = character_stage_support_y(center.y);
+    let spread = support_samples
+        .iter()
+        .map(|(_, transform)| {
+            Vec2::new(
+                transform.translation.x - center.x,
+                transform.translation.z - center.z,
+            )
+            .length()
+        })
+        .fold(DEFAULT_STAGE_SUPPORT_HALF_SIZE, f32::max);
+    let half_size = (spread + 80.0).max(DEFAULT_STAGE_SUPPORT_HALF_SIZE);
+
+    commands.spawn((
+        SceneMaxEntity {
+            name: "__tnua_stage_support".to_owned(),
+            runtime_name: "__tnua_stage_support@physics".to_owned(),
+        },
+        SceneMaxStageSupport,
+        Transform::from_translation(Vec3::new(center.x, support_y, center.z)),
+        Visibility::Hidden,
+        AvianRigidBody::Static,
+        AvianCollider::cuboid(half_size, 0.2, half_size),
+        world_collision_layers(),
+    ));
+    tracing::info!(
+        support_y,
+        half_size,
+        samples = support_samples.len(),
+        "spawned coarse SceneMax character stage support"
+    );
+}
+
+pub(super) fn character_stage_support_y(center_y: f32) -> f32 {
+    center_y - DEFAULT_CHARACTER_FLOAT_HEIGHT - DEFAULT_CHARACTER_VISUAL_DROP
+}
+
+pub(super) fn preferred_stage_support_samples(
+    samples: &[(String, Transform)],
+) -> Vec<(String, Transform)> {
+    let player_samples = samples
+        .iter()
+        .filter(|(name, _)| name.to_ascii_lowercase().starts_with("player"))
+        .cloned()
+        .collect::<Vec<_>>();
+    if player_samples.is_empty() {
+        samples.to_vec()
+    } else {
+        player_samples
+    }
+}
+
+pub(super) fn update_avian_collision_contacts(
+    mut starts: MessageReader<CollisionStart>,
+    mut ends: MessageReader<CollisionEnd>,
+    mut contacts: ResMut<SceneMaxPhysicsContacts>,
+    scene_entities: Query<&SceneMaxEntity>,
+) {
+    for event in starts.read() {
+        if let Some(pair) = collision_event_pair(
+            event.collider1,
+            event.body1,
+            event.collider2,
+            event.body2,
+            &scene_entities,
+        ) {
+            contacts.active_pairs.insert(pair);
+        }
+    }
+
+    for event in ends.read() {
+        if let Some(pair) = collision_event_pair(
+            event.collider1,
+            event.body1,
+            event.collider2,
+            event.body2,
+            &scene_entities,
+        ) {
+            contacts.active_pairs.remove(&pair);
+        }
+    }
+}
+
+pub(super) fn collision_event_pair(
+    collider1: Entity,
+    body1: Option<Entity>,
+    collider2: Entity,
+    body2: Option<Entity>,
+    scene_entities: &Query<&SceneMaxEntity>,
+) -> Option<(String, String)> {
+    let left = collision_event_entity_name(collider1, body1, scene_entities)?;
+    let right = collision_event_entity_name(collider2, body2, scene_entities)?;
+    Some(normalized_collision_pair(&left, &right))
+}
+
+pub(super) fn collision_event_entity_name(
+    collider: Entity,
+    body: Option<Entity>,
+    scene_entities: &Query<&SceneMaxEntity>,
+) -> Option<String> {
+    body.and_then(|body| scene_entities.get(body).ok())
+        .or_else(|| scene_entities.get(collider).ok())
+        .map(|entity| entity.name.clone())
+}
+
+pub(super) fn collision_condition_matches(
+    sources: &[String],
+    target: &str,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> bool {
+    let Some(transforms_by_name) = transforms_by_name else {
+        return false;
+    };
+    let target_exact = transforms_by_name.get(target).copied();
+    let Some(target_transform) =
+        target_exact.or_else(|| collision_owner_transform(target, transforms_by_name))
+    else {
+        return false;
+    };
+    sources.iter().any(|source| {
+        let source_exact = transforms_by_name.get(source).copied();
+        if let (Some(source_transform), Some(target_transform)) = (source_exact, target_exact) {
+            if !player_hitbox_owner_distance_allows(source, target, transforms_by_name) {
+                return false;
+            }
+            if let Some(matches) = exact_collider_shapes_overlap(
+                source,
+                source_transform,
+                target,
+                target_transform,
+                collider_bounds,
+            ) {
+                return matches;
+            }
+            return source_transform
+                .translation
+                .distance(target_transform.translation)
+                <= exact_collision_threshold(source, target, collider_bounds);
+        }
+        collision_owner_transform(source, transforms_by_name).is_some_and(|source_transform| {
+            source_transform
+                .translation
+                .distance(target_transform.translation)
+                <= collision_threshold(source, target)
+        })
+    })
+}
+
+pub(super) fn collision_owner_transform(
+    reference: &str,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Option<Transform> {
+    let owner = collision_owner(reference);
+    transforms_by_name
+        .get(reference)
+        .copied()
+        .or_else(|| transforms_by_name.get(&owner).copied())
+}
+
+pub(super) fn collision_owner_distance(
+    source: &str,
+    target: &str,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> f32 {
+    let source_owner = collision_owner(source);
+    let target_owner = collision_owner(target);
+    let (Some(source_transform), Some(target_transform)) = (
+        transforms_by_name.get(&source_owner),
+        transforms_by_name.get(&target_owner),
+    ) else {
+        return f32::INFINITY;
+    };
+    source_transform
+        .translation
+        .distance(target_transform.translation)
+}
+
+pub(super) fn player_hitbox_owner_distance_allows(
+    source: &str,
+    target: &str,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> bool {
+    let source_owner = collision_owner(source);
+    let target_owner = collision_owner(target);
+    if source_owner == target_owner {
+        return true;
+    }
+    if !source_owner.starts_with("player") || !target_owner.starts_with("player") {
+        return true;
+    }
+    if !source.contains("_collider") || !target.contains("_collider") {
+        return true;
+    }
+    let owner_distance = collision_owner_distance(source, target, transforms_by_name);
+    !owner_distance.is_finite() || owner_distance <= MAX_PLAYER_HITBOX_OWNER_DISTANCE
+}
+
+pub(super) fn collision_reference_candidates(reference: &str) -> Vec<String> {
+    vec![reference.trim().trim_matches('"').to_owned()]
+}
+
+pub(super) fn collision_owner(reference: &str) -> String {
+    let normalized = reference.trim().trim_matches('"');
+    for owner in ["player1", "player2"] {
+        if normalized == owner
+            || normalized
+                .strip_prefix(owner)
+                .is_some_and(|rest| rest.starts_with('_') || rest.starts_with('.'))
+        {
+            return owner.to_owned();
+        }
+    }
+    normalized
+        .split(['.', '[', '"'])
+        .next()
+        .unwrap_or(normalized)
+        .to_owned()
+}
+
+pub(super) fn collision_threshold(source: &str, target: &str) -> f32 {
+    let source_owner = collision_owner(source);
+    let target_owner = collision_owner(target);
+    if source_owner.starts_with("player") && target_owner.starts_with("player") {
+        4.25
+    } else {
+        2.5
+    }
+}
+
+pub(super) fn exact_collider_shapes_overlap(
+    source: &str,
+    source_transform: Transform,
+    target: &str,
+    target_transform: Transform,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<bool> {
+    let collider_bounds = collider_bounds?;
+    let source_shape = collider_bounds.shape_by_name.get(source).copied()?;
+    let target_shape = collider_bounds.shape_by_name.get(target).copied()?;
+    Some(collider_shapes_overlap(
+        source_shape,
+        source_transform,
+        target_shape,
+        target_transform,
+    ))
+}
+
+pub(super) fn collider_shapes_overlap(
+    source_shape: ColliderBoundShape,
+    source_transform: Transform,
+    target_shape: ColliderBoundShape,
+    target_transform: Transform,
+) -> bool {
+    match (source_shape, target_shape) {
+        (
+            ColliderBoundShape::Sphere {
+                radius: source_radius,
+            },
+            ColliderBoundShape::Sphere {
+                radius: target_radius,
+            },
+        ) => {
+            source_transform
+                .translation
+                .distance(target_transform.translation)
+                <= source_radius + target_radius
+        }
+        (ColliderBoundShape::Box { half_extents }, ColliderBoundShape::Sphere { radius }) => {
+            sphere_overlaps_box(
+                target_transform.translation,
+                radius,
+                source_transform,
+                half_extents,
+            )
+        }
+        (ColliderBoundShape::Sphere { radius }, ColliderBoundShape::Box { half_extents }) => {
+            sphere_overlaps_box(
+                source_transform.translation,
+                radius,
+                target_transform,
+                half_extents,
+            )
+        }
+        _ => {
+            source_transform
+                .translation
+                .distance(target_transform.translation)
+                <= source_shape.bounding_radius() + target_shape.bounding_radius()
+        }
+    }
+}
+
+pub(super) fn sphere_overlaps_box(
+    sphere_center: Vec3,
+    sphere_radius: f32,
+    box_transform: Transform,
+    half_extents: Vec3,
+) -> bool {
+    let local_center = box_transform
+        .rotation
+        .inverse()
+        .mul_vec3(sphere_center - box_transform.translation);
+    let closest = local_center.clamp(-half_extents, half_extents);
+    local_center.distance_squared(closest) <= sphere_radius * sphere_radius
+}
+
+pub(super) fn exact_collision_threshold(
+    source: &str,
+    target: &str,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> f32 {
+    collider_radius(source, collider_bounds) + collider_radius(target, collider_bounds)
+}
+
+pub(super) fn collider_radius(
+    reference: &str,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> f32 {
+    collider_bounds
+        .and_then(|bounds| bounds.radius_by_name.get(reference).copied())
+        .unwrap_or_else(|| collision_part_radius(reference))
+}
+
+pub(super) fn collision_part_radius(reference: &str) -> f32 {
+    let lower = reference.to_ascii_lowercase();
+    if lower.contains("body") {
+        0.85
+    } else if lower.contains("head") {
+        0.65
+    } else if lower.contains("hand") || lower.contains("foot") {
+        0.55
+    } else {
+        1.25
+    }
+}
+
+pub(super) fn coordinate_value_from_name(
+    name: &str,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Option<f32> {
+    let (entity, axis) = name.rsplit_once('.')?;
+    let transform = transforms_by_name.get(entity)?;
+    match axis.to_ascii_lowercase().as_str() {
+        "x" => Some(transform.translation.x),
+        "y" => Some(transform.translation.y),
+        "z" => Some(transform.translation.z),
+        _ => None,
+    }
+}
+
+pub(super) fn transform_from_options(
+    options: &EntityOptions,
+    asset_scale: Option<[f32; 3]>,
+) -> Transform {
+    let translation = options
+        .position
+        .map(vec3_from_scenemax)
+        .unwrap_or(Vec3::ZERO);
+    let scale = options
+        .scale
+        .map(vec3_from_scenemax)
+        .or_else(|| asset_scale.map(|scale| Vec3::new(scale[0], scale[1], scale[2])))
+        .unwrap_or(Vec3::ONE);
+    let rotation = options
+        .rotation_degrees
+        .map(rotation_from_degrees)
+        .unwrap_or(Quat::IDENTITY);
+
+    Transform {
+        translation,
+        rotation,
+        scale,
+    }
+}
+
+pub(super) fn timed_turn_from_statement(turn: &scenemax_parser::TurnStatement) -> TimedTurn {
+    let duration = turn.duration_seconds.max(0.001);
+    TimedTurn {
+        remaining_seconds: duration,
+        duration_seconds: duration,
+        radians_per_second: turn.degrees.to_radians() / duration,
+        loop_condition: turn.loop_condition.clone(),
+    }
+}
+
+pub(super) fn timed_move_from_statement(
+    movement: &scenemax_parser::MoveStatement,
+    transform: &Transform,
+) -> TimedMove {
+    let duration = movement.duration_seconds.max(0.001);
+    let direction = movement_direction_vector(movement.direction, transform);
+
+    TimedMove {
+        remaining_seconds: duration,
+        duration_seconds: duration,
+        velocity: direction * directional_move_speed(movement),
+        final_translation: None,
+        loop_condition: movement.loop_condition.clone(),
+    }
+}
+
+pub(super) fn directional_move_speed(movement: &scenemax_parser::MoveStatement) -> f32 {
+    if movement.duration_seconds > 0.0 {
+        movement.distance / movement.duration_seconds.max(0.001)
+    } else {
+        movement.distance / 0.001
+    }
+}
+
+pub(super) fn timed_move_to_from_statement(
+    movement: &scenemax_parser::MoveToStatement,
+    transform: &Transform,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Option<TimedMove> {
+    let destination = evaluate_move_to_destination(&movement.destination, transforms_by_name)?;
+    let duration = movement.duration_seconds.max(0.001);
+    Some(TimedMove {
+        remaining_seconds: duration,
+        duration_seconds: duration,
+        velocity: (destination - transform.translation) / duration,
+        final_translation: Some(destination),
+        loop_condition: None,
+    })
+}
+
+pub(super) fn append_timed_move(commands: &mut Commands, entity: Entity, timed_move: TimedMove) {
+    commands.queue(move |world: &mut World| {
+        let Ok(mut entity_mut) = world.get_entity_mut(entity) else {
+            return;
+        };
+        let mut timed_move = Some(timed_move);
+        if let Some(mut moves) = entity_mut.get_mut::<TimedMoves>() {
+            moves.moves.push(timed_move.take().unwrap());
+        } else {
+            entity_mut.insert(TimedMoves {
+                moves: vec![timed_move.take().unwrap()],
+            });
+        }
+    });
+}
+
+pub(super) fn timed_jump_from_statement(
+    jump: &CharacterJumpStatement,
+    transform: &Transform,
+) -> TimedJump {
+    TimedJump {
+        elapsed_seconds: 0.0,
+        duration_seconds: jump_duration_seconds(jump.speed),
+        start_y: transform.translation.y,
+        height: jump_height(jump.speed),
+    }
+}
+
+pub(super) fn evaluate_move_to_destination(
+    destination: &scenemax_parser::MoveToDestination,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Option<Vec3> {
+    match destination {
+        scenemax_parser::MoveToDestination::Position(position) => {
+            evaluate_position_value(position, transforms_by_name)
+        }
+        scenemax_parser::MoveToDestination::EntityForward { entity, distance } => {
+            let transform = transforms_by_name.get(entity)?;
+            Some(transform.translation + horizontal_forward(transform) * *distance)
+        }
+    }
+}
+
+pub(super) fn apply_physics_impulse(
+    commands: &mut Commands,
+    entity: Entity,
+    transform: &Transform,
+    impulse: &scenemax_parser::PhysicsImpulseStatement,
+) {
+    let direction = physics_direction_vector(impulse.direction, transform);
+    commands
+        .entity(entity)
+        .insert(LinearVelocity(direction * impulse.strength));
+}
+
+pub(super) fn apply_physics_stop(commands: &mut Commands, entity: Entity) {
+    commands
+        .entity(entity)
+        .insert((LinearVelocity::ZERO, AngularVelocity::ZERO));
+}
+
+pub(super) fn apply_physics_throw_at(
+    commands: &mut Commands,
+    entity: Entity,
+    transform: &Transform,
+    throw_at: &scenemax_parser::PhysicsThrowAtStatement,
+    vars: &SceneMaxVars,
+    transforms_by_name: &HashMap<String, Transform>,
+) {
+    let Some(target_transform) = lookup_subject_transform(&throw_at.subject, transforms_by_name)
+    else {
+        return;
+    };
+    let Some(power) = resolve_assignment_value(&throw_at.power, vars, Some(transforms_by_name))
+    else {
+        return;
+    };
+    let mut direction = target_transform.translation - transform.translation;
+    if direction.length_squared() <= f32::EPSILON {
+        return;
+    }
+    direction = direction.normalize();
+    commands
+        .entity(entity)
+        .insert(LinearVelocity(direction * power));
+}
+
+pub(super) fn physics_direction_vector(
+    direction: scenemax_parser::PhysicsDirection,
+    transform: &Transform,
+) -> Vec3 {
+    match direction {
+        scenemax_parser::PhysicsDirection::Up => Vec3::Y,
+        scenemax_parser::PhysicsDirection::Down => -Vec3::Y,
+        scenemax_parser::PhysicsDirection::Forward => horizontal_forward(transform),
+        scenemax_parser::PhysicsDirection::Backward => -horizontal_forward(transform),
+        scenemax_parser::PhysicsDirection::Left => -horizontal_right(transform),
+        scenemax_parser::PhysicsDirection::Right => horizontal_right(transform),
+    }
+}
+
+pub(super) fn set_character_move_intent(
+    motor: &mut SceneMaxCharacterMotor,
+    controller: &SceneMaxCharacterController,
+    movement: &scenemax_parser::MoveStatement,
+    transform: &Transform,
+    continuous_delta_seconds: Option<f32>,
+) {
+    let duration = movement.duration_seconds.max(0.001);
+    let speed = directional_move_speed(movement);
+    let direction = movement_direction_vector(movement.direction, transform);
+    let speed_ratio = speed / controller.move_speed.max(0.001);
+
+    if continuous_delta_seconds.is_some() {
+        set_character_motion(motor, direction, speed_ratio, CHARACTER_INPUT_TTL_SECONDS);
+    } else {
+        motor.timed_motion = direction.normalize_or_zero() * speed_ratio;
+        motor.timed_motion_remaining_seconds = duration;
+    }
+}
+
+pub(super) fn movement_direction_vector(direction: MoveDirection, transform: &Transform) -> Vec3 {
+    match direction {
+        MoveDirection::Forward => horizontal_forward(transform),
+        MoveDirection::Backward => -horizontal_forward(transform),
+        MoveDirection::Left => horizontal_right(transform),
+        MoveDirection::Right => -horizontal_right(transform),
+        MoveDirection::Up => Vec3::Y,
+        MoveDirection::Down => -Vec3::Y,
+    }
+}
+
+pub(super) fn set_character_motion(
+    motor: &mut SceneMaxCharacterMotor,
+    direction: Vec3,
+    speed_ratio: f32,
+    ttl_seconds: f32,
+) {
+    motor.desired_motion = direction.normalize_or_zero() * speed_ratio;
+    motor.motion_ttl_seconds = ttl_seconds;
+}
+
+pub(super) fn set_character_jump_intent(
+    motor: &mut SceneMaxCharacterMotor,
+    jump: &CharacterJumpStatement,
+) {
+    motor.pending_jump_speed = Some(jump.speed);
+    motor.jump_hold_seconds = motor
+        .jump_hold_seconds
+        .max(character_jump_feed_seconds(jump.speed));
+}
+
+pub(super) fn jump_height(speed: f32) -> f32 {
+    (speed * 0.16).clamp(1.2, 8.0)
+}
+
+pub(super) fn jump_duration_seconds(speed: f32) -> f32 {
+    (speed * 0.025).clamp(0.45, 1.15)
+}
+
+pub(super) fn character_jump_feed_seconds(speed: f32) -> f32 {
+    jump_duration_seconds(speed).max(CHARACTER_JUMP_FEED_SECONDS)
+}
+
+pub(super) fn jump_y_offset(progress: f32, height: f32) -> f32 {
+    let progress = progress.clamp(0.0, 1.0);
+    4.0 * height * progress * (1.0 - progress)
+}
+
+pub(super) fn horizontal_forward(transform: &Transform) -> Vec3 {
+    let mut direction = transform.rotation * Vec3::Z;
+    direction.y = 0.0;
+    if direction.length_squared() <= f32::EPSILON {
+        return Vec3::Z;
+    }
+    direction.normalize()
+}
+
+pub(super) fn horizontal_right(transform: &Transform) -> Vec3 {
+    let mut direction = transform.rotation * Vec3::X;
+    direction.y = 0.0;
+    if direction.length_squared() <= f32::EPSILON {
+        return Vec3::X;
+    }
+    direction.normalize()
+}
+
+pub(super) fn evaluate_position_statement(
+    position: &PositionStatement,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Option<Vec3> {
+    evaluate_position_value(&position.position, transforms_by_name)
+}
+
+pub(super) fn evaluate_position_value(
+    position: &PositionValue,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Option<Vec3> {
+    match position {
+        PositionValue::Entity(entity) => {
+            Some(lookup_subject_transform(entity, transforms_by_name)?.translation)
+        }
+        PositionValue::Coordinates(values) if values.len() == 3 => Some(Vec3::new(
+            evaluate_position_expr(&values[0], transforms_by_name)?,
+            evaluate_position_expr(&values[1], transforms_by_name)?,
+            evaluate_position_expr(&values[2], transforms_by_name)?,
+        )),
+        _ => None,
+    }
+}
+
+pub(super) fn evaluate_position_expr(
+    value: &PositionExpr,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Option<f32> {
+    match value {
+        PositionExpr::Number(value) => Some(*value),
+        PositionExpr::EntityAxis {
+            entity,
+            axis,
+            offset,
+        } => {
+            let transform = transforms_by_name.get(entity)?;
+            let base = match axis {
+                SceneMaxAxis::X => transform.translation.x,
+                SceneMaxAxis::Y => transform.translation.y,
+                SceneMaxAxis::Z => transform.translation.z,
+            };
+            Some(base + offset)
+        }
+    }
+}
+
+pub(super) fn lookup_subject_transform(
+    subject: &str,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Option<Transform> {
+    if let Some(transform) = transforms_by_name.get(subject).copied() {
+        return Some(transform);
+    }
+    let name = subject.split_whitespace().next()?;
+    transforms_by_name.get(name).copied()
+}
+
+pub(super) fn look_at_scenemax_forward(transform: &mut Transform, target_translation: Vec3) {
+    let mut direction = target_translation - transform.translation;
+    direction.y = 0.0;
+    if direction.length_squared() <= f32::EPSILON {
+        return;
+    }
+    let direction = direction.normalize();
+    transform.rotation = Quat::from_rotation_y(direction.x.atan2(direction.z));
+}
+
+pub(super) fn update_timed_turns(
+    time: Res<Time>,
+    startup_program: Res<SceneMaxStartupProgram>,
+    vars: Res<SceneMaxVars>,
+    collider_bounds: Res<SceneMaxColliderBounds>,
+    mut commands: Commands,
+    mut scene_entities: ParamSet<(
+        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &mut Transform, &mut TimedTurn)>,
+    )>,
+) {
+    let transforms_by_name = scene_entities
+        .p0()
+        .iter()
+        .map(|(entity, transform)| (entity.name.clone(), *transform))
+        .collect::<HashMap<_, _>>();
+    let guards_by_name = startup_program
+        .0
+        .as_ref()
+        .map(collect_guards_by_name)
+        .unwrap_or_default();
+
+    for (entity, mut transform, mut turn) in &mut scene_entities.p1() {
+        let delta = time.delta_secs().min(turn.remaining_seconds);
+        transform.rotate_y(turn.radians_per_second * delta);
+        turn.remaining_seconds -= delta;
+        if turn.remaining_seconds <= 0.0 {
+            if turn.loop_condition.as_ref().is_some_and(|condition| {
+                condition_matches(
+                    condition,
+                    &vars,
+                    &guards_by_name,
+                    Some(&transforms_by_name),
+                    Some(&collider_bounds),
+                )
+            }) {
+                turn.remaining_seconds = turn.duration_seconds;
+                continue;
+            }
+            commands.entity(entity).remove::<TimedTurn>();
+        }
+    }
+}
+
+pub(super) fn update_timed_moves(
+    time: Res<Time>,
+    startup_program: Res<SceneMaxStartupProgram>,
+    vars: Res<SceneMaxVars>,
+    collider_bounds: Res<SceneMaxColliderBounds>,
+    mut commands: Commands,
+    mut scene_entities: ParamSet<(
+        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &mut Transform, &mut TimedMoves)>,
+    )>,
+) {
+    let transforms_by_name = scene_entities
+        .p0()
+        .iter()
+        .map(|(entity, transform)| (entity.name.clone(), *transform))
+        .collect::<HashMap<_, _>>();
+    let guards_by_name = startup_program
+        .0
+        .as_ref()
+        .map(collect_guards_by_name)
+        .unwrap_or_default();
+
+    for (entity, mut transform, mut movements) in &mut scene_entities.p1() {
+        let mut active_moves = Vec::with_capacity(movements.moves.len());
+        for mut movement in movements.moves.drain(..) {
+            let delta = time.delta_secs().min(movement.remaining_seconds);
+            transform.translation += movement.velocity * delta;
+            movement.remaining_seconds -= delta;
+            if movement.remaining_seconds <= 0.0 {
+                if let Some(final_translation) = movement.final_translation {
+                    transform.translation = final_translation;
+                }
+                if movement.loop_condition.as_ref().is_some_and(|condition| {
+                    condition_matches(
+                        condition,
+                        &vars,
+                        &guards_by_name,
+                        Some(&transforms_by_name),
+                        Some(&collider_bounds),
+                    )
+                }) {
+                    movement.remaining_seconds = movement.duration_seconds;
+                    movement.final_translation = None;
+                    active_moves.push(movement);
+                }
+            } else {
+                active_moves.push(movement);
+            }
+        }
+        movements.moves = active_moves;
+        if movements.moves.is_empty() {
+            commands.entity(entity).remove::<TimedMoves>();
+        }
+    }
+}
+
+pub(super) fn update_timed_jumps(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut jumps: Query<(Entity, &mut Transform, &mut TimedJump)>,
+) {
+    for (entity, mut transform, mut jump) in &mut jumps {
+        jump.elapsed_seconds += time.delta_secs();
+        let progress = jump.elapsed_seconds / jump.duration_seconds.max(0.001);
+        transform.translation.y = jump.start_y + jump_y_offset(progress, jump.height);
+        if progress >= 1.0 {
+            transform.translation.y = jump.start_y;
+            commands.entity(entity).remove::<TimedJump>();
+        }
+    }
+}
+
+pub(super) fn feed_tnua_character_controllers(
+    time: Res<Time>,
+    mut character_configs: ResMut<Assets<SceneMaxControlSchemeConfig>>,
+    mut characters: Query<(
+        &SceneMaxCharacterController,
+        &mut SceneMaxCharacterMotor,
+        &TnuaConfig<SceneMaxControlScheme>,
+        &mut TnuaController<SceneMaxControlScheme>,
+    )>,
+) {
+    let delta = time.delta_secs();
+    for (settings, mut motor, config_handle, mut controller) in &mut characters {
+        controller.initiate_action_feeding();
+
+        let mut desired_motion = Vec3::ZERO;
+        if motor.timed_motion_remaining_seconds > 0.0 {
+            desired_motion += motor.timed_motion;
+            motor.timed_motion_remaining_seconds =
+                (motor.timed_motion_remaining_seconds - delta).max(0.0);
+        }
+        if motor.motion_ttl_seconds > 0.0 {
+            desired_motion += motor.desired_motion;
+            motor.motion_ttl_seconds = (motor.motion_ttl_seconds - delta).max(0.0);
+        }
+
+        controller.basis = TnuaBuiltinWalk {
+            desired_motion,
+            desired_forward: None,
+        };
+
+        if motor.jump_hold_seconds > 0.0 {
+            if let Some(speed) = motor.pending_jump_speed.take() {
+                if let Some(mut config) = character_configs.get_mut(&config_handle.0) {
+                    config.jump.height = jump_height(speed);
+                }
+            }
+            controller.action(SceneMaxControlScheme::Jump(TnuaBuiltinJump {
+                allow_in_air: true,
+                ..Default::default()
+            }));
+            motor.jump_hold_seconds = (motor.jump_hold_seconds - delta).max(0.0);
+        }
+
+        let _ = settings.gravity;
+    }
+}
+
+pub(super) fn vec3_from_scenemax(value: SceneMaxVec3) -> Vec3 {
+    Vec3::new(value.x, value.y, value.z)
+}
+
+pub(super) fn rotation_from_degrees(value: SceneMaxVec3) -> Quat {
+    Quat::from_euler(
+        EulerRot::XYZ,
+        value.x.to_radians(),
+        value.y.to_radians(),
+        value.z.to_radians(),
+    )
+}
