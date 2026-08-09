@@ -969,7 +969,7 @@ pub(super) fn apply_key_events(
     mut ui_queue: ResMut<SceneMaxUiActionQueue>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
-        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -981,6 +981,7 @@ pub(super) fn apply_key_events(
             Option<&mut SceneMaxCharacterMotor>,
         )>,
     )>,
+    bone_queries: SceneMaxBoneQueries,
 ) {
     let Some(program) = startup_program.0.as_ref() else {
         return;
@@ -989,12 +990,8 @@ pub(super) fn apply_key_events(
         return;
     }
 
-    let mut transforms_by_name = scene_entities
-        .p0()
-        .iter()
-        .map(|(entity, transform)| (entity.name.clone(), *transform))
-        .collect::<HashMap<_, _>>();
-    apply_transform_aliases(&mut transforms_by_name, &object_pools);
+    let mut transforms_by_name =
+        build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
 
@@ -1078,7 +1075,7 @@ pub(super) fn apply_when_events(
     physics_contacts: Res<SceneMaxPhysicsContacts>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
-        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -1090,6 +1087,7 @@ pub(super) fn apply_when_events(
             Option<&mut SceneMaxCharacterMotor>,
         )>,
     )>,
+    bone_queries: SceneMaxBoneQueries,
 ) {
     let Some(program) = startup_program.0.as_ref() else {
         active_collisions.active_by_statement.clear();
@@ -1097,12 +1095,8 @@ pub(super) fn apply_when_events(
         return;
     };
 
-    let mut transforms_by_name = scene_entities
-        .p0()
-        .iter()
-        .map(|(entity, transform)| (entity.name.clone(), *transform))
-        .collect::<HashMap<_, _>>();
-    apply_transform_aliases(&mut transforms_by_name, &object_pools);
+    let mut transforms_by_name =
+        build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
 
@@ -1424,7 +1418,7 @@ pub(super) fn update_recurring_runs(
     mut active_controllers: ResMut<ActiveActionControllers>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
-        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -1436,6 +1430,7 @@ pub(super) fn update_recurring_runs(
             Option<&mut SceneMaxCharacterMotor>,
         )>,
     )>,
+    bone_queries: SceneMaxBoneQueries,
 ) {
     let Some(program) = startup_program.0.as_ref() else {
         recurring_timers.remaining_by_statement.clear();
@@ -1477,12 +1472,8 @@ pub(super) fn update_recurring_runs(
         return;
     }
 
-    let mut transforms_by_name = scene_entities
-        .p0()
-        .iter()
-        .map(|(entity, transform)| (entity.name.clone(), *transform))
-        .collect::<HashMap<_, _>>();
-    apply_transform_aliases(&mut transforms_by_name, &object_pools);
+    let mut transforms_by_name =
+        build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
 
@@ -1532,7 +1523,7 @@ pub(super) fn update_delayed_actions(
     mut active_controllers: ResMut<ActiveActionControllers>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
-        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -1544,6 +1535,7 @@ pub(super) fn update_delayed_actions(
             Option<&mut SceneMaxCharacterMotor>,
         )>,
     )>,
+    bone_queries: SceneMaxBoneQueries,
 ) {
     let Some(program) = startup_program.0.as_ref() else {
         delayed_actions.actions.clear();
@@ -1568,12 +1560,8 @@ pub(super) fn update_delayed_actions(
         return;
     }
 
-    let mut transforms_by_name = scene_entities
-        .p0()
-        .iter()
-        .map(|(entity, transform)| (entity.name.clone(), *transform))
-        .collect::<HashMap<_, _>>();
-    apply_transform_aliases(&mut transforms_by_name, &object_pools);
+    let mut transforms_by_name =
+        build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
 
@@ -1654,7 +1642,7 @@ pub(super) fn apply_action_sequence(
     continuous_delta_seconds: Option<f32>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -2120,7 +2108,7 @@ pub(super) fn apply_runtime_model_decl(
     collider_bounds: &mut SceneMaxColliderBounds,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -2221,7 +2209,7 @@ pub(super) fn apply_key_action(
     continuous_delta_seconds: Option<f32>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -2832,7 +2820,7 @@ pub(super) fn animation_speed_condition_matches(
     transforms_by_name: Option<&HashMap<String, Transform>>,
     collider_bounds: Option<&SceneMaxColliderBounds>,
     scene_entities: &mut ParamSet<(
-        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -2899,7 +2887,7 @@ pub(super) fn apply_function_by_name(
     continuous_delta_seconds: Option<f32>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -2992,6 +2980,157 @@ pub(super) fn apply_transform_aliases(
     }
 }
 
+fn build_action_transform_map(
+    program: &Program,
+    object_pools: &SceneMaxObjectPools,
+    scene_entities: Query<(Entity, &SceneMaxEntity, &Transform)>,
+    bone_queries: &SceneMaxBoneQueries,
+) -> HashMap<String, Transform> {
+    let mut transforms_by_name = HashMap::new();
+    let scene_roots = collect_scene_transform_roots(&mut transforms_by_name, scene_entities);
+    let targets = collect_bone_alias_targets(program);
+    let bone_start = std::time::Instant::now();
+    let alias_count = insert_bone_transform_aliases(
+        &scene_roots,
+        &targets,
+        &bone_queries.children,
+        &bone_queries.named_nodes,
+        &mut transforms_by_name,
+    );
+    PERF_TRANSFORM_BUILDS.fetch_add(1, Ordering::Relaxed);
+    PERF_BONE_ALIAS_NS.fetch_add(bone_start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    PERF_BONE_TARGET_RESOLVES.fetch_add(targets.len() as u64, Ordering::Relaxed);
+    PERF_BONE_ALIASES_INSERTED.fetch_add(alias_count as u64, Ordering::Relaxed);
+    apply_transform_aliases(&mut transforms_by_name, object_pools);
+    transforms_by_name
+}
+
+fn collect_scene_transform_roots(
+    transforms_by_name: &mut HashMap<String, Transform>,
+    scene_entities: Query<(Entity, &SceneMaxEntity, &Transform)>,
+) -> Vec<(Entity, String)> {
+    scene_entities
+        .iter()
+        .map(|(entity, scene_entity, transform)| {
+            transforms_by_name.insert(scene_entity.name.clone(), *transform);
+            (entity, scene_entity.name.clone())
+        })
+        .collect()
+}
+
+fn collect_bone_alias_targets(program: &Program) -> Vec<SceneMaxBoneAliasTarget> {
+    let mut seen = HashSet::new();
+    let mut targets = Vec::new();
+    collect_bone_alias_targets_from_statements(&program.statements, &mut seen, &mut targets);
+    targets
+}
+
+fn collect_bone_alias_targets_from_statements(
+    statements: &[Statement],
+    seen: &mut HashSet<String>,
+    targets: &mut Vec<SceneMaxBoneAliasTarget>,
+) {
+    for statement in statements {
+        match statement {
+            Statement::Position(position) => {
+                collect_bone_alias_target_from_position_value(&position.position, seen, targets);
+            }
+            Statement::MoveTo(move_to) => {
+                if let MoveToDestination::Position(position) = &move_to.destination {
+                    collect_bone_alias_target_from_position_value(position, seen, targets);
+                }
+            }
+            Statement::LookAt { subject, .. } => {
+                collect_bone_alias_target_from_subject(subject, seen, targets);
+            }
+            Statement::KeyEvent(event) => {
+                collect_bone_alias_targets_from_statements(&event.actions, seen, targets);
+            }
+            Statement::WhenEvent(event) => {
+                collect_bone_alias_targets_from_statements(&event.actions, seen, targets);
+            }
+            Statement::If(statement) => {
+                collect_bone_alias_targets_from_statements(&statement.actions, seen, targets);
+                collect_bone_alias_targets_from_statements(&statement.else_actions, seen, targets);
+            }
+            Statement::Guarded { actions, .. }
+            | Statement::Repeat { actions, .. }
+            | Statement::DoWhile { actions, .. }
+            | Statement::LoopContinue { actions, .. }
+            | Statement::Async { actions } => {
+                collect_bone_alias_targets_from_statements(actions, seen, targets);
+            }
+            Statement::FunctionDef(function) => {
+                collect_bone_alias_targets_from_statements(&function.actions, seen, targets);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_bone_alias_target_from_position_value(
+    position: &PositionValue,
+    seen: &mut HashSet<String>,
+    targets: &mut Vec<SceneMaxBoneAliasTarget>,
+) {
+    if let PositionValue::Entity(subject) = position {
+        collect_bone_alias_target_from_subject(subject, seen, targets);
+    }
+}
+
+fn collect_bone_alias_target_from_subject(
+    subject: &str,
+    seen: &mut HashSet<String>,
+    targets: &mut Vec<SceneMaxBoneAliasTarget>,
+) {
+    let Some((owner, bone)) = parse_quoted_bone_subject(subject) else {
+        return;
+    };
+    let alias = quoted_bone_alias(&owner, &bone);
+    if seen.insert(alias.to_ascii_lowercase()) {
+        targets.push(SceneMaxBoneAliasTarget { alias, owner, bone });
+    }
+}
+
+fn parse_quoted_bone_subject(subject: &str) -> Option<(String, String)> {
+    let quote_start = subject.find('"')?;
+    let owner = subject[..quote_start].trim().trim_end_matches('.').trim();
+    let after_start = &subject[quote_start + 1..];
+    let quote_end = after_start.find('"')?;
+    let bone = after_start[..quote_end].trim();
+    (!owner.is_empty() && !bone.is_empty()).then(|| (owner.to_owned(), bone.to_owned()))
+}
+
+fn insert_bone_transform_aliases(
+    scene_roots: &[(Entity, String)],
+    targets: &[SceneMaxBoneAliasTarget],
+    children: &Query<&Children>,
+    named_nodes: &Query<(&Name, &GlobalTransform)>,
+    transforms_by_name: &mut HashMap<String, Transform>,
+) -> usize {
+    let mut inserted = 0;
+    for target in targets {
+        let Some((entity, _)) = scene_roots
+            .iter()
+            .find(|(_, owner_name)| owner_name.eq_ignore_ascii_case(&target.owner))
+        else {
+            continue;
+        };
+        let Some(transform) =
+            find_descendant_transform_by_name(*entity, &target.bone, children, named_nodes)
+        else {
+            continue;
+        };
+        transforms_by_name.insert(target.alias.clone(), transform);
+        inserted += 1;
+    }
+    inserted
+}
+
+pub(super) fn quoted_bone_alias(owner_name: &str, bone_name: &str) -> String {
+    format!("{owner_name}.\"{bone_name}\"")
+}
+
 pub(super) fn apply_scoped_transform_aliases(
     transforms_by_name: &mut HashMap<String, Transform>,
     scope: Option<&SceneMaxScopeFrame>,
@@ -3064,7 +3203,7 @@ pub(super) fn release_pool_action(
     scope: Option<&mut SceneMaxScopeFrame>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -3093,7 +3232,7 @@ pub(super) fn delete_scene_object(
     scope: Option<&mut SceneMaxScopeFrame>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -3164,7 +3303,7 @@ pub(super) fn hide_and_stop_scene_entity(
     target: &str,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
         Query<(
             Entity,
             &SceneMaxEntity,

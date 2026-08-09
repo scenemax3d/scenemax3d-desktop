@@ -4,6 +4,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     sync::Mutex,
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use anyhow::Result;
@@ -18,6 +19,7 @@ use avian3d::{
 use bevy::{
     animation::AnimationTargetId,
     asset::{AssetApp, AssetPlugin, RenderAssetUsages, io::AssetSourceBuilder},
+    ecs::system::SystemParam,
     gltf::Gltf,
     log::LogPlugin,
     mesh::{Indices, PrimitiveTopology},
@@ -36,8 +38,8 @@ use scenemax_parser::{
     AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement,
     CameraAttachStatement, CharacterJumpStatement, CharacterModeStatement, Condition,
     EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage, LoggerStatement, MoveDirection,
-    ObjectPoolStatement, PoolReleaseStatement, PositionExpr, PositionStatement, PositionValue,
-    Program, SceneMaxAxis, SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3,
+    MoveToDestination, ObjectPoolStatement, PoolReleaseStatement, PositionExpr, PositionStatement,
+    PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3,
     SpritePlayStatement, Statement, UiEaseDirection, UiTargetPath,
 };
 use scenemax_runtime_script_core::{
@@ -150,6 +152,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<SceneMaxColliderBounds>()
         .init_resource::<SceneMaxUiRuntime>()
         .init_resource::<SceneMaxUiActionQueue>()
+        .init_resource::<SceneMaxPerfDebug>()
         .add_plugins(
             DefaultPlugins
                 .build()
@@ -232,6 +235,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             )
                 .chain(),
         )
+        .add_systems(Update, update_scenemax_perf_debug)
         .run();
 }
 
@@ -264,6 +268,45 @@ struct SceneMaxLaunchContext {
 
 #[derive(Debug, Resource, Default)]
 struct SceneMaxStartupProgram(Option<Program>, Option<PathBuf>);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SceneMaxBoneAliasTarget {
+    alias: String,
+    owner: String,
+    bone: String,
+}
+
+#[derive(Debug, Resource, Default)]
+struct SceneMaxPerfDebug {
+    elapsed_seconds: f32,
+    frames: u32,
+}
+
+static PERF_BONE_ALIAS_NS: AtomicU64 = AtomicU64::new(0);
+static PERF_TRANSFORM_BUILDS: AtomicU64 = AtomicU64::new(0);
+static PERF_BONE_TARGET_RESOLVES: AtomicU64 = AtomicU64::new(0);
+static PERF_BONE_ALIASES_INSERTED: AtomicU64 = AtomicU64::new(0);
+
+fn update_scenemax_perf_debug(time: Res<Time>, mut perf: ResMut<SceneMaxPerfDebug>) {
+    perf.elapsed_seconds += time.delta_secs();
+    perf.frames += 1;
+    if perf.elapsed_seconds < 1.0 {
+        return;
+    }
+    let elapsed = perf.elapsed_seconds.max(f32::EPSILON);
+    let fps = perf.frames as f32 / elapsed;
+    let builds = PERF_TRANSFORM_BUILDS.swap(0, Ordering::Relaxed).max(1);
+    let bone_ns = PERF_BONE_ALIAS_NS.swap(0, Ordering::Relaxed);
+    let targets = PERF_BONE_TARGET_RESOLVES.swap(0, Ordering::Relaxed);
+    let aliases = PERF_BONE_ALIASES_INSERTED.swap(0, Ordering::Relaxed);
+    write_runtime_diagnostic_line(format!(
+        "PERF fps={fps:.1} bone_ms/build={:.3} bone_targets/build={:.1} bone_aliases/build={:.1} transform_builds={builds}",
+        bone_ns as f64 / 1_000_000.0 / builds as f64,
+        targets as f64 / builds as f64,
+        aliases as f64 / builds as f64,
+    ));
+    *perf = SceneMaxPerfDebug::default();
+}
 
 #[derive(Debug, Resource, Default)]
 struct SceneMaxObjectPools {
@@ -584,6 +627,12 @@ struct CameraAttachmentRuntime {
 struct SceneMaxEntity {
     name: String,
     runtime_name: String,
+}
+
+#[derive(SystemParam)]
+struct SceneMaxBoneQueries<'w, 's> {
+    children: Query<'w, 's, &'static Children>,
+    named_nodes: Query<'w, 's, (&'static Name, &'static GlobalTransform)>,
 }
 
 #[derive(Debug, Component)]
@@ -1027,6 +1076,14 @@ mod tests {
         apply_ui_image_scale_mode(&widget, &mut image_node);
 
         assert!(matches!(image_node.image_mode, NodeImageMode::Stretch));
+    }
+
+    #[test]
+    fn quoted_bone_alias_matches_position_subject_syntax() {
+        assert_eq!(
+            quoted_bone_alias("player2", "mixamorig:Head"),
+            "player2.\"mixamorig:Head\""
+        );
     }
 
     #[test]

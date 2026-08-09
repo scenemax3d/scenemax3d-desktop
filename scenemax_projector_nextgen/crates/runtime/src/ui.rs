@@ -1084,6 +1084,7 @@ pub(super) fn ui_image_node_for_widget(
         if ui_asset_path_exists(&candidate, context) {
             let sprite_sheet = ui_sprite_sheet_for_widget(widget, &candidate, context, ui_runtime);
             let mut image_node = ImageNode::new(asset_server.load(candidate));
+            apply_ui_image_scale_mode(widget, &mut image_node);
             if let Some(sprite_sheet) = sprite_sheet {
                 image_node.rect = Some(ui_sprite_frame_rect(
                     widget.sprite_frame,
@@ -1101,6 +1102,12 @@ pub(super) fn ui_image_node_for_widget(
         ImageNode::solid_color(Color::srgba(0.9, 0.72, 0.38, 0.85)),
         None,
     )
+}
+
+pub(super) fn apply_ui_image_scale_mode(widget: &SceneMaxUiWidgetDef, image_node: &mut ImageNode) {
+    if widget.image_scale_mode.eq_ignore_ascii_case("stretch") {
+        image_node.image_mode = NodeImageMode::Stretch;
+    }
 }
 
 pub(super) fn parse_ui_frame_value(value: &str) -> Option<usize> {
