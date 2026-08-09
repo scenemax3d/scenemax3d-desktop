@@ -9,6 +9,10 @@ import java.io.File;
 public class ProjectSettingsDialog extends JDialog {
 
     private final SceneMaxProject project;
+    private final JComboBox<String> cmbProjector = new JComboBox<>(new String[]{
+            SceneMaxProject.PROJECTOR_CLASSIC_LABEL,
+            SceneMaxProject.PROJECTOR_NEXTGEN_LABEL
+    });
     private final JTextField txtGamePage = new JTextField();
     private final JTextField txtWindowsChannel = new JTextField("windows");
     private final JTextField txtLinuxChannel = new JTextField("linux");
@@ -60,6 +64,7 @@ public class ProjectSettingsDialog extends JDialog {
         JPanel form = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = formConstraints();
 
+        addField(form, gbc, "Projector", cmbProjector);
         addField(form, gbc, "itch.io Game Page", txtGamePage);
         addField(form, gbc, "Windows Channel", txtWindowsChannel);
         addField(form, gbc, "Linux Channel", txtLinuxChannel);
@@ -134,6 +139,7 @@ public class ProjectSettingsDialog extends JDialog {
     }
 
     private void loadValues() {
+        cmbProjector.setSelectedItem(project.getProjectorLabel());
         txtGamePage.setText(StringUtils.defaultString(project.itchGamePage));
         txtWindowsChannel.setText(StringUtils.defaultIfBlank(project.itchWindowsChannel, "windows"));
         txtLinuxChannel.setText(StringUtils.defaultIfBlank(project.itchLinuxChannel, "linux"));
@@ -208,6 +214,7 @@ public class ProjectSettingsDialog extends JDialog {
         }
 
         saveProjectFields();
+        project.projectorType = SceneMaxProject.projectorTypeFromLabel(String.valueOf(cmbProjector.getSelectedItem()));
         project.itchGamePage = gamePage;
         project.itchWindowsChannel = safeText(txtWindowsChannel);
         project.itchLinuxChannel = safeText(txtLinuxChannel);

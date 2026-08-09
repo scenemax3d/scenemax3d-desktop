@@ -49,6 +49,7 @@ public class ProjectMenuAction extends AbstractAction {
         this.app.refreshScriptsFolder();
         this.app.refreshAssetsMenu();
         this.app.refreshAppTitle();
+        this.app.refreshProjectsMenu();
 
         // Restore tabs for the new project
         if (tabPanel != null) {

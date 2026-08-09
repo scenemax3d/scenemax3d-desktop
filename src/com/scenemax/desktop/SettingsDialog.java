@@ -64,6 +64,19 @@ public class SettingsDialog extends JDialog {
     private JLabel lblGemmaInstallInfo;
     private JTextField txtButlerPath;
     private JLabel lblButlerStatus;
+    private JTextField txtRustCargoPath;
+    private JTextField txtNextGenProjectorPath;
+    private JTextField txtWasmBindgenPath;
+    private JLabel lblRustBevyStatus;
+    private JLabel lblRustCargoStatus;
+    private JLabel lblNextGenProjectorStatus;
+    private JLabel lblWasmBindgenStatus;
+    private JLabel lblCppBuildToolsStatus;
+    private JProgressBar rustBevyScanProgress;
+    private JPanel rustBevyPanel;
+    private JButton btnBuildNextGenRelease;
+    private boolean rustBevyAutoDetectStarted = false;
+    private boolean rustBevyAutoDetectRunning = false;
 
     public SettingsDialog() {
         this(null);
@@ -94,9 +107,20 @@ public class SettingsDialog extends JDialog {
         cboGemmaVariant = new JComboBox<>(GemmaModelVariant.values());
         cboGemmaVariant.setSelectedItem(resolveVariant(defaultValue(AppDB.getInstance().getParam("local_gemma_model"), LocalGemmaBridgeConfig.DEFAULT_MODEL)));
         txtButlerPath = new JTextField(Util.getItchButlerPath(Util.getActiveProject()));
+        txtRustCargoPath = new JTextField(defaultValue(AppDB.getInstance().getParam("rust_cargo_path"), defaultCargoPath()));
+        txtNextGenProjectorPath = new JTextField(defaultValue(AppDB.getInstance().getParam("nextgen_projector_path"), new File(Util.getWorkingDir(), "scenemax_projector_nextgen").getAbsolutePath()));
+        txtWasmBindgenPath = new JTextField(defaultValue(AppDB.getInstance().getParam("wasm_bindgen_path"), defaultWasmBindgenPath()));
+        rustBevyPanel = createRustBevyPanel();
+        tabbedPane1.addTab("Rust/Bevy", rustBevyPanel);
         tabbedPane1.addTab("Butler", createButlerPanel());
         tabbedPane1.addTab("MCP", createMcpPanel());
         tabbedPane1.addTab("Local Gemma", createGemmaPanel());
+        tabbedPane1.addChangeListener(e -> {
+            if (tabbedPane1.getSelectedComponent() == rustBevyPanel) {
+                startRustBevyAutoDetect(false);
+            }
+        });
+        refreshRustBevyPanelState();
         refreshButlerPanelState();
         refreshMcpPanelState();
         refreshGemmaPanelState();
@@ -205,6 +229,9 @@ public class SettingsDialog extends JDialog {
         AppDB.getInstance().setParam("mcp_claude_cli_path", normalizeOptionalPath(txtClaudeCliPath.getText()));
         AppDB.getInstance().setParam("mcp_codex_cli_path", normalizeOptionalPath(txtCodexCliPath.getText()));
         Util.setItchButlerPath(normalizeOptionalPath(txtButlerPath.getText()));
+        AppDB.getInstance().setParam("rust_cargo_path", normalizeOptionalPath(txtRustCargoPath.getText()));
+        AppDB.getInstance().setParam("nextgen_projector_path", normalizeOptionalPath(txtNextGenProjectorPath.getText()));
+        AppDB.getInstance().setParam("wasm_bindgen_path", normalizeOptionalPath(txtWasmBindgenPath.getText()));
         try {
             updateLocalGemmaSettings();
         } catch (NumberFormatException ex) {
@@ -289,6 +316,14 @@ public class SettingsDialog extends JDialog {
 
     private String defaultValue(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
+    }
+
+    private String defaultCargoPath() {
+        return new File(System.getProperty("user.home"), ".cargo\\bin\\cargo.exe").getAbsolutePath();
+    }
+
+    private String defaultWasmBindgenPath() {
+        return new File(System.getProperty("user.home"), ".cargo\\bin\\wasm-bindgen.exe").getAbsolutePath();
     }
 
     private JPanel createMcpPanel() {
@@ -376,6 +411,151 @@ public class SettingsDialog extends JDialog {
         panel.add(new JLabel("Use Browse/Install/Login to prepare the CLI, and See config to add SceneMax to Claude Desktop."), gbc);
 
         gbc.gridy = 10;
+        gbc.weighty = 1;
+        gbc.fill = GridBagConstraints.BOTH;
+        panel.add(new JPanel(), gbc);
+
+        return panel;
+    }
+
+    private JPanel createRustBevyPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(6, 6, 6, 6);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.gridwidth = 2;
+        JTextArea intro = new JTextArea(
+                "Prepare the toolchain used by SceneMax NextGen packaging. Bevy itself is not a separate SDK: Cargo downloads the Bevy crates from the scenemax_projector_nextgen workspace dependencies."
+        );
+        intro.setEditable(false);
+        intro.setLineWrap(true);
+        intro.setWrapStyleWord(true);
+        intro.setOpaque(false);
+        intro.setFocusable(false);
+        intro.setBorder(null);
+        panel.add(intro, gbc);
+
+        gbc.gridy = 1;
+        panel.add(new JLabel("Cargo Executable:"), gbc);
+
+        gbc.gridy = 2;
+        gbc.gridwidth = 1;
+        gbc.weightx = 1;
+        panel.add(txtRustCargoPath, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 0;
+        JPanel cargoActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        JButton btnDetectRust = new JButton("Detect");
+        btnDetectRust.addActionListener(e -> startRustBevyAutoDetect(true));
+        JButton btnBrowseCargo = new JButton("Browse...");
+        btnBrowseCargo.addActionListener(e -> chooseFilePath(txtRustCargoPath, "Select cargo executable"));
+        JButton btnInstallRust = new JButton("Install Rust SDK");
+        btnInstallRust.addActionListener(e -> installRustSdk());
+        cargoActions.add(btnDetectRust);
+        cargoActions.add(btnBrowseCargo);
+        cargoActions.add(btnInstallRust);
+        panel.add(cargoActions, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 3;
+        gbc.gridwidth = 2;
+        panel.add(new JLabel("NextGen Projector Source Folder (developers only):"), gbc);
+
+        gbc.gridy = 4;
+        gbc.gridwidth = 1;
+        gbc.weightx = 1;
+        panel.add(txtNextGenProjectorPath, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 0;
+        JPanel nextGenActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        JButton btnBrowseNextGen = new JButton("Browse...");
+        btnBrowseNextGen.addActionListener(e -> chooseDirectoryPath(txtNextGenProjectorPath, "Select scenemax_projector_nextgen folder"));
+        btnBuildNextGenRelease = new JButton("Build Optimized Runtime (only if missing)");
+        btnBuildNextGenRelease.addActionListener(e -> buildNextGenRelease());
+        nextGenActions.add(btnBrowseNextGen);
+        nextGenActions.add(btnBuildNextGenRelease);
+        panel.add(nextGenActions, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 5;
+        gbc.gridwidth = 2;
+        panel.add(new JLabel("wasm-bindgen Executable:"), gbc);
+
+        gbc.gridy = 6;
+        gbc.gridwidth = 1;
+        gbc.weightx = 1;
+        panel.add(txtWasmBindgenPath, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 0;
+        JPanel wasmActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        JButton btnBrowseWasm = new JButton("Browse...");
+        btnBrowseWasm.addActionListener(e -> chooseFilePath(txtWasmBindgenPath, "Select wasm-bindgen executable"));
+        JButton btnInstallWeb = new JButton("Install Web Tools");
+        btnInstallWeb.addActionListener(e -> installWebTools());
+        wasmActions.add(btnBrowseWasm);
+        wasmActions.add(btnInstallWeb);
+        panel.add(wasmActions, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 7;
+        gbc.gridwidth = 2;
+        JPanel installActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        JButton btnInstallDesktopTargets = new JButton("Install Desktop Targets");
+        btnInstallDesktopTargets.addActionListener(e -> installDesktopRustTargets());
+        JButton btnInstallMsvc = new JButton("Install C++ Build Tools");
+        btnInstallMsvc.addActionListener(e -> installCppBuildTools());
+        JButton btnCheck = new JButton("Check Toolchain");
+        btnCheck.addActionListener(e -> startRustBevyAutoDetect(true));
+        installActions.add(btnInstallDesktopTargets);
+        installActions.add(btnInstallMsvc);
+        installActions.add(btnCheck);
+        panel.add(installActions, gbc);
+
+        gbc.gridy = 8;
+        rustBevyScanProgress = new JProgressBar();
+        rustBevyScanProgress.setIndeterminate(true);
+        rustBevyScanProgress.setStringPainted(true);
+        rustBevyScanProgress.setString("Searching for installed SDKs...");
+        rustBevyScanProgress.setVisible(false);
+        panel.add(rustBevyScanProgress, gbc);
+
+        gbc.gridy = 9;
+        lblRustBevyStatus = new JLabel("Status unavailable");
+        panel.add(lblRustBevyStatus, gbc);
+
+        gbc.gridy = 10;
+        JPanel readinessPanel = new JPanel(new GridLayout(0, 1, 0, 4));
+        readinessPanel.setBorder(BorderFactory.createTitledBorder("Detected SDKs"));
+        lblRustCargoStatus = new JLabel("Cargo: not checked yet");
+        lblNextGenProjectorStatus = new JLabel("NextGen workspace: not checked yet");
+        lblWasmBindgenStatus = new JLabel("wasm-bindgen: not checked yet");
+        lblCppBuildToolsStatus = new JLabel("C++ Build Tools: not checked yet");
+        readinessPanel.add(lblRustCargoStatus);
+        readinessPanel.add(lblNextGenProjectorStatus);
+        readinessPanel.add(lblWasmBindgenStatus);
+        readinessPanel.add(lblCppBuildToolsStatus);
+        panel.add(readinessPanel, gbc);
+
+        gbc.gridy = 11;
+        JTextArea hint = new JTextArea(
+                "Windows packages need Rust, Cargo, the MSVC Rust target, and C++ build tools. Linux/macOS packages may require cross-linkers or a CI runner on the target OS. Web packages need the wasm32 Rust target and wasm-bindgen-cli."
+        );
+        hint.setEditable(false);
+        hint.setLineWrap(true);
+        hint.setWrapStyleWord(true);
+        hint.setOpaque(false);
+        hint.setFocusable(false);
+        hint.setBorder(null);
+        panel.add(hint, gbc);
+
+        gbc.gridy = 12;
         gbc.weighty = 1;
         gbc.fill = GridBagConstraints.BOTH;
         panel.add(new JPanel(), gbc);
@@ -621,6 +801,651 @@ public class SettingsDialog extends JDialog {
             }
         }
         lblGemmaStatus.setText(state);
+    }
+
+    private void refreshRustBevyPanelState() {
+        if (lblRustBevyStatus == null) {
+            return;
+        }
+        String cargoPath = normalizeOptionalPath(txtRustCargoPath.getText());
+        File cargo = cargoPath.isEmpty() ? new File(defaultCargoPath()) : new File(cargoPath);
+        File nextGen = new File(normalizeOptionalPath(txtNextGenProjectorPath.getText()));
+        File wasmBindgen = new File(normalizeOptionalPath(txtWasmBindgenPath.getText()));
+        File cppTools = findCppBuildTools();
+        File projectorBinary = findAnyNextGenProjectorBinary();
+
+        boolean cargoReady = cargo.isFile();
+        boolean nextGenReady = nextGen.isDirectory() && new File(nextGen, "Cargo.toml").isFile();
+        boolean projectorReady = projectorBinary != null && projectorBinary.isFile();
+        boolean wasmReady = wasmBindgen.isFile();
+        boolean cppReady = cppTools != null && cppTools.isFile();
+
+        lblRustCargoStatus.setText(readinessHtml("Cargo / Rust SDK", cargoReady, cargoReady ? cargo.getAbsolutePath() : "Not found yet"));
+        lblNextGenProjectorStatus.setText(readinessHtml("NextGen projector executable", projectorReady, projectorReady ? projectorBinary.getAbsolutePath() : "Not found; build only if the IDE setup did not include it"));
+        lblWasmBindgenStatus.setText(readinessHtml("wasm-bindgen", wasmReady, wasmReady ? wasmBindgen.getAbsolutePath() : "Needed for Web packaging"));
+        lblCppBuildToolsStatus.setText(readinessHtml("C++ Build Tools", cppReady, cppReady ? cppTools.getAbsolutePath() : "Needed for Windows native packaging"));
+        if (btnBuildNextGenRelease != null) {
+            btnBuildNextGenRelease.setEnabled(!projectorReady && cargoReady && nextGenReady);
+            btnBuildNextGenRelease.setToolTipText(projectorReady
+                    ? "A NextGen projector executable already exists. Normal users do not need to build it."
+                    : "Enabled only when no NextGen projector executable is found and the source workspace is available.");
+        }
+        lblRustBevyStatus.setText(overallRustBevyStatus(cargoReady, nextGenReady, projectorReady, wasmReady, cppReady));
+    }
+
+    private void detectRustBevyToolchain() {
+        RustBevyDetectionResult result = detectRustBevyToolchainNow();
+        applyRustBevyDetectionResult(result);
+        refreshRustBevyPanelState();
+    }
+
+    private void startRustBevyAutoDetect(boolean force) {
+        if (rustBevyAutoDetectRunning) {
+            return;
+        }
+        if (rustBevyAutoDetectStarted && !force) {
+            return;
+        }
+        rustBevyAutoDetectStarted = true;
+        rustBevyAutoDetectRunning = true;
+        if (rustBevyScanProgress != null) {
+            rustBevyScanProgress.setVisible(true);
+        }
+        lblRustBevyStatus.setText("<html>Searching common SDK locations. You do not need to reinstall tools that are already detected.</html>");
+        lblRustCargoStatus.setText(searchingHtml("Cargo / Rust SDK"));
+        lblNextGenProjectorStatus.setText(searchingHtml("NextGen projector workspace"));
+        lblWasmBindgenStatus.setText(searchingHtml("wasm-bindgen"));
+        lblCppBuildToolsStatus.setText(searchingHtml("C++ Build Tools"));
+
+        SwingWorker<RustBevyDetectionResult, String> worker = new SwingWorker<>() {
+            @Override
+            protected RustBevyDetectionResult doInBackground() {
+                publish("Searching saved settings, PATH, Cargo folders, SceneMax folders, and Visual Studio Build Tools...");
+                return detectRustBevyToolchainNow();
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                if (chunks != null && !chunks.isEmpty()) {
+                    lblRustBevyStatus.setText(chunks.get(chunks.size() - 1));
+                }
+            }
+
+            @Override
+            protected void done() {
+                rustBevyAutoDetectRunning = false;
+                if (rustBevyScanProgress != null) {
+                    rustBevyScanProgress.setVisible(false);
+                }
+                try {
+                    applyRustBevyDetectionResult(get());
+                    refreshRustBevyPanelState();
+                } catch (Exception ex) {
+                    lblRustBevyStatus.setText("<html><font color='#a00000'>SDK search failed:</font> " + escapeHtml(ex.getMessage()) + "</html>");
+                    refreshRustBevyPanelState();
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private RustBevyDetectionResult detectRustBevyToolchainNow() {
+        RustBevyDetectionResult result = new RustBevyDetectionResult();
+        result.cargo = findCargoExecutable();
+        result.rustup = findRustupExecutable(result.cargo);
+        result.nextGenProjector = findNextGenProjectorWorkspace();
+        result.projectorBinary = findAnyNextGenProjectorBinary();
+        result.wasmBindgen = findWasmBindgenExecutable();
+        result.cppBuildTools = findCppBuildTools();
+        return result;
+    }
+
+    private void applyRustBevyDetectionResult(RustBevyDetectionResult result) {
+        if (result == null) {
+            return;
+        }
+        if (result.cargo != null && result.cargo.isFile()) {
+            txtRustCargoPath.setText(result.cargo.getAbsolutePath());
+        }
+        if (result.nextGenProjector != null && result.nextGenProjector.isDirectory()) {
+            txtNextGenProjectorPath.setText(result.nextGenProjector.getAbsolutePath());
+        }
+        if (result.wasmBindgen != null && result.wasmBindgen.isFile()) {
+            txtWasmBindgenPath.setText(result.wasmBindgen.getAbsolutePath());
+        }
+    }
+
+    private File findCargoExecutable() {
+        return firstExistingFile(candidateFiles(
+                new File(normalizeOptionalPath(txtRustCargoPath.getText())),
+                new File(defaultCargoPath()),
+                new File(env("CARGO_HOME"), "bin\\cargo.exe"),
+                new File(env("USERPROFILE"), ".cargo\\bin\\cargo.exe"),
+                new File(env("ProgramFiles"), "Rust\\bin\\cargo.exe"),
+                new File(env("ProgramFiles(x86)"), "Rust\\bin\\cargo.exe"),
+                findOnPath("cargo.exe"),
+                findOnPath("cargo")
+        ));
+    }
+
+    private File findRustupExecutable(File cargo) {
+        List<File> candidates = new ArrayList<>();
+        if (cargo != null && cargo.getParentFile() != null) {
+            candidates.add(new File(cargo.getParentFile(), "rustup.exe"));
+            candidates.add(new File(cargo.getParentFile(), "rustup"));
+        }
+        candidates.add(new File(env("CARGO_HOME"), "bin\\rustup.exe"));
+        candidates.add(new File(env("USERPROFILE"), ".cargo\\bin\\rustup.exe"));
+        candidates.add(findOnPath("rustup.exe"));
+        candidates.add(findOnPath("rustup"));
+        return firstExistingFile(candidates);
+    }
+
+    private File findWasmBindgenExecutable() {
+        return firstExistingFile(candidateFiles(
+                new File(normalizeOptionalPath(txtWasmBindgenPath.getText())),
+                new File(defaultWasmBindgenPath()),
+                new File(env("CARGO_HOME"), "bin\\wasm-bindgen.exe"),
+                new File(env("USERPROFILE"), ".cargo\\bin\\wasm-bindgen.exe"),
+                findOnPath("wasm-bindgen.exe"),
+                findOnPath("wasm-bindgen")
+        ));
+    }
+
+    private File findNextGenProjectorWorkspace() {
+        String configured = normalizeOptionalPath(txtNextGenProjectorPath.getText());
+        File workingDir = new File(Util.getWorkingDir());
+        File parent = workingDir.getParentFile();
+        return firstExistingDirectory(candidateFiles(
+                new File(configured),
+                new File(env("SCENEMAX_NEXTGEN_PROJECTOR")),
+                new File(workingDir, "scenemax_projector_nextgen"),
+                parent == null ? null : new File(parent, "scenemax_projector_nextgen"),
+                new File("C:\\dev\\scenemax_desktop\\scenemax_projector_nextgen"),
+                new File(env("USERPROFILE"), "Documents\\scenemax_nextgen\\scenemax_projector_nextgen")
+        ), "Cargo.toml");
+    }
+
+    private File findAnyNextGenProjectorBinary() {
+        String configured = normalizeOptionalPath(AppDB.getInstance().getParam("nextgen_projector_path"));
+        String uiConfigured = normalizeOptionalPath(txtNextGenProjectorPath.getText());
+        File workingDir = new File(Util.getWorkingDir());
+        File workspace = findNextGenProjectorWorkspace();
+        List<File> candidates = new ArrayList<>();
+        addNextGenBinaryCandidates(candidates, new File(configured));
+        addNextGenBinaryCandidates(candidates, new File(uiConfigured));
+        addNextGenBinaryCandidates(candidates, workspace);
+        addNextGenBinaryCandidates(candidates, new File(workingDir, "scenemax_projector_nextgen"));
+        addNextGenBinaryCandidates(candidates, new File(workingDir, "runtime\\nextgen"));
+        addNextGenBinaryCandidates(candidates, new File(workingDir, "projectors\\nextgen"));
+        addNextGenBinaryCandidates(candidates, new File(workingDir, "bin\\nextgen"));
+        return firstExistingFile(candidates);
+    }
+
+    private void addNextGenBinaryCandidates(List<File> candidates, File base) {
+        if (candidates == null || base == null || base.getPath().isBlank()) {
+            return;
+        }
+        if (base.isFile()) {
+            candidates.add(base);
+            return;
+        }
+        candidates.add(new File(base, "scenemax_projector_nextgen.exe"));
+        candidates.add(new File(base, "scenemax_projector_nextgen"));
+        candidates.add(new File(base, "target\\release\\scenemax_projector_nextgen.exe"));
+        candidates.add(new File(base, "target\\debug\\scenemax_projector_nextgen.exe"));
+        candidates.add(new File(base, "bin\\windows\\scenemax_projector_nextgen.exe"));
+        candidates.add(new File(base, "windows\\scenemax_projector_nextgen.exe"));
+        candidates.add(new File(base, "win64\\scenemax_projector_nextgen.exe"));
+    }
+
+    private File findCppBuildTools() {
+        File fromPath = findOnPath("cl.exe");
+        if (fromPath != null && fromPath.isFile()) {
+            return fromPath;
+        }
+        File vswhere = firstExistingFile(candidateFiles(
+                new File(env("ProgramFiles(x86)"), "Microsoft Visual Studio\\Installer\\vswhere.exe"),
+                new File(env("ProgramFiles"), "Microsoft Visual Studio\\Installer\\vswhere.exe")
+        ));
+        if (vswhere != null) {
+            File found = findClWithVswhere(vswhere);
+            if (found != null) {
+                return found;
+            }
+        }
+        File found = findClUnderVisualStudioRoot(new File(env("ProgramFiles"), "Microsoft Visual Studio"));
+        if (found != null) {
+            return found;
+        }
+        return findClUnderVisualStudioRoot(new File(env("ProgramFiles(x86)"), "Microsoft Visual Studio"));
+    }
+
+    private File findClWithVswhere(File vswhere) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(
+                    vswhere.getAbsolutePath(),
+                    "-latest",
+                    "-products", "*",
+                    "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                    "-property", "installationPath");
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            String installPath;
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                installPath = reader.readLine();
+            }
+            int exitCode = process.waitFor();
+            if (exitCode == 0 && installPath != null && !installPath.trim().isEmpty()) {
+                return findClUnderInstallRoot(new File(installPath.trim()));
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private File findClUnderVisualStudioRoot(File root) {
+        if (root == null || !root.isDirectory()) {
+            return null;
+        }
+        File[] years = root.listFiles(File::isDirectory);
+        if (years == null) {
+            return null;
+        }
+        for (File year : years) {
+            File[] editions = year.listFiles(File::isDirectory);
+            if (editions == null) {
+                continue;
+            }
+            for (File edition : editions) {
+                File found = findClUnderInstallRoot(edition);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private File findClUnderInstallRoot(File installRoot) {
+        File msvcRoot = new File(installRoot, "VC\\Tools\\MSVC");
+        if (!msvcRoot.isDirectory()) {
+            return null;
+        }
+        File[] versions = msvcRoot.listFiles(File::isDirectory);
+        if (versions == null) {
+            return null;
+        }
+        for (int i = versions.length - 1; i >= 0; i--) {
+            File cl = new File(versions[i], "bin\\Hostx64\\x64\\cl.exe");
+            if (cl.isFile()) {
+                return cl;
+            }
+        }
+        return null;
+    }
+
+    private File firstExistingFile(List<File> candidates) {
+        if (candidates == null) {
+            return null;
+        }
+        for (File candidate : candidates) {
+            if (candidate != null && candidate.isFile()) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private List<File> candidateFiles(File... candidates) {
+        List<File> result = new ArrayList<>();
+        if (candidates == null) {
+            return result;
+        }
+        for (File candidate : candidates) {
+            if (candidate != null) {
+                result.add(candidate);
+            }
+        }
+        return result;
+    }
+
+    private File firstExistingDirectory(List<File> candidates, String requiredChild) {
+        if (candidates == null) {
+            return null;
+        }
+        for (File candidate : candidates) {
+            if (candidate != null && candidate.isDirectory()
+                    && (requiredChild == null || new File(candidate, requiredChild).isFile())) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private File findOnPath(String executableName) {
+        String path = System.getenv("PATH");
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        String[] parts = path.split(File.pathSeparator);
+        for (String part : parts) {
+            if (part == null || part.isBlank()) {
+                continue;
+            }
+            File candidate = new File(part.trim(), executableName);
+            if (candidate.isFile()) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private String env(String name) {
+        String value = System.getenv(name);
+        return value == null ? "" : value;
+    }
+
+    private String readinessHtml(String label, boolean ready, String detail) {
+        String color = ready ? "#188038" : "#a00000";
+        String marker = ready ? "&#10003;" : "X";
+        String state = ready ? "Ready" : "Missing";
+        return "<html><font color='" + color + "'><b>" + marker + "</b></font> "
+                + escapeHtml(label) + ": <b>" + state + "</b> - "
+                + escapeHtml(detail == null ? "" : detail) + "</html>";
+    }
+
+    private String searchingHtml(String label) {
+        return "<html><font color='#666666'>...</font> " + escapeHtml(label) + ": searching common locations...</html>";
+    }
+
+    private String overallRustBevyStatus(boolean cargoReady, boolean nextGenReady, boolean projectorReady, boolean wasmReady, boolean cppReady) {
+        if (projectorReady && wasmReady) {
+            return "<html><font color='#188038'><b>&#10003;</b></font> NextGen projectors are ready. You do not need to build or reinstall anything.</html>";
+        }
+        if (projectorReady) {
+            return "<html><font color='#188038'><b>&#10003;</b></font> Desktop NextGen projector is ready. Install Web Tools only if you want Web/WebAssembly packages.</html>";
+        }
+        if (cargoReady && nextGenReady && cppReady) {
+            return "<html>No shipped NextGen projector executable was found. Developer fallback build is available.</html>";
+        }
+        return "<html>No NextGen projector executable was found. Use install/build buttons only for missing rows below.</html>";
+    }
+
+    private String escapeHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;");
+    }
+
+    private void chooseFilePath(JTextField target, String title) {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle(title);
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        String current = normalizeOptionalPath(target.getText());
+        if (!current.isEmpty()) {
+            chooser.setSelectedFile(new File(current));
+        }
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            target.setText(chooser.getSelectedFile().getAbsolutePath());
+            refreshRustBevyPanelState();
+        }
+    }
+
+    private void chooseDirectoryPath(JTextField target, String title) {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle(title);
+        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        String current = normalizeOptionalPath(target.getText());
+        if (!current.isEmpty()) {
+            chooser.setSelectedFile(new File(current));
+        }
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            target.setText(chooser.getSelectedFile().getAbsolutePath());
+            refreshRustBevyPanelState();
+        }
+    }
+
+    private void installRustSdk() {
+        if (new File(defaultCargoPath()).isFile()) {
+            txtRustCargoPath.setText(defaultCargoPath());
+            refreshRustBevyPanelState();
+            JOptionPane.showMessageDialog(this,
+                    "Rust/Cargo is already installed:\n" + defaultCargoPath(),
+                    "Rust SDK",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                "SceneMax can try to install Rust using Windows Package Manager (winget).\n\n" +
+                        "If winget is unavailable, the official Rust installer page will be opened instead.\n\n" +
+                        "Continue?",
+                "Install Rust SDK",
+                JOptionPane.YES_NO_OPTION);
+        if (choice != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        runRustBevyCommandAsync(
+                "Installing Rust SDK",
+                List.of("winget", "install", "--id", "Rustlang.Rustup", "-e", "--source", "winget"),
+                null,
+                () -> {
+                    if (new File(defaultCargoPath()).isFile()) {
+                        txtRustCargoPath.setText(defaultCargoPath());
+                        refreshRustBevyPanelState();
+                    }
+                },
+                () -> openRustInstallPage());
+    }
+
+    private void openRustInstallPage() {
+        try {
+            Desktop.getDesktop().browse(java.net.URI.create("https://www.rust-lang.org/tools/install"));
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Could not open the Rust installer page automatically.\n\nOpen manually:\nhttps://www.rust-lang.org/tools/install",
+                    "Rust SDK",
+                    JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    private void installDesktopRustTargets() {
+        File rustup = resolveRustupExecutable();
+        if (!rustup.isFile()) {
+            JOptionPane.showMessageDialog(this,
+                    "rustup was not found. Install the Rust SDK first.",
+                    "Rust Targets",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        runRustBevyCommandAsync(
+                "Installing Rust desktop targets",
+                List.of(rustup.getAbsolutePath(), "target", "add",
+                        "x86_64-pc-windows-msvc",
+                        "x86_64-unknown-linux-gnu",
+                        "x86_64-apple-darwin"),
+                null,
+                this::refreshRustBevyPanelState,
+                null);
+    }
+
+    private void installWebTools() {
+        File rustup = resolveRustupExecutable();
+        File cargo = resolveCargoExecutableFromUi();
+        if (!rustup.isFile() || !cargo.isFile()) {
+            JOptionPane.showMessageDialog(this,
+                    "Rust/Cargo/rustup was not found. Install the Rust SDK first.",
+                    "Web Tools",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        runRustBevyCommandAsync(
+                "Installing WebAssembly target",
+                List.of(rustup.getAbsolutePath(), "target", "add", "wasm32-unknown-unknown"),
+                null,
+                () -> runRustBevyCommandAsync(
+                        "Installing wasm-bindgen-cli",
+                        List.of(cargo.getAbsolutePath(), "install", "wasm-bindgen-cli"),
+                        null,
+                        () -> {
+                            File wasmBindgen = new File(defaultWasmBindgenPath());
+                            if (wasmBindgen.isFile()) {
+                                txtWasmBindgenPath.setText(wasmBindgen.getAbsolutePath());
+                            }
+                            refreshRustBevyPanelState();
+                        },
+                        null),
+                null);
+    }
+
+    private void installCppBuildTools() {
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                "This will try to install Microsoft Visual Studio Build Tools with the C++ workload using winget.\n\n" +
+                        "The installer may require administrator approval and can take a while.\n\n" +
+                        "Continue?",
+                "Install C++ Build Tools",
+                JOptionPane.YES_NO_OPTION);
+        if (choice != JOptionPane.YES_OPTION) {
+            return;
+        }
+        runRustBevyCommandAsync(
+                "Installing C++ Build Tools",
+                List.of("winget", "install", "--id", "Microsoft.VisualStudio.2022.BuildTools", "-e", "--source", "winget",
+                        "--override", "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --norestart"),
+                null,
+                this::refreshRustBevyPanelState,
+                null);
+    }
+
+    private void buildNextGenRelease() {
+        File cargo = resolveCargoExecutableFromUi();
+        File nextGen = new File(normalizeOptionalPath(txtNextGenProjectorPath.getText()));
+        if (!cargo.isFile()) {
+            JOptionPane.showMessageDialog(this,
+                    "Cargo was not found. Install Rust or browse to cargo.exe first.",
+                    "NextGen Build",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (!nextGen.isDirectory() || !new File(nextGen, "Cargo.toml").isFile()) {
+            JOptionPane.showMessageDialog(this,
+                    "The NextGen projector workspace was not found. Browse to scenemax_projector_nextgen first.",
+                    "NextGen Build",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        runRustBevyCommandAsync(
+                "Building NextGen Bevy projector",
+                List.of(cargo.getAbsolutePath(), "build", "-p", "scenemax_projector_nextgen", "--release"),
+                nextGen,
+                this::refreshRustBevyPanelState,
+                null);
+    }
+
+    private File resolveCargoExecutableFromUi() {
+        String configured = normalizeOptionalPath(txtRustCargoPath.getText());
+        if (!configured.isEmpty()) {
+            return new File(configured);
+        }
+        return new File(defaultCargoPath());
+    }
+
+    private File resolveRustupExecutable() {
+        File cargo = resolveCargoExecutableFromUi();
+        File dir = cargo.getParentFile();
+        if (dir != null) {
+            File rustup = new File(dir, "rustup.exe");
+            if (rustup.isFile()) {
+                return rustup;
+            }
+        }
+        return new File(System.getProperty("user.home"), ".cargo\\bin\\rustup.exe");
+    }
+
+    private void runRustBevyCommandAsync(String title, List<String> command, File directory, Runnable success, Runnable failure) {
+        JDialog progressDialog = new JDialog(this, title, false);
+        JTextArea txtOutput = new JTextArea(18, 82);
+        txtOutput.setEditable(false);
+        txtOutput.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        progressDialog.setContentPane(new JScrollPane(txtOutput));
+        progressDialog.pack();
+        progressDialog.setLocationRelativeTo(this);
+
+        SwingWorker<CommandResult, String> worker = new SwingWorker<>() {
+            @Override
+            protected CommandResult doInBackground() throws Exception {
+                String commandLine = String.join(" ", command);
+                publish("Running:\n" + commandLine + "\n\n");
+                ProcessBuilder pb = new ProcessBuilder(command);
+                if (directory != null) {
+                    pb.directory(directory);
+                }
+                pb.redirectErrorStream(true);
+                Process process = pb.start();
+                StringBuilder output = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        output.append(line).append(System.lineSeparator());
+                        publish(line + System.lineSeparator());
+                    }
+                }
+                int exitCode = process.waitFor();
+                return new CommandResult(exitCode, output.toString().trim(), commandLine);
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                for (String chunk : chunks) {
+                    txtOutput.append(chunk);
+                }
+                txtOutput.setCaretPosition(txtOutput.getDocument().getLength());
+            }
+
+            @Override
+            protected void done() {
+                progressDialog.dispose();
+                try {
+                    CommandResult result = get();
+                    if (result.exitCode == 0) {
+                        if (success != null) {
+                            success.run();
+                        }
+                        JOptionPane.showMessageDialog(SettingsDialog.this,
+                                title + " finished successfully.",
+                                title,
+                                JOptionPane.INFORMATION_MESSAGE);
+                    } else {
+                        if (failure != null) {
+                            failure.run();
+                        }
+                        JOptionPane.showMessageDialog(SettingsDialog.this,
+                                title + " failed.\n\nOutput:\n" + result.output,
+                                title,
+                                JOptionPane.ERROR_MESSAGE);
+                    }
+                } catch (Exception ex) {
+                    if (failure != null) {
+                        failure.run();
+                    }
+                    JOptionPane.showMessageDialog(SettingsDialog.this,
+                            title + " failed.\n\n" + ex.getMessage(),
+                            title,
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+        progressDialog.setVisible(true);
     }
 
     private void browseForButler() {
@@ -1510,6 +2335,15 @@ public class SettingsDialog extends JDialog {
             this.output = output;
             this.commandLine = commandLine;
         }
+    }
+
+    private static class RustBevyDetectionResult {
+        File cargo;
+        File rustup;
+        File nextGenProjector;
+        File projectorBinary;
+        File wasmBindgen;
+        File cppBuildTools;
     }
 
     private static class GemmaDownloadDialog extends JDialog {

@@ -134,6 +134,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private float DEFAULT_FONT_SIZE;
     private float EXTRA_FONT_SIZE = 12;
     private PackageProgramDialog packageProgramDialog;
+    private PackageBevyProgramDialog packageBevyProgramDialog;
     private ActionListener menuActionListener;
     private Integer originalTreeFontSize;
     private String lastSelectedFilePath;
@@ -147,6 +148,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private JMenu projectsSubMenu;
     private JMenu assetsMenu;
     private ProjectInventoryDialog projectInventoryDialog;
+    private ProjectExplorerDialog projectExplorerDialog;
     private EditorTabPanel editorTabPanel;
     private SceneMaxAutoComplete autoComplete;
     private SceneMaxToolRegistry automationToolRegistry;
@@ -533,6 +535,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
                 } else if (cmd.equals("new_project_scripts_folder")) {
                     createNewProjectScriptsFolder();
+                } else if (cmd.equals("project_explorer")) {
+                    openProjectExplorer();
                 } else if (cmd.equals("project_settings")) {
                     SceneMaxProject activeProject = Util.getActiveProject();
                     if (activeProject == null) {
@@ -703,6 +707,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private void addProjectsToMenu(JMenu menu) {
         menu.addSeparator();
         List<SceneMaxProject> projects = Util.getProjects_New();
+        projects.sort(Comparator
+                .comparingLong((SceneMaxProject project) -> project.lastActiveAt)
+                .reversed()
+                .thenComparing(project -> project.name.toLowerCase(Locale.ROOT)));
         for (SceneMaxProject p : projects) {
             addProjectMenuItem(menu, p);
         }
@@ -768,6 +776,20 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         projectInventoryDialog = new ProjectInventoryDialog(this);
         projectInventoryDialog.setLocationRelativeTo(this);
         projectInventoryDialog.setVisible(true);
+    }
+
+    private void openProjectExplorer() {
+        if (projectExplorerDialog != null && projectExplorerDialog.isDisplayable()) {
+            projectExplorerDialog.refreshProjects();
+            projectExplorerDialog.setVisible(true);
+            projectExplorerDialog.toFront();
+            projectExplorerDialog.requestFocus();
+            return;
+        }
+
+        projectExplorerDialog = new ProjectExplorerDialog(this);
+        projectExplorerDialog.setLocationRelativeTo(this);
+        projectExplorerDialog.setVisible(true);
     }
 
 
@@ -3731,6 +3753,11 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         if (p == null) {
             Util.createProject("default project", null);
             migrateToDefaultProject();
+            p = Util.getActiveProject();
+        }
+
+        if (p != null) {
+            Util.markProjectOpened(p.name);
         }
 
         loadScriptsFolder();
@@ -4692,17 +4719,26 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             } else {
 
                 packageBrogramButton.setEnabled(false);
-                packageProgramDialog = new PackageProgramDialog();
-                packageProgramDialog.pack();
-                packageProgramDialog.setLocationRelativeTo(null);
-                packageProgramDialog.run(lastSelectedFilePath, mr.finalPrg, new Runnable() {
+                SceneMaxProject activeProject = Util.getActiveProject();
+                Runnable onPackageDone = new Runnable() {
                     @Override
                     public void run() {
                         packageBrogramButton.setEnabled(true);
                     }
-                });
-
-                packageProgramDialog.setVisible(true);
+                };
+                if (activeProject != null && activeProject.isNextGenProjector()) {
+                    packageBevyProgramDialog = new PackageBevyProgramDialog();
+                    packageBevyProgramDialog.pack();
+                    packageBevyProgramDialog.setLocationRelativeTo(null);
+                    packageBevyProgramDialog.run(lastSelectedFilePath, mr.finalPrg, onPackageDone);
+                    packageBevyProgramDialog.setVisible(true);
+                } else {
+                    packageProgramDialog = new PackageProgramDialog();
+                    packageProgramDialog.pack();
+                    packageProgramDialog.setLocationRelativeTo(null);
+                    packageProgramDialog.run(lastSelectedFilePath, mr.finalPrg, onPackageDone);
+                    packageProgramDialog.setVisible(true);
+                }
             }
 
         } else if (actionEvent.getActionCommand().equals("save")) {
@@ -4909,28 +4945,55 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     private void createNewProjectScriptsFolder() {
         //List<File> folders = Util.getScriptFolders();
-        String folderName = (String) JOptionPane.showInputDialog(
-                null,
-                "Type new project name",
-                "Project Name",
-                JOptionPane.PLAIN_MESSAGE,
-                null,
-                null,
-                "");
+        JTextField txtProjectName = new JTextField(28);
+        JComboBox<String> cmbProjector = new JComboBox<>(new String[]{
+                SceneMaxProject.PROJECTOR_CLASSIC_LABEL,
+                SceneMaxProject.PROJECTOR_NEXTGEN_LABEL
+        });
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        panel.add(new JLabel("Project name"), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1;
+        panel.add(txtProjectName, gbc);
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.weightx = 0;
+        panel.add(new JLabel("Projector"), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1;
+        panel.add(cmbProjector, gbc);
 
-        if (folderName == null || folderName.trim().length() == 0) {
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                panel,
+                "New Project",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE);
+
+        if (choice != JOptionPane.OK_OPTION) {
             return;
         }
 
+        String folderName = txtProjectName.getText();
+        if (folderName == null || folderName.trim().length() == 0) {
+            return;
+        }
         folderName = folderName.trim();
+        String projectorType = SceneMaxProject.projectorTypeFromLabel(String.valueOf(cmbProjector.getSelectedItem()));
 
-        Util.createProject(folderName, folderName);
+        if (!Util.createProject(folderName, folderName, projectorType)) {
+            return;
+        }
         refreshScriptsFolder();
         refreshAppTitle();
         refreshAssetsMenu();
-
-        SceneMaxProject p = Util.getActiveProject();
-        addProjectMenuItem(projectsSubMenu, p);
+        refreshProjectsMenu();
 
     }
 
@@ -5488,6 +5551,52 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     public void refreshScriptsFolder() {
         loadScriptsFolder();
         openLastTreeNode();
+    }
+
+    public void prepareProjectCatalogMutation(boolean closeOpenTabs) {
+        if (editorTabPanel == null) {
+            return;
+        }
+        if (editorTabPanel.getActiveTab() != null && editorTabPanel.getActiveTab().dirty) {
+            editorTabPanel.saveActiveTab();
+        }
+        saveCurrentProjectOpenTabsState();
+        if (closeOpenTabs) {
+            editorTabPanel.closeAllTabs();
+        }
+    }
+
+    public void refreshProjectsMenu() {
+        if (projectsSubMenu == null) {
+            return;
+        }
+
+        projectsSubMenu.removeAll();
+        JSONObject menus = getMenuJSON();
+        JSONArray items = menus.getJSONArray("items");
+        for (int i = 0; i < items.length(); ++i) {
+            JSONObject menuItem = items.getJSONObject(i);
+            if (!"File".equals(menuItem.getString("name"))) {
+                continue;
+            }
+            JSONArray fileItems = menuItem.getJSONArray("items");
+            for (int j = 0; j < fileItems.length(); ++j) {
+                JSONObject fileItem = fileItems.getJSONObject(j);
+                if ("Projects".equals(fileItem.getString("name")) && fileItem.has("items")) {
+                    addMenuItems(projectsSubMenu, fileItem.getJSONArray("items"));
+                    addProjectsToMenu(projectsSubMenu);
+                    projectsSubMenu.updateUI();
+                    return;
+                }
+            }
+        }
+    }
+
+    public void refreshProjectCatalogViews() {
+        refreshProjectsMenu();
+        refreshScriptsFolder();
+        refreshAppTitle();
+        refreshAssetsMenu();
     }
 
     public void refreshWorkspaceViews() {

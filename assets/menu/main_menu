@@ -5,6 +5,7 @@
 
       {"name": "Projects", "items": [
           {"name": "New Project...","command": "new_project_scripts_folder"},
+          {"name": "Project Explorer...","command": "project_explorer"},
           {"name": "Project Settings...","command": "project_settings"}
 
         ]

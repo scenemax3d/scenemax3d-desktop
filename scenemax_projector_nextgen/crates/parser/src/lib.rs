@@ -31,6 +31,7 @@ pub enum Statement {
     },
     ObjectPool(ObjectPoolStatement),
     Animate(AnimationStatement),
+    SpritePlay(SpritePlayStatement),
     AnimationSpeed(AnimationSpeedStatement),
     Visibility {
         target: String,
@@ -112,6 +113,9 @@ pub enum Statement {
     CameraAttach(CameraAttachStatement),
     CameraAttachStop,
     Logger(LoggerStatement),
+    DebugMode {
+        enabled: bool,
+    },
     FunctionDef(FunctionDefStatement),
     RunFunction {
         name: String,
@@ -133,6 +137,13 @@ pub enum Statement {
     AddCode {
         path: String,
     },
+    UiLoad {
+        name: String,
+    },
+    UiShowHide(UiShowHideStatement),
+    UiMessage(UiMessageStatement),
+    UiEase(UiEaseStatement),
+    UiSetProperty(UiSetPropertyStatement),
     NoOp {
         text: String,
     },
@@ -149,6 +160,7 @@ pub struct EntityOptions {
     pub size: Option<SceneMaxVec3>,
     pub hidden: bool,
     pub collider: bool,
+    pub sprite: bool,
     pub radius: Option<f32>,
     pub body_kind: Option<SceneMaxBodyKind>,
     pub collision_shape: Option<SceneMaxCollisionShape>,
@@ -183,6 +195,15 @@ pub struct AnimationStatement {
     pub speed: f32,
     pub looped: bool,
     pub blocking: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpritePlayStatement {
+    pub target: String,
+    pub from_frame: usize,
+    pub to_frame: usize,
+    pub duration_seconds: f32,
+    pub looped: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -322,6 +343,10 @@ pub enum SceneMaxAxis {
 pub enum MoveDirection {
     Forward,
     Backward,
+    Left,
+    Right,
+    Up,
+    Down,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -511,6 +536,63 @@ pub struct FunctionDefStatement {
     pub actions: Vec<Statement>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiTargetPath {
+    pub ui_name: Option<String>,
+    pub layer: String,
+    pub widget_path: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiShowHideStatement {
+    pub target: UiTargetPath,
+    pub visible: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiMessageStatement {
+    pub target: UiTargetPath,
+    pub text: String,
+    pub effects: String,
+    pub duration_seconds: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiEaseStatement {
+    pub target: UiTargetPath,
+    pub easing: String,
+    pub direction: UiEaseDirection,
+    pub duration_seconds: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiEaseDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiSetPropertyStatement {
+    pub target: UiTargetPath,
+    pub property: String,
+    pub value: UiPropertyValue,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UiPropertyValue {
+    Literal(String),
+    Expression(AssignmentValue),
+    Concatenation(Vec<UiPropertyValuePart>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UiPropertyValuePart {
+    Literal(String),
+    Expression(AssignmentValue),
+}
+
 #[derive(Debug, Error, PartialEq)]
 pub enum ParseError {
     #[error("invalid number '{0}'")]
@@ -564,6 +646,43 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
             continue;
         }
 
+        let lower = line.to_ascii_lowercase();
+        if let Some(times) = parse_repeat_header(line) {
+            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1)?;
+            let repeated = Statement::Repeat {
+                times,
+                actions: nested_actions,
+            };
+            if lower.ends_with(" async") {
+                statements.push(Statement::Async {
+                    actions: vec![repeated],
+                });
+            } else {
+                statements.push(repeated);
+            }
+            pending_guard = None;
+            index = next_index;
+            continue;
+        }
+
+        if lower == "do async" {
+            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1)?;
+            statements.push(Statement::Async {
+                actions: nested_actions,
+            });
+            pending_guard = None;
+            index = next_index;
+            continue;
+        }
+
+        if lower == "do" {
+            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1)?;
+            statements.extend(nested_actions);
+            pending_guard = None;
+            index = next_index;
+            continue;
+        }
+
         if opens_runtime_block(line) {
             block_depth = update_block_depth(block_depth, line);
             statements.push(unsupported(line));
@@ -591,6 +710,12 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
             } else {
                 statements.extend(paths.into_iter().map(|path| Statement::AddCode { path }));
             }
+            index += 1;
+            continue;
+        }
+
+        if let Some(ui_statement) = parse_ui_statement(line)? {
+            statements.push(ui_statement);
             index += 1;
             continue;
         }
@@ -723,8 +848,7 @@ fn parse_key_event_block(
         }
 
         if should_parse_key_action_line(line) {
-            let action = parse_statement(line)?;
-            actions.push(action);
+            actions.extend(parse_action_statements(line)?);
         }
 
         if opens_runtime_block(line) {
@@ -1234,8 +1358,7 @@ fn parse_action_block(
         }
 
         if should_parse_key_action_line(line) {
-            let action = parse_statement(line)?;
-            actions.push(action);
+            actions.extend(parse_action_statements(line)?);
         }
 
         if opens_runtime_block(line) {
@@ -1330,8 +1453,25 @@ fn parse_guarded_actions_after(
     if lower.starts_with("do ") {
         return Ok((Vec::new(), skip_control_block(logical_lines, cursor)));
     }
-    let action = parse_statement(line)?;
-    Ok((vec![action], cursor + 1))
+    Ok((parse_action_statements(line)?, cursor + 1))
+}
+
+fn parse_action_statements(line: &str) -> Result<Vec<Statement>, ParseError> {
+    if let Some(statement) = parse_ui_statement(line)? {
+        return Ok(vec![statement]);
+    }
+    if is_local_assignment_line(line) {
+        if let Some(assignments) = parse_assignment_list(line)? {
+            return Ok(assignments
+                .into_iter()
+                .map(Statement::LocalAssignment)
+                .collect());
+        }
+    }
+    if let Some(assignments) = parse_assignment_list(line)? {
+        return Ok(assignments.into_iter().map(Statement::Assignment).collect());
+    }
+    Ok(vec![parse_statement(line)?])
 }
 
 fn parse_if_header(line: &str) -> Result<Option<Condition>, ParseError> {
@@ -1502,6 +1642,10 @@ fn update_block_depth(current: usize, line: &str) -> usize {
 }
 
 fn parse_statement(line: &str) -> Result<Statement, ParseError> {
+    if let Some(statement) = parse_ui_statement(line)? {
+        return Ok(statement);
+    }
+
     if let Some(camera) = parse_fighting_camera(line)? {
         return Ok(Statement::FightingCamera(camera));
     }
@@ -1526,6 +1670,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
 
     if let Some(logger) = parse_logger_statement(line)? {
         return Ok(Statement::Logger(logger));
+    }
+
+    if let Some(debug_mode) = parse_debug_mode_statement(line) {
+        return Ok(debug_mode);
     }
 
     if let Some(run_function) = parse_run_function_statement(line) {
@@ -1654,6 +1802,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         });
     }
 
+    if let Some(sprite_play) = parse_sprite_play(line)? {
+        return Ok(Statement::SpritePlay(sprite_play));
+    }
+
     if is_unsupported_dotted_runtime_command(line) {
         return Ok(unsupported(line));
     }
@@ -1667,6 +1819,155 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
     }
 
     Ok(unsupported(line))
+}
+
+fn parse_ui_statement(line: &str) -> Result<Option<Statement>, ParseError> {
+    let line = line.trim();
+    let lower = line.to_ascii_lowercase();
+    if !lower.starts_with("ui.") {
+        return Ok(None);
+    }
+
+    if starts_with_case_insensitive(line, "UI.load") {
+        if let Some(name) = parse_quoted_strings(line).into_iter().next() {
+            return Ok(Some(Statement::UiLoad { name }));
+        }
+        return Ok(None);
+    }
+
+    if let Some(before_call) = strip_suffix_case_insensitive(line, ".show") {
+        if let Some(target) = parse_ui_target_path(before_call) {
+            return Ok(Some(Statement::UiShowHide(UiShowHideStatement {
+                target,
+                visible: true,
+            })));
+        }
+    }
+    if let Some(before_call) = strip_suffix_case_insensitive(line, ".hide") {
+        if let Some(target) = parse_ui_target_path(before_call) {
+            return Ok(Some(Statement::UiShowHide(UiShowHideStatement {
+                target,
+                visible: false,
+            })));
+        }
+    }
+
+    if let Some(open_index) = lower.find(".message(") {
+        let path_text = &line[..open_index];
+        let Some(target) = parse_ui_target_path(path_text) else {
+            return Ok(None);
+        };
+        let args = parse_call_args(&line[open_index + ".message".len()..]);
+        let Some(text) = args.first().cloned() else {
+            return Ok(None);
+        };
+        let duration_seconds = args
+            .last()
+            .and_then(|value| value.parse::<f32>().ok())
+            .unwrap_or(0.0);
+        let effects = args
+            .get(1)
+            .filter(|value| value.parse::<f32>().is_err())
+            .cloned()
+            .unwrap_or_default();
+        return Ok(Some(Statement::UiMessage(UiMessageStatement {
+            target,
+            text,
+            effects,
+            duration_seconds,
+        })));
+    }
+
+    if let Some(open_index) = lower.find(".ease(") {
+        let path_text = &line[..open_index];
+        let Some(target) = parse_ui_target_path(path_text) else {
+            return Ok(None);
+        };
+        let args = parse_call_args(&line[open_index + ".ease".len()..]);
+        let Some(easing) = args.first().cloned() else {
+            return Ok(None);
+        };
+        let direction = args
+            .get(1)
+            .and_then(|value| parse_ui_ease_direction(value))
+            .unwrap_or(UiEaseDirection::Up);
+        let duration_seconds = args
+            .get(2)
+            .and_then(|value| value.parse::<f32>().ok())
+            .unwrap_or(0.0);
+        return Ok(Some(Statement::UiEase(UiEaseStatement {
+            target,
+            easing,
+            direction,
+            duration_seconds,
+        })));
+    }
+
+    if let Some((left, right)) = line.split_once('=') {
+        let left = left.trim();
+        if left.to_ascii_lowercase().starts_with("ui.") {
+            let mut parts = left.rsplitn(2, '.');
+            let property = parts.next().unwrap_or_default().trim();
+            let path_text = parts.next().unwrap_or_default().trim();
+            if !property.is_empty()
+                && let Some(target) = parse_ui_target_path(path_text)
+                && let Some(value) = parse_ui_property_value(right)?
+            {
+                return Ok(Some(Statement::UiSetProperty(UiSetPropertyStatement {
+                    target,
+                    property: property.to_owned(),
+                    value,
+                })));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+fn parse_ui_target_path(text: &str) -> Option<UiTargetPath> {
+    let text = text.trim();
+    if !starts_with_case_insensitive(text, "UI.") {
+        return None;
+    }
+    let parts = text["UI.".len()..]
+        .split('.')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        return None;
+    }
+    let first = *parts.first()?;
+    let (ui_name, layer_index) = if is_probable_ui_layer_name(first) || parts.len() == 1 {
+        (None, 0)
+    } else {
+        (Some(first.to_owned()), 1)
+    };
+    let layer = parts.get(layer_index)?.to_string();
+    let widget_path = parts[layer_index + 1..]
+        .iter()
+        .map(|part| (*part).to_owned())
+        .collect::<Vec<_>>();
+    Some(UiTargetPath {
+        ui_name,
+        layer,
+        widget_path,
+    })
+}
+
+fn is_probable_ui_layer_name(name: &str) -> bool {
+    name.to_ascii_lowercase().starts_with("layer")
+}
+
+fn parse_ui_ease_direction(text: &str) -> Option<UiEaseDirection> {
+    match text.trim().to_ascii_lowercase().as_str() {
+        "up" => Some(UiEaseDirection::Up),
+        "down" => Some(UiEaseDirection::Down),
+        "left" => Some(UiEaseDirection::Left),
+        "right" => Some(UiEaseDirection::Right),
+        _ => None,
+    }
 }
 
 fn parse_camera_system_select(line: &str) -> Option<String> {
@@ -1711,6 +2012,14 @@ fn parse_logger_statement(line: &str) -> Result<Option<LoggerStatement>, ParseEr
         LoggerMessage::Value(value)
     };
     Ok(Some(LoggerStatement { level, message }))
+}
+
+fn parse_debug_mode_statement(line: &str) -> Option<Statement> {
+    match line.trim().to_ascii_lowercase().as_str() {
+        "debug.on" => Some(Statement::DebugMode { enabled: true }),
+        "debug.off" => Some(Statement::DebugMode { enabled: false }),
+        _ => None,
+    }
 }
 
 fn parse_run_function_statement(line: &str) -> Option<Statement> {
@@ -1773,20 +2082,153 @@ fn parse_call_args(text: &str) -> Vec<String> {
     let Some(open_index) = text.find('(') else {
         return Vec::new();
     };
-    let Some(close_offset) = text[open_index + 1..].find(')') else {
-        return Vec::new();
-    };
-    let args_text = &text[open_index + 1..open_index + 1 + close_offset];
-    args_text
-        .split(',')
-        .map(clean_call_arg)
-        .filter(|arg| !arg.is_empty())
-        .map(str::to_owned)
-        .collect()
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut depth = 0usize;
+
+    for ch in text[open_index + 1..].chars() {
+        if let Some(quote_char) = quote {
+            current.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == quote_char {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => {
+                quote = Some(ch);
+                current.push(ch);
+            }
+            '(' | '[' | '{' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' if depth == 0 => {
+                let arg = clean_call_arg(&current);
+                if !arg.is_empty() {
+                    args.push(arg.to_owned());
+                }
+                return args;
+            }
+            ')' | ']' | '}' => {
+                depth = depth.saturating_sub(1);
+                current.push(ch);
+            }
+            ',' if depth == 0 => {
+                let arg = clean_call_arg(&current);
+                if !arg.is_empty() {
+                    args.push(arg.to_owned());
+                }
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    Vec::new()
 }
 
 fn clean_call_arg(arg: &str) -> &str {
     arg.trim().trim_matches('"').trim_matches('\'').trim()
+}
+
+fn parse_ui_property_value(raw_value: &str) -> Result<Option<UiPropertyValue>, ParseError> {
+    let raw_value = raw_value.trim().trim_end_matches(';').trim();
+    if raw_value.is_empty() {
+        return Ok(None);
+    }
+    if is_quoted(raw_value) {
+        return Ok(Some(UiPropertyValue::Literal(unquote_ui_text(raw_value))));
+    }
+    if let Some(parts) = parse_ui_property_concatenation(raw_value)? {
+        return Ok(Some(UiPropertyValue::Concatenation(parts)));
+    }
+    if let Some(value) = parse_assignment_value(clean_assignment_value(raw_value))? {
+        return Ok(Some(UiPropertyValue::Expression(value)));
+    }
+    Ok(Some(UiPropertyValue::Literal(
+        clean_call_arg(raw_value).to_owned(),
+    )))
+}
+
+fn parse_ui_property_concatenation(
+    raw_value: &str,
+) -> Result<Option<Vec<UiPropertyValuePart>>, ParseError> {
+    let parts = split_top_level_plus(raw_value);
+    if parts.len() < 2 || !parts.iter().any(|part| is_quoted(part)) {
+        return Ok(None);
+    }
+
+    let mut values = Vec::new();
+    for part in parts {
+        if is_quoted(part) {
+            values.push(UiPropertyValuePart::Literal(unquote_ui_text(part)));
+        } else if let Some(value) = parse_assignment_value(clean_assignment_value(part))? {
+            values.push(UiPropertyValuePart::Expression(value));
+        } else {
+            values.push(UiPropertyValuePart::Literal(
+                clean_call_arg(part).to_owned(),
+            ));
+        }
+    }
+    Ok(Some(values))
+}
+
+fn split_top_level_plus(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut start = 0usize;
+
+    for (index, value) in text.char_indices() {
+        if let Some(quote_char) = quote {
+            if escaped {
+                escaped = false;
+            } else if value == '\\' {
+                escaped = true;
+            } else if value == quote_char {
+                quote = None;
+            }
+            continue;
+        }
+
+        match value {
+            '"' | '\'' => quote = Some(value),
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            '+' if depth == 0 => {
+                parts.push(text[start..index].trim());
+                start = index + value.len_utf8();
+            }
+            _ => {}
+        }
+    }
+
+    parts.push(text[start..].trim());
+    parts.into_iter().filter(|part| !part.is_empty()).collect()
+}
+
+fn is_quoted(text: &str) -> bool {
+    let text = text.trim();
+    (text.len() >= 2 && text.starts_with('"') && text.ends_with('"'))
+        || (text.len() >= 2 && text.starts_with('\'') && text.ends_with('\''))
+}
+
+fn unquote_ui_text(text: &str) -> String {
+    let text = text.trim();
+    if is_quoted(text) {
+        text[1..text.len() - 1].to_owned()
+    } else {
+        text.to_owned()
+    }
 }
 
 fn split_once_case_insensitive<'a>(text: &'a str, needle: &str) -> Option<(&'a str, &'a str)> {
@@ -1794,6 +2236,15 @@ fn split_once_case_insensitive<'a>(text: &'a str, needle: &str) -> Option<(&'a s
         .to_ascii_lowercase()
         .find(&needle.to_ascii_lowercase())?;
     Some((&text[..index], &text[index + needle.len()..]))
+}
+
+fn starts_with_case_insensitive(text: &str, prefix: &str) -> bool {
+    text.len() >= prefix.len() && text[..prefix.len()].eq_ignore_ascii_case(prefix)
+}
+
+fn strip_suffix_case_insensitive<'a>(text: &'a str, suffix: &str) -> Option<&'a str> {
+    (text.len() >= suffix.len() && text[text.len() - suffix.len()..].eq_ignore_ascii_case(suffix))
+        .then(|| &text[..text.len() - suffix.len()])
 }
 
 fn parse_fighting_camera(line: &str) -> Result<Option<FightingCameraStatement>, ParseError> {
@@ -2576,14 +3027,18 @@ fn parse_move(line: &str) -> Result<Option<MoveStatement>, ParseError> {
     };
     let direction = match direction_text.to_ascii_lowercase().as_str() {
         "forward" => MoveDirection::Forward,
-        "backward" => MoveDirection::Backward,
+        "backward" | "back" => MoveDirection::Backward,
+        "left" => MoveDirection::Left,
+        "right" => MoveDirection::Right,
+        "up" => MoveDirection::Up,
+        "down" => MoveDirection::Down,
         _ => return Ok(None),
     };
     let raw_distance = parts.get(2).copied().unwrap_or_default();
     let distance = raw_distance
         .parse::<f32>()
         .map_err(|_| ParseError::InvalidNumber(raw_distance.to_owned()))?;
-    let duration_seconds = parse_for_duration_seconds(rest)?.unwrap_or(0.0);
+    let duration_seconds = parse_directional_move_duration_seconds(rest)?.unwrap_or(0.0);
     let loop_condition = parse_loop_while_condition(rest)?;
 
     Ok(Some(MoveStatement {
@@ -2865,6 +3320,47 @@ fn parse_animation(line: &str) -> Result<Option<AnimationStatement>, ParseError>
     }))
 }
 
+fn parse_sprite_play(line: &str) -> Result<Option<SpritePlayStatement>, ParseError> {
+    let Some((target, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
+    let rest = rest.trim();
+    let lower = rest.to_ascii_lowercase();
+    if !lower.starts_with("play") {
+        return Ok(None);
+    }
+    let Some(frame_index) = lower.find("frame") else {
+        return Ok(None);
+    };
+    let frame_text = &rest[frame_index + "frame".len()..];
+    let Some((from_text, after_from)) = split_once_case_insensitive(frame_text, " to ") else {
+        return Ok(None);
+    };
+    let from_frame = from_text
+        .trim()
+        .parse::<usize>()
+        .map_err(|_| ParseError::InvalidNumber(from_text.trim().to_owned()))?;
+    let to_raw = after_from
+        .trim()
+        .split(|value: char| value.is_whitespace() || value == ')' || value == ',')
+        .next()
+        .unwrap_or_default();
+    if to_raw.is_empty() {
+        return Ok(None);
+    }
+    let to_frame = to_raw
+        .parse::<usize>()
+        .map_err(|_| ParseError::InvalidNumber(to_raw.to_owned()))?;
+    let duration_seconds = parse_duration_seconds(rest)?.unwrap_or(0.0).max(0.001);
+    Ok(Some(SpritePlayStatement {
+        target: target.to_owned(),
+        from_frame,
+        to_frame,
+        duration_seconds,
+        looped: contains_keyword(rest, "loop"),
+    }))
+}
+
 fn parse_animation_speed(line: &str) -> Result<Option<AnimationSpeedStatement>, ParseError> {
     let Some((target, rest)) = split_dot_command_rest(line) else {
         return Ok(None);
@@ -2972,6 +3468,13 @@ fn parse_for_duration_seconds(text: &str) -> Result<Option<f32>, ParseError> {
     Ok(raw.parse::<f32>().ok())
 }
 
+fn parse_directional_move_duration_seconds(text: &str) -> Result<Option<f32>, ParseError> {
+    match parse_for_duration_seconds(text)? {
+        Some(seconds) => Ok(Some(seconds)),
+        None => parse_duration_seconds(text),
+    }
+}
+
 fn parse_for_duration_seconds_tolerant(text: &str) -> Option<f32> {
     let lower = text.to_ascii_lowercase();
     let for_index = lower.find(" for ")?;
@@ -3048,6 +3551,7 @@ fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseErr
         radius: parse_scalar_after(text, "radius")?,
         body_kind: parse_body_kind(raw),
         collision_shape: parse_collision_shape(raw),
+        sprite: contains_keyword(raw, "sprite"),
     })
 }
 
@@ -3388,6 +3892,33 @@ mod tests {
     }
 
     #[test]
+    fn parses_sprite_play_frame_range() {
+        let program =
+            parse_program("b=>bird sprite\nb.play (frame 0 to 13 in 1 seconds) loop").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::ModelDecl {
+                    name: "b".to_owned(),
+                    resource: "bird".to_owned(),
+                    options: EntityOptions {
+                        sprite: true,
+                        ..Default::default()
+                    },
+                },
+                Statement::SpritePlay(SpritePlayStatement {
+                    target: "b".to_owned(),
+                    from_frame: 0,
+                    to_frame: 13,
+                    duration_seconds: 1.0,
+                    looped: true,
+                }),
+            ]
+        );
+    }
+
+    #[test]
     fn parses_animation_speed_and_quoted_clip() {
         let program = parse_program("d.\"Fly Forward\" at speed of 0.5 loop").unwrap();
 
@@ -3600,6 +4131,7 @@ mod tests {
                     size: None,
                     hidden: true,
                     collider: false,
+                    sprite: false,
                     radius: None,
                     body_kind: Some(SceneMaxBodyKind::Kinematic),
                     collision_shape: None,
@@ -3632,6 +4164,7 @@ mod tests {
                         }),
                         hidden: false,
                         collider: false,
+                        sprite: false,
                         radius: None,
                         body_kind: Some(SceneMaxBodyKind::Static),
                         collision_shape: Some(SceneMaxCollisionShape::Box),
@@ -3755,6 +4288,7 @@ mod tests {
                         }),
                         hidden: false,
                         collider: false,
+                        sprite: false,
                         radius: None,
                         body_kind: Some(SceneMaxBodyKind::Static),
                         collision_shape: None,
@@ -3812,6 +4346,79 @@ mod tests {
                 loop_condition: None,
                 async_run: true,
             })]
+        );
+    }
+
+    #[test]
+    fn parses_classic_directional_move_statement() {
+        let program = parse_program("g.move up 4 in 3 Seconds").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::Move(MoveStatement {
+                target: "g".to_owned(),
+                direction: MoveDirection::Up,
+                distance: 4.0,
+                duration_seconds: 3.0,
+                loop_condition: None,
+                async_run: false,
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_top_level_classic_repeat_move_block() {
+        let program = parse_program(
+            "g=>gemini\n\ndo 3 Times\n  g.move left 4 in 3 Seconds\n  g.move right 4 in 2 seconds \n  g.move up 2 in 1 Seconds\n  g.move down 3 in 2 seconds \nend do ",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::ModelDecl {
+                    name: "g".to_owned(),
+                    resource: "gemini".to_owned(),
+                    options: EntityOptions::default(),
+                },
+                Statement::Repeat {
+                    times: 3,
+                    actions: vec![
+                        Statement::Move(MoveStatement {
+                            target: "g".to_owned(),
+                            direction: MoveDirection::Left,
+                            distance: 4.0,
+                            duration_seconds: 3.0,
+                            loop_condition: None,
+                            async_run: false,
+                        }),
+                        Statement::Move(MoveStatement {
+                            target: "g".to_owned(),
+                            direction: MoveDirection::Right,
+                            distance: 4.0,
+                            duration_seconds: 2.0,
+                            loop_condition: None,
+                            async_run: false,
+                        }),
+                        Statement::Move(MoveStatement {
+                            target: "g".to_owned(),
+                            direction: MoveDirection::Up,
+                            distance: 2.0,
+                            duration_seconds: 1.0,
+                            loop_condition: None,
+                            async_run: false,
+                        }),
+                        Statement::Move(MoveStatement {
+                            target: "g".to_owned(),
+                            direction: MoveDirection::Down,
+                            distance: 3.0,
+                            duration_seconds: 2.0,
+                            loop_condition: None,
+                            async_run: false,
+                        }),
+                    ],
+                },
+            ]
         );
     }
 
@@ -5292,6 +5899,137 @@ mod tests {
     }
 
     #[test]
+    fn parses_debug_mode_commands() {
+        let program = parse_program("debug.on\ndebug.off").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::DebugMode { enabled: true },
+                Statement::DebugMode { enabled: false },
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_runtime_ui_commands() {
+        let program = parse_program(
+            "UI.load \"game_intro_ui\"\n\
+             UI.layer1.titlePanel.ease(\"EaseInBack\", Down, 0.6)\n\
+             UI.layer1.titlePanel.titleText.message(\"MASTER THE FIGHT\", TextEffect.fade_in, 1.1)\n\
+             UI.layer1.footerPanel.hide",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::UiLoad { name } if name == "game_intro_ui"
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::UiEase(ease)
+                if ease.target.layer == "layer1"
+                    && ease.target.widget_path == vec!["titlePanel"]
+                    && ease.direction == UiEaseDirection::Down
+        ));
+        assert!(matches!(
+            &program.statements[2],
+            Statement::UiMessage(message)
+                if message.target.widget_path == vec!["titlePanel", "titleText"]
+                    && message.text == "MASTER THE FIGHT"
+                    && message.effects == "TextEffect.fade_in"
+        ));
+        assert!(matches!(
+            &program.statements[3],
+            Statement::UiShowHide(show_hide)
+                if show_hide.target.widget_path == vec!["footerPanel"] && !show_hide.visible
+        ));
+    }
+
+    #[test]
+    fn parses_ui_message_with_comma_in_text() {
+        let program = parse_program(
+            "UI.layer1.footerPanel.footerSub.message(\"Memorize the keys, then launch straight into the fight.\", TextEffect.word_reveal | TextEffect.fade_in, 1.2)",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::UiMessage(message)
+                if message.target.widget_path == vec!["footerPanel", "footerSub"]
+                    && message.text == "Memorize the keys, then launch straight into the fight."
+                    && message.effects == "TextEffect.word_reveal | TextEffect.fade_in"
+                    && (message.duration_seconds - 1.2).abs() < f32::EPSILON
+        ));
+    }
+
+    #[test]
+    fn parses_ui_text_property_expression_and_literal() {
+        let program = parse_program(
+            "UI.layer1.panel2.timer.text = timer\n\
+             UI.layer1.panel2.label.text = \"timer\"\n\
+             UI.layer1.panel2.caption.text = \"timer = \" + timer",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::UiSetProperty(property)
+                if property.target.widget_path == vec!["panel2", "timer"]
+                    && property.property == "text"
+                    && property.value == UiPropertyValue::Expression(
+                        AssignmentValue::Symbol("timer".to_owned())
+                    )
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::UiSetProperty(property)
+                if property.target.widget_path == vec!["panel2", "label"]
+                    && property.property == "text"
+                    && property.value == UiPropertyValue::Literal("timer".to_owned())
+        ));
+        assert!(matches!(
+            &program.statements[2],
+            Statement::UiSetProperty(property)
+                if property.target.widget_path == vec!["panel2", "caption"]
+                    && property.property == "text"
+                    && property.value == UiPropertyValue::Concatenation(vec![
+                        UiPropertyValuePart::Literal("timer = ".to_owned()),
+                        UiPropertyValuePart::Expression(AssignmentValue::Symbol("timer".to_owned())),
+                    ])
+        ));
+    }
+
+    #[test]
+    fn parses_local_comma_assignments_inside_function_blocks() {
+        let program = parse_program(
+            "print_status = {\n  var frame1=round(life1*16/INITIAL_PLAYER_STRENGTH),\n      frame2=round(life2*16/INITIAL_PLAYER_STRENGTH),\n      player_percent=round(life1*100/INITIAL_PLAYER_STRENGTH),\n      opponent_percent=round(life2*100/INITIAL_PLAYER_STRENGTH)\n  UI.layer1.playerHud.playerHealthValue.text = player_percent + \"%\"\n}",
+        )
+        .unwrap();
+
+        let Statement::FunctionDef(function) = &program.statements[0] else {
+            panic!("expected function definition");
+        };
+
+        assert_eq!(function.actions.len(), 5);
+        assert!(matches!(
+            &function.actions[2],
+            Statement::LocalAssignment(AssignmentStatement { name, .. })
+                if name == "player_percent"
+        ));
+        assert!(matches!(
+            &function.actions[4],
+            Statement::UiSetProperty(property)
+                if property.value == UiPropertyValue::Concatenation(vec![
+                    UiPropertyValuePart::Expression(AssignmentValue::Symbol(
+                        "player_percent".to_owned()
+                    )),
+                    UiPropertyValuePart::Literal("%".to_owned()),
+                ])
+        ));
+    }
+
+    #[test]
     fn parses_third_person_camera_and_attach_commands() {
         let program = parse_program(
             "crystal_hunt_cam = camera.system.third_person(player1, distance 12, height 3.4, side 4.5, look ahead 4, damping 7, fov 62, max fov 72)\ncamera.attach to tg : pos (0,1,-12)\ncamera.attach stop",
@@ -5424,6 +6162,7 @@ mod tests {
                                 y: 3.0,
                                 z: 3.0,
                             }),
+                            sprite: true,
                             ..Default::default()
                         },
                     }],
@@ -5458,6 +6197,7 @@ mod tests {
                 resource: "throw_text".to_owned(),
                 options: EntityOptions {
                     hidden: true,
+                    sprite: true,
                     ..Default::default()
                 },
             }
