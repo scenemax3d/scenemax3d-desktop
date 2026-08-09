@@ -14,4 +14,6 @@ scenemax_assets = { path = "../assets" }
 scenemax_ir = { path = "../ir" }
 scenemax_multiplayer = { path = "../multiplayer" }
 scenemax_parser = { path = "../parser" }
+serde = { workspace = true }
+serde_json = { workspace = true }
 tracing.workspace = true

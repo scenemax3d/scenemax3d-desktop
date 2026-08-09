@@ -25,6 +25,7 @@ use bevy::{
     gltf::Gltf,
     log::LogPlugin,
     prelude::*,
+    ui::IsDefaultUiCamera,
     window::{PresentMode, WindowResolution},
     winit::WinitSettings,
 };
@@ -40,8 +41,9 @@ use scenemax_parser::{
     ComparisonOperator, Condition, EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage,
     LoggerStatement, MoveDirection, ObjectPoolStatement, PoolReleaseStatement, PositionExpr,
     PositionStatement, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
-    SceneMaxCollisionShape, SceneMaxVec3, Statement,
+    SceneMaxCollisionShape, SceneMaxVec3, Statement, UiEaseDirection, UiTargetPath,
 };
+use serde::Deserialize;
 
 #[derive(TnuaScheme)]
 #[scheme(basis = TnuaBuiltinWalk)]
@@ -106,6 +108,8 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             script_root,
             asset_root: asset_root.clone(),
             builtin_asset_root,
+            window_width: launch.window.width,
+            window_height: launch.window.height,
         })
         .insert_resource(scene_program)
         .init_resource::<SceneMaxVars>()
@@ -119,6 +123,8 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<ActiveActionControllers>()
         .init_resource::<SceneMaxPhysicsContacts>()
         .init_resource::<SceneMaxColliderBounds>()
+        .init_resource::<SceneMaxUiRuntime>()
+        .init_resource::<SceneMaxUiActionQueue>()
         .add_plugins(
             DefaultPlugins
                 .build()
@@ -170,6 +176,12 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_virtual_colliders,
                 update_current_animation_vars,
                 apply_when_events,
+            )
+                .chain(),
+        )
+        .add_systems(
+            Update,
+            (
                 apply_builtin_navigation_controls,
                 update_timed_turns,
                 update_timed_moves,
@@ -180,6 +192,15 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 restore_default_idle_animations,
                 play_pending_animations,
                 apply_animation_speed_overrides,
+            )
+                .chain(),
+        )
+        .add_systems(
+            Update,
+            (
+                apply_scenemax_ui_actions,
+                update_scenemax_ui_eases,
+                update_scenemax_ui_message_animations,
             )
                 .chain(),
         )
@@ -260,6 +281,8 @@ struct SceneMaxLaunchContext {
     script_root: Option<PathBuf>,
     asset_root: Option<PathBuf>,
     builtin_asset_root: Option<PathBuf>,
+    window_width: u32,
+    window_height: u32,
 }
 
 #[derive(Debug, Resource, Default)]
@@ -396,6 +419,263 @@ impl SceneMaxAnimationDurations {
             .copied()
             .or_else(|| self.by_clip.get(&clip_key).copied())
     }
+}
+
+#[derive(Debug, Resource, Default)]
+struct SceneMaxUiRuntime {
+    active_ui_name: Option<String>,
+    loaded: HashMap<String, LoadedSceneMaxUi>,
+    sprite_index: HashMap<String, SceneMaxSpriteAsset>,
+    sprite_index_root: Option<PathBuf>,
+}
+
+#[derive(Debug, Default)]
+struct LoadedSceneMaxUi {
+    root_entities: Vec<Entity>,
+    layer_entities: HashMap<String, Entity>,
+    targets: HashMap<String, SceneMaxUiTarget>,
+}
+
+#[derive(Debug, Clone)]
+struct SceneMaxUiTarget {
+    entity: Entity,
+    text_entity: Option<Entity>,
+}
+
+#[derive(Debug, Resource, Default)]
+struct SceneMaxUiActionQueue {
+    actions: Vec<SceneMaxUiAction>,
+}
+
+#[derive(Debug, Clone)]
+enum SceneMaxUiAction {
+    Load {
+        name: String,
+    },
+    ShowHide {
+        target: UiTargetPath,
+        visible: bool,
+    },
+    Message {
+        target: UiTargetPath,
+        text: String,
+        effects: String,
+        duration_seconds: f32,
+    },
+    Ease {
+        target: UiTargetPath,
+        easing: String,
+        direction: UiEaseDirection,
+        duration_seconds: f32,
+    },
+    SetProperty {
+        target: UiTargetPath,
+        property: String,
+        value: String,
+    },
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Component)]
+struct SceneMaxUiWidget {
+    ui_name: String,
+    layer: String,
+    widget_path: Vec<String>,
+}
+
+#[derive(Debug, Clone, Component)]
+struct SceneMaxUiEase {
+    start: Vec2,
+    elapsed_seconds: f32,
+    duration_seconds: f32,
+    easing: String,
+}
+
+#[derive(Debug, Clone, Component)]
+struct SceneMaxUiMessageAnimation {
+    full_text: String,
+    elapsed_seconds: f32,
+    duration_seconds: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SceneMaxUiDocument {
+    name: String,
+    #[serde(default = "default_ui_canvas_width")]
+    canvas_width: f32,
+    #[serde(default = "default_ui_canvas_height")]
+    canvas_height: f32,
+    #[serde(default)]
+    layers: Vec<SceneMaxUiLayerDef>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SceneMaxUiLayerDef {
+    name: String,
+    #[serde(default = "default_true")]
+    visible: bool,
+    #[serde(default)]
+    z_order: i32,
+    #[serde(default)]
+    widgets: Vec<SceneMaxUiWidgetDef>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SceneMaxUiWidgetDef {
+    name: String,
+    #[serde(rename = "type")]
+    widget_type: String,
+    #[serde(default = "default_ui_size_mode")]
+    width_mode: String,
+    #[serde(default = "default_ui_size_mode")]
+    height_mode: String,
+    #[serde(default = "default_ui_width")]
+    width: f32,
+    #[serde(default = "default_ui_height")]
+    height: f32,
+    #[serde(default)]
+    constraints: Vec<SceneMaxUiConstraint>,
+    #[serde(default = "default_half")]
+    horizontal_bias: f32,
+    #[serde(default = "default_half")]
+    vertical_bias: f32,
+    #[serde(default)]
+    padding_left: f32,
+    #[serde(default)]
+    padding_right: f32,
+    #[serde(default)]
+    padding_top: f32,
+    #[serde(default)]
+    padding_bottom: f32,
+    #[serde(default)]
+    margin_left: f32,
+    #[serde(default)]
+    margin_right: f32,
+    #[serde(default)]
+    margin_top: f32,
+    #[serde(default)]
+    margin_bottom: f32,
+    #[serde(default = "default_true")]
+    visible: bool,
+    #[serde(default)]
+    center_horizontal: bool,
+    #[serde(default)]
+    center_vertical: bool,
+    #[serde(default)]
+    z_order: i32,
+    #[serde(default = "default_panel_color")]
+    background_color: String,
+    #[serde(default)]
+    text: String,
+    #[serde(default = "default_text_color")]
+    text_color: String,
+    #[serde(default = "default_font_size")]
+    font_size: f32,
+    #[serde(default = "default_text_alignment")]
+    text_alignment: String,
+    #[serde(default)]
+    button_text: String,
+    #[serde(default = "default_button_color")]
+    button_color: String,
+    #[serde(default = "default_text_color")]
+    button_text_color: String,
+    #[serde(default)]
+    image_path: Option<String>,
+    #[serde(default)]
+    sprite_name: Option<String>,
+    #[serde(default)]
+    sprite_frame: usize,
+    #[serde(default)]
+    list_headers: Vec<String>,
+    #[serde(default)]
+    list_rows: Vec<Vec<String>>,
+    #[serde(default = "default_font_size")]
+    list_header_font_size: f32,
+    #[serde(default = "default_list_row_font_size")]
+    list_row_font_size: f32,
+    #[serde(default)]
+    children: Vec<SceneMaxUiWidgetDef>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SceneMaxUiConstraint {
+    side: String,
+    target_name: String,
+    target_side: String,
+    #[serde(default)]
+    margin: f32,
+}
+
+#[derive(Debug, Clone)]
+struct SceneMaxSpriteAsset {
+    path: String,
+    _rows: usize,
+    _cols: usize,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct UiLayoutRect {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+}
+
+fn default_ui_canvas_width() -> f32 {
+    1920.0
+}
+
+fn default_ui_canvas_height() -> f32 {
+    1080.0
+}
+
+fn default_ui_width() -> f32 {
+    100.0
+}
+
+fn default_ui_height() -> f32 {
+    50.0
+}
+
+fn default_ui_size_mode() -> String {
+    "WRAP_CONTENT".to_owned()
+}
+
+fn default_panel_color() -> String {
+    "#33333300".to_owned()
+}
+
+fn default_text_color() -> String {
+    "#FFFFFFFF".to_owned()
+}
+
+fn default_button_color() -> String {
+    "#4488FFFF".to_owned()
+}
+
+fn default_text_alignment() -> String {
+    "left".to_owned()
+}
+
+fn default_font_size() -> f32 {
+    16.0
+}
+
+fn default_list_row_font_size() -> f32 {
+    14.0
+}
+
+fn default_half() -> f32 {
+    0.5
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug)]
@@ -950,6 +1230,1009 @@ fn default_script_path(project_root: Option<&Path>) -> Option<PathBuf> {
     .find(|path| path.is_file())
 }
 
+fn scenemax_ui_action_from_statement(action: &Statement) -> Option<SceneMaxUiAction> {
+    match action {
+        Statement::UiLoad { name } => Some(SceneMaxUiAction::Load { name: name.clone() }),
+        Statement::UiShowHide(show_hide) => Some(SceneMaxUiAction::ShowHide {
+            target: show_hide.target.clone(),
+            visible: show_hide.visible,
+        }),
+        Statement::UiMessage(message) => Some(SceneMaxUiAction::Message {
+            target: message.target.clone(),
+            text: message.text.clone(),
+            effects: message.effects.clone(),
+            duration_seconds: message.duration_seconds,
+        }),
+        Statement::UiEase(ease) => Some(SceneMaxUiAction::Ease {
+            target: ease.target.clone(),
+            easing: ease.easing.clone(),
+            direction: ease.direction,
+            duration_seconds: ease.duration_seconds,
+        }),
+        Statement::UiSetProperty(property) => Some(SceneMaxUiAction::SetProperty {
+            target: property.target.clone(),
+            property: property.property.clone(),
+            value: property.value.clone(),
+        }),
+        _ => None,
+    }
+}
+
+fn apply_scenemax_ui_actions(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    context: Res<SceneMaxLaunchContext>,
+    mut ui_runtime: ResMut<SceneMaxUiRuntime>,
+    mut ui_queue: ResMut<SceneMaxUiActionQueue>,
+    mut text_query: Query<&mut Text>,
+    mut visibility_query: Query<&mut Visibility>,
+) {
+    let actions = ui_queue.actions.drain(..).collect::<Vec<_>>();
+    if actions.is_empty() {
+        return;
+    }
+    for action in actions {
+        match action {
+            SceneMaxUiAction::Load { name } => {
+                if let Err(error) = load_scenemax_ui_document(
+                    &name,
+                    &mut commands,
+                    &asset_server,
+                    &context,
+                    &mut ui_runtime,
+                ) {
+                    tracing::warn!(name, %error, "failed to load SceneMax UI document");
+                    write_runtime_diagnostic_line(format!("failed to load UI {name}: {error}"));
+                }
+            }
+            SceneMaxUiAction::ShowHide { target, visible } => {
+                if let Some(target) = resolve_ui_target(&ui_runtime, &target) {
+                    if let Ok(mut visibility_component) = visibility_query.get_mut(target.entity) {
+                        *visibility_component = if visible {
+                            Visibility::Inherited
+                        } else {
+                            Visibility::Hidden
+                        };
+                    } else {
+                        commands.entity(target.entity).insert(if visible {
+                            Visibility::Inherited
+                        } else {
+                            Visibility::Hidden
+                        });
+                    }
+                }
+            }
+            SceneMaxUiAction::Message {
+                target,
+                text,
+                effects,
+                duration_seconds,
+            } => {
+                if let Some(target) = resolve_ui_target(&ui_runtime, &target)
+                    && let Some(text_entity) = target.text_entity
+                    && let Ok(mut text_component) = text_query.get_mut(text_entity)
+                {
+                    commands
+                        .entity(text_entity)
+                        .remove::<SceneMaxUiMessageAnimation>();
+                    if ui_message_has_effect(&effects, "typewriter")
+                        && duration_seconds > f32::EPSILON
+                    {
+                        text_component.0.clear();
+                        commands
+                            .entity(text_entity)
+                            .insert(SceneMaxUiMessageAnimation {
+                                full_text: text,
+                                elapsed_seconds: 0.0,
+                                duration_seconds: duration_seconds.max(0.001),
+                            });
+                    } else {
+                        text_component.0 = text;
+                    }
+                }
+            }
+            SceneMaxUiAction::Ease {
+                target,
+                easing,
+                direction,
+                duration_seconds,
+            } => {
+                if let Some(target_path) = resolve_ui_target_path(&ui_runtime, &target)
+                    && let Some(target) = resolve_ui_target(&ui_runtime, &target)
+                {
+                    let start = ui_ease_start_offset(direction);
+                    commands.entity(target.entity).insert((
+                        Visibility::Inherited,
+                        UiTransform::from_translation(Val2::percent(start.x, start.y)),
+                        SceneMaxUiEase {
+                            start,
+                            elapsed_seconds: 0.0,
+                            duration_seconds: duration_seconds.max(0.001),
+                            easing,
+                        },
+                    ));
+                    tracing::debug!(target = target_path, "started SceneMax UI ease");
+                }
+            }
+            SceneMaxUiAction::SetProperty {
+                target,
+                property,
+                value,
+            } => {
+                if property.eq_ignore_ascii_case("text") {
+                    if let Some(target) = resolve_ui_target(&ui_runtime, &target)
+                        && let Some(text_entity) = target.text_entity
+                        && let Ok(mut text_component) = text_query.get_mut(text_entity)
+                    {
+                        commands
+                            .entity(text_entity)
+                            .remove::<SceneMaxUiMessageAnimation>();
+                        text_component.0 = value;
+                    }
+                } else if property.eq_ignore_ascii_case("visible") {
+                    let visible = !matches!(value.to_ascii_lowercase().as_str(), "0" | "false");
+                    if let Some(target) = resolve_ui_target(&ui_runtime, &target) {
+                        commands.entity(target.entity).insert(if visible {
+                            Visibility::Inherited
+                        } else {
+                            Visibility::Hidden
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn update_scenemax_ui_eases(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut query: Query<(Entity, &mut UiTransform, &mut SceneMaxUiEase)>,
+) {
+    for (entity, mut transform, mut ease) in &mut query {
+        ease.elapsed_seconds += time.delta_secs();
+        let t = (ease.elapsed_seconds / ease.duration_seconds).clamp(0.0, 1.0);
+        let eased = ui_ease_progress(t, &ease.easing);
+        let offset = ease.start * (1.0 - eased);
+        transform.translation = Val2::percent(offset.x, offset.y);
+        if t >= 1.0 {
+            transform.translation = Val2::ZERO;
+            commands.entity(entity).remove::<SceneMaxUiEase>();
+        }
+    }
+}
+
+fn update_scenemax_ui_message_animations(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut query: Query<(Entity, &mut Text, &mut SceneMaxUiMessageAnimation)>,
+) {
+    for (entity, mut text, mut animation) in &mut query {
+        animation.elapsed_seconds += time.delta_secs();
+        let progress = (animation.elapsed_seconds / animation.duration_seconds).clamp(0.0, 1.0);
+        text.0 = typewriter_visible_text(&animation.full_text, progress);
+        if progress >= 1.0 {
+            text.0 = animation.full_text.clone();
+            commands
+                .entity(entity)
+                .remove::<SceneMaxUiMessageAnimation>();
+        }
+    }
+}
+
+fn typewriter_visible_text(full_text: &str, progress: f32) -> String {
+    let total_chars = full_text.chars().count();
+    let visible_chars = ((total_chars as f32) * progress.clamp(0.0, 1.0)).ceil() as usize;
+    full_text.chars().take(visible_chars).collect()
+}
+
+fn ui_message_has_effect(effects: &str, effect_name: &str) -> bool {
+    let effect_name = effect_name.to_ascii_lowercase();
+    effects
+        .split(['|', ',', ' '])
+        .map(|part| part.trim().to_ascii_lowercase())
+        .any(|part| {
+            part == effect_name
+                || part
+                    .rsplit_once('.')
+                    .map(|(_, name)| name == effect_name)
+                    .unwrap_or(false)
+        })
+}
+
+fn load_scenemax_ui_document(
+    name: &str,
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    context: &SceneMaxLaunchContext,
+    ui_runtime: &mut SceneMaxUiRuntime,
+) -> Result<()> {
+    if ui_runtime.loaded.contains_key(name) {
+        ui_runtime.active_ui_name = Some(name.to_owned());
+        return Ok(());
+    }
+    let path = resolve_scenemax_ui_path(name, context)?;
+    let source = fs::read_to_string(&path)?;
+    let doc: SceneMaxUiDocument = serde_json::from_str(&source)?;
+    let ui_name = doc.name.clone();
+    let ui_scale = scenemax_ui_document_scale(&doc, context);
+    refresh_sprite_index(ui_runtime, context);
+
+    let mut loaded = LoadedSceneMaxUi::default();
+    for layer in &doc.layers {
+        let root = commands
+            .spawn((
+                Name::new(format!("UI.{}.{}", ui_name, layer.name)),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::ZERO,
+                    top: Val::ZERO,
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    ..default()
+                },
+                UiTransform::default(),
+                if layer.visible {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                },
+                GlobalZIndex(layer.z_order),
+            ))
+            .id();
+        loaded.root_entities.push(root);
+        loaded.layer_entities.insert(layer.name.clone(), root);
+        loaded.targets.insert(
+            ui_target_key(&ui_name, &layer.name, &[]),
+            SceneMaxUiTarget {
+                entity: root,
+                text_entity: None,
+            },
+        );
+
+        let local_rects =
+            solve_ui_widget_layout(&layer.widgets, doc.canvas_width, doc.canvas_height);
+        for widget in sorted_ui_widgets(&layer.widgets) {
+            spawn_scenemax_ui_widget(
+                commands,
+                asset_server,
+                context,
+                ui_runtime,
+                &ui_name,
+                &layer.name,
+                Vec::new(),
+                widget,
+                root,
+                UiLayoutRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: doc.canvas_width,
+                    height: doc.canvas_height,
+                },
+                ui_scale,
+                &local_rects,
+                &mut loaded,
+            );
+        }
+    }
+
+    ui_runtime.active_ui_name = Some(ui_name.clone());
+    ui_runtime.loaded.insert(ui_name.clone(), loaded);
+    tracing::info!(name = ui_name, path = %path.display(), "loaded SceneMax UI document");
+    write_runtime_diagnostic_line(format!("loaded UI {ui_name} from {}", path.display()));
+    Ok(())
+}
+
+fn resolve_scenemax_ui_path(name: &str, context: &SceneMaxLaunchContext) -> Result<PathBuf> {
+    let file_name = if name.ends_with(".smui") {
+        name.to_owned()
+    } else {
+        format!("{name}.smui")
+    };
+    let mut candidates = Vec::new();
+    if let Some(script_root) = context.script_root.as_ref() {
+        candidates.push(script_root.join(&file_name));
+    }
+    if let Some(asset_root) = context.asset_root.as_ref()
+        && let Some(project_root) = asset_root.parent()
+    {
+        candidates.push(project_root.join("scripts").join(&file_name));
+    }
+    candidates
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+        .ok_or_else(|| anyhow::anyhow!("UI document {file_name} was not found"))
+}
+
+fn scenemax_ui_document_scale(doc: &SceneMaxUiDocument, context: &SceneMaxLaunchContext) -> f32 {
+    let width_scale = context.window_width as f32 / doc.canvas_width.max(1.0);
+    let height_scale = context.window_height as f32 / doc.canvas_height.max(1.0);
+    width_scale.min(height_scale).max(0.1)
+}
+
+fn scaled_ui_font_size(font_size: f32, ui_scale: f32) -> f32 {
+    (font_size * ui_scale).max(1.0)
+}
+
+fn spawn_scenemax_ui_widget(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    context: &SceneMaxLaunchContext,
+    ui_runtime: &SceneMaxUiRuntime,
+    ui_name: &str,
+    layer_name: &str,
+    parent_path: Vec<String>,
+    widget: &SceneMaxUiWidgetDef,
+    parent_entity: Entity,
+    parent_rect: UiLayoutRect,
+    ui_scale: f32,
+    sibling_rects: &HashMap<String, UiLayoutRect>,
+    loaded: &mut LoadedSceneMaxUi,
+) {
+    let Some(rect) = sibling_rects.get(&widget.name).copied() else {
+        return;
+    };
+    let mut widget_path = parent_path.clone();
+    widget_path.push(widget.name.clone());
+    let local_rect = UiLayoutRect {
+        x: rect.x - parent_rect.x,
+        y: rect.y - parent_rect.y,
+        width: rect.width,
+        height: rect.height,
+    };
+    let node = node_from_rect(local_rect, parent_rect);
+    let key = ui_target_key(ui_name, layer_name, &widget_path);
+    let visibility = if widget.visible {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+    let base_marker = SceneMaxUiWidget {
+        ui_name: ui_name.to_owned(),
+        layer: layer_name.to_owned(),
+        widget_path: widget_path.clone(),
+    };
+
+    let (entity, text_entity) = match widget.widget_type.as_str() {
+        "TEXT_VIEW" | "EDIT_TEXT" => {
+            let entity = commands
+                .spawn((
+                    Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
+                    node,
+                    UiTransform::default(),
+                    visibility,
+                    ZIndex(widget.z_order),
+                    Text::new(widget.text.clone()),
+                    TextFont {
+                        font_size: FontSize::Px(scaled_ui_font_size(widget.font_size, ui_scale)),
+                        ..default()
+                    },
+                    TextColor(parse_ui_color(&widget.text_color)),
+                    TextLayout::justify(ui_text_justify(&widget.text_alignment)).with_no_wrap(),
+                    base_marker,
+                ))
+                .id();
+            (entity, Some(entity))
+        }
+        "BUTTON" => {
+            let entity = commands
+                .spawn((
+                    Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
+                    node,
+                    BackgroundColor(parse_ui_color(&widget.button_color)),
+                    UiTransform::default(),
+                    visibility,
+                    ZIndex(widget.z_order),
+                    base_marker,
+                ))
+                .id();
+            let text = commands
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::ZERO,
+                        top: Val::ZERO,
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        ..default()
+                    },
+                    Text::new(widget.button_text.clone()),
+                    TextFont {
+                        font_size: FontSize::Px(scaled_ui_font_size(widget.font_size, ui_scale)),
+                        ..default()
+                    },
+                    TextColor(parse_ui_color(&widget.button_text_color)),
+                    TextLayout::justify(Justify::Center).with_no_wrap(),
+                ))
+                .id();
+            commands.entity(entity).add_child(text);
+            (entity, Some(text))
+        }
+        "IMAGE" => {
+            let image_node = ui_image_node_for_widget(widget, asset_server, context, ui_runtime);
+            let entity = commands
+                .spawn((
+                    Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
+                    node,
+                    image_node,
+                    UiTransform::default(),
+                    visibility,
+                    ZIndex(widget.z_order),
+                    base_marker,
+                ))
+                .id();
+            (entity, None)
+        }
+        "LIST_VIEW" => {
+            let text = list_view_text(widget);
+            let entity = commands
+                .spawn((
+                    Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
+                    node,
+                    BackgroundColor(parse_ui_color(&widget.background_color)),
+                    UiTransform::default(),
+                    visibility,
+                    ZIndex(widget.z_order),
+                    Text::new(text),
+                    TextFont {
+                        font_size: FontSize::Px(scaled_ui_font_size(
+                            widget.list_row_font_size,
+                            ui_scale,
+                        )),
+                        ..default()
+                    },
+                    TextColor(parse_ui_color(&widget.text_color)),
+                    TextLayout::justify(Justify::Left).with_no_wrap(),
+                    base_marker,
+                ))
+                .id();
+            (entity, Some(entity))
+        }
+        _ => {
+            let entity = commands
+                .spawn((
+                    Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
+                    node,
+                    BackgroundColor(parse_ui_color(&widget.background_color)),
+                    UiTransform::default(),
+                    visibility,
+                    ZIndex(widget.z_order),
+                    base_marker,
+                ))
+                .id();
+            (entity, None)
+        }
+    };
+    commands.entity(parent_entity).add_child(entity);
+    loaded.targets.insert(
+        key,
+        SceneMaxUiTarget {
+            entity,
+            text_entity,
+        },
+    );
+
+    if !widget.children.is_empty() {
+        let child_parent_rect = UiLayoutRect {
+            x: rect.x + widget.padding_left,
+            y: rect.y + widget.padding_top,
+            width: (rect.width - widget.padding_left - widget.padding_right).max(1.0),
+            height: (rect.height - widget.padding_top - widget.padding_bottom).max(1.0),
+        };
+        let child_rects = solve_ui_widget_layout(
+            &widget.children,
+            child_parent_rect.width,
+            child_parent_rect.height,
+        )
+        .into_iter()
+        .map(|(name, mut child_rect)| {
+            child_rect.x += child_parent_rect.x;
+            child_rect.y += child_parent_rect.y;
+            (name, child_rect)
+        })
+        .collect::<HashMap<_, _>>();
+        for child in sorted_ui_widgets(&widget.children) {
+            spawn_scenemax_ui_widget(
+                commands,
+                asset_server,
+                context,
+                ui_runtime,
+                ui_name,
+                layer_name,
+                widget_path.clone(),
+                child,
+                entity,
+                child_parent_rect,
+                ui_scale,
+                &child_rects,
+                loaded,
+            );
+        }
+    }
+}
+
+fn sorted_ui_widgets(widgets: &[SceneMaxUiWidgetDef]) -> Vec<&SceneMaxUiWidgetDef> {
+    let mut sorted = widgets.iter().collect::<Vec<_>>();
+    sorted.sort_by_key(|widget| widget.z_order);
+    sorted
+}
+
+fn node_from_rect(rect: UiLayoutRect, parent_rect: UiLayoutRect) -> Node {
+    Node {
+        position_type: PositionType::Absolute,
+        left: Val::Percent(percent(rect.x, parent_rect.width)),
+        top: Val::Percent(percent(rect.y, parent_rect.height)),
+        width: Val::Percent(percent(rect.width, parent_rect.width)),
+        height: Val::Percent(percent(rect.height, parent_rect.height)),
+        ..default()
+    }
+}
+
+fn percent(value: f32, total: f32) -> f32 {
+    if total.abs() <= f32::EPSILON {
+        0.0
+    } else {
+        value / total * 100.0
+    }
+}
+
+fn solve_ui_widget_layout(
+    widgets: &[SceneMaxUiWidgetDef],
+    parent_width: f32,
+    parent_height: f32,
+) -> HashMap<String, UiLayoutRect> {
+    let mut results = widgets
+        .iter()
+        .map(|widget| {
+            (
+                widget.name.clone(),
+                UiLayoutRect {
+                    width: preferred_ui_widget_size(widget, true),
+                    height: preferred_ui_widget_size(widget, false),
+                    ..default()
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    for _ in 0..widgets.len().max(1) {
+        for widget in widgets {
+            let rect = resolve_ui_widget_rect(widget, &results, parent_width, parent_height);
+            results.insert(widget.name.clone(), rect);
+        }
+    }
+    results
+}
+
+fn resolve_ui_widget_rect(
+    widget: &SceneMaxUiWidgetDef,
+    results: &HashMap<String, UiLayoutRect>,
+    parent_width: f32,
+    parent_height: f32,
+) -> UiLayoutRect {
+    let (x, width) = resolve_ui_axis(widget, results, parent_width, true);
+    let (y, height) = resolve_ui_axis(widget, results, parent_height, false);
+    UiLayoutRect {
+        x,
+        y,
+        width,
+        height,
+    }
+}
+
+fn resolve_ui_axis(
+    widget: &SceneMaxUiWidgetDef,
+    results: &HashMap<String, UiLayoutRect>,
+    parent_size: f32,
+    horizontal: bool,
+) -> (f32, f32) {
+    let start_side = if horizontal { "LEFT" } else { "TOP" };
+    let end_side = if horizontal { "RIGHT" } else { "BOTTOM" };
+    let mut start = widget
+        .constraints
+        .iter()
+        .find(|constraint| constraint.side.eq_ignore_ascii_case(start_side));
+    let mut end = widget
+        .constraints
+        .iter()
+        .find(|constraint| constraint.side.eq_ignore_ascii_case(end_side));
+
+    let centered = if horizontal {
+        widget.center_horizontal
+    } else {
+        widget.center_vertical
+    };
+    let synthetic_start;
+    let synthetic_end;
+    if centered && start.is_none() && end.is_none() {
+        synthetic_start = SceneMaxUiConstraint {
+            side: start_side.to_owned(),
+            target_name: "parent".to_owned(),
+            target_side: start_side.to_owned(),
+            margin: 0.0,
+        };
+        synthetic_end = SceneMaxUiConstraint {
+            side: end_side.to_owned(),
+            target_name: "parent".to_owned(),
+            target_side: end_side.to_owned(),
+            margin: 0.0,
+        };
+        start = Some(&synthetic_start);
+        end = Some(&synthetic_end);
+    }
+
+    let size_mode = if horizontal {
+        &widget.width_mode
+    } else {
+        &widget.height_mode
+    };
+    let fixed_size = if horizontal {
+        widget.width
+    } else {
+        widget.height
+    };
+    let bias = if horizontal {
+        widget.horizontal_bias
+    } else {
+        widget.vertical_bias
+    };
+    let widget_start_margin = if horizontal {
+        widget.margin_left
+    } else {
+        widget.margin_top
+    };
+    let widget_end_margin = if horizontal {
+        widget.margin_right
+    } else {
+        widget.margin_bottom
+    };
+    let start_anchor = start
+        .map(|constraint| resolve_ui_anchor(constraint, results, parent_size, horizontal))
+        .unwrap_or(0.0);
+    let end_anchor = end
+        .map(|constraint| resolve_ui_anchor(constraint, results, parent_size, horizontal))
+        .unwrap_or(0.0);
+    let start_margin =
+        start.map(|constraint| constraint.margin).unwrap_or(0.0) + widget_start_margin;
+    let end_margin = end.map(|constraint| constraint.margin).unwrap_or(0.0) + widget_end_margin;
+
+    if let (Some(_), Some(_)) = (start, end) {
+        let available = end_anchor - start_anchor - start_margin - end_margin;
+        let size = if size_mode.eq_ignore_ascii_case("MATCH_CONSTRAINT") {
+            available.max(0.0)
+        } else if size_mode.eq_ignore_ascii_case("FIXED") {
+            fixed_size
+        } else {
+            preferred_ui_widget_size(widget, horizontal)
+        };
+        return (
+            start_anchor + start_margin + (available - size) * bias,
+            size,
+        );
+    }
+    if start.is_some() {
+        let size = if size_mode.eq_ignore_ascii_case("FIXED") {
+            fixed_size
+        } else {
+            preferred_ui_widget_size(widget, horizontal)
+        };
+        return (start_anchor + start_margin, size);
+    }
+    if end.is_some() {
+        let size = if size_mode.eq_ignore_ascii_case("FIXED") {
+            fixed_size
+        } else {
+            preferred_ui_widget_size(widget, horizontal)
+        };
+        return (end_anchor - end_margin - size, size);
+    }
+
+    let size = if size_mode.eq_ignore_ascii_case("FIXED") {
+        fixed_size
+    } else {
+        preferred_ui_widget_size(widget, horizontal)
+    };
+    (widget_start_margin, size)
+}
+
+fn resolve_ui_anchor(
+    constraint: &SceneMaxUiConstraint,
+    results: &HashMap<String, UiLayoutRect>,
+    parent_size: f32,
+    horizontal: bool,
+) -> f32 {
+    if constraint.target_name.eq_ignore_ascii_case("parent") {
+        return match constraint.target_side.to_ascii_uppercase().as_str() {
+            "RIGHT" | "BOTTOM" => parent_size,
+            _ => 0.0,
+        };
+    }
+    let Some(rect) = results.get(&constraint.target_name) else {
+        return 0.0;
+    };
+    match constraint.target_side.to_ascii_uppercase().as_str() {
+        "RIGHT" => rect.x + rect.width,
+        "BOTTOM" => rect.y + rect.height,
+        "LEFT" if horizontal => rect.x,
+        "TOP" if !horizontal => rect.y,
+        "LEFT" | "TOP" => {
+            if horizontal {
+                rect.x
+            } else {
+                rect.y
+            }
+        }
+        _ => 0.0,
+    }
+}
+
+fn preferred_ui_widget_size(widget: &SceneMaxUiWidgetDef, horizontal: bool) -> f32 {
+    let mode = if horizontal {
+        &widget.width_mode
+    } else {
+        &widget.height_mode
+    };
+    if mode.eq_ignore_ascii_case("FIXED") || mode.eq_ignore_ascii_case("MATCH_CONSTRAINT") {
+        return if horizontal {
+            widget.width
+        } else {
+            widget.height
+        };
+    }
+    match widget.widget_type.as_str() {
+        "TEXT_VIEW" | "EDIT_TEXT" => {
+            if horizontal {
+                (widget.text.len() as f32 * widget.font_size * 0.6).max(50.0)
+            } else {
+                widget.font_size * 1.4
+            }
+        }
+        "BUTTON" => {
+            if horizontal {
+                (widget.button_text.len() as f32 * widget.font_size * 0.6 + 24.0).max(80.0)
+            } else {
+                widget.font_size * 1.4 + 16.0
+            }
+        }
+        _ => {
+            if horizontal {
+                widget.width
+            } else {
+                widget.height
+            }
+        }
+    }
+}
+
+fn parse_ui_color(hex: &str) -> Color {
+    let trimmed = hex.trim().trim_start_matches('#');
+    if trimmed.len() < 6 {
+        return Color::WHITE;
+    }
+    let parse =
+        |range: std::ops::Range<usize>| u8::from_str_radix(&trimmed[range], 16).unwrap_or(255);
+    let alpha = if trimmed.len() >= 8 { parse(6..8) } else { 255 };
+    Color::srgba_u8(parse(0..2), parse(2..4), parse(4..6), alpha)
+}
+
+fn ui_text_justify(alignment: &str) -> Justify {
+    match alignment.to_ascii_lowercase().as_str() {
+        "center" => Justify::Center,
+        "right" => Justify::Right,
+        _ => Justify::Left,
+    }
+}
+
+fn ui_target_key(ui_name: &str, layer: &str, widget_path: &[String]) -> String {
+    if widget_path.is_empty() {
+        format!("{ui_name}.{layer}")
+    } else {
+        format!("{ui_name}.{layer}.{}", widget_path.join("."))
+    }
+}
+
+fn resolve_ui_target<'a>(
+    ui_runtime: &'a SceneMaxUiRuntime,
+    path: &UiTargetPath,
+) -> Option<&'a SceneMaxUiTarget> {
+    let target_path = resolve_ui_target_path(ui_runtime, path)?;
+    let ui_name = path
+        .ui_name
+        .as_deref()
+        .or(ui_runtime.active_ui_name.as_deref())?;
+    ui_runtime
+        .loaded
+        .get(ui_name)
+        .and_then(|loaded| loaded.targets.get(&target_path))
+}
+
+fn resolve_ui_target_path(ui_runtime: &SceneMaxUiRuntime, path: &UiTargetPath) -> Option<String> {
+    let ui_name = path
+        .ui_name
+        .as_deref()
+        .or(ui_runtime.active_ui_name.as_deref())?;
+    if path.widget_path.is_empty() {
+        return Some(ui_target_key(ui_name, &path.layer, &[]));
+    }
+    Some(ui_target_key(ui_name, &path.layer, &path.widget_path))
+}
+
+fn ui_ease_start_offset(direction: UiEaseDirection) -> Vec2 {
+    match direction {
+        UiEaseDirection::Up => Vec2::new(0.0, 115.0),
+        UiEaseDirection::Down => Vec2::new(0.0, -115.0),
+        UiEaseDirection::Left => Vec2::new(-115.0, 0.0),
+        UiEaseDirection::Right => Vec2::new(115.0, 0.0),
+    }
+}
+
+fn ui_ease_progress(t: f32, easing: &str) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    let lower = easing.to_ascii_lowercase();
+    if lower.contains("bounce") {
+        return ease_out_bounce(t);
+    }
+    if lower.contains("back") {
+        let c1 = 1.70158;
+        let c3 = c1 + 1.0;
+        return c3 * t * t * t - c1 * t * t;
+    }
+    if lower.contains("cubic") {
+        return t * t * t;
+    }
+    if lower.contains("quad") {
+        return t * t;
+    }
+    t
+}
+
+fn ease_out_bounce(t: f32) -> f32 {
+    let n1 = 7.5625;
+    let d1 = 2.75;
+    if t < 1.0 / d1 {
+        n1 * t * t
+    } else if t < 2.0 / d1 {
+        let t = t - 1.5 / d1;
+        n1 * t * t + 0.75
+    } else if t < 2.5 / d1 {
+        let t = t - 2.25 / d1;
+        n1 * t * t + 0.9375
+    } else {
+        let t = t - 2.625 / d1;
+        n1 * t * t + 0.984375
+    }
+}
+
+fn list_view_text(widget: &SceneMaxUiWidgetDef) -> String {
+    let mut lines = Vec::new();
+    if !widget.list_headers.is_empty() {
+        lines.push(widget.list_headers.join("  "));
+    }
+    for row in &widget.list_rows {
+        lines.push(row.join("  "));
+    }
+    lines.join("\n")
+}
+
+fn ui_image_node_for_widget(
+    widget: &SceneMaxUiWidgetDef,
+    asset_server: &AssetServer,
+    context: &SceneMaxLaunchContext,
+    ui_runtime: &SceneMaxUiRuntime,
+) -> ImageNode {
+    let candidates = ui_image_asset_candidates(widget, context, ui_runtime);
+    for candidate in candidates {
+        if ui_asset_path_exists(&candidate, context) {
+            return ImageNode::new(asset_server.load(candidate));
+        }
+    }
+    ImageNode::solid_color(Color::srgba(0.9, 0.72, 0.38, 0.85))
+}
+
+fn ui_image_asset_candidates(
+    widget: &SceneMaxUiWidgetDef,
+    context: &SceneMaxLaunchContext,
+    ui_runtime: &SceneMaxUiRuntime,
+) -> Vec<String> {
+    let mut candidates = Vec::new();
+    if let Some(sprite_name) = widget.sprite_name.as_deref() {
+        if let Some(sprite) = ui_runtime.sprite_index.get(sprite_name) {
+            candidates.push(normalize_asset_path(&sprite.path));
+        }
+        candidates.push(format!("sprites/{sprite_name}.png"));
+        candidates.push(format!("sprites/{}.png", sprite_name.to_ascii_lowercase()));
+        if context.builtin_asset_root.is_some() {
+            candidates.push(format!("builtin://sprites/{sprite_name}.png"));
+            candidates.push(format!(
+                "builtin://sprites/{}.png",
+                sprite_name.to_ascii_lowercase()
+            ));
+        }
+    }
+    if let Some(image_path) = widget.image_path.as_deref() {
+        candidates.push(normalize_asset_path(image_path));
+    }
+    candidates
+}
+
+fn normalize_asset_path(path: &str) -> String {
+    path.replace('\\', "/")
+        .trim_start_matches('/')
+        .trim_start_matches("resources/")
+        .to_owned()
+}
+
+fn ui_asset_path_exists(asset_path: &str, context: &SceneMaxLaunchContext) -> bool {
+    if let Some(relative) = asset_path.strip_prefix("builtin://") {
+        return context
+            .builtin_asset_root
+            .as_ref()
+            .is_some_and(|root| root.join(relative).is_file());
+    }
+    context
+        .asset_root
+        .as_ref()
+        .is_some_and(|root| root.join(asset_path).is_file())
+}
+
+fn refresh_sprite_index(ui_runtime: &mut SceneMaxUiRuntime, context: &SceneMaxLaunchContext) {
+    let Some(asset_root) = context.asset_root.as_ref() else {
+        return;
+    };
+    if ui_runtime.sprite_index_root.as_ref() == Some(asset_root) {
+        return;
+    }
+    ui_runtime.sprite_index.clear();
+    ui_runtime.sprite_index_root = Some(asset_root.clone());
+    load_sprite_index_file(
+        &asset_root.join("sprites").join("sprites.json"),
+        "",
+        ui_runtime,
+    );
+    if let Some(builtin_root) = context.builtin_asset_root.as_ref() {
+        load_sprite_index_file(
+            &builtin_root.join("sprites").join("sprites.json"),
+            "builtin://",
+            ui_runtime,
+        );
+    }
+}
+
+fn load_sprite_index_file(path: &Path, prefix: &str, ui_runtime: &mut SceneMaxUiRuntime) {
+    let Ok(source) = fs::read_to_string(path) else {
+        return;
+    };
+    let Ok(root) = serde_json::from_str::<serde_json::Value>(&source) else {
+        return;
+    };
+    let Some(sprites) = root.get("sprites").and_then(|value| value.as_array()) else {
+        return;
+    };
+    for sprite in sprites {
+        let Some(name) = sprite.get("name").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        let Some(path) = sprite.get("path").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        let rows = sprite
+            .get("rows")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(1) as usize;
+        let cols = sprite
+            .get("cols")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(1) as usize;
+        ui_runtime.sprite_index.insert(
+            name.to_owned(),
+            SceneMaxSpriteAsset {
+                path: format!("{prefix}{}", normalize_asset_path(path)),
+                _rows: rows,
+                _cols: cols,
+            },
+        );
+    }
+}
+
 fn setup_scenemax_program(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -959,6 +2242,7 @@ fn setup_scenemax_program(
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
     mut delayed_actions: ResMut<DelayedActionQueue>,
+    mut ui_queue: ResMut<SceneMaxUiActionQueue>,
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -991,6 +2275,7 @@ fn setup_scenemax_program(
         &mut object_pools,
         &mut camera_system,
         &mut delayed_actions,
+        &mut ui_queue,
         &mut collider_bounds,
         &mut meshes,
         &mut materials,
@@ -1008,6 +2293,7 @@ fn spawn_scenemax_program(
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
     delayed_actions: &mut DelayedActionQueue,
+    ui_queue: &mut SceneMaxUiActionQueue,
     collider_bounds: &mut SceneMaxColliderBounds,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
@@ -1221,6 +2507,7 @@ fn spawn_scenemax_program(
         object_pools,
         camera_system,
         delayed_actions,
+        ui_queue,
         &functions_by_name,
         &entities_by_name,
         &mut transforms_by_name,
@@ -2137,6 +3424,7 @@ fn apply_startup_runs(
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
     delayed_actions: &mut DelayedActionQueue,
+    ui_queue: &mut SceneMaxUiActionQueue,
     functions_by_name: &HashMap<String, FunctionRuntime>,
     entities_by_name: &HashMap<String, Entity>,
     transforms_by_name: &mut HashMap<String, Transform>,
@@ -2156,6 +3444,7 @@ fn apply_startup_runs(
         object_pools,
         camera_system,
         delayed_actions,
+        ui_queue,
         functions_by_name,
         entities_by_name,
         transforms_by_name,
@@ -2194,6 +3483,7 @@ fn apply_startup_action_sequence(
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
     delayed_actions: &mut DelayedActionQueue,
+    ui_queue: &mut SceneMaxUiActionQueue,
     functions_by_name: &HashMap<String, FunctionRuntime>,
     entities_by_name: &HashMap<String, Entity>,
     transforms_by_name: &mut HashMap<String, Transform>,
@@ -2272,6 +3562,7 @@ fn apply_startup_action_sequence(
                     object_pools,
                     camera_system,
                     delayed_actions,
+                    ui_queue,
                     functions_by_name,
                     entities_by_name,
                     transforms_by_name,
@@ -2294,6 +3585,7 @@ fn apply_startup_action_sequence(
                     object_pools,
                     camera_system,
                     delayed_actions,
+                    ui_queue,
                     functions_by_name,
                     entities_by_name,
                     transforms_by_name,
@@ -2317,6 +3609,7 @@ fn apply_startup_action_sequence(
                     object_pools,
                     camera_system,
                     delayed_actions,
+                    ui_queue,
                     functions_by_name,
                     entities_by_name,
                     transforms_by_name,
@@ -2352,6 +3645,7 @@ fn apply_startup_action_sequence(
                     object_pools,
                     camera_system,
                     delayed_actions,
+                    ui_queue,
                     functions_by_name,
                     entities_by_name,
                     transforms_by_name,
@@ -2386,6 +3680,7 @@ fn apply_startup_action_sequence(
                         object_pools,
                         camera_system,
                         delayed_actions,
+                        ui_queue,
                         functions_by_name,
                         entities_by_name,
                         transforms_by_name,
@@ -2407,6 +3702,7 @@ fn apply_startup_action_sequence(
                     vars,
                     object_pools,
                     camera_system,
+                    ui_queue,
                     functions_by_name,
                     entities_by_name,
                     transforms_by_name,
@@ -2435,6 +3731,7 @@ fn apply_startup_action_sequence(
                     vars,
                     object_pools,
                     camera_system,
+                    ui_queue,
                     functions_by_name,
                     entities_by_name,
                     transforms_by_name,
@@ -2459,6 +3756,7 @@ fn apply_startup_function_by_name(
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
+    ui_queue: &mut SceneMaxUiActionQueue,
     functions_by_name: &HashMap<String, FunctionRuntime>,
     entities_by_name: &HashMap<String, Entity>,
     transforms_by_name: &mut HashMap<String, Transform>,
@@ -2495,6 +3793,7 @@ fn apply_startup_function_by_name(
             vars,
             object_pools,
             camera_system,
+            ui_queue,
             functions_by_name,
             entities_by_name,
             transforms_by_name,
@@ -2515,6 +3814,7 @@ fn apply_startup_action(
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
+    ui_queue: &mut SceneMaxUiActionQueue,
     functions_by_name: &HashMap<String, FunctionRuntime>,
     entities_by_name: &HashMap<String, Entity>,
     transforms_by_name: &mut HashMap<String, Transform>,
@@ -2560,6 +3860,45 @@ fn apply_startup_action(
             );
             ActionSequenceResult::Completed
         }
+        Statement::UiLoad { name } => {
+            ui_queue
+                .actions
+                .push(SceneMaxUiAction::Load { name: name.clone() });
+            ActionSequenceResult::Completed
+        }
+        Statement::UiShowHide(show_hide) => {
+            ui_queue.actions.push(SceneMaxUiAction::ShowHide {
+                target: show_hide.target.clone(),
+                visible: show_hide.visible,
+            });
+            ActionSequenceResult::Completed
+        }
+        Statement::UiMessage(message) => {
+            ui_queue.actions.push(SceneMaxUiAction::Message {
+                target: message.target.clone(),
+                text: message.text.clone(),
+                effects: message.effects.clone(),
+                duration_seconds: message.duration_seconds,
+            });
+            ActionSequenceResult::Completed
+        }
+        Statement::UiEase(ease) => {
+            ui_queue.actions.push(SceneMaxUiAction::Ease {
+                target: ease.target.clone(),
+                easing: ease.easing.clone(),
+                direction: ease.direction,
+                duration_seconds: ease.duration_seconds,
+            });
+            ActionSequenceResult::Completed
+        }
+        Statement::UiSetProperty(property) => {
+            ui_queue.actions.push(SceneMaxUiAction::SetProperty {
+                target: property.target.clone(),
+                property: property.property.clone(),
+                value: property.value.clone(),
+            });
+            ActionSequenceResult::Completed
+        }
         Statement::RunFunction { name, args } => {
             match apply_startup_function_by_name(
                 name,
@@ -2568,6 +3907,7 @@ fn apply_startup_action(
                 vars,
                 object_pools,
                 camera_system,
+                ui_queue,
                 functions_by_name,
                 entities_by_name,
                 transforms_by_name,
@@ -2589,6 +3929,7 @@ fn apply_startup_action(
                     vars,
                     object_pools,
                     camera_system,
+                    ui_queue,
                     functions_by_name,
                     entities_by_name,
                     transforms_by_name,
@@ -2621,6 +3962,7 @@ fn apply_startup_action(
                     vars,
                     object_pools,
                     camera_system,
+                    ui_queue,
                     functions_by_name,
                     entities_by_name,
                     transforms_by_name,
@@ -2649,6 +3991,7 @@ fn apply_startup_action(
                         vars,
                         object_pools,
                         camera_system,
+                        ui_queue,
                         functions_by_name,
                         entities_by_name,
                         transforms_by_name,
@@ -2672,6 +4015,7 @@ fn apply_startup_action(
                         vars,
                         object_pools,
                         camera_system,
+                        ui_queue,
                         functions_by_name,
                         entities_by_name,
                         transforms_by_name,
@@ -2695,6 +4039,7 @@ fn apply_startup_action(
                         vars,
                         object_pools,
                         camera_system,
+                        ui_queue,
                         functions_by_name,
                         entities_by_name,
                         transforms_by_name,
@@ -2940,6 +4285,7 @@ fn switch_scene_on_key(
             collider_bounds.clear();
             apply_initial_assignments(&program, &mut vars);
             apply_camera_systems(&program, &mut camera_system);
+            let mut scene_ui_queue = SceneMaxUiActionQueue::default();
             spawn_scenemax_program(
                 &mut commands,
                 &asset_server,
@@ -2950,6 +4296,7 @@ fn switch_scene_on_key(
                 &mut object_pools,
                 &mut camera_system,
                 &mut delayed_actions,
+                &mut scene_ui_queue,
                 &mut collider_bounds,
                 &mut meshes,
                 &mut materials,
@@ -2978,6 +4325,7 @@ fn apply_key_events(
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
     mut delayed_actions: ResMut<DelayedActionQueue>,
+    mut ui_queue: ResMut<SceneMaxUiActionQueue>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
         Query<(&SceneMaxEntity, &Transform)>,
@@ -3063,6 +4411,7 @@ fn apply_key_events(
             &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
+            Some(&mut ui_queue),
             None,
             None,
             continuous_delta_seconds,
@@ -3135,6 +4484,7 @@ fn apply_when_events(
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
     mut delayed_actions: ResMut<DelayedActionQueue>,
+    mut ui_queue: ResMut<SceneMaxUiActionQueue>,
     mut active_collisions: ResMut<ActiveCollisionEvents>,
     mut active_controllers: ResMut<ActiveActionControllers>,
     physics_contacts: Res<SceneMaxPhysicsContacts>,
@@ -3277,6 +4627,7 @@ fn apply_when_events(
             &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
+            Some(&mut ui_queue),
             Some(owner.clone()),
             None,
             Some(time.delta_secs()),
@@ -3491,6 +4842,7 @@ fn update_recurring_runs(
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
     mut delayed_actions: ResMut<DelayedActionQueue>,
+    mut ui_queue: ResMut<SceneMaxUiActionQueue>,
     mut recurring_timers: ResMut<RecurringRunTimers>,
     mut active_controllers: ResMut<ActiveActionControllers>,
     mut commands: Commands,
@@ -3575,6 +4927,7 @@ fn update_recurring_runs(
             &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
+            Some(&mut ui_queue),
             Some(owner.clone()),
             None,
             None,
@@ -3598,6 +4951,7 @@ fn update_delayed_actions(
     mut object_pools: ResMut<SceneMaxObjectPools>,
     mut camera_system: ResMut<SceneMaxCameraSystem>,
     mut delayed_actions: ResMut<DelayedActionQueue>,
+    mut ui_queue: ResMut<SceneMaxUiActionQueue>,
     mut active_controllers: ResMut<ActiveActionControllers>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
@@ -3667,6 +5021,7 @@ fn update_delayed_actions(
             &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
+            Some(&mut ui_queue),
             delayed.owner.clone(),
             delayed.scope.as_mut(),
             None,
@@ -3716,6 +5071,7 @@ fn apply_action_sequence(
     animation_durations: &SceneMaxAnimationDurations,
     collider_bounds: &mut SceneMaxColliderBounds,
     mut delayed_actions: Option<&mut DelayedActionQueue>,
+    mut ui_queue: Option<&mut SceneMaxUiActionQueue>,
     owner: Option<SceneMaxControllerKey>,
     mut scope: Option<&mut SceneMaxScopeFrame>,
     continuous_delta_seconds: Option<f32>,
@@ -3862,6 +5218,7 @@ fn apply_action_sequence(
                     animation_durations,
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
+                    ui_queue.as_deref_mut(),
                     owner.clone(),
                     Some(&mut function_scope),
                     continuous_delta_seconds,
@@ -3887,6 +5244,7 @@ fn apply_action_sequence(
                     animation_durations,
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
+                    ui_queue.as_deref_mut(),
                     None,
                     scope.as_deref_mut(),
                     continuous_delta_seconds,
@@ -3915,6 +5273,7 @@ fn apply_action_sequence(
                     animation_durations,
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
+                    ui_queue.as_deref_mut(),
                     owner.clone(),
                     scope.as_deref_mut(),
                     continuous_delta_seconds,
@@ -3952,6 +5311,7 @@ fn apply_action_sequence(
                     animation_durations,
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
+                    ui_queue.as_deref_mut(),
                     owner.clone(),
                     scope.as_deref_mut(),
                     continuous_delta_seconds,
@@ -4021,6 +5381,7 @@ fn apply_action_sequence(
                     animation_durations,
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
+                    ui_queue.as_deref_mut(),
                     owner.clone(),
                     scope.as_deref_mut(),
                     continuous_delta_seconds,
@@ -4061,6 +5422,7 @@ fn apply_action_sequence(
                         animation_durations,
                         collider_bounds,
                         delayed_actions.as_deref_mut(),
+                        ui_queue.as_deref_mut(),
                         owner.clone(),
                         scope.as_deref_mut(),
                         continuous_delta_seconds,
@@ -4088,6 +5450,7 @@ fn apply_action_sequence(
                     animation_durations,
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
+                    ui_queue.as_deref_mut(),
                     owner.clone(),
                     scope.as_deref_mut(),
                     None,
@@ -4120,6 +5483,7 @@ fn apply_action_sequence(
                     animation_durations,
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
+                    ui_queue.as_deref_mut(),
                     owner.clone(),
                     scope.as_deref_mut(),
                     continuous_delta_seconds,
@@ -4154,6 +5518,7 @@ fn apply_action_sequence(
                     animation_durations,
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
+                    ui_queue.as_deref_mut(),
                     owner.clone(),
                     scope.as_deref_mut(),
                     continuous_delta_seconds,
@@ -4334,6 +5699,7 @@ fn apply_key_action(
     animation_durations: &SceneMaxAnimationDurations,
     collider_bounds: &mut SceneMaxColliderBounds,
     delayed_actions: Option<&mut DelayedActionQueue>,
+    mut ui_queue: Option<&mut SceneMaxUiActionQueue>,
     owner: Option<SceneMaxControllerKey>,
     mut scope: Option<&mut SceneMaxScopeFrame>,
     continuous_delta_seconds: Option<f32>,
@@ -4494,6 +5860,12 @@ fn apply_key_action(
         );
         return ActionSequenceResult::Completed;
     }
+    if let Some(ui_action) = scenemax_ui_action_from_statement(action)
+        && let Some(ui_queue) = ui_queue.as_deref_mut()
+    {
+        ui_queue.actions.push(ui_action);
+        return ActionSequenceResult::Completed;
+    }
     if let Statement::RunFunction { name, args } = action {
         return match apply_function_by_name(
             name,
@@ -4509,6 +5881,7 @@ fn apply_key_action(
             animation_durations,
             collider_bounds,
             delayed_actions,
+            ui_queue,
             owner,
             scope,
             continuous_delta_seconds,
@@ -4569,6 +5942,7 @@ fn apply_key_action(
                 animation_durations,
                 collider_bounds,
                 None,
+                ui_queue.as_deref_mut(),
                 owner.clone(),
                 scope.as_deref_mut(),
                 continuous_delta_seconds,
@@ -4965,6 +6339,7 @@ fn apply_function_by_name(
     animation_durations: &SceneMaxAnimationDurations,
     collider_bounds: &mut SceneMaxColliderBounds,
     delayed_actions: Option<&mut DelayedActionQueue>,
+    ui_queue: Option<&mut SceneMaxUiActionQueue>,
     owner: Option<SceneMaxControllerKey>,
     scope: Option<&mut SceneMaxScopeFrame>,
     continuous_delta_seconds: Option<f32>,
@@ -5022,6 +6397,7 @@ fn apply_function_by_name(
         animation_durations,
         collider_bounds,
         delayed_actions,
+        ui_queue,
         owner,
         Some(&mut function_scope),
         continuous_delta_seconds,
@@ -5202,6 +6578,36 @@ fn substitute_statement(statement: &Statement, bindings: &HashMap<String, String
         Statement::Delete { target } => Statement::Delete {
             target: substitute_path(target, bindings),
         },
+        Statement::UiLoad { name } => Statement::UiLoad {
+            name: substitute_reference(name, bindings),
+        },
+        Statement::UiShowHide(show_hide) => {
+            Statement::UiShowHide(scenemax_parser::UiShowHideStatement {
+                target: substitute_ui_target_path(&show_hide.target, bindings),
+                visible: show_hide.visible,
+            })
+        }
+        Statement::UiMessage(message) => {
+            Statement::UiMessage(scenemax_parser::UiMessageStatement {
+                target: substitute_ui_target_path(&message.target, bindings),
+                text: substitute_reference(&message.text, bindings),
+                effects: message.effects.clone(),
+                duration_seconds: message.duration_seconds,
+            })
+        }
+        Statement::UiEase(ease) => Statement::UiEase(scenemax_parser::UiEaseStatement {
+            target: substitute_ui_target_path(&ease.target, bindings),
+            easing: ease.easing.clone(),
+            direction: ease.direction,
+            duration_seconds: ease.duration_seconds,
+        }),
+        Statement::UiSetProperty(property) => {
+            Statement::UiSetProperty(scenemax_parser::UiSetPropertyStatement {
+                target: substitute_ui_target_path(&property.target, bindings),
+                property: property.property.clone(),
+                value: substitute_reference(&property.value, bindings),
+            })
+        }
         Statement::If(statement) => Statement::If(scenemax_parser::IfStatement {
             condition: substitute_condition(&statement.condition, bindings),
             actions: substitute_statements(&statement.actions, bindings),
@@ -5292,6 +6698,24 @@ fn substitute_logger_message(
         LoggerMessage::Value(value) => {
             LoggerMessage::Value(substitute_assignment_value(value, bindings))
         }
+    }
+}
+
+fn substitute_ui_target_path(
+    path: &UiTargetPath,
+    bindings: &HashMap<String, String>,
+) -> UiTargetPath {
+    UiTargetPath {
+        ui_name: path
+            .ui_name
+            .as_ref()
+            .map(|name| substitute_reference(name, bindings)),
+        layer: substitute_path(&path.layer, bindings),
+        widget_path: path
+            .widget_path
+            .iter()
+            .map(|part| substitute_path(part, bindings))
+            .collect(),
     }
 }
 
@@ -8144,6 +9568,7 @@ fn setup_camera_and_lights(
 
     commands.spawn((
         Camera3d::default(),
+        IsDefaultUiCamera,
         startup_program
             .0
             .as_ref()
@@ -8238,6 +9663,27 @@ mod tests {
         keyboard.press(KeyCode::Space);
 
         assert_eq!(pending_key_switch(&program, &keyboard), Some("game_level1"));
+    }
+
+    #[test]
+    fn detects_ui_typewriter_effect_expression() {
+        assert!(ui_message_has_effect(
+            "TextEffect.fade_in | TextEffect.typewriter",
+            "typewriter"
+        ));
+        assert!(!ui_message_has_effect(
+            "TextEffect.fade_in | TextEffect.zoom_in",
+            "typewriter"
+        ));
+    }
+
+    #[test]
+    fn reveals_ui_typewriter_text_by_progress() {
+        assert_eq!(typewriter_visible_text("ABCD", 0.0), "");
+        assert_eq!(typewriter_visible_text("ABCD", 0.25), "A");
+        assert_eq!(typewriter_visible_text("ABCD", 0.5), "AB");
+        assert_eq!(typewriter_visible_text("ABCD", 1.0), "ABCD");
+        assert_eq!(typewriter_visible_text("AאB", 0.67), "AאB");
     }
 
     #[test]

@@ -133,6 +133,13 @@ pub enum Statement {
     AddCode {
         path: String,
     },
+    UiLoad {
+        name: String,
+    },
+    UiShowHide(UiShowHideStatement),
+    UiMessage(UiMessageStatement),
+    UiEase(UiEaseStatement),
+    UiSetProperty(UiSetPropertyStatement),
     NoOp {
         text: String,
     },
@@ -513,6 +520,50 @@ pub struct FunctionDefStatement {
     pub params: Vec<String>,
     pub guard: Option<Condition>,
     pub actions: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiTargetPath {
+    pub ui_name: Option<String>,
+    pub layer: String,
+    pub widget_path: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiShowHideStatement {
+    pub target: UiTargetPath,
+    pub visible: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiMessageStatement {
+    pub target: UiTargetPath,
+    pub text: String,
+    pub effects: String,
+    pub duration_seconds: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiEaseStatement {
+    pub target: UiTargetPath,
+    pub easing: String,
+    pub direction: UiEaseDirection,
+    pub duration_seconds: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiEaseDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiSetPropertyStatement {
+    pub target: UiTargetPath,
+    pub property: String,
+    pub value: String,
 }
 
 #[derive(Debug, Error, PartialEq)]
@@ -1543,6 +1594,10 @@ fn update_block_depth(current: usize, line: &str) -> usize {
 }
 
 fn parse_statement(line: &str) -> Result<Statement, ParseError> {
+    if let Some(statement) = parse_ui_statement(line)? {
+        return Ok(statement);
+    }
+
     if let Some(camera) = parse_fighting_camera(line)? {
         return Ok(Statement::FightingCamera(camera));
     }
@@ -1710,6 +1765,154 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
     Ok(unsupported(line))
 }
 
+fn parse_ui_statement(line: &str) -> Result<Option<Statement>, ParseError> {
+    let line = line.trim();
+    let lower = line.to_ascii_lowercase();
+    if !lower.starts_with("ui.") {
+        return Ok(None);
+    }
+
+    if starts_with_case_insensitive(line, "UI.load") {
+        if let Some(name) = parse_quoted_strings(line).into_iter().next() {
+            return Ok(Some(Statement::UiLoad { name }));
+        }
+        return Ok(None);
+    }
+
+    if let Some(before_call) = strip_suffix_case_insensitive(line, ".show") {
+        if let Some(target) = parse_ui_target_path(before_call) {
+            return Ok(Some(Statement::UiShowHide(UiShowHideStatement {
+                target,
+                visible: true,
+            })));
+        }
+    }
+    if let Some(before_call) = strip_suffix_case_insensitive(line, ".hide") {
+        if let Some(target) = parse_ui_target_path(before_call) {
+            return Ok(Some(Statement::UiShowHide(UiShowHideStatement {
+                target,
+                visible: false,
+            })));
+        }
+    }
+
+    if let Some(open_index) = lower.find(".message(") {
+        let path_text = &line[..open_index];
+        let Some(target) = parse_ui_target_path(path_text) else {
+            return Ok(None);
+        };
+        let args = parse_call_args(&line[open_index + ".message".len()..]);
+        let Some(text) = args.first().cloned() else {
+            return Ok(None);
+        };
+        let duration_seconds = args
+            .last()
+            .and_then(|value| value.parse::<f32>().ok())
+            .unwrap_or(0.0);
+        let effects = args
+            .get(1)
+            .filter(|value| value.parse::<f32>().is_err())
+            .cloned()
+            .unwrap_or_default();
+        return Ok(Some(Statement::UiMessage(UiMessageStatement {
+            target,
+            text,
+            effects,
+            duration_seconds,
+        })));
+    }
+
+    if let Some(open_index) = lower.find(".ease(") {
+        let path_text = &line[..open_index];
+        let Some(target) = parse_ui_target_path(path_text) else {
+            return Ok(None);
+        };
+        let args = parse_call_args(&line[open_index + ".ease".len()..]);
+        let Some(easing) = args.first().cloned() else {
+            return Ok(None);
+        };
+        let direction = args
+            .get(1)
+            .and_then(|value| parse_ui_ease_direction(value))
+            .unwrap_or(UiEaseDirection::Up);
+        let duration_seconds = args
+            .get(2)
+            .and_then(|value| value.parse::<f32>().ok())
+            .unwrap_or(0.0);
+        return Ok(Some(Statement::UiEase(UiEaseStatement {
+            target,
+            easing,
+            direction,
+            duration_seconds,
+        })));
+    }
+
+    if let Some((left, right)) = line.split_once('=') {
+        let left = left.trim();
+        if left.to_ascii_lowercase().starts_with("ui.") {
+            let mut parts = left.rsplitn(2, '.');
+            let property = parts.next().unwrap_or_default().trim();
+            let path_text = parts.next().unwrap_or_default().trim();
+            if !property.is_empty()
+                && let Some(target) = parse_ui_target_path(path_text)
+            {
+                return Ok(Some(Statement::UiSetProperty(UiSetPropertyStatement {
+                    target,
+                    property: property.to_owned(),
+                    value: clean_call_arg(right).to_owned(),
+                })));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+fn parse_ui_target_path(text: &str) -> Option<UiTargetPath> {
+    let text = text.trim();
+    if !starts_with_case_insensitive(text, "UI.") {
+        return None;
+    }
+    let parts = text["UI.".len()..]
+        .split('.')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        return None;
+    }
+    let first = *parts.first()?;
+    let (ui_name, layer_index) = if is_probable_ui_layer_name(first) || parts.len() == 1 {
+        (None, 0)
+    } else {
+        (Some(first.to_owned()), 1)
+    };
+    let layer = parts.get(layer_index)?.to_string();
+    let widget_path = parts[layer_index + 1..]
+        .iter()
+        .map(|part| (*part).to_owned())
+        .collect::<Vec<_>>();
+    Some(UiTargetPath {
+        ui_name,
+        layer,
+        widget_path,
+    })
+}
+
+fn is_probable_ui_layer_name(name: &str) -> bool {
+    name.to_ascii_lowercase().starts_with("layer")
+}
+
+fn parse_ui_ease_direction(text: &str) -> Option<UiEaseDirection> {
+    match text.trim().to_ascii_lowercase().as_str() {
+        "up" => Some(UiEaseDirection::Up),
+        "down" => Some(UiEaseDirection::Down),
+        "left" => Some(UiEaseDirection::Left),
+        "right" => Some(UiEaseDirection::Right),
+        _ => None,
+    }
+}
+
 fn parse_camera_system_select(line: &str) -> Option<String> {
     let (left, right) = line.split_once('=')?;
     if !left.trim().eq_ignore_ascii_case("camera.system") {
@@ -1835,6 +2038,15 @@ fn split_once_case_insensitive<'a>(text: &'a str, needle: &str) -> Option<(&'a s
         .to_ascii_lowercase()
         .find(&needle.to_ascii_lowercase())?;
     Some((&text[..index], &text[index + needle.len()..]))
+}
+
+fn starts_with_case_insensitive(text: &str, prefix: &str) -> bool {
+    text.len() >= prefix.len() && text[..prefix.len()].eq_ignore_ascii_case(prefix)
+}
+
+fn strip_suffix_case_insensitive<'a>(text: &'a str, suffix: &str) -> Option<&'a str> {
+    (text.len() >= suffix.len() && text[text.len() - suffix.len()..].eq_ignore_ascii_case(suffix))
+        .then(|| &text[..text.len() - suffix.len()])
 }
 
 fn parse_fighting_camera(line: &str) -> Result<Option<FightingCameraStatement>, ParseError> {
@@ -5414,6 +5626,41 @@ mod tests {
                 }),
             ]
         );
+    }
+
+    #[test]
+    fn parses_runtime_ui_commands() {
+        let program = parse_program(
+            "UI.load \"game_intro_ui\"\n\
+             UI.layer1.titlePanel.ease(\"EaseInBack\", Down, 0.6)\n\
+             UI.layer1.titlePanel.titleText.message(\"MASTER THE FIGHT\", TextEffect.fade_in, 1.1)\n\
+             UI.layer1.footerPanel.hide",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::UiLoad { name } if name == "game_intro_ui"
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::UiEase(ease)
+                if ease.target.layer == "layer1"
+                    && ease.target.widget_path == vec!["titlePanel"]
+                    && ease.direction == UiEaseDirection::Down
+        ));
+        assert!(matches!(
+            &program.statements[2],
+            Statement::UiMessage(message)
+                if message.target.widget_path == vec!["titlePanel", "titleText"]
+                    && message.text == "MASTER THE FIGHT"
+                    && message.effects == "TextEffect.fade_in"
+        ));
+        assert!(matches!(
+            &program.statements[3],
+            Statement::UiShowHide(show_hide)
+                if show_hide.target.widget_path == vec!["footerPanel"] && !show_hide.visible
+        ));
     }
 
     #[test]
