@@ -1017,6 +1017,19 @@ mod tests {
     }
 
     #[test]
+    fn ui_image_scale_mode_stretch_sets_bevy_stretch() {
+        let widget: SceneMaxUiWidgetDef = serde_json::from_str(
+            r#"{"name":"playerHealthFill","type":"IMAGE","imageScaleMode":"stretch"}"#,
+        )
+        .unwrap();
+        let mut image_node = ImageNode::default();
+
+        apply_ui_image_scale_mode(&widget, &mut image_node);
+
+        assert!(matches!(image_node.image_mode, NodeImageMode::Stretch));
+    }
+
+    #[test]
     fn ui_sprite_index_loads_extension_file() {
         let root =
             std::env::temp_dir().join(format!("scenemax_ui_sprite_ext_{}", std::process::id()));

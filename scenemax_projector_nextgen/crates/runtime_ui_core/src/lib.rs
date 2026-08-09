@@ -102,6 +102,8 @@ pub struct SceneMaxUiWidgetDef {
     pub sprite_name: Option<String>,
     #[serde(default)]
     pub sprite_frame: usize,
+    #[serde(default = "default_image_scale_mode")]
+    pub image_scale_mode: String,
     #[serde(default)]
     pub list_headers: Vec<String>,
     #[serde(default)]
@@ -247,6 +249,10 @@ fn default_button_color() -> String {
 
 fn default_text_alignment() -> String {
     "left".to_owned()
+}
+
+fn default_image_scale_mode() -> String {
+    "fit".to_owned()
 }
 
 fn default_font_size() -> f32 {
