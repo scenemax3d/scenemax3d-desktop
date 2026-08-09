@@ -28,10 +28,49 @@ pub(super) fn scenemax_ui_action_from_statement(action: &Statement) -> Option<Sc
     }
 }
 
+pub(super) fn clear_scenemax_ui_on_scene_change(
+    mut commands: Commands,
+    context: Res<SceneMaxLaunchContext>,
+    startup_program: Res<SceneMaxStartupProgram>,
+    mut ui_runtime: ResMut<SceneMaxUiRuntime>,
+    mut ui_queue: ResMut<SceneMaxUiActionQueue>,
+) {
+    let current_scene_root = startup_program
+        .1
+        .clone()
+        .or_else(|| context.script_root.clone());
+    if ui_runtime.scene_script_root == current_scene_root {
+        return;
+    }
+
+    if ui_runtime.scene_script_root.is_none() && ui_runtime.loaded.is_empty() {
+        ui_runtime.scene_script_root = current_scene_root;
+        return;
+    }
+
+    let ui_count = ui_runtime.loaded.len();
+    for loaded in ui_runtime.loaded.values() {
+        for entity in &loaded.root_entities {
+            commands.entity(*entity).despawn();
+        }
+    }
+
+    ui_runtime.active_ui_name = None;
+    ui_runtime.loaded.clear();
+    ui_queue.actions.clear();
+    ui_runtime.scene_script_root = current_scene_root;
+
+    tracing::info!(ui_count, "cleared SceneMax UI after scene switch");
+    write_runtime_diagnostic_line(format!(
+        "cleared {ui_count} SceneMax UI document(s) after scene switch"
+    ));
+}
+
 pub(super) fn apply_scenemax_ui_actions(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     context: Res<SceneMaxLaunchContext>,
+    startup_program: Res<SceneMaxStartupProgram>,
     mut ui_runtime: ResMut<SceneMaxUiRuntime>,
     mut ui_queue: ResMut<SceneMaxUiActionQueue>,
     mut text_queries: ParamSet<(
@@ -61,6 +100,7 @@ pub(super) fn apply_scenemax_ui_actions(
                     &mut commands,
                     &asset_server,
                     &context,
+                    startup_program.1.as_deref(),
                     &mut ui_runtime,
                 ) {
                     tracing::warn!(name, %error, "failed to load SceneMax UI document");
@@ -406,13 +446,17 @@ pub(super) fn load_scenemax_ui_document(
     commands: &mut Commands,
     asset_server: &AssetServer,
     context: &SceneMaxLaunchContext,
+    scene_script_root: Option<&Path>,
     ui_runtime: &mut SceneMaxUiRuntime,
 ) -> Result<()> {
+    ui_runtime.scene_script_root = scene_script_root
+        .map(Path::to_path_buf)
+        .or_else(|| context.script_root.clone());
     if ui_runtime.loaded.contains_key(name) {
         ui_runtime.active_ui_name = Some(name.to_owned());
         return Ok(());
     }
-    let path = resolve_scenemax_ui_path(name, context)?;
+    let path = resolve_scenemax_ui_path(name, context, scene_script_root)?;
     let source = fs::read_to_string(&path)?;
     let doc: SceneMaxUiDocument = serde_json::from_str(&source)?;
     let ui_name = doc.name.clone();
@@ -487,6 +531,7 @@ pub(super) fn load_scenemax_ui_document(
 pub(super) fn resolve_scenemax_ui_path(
     name: &str,
     context: &SceneMaxLaunchContext,
+    scene_script_root: Option<&Path>,
 ) -> Result<PathBuf> {
     let file_name = if name.ends_with(".smui") {
         name.to_owned()
@@ -494,6 +539,9 @@ pub(super) fn resolve_scenemax_ui_path(
         format!("{name}.smui")
     };
     let mut candidates = Vec::new();
+    if let Some(scene_script_root) = scene_script_root {
+        candidates.push(scene_script_root.join(&file_name));
+    }
     if let Some(script_root) = context.script_root.as_ref() {
         candidates.push(script_root.join(&file_name));
     }

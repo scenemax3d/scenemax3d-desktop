@@ -94,16 +94,17 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .and_then(Path::parent)
         .map(Path::to_path_buf);
     let scene_program = load_startup_program(&launch);
+    let effective_script_root = scene_program.1.clone().or_else(|| script_root.clone());
     let asset_root = project_root
         .as_ref()
         .map(|root| root.join("resources"))
         .filter(|path| path.is_dir());
     let builtin_asset_root = find_builtin_resources_root(
         project_root.as_deref(),
-        script_root.as_deref(),
+        effective_script_root.as_deref(),
         asset_root.as_deref(),
     );
-    initialize_runtime_logger(project_root.as_deref(), script_root.as_deref());
+    initialize_runtime_logger(project_root.as_deref(), effective_script_root.as_deref());
 
     let mut app = App::new();
     if let Some(builtin_asset_root) = builtin_asset_root.as_ref() {
@@ -126,7 +127,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
 
     app.insert_resource(WinitSettings::continuous())
         .insert_resource(SceneMaxLaunchContext {
-            script_root,
+            script_root: effective_script_root,
             asset_root: asset_root.clone(),
             builtin_asset_root,
             window_width: launch.window.width,
@@ -219,6 +220,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .add_systems(
             Update,
             (
+                clear_scenemax_ui_on_scene_change,
                 apply_scenemax_ui_actions,
                 update_scenemax_ui_eases,
                 update_scenemax_ui_message_animations,
@@ -257,7 +259,7 @@ struct SceneMaxLaunchContext {
 }
 
 #[derive(Debug, Resource, Default)]
-struct SceneMaxStartupProgram(Option<Program>);
+struct SceneMaxStartupProgram(Option<Program>, Option<PathBuf>);
 
 #[derive(Debug, Resource, Default)]
 struct SceneMaxObjectPools {
@@ -385,6 +387,7 @@ impl SceneMaxAnimationDurations {
 
 #[derive(Debug, Resource, Default)]
 struct SceneMaxUiRuntime {
+    scene_script_root: Option<PathBuf>,
     active_ui_name: Option<String>,
     loaded: HashMap<String, LoadedSceneMaxUi>,
     sprite_index: HashMap<String, SceneMaxSpriteAsset>,
@@ -1680,5 +1683,36 @@ mod tests {
         assert!(!has_ui_runtime_content(&Program {
             statements: vec![Statement::Wait { seconds: 0.1 }],
         }));
+    }
+
+    #[test]
+    fn scene_entry_program_reports_effective_scene_script_root() {
+        let root = std::env::temp_dir().join(format!(
+            "scenemax_nextgen_scene_root_{}",
+            std::process::id()
+        ));
+        let scene_dir = root.join("game_intro");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&scene_dir).unwrap();
+        fs::write(root.join("main"), "switch to \"game_intro\"\n").unwrap();
+        fs::write(scene_dir.join("main"), "UI.load \"game_intro_ui\"\n").unwrap();
+
+        let (program, script_root) = load_scene_entry_program(&root.join("main")).unwrap();
+
+        assert_eq!(script_root, scene_dir);
+        assert!(matches!(
+            program.statements.first(),
+            Some(Statement::UiLoad { name }) if name == "game_intro_ui"
+        ));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn scene_switch_resolves_sibling_scene_main_from_current_scene_root() {
+        let current_scene = Path::new("C:/game/scripts/Fighting Game/game_intro");
+        assert_eq!(
+            scene_main_path(current_scene, "game_level1"),
+            PathBuf::from("C:/game/scripts/Fighting Game/game_level1/main")
+        );
     }
 }

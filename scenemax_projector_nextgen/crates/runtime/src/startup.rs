@@ -231,13 +231,14 @@ pub(super) fn load_startup_program(launch: &ProjectorLaunch) -> SceneMaxStartupP
     };
 
     match load_scene_entry_program(&script_path) {
-        Ok(program) => {
+        Ok((program, script_root)) => {
             tracing::info!(
                 path = %script_path.display(),
+                effective_root = %script_root.display(),
                 statements = program.statements.len(),
                 "loaded SceneMax startup script graph"
             );
-            SceneMaxStartupProgram(Some(program))
+            SceneMaxStartupProgram(Some(program), Some(script_root))
         }
         Err(error) => {
             tracing::error!(
@@ -250,10 +251,16 @@ pub(super) fn load_startup_program(launch: &ProjectorLaunch) -> SceneMaxStartupP
     }
 }
 
-pub(super) fn load_scene_entry_program(script_path: &Path) -> Result<Program> {
+pub(super) fn load_scene_entry_program(script_path: &Path) -> Result<(Program, PathBuf)> {
     let root_program = load_script_with_adds(script_path, &mut HashSet::new())?;
     if has_scene_content(&root_program) {
-        return Ok(root_program);
+        return Ok((
+            root_program,
+            script_path
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf(),
+        ));
     }
 
     if let Some(scene) = root_program
@@ -274,10 +281,23 @@ pub(super) fn load_scene_entry_program(script_path: &Path) -> Result<Program> {
             path = %scene_main.display(),
             "startup script switches to scene"
         );
-        return load_script_with_adds(&scene_main, &mut HashSet::new());
+        let program = load_script_with_adds(&scene_main, &mut HashSet::new())?;
+        return Ok((
+            program,
+            scene_main
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf(),
+        ));
     }
 
-    Ok(root_program)
+    Ok((
+        root_program,
+        script_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf(),
+    ))
 }
 
 pub(super) fn load_script_with_adds(
@@ -385,6 +405,43 @@ pub(super) fn has_scene_content(program: &Program) -> bool {
                 | Statement::CameraRotation(_)
         )
     })
+}
+
+pub(super) fn has_ui_runtime_content(program: &Program) -> bool {
+    program
+        .statements
+        .iter()
+        .any(statement_has_ui_runtime_content)
+}
+
+pub(super) fn statement_has_ui_runtime_content(statement: &Statement) -> bool {
+    if scenemax_ui_action_from_statement(statement).is_some() {
+        return true;
+    }
+    match statement {
+        Statement::KeyEvent(event) => event.actions.iter().any(statement_has_ui_runtime_content),
+        Statement::WhenEvent(event) => event.actions.iter().any(statement_has_ui_runtime_content),
+        Statement::FunctionDef(function) => function
+            .actions
+            .iter()
+            .any(statement_has_ui_runtime_content),
+        Statement::If(statement) => {
+            statement
+                .actions
+                .iter()
+                .any(statement_has_ui_runtime_content)
+                || statement
+                    .else_actions
+                    .iter()
+                    .any(statement_has_ui_runtime_content)
+        }
+        Statement::Guarded { actions, .. }
+        | Statement::Repeat { actions, .. }
+        | Statement::DoWhile { actions, .. }
+        | Statement::LoopContinue { actions, .. }
+        | Statement::Async { actions } => actions.iter().any(statement_has_ui_runtime_content),
+        _ => false,
+    }
 }
 
 pub(super) fn normalize_script_path(path: &Path) -> PathBuf {
@@ -699,7 +756,11 @@ pub(super) fn spawn_scenemax_program(
         &guards_by_name,
     );
 
-    if !spawned_any {
+    if !spawned_any && (has_ui_runtime_content(program) || !ui_queue.actions.is_empty()) {
+        write_runtime_diagnostic_line(
+            "skipped default placeholder because the program contains UI runtime content",
+        );
+    } else if !spawned_any {
         write_runtime_diagnostic_line(
             "spawned default placeholder because the program produced no renderable entities",
         );
