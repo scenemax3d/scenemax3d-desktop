@@ -34,11 +34,18 @@ pub(super) fn apply_scenemax_ui_actions(
     context: Res<SceneMaxLaunchContext>,
     mut ui_runtime: ResMut<SceneMaxUiRuntime>,
     mut ui_queue: ResMut<SceneMaxUiActionQueue>,
-    mut text_query: Query<(
-        &mut Text,
-        &mut TextColor,
-        &mut UiTransform,
-        Option<&SceneMaxUiTextVisualState>,
+    mut text_queries: ParamSet<(
+        Query<(
+            &mut Text,
+            &mut TextColor,
+            &mut UiTransform,
+            Option<&SceneMaxUiTextVisualState>,
+        )>,
+        Query<(
+            &mut SceneMaxUiBitmapText,
+            &mut UiTransform,
+            Option<&SceneMaxUiTextVisualState>,
+        )>,
     )>,
     mut visibility_query: Query<&mut Visibility>,
 ) {
@@ -86,7 +93,7 @@ pub(super) fn apply_scenemax_ui_actions(
                 if let Some(target) = resolve_ui_target(&ui_runtime, &target)
                     && let Some(text_entity) = target.text_entity
                     && let Ok((mut text_component, mut text_color, mut transform, visual_state)) =
-                        text_query.get_mut(text_entity)
+                        text_queries.p0().get_mut(text_entity)
                 {
                     let visual_state = visual_state.copied().unwrap_or(SceneMaxUiTextVisualState {
                         base_color: text_color.0,
@@ -125,6 +132,56 @@ pub(super) fn apply_scenemax_ui_actions(
                         text_color.0 = visual_state.base_color;
                         *transform = visual_state.base_transform;
                     }
+                } else if let Some(target) = resolve_ui_target(&ui_runtime, &target)
+                    && let Some(text_entity) = target.text_entity
+                    && let Ok((mut bitmap_text, mut transform, visual_state)) =
+                        text_queries.p1().get_mut(text_entity)
+                {
+                    let visual_state = visual_state.copied().unwrap_or(SceneMaxUiTextVisualState {
+                        base_color: bitmap_text.color,
+                        base_transform: *transform,
+                    });
+                    commands
+                        .entity(text_entity)
+                        .remove::<SceneMaxUiMessageAnimation>()
+                        .insert(visual_state);
+                    let effect_names = scenemax_runtime_ui_core::parse_effects(&effects);
+                    if scenemax_runtime_ui_core::should_animate(&effect_names)
+                        && duration_seconds > f32::EPSILON
+                    {
+                        apply_ui_bitmap_message_progress(
+                            &mut commands,
+                            text_entity,
+                            &mut bitmap_text,
+                            &mut transform,
+                            &ui_runtime,
+                            &text,
+                            &effect_names,
+                            0.0,
+                            visual_state.base_color,
+                            visual_state.base_transform,
+                        );
+                        commands
+                            .entity(text_entity)
+                            .insert(SceneMaxUiMessageAnimation {
+                                full_text: text,
+                                effect_names,
+                                elapsed_seconds: 0.0,
+                                duration_seconds: duration_seconds.max(0.001),
+                                base_color: visual_state.base_color,
+                                base_transform: visual_state.base_transform,
+                            });
+                    } else {
+                        bitmap_text.text = text;
+                        bitmap_text.color = visual_state.base_color;
+                        *transform = visual_state.base_transform;
+                        render_scenemax_bitmap_text(
+                            &mut commands,
+                            text_entity,
+                            &mut bitmap_text,
+                            &ui_runtime,
+                        );
+                    }
                 }
             }
             SceneMaxUiAction::Ease {
@@ -158,21 +215,48 @@ pub(super) fn apply_scenemax_ui_actions(
                 if property.eq_ignore_ascii_case("text") {
                     if let Some(target) = resolve_ui_target(&ui_runtime, &target)
                         && let Some(text_entity) = target.text_entity
-                        && let Ok((mut text_component, mut text_color, mut transform, visual_state)) =
-                            text_query.get_mut(text_entity)
                     {
-                        let visual_state =
-                            visual_state.copied().unwrap_or(SceneMaxUiTextVisualState {
-                                base_color: text_color.0,
-                                base_transform: *transform,
-                            });
-                        commands
-                            .entity(text_entity)
-                            .remove::<SceneMaxUiMessageAnimation>()
-                            .insert(visual_state);
-                        text_component.0 = value;
-                        text_color.0 = visual_state.base_color;
-                        *transform = visual_state.base_transform;
+                        if let Ok((
+                            mut text_component,
+                            mut text_color,
+                            mut transform,
+                            visual_state,
+                        )) = text_queries.p0().get_mut(text_entity)
+                        {
+                            let visual_state =
+                                visual_state.copied().unwrap_or(SceneMaxUiTextVisualState {
+                                    base_color: text_color.0,
+                                    base_transform: *transform,
+                                });
+                            commands
+                                .entity(text_entity)
+                                .remove::<SceneMaxUiMessageAnimation>()
+                                .insert(visual_state);
+                            text_component.0 = value;
+                            text_color.0 = visual_state.base_color;
+                            *transform = visual_state.base_transform;
+                        } else if let Ok((mut bitmap_text, mut transform, visual_state)) =
+                            text_queries.p1().get_mut(text_entity)
+                        {
+                            let visual_state =
+                                visual_state.copied().unwrap_or(SceneMaxUiTextVisualState {
+                                    base_color: bitmap_text.color,
+                                    base_transform: *transform,
+                                });
+                            commands
+                                .entity(text_entity)
+                                .remove::<SceneMaxUiMessageAnimation>()
+                                .insert(visual_state);
+                            bitmap_text.text = value;
+                            bitmap_text.color = visual_state.base_color;
+                            *transform = visual_state.base_transform;
+                            render_scenemax_bitmap_text(
+                                &mut commands,
+                                text_entity,
+                                &mut bitmap_text,
+                                &ui_runtime,
+                            );
+                        }
                     }
                 } else if property.eq_ignore_ascii_case("visible") {
                     let visible = !matches!(value.to_ascii_lowercase().as_str(), "0" | "false");
@@ -242,6 +326,44 @@ pub(super) fn update_scenemax_ui_message_animations(
     }
 }
 
+pub(super) fn update_scenemax_ui_bitmap_message_animations(
+    time: Res<Time>,
+    mut commands: Commands,
+    ui_runtime: Res<SceneMaxUiRuntime>,
+    mut query: Query<(
+        Entity,
+        &mut SceneMaxUiBitmapText,
+        &mut UiTransform,
+        &mut SceneMaxUiMessageAnimation,
+    )>,
+) {
+    for (entity, mut bitmap_text, mut transform, mut animation) in &mut query {
+        animation.elapsed_seconds += time.delta_secs();
+        let progress = (animation.elapsed_seconds / animation.duration_seconds).clamp(0.0, 1.0);
+        apply_ui_bitmap_message_progress(
+            &mut commands,
+            entity,
+            &mut bitmap_text,
+            &mut transform,
+            &ui_runtime,
+            &animation.full_text,
+            &animation.effect_names,
+            progress,
+            animation.base_color,
+            animation.base_transform,
+        );
+        if progress >= 1.0 {
+            bitmap_text.text = animation.full_text.clone();
+            bitmap_text.color = animation.base_color;
+            *transform = animation.base_transform;
+            render_scenemax_bitmap_text(&mut commands, entity, &mut bitmap_text, &ui_runtime);
+            commands
+                .entity(entity)
+                .remove::<SceneMaxUiMessageAnimation>();
+        }
+    }
+}
+
 pub(super) fn apply_ui_message_progress(
     text: &mut Text,
     text_color: &mut TextColor,
@@ -257,6 +379,26 @@ pub(super) fn apply_ui_message_progress(
     text_color.0 = base_color.with_alpha(base_color.alpha() * frame.alpha);
     *transform = base_transform;
     transform.scale = base_transform.scale * frame.scale;
+}
+
+pub(super) fn apply_ui_bitmap_message_progress(
+    commands: &mut Commands,
+    entity: Entity,
+    bitmap_text: &mut SceneMaxUiBitmapText,
+    transform: &mut UiTransform,
+    ui_runtime: &SceneMaxUiRuntime,
+    full_text: &str,
+    effect_names: &[String],
+    progress: f32,
+    base_color: Color,
+    base_transform: UiTransform,
+) {
+    let frame = scenemax_runtime_ui_core::evaluate_message_frame(full_text, effect_names, progress);
+    bitmap_text.text = frame.visible_text;
+    bitmap_text.color = base_color.with_alpha(base_color.alpha() * frame.alpha);
+    *transform = base_transform;
+    transform.scale = base_transform.scale * frame.scale;
+    render_scenemax_bitmap_text(commands, entity, bitmap_text, ui_runtime);
 }
 
 pub(super) fn load_scenemax_ui_document(
@@ -276,6 +418,7 @@ pub(super) fn load_scenemax_ui_document(
     let ui_name = doc.name.clone();
     let ui_scale = document_scale(&doc, context.window_width, context.window_height);
     refresh_sprite_index(ui_runtime, context);
+    refresh_font_index(ui_runtime, context);
 
     let mut loaded = LoadedSceneMaxUi::default();
     for layer in &doc.layers {
@@ -369,7 +512,7 @@ pub(super) fn spawn_scenemax_ui_widget(
     commands: &mut Commands,
     asset_server: &AssetServer,
     context: &SceneMaxLaunchContext,
-    ui_runtime: &SceneMaxUiRuntime,
+    ui_runtime: &mut SceneMaxUiRuntime,
     ui_name: &str,
     layer_name: &str,
     parent_path: Vec<String>,
@@ -407,28 +550,25 @@ pub(super) fn spawn_scenemax_ui_widget(
     let (entity, text_entity) = match widget.widget_type.as_str() {
         "TEXT_VIEW" | "EDIT_TEXT" => {
             let text_color = parse_ui_color(&widget.text_color);
-            let text_transform = UiTransform::default();
-            let entity = commands
-                .spawn((
-                    Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
-                    node,
-                    text_transform,
-                    visibility,
-                    ZIndex(widget.z_order),
-                    Text::new(widget.text.clone()),
-                    TextFont {
-                        font_size: FontSize::Px(scaled_font_size(widget.font_size, ui_scale)),
-                        ..default()
-                    },
-                    TextColor(text_color),
-                    TextLayout::justify(ui_text_justify(&widget.text_alignment)).with_no_wrap(),
-                    SceneMaxUiTextVisualState {
-                        base_color: text_color,
-                        base_transform: text_transform,
-                    },
-                    base_marker,
-                ))
-                .id();
+            let entity = spawn_scenemax_ui_text_entity(
+                commands,
+                asset_server,
+                context,
+                ui_runtime,
+                format!("UI.{ui_name}.{}", widget_path.join(".")),
+                node,
+                visibility,
+                ZIndex(widget.z_order),
+                widget.text.clone(),
+                widget.font_name.as_deref(),
+                widget.font_size,
+                text_color,
+                ui_text_justify(&widget.text_alignment),
+                ui_scale,
+                rect.width,
+                rect.height,
+                Some(base_marker),
+            );
             (entity, Some(entity))
         }
         "BUTTON" => {
@@ -443,29 +583,32 @@ pub(super) fn spawn_scenemax_ui_widget(
                     base_marker,
                 ))
                 .id();
-            let text = commands
-                .spawn((
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: Val::ZERO,
-                        top: Val::ZERO,
-                        width: Val::Percent(100.0),
-                        height: Val::Percent(100.0),
-                        ..default()
-                    },
-                    Text::new(widget.button_text.clone()),
-                    TextFont {
-                        font_size: FontSize::Px(scaled_font_size(widget.font_size, ui_scale)),
-                        ..default()
-                    },
-                    TextColor(parse_ui_color(&widget.button_text_color)),
-                    TextLayout::justify(Justify::Center).with_no_wrap(),
-                    SceneMaxUiTextVisualState {
-                        base_color: parse_ui_color(&widget.button_text_color),
-                        base_transform: UiTransform::default(),
-                    },
-                ))
-                .id();
+            let text = spawn_scenemax_ui_text_entity(
+                commands,
+                asset_server,
+                context,
+                ui_runtime,
+                format!("UI.{ui_name}.{}.text", widget_path.join(".")),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::ZERO,
+                    top: Val::ZERO,
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    ..default()
+                },
+                Visibility::Inherited,
+                ZIndex(0),
+                widget.button_text.clone(),
+                widget.font_name.as_deref(),
+                widget.font_size,
+                parse_ui_color(&widget.button_text_color),
+                Justify::Center,
+                ui_scale,
+                rect.width,
+                rect.height,
+                None,
+            );
             commands.entity(entity).add_child(text);
             (entity, Some(text))
         }
@@ -487,32 +630,31 @@ pub(super) fn spawn_scenemax_ui_widget(
         "LIST_VIEW" => {
             let text = list_view_text(widget);
             let text_color = parse_ui_color(&widget.text_color);
-            let text_transform = UiTransform::default();
-            let entity = commands
-                .spawn((
-                    Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
-                    node,
-                    BackgroundColor(parse_ui_color(&widget.background_color)),
-                    text_transform,
-                    visibility,
-                    ZIndex(widget.z_order),
-                    Text::new(text),
-                    TextFont {
-                        font_size: FontSize::Px(scaled_font_size(
-                            widget.list_row_font_size,
-                            ui_scale,
-                        )),
-                        ..default()
-                    },
-                    TextColor(text_color),
-                    TextLayout::justify(Justify::Left).with_no_wrap(),
-                    SceneMaxUiTextVisualState {
-                        base_color: text_color,
-                        base_transform: text_transform,
-                    },
-                    base_marker,
-                ))
-                .id();
+            let entity = spawn_scenemax_ui_text_entity(
+                commands,
+                asset_server,
+                context,
+                ui_runtime,
+                format!("UI.{ui_name}.{}", widget_path.join(".")),
+                node,
+                visibility,
+                ZIndex(widget.z_order),
+                text,
+                widget
+                    .list_row_font_name
+                    .as_deref()
+                    .or(widget.font_name.as_deref()),
+                widget.list_row_font_size,
+                text_color,
+                Justify::Left,
+                ui_scale,
+                rect.width,
+                rect.height,
+                Some(base_marker),
+            );
+            commands
+                .entity(entity)
+                .insert(BackgroundColor(parse_ui_color(&widget.background_color)));
             (entity, Some(entity))
         }
         _ => {
@@ -576,6 +718,179 @@ pub(super) fn spawn_scenemax_ui_widget(
             );
         }
     }
+}
+
+pub(super) fn spawn_scenemax_ui_text_entity(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    context: &SceneMaxLaunchContext,
+    ui_runtime: &mut SceneMaxUiRuntime,
+    name: String,
+    node: Node,
+    visibility: Visibility,
+    z_index: ZIndex,
+    text: String,
+    font_name: Option<&str>,
+    font_size: f32,
+    color: Color,
+    alignment: Justify,
+    ui_scale: f32,
+    widget_width: f32,
+    widget_height: f32,
+    marker: Option<SceneMaxUiWidget>,
+) -> Entity {
+    let transform = UiTransform::default();
+    let entity = commands
+        .spawn((
+            Name::new(name),
+            node,
+            transform,
+            visibility,
+            z_index,
+            SceneMaxUiTextVisualState {
+                base_color: color,
+                base_transform: transform,
+            },
+        ))
+        .id();
+    if let Some(marker) = marker {
+        commands.entity(entity).insert(marker);
+    }
+
+    if let Some(font_name) =
+        ensure_scenemax_bitmap_font(font_name, ui_runtime, asset_server, context)
+    {
+        let mut bitmap_text = SceneMaxUiBitmapText {
+            text,
+            font_name,
+            font_size: scaled_font_size(font_size, ui_scale),
+            color,
+            alignment,
+            widget_width,
+            widget_height,
+            glyph_entities: Vec::new(),
+        };
+        render_scenemax_bitmap_text(commands, entity, &mut bitmap_text, ui_runtime);
+        commands.entity(entity).insert(bitmap_text);
+    } else {
+        commands.entity(entity).insert((
+            Text::new(text),
+            TextFont {
+                font_size: FontSize::Px(scaled_font_size(font_size, ui_scale)),
+                ..default()
+            },
+            TextColor(color),
+            TextLayout::justify(alignment).with_no_wrap(),
+        ));
+    }
+
+    entity
+}
+
+pub(super) fn ensure_scenemax_bitmap_font(
+    font_name: Option<&str>,
+    ui_runtime: &mut SceneMaxUiRuntime,
+    asset_server: &AssetServer,
+    context: &SceneMaxLaunchContext,
+) -> Option<String> {
+    let font_name = font_name?.trim();
+    if font_name.is_empty() {
+        return None;
+    }
+    let key = font_name.to_ascii_lowercase();
+    if ui_runtime.bitmap_fonts.contains_key(&key) {
+        return Some(key);
+    }
+    let asset = ui_runtime.font_index.get(&key)?.clone();
+    match load_scenemax_bitmap_font(&asset.path, asset_server, context) {
+        Ok(font) => {
+            ui_runtime.bitmap_fonts.insert(key.clone(), font);
+            Some(key)
+        }
+        Err(error) => {
+            tracing::warn!(font = font_name, path = asset.path, %error, "failed to load SceneMax bitmap font");
+            write_runtime_diagnostic_line(format!(
+                "failed to load font {font_name} from {}: {error}",
+                asset.path
+            ));
+            None
+        }
+    }
+}
+
+pub(super) fn render_scenemax_bitmap_text(
+    commands: &mut Commands,
+    entity: Entity,
+    bitmap_text: &mut SceneMaxUiBitmapText,
+    ui_runtime: &SceneMaxUiRuntime,
+) {
+    for glyph_entity in bitmap_text.glyph_entities.drain(..) {
+        commands.entity(glyph_entity).despawn();
+    }
+
+    let Some(font) = ui_runtime.bitmap_fonts.get(&bitmap_text.font_name) else {
+        return;
+    };
+    let scale = bitmap_text.font_size / font.size.max(1.0);
+    let line_height = font.line_height.max(font.size) * scale;
+    let lines = bitmap_text.text.split('\n').collect::<Vec<_>>();
+    let total_height = line_height * lines.len().max(1) as f32;
+    let y_start = (bitmap_text.widget_height - total_height) * 0.5;
+
+    for (line_index, line) in lines.iter().enumerate() {
+        let line_width = scenemax_bitmap_line_width(font, line, scale);
+        let mut cursor_x = match bitmap_text.alignment {
+            Justify::Center => (bitmap_text.widget_width - line_width) * 0.5,
+            Justify::Right => bitmap_text.widget_width - line_width,
+            _ => 0.0,
+        };
+        let line_y = y_start + line_index as f32 * line_height;
+        for ch in line.chars() {
+            if ch == '\r' {
+                continue;
+            }
+            let Some(glyph) = font.glyphs.get(&ch) else {
+                cursor_x += line_height * 0.35;
+                continue;
+            };
+            if glyph.width > 1.0 && glyph.height > 1.0 {
+                let glyph_entity = commands
+                    .spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(cursor_x + glyph.x_offset * scale),
+                            top: Val::Px(line_y + glyph.y_offset * scale),
+                            width: Val::Px(glyph.width * scale),
+                            height: Val::Px(glyph.height * scale),
+                            ..default()
+                        },
+                        ImageNode {
+                            image: font.image.clone(),
+                            color: bitmap_text.color,
+                            rect: Some(glyph.source),
+                            ..default()
+                        },
+                    ))
+                    .id();
+                commands.entity(entity).add_child(glyph_entity);
+                bitmap_text.glyph_entities.push(glyph_entity);
+            }
+            cursor_x += glyph.x_advance * scale;
+        }
+    }
+}
+
+pub(super) fn scenemax_bitmap_line_width(font: &SceneMaxBitmapFont, text: &str, scale: f32) -> f32 {
+    text.chars()
+        .filter(|ch| *ch != '\r')
+        .map(|ch| {
+            font.glyphs
+                .get(&ch)
+                .map(|glyph| glyph.x_advance)
+                .unwrap_or(font.line_height * 0.35)
+        })
+        .sum::<f32>()
+        * scale
 }
 
 pub(super) fn node_from_rect(rect: UiLayoutRect, parent_rect: UiLayoutRect) -> Node {
@@ -768,6 +1083,173 @@ pub(super) fn refresh_sprite_index(
             ui_runtime,
         );
     }
+}
+
+pub(super) fn refresh_font_index(
+    ui_runtime: &mut SceneMaxUiRuntime,
+    context: &SceneMaxLaunchContext,
+) {
+    if ui_runtime.font_index_root.as_ref() == context.asset_root.as_ref() {
+        return;
+    }
+    ui_runtime.font_index.clear();
+    ui_runtime.bitmap_fonts.clear();
+    ui_runtime.font_index_root = context.asset_root.clone();
+
+    if let Some(builtin_root) = context.builtin_asset_root.as_ref() {
+        load_font_index_file(
+            &builtin_root.join("fonts").join("fonts.json"),
+            "builtin://",
+            ui_runtime,
+        );
+    }
+    if let Some(asset_root) = context.asset_root.as_ref() {
+        load_font_index_file(&asset_root.join("fonts").join("fonts.json"), "", ui_runtime);
+        load_font_index_file(
+            &asset_root.join("fonts").join("fonts-ext.json"),
+            "",
+            ui_runtime,
+        );
+    }
+}
+
+pub(super) fn load_font_index_file(path: &Path, prefix: &str, ui_runtime: &mut SceneMaxUiRuntime) {
+    let Ok(source) = fs::read_to_string(path) else {
+        return;
+    };
+    let Ok(root) = serde_json::from_str::<serde_json::Value>(&source) else {
+        return;
+    };
+    let Some(fonts) = root.get("fonts").and_then(|value| value.as_array()) else {
+        return;
+    };
+    for font in fonts {
+        let Some(name) = font.get("name").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        let Some(path) = font.get("path").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        ui_runtime.font_index.insert(
+            name.to_ascii_lowercase(),
+            SceneMaxBitmapFontAsset {
+                path: format!("{prefix}{}", normalize_asset_path(path)),
+            },
+        );
+    }
+}
+
+pub(super) fn load_scenemax_bitmap_font(
+    asset_path: &str,
+    asset_server: &AssetServer,
+    context: &SceneMaxLaunchContext,
+) -> Result<SceneMaxBitmapFont> {
+    let font_file = ui_asset_file_path(asset_path, context)
+        .ok_or_else(|| anyhow::anyhow!("font asset {asset_path} was not found"))?;
+    let source = fs::read_to_string(&font_file)?;
+    let mut size = 0.0;
+    let mut line_height = 0.0;
+    let mut page_file = None::<String>;
+    let mut glyphs = HashMap::new();
+
+    for line in source.lines() {
+        if line.starts_with("info ") {
+            size = parse_fnt_f32(line, "size").unwrap_or(size).abs();
+        } else if line.starts_with("common ") {
+            line_height = parse_fnt_f32(line, "lineHeight").unwrap_or(line_height);
+        } else if line.starts_with("page ") {
+            page_file = parse_fnt_string(line, "file");
+        } else if line.starts_with("char ") {
+            let Some(id) = parse_fnt_u32(line, "id") else {
+                continue;
+            };
+            let Some(ch) = char::from_u32(id) else {
+                continue;
+            };
+            let x = parse_fnt_f32(line, "x").unwrap_or(0.0);
+            let y = parse_fnt_f32(line, "y").unwrap_or(0.0);
+            let width = parse_fnt_f32(line, "width").unwrap_or(0.0);
+            let height = parse_fnt_f32(line, "height").unwrap_or(0.0);
+            glyphs.insert(
+                ch,
+                SceneMaxBitmapGlyph {
+                    source: Rect {
+                        min: Vec2::new(x, y),
+                        max: Vec2::new(x + width, y + height),
+                    },
+                    width,
+                    height,
+                    x_offset: parse_fnt_f32(line, "xoffset").unwrap_or(0.0),
+                    y_offset: parse_fnt_f32(line, "yoffset").unwrap_or(0.0),
+                    x_advance: parse_fnt_f32(line, "xadvance").unwrap_or(width),
+                },
+            );
+        }
+    }
+
+    if glyphs.is_empty() {
+        anyhow::bail!("font {asset_path} has no glyphs");
+    }
+    let page_file =
+        page_file.ok_or_else(|| anyhow::anyhow!("font {asset_path} has no page image"))?;
+    let image_path = bitmap_font_page_asset_path(asset_path, &page_file);
+    Ok(SceneMaxBitmapFont {
+        image: asset_server.load(image_path),
+        size: size.max(line_height).max(1.0),
+        line_height: line_height.max(size).max(1.0),
+        glyphs,
+    })
+}
+
+pub(super) fn bitmap_font_page_asset_path(font_asset_path: &str, page_file: &str) -> String {
+    let normalized_font = normalize_asset_path(font_asset_path);
+    let (prefix, relative_font) = normalized_font
+        .strip_prefix("builtin://")
+        .map(|relative| ("builtin://", relative))
+        .unwrap_or(("", normalized_font.as_str()));
+    let parent = Path::new(relative_font)
+        .parent()
+        .map(|path| path.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
+    let page_file = page_file.replace('\\', "/");
+    if parent.is_empty() {
+        format!("{prefix}{page_file}")
+    } else {
+        format!("{prefix}{parent}/{page_file}")
+    }
+}
+
+pub(super) fn ui_asset_file_path(
+    asset_path: &str,
+    context: &SceneMaxLaunchContext,
+) -> Option<PathBuf> {
+    if let Some(relative) = asset_path.strip_prefix("builtin://") {
+        return context
+            .builtin_asset_root
+            .as_ref()
+            .map(|root| root.join(relative))
+            .filter(|path| path.is_file());
+    }
+    context
+        .asset_root
+        .as_ref()
+        .map(|root| root.join(asset_path))
+        .filter(|path| path.is_file())
+}
+
+pub(super) fn parse_fnt_string(line: &str, key: &str) -> Option<String> {
+    let prefix = format!("{key}=");
+    line.split_whitespace()
+        .find_map(|part| part.strip_prefix(&prefix))
+        .map(|value| value.trim_matches('"').to_owned())
+}
+
+pub(super) fn parse_fnt_f32(line: &str, key: &str) -> Option<f32> {
+    parse_fnt_string(line, key)?.parse().ok()
+}
+
+pub(super) fn parse_fnt_u32(line: &str, key: &str) -> Option<u32> {
+    parse_fnt_string(line, key)?.parse().ok()
 }
 
 pub(super) fn load_sprite_index_file(

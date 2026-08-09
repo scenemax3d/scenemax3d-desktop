@@ -84,6 +84,8 @@ pub struct SceneMaxUiWidgetDef {
     pub text: String,
     #[serde(default = "default_text_color")]
     pub text_color: String,
+    #[serde(default)]
+    pub font_name: Option<String>,
     #[serde(default = "default_font_size")]
     pub font_size: f32,
     #[serde(default = "default_text_alignment")]
@@ -104,6 +106,10 @@ pub struct SceneMaxUiWidgetDef {
     pub list_headers: Vec<String>,
     #[serde(default)]
     pub list_rows: Vec<Vec<String>>,
+    #[serde(default)]
+    pub list_header_font_name: Option<String>,
+    #[serde(default)]
+    pub list_row_font_name: Option<String>,
     #[serde(default = "default_font_size")]
     pub list_header_font_size: f32,
     #[serde(default = "default_list_row_font_size")]
@@ -714,6 +720,43 @@ mod tests {
         assert_eq!(footer.y, 960.0);
         assert_eq!(footer.width, 400.0);
         assert_eq!(footer.height, 80.0);
+    }
+
+    #[test]
+    fn preserves_text_font_names_from_ui_documents() {
+        let doc: SceneMaxUiDocument = serde_json::from_str(
+            r##"{
+                "name": "intro",
+                "layers": [{
+                    "name": "hud",
+                    "widgets": [{
+                        "name": "title",
+                        "type": "TEXT_VIEW",
+                        "fontName": "message_bold1",
+                        "fontSize": 96
+                    }, {
+                        "name": "scores",
+                        "type": "LIST_VIEW",
+                        "listHeaderFontName": "message_bold1",
+                        "listRowFontName": "arial_64"
+                    }]
+                }]
+            }"##,
+        )
+        .unwrap();
+
+        assert_eq!(
+            doc.layers[0].widgets[0].font_name.as_deref(),
+            Some("message_bold1")
+        );
+        assert_eq!(
+            doc.layers[0].widgets[1].list_header_font_name.as_deref(),
+            Some("message_bold1")
+        );
+        assert_eq!(
+            doc.layers[0].widgets[1].list_row_font_name.as_deref(),
+            Some("arial_64")
+        );
     }
 
     #[test]

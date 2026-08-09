@@ -222,6 +222,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 apply_scenemax_ui_actions,
                 update_scenemax_ui_eases,
                 update_scenemax_ui_message_animations,
+                update_scenemax_ui_bitmap_message_animations,
             )
                 .chain(),
         )
@@ -388,6 +389,9 @@ struct SceneMaxUiRuntime {
     loaded: HashMap<String, LoadedSceneMaxUi>,
     sprite_index: HashMap<String, SceneMaxSpriteAsset>,
     sprite_index_root: Option<PathBuf>,
+    font_index: HashMap<String, SceneMaxBitmapFontAsset>,
+    font_index_root: Option<PathBuf>,
+    bitmap_fonts: HashMap<String, SceneMaxBitmapFont>,
 }
 
 #[derive(Debug, Default)]
@@ -460,6 +464,41 @@ struct SceneMaxUiMessageAnimation {
     duration_seconds: f32,
     base_color: Color,
     base_transform: UiTransform,
+}
+
+#[derive(Debug, Clone)]
+struct SceneMaxBitmapFontAsset {
+    path: String,
+}
+
+#[derive(Debug, Clone)]
+struct SceneMaxBitmapFont {
+    image: Handle<Image>,
+    size: f32,
+    line_height: f32,
+    glyphs: HashMap<char, SceneMaxBitmapGlyph>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SceneMaxBitmapGlyph {
+    source: Rect,
+    width: f32,
+    height: f32,
+    x_offset: f32,
+    y_offset: f32,
+    x_advance: f32,
+}
+
+#[derive(Debug, Clone, Component)]
+struct SceneMaxUiBitmapText {
+    text: String,
+    font_name: String,
+    font_size: f32,
+    color: Color,
+    alignment: Justify,
+    widget_width: f32,
+    widget_height: f32,
+    glyph_entities: Vec<Entity>,
 }
 
 #[derive(Debug, Clone, Copy, Component)]
@@ -1612,5 +1651,22 @@ mod tests {
 
         assert!(current_animation_matches(&current, "run_sword", true));
         assert!(!current_animation_matches(&current, "idle2", true));
+    }
+
+    #[test]
+    fn resolves_bitmap_font_page_next_to_fnt_asset() {
+        assert_eq!(
+            bitmap_font_page_asset_path("fonts/message_bold1.fnt", "message_bold1.png"),
+            "fonts/message_bold1.png"
+        );
+        assert_eq!(
+            bitmap_font_page_asset_path("builtin://fonts/arial_64.fnt", "arial_64.png"),
+            "builtin://fonts/arial_64.png"
+        );
+        assert_eq!(parse_fnt_u32("char id=44 x=62", "id"), Some(44));
+        assert_eq!(
+            parse_fnt_string("page id=0 file=\"message_bold1.png\"", "file").as_deref(),
+            Some("message_bold1.png")
+        );
     }
 }
