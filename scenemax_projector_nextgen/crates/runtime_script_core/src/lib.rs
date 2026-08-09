@@ -268,7 +268,7 @@ pub fn substitute_statement(
             Statement::UiSetProperty(scenemax_parser::UiSetPropertyStatement {
                 target: substitute_ui_target_path(&property.target, bindings),
                 property: property.property.clone(),
-                value: substitute_reference(&property.value, bindings),
+                value: substitute_ui_property_value(&property.value, bindings),
             })
         }
         Statement::If(statement) => Statement::If(scenemax_parser::IfStatement {
@@ -550,6 +550,46 @@ pub fn substitute_assignment_value(
             operator: *operator,
             right: Box::new(substitute_assignment_value(right, bindings)),
         },
+    }
+}
+
+pub fn substitute_ui_property_value(
+    value: &scenemax_parser::UiPropertyValue,
+    bindings: &HashMap<String, String>,
+) -> scenemax_parser::UiPropertyValue {
+    match value {
+        scenemax_parser::UiPropertyValue::Literal(text) => {
+            scenemax_parser::UiPropertyValue::Literal(substitute_reference(text, bindings))
+        }
+        scenemax_parser::UiPropertyValue::Expression(value) => {
+            scenemax_parser::UiPropertyValue::Expression(substitute_assignment_value(
+                value, bindings,
+            ))
+        }
+        scenemax_parser::UiPropertyValue::Concatenation(parts) => {
+            scenemax_parser::UiPropertyValue::Concatenation(
+                parts
+                    .iter()
+                    .map(|part| substitute_ui_property_value_part(part, bindings))
+                    .collect(),
+            )
+        }
+    }
+}
+
+fn substitute_ui_property_value_part(
+    part: &scenemax_parser::UiPropertyValuePart,
+    bindings: &HashMap<String, String>,
+) -> scenemax_parser::UiPropertyValuePart {
+    match part {
+        scenemax_parser::UiPropertyValuePart::Literal(text) => {
+            scenemax_parser::UiPropertyValuePart::Literal(substitute_reference(text, bindings))
+        }
+        scenemax_parser::UiPropertyValuePart::Expression(value) => {
+            scenemax_parser::UiPropertyValuePart::Expression(substitute_assignment_value(
+                value, bindings,
+            ))
+        }
     }
 }
 

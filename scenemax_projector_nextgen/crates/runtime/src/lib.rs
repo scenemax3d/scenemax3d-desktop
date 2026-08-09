@@ -948,6 +948,53 @@ mod tests {
     }
 
     #[test]
+    fn ui_text_property_resolves_variable_expressions() {
+        let vars = SceneMaxVars(HashMap::from([("timer".to_owned(), 59.0)]));
+        let guards = HashMap::new();
+
+        assert_eq!(
+            resolve_ui_property_value(
+                &scenemax_parser::UiPropertyValue::Expression(AssignmentValue::Symbol(
+                    "timer".to_owned(),
+                )),
+                &vars,
+                None,
+                &guards,
+                None,
+                None,
+            ),
+            "59"
+        );
+        assert_eq!(
+            resolve_ui_property_value(
+                &scenemax_parser::UiPropertyValue::Literal("timer".to_owned()),
+                &vars,
+                None,
+                &guards,
+                None,
+                None,
+            ),
+            "timer"
+        );
+        assert_eq!(
+            resolve_ui_property_value(
+                &scenemax_parser::UiPropertyValue::Concatenation(vec![
+                    scenemax_parser::UiPropertyValuePart::Literal("timer = ".to_owned()),
+                    scenemax_parser::UiPropertyValuePart::Expression(AssignmentValue::Symbol(
+                        "timer".to_owned(),
+                    )),
+                ]),
+                &vars,
+                None,
+                &guards,
+                None,
+                None,
+            ),
+            "timer = 59"
+        );
+    }
+
+    #[test]
     fn object_pool_prototype_uses_returned_factory_symbol() {
         let functions = HashMap::from([(
             "create_rock".to_owned(),

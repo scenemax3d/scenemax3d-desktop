@@ -574,7 +574,20 @@ pub enum UiEaseDirection {
 pub struct UiSetPropertyStatement {
     pub target: UiTargetPath,
     pub property: String,
-    pub value: String,
+    pub value: UiPropertyValue,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UiPropertyValue {
+    Literal(String),
+    Expression(AssignmentValue),
+    Concatenation(Vec<UiPropertyValuePart>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UiPropertyValuePart {
+    Literal(String),
+    Expression(AssignmentValue),
 }
 
 #[derive(Debug, Error, PartialEq)]
@@ -694,6 +707,12 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
             } else {
                 statements.extend(paths.into_iter().map(|path| Statement::AddCode { path }));
             }
+            index += 1;
+            continue;
+        }
+
+        if let Some(ui_statement) = parse_ui_statement(line)? {
+            statements.push(ui_statement);
             index += 1;
             continue;
         }
@@ -826,8 +845,7 @@ fn parse_key_event_block(
         }
 
         if should_parse_key_action_line(line) {
-            let action = parse_statement(line)?;
-            actions.push(action);
+            actions.extend(parse_action_statements(line)?);
         }
 
         if opens_runtime_block(line) {
@@ -1337,8 +1355,7 @@ fn parse_action_block(
         }
 
         if should_parse_key_action_line(line) {
-            let action = parse_statement(line)?;
-            actions.push(action);
+            actions.extend(parse_action_statements(line)?);
         }
 
         if opens_runtime_block(line) {
@@ -1433,8 +1450,25 @@ fn parse_guarded_actions_after(
     if lower.starts_with("do ") {
         return Ok((Vec::new(), skip_control_block(logical_lines, cursor)));
     }
-    let action = parse_statement(line)?;
-    Ok((vec![action], cursor + 1))
+    Ok((parse_action_statements(line)?, cursor + 1))
+}
+
+fn parse_action_statements(line: &str) -> Result<Vec<Statement>, ParseError> {
+    if let Some(statement) = parse_ui_statement(line)? {
+        return Ok(vec![statement]);
+    }
+    if is_local_assignment_line(line) {
+        if let Some(assignments) = parse_assignment_list(line)? {
+            return Ok(assignments
+                .into_iter()
+                .map(Statement::LocalAssignment)
+                .collect());
+        }
+    }
+    if let Some(assignments) = parse_assignment_list(line)? {
+        return Ok(assignments.into_iter().map(Statement::Assignment).collect());
+    }
+    Ok(vec![parse_statement(line)?])
 }
 
 fn parse_if_header(line: &str) -> Result<Option<Condition>, ParseError> {
@@ -1870,11 +1904,12 @@ fn parse_ui_statement(line: &str) -> Result<Option<Statement>, ParseError> {
             let path_text = parts.next().unwrap_or_default().trim();
             if !property.is_empty()
                 && let Some(target) = parse_ui_target_path(path_text)
+                && let Some(value) = parse_ui_property_value(right)?
             {
                 return Ok(Some(Statement::UiSetProperty(UiSetPropertyStatement {
                     target,
                     property: property.to_owned(),
-                    value: clean_call_arg(right).to_owned(),
+                    value,
                 })));
             }
         }
@@ -2087,6 +2122,98 @@ fn parse_call_args(text: &str) -> Vec<String> {
 
 fn clean_call_arg(arg: &str) -> &str {
     arg.trim().trim_matches('"').trim_matches('\'').trim()
+}
+
+fn parse_ui_property_value(raw_value: &str) -> Result<Option<UiPropertyValue>, ParseError> {
+    let raw_value = raw_value.trim().trim_end_matches(';').trim();
+    if raw_value.is_empty() {
+        return Ok(None);
+    }
+    if is_quoted(raw_value) {
+        return Ok(Some(UiPropertyValue::Literal(unquote_ui_text(raw_value))));
+    }
+    if let Some(parts) = parse_ui_property_concatenation(raw_value)? {
+        return Ok(Some(UiPropertyValue::Concatenation(parts)));
+    }
+    if let Some(value) = parse_assignment_value(clean_assignment_value(raw_value))? {
+        return Ok(Some(UiPropertyValue::Expression(value)));
+    }
+    Ok(Some(UiPropertyValue::Literal(
+        clean_call_arg(raw_value).to_owned(),
+    )))
+}
+
+fn parse_ui_property_concatenation(
+    raw_value: &str,
+) -> Result<Option<Vec<UiPropertyValuePart>>, ParseError> {
+    let parts = split_top_level_plus(raw_value);
+    if parts.len() < 2 || !parts.iter().any(|part| is_quoted(part)) {
+        return Ok(None);
+    }
+
+    let mut values = Vec::new();
+    for part in parts {
+        if is_quoted(part) {
+            values.push(UiPropertyValuePart::Literal(unquote_ui_text(part)));
+        } else if let Some(value) = parse_assignment_value(clean_assignment_value(part))? {
+            values.push(UiPropertyValuePart::Expression(value));
+        } else {
+            values.push(UiPropertyValuePart::Literal(
+                clean_call_arg(part).to_owned(),
+            ));
+        }
+    }
+    Ok(Some(values))
+}
+
+fn split_top_level_plus(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut start = 0usize;
+
+    for (index, value) in text.char_indices() {
+        if let Some(quote_char) = quote {
+            if escaped {
+                escaped = false;
+            } else if value == '\\' {
+                escaped = true;
+            } else if value == quote_char {
+                quote = None;
+            }
+            continue;
+        }
+
+        match value {
+            '"' | '\'' => quote = Some(value),
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            '+' if depth == 0 => {
+                parts.push(text[start..index].trim());
+                start = index + value.len_utf8();
+            }
+            _ => {}
+        }
+    }
+
+    parts.push(text[start..].trim());
+    parts.into_iter().filter(|part| !part.is_empty()).collect()
+}
+
+fn is_quoted(text: &str) -> bool {
+    let text = text.trim();
+    (text.len() >= 2 && text.starts_with('"') && text.ends_with('"'))
+        || (text.len() >= 2 && text.starts_with('\'') && text.ends_with('\''))
+}
+
+fn unquote_ui_text(text: &str) -> String {
+    let text = text.trim();
+    if is_quoted(text) {
+        text[1..text.len() - 1].to_owned()
+    } else {
+        text.to_owned()
+    }
 }
 
 fn split_once_case_insensitive<'a>(text: &'a str, needle: &str) -> Option<(&'a str, &'a str)> {
@@ -5805,6 +5932,72 @@ mod tests {
                     && message.text == "Memorize the keys, then launch straight into the fight."
                     && message.effects == "TextEffect.word_reveal | TextEffect.fade_in"
                     && (message.duration_seconds - 1.2).abs() < f32::EPSILON
+        ));
+    }
+
+    #[test]
+    fn parses_ui_text_property_expression_and_literal() {
+        let program = parse_program(
+            "UI.layer1.panel2.timer.text = timer\n\
+             UI.layer1.panel2.label.text = \"timer\"\n\
+             UI.layer1.panel2.caption.text = \"timer = \" + timer",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::UiSetProperty(property)
+                if property.target.widget_path == vec!["panel2", "timer"]
+                    && property.property == "text"
+                    && property.value == UiPropertyValue::Expression(
+                        AssignmentValue::Symbol("timer".to_owned())
+                    )
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::UiSetProperty(property)
+                if property.target.widget_path == vec!["panel2", "label"]
+                    && property.property == "text"
+                    && property.value == UiPropertyValue::Literal("timer".to_owned())
+        ));
+        assert!(matches!(
+            &program.statements[2],
+            Statement::UiSetProperty(property)
+                if property.target.widget_path == vec!["panel2", "caption"]
+                    && property.property == "text"
+                    && property.value == UiPropertyValue::Concatenation(vec![
+                        UiPropertyValuePart::Literal("timer = ".to_owned()),
+                        UiPropertyValuePart::Expression(AssignmentValue::Symbol("timer".to_owned())),
+                    ])
+        ));
+    }
+
+    #[test]
+    fn parses_local_comma_assignments_inside_function_blocks() {
+        let program = parse_program(
+            "print_status = {\n  var frame1=round(life1*16/INITIAL_PLAYER_STRENGTH),\n      frame2=round(life2*16/INITIAL_PLAYER_STRENGTH),\n      player_percent=round(life1*100/INITIAL_PLAYER_STRENGTH),\n      opponent_percent=round(life2*100/INITIAL_PLAYER_STRENGTH)\n  UI.layer1.playerHud.playerHealthValue.text = player_percent + \"%\"\n}",
+        )
+        .unwrap();
+
+        let Statement::FunctionDef(function) = &program.statements[0] else {
+            panic!("expected function definition");
+        };
+
+        assert_eq!(function.actions.len(), 5);
+        assert!(matches!(
+            &function.actions[2],
+            Statement::LocalAssignment(AssignmentStatement { name, .. })
+                if name == "player_percent"
+        ));
+        assert!(matches!(
+            &function.actions[4],
+            Statement::UiSetProperty(property)
+                if property.value == UiPropertyValue::Concatenation(vec![
+                    UiPropertyValuePart::Expression(AssignmentValue::Symbol(
+                        "player_percent".to_owned()
+                    )),
+                    UiPropertyValuePart::Literal("%".to_owned()),
+                ])
         ));
     }
 

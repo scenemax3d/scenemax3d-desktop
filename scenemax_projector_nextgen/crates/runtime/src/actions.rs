@@ -481,10 +481,18 @@ pub(super) fn apply_startup_action(
             ActionSequenceResult::Completed
         }
         Statement::UiSetProperty(property) => {
+            let value = resolve_ui_property_value(
+                &property.value,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
             ui_queue.actions.push(SceneMaxUiAction::SetProperty {
                 target: property.target.clone(),
                 property: property.property.clone(),
-                value: property.value.clone(),
+                value,
             });
             ActionSequenceResult::Completed
         }
@@ -2368,6 +2376,24 @@ pub(super) fn apply_key_action(
         );
         return ActionSequenceResult::Completed;
     }
+    if let Statement::UiSetProperty(property) = action {
+        if let Some(ui_queue) = ui_queue.as_deref_mut() {
+            let value = resolve_ui_property_value(
+                &property.value,
+                vars,
+                scope.as_deref(),
+                guards_by_name,
+                Some(transforms_by_name),
+                Some(collider_bounds),
+            );
+            ui_queue.actions.push(SceneMaxUiAction::SetProperty {
+                target: property.target.clone(),
+                property: property.property.clone(),
+                value,
+            });
+        }
+        return ActionSequenceResult::Completed;
+    }
     if let Some(ui_action) = scenemax_ui_action_from_statement(action)
         && let Some(ui_queue) = ui_queue.as_deref_mut()
     {
@@ -3357,6 +3383,78 @@ impl SceneMaxVmSpatial for RuntimeVmSpatial<'_> {
 
 pub(super) fn format_scenemax_number(value: f32) -> String {
     scenemax_runtime_vm_core::format_scenemax_number(value)
+}
+
+pub(super) fn resolve_ui_property_value(
+    value: &scenemax_parser::UiPropertyValue,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> String {
+    match value {
+        scenemax_parser::UiPropertyValue::Literal(text) => text.clone(),
+        scenemax_parser::UiPropertyValue::Expression(value) => {
+            resolve_assignment_value_scoped_with_guards(
+                value,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
+            .map(format_scenemax_number)
+            .unwrap_or_else(|| assignment_value_fallback_text(value))
+        }
+        scenemax_parser::UiPropertyValue::Concatenation(parts) => parts
+            .iter()
+            .map(|part| {
+                resolve_ui_property_value_part(
+                    part,
+                    vars,
+                    scope,
+                    guards_by_name,
+                    transforms_by_name,
+                    collider_bounds,
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(""),
+    }
+}
+
+fn resolve_ui_property_value_part(
+    part: &scenemax_parser::UiPropertyValuePart,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> String {
+    match part {
+        scenemax_parser::UiPropertyValuePart::Literal(text) => text.clone(),
+        scenemax_parser::UiPropertyValuePart::Expression(value) => {
+            resolve_assignment_value_scoped_with_guards(
+                value,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
+            .map(format_scenemax_number)
+            .unwrap_or_else(|| assignment_value_fallback_text(value))
+        }
+    }
+}
+
+fn assignment_value_fallback_text(value: &AssignmentValue) -> String {
+    match value {
+        AssignmentValue::Number(value) => format_scenemax_number(*value),
+        AssignmentValue::Symbol(name) => name.clone(),
+        _ => "null".to_owned(),
+    }
 }
 
 pub(super) fn apply_assignment(

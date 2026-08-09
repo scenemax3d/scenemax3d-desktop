@@ -19,11 +19,7 @@ pub(super) fn scenemax_ui_action_from_statement(action: &Statement) -> Option<Sc
             direction: ease.direction,
             duration_seconds: ease.duration_seconds,
         }),
-        Statement::UiSetProperty(property) => Some(SceneMaxUiAction::SetProperty {
-            target: property.target.clone(),
-            property: property.property.clone(),
-            value: property.value.clone(),
-        }),
+        Statement::UiSetProperty(_) => None,
         _ => None,
     }
 }
