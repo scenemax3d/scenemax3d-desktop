@@ -6,6 +6,7 @@ members = [
     "crates/parser",
     "crates/projector",
     "crates/runtime",
+    "crates/runtime_script_core",
     "crates/runtime_ui_core",
 ]
 resolver = "3"

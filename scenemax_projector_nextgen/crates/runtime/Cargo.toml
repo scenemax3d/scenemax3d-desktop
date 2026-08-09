@@ -14,6 +14,7 @@ scenemax_assets = { path = "../assets" }
 scenemax_ir = { path = "../ir" }
 scenemax_multiplayer = { path = "../multiplayer" }
 scenemax_parser = { path = "../parser" }
+scenemax_runtime_script_core = { path = "../runtime_script_core" }
 scenemax_runtime_ui_core = { path = "../runtime_ui_core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
