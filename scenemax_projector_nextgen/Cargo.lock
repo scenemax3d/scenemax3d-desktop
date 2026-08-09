@@ -5010,9 +5010,18 @@ dependencies = [
  "scenemax_ir",
  "scenemax_multiplayer",
  "scenemax_parser",
+ "scenemax_runtime_ui_core",
  "serde",
  "serde_json",
  "tracing",
+]
+
+[[package]]
+name = "scenemax_runtime_ui_core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

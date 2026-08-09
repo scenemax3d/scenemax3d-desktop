@@ -43,7 +43,10 @@ use scenemax_parser::{
     PositionStatement, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
     SceneMaxCollisionShape, SceneMaxVec3, Statement, UiEaseDirection, UiTargetPath,
 };
-use serde::Deserialize;
+use scenemax_runtime_ui_core::{
+    SceneMaxSpriteAsset, SceneMaxUiDocument, SceneMaxUiWidgetDef, UiLayoutRect, document_scale,
+    list_view_text, percent, scaled_font_size, solve_widget_layout, sorted_widgets, target_key,
+};
 
 #[derive(TnuaScheme)]
 #[scheme(basis = TnuaBuiltinWalk)]
@@ -494,188 +497,17 @@ struct SceneMaxUiEase {
 #[derive(Debug, Clone, Component)]
 struct SceneMaxUiMessageAnimation {
     full_text: String,
+    effect_names: Vec<String>,
     elapsed_seconds: f32,
     duration_seconds: f32,
+    base_color: Color,
+    base_transform: UiTransform,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SceneMaxUiDocument {
-    name: String,
-    #[serde(default = "default_ui_canvas_width")]
-    canvas_width: f32,
-    #[serde(default = "default_ui_canvas_height")]
-    canvas_height: f32,
-    #[serde(default)]
-    layers: Vec<SceneMaxUiLayerDef>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SceneMaxUiLayerDef {
-    name: String,
-    #[serde(default = "default_true")]
-    visible: bool,
-    #[serde(default)]
-    z_order: i32,
-    #[serde(default)]
-    widgets: Vec<SceneMaxUiWidgetDef>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SceneMaxUiWidgetDef {
-    name: String,
-    #[serde(rename = "type")]
-    widget_type: String,
-    #[serde(default = "default_ui_size_mode")]
-    width_mode: String,
-    #[serde(default = "default_ui_size_mode")]
-    height_mode: String,
-    #[serde(default = "default_ui_width")]
-    width: f32,
-    #[serde(default = "default_ui_height")]
-    height: f32,
-    #[serde(default)]
-    constraints: Vec<SceneMaxUiConstraint>,
-    #[serde(default = "default_half")]
-    horizontal_bias: f32,
-    #[serde(default = "default_half")]
-    vertical_bias: f32,
-    #[serde(default)]
-    padding_left: f32,
-    #[serde(default)]
-    padding_right: f32,
-    #[serde(default)]
-    padding_top: f32,
-    #[serde(default)]
-    padding_bottom: f32,
-    #[serde(default)]
-    margin_left: f32,
-    #[serde(default)]
-    margin_right: f32,
-    #[serde(default)]
-    margin_top: f32,
-    #[serde(default)]
-    margin_bottom: f32,
-    #[serde(default = "default_true")]
-    visible: bool,
-    #[serde(default)]
-    center_horizontal: bool,
-    #[serde(default)]
-    center_vertical: bool,
-    #[serde(default)]
-    z_order: i32,
-    #[serde(default = "default_panel_color")]
-    background_color: String,
-    #[serde(default)]
-    text: String,
-    #[serde(default = "default_text_color")]
-    text_color: String,
-    #[serde(default = "default_font_size")]
-    font_size: f32,
-    #[serde(default = "default_text_alignment")]
-    text_alignment: String,
-    #[serde(default)]
-    button_text: String,
-    #[serde(default = "default_button_color")]
-    button_color: String,
-    #[serde(default = "default_text_color")]
-    button_text_color: String,
-    #[serde(default)]
-    image_path: Option<String>,
-    #[serde(default)]
-    sprite_name: Option<String>,
-    #[serde(default)]
-    sprite_frame: usize,
-    #[serde(default)]
-    list_headers: Vec<String>,
-    #[serde(default)]
-    list_rows: Vec<Vec<String>>,
-    #[serde(default = "default_font_size")]
-    list_header_font_size: f32,
-    #[serde(default = "default_list_row_font_size")]
-    list_row_font_size: f32,
-    #[serde(default)]
-    children: Vec<SceneMaxUiWidgetDef>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SceneMaxUiConstraint {
-    side: String,
-    target_name: String,
-    target_side: String,
-    #[serde(default)]
-    margin: f32,
-}
-
-#[derive(Debug, Clone)]
-struct SceneMaxSpriteAsset {
-    path: String,
-    _rows: usize,
-    _cols: usize,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct UiLayoutRect {
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-}
-
-fn default_ui_canvas_width() -> f32 {
-    1920.0
-}
-
-fn default_ui_canvas_height() -> f32 {
-    1080.0
-}
-
-fn default_ui_width() -> f32 {
-    100.0
-}
-
-fn default_ui_height() -> f32 {
-    50.0
-}
-
-fn default_ui_size_mode() -> String {
-    "WRAP_CONTENT".to_owned()
-}
-
-fn default_panel_color() -> String {
-    "#33333300".to_owned()
-}
-
-fn default_text_color() -> String {
-    "#FFFFFFFF".to_owned()
-}
-
-fn default_button_color() -> String {
-    "#4488FFFF".to_owned()
-}
-
-fn default_text_alignment() -> String {
-    "left".to_owned()
-}
-
-fn default_font_size() -> f32 {
-    16.0
-}
-
-fn default_list_row_font_size() -> f32 {
-    14.0
-}
-
-fn default_half() -> f32 {
-    0.5
-}
-
-fn default_true() -> bool {
-    true
+#[derive(Debug, Clone, Copy, Component)]
+struct SceneMaxUiTextVisualState {
+    base_color: Color,
+    base_transform: UiTransform,
 }
 
 #[derive(Debug)]
@@ -1264,7 +1096,12 @@ fn apply_scenemax_ui_actions(
     context: Res<SceneMaxLaunchContext>,
     mut ui_runtime: ResMut<SceneMaxUiRuntime>,
     mut ui_queue: ResMut<SceneMaxUiActionQueue>,
-    mut text_query: Query<&mut Text>,
+    mut text_query: Query<(
+        &mut Text,
+        &mut TextColor,
+        &mut UiTransform,
+        Option<&SceneMaxUiTextVisualState>,
+    )>,
     mut visibility_query: Query<&mut Visibility>,
 ) {
     let actions = ui_queue.actions.drain(..).collect::<Vec<_>>();
@@ -1310,24 +1147,45 @@ fn apply_scenemax_ui_actions(
             } => {
                 if let Some(target) = resolve_ui_target(&ui_runtime, &target)
                     && let Some(text_entity) = target.text_entity
-                    && let Ok(mut text_component) = text_query.get_mut(text_entity)
+                    && let Ok((mut text_component, mut text_color, mut transform, visual_state)) =
+                        text_query.get_mut(text_entity)
                 {
+                    let visual_state = visual_state.copied().unwrap_or(SceneMaxUiTextVisualState {
+                        base_color: text_color.0,
+                        base_transform: *transform,
+                    });
                     commands
                         .entity(text_entity)
-                        .remove::<SceneMaxUiMessageAnimation>();
-                    if ui_message_has_effect(&effects, "typewriter")
+                        .remove::<SceneMaxUiMessageAnimation>()
+                        .insert(visual_state);
+                    let effect_names = scenemax_runtime_ui_core::parse_effects(&effects);
+                    if scenemax_runtime_ui_core::should_animate(&effect_names)
                         && duration_seconds > f32::EPSILON
                     {
-                        text_component.0.clear();
+                        apply_ui_message_progress(
+                            &mut text_component,
+                            &mut text_color,
+                            &mut transform,
+                            &text,
+                            &effect_names,
+                            0.0,
+                            visual_state.base_color,
+                            visual_state.base_transform,
+                        );
                         commands
                             .entity(text_entity)
                             .insert(SceneMaxUiMessageAnimation {
                                 full_text: text,
+                                effect_names,
                                 elapsed_seconds: 0.0,
                                 duration_seconds: duration_seconds.max(0.001),
+                                base_color: visual_state.base_color,
+                                base_transform: visual_state.base_transform,
                             });
                     } else {
                         text_component.0 = text;
+                        text_color.0 = visual_state.base_color;
+                        *transform = visual_state.base_transform;
                     }
                 }
             }
@@ -1362,12 +1220,21 @@ fn apply_scenemax_ui_actions(
                 if property.eq_ignore_ascii_case("text") {
                     if let Some(target) = resolve_ui_target(&ui_runtime, &target)
                         && let Some(text_entity) = target.text_entity
-                        && let Ok(mut text_component) = text_query.get_mut(text_entity)
+                        && let Ok((mut text_component, mut text_color, mut transform, visual_state)) =
+                            text_query.get_mut(text_entity)
                     {
+                        let visual_state =
+                            visual_state.copied().unwrap_or(SceneMaxUiTextVisualState {
+                                base_color: text_color.0,
+                                base_transform: *transform,
+                            });
                         commands
                             .entity(text_entity)
-                            .remove::<SceneMaxUiMessageAnimation>();
+                            .remove::<SceneMaxUiMessageAnimation>()
+                            .insert(visual_state);
                         text_component.0 = value;
+                        text_color.0 = visual_state.base_color;
+                        *transform = visual_state.base_transform;
                     }
                 } else if property.eq_ignore_ascii_case("visible") {
                     let visible = !matches!(value.to_ascii_lowercase().as_str(), "0" | "false");
@@ -1405,14 +1272,31 @@ fn update_scenemax_ui_eases(
 fn update_scenemax_ui_message_animations(
     time: Res<Time>,
     mut commands: Commands,
-    mut query: Query<(Entity, &mut Text, &mut SceneMaxUiMessageAnimation)>,
+    mut query: Query<(
+        Entity,
+        &mut Text,
+        &mut TextColor,
+        &mut UiTransform,
+        &mut SceneMaxUiMessageAnimation,
+    )>,
 ) {
-    for (entity, mut text, mut animation) in &mut query {
+    for (entity, mut text, mut text_color, mut transform, mut animation) in &mut query {
         animation.elapsed_seconds += time.delta_secs();
         let progress = (animation.elapsed_seconds / animation.duration_seconds).clamp(0.0, 1.0);
-        text.0 = typewriter_visible_text(&animation.full_text, progress);
+        apply_ui_message_progress(
+            &mut text,
+            &mut text_color,
+            &mut transform,
+            &animation.full_text,
+            &animation.effect_names,
+            progress,
+            animation.base_color,
+            animation.base_transform,
+        );
         if progress >= 1.0 {
             text.0 = animation.full_text.clone();
+            text_color.0 = animation.base_color;
+            *transform = animation.base_transform;
             commands
                 .entity(entity)
                 .remove::<SceneMaxUiMessageAnimation>();
@@ -1420,24 +1304,21 @@ fn update_scenemax_ui_message_animations(
     }
 }
 
-fn typewriter_visible_text(full_text: &str, progress: f32) -> String {
-    let total_chars = full_text.chars().count();
-    let visible_chars = ((total_chars as f32) * progress.clamp(0.0, 1.0)).ceil() as usize;
-    full_text.chars().take(visible_chars).collect()
-}
-
-fn ui_message_has_effect(effects: &str, effect_name: &str) -> bool {
-    let effect_name = effect_name.to_ascii_lowercase();
-    effects
-        .split(['|', ',', ' '])
-        .map(|part| part.trim().to_ascii_lowercase())
-        .any(|part| {
-            part == effect_name
-                || part
-                    .rsplit_once('.')
-                    .map(|(_, name)| name == effect_name)
-                    .unwrap_or(false)
-        })
+fn apply_ui_message_progress(
+    text: &mut Text,
+    text_color: &mut TextColor,
+    transform: &mut UiTransform,
+    full_text: &str,
+    effect_names: &[String],
+    progress: f32,
+    base_color: Color,
+    base_transform: UiTransform,
+) {
+    let frame = scenemax_runtime_ui_core::evaluate_message_frame(full_text, effect_names, progress);
+    text.0 = frame.visible_text;
+    text_color.0 = base_color.with_alpha(base_color.alpha() * frame.alpha);
+    *transform = base_transform;
+    transform.scale = base_transform.scale * frame.scale;
 }
 
 fn load_scenemax_ui_document(
@@ -1455,7 +1336,7 @@ fn load_scenemax_ui_document(
     let source = fs::read_to_string(&path)?;
     let doc: SceneMaxUiDocument = serde_json::from_str(&source)?;
     let ui_name = doc.name.clone();
-    let ui_scale = scenemax_ui_document_scale(&doc, context);
+    let ui_scale = document_scale(&doc, context.window_width, context.window_height);
     refresh_sprite_index(ui_runtime, context);
 
     let mut loaded = LoadedSceneMaxUi::default();
@@ -1483,16 +1364,15 @@ fn load_scenemax_ui_document(
         loaded.root_entities.push(root);
         loaded.layer_entities.insert(layer.name.clone(), root);
         loaded.targets.insert(
-            ui_target_key(&ui_name, &layer.name, &[]),
+            target_key(&ui_name, &layer.name, &[]),
             SceneMaxUiTarget {
                 entity: root,
                 text_entity: None,
             },
         );
 
-        let local_rects =
-            solve_ui_widget_layout(&layer.widgets, doc.canvas_width, doc.canvas_height);
-        for widget in sorted_ui_widgets(&layer.widgets) {
+        let local_rects = solve_widget_layout(&layer.widgets, doc.canvas_width, doc.canvas_height);
+        for widget in sorted_widgets(&layer.widgets) {
             spawn_scenemax_ui_widget(
                 commands,
                 asset_server,
@@ -1544,16 +1424,6 @@ fn resolve_scenemax_ui_path(name: &str, context: &SceneMaxLaunchContext) -> Resu
         .ok_or_else(|| anyhow::anyhow!("UI document {file_name} was not found"))
 }
 
-fn scenemax_ui_document_scale(doc: &SceneMaxUiDocument, context: &SceneMaxLaunchContext) -> f32 {
-    let width_scale = context.window_width as f32 / doc.canvas_width.max(1.0);
-    let height_scale = context.window_height as f32 / doc.canvas_height.max(1.0);
-    width_scale.min(height_scale).max(0.1)
-}
-
-fn scaled_ui_font_size(font_size: f32, ui_scale: f32) -> f32 {
-    (font_size * ui_scale).max(1.0)
-}
-
 fn spawn_scenemax_ui_widget(
     commands: &mut Commands,
     asset_server: &AssetServer,
@@ -1581,7 +1451,7 @@ fn spawn_scenemax_ui_widget(
         height: rect.height,
     };
     let node = node_from_rect(local_rect, parent_rect);
-    let key = ui_target_key(ui_name, layer_name, &widget_path);
+    let key = target_key(ui_name, layer_name, &widget_path);
     let visibility = if widget.visible {
         Visibility::Inherited
     } else {
@@ -1595,20 +1465,26 @@ fn spawn_scenemax_ui_widget(
 
     let (entity, text_entity) = match widget.widget_type.as_str() {
         "TEXT_VIEW" | "EDIT_TEXT" => {
+            let text_color = parse_ui_color(&widget.text_color);
+            let text_transform = UiTransform::default();
             let entity = commands
                 .spawn((
                     Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
                     node,
-                    UiTransform::default(),
+                    text_transform,
                     visibility,
                     ZIndex(widget.z_order),
                     Text::new(widget.text.clone()),
                     TextFont {
-                        font_size: FontSize::Px(scaled_ui_font_size(widget.font_size, ui_scale)),
+                        font_size: FontSize::Px(scaled_font_size(widget.font_size, ui_scale)),
                         ..default()
                     },
-                    TextColor(parse_ui_color(&widget.text_color)),
+                    TextColor(text_color),
                     TextLayout::justify(ui_text_justify(&widget.text_alignment)).with_no_wrap(),
+                    SceneMaxUiTextVisualState {
+                        base_color: text_color,
+                        base_transform: text_transform,
+                    },
                     base_marker,
                 ))
                 .id();
@@ -1638,11 +1514,15 @@ fn spawn_scenemax_ui_widget(
                     },
                     Text::new(widget.button_text.clone()),
                     TextFont {
-                        font_size: FontSize::Px(scaled_ui_font_size(widget.font_size, ui_scale)),
+                        font_size: FontSize::Px(scaled_font_size(widget.font_size, ui_scale)),
                         ..default()
                     },
                     TextColor(parse_ui_color(&widget.button_text_color)),
                     TextLayout::justify(Justify::Center).with_no_wrap(),
+                    SceneMaxUiTextVisualState {
+                        base_color: parse_ui_color(&widget.button_text_color),
+                        base_transform: UiTransform::default(),
+                    },
                 ))
                 .id();
             commands.entity(entity).add_child(text);
@@ -1665,24 +1545,30 @@ fn spawn_scenemax_ui_widget(
         }
         "LIST_VIEW" => {
             let text = list_view_text(widget);
+            let text_color = parse_ui_color(&widget.text_color);
+            let text_transform = UiTransform::default();
             let entity = commands
                 .spawn((
                     Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
                     node,
                     BackgroundColor(parse_ui_color(&widget.background_color)),
-                    UiTransform::default(),
+                    text_transform,
                     visibility,
                     ZIndex(widget.z_order),
                     Text::new(text),
                     TextFont {
-                        font_size: FontSize::Px(scaled_ui_font_size(
+                        font_size: FontSize::Px(scaled_font_size(
                             widget.list_row_font_size,
                             ui_scale,
                         )),
                         ..default()
                     },
-                    TextColor(parse_ui_color(&widget.text_color)),
+                    TextColor(text_color),
                     TextLayout::justify(Justify::Left).with_no_wrap(),
+                    SceneMaxUiTextVisualState {
+                        base_color: text_color,
+                        base_transform: text_transform,
+                    },
                     base_marker,
                 ))
                 .id();
@@ -1719,7 +1605,7 @@ fn spawn_scenemax_ui_widget(
             width: (rect.width - widget.padding_left - widget.padding_right).max(1.0),
             height: (rect.height - widget.padding_top - widget.padding_bottom).max(1.0),
         };
-        let child_rects = solve_ui_widget_layout(
+        let child_rects = solve_widget_layout(
             &widget.children,
             child_parent_rect.width,
             child_parent_rect.height,
@@ -1731,7 +1617,7 @@ fn spawn_scenemax_ui_widget(
             (name, child_rect)
         })
         .collect::<HashMap<_, _>>();
-        for child in sorted_ui_widgets(&widget.children) {
+        for child in sorted_widgets(&widget.children) {
             spawn_scenemax_ui_widget(
                 commands,
                 asset_server,
@@ -1751,12 +1637,6 @@ fn spawn_scenemax_ui_widget(
     }
 }
 
-fn sorted_ui_widgets(widgets: &[SceneMaxUiWidgetDef]) -> Vec<&SceneMaxUiWidgetDef> {
-    let mut sorted = widgets.iter().collect::<Vec<_>>();
-    sorted.sort_by_key(|widget| widget.z_order);
-    sorted
-}
-
 fn node_from_rect(rect: UiLayoutRect, parent_rect: UiLayoutRect) -> Node {
     Node {
         position_type: PositionType::Absolute,
@@ -1765,241 +1645,6 @@ fn node_from_rect(rect: UiLayoutRect, parent_rect: UiLayoutRect) -> Node {
         width: Val::Percent(percent(rect.width, parent_rect.width)),
         height: Val::Percent(percent(rect.height, parent_rect.height)),
         ..default()
-    }
-}
-
-fn percent(value: f32, total: f32) -> f32 {
-    if total.abs() <= f32::EPSILON {
-        0.0
-    } else {
-        value / total * 100.0
-    }
-}
-
-fn solve_ui_widget_layout(
-    widgets: &[SceneMaxUiWidgetDef],
-    parent_width: f32,
-    parent_height: f32,
-) -> HashMap<String, UiLayoutRect> {
-    let mut results = widgets
-        .iter()
-        .map(|widget| {
-            (
-                widget.name.clone(),
-                UiLayoutRect {
-                    width: preferred_ui_widget_size(widget, true),
-                    height: preferred_ui_widget_size(widget, false),
-                    ..default()
-                },
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    for _ in 0..widgets.len().max(1) {
-        for widget in widgets {
-            let rect = resolve_ui_widget_rect(widget, &results, parent_width, parent_height);
-            results.insert(widget.name.clone(), rect);
-        }
-    }
-    results
-}
-
-fn resolve_ui_widget_rect(
-    widget: &SceneMaxUiWidgetDef,
-    results: &HashMap<String, UiLayoutRect>,
-    parent_width: f32,
-    parent_height: f32,
-) -> UiLayoutRect {
-    let (x, width) = resolve_ui_axis(widget, results, parent_width, true);
-    let (y, height) = resolve_ui_axis(widget, results, parent_height, false);
-    UiLayoutRect {
-        x,
-        y,
-        width,
-        height,
-    }
-}
-
-fn resolve_ui_axis(
-    widget: &SceneMaxUiWidgetDef,
-    results: &HashMap<String, UiLayoutRect>,
-    parent_size: f32,
-    horizontal: bool,
-) -> (f32, f32) {
-    let start_side = if horizontal { "LEFT" } else { "TOP" };
-    let end_side = if horizontal { "RIGHT" } else { "BOTTOM" };
-    let mut start = widget
-        .constraints
-        .iter()
-        .find(|constraint| constraint.side.eq_ignore_ascii_case(start_side));
-    let mut end = widget
-        .constraints
-        .iter()
-        .find(|constraint| constraint.side.eq_ignore_ascii_case(end_side));
-
-    let centered = if horizontal {
-        widget.center_horizontal
-    } else {
-        widget.center_vertical
-    };
-    let synthetic_start;
-    let synthetic_end;
-    if centered && start.is_none() && end.is_none() {
-        synthetic_start = SceneMaxUiConstraint {
-            side: start_side.to_owned(),
-            target_name: "parent".to_owned(),
-            target_side: start_side.to_owned(),
-            margin: 0.0,
-        };
-        synthetic_end = SceneMaxUiConstraint {
-            side: end_side.to_owned(),
-            target_name: "parent".to_owned(),
-            target_side: end_side.to_owned(),
-            margin: 0.0,
-        };
-        start = Some(&synthetic_start);
-        end = Some(&synthetic_end);
-    }
-
-    let size_mode = if horizontal {
-        &widget.width_mode
-    } else {
-        &widget.height_mode
-    };
-    let fixed_size = if horizontal {
-        widget.width
-    } else {
-        widget.height
-    };
-    let bias = if horizontal {
-        widget.horizontal_bias
-    } else {
-        widget.vertical_bias
-    };
-    let widget_start_margin = if horizontal {
-        widget.margin_left
-    } else {
-        widget.margin_top
-    };
-    let widget_end_margin = if horizontal {
-        widget.margin_right
-    } else {
-        widget.margin_bottom
-    };
-    let start_anchor = start
-        .map(|constraint| resolve_ui_anchor(constraint, results, parent_size, horizontal))
-        .unwrap_or(0.0);
-    let end_anchor = end
-        .map(|constraint| resolve_ui_anchor(constraint, results, parent_size, horizontal))
-        .unwrap_or(0.0);
-    let start_margin =
-        start.map(|constraint| constraint.margin).unwrap_or(0.0) + widget_start_margin;
-    let end_margin = end.map(|constraint| constraint.margin).unwrap_or(0.0) + widget_end_margin;
-
-    if let (Some(_), Some(_)) = (start, end) {
-        let available = end_anchor - start_anchor - start_margin - end_margin;
-        let size = if size_mode.eq_ignore_ascii_case("MATCH_CONSTRAINT") {
-            available.max(0.0)
-        } else if size_mode.eq_ignore_ascii_case("FIXED") {
-            fixed_size
-        } else {
-            preferred_ui_widget_size(widget, horizontal)
-        };
-        return (
-            start_anchor + start_margin + (available - size) * bias,
-            size,
-        );
-    }
-    if start.is_some() {
-        let size = if size_mode.eq_ignore_ascii_case("FIXED") {
-            fixed_size
-        } else {
-            preferred_ui_widget_size(widget, horizontal)
-        };
-        return (start_anchor + start_margin, size);
-    }
-    if end.is_some() {
-        let size = if size_mode.eq_ignore_ascii_case("FIXED") {
-            fixed_size
-        } else {
-            preferred_ui_widget_size(widget, horizontal)
-        };
-        return (end_anchor - end_margin - size, size);
-    }
-
-    let size = if size_mode.eq_ignore_ascii_case("FIXED") {
-        fixed_size
-    } else {
-        preferred_ui_widget_size(widget, horizontal)
-    };
-    (widget_start_margin, size)
-}
-
-fn resolve_ui_anchor(
-    constraint: &SceneMaxUiConstraint,
-    results: &HashMap<String, UiLayoutRect>,
-    parent_size: f32,
-    horizontal: bool,
-) -> f32 {
-    if constraint.target_name.eq_ignore_ascii_case("parent") {
-        return match constraint.target_side.to_ascii_uppercase().as_str() {
-            "RIGHT" | "BOTTOM" => parent_size,
-            _ => 0.0,
-        };
-    }
-    let Some(rect) = results.get(&constraint.target_name) else {
-        return 0.0;
-    };
-    match constraint.target_side.to_ascii_uppercase().as_str() {
-        "RIGHT" => rect.x + rect.width,
-        "BOTTOM" => rect.y + rect.height,
-        "LEFT" if horizontal => rect.x,
-        "TOP" if !horizontal => rect.y,
-        "LEFT" | "TOP" => {
-            if horizontal {
-                rect.x
-            } else {
-                rect.y
-            }
-        }
-        _ => 0.0,
-    }
-}
-
-fn preferred_ui_widget_size(widget: &SceneMaxUiWidgetDef, horizontal: bool) -> f32 {
-    let mode = if horizontal {
-        &widget.width_mode
-    } else {
-        &widget.height_mode
-    };
-    if mode.eq_ignore_ascii_case("FIXED") || mode.eq_ignore_ascii_case("MATCH_CONSTRAINT") {
-        return if horizontal {
-            widget.width
-        } else {
-            widget.height
-        };
-    }
-    match widget.widget_type.as_str() {
-        "TEXT_VIEW" | "EDIT_TEXT" => {
-            if horizontal {
-                (widget.text.len() as f32 * widget.font_size * 0.6).max(50.0)
-            } else {
-                widget.font_size * 1.4
-            }
-        }
-        "BUTTON" => {
-            if horizontal {
-                (widget.button_text.len() as f32 * widget.font_size * 0.6 + 24.0).max(80.0)
-            } else {
-                widget.font_size * 1.4 + 16.0
-            }
-        }
-        _ => {
-            if horizontal {
-                widget.width
-            } else {
-                widget.height
-            }
-        }
     }
 }
 
@@ -2019,14 +1664,6 @@ fn ui_text_justify(alignment: &str) -> Justify {
         "center" => Justify::Center,
         "right" => Justify::Right,
         _ => Justify::Left,
-    }
-}
-
-fn ui_target_key(ui_name: &str, layer: &str, widget_path: &[String]) -> String {
-    if widget_path.is_empty() {
-        format!("{ui_name}.{layer}")
-    } else {
-        format!("{ui_name}.{layer}.{}", widget_path.join("."))
     }
 }
 
@@ -2051,9 +1688,9 @@ fn resolve_ui_target_path(ui_runtime: &SceneMaxUiRuntime, path: &UiTargetPath) -
         .as_deref()
         .or(ui_runtime.active_ui_name.as_deref())?;
     if path.widget_path.is_empty() {
-        return Some(ui_target_key(ui_name, &path.layer, &[]));
+        return Some(target_key(ui_name, &path.layer, &[]));
     }
-    Some(ui_target_key(ui_name, &path.layer, &path.widget_path))
+    Some(target_key(ui_name, &path.layer, &path.widget_path))
 }
 
 fn ui_ease_start_offset(direction: UiEaseDirection) -> Vec2 {
@@ -2100,17 +1737,6 @@ fn ease_out_bounce(t: f32) -> f32 {
         let t = t - 2.625 / d1;
         n1 * t * t + 0.984375
     }
-}
-
-fn list_view_text(widget: &SceneMaxUiWidgetDef) -> String {
-    let mut lines = Vec::new();
-    if !widget.list_headers.is_empty() {
-        lines.push(widget.list_headers.join("  "));
-    }
-    for row in &widget.list_rows {
-        lines.push(row.join("  "));
-    }
-    lines.join("\n")
 }
 
 fn ui_image_node_for_widget(
@@ -2226,8 +1852,8 @@ fn load_sprite_index_file(path: &Path, prefix: &str, ui_runtime: &mut SceneMaxUi
             name.to_owned(),
             SceneMaxSpriteAsset {
                 path: format!("{prefix}{}", normalize_asset_path(path)),
-                _rows: rows,
-                _cols: cols,
+                rows,
+                cols,
             },
         );
     }
@@ -9663,27 +9289,6 @@ mod tests {
         keyboard.press(KeyCode::Space);
 
         assert_eq!(pending_key_switch(&program, &keyboard), Some("game_level1"));
-    }
-
-    #[test]
-    fn detects_ui_typewriter_effect_expression() {
-        assert!(ui_message_has_effect(
-            "TextEffect.fade_in | TextEffect.typewriter",
-            "typewriter"
-        ));
-        assert!(!ui_message_has_effect(
-            "TextEffect.fade_in | TextEffect.zoom_in",
-            "typewriter"
-        ));
-    }
-
-    #[test]
-    fn reveals_ui_typewriter_text_by_progress() {
-        assert_eq!(typewriter_visible_text("ABCD", 0.0), "");
-        assert_eq!(typewriter_visible_text("ABCD", 0.25), "A");
-        assert_eq!(typewriter_visible_text("ABCD", 0.5), "AB");
-        assert_eq!(typewriter_visible_text("ABCD", 1.0), "ABCD");
-        assert_eq!(typewriter_visible_text("AאB", 0.67), "AאB");
     }
 
     #[test]

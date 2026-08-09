@@ -2017,16 +2017,57 @@ fn parse_call_args(text: &str) -> Vec<String> {
     let Some(open_index) = text.find('(') else {
         return Vec::new();
     };
-    let Some(close_offset) = text[open_index + 1..].find(')') else {
-        return Vec::new();
-    };
-    let args_text = &text[open_index + 1..open_index + 1 + close_offset];
-    args_text
-        .split(',')
-        .map(clean_call_arg)
-        .filter(|arg| !arg.is_empty())
-        .map(str::to_owned)
-        .collect()
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut depth = 0usize;
+
+    for ch in text[open_index + 1..].chars() {
+        if let Some(quote_char) = quote {
+            current.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == quote_char {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => {
+                quote = Some(ch);
+                current.push(ch);
+            }
+            '(' | '[' | '{' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' if depth == 0 => {
+                let arg = clean_call_arg(&current);
+                if !arg.is_empty() {
+                    args.push(arg.to_owned());
+                }
+                return args;
+            }
+            ')' | ']' | '}' => {
+                depth = depth.saturating_sub(1);
+                current.push(ch);
+            }
+            ',' if depth == 0 => {
+                let arg = clean_call_arg(&current);
+                if !arg.is_empty() {
+                    args.push(arg.to_owned());
+                }
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    Vec::new()
 }
 
 fn clean_call_arg(arg: &str) -> &str {
@@ -5660,6 +5701,23 @@ mod tests {
             &program.statements[3],
             Statement::UiShowHide(show_hide)
                 if show_hide.target.widget_path == vec!["footerPanel"] && !show_hide.visible
+        ));
+    }
+
+    #[test]
+    fn parses_ui_message_with_comma_in_text() {
+        let program = parse_program(
+            "UI.layer1.footerPanel.footerSub.message(\"Memorize the keys, then launch straight into the fight.\", TextEffect.word_reveal | TextEffect.fade_in, 1.2)",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::UiMessage(message)
+                if message.target.widget_path == vec!["footerPanel", "footerSub"]
+                    && message.text == "Memorize the keys, then launch straight into the fight."
+                    && message.effects == "TextEffect.word_reveal | TextEffect.fade_in"
+                    && (message.duration_seconds - 1.2).abs() < f32::EPSILON
         ));
     }
 
