@@ -17,9 +17,10 @@ use avian3d::{
 };
 use bevy::{
     animation::AnimationTargetId,
-    asset::{AssetApp, AssetPlugin, io::AssetSourceBuilder},
+    asset::{AssetApp, AssetPlugin, RenderAssetUsages, io::AssetSourceBuilder},
     gltf::Gltf,
     log::LogPlugin,
+    mesh::{Indices, PrimitiveTopology},
     prelude::*,
     ui::IsDefaultUiCamera,
     window::{PresentMode, WindowResolution},
@@ -36,8 +37,8 @@ use scenemax_parser::{
     CameraAttachStatement, CharacterJumpStatement, CharacterModeStatement, Condition,
     EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage, LoggerStatement, MoveDirection,
     ObjectPoolStatement, PoolReleaseStatement, PositionExpr, PositionStatement, PositionValue,
-    Program, SceneMaxAxis, SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3, Statement,
-    UiEaseDirection, UiTargetPath,
+    Program, SceneMaxAxis, SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3,
+    SpritePlayStatement, Statement, UiEaseDirection, UiTargetPath,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
@@ -56,6 +57,7 @@ mod actions;
 mod animation;
 mod camera;
 mod physics;
+mod sprites;
 mod startup;
 mod ui;
 
@@ -63,6 +65,7 @@ use actions::*;
 use animation::*;
 use camera::*;
 use physics::*;
+use sprites::*;
 use startup::*;
 use ui::*;
 
@@ -211,6 +214,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_fighting_camera,
                 update_third_person_camera,
                 update_attached_camera,
+                update_sprite_animations,
                 restore_default_idle_animations,
                 play_pending_animations,
                 apply_animation_speed_overrides,
@@ -595,6 +599,23 @@ struct SceneMaxGltf {
 }
 
 #[derive(Debug, Component)]
+struct SceneMaxSprite {
+    rows: usize,
+    cols: usize,
+    frame_count: usize,
+    mesh: Handle<Mesh>,
+}
+
+#[derive(Debug, Clone, Component)]
+struct SceneMaxSpriteAnimation {
+    from_frame: usize,
+    to_frame: usize,
+    duration_seconds: f32,
+    elapsed_seconds: f32,
+    looped: bool,
+}
+
+#[derive(Debug, Component)]
 struct CurrentAnimation {
     clip: String,
     looped: bool,
@@ -966,6 +987,30 @@ mod tests {
     }
 
     #[test]
+    fn sprite_play_statement_builds_runtime_animation() {
+        let animation = sprite_animation_from_statement(&SpritePlayStatement {
+            target: "b".to_owned(),
+            from_frame: 0,
+            to_frame: 13,
+            duration_seconds: 1.0,
+            looped: true,
+        });
+
+        assert_eq!(animation.from_frame, 0);
+        assert_eq!(animation.to_frame, 13);
+        assert_eq!(animation.duration_seconds, 1.0);
+        assert!(animation.looped);
+    }
+
+    #[test]
+    fn sprite_display_size_defaults_to_world_unit_quad() {
+        assert_eq!(
+            sprite_display_size(&EntityOptions::default(), 184, 169),
+            Vec2::ONE
+        );
+    }
+
+    #[test]
     fn scoped_transform_aliases_follow_live_transform_sync() {
         let object_pools = SceneMaxObjectPools::default();
         let mut scope = SceneMaxScopeFrame::default();
@@ -1090,17 +1135,13 @@ mod tests {
             radius: None,
             body_kind: None,
             collision_shape: Some(SceneMaxCollisionShape::Box),
+            ..Default::default()
         };
         let sphere_options = EntityOptions {
-            position: None,
-            rotation_degrees: None,
-            scale: None,
-            size: None,
-            hidden: false,
             collider: true,
             radius: Some(0.4),
-            body_kind: None,
             collision_shape: Some(SceneMaxCollisionShape::Sphere),
+            ..Default::default()
         };
 
         register_collider_bounds(

@@ -676,6 +676,27 @@ pub(super) fn apply_startup_action(
             }
             ActionSequenceResult::Completed
         }
+        Statement::SpritePlay(sprite_play) => {
+            if let Some(entity) = entities_by_name.get(&sprite_play.target) {
+                commands
+                    .entity(*entity)
+                    .insert(sprite_animation_from_statement(sprite_play));
+                write_runtime_diagnostic_line(format!(
+                    "started sprite animation target={} frames={}..{} duration={:.3}s loop={}",
+                    sprite_play.target,
+                    sprite_play.from_frame,
+                    sprite_play.to_frame,
+                    sprite_play.duration_seconds,
+                    sprite_play.looped
+                ));
+            } else {
+                write_runtime_diagnostic_line(format!(
+                    "sprite animation target={} was not found",
+                    sprite_play.target
+                ));
+            }
+            ActionSequenceResult::Completed
+        }
         Statement::AnimationSpeed(animation_speed) => {
             if let Some(entity) = entities_by_name.get(&animation_speed.target) {
                 commands
@@ -2487,6 +2508,26 @@ pub(super) fn apply_key_action(
                     });
                     queued_animations.insert(entity, (animation.clip.clone(), animation.looped));
                 }
+            }
+            Statement::SpritePlay(sprite_play)
+                if target_matches_alias(
+                    &sprite_play.target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
+            {
+                commands
+                    .entity(entity)
+                    .insert(sprite_animation_from_statement(sprite_play));
+                write_runtime_diagnostic_line(format!(
+                    "started sprite animation target={} frames={}..{} duration={:.3}s loop={}",
+                    scene_entity.name,
+                    sprite_play.from_frame,
+                    sprite_play.to_frame,
+                    sprite_play.duration_seconds,
+                    sprite_play.looped
+                ));
             }
             Statement::AnimationSpeed(animation_speed)
                 if target_matches_alias(

@@ -556,6 +556,14 @@ pub(super) fn spawn_scenemax_program(
     let mut entities_by_name = HashMap::new();
     let mut transforms_by_name = HashMap::new();
     let mut gltfs_by_name = HashMap::new();
+    let sprite_index = load_sprite_index(asset_root, builtin_asset_root);
+    let sprite_context = SceneMaxLaunchContext {
+        script_root: None,
+        asset_root: Some(asset_root.to_path_buf()),
+        builtin_asset_root: builtin_asset_root.map(Path::to_path_buf),
+        window_width: 0,
+        window_height: 0,
+    };
 
     for ModelRuntimeDecl {
         name,
@@ -580,6 +588,35 @@ pub(super) fn spawn_scenemax_program(
             spawned_any = true;
             tracing::info!(name, resource, "spawned SceneMax collider");
             continue;
+        }
+
+        if options.sprite {
+            if let Some((entity_id, transform)) = spawn_scenemax_sprite_decl(
+                commands,
+                asset_server,
+                &sprite_context,
+                meshes,
+                materials,
+                name,
+                resource,
+                options,
+                &sprite_index,
+                &visibility_by_target,
+            ) {
+                insert_physics_components(commands, entity_id, name, resource, options, &transform);
+                entities_by_name.insert(name.clone(), entity_id);
+                transforms_by_name.insert(name.clone(), transform);
+                spawned_any = true;
+                continue;
+            }
+            tracing::warn!(name, resource, "SceneMax sprite resource was not found");
+            write_runtime_diagnostic_line(format!(
+                "sprite resource {name}=>{resource} was not found; project assets={}; builtin assets={}",
+                asset_root.display(),
+                builtin_asset_root
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| "<none>".to_owned())
+            ));
         }
 
         if let Some(primitive) = primitive_mesh(resource, meshes, materials) {

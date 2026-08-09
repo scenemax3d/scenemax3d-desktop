@@ -31,6 +31,7 @@ pub enum Statement {
     },
     ObjectPool(ObjectPoolStatement),
     Animate(AnimationStatement),
+    SpritePlay(SpritePlayStatement),
     AnimationSpeed(AnimationSpeedStatement),
     Visibility {
         target: String,
@@ -156,6 +157,7 @@ pub struct EntityOptions {
     pub size: Option<SceneMaxVec3>,
     pub hidden: bool,
     pub collider: bool,
+    pub sprite: bool,
     pub radius: Option<f32>,
     pub body_kind: Option<SceneMaxBodyKind>,
     pub collision_shape: Option<SceneMaxCollisionShape>,
@@ -190,6 +192,15 @@ pub struct AnimationStatement {
     pub speed: f32,
     pub looped: bool,
     pub blocking: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpritePlayStatement {
+    pub target: String,
+    pub from_frame: usize,
+    pub to_frame: usize,
+    pub duration_seconds: f32,
+    pub looped: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1750,6 +1761,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         });
     }
 
+    if let Some(sprite_play) = parse_sprite_play(line)? {
+        return Ok(Statement::SpritePlay(sprite_play));
+    }
+
     if is_unsupported_dotted_runtime_command(line) {
         return Ok(unsupported(line));
     }
@@ -3163,6 +3178,47 @@ fn parse_animation(line: &str) -> Result<Option<AnimationStatement>, ParseError>
     }))
 }
 
+fn parse_sprite_play(line: &str) -> Result<Option<SpritePlayStatement>, ParseError> {
+    let Some((target, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
+    let rest = rest.trim();
+    let lower = rest.to_ascii_lowercase();
+    if !lower.starts_with("play") {
+        return Ok(None);
+    }
+    let Some(frame_index) = lower.find("frame") else {
+        return Ok(None);
+    };
+    let frame_text = &rest[frame_index + "frame".len()..];
+    let Some((from_text, after_from)) = split_once_case_insensitive(frame_text, " to ") else {
+        return Ok(None);
+    };
+    let from_frame = from_text
+        .trim()
+        .parse::<usize>()
+        .map_err(|_| ParseError::InvalidNumber(from_text.trim().to_owned()))?;
+    let to_raw = after_from
+        .trim()
+        .split(|value: char| value.is_whitespace() || value == ')' || value == ',')
+        .next()
+        .unwrap_or_default();
+    if to_raw.is_empty() {
+        return Ok(None);
+    }
+    let to_frame = to_raw
+        .parse::<usize>()
+        .map_err(|_| ParseError::InvalidNumber(to_raw.to_owned()))?;
+    let duration_seconds = parse_duration_seconds(rest)?.unwrap_or(0.0).max(0.001);
+    Ok(Some(SpritePlayStatement {
+        target: target.to_owned(),
+        from_frame,
+        to_frame,
+        duration_seconds,
+        looped: contains_keyword(rest, "loop"),
+    }))
+}
+
 fn parse_animation_speed(line: &str) -> Result<Option<AnimationSpeedStatement>, ParseError> {
     let Some((target, rest)) = split_dot_command_rest(line) else {
         return Ok(None);
@@ -3353,6 +3409,7 @@ fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseErr
         radius: parse_scalar_after(text, "radius")?,
         body_kind: parse_body_kind(raw),
         collision_shape: parse_collision_shape(raw),
+        sprite: contains_keyword(raw, "sprite"),
     })
 }
 
@@ -3693,6 +3750,33 @@ mod tests {
     }
 
     #[test]
+    fn parses_sprite_play_frame_range() {
+        let program =
+            parse_program("b=>bird sprite\nb.play (frame 0 to 13 in 1 seconds) loop").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::ModelDecl {
+                    name: "b".to_owned(),
+                    resource: "bird".to_owned(),
+                    options: EntityOptions {
+                        sprite: true,
+                        ..Default::default()
+                    },
+                },
+                Statement::SpritePlay(SpritePlayStatement {
+                    target: "b".to_owned(),
+                    from_frame: 0,
+                    to_frame: 13,
+                    duration_seconds: 1.0,
+                    looped: true,
+                }),
+            ]
+        );
+    }
+
+    #[test]
     fn parses_animation_speed_and_quoted_clip() {
         let program = parse_program("d.\"Fly Forward\" at speed of 0.5 loop").unwrap();
 
@@ -3905,6 +3989,7 @@ mod tests {
                     size: None,
                     hidden: true,
                     collider: false,
+                    sprite: false,
                     radius: None,
                     body_kind: Some(SceneMaxBodyKind::Kinematic),
                     collision_shape: None,
@@ -3937,6 +4022,7 @@ mod tests {
                         }),
                         hidden: false,
                         collider: false,
+                        sprite: false,
                         radius: None,
                         body_kind: Some(SceneMaxBodyKind::Static),
                         collision_shape: Some(SceneMaxCollisionShape::Box),
@@ -4060,6 +4146,7 @@ mod tests {
                         }),
                         hidden: false,
                         collider: false,
+                        sprite: false,
                         radius: None,
                         body_kind: Some(SceneMaxBodyKind::Static),
                         collision_shape: None,
@@ -5854,6 +5941,7 @@ mod tests {
                                 y: 3.0,
                                 z: 3.0,
                             }),
+                            sprite: true,
                             ..Default::default()
                         },
                     }],
@@ -5888,6 +5976,7 @@ mod tests {
                 resource: "throw_text".to_owned(),
                 options: EntityOptions {
                     hidden: true,
+                    sprite: true,
                     ..Default::default()
                 },
             }
