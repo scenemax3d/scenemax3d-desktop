@@ -148,6 +148,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private JMenu projectsSubMenu;
     private JMenu assetsMenu;
     private ProjectInventoryDialog projectInventoryDialog;
+    private ProjectExplorerDialog projectExplorerDialog;
     private EditorTabPanel editorTabPanel;
     private SceneMaxAutoComplete autoComplete;
     private SceneMaxToolRegistry automationToolRegistry;
@@ -534,6 +535,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
                 } else if (cmd.equals("new_project_scripts_folder")) {
                     createNewProjectScriptsFolder();
+                } else if (cmd.equals("project_explorer")) {
+                    openProjectExplorer();
                 } else if (cmd.equals("project_settings")) {
                     SceneMaxProject activeProject = Util.getActiveProject();
                     if (activeProject == null) {
@@ -769,6 +772,20 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         projectInventoryDialog = new ProjectInventoryDialog(this);
         projectInventoryDialog.setLocationRelativeTo(this);
         projectInventoryDialog.setVisible(true);
+    }
+
+    private void openProjectExplorer() {
+        if (projectExplorerDialog != null && projectExplorerDialog.isDisplayable()) {
+            projectExplorerDialog.refreshProjects();
+            projectExplorerDialog.setVisible(true);
+            projectExplorerDialog.toFront();
+            projectExplorerDialog.requestFocus();
+            return;
+        }
+
+        projectExplorerDialog = new ProjectExplorerDialog(this);
+        projectExplorerDialog.setLocationRelativeTo(this);
+        projectExplorerDialog.setVisible(true);
     }
 
 
@@ -4967,9 +4984,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         refreshScriptsFolder();
         refreshAppTitle();
         refreshAssetsMenu();
-
-        SceneMaxProject p = Util.getActiveProject();
-        addProjectMenuItem(projectsSubMenu, p);
+        refreshProjectsMenu();
 
     }
 
@@ -5527,6 +5542,52 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     public void refreshScriptsFolder() {
         loadScriptsFolder();
         openLastTreeNode();
+    }
+
+    public void prepareProjectCatalogMutation(boolean closeOpenTabs) {
+        if (editorTabPanel == null) {
+            return;
+        }
+        if (editorTabPanel.getActiveTab() != null && editorTabPanel.getActiveTab().dirty) {
+            editorTabPanel.saveActiveTab();
+        }
+        saveCurrentProjectOpenTabsState();
+        if (closeOpenTabs) {
+            editorTabPanel.closeAllTabs();
+        }
+    }
+
+    public void refreshProjectsMenu() {
+        if (projectsSubMenu == null) {
+            return;
+        }
+
+        projectsSubMenu.removeAll();
+        JSONObject menus = getMenuJSON();
+        JSONArray items = menus.getJSONArray("items");
+        for (int i = 0; i < items.length(); ++i) {
+            JSONObject menuItem = items.getJSONObject(i);
+            if (!"File".equals(menuItem.getString("name"))) {
+                continue;
+            }
+            JSONArray fileItems = menuItem.getJSONArray("items");
+            for (int j = 0; j < fileItems.length(); ++j) {
+                JSONObject fileItem = fileItems.getJSONObject(j);
+                if ("Projects".equals(fileItem.getString("name")) && fileItem.has("items")) {
+                    addMenuItems(projectsSubMenu, fileItem.getJSONArray("items"));
+                    addProjectsToMenu(projectsSubMenu);
+                    projectsSubMenu.updateUI();
+                    return;
+                }
+            }
+        }
+    }
+
+    public void refreshProjectCatalogViews() {
+        refreshProjectsMenu();
+        refreshScriptsFolder();
+        refreshAppTitle();
+        refreshAssetsMenu();
     }
 
     public void refreshWorkspaceViews() {

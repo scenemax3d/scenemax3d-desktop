@@ -371,16 +371,18 @@ public class Util {
     public static boolean switchProject(String name) {
 
         SceneMaxProject currProj = getActiveProject();
-        if(name.equals(currProj.name)) {
+        if(currProj != null && name.equals(currProj.name)) {
             return true;
         }
 
         String parent = AppDB.getInstance().getParam("selected_tree_node_parent");
         String node = AppDB.getInstance().getParam("selected_tree_node");
 
-        currProj.selectedParent=parent;
-        currProj.selectedNode=node;
-        saveProject(currProj);
+        if (currProj != null) {
+            currProj.selectedParent=parent;
+            currProj.selectedNode=node;
+            saveProject(currProj);
+        }
 
         List<SceneMaxProject> projects = getProjects_New();
         for(SceneMaxProject p : projects) {
@@ -413,6 +415,194 @@ public class Util {
 
         return false;
 
+    }
+
+    public static synchronized boolean renameProject(String oldName, String newName) throws IOException {
+        String normalizedNewName = normalizeProjectName(newName);
+        JSONObject conf = getProjectsConfig();
+        if (conf == null) {
+            throw new IOException("Projects configuration was not found.");
+        }
+
+        JSONArray projects = conf.getJSONArray("projects");
+        JSONObject project = null;
+        for (int i = 0; i < projects.length(); ++i) {
+            JSONObject candidate = projects.getJSONObject(i);
+            String candidateName = candidate.getString("name");
+            if (candidateName.equals(normalizedNewName) && !candidateName.equals(oldName)) {
+                throw new IOException("A project named \"" + normalizedNewName + "\" already exists.");
+            }
+            if (candidateName.equals(oldName)) {
+                project = candidate;
+            }
+        }
+
+        if (project == null) {
+            throw new IOException("Project \"" + oldName + "\" was not found.");
+        }
+        if (oldName.equals(normalizedNewName)) {
+            return false;
+        }
+
+        String oldPath = project.getString("path");
+        String newPath = oldPath;
+        File oldFolder = new File(oldPath);
+        File newFolder = getRenamedProjectFolder(oldFolder, normalizedNewName);
+        if (newFolder != null) {
+            File oldCanonical = oldFolder.getCanonicalFile();
+            File newCanonical = newFolder.getCanonicalFile();
+            if (!oldCanonical.equals(newCanonical)) {
+                if (newFolder.exists()) {
+                    throw new IOException("Project folder already exists: " + newFolder.getPath());
+                }
+                FileUtils.moveDirectory(oldFolder, newFolder);
+            }
+            newPath = toProjectConfigPath(newFolder);
+        }
+
+        project.put("name", normalizedNewName);
+        project.put("path", newPath);
+        if (oldName.equals(conf.optString("selectedProject", ""))) {
+            conf.put("selectedProject", normalizedNewName);
+        }
+        writeProjectsConfig(conf);
+        migrateProjectTabs(oldName, normalizedNewName, oldPath, newPath);
+        return true;
+    }
+
+    public static synchronized SceneMaxProject deleteProject(String name) throws IOException {
+        JSONObject conf = getProjectsConfig();
+        if (conf == null) {
+            throw new IOException("Projects configuration was not found.");
+        }
+
+        JSONArray projects = conf.getJSONArray("projects");
+        if (projects.length() <= 1) {
+            throw new IOException("At least one project must remain open in the IDE.");
+        }
+
+        JSONObject deleted = null;
+        JSONArray remaining = new JSONArray();
+        for (int i = 0; i < projects.length(); ++i) {
+            JSONObject project = projects.getJSONObject(i);
+            if (project.getString("name").equals(name)) {
+                deleted = project;
+            } else {
+                remaining.put(project);
+            }
+        }
+
+        if (deleted == null) {
+            throw new IOException("Project \"" + name + "\" was not found.");
+        }
+
+        String selectedProject = conf.optString("selectedProject", "");
+        if (name.equals(selectedProject) && remaining.length() > 0) {
+            JSONObject nextProject = remaining.getJSONObject(0);
+            conf.put("selectedProject", nextProject.getString("name"));
+            AppDB.getInstance().setParam("selected_tree_node_parent", nextProject.optString("selectedParent", ""));
+            AppDB.getInstance().setParam("selected_tree_node", nextProject.optString("selectedNode", ""));
+        }
+        conf.put("projects", remaining);
+        writeProjectsConfig(conf);
+
+        File projectFolder = new File(deleted.getString("path"));
+        if (isManagedProjectFolder(projectFolder) && projectFolder.exists()) {
+            FileUtils.deleteDirectory(projectFolder);
+        }
+
+        return getActiveProject();
+    }
+
+    private static String normalizeProjectName(String name) throws IOException {
+        if (name == null || name.trim().isEmpty()) {
+            throw new IOException("Project name cannot be empty.");
+        }
+        return name.trim();
+    }
+
+    private static File getRenamedProjectFolder(File oldFolder, String newProjectName) throws IOException {
+        if (!isManagedProjectFolder(oldFolder)) {
+            return null;
+        }
+        File projectsFolder = new File("projects").getCanonicalFile();
+        return new File(projectsFolder, newProjectName.replace(" ", "_"));
+    }
+
+    private static boolean isManagedProjectFolder(File folder) throws IOException {
+        if (folder == null || !folder.exists()) {
+            return false;
+        }
+        File projectsFolder = new File("projects").getCanonicalFile();
+        File parent = folder.getCanonicalFile().getParentFile();
+        return parent != null && parent.equals(projectsFolder);
+    }
+
+    private static String toProjectConfigPath(File folder) throws IOException {
+        File projectsFolder = new File("projects").getCanonicalFile();
+        File canonicalFolder = folder.getCanonicalFile();
+        if (canonicalFolder.getParentFile() != null && canonicalFolder.getParentFile().equals(projectsFolder)) {
+            return "projects/" + canonicalFolder.getName();
+        }
+        return folder.getPath();
+    }
+
+    private static void writeProjectsConfig(JSONObject conf) throws IOException {
+        FileUtils.write(new File("projects/projects.json"), conf.toString(4), StandardCharsets.UTF_8);
+    }
+
+    private static void migrateProjectTabs(String oldName, String newName, String oldPath, String newPath) {
+        AppDB db = AppDB.getInstance();
+        String oldOpenTabs = db.getParam("open_tabs~" + oldName);
+        if (oldOpenTabs != null) {
+            db.setParam("open_tabs~" + newName, rewriteProjectPaths(oldOpenTabs, oldPath, newPath));
+        }
+        String oldActiveTab = db.getParam("active_tab~" + oldName);
+        if (oldActiveTab != null) {
+            db.setParam("active_tab~" + newName, rewriteProjectPath(oldActiveTab, oldPath, newPath));
+        }
+        String oldApiKey = db.getParam("project~" + oldName + "~itch_api_key");
+        if (oldApiKey != null) {
+            db.setParam("project~" + newName + "~itch_api_key", oldApiKey);
+        }
+    }
+
+    private static String rewriteProjectPaths(String jsonArrayText, String oldPath, String newPath) {
+        try {
+            JSONArray paths = new JSONArray(jsonArrayText);
+            JSONArray rewritten = new JSONArray();
+            for (int i = 0; i < paths.length(); ++i) {
+                rewritten.put(rewriteProjectPath(paths.getString(i), oldPath, newPath));
+            }
+            return rewritten.toString();
+        } catch (Exception ex) {
+            return jsonArrayText;
+        }
+    }
+
+    private static String rewriteProjectPath(String path, String oldPath, String newPath) {
+        if (path == null || oldPath == null || newPath == null || oldPath.equals(newPath)) {
+            return path;
+        }
+
+        File oldFolder = new File(oldPath);
+        File newFolder = new File(newPath);
+        String normalized = path.replace('\\', '/');
+        String oldRelative = oldPath.replace('\\', '/');
+        String newRelative = newPath.replace('\\', '/');
+        if (normalized.startsWith(oldRelative)) {
+            return newRelative + normalized.substring(oldRelative.length());
+        }
+
+        try {
+            String oldAbsolute = oldFolder.getCanonicalPath().replace('\\', '/');
+            String newAbsolute = newFolder.getCanonicalPath().replace('\\', '/');
+            if (normalized.startsWith(oldAbsolute)) {
+                return newAbsolute + normalized.substring(oldAbsolute.length());
+            }
+        } catch (IOException ignored) {
+        }
+        return path;
     }
 
     private static boolean saveProject(SceneMaxProject p) {
