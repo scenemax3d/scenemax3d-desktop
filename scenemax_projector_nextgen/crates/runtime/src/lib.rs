@@ -455,6 +455,14 @@ struct SceneMaxUiWidget {
     widget_path: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, Component)]
+struct SceneMaxUiSpriteSheet {
+    rows: usize,
+    cols: usize,
+    image_width: u32,
+    image_height: u32,
+}
+
 #[derive(Debug, Clone, Component)]
 struct SceneMaxUiEase {
     start: Vec2,
@@ -992,6 +1000,51 @@ mod tests {
             ),
             "timer = 59"
         );
+    }
+
+    #[test]
+    fn ui_sprite_frame_rect_selects_health_bar_rows() {
+        assert_eq!(parse_ui_frame_value("5"), Some(5));
+        assert_eq!(parse_ui_frame_value("5.4"), Some(5));
+
+        let rect = ui_sprite_frame_rect(5, 1, 15, 384, 360);
+        assert_eq!(rect.min, Vec2::new(0.0, 120.0));
+        assert_eq!(rect.max, Vec2::new(384.0, 144.0));
+
+        let clamped = ui_sprite_frame_rect(99, 1, 15, 384, 360);
+        assert_eq!(clamped.min, Vec2::new(0.0, 336.0));
+        assert_eq!(clamped.max, Vec2::new(384.0, 360.0));
+    }
+
+    #[test]
+    fn ui_sprite_index_loads_extension_file() {
+        let root =
+            std::env::temp_dir().join(format!("scenemax_ui_sprite_ext_{}", std::process::id()));
+        let sprite_dir = root.join("sprites");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&sprite_dir).unwrap();
+        fs::write(
+            sprite_dir.join("sprites-ext.json"),
+            r#"{"sprites":[{"path":"sprites/bar1.png","name":"health_bar1","rows":15,"cols":1}]}"#,
+        )
+        .unwrap();
+
+        let mut ui_runtime = SceneMaxUiRuntime::default();
+        let context = SceneMaxLaunchContext {
+            script_root: None,
+            asset_root: Some(root.clone()),
+            builtin_asset_root: None,
+            window_width: 1600,
+            window_height: 900,
+        };
+
+        refresh_sprite_index(&mut ui_runtime, &context);
+
+        let sprite = ui_runtime.sprite_index.get("health_bar1").unwrap();
+        assert_eq!(sprite.rows, 15);
+        assert_eq!(sprite.cols, 1);
+        assert_eq!(sprite.path, "sprites/bar1.png");
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

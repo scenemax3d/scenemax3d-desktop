@@ -82,6 +82,7 @@ pub(super) fn apply_scenemax_ui_actions(
             Option<&SceneMaxUiTextVisualState>,
         )>,
     )>,
+    mut image_query: Query<(&mut ImageNode, Option<&SceneMaxUiSpriteSheet>)>,
     mut visibility_query: Query<&mut Visibility>,
 ) {
     let actions = ui_queue.actions.drain(..).collect::<Vec<_>>();
@@ -303,6 +304,19 @@ pub(super) fn apply_scenemax_ui_actions(
                             Visibility::Hidden
                         });
                     }
+                } else if property.eq_ignore_ascii_case("frame")
+                    && let Some(target) = resolve_ui_target(&ui_runtime, &target)
+                    && let Ok((mut image_node, sprite_sheet)) = image_query.get_mut(target.entity)
+                    && let Some(sprite_sheet) = sprite_sheet
+                    && let Some(frame) = parse_ui_frame_value(&value)
+                {
+                    image_node.rect = Some(ui_sprite_frame_rect(
+                        frame,
+                        sprite_sheet.cols,
+                        sprite_sheet.rows,
+                        sprite_sheet.image_width,
+                        sprite_sheet.image_height,
+                    ));
                 }
             }
         }
@@ -657,7 +671,8 @@ pub(super) fn spawn_scenemax_ui_widget(
             (entity, Some(text))
         }
         "IMAGE" => {
-            let image_node = ui_image_node_for_widget(widget, asset_server, context, ui_runtime);
+            let (image_node, sprite_sheet) =
+                ui_image_node_for_widget(widget, asset_server, context, ui_runtime);
             let entity = commands
                 .spawn((
                     Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
@@ -669,6 +684,9 @@ pub(super) fn spawn_scenemax_ui_widget(
                     base_marker,
                 ))
                 .id();
+            if let Some(sprite_sheet) = sprite_sheet {
+                commands.entity(entity).insert(sprite_sheet);
+            }
             (entity, None)
         }
         "PANEL" => {
@@ -1060,14 +1078,90 @@ pub(super) fn ui_image_node_for_widget(
     asset_server: &AssetServer,
     context: &SceneMaxLaunchContext,
     ui_runtime: &SceneMaxUiRuntime,
-) -> ImageNode {
+) -> (ImageNode, Option<SceneMaxUiSpriteSheet>) {
     let candidates = ui_image_asset_candidates(widget, context, ui_runtime);
     for candidate in candidates {
         if ui_asset_path_exists(&candidate, context) {
-            return ImageNode::new(asset_server.load(candidate));
+            let sprite_sheet = ui_sprite_sheet_for_widget(widget, &candidate, context, ui_runtime);
+            let mut image_node = ImageNode::new(asset_server.load(candidate));
+            if let Some(sprite_sheet) = sprite_sheet {
+                image_node.rect = Some(ui_sprite_frame_rect(
+                    widget.sprite_frame,
+                    sprite_sheet.cols,
+                    sprite_sheet.rows,
+                    sprite_sheet.image_width,
+                    sprite_sheet.image_height,
+                ));
+                return (image_node, Some(sprite_sheet));
+            }
+            return (image_node, None);
         }
     }
-    ImageNode::solid_color(Color::srgba(0.9, 0.72, 0.38, 0.85))
+    (
+        ImageNode::solid_color(Color::srgba(0.9, 0.72, 0.38, 0.85)),
+        None,
+    )
+}
+
+pub(super) fn parse_ui_frame_value(value: &str) -> Option<usize> {
+    let value = value.trim().parse::<f32>().ok()?;
+    value.is_finite().then_some(value.round().max(0.0) as usize)
+}
+
+pub(super) fn ui_sprite_sheet_for_widget(
+    widget: &SceneMaxUiWidgetDef,
+    asset_path: &str,
+    context: &SceneMaxLaunchContext,
+    ui_runtime: &SceneMaxUiRuntime,
+) -> Option<SceneMaxUiSpriteSheet> {
+    let sprite_name = widget.sprite_name.as_deref()?;
+    let sprite = ui_runtime.sprite_index.get(sprite_name).or_else(|| {
+        ui_runtime
+            .sprite_index
+            .get(&sprite_name.to_ascii_lowercase())
+    })?;
+    let image_file = ui_asset_file_path(asset_path, context)?;
+    let (image_width, image_height) = ui_png_dimensions(&image_file)?;
+    Some(SceneMaxUiSpriteSheet {
+        rows: sprite.rows.max(1),
+        cols: sprite.cols.max(1),
+        image_width,
+        image_height,
+    })
+}
+
+pub(super) fn ui_sprite_frame_rect(
+    frame: usize,
+    cols: usize,
+    rows: usize,
+    image_width: u32,
+    image_height: u32,
+) -> Rect {
+    let cols = cols.max(1);
+    let rows = rows.max(1);
+    let frame = frame.min(cols * rows - 1);
+    let col = frame % cols;
+    let row = frame / cols;
+    let frame_width = image_width as f32 / cols as f32;
+    let frame_height = image_height as f32 / rows as f32;
+    Rect {
+        min: Vec2::new(col as f32 * frame_width, row as f32 * frame_height),
+        max: Vec2::new(
+            (col + 1) as f32 * frame_width,
+            (row + 1) as f32 * frame_height,
+        ),
+    }
+}
+
+pub(super) fn ui_png_dimensions(path: &Path) -> Option<(u32, u32)> {
+    let bytes = fs::read(path).ok()?;
+    if bytes.len() < 24 || &bytes[..8] != b"\x89PNG\r\n\x1a\n" {
+        return None;
+    }
+    Some((
+        u32::from_be_bytes(bytes[16..20].try_into().ok()?),
+        u32::from_be_bytes(bytes[20..24].try_into().ok()?),
+    ))
 }
 
 pub(super) fn ui_image_asset_candidates(
@@ -1133,9 +1227,19 @@ pub(super) fn refresh_sprite_index(
         "",
         ui_runtime,
     );
+    load_sprite_index_file(
+        &asset_root.join("sprites").join("sprites-ext.json"),
+        "",
+        ui_runtime,
+    );
     if let Some(builtin_root) = context.builtin_asset_root.as_ref() {
         load_sprite_index_file(
             &builtin_root.join("sprites").join("sprites.json"),
+            "builtin://",
+            ui_runtime,
+        );
+        load_sprite_index_file(
+            &builtin_root.join("sprites").join("sprites-ext.json"),
             "builtin://",
             ui_runtime,
         );
@@ -1338,13 +1442,16 @@ pub(super) fn load_sprite_index_file(
             .get("cols")
             .and_then(|value| value.as_u64())
             .unwrap_or(1) as usize;
-        ui_runtime.sprite_index.insert(
-            name.to_owned(),
-            SceneMaxSpriteAsset {
-                path: format!("{prefix}{}", normalize_asset_path(path)),
-                rows,
-                cols,
-            },
-        );
+        let asset = SceneMaxSpriteAsset {
+            path: format!("{prefix}{}", normalize_asset_path(path)),
+            rows,
+            cols,
+        };
+        ui_runtime
+            .sprite_index
+            .insert(name.to_owned(), asset.clone());
+        ui_runtime
+            .sprite_index
+            .insert(name.to_ascii_lowercase(), asset);
     }
 }
