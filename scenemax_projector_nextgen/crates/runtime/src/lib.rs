@@ -1669,4 +1669,16 @@ mod tests {
             Some("message_bold1.png")
         );
     }
+
+    #[test]
+    fn detects_ui_only_programs_as_runtime_content() {
+        assert!(has_ui_runtime_content(&Program {
+            statements: vec![Statement::UiLoad {
+                name: "game_intro_ui".to_owned(),
+            }],
+        }));
+        assert!(!has_ui_runtime_content(&Program {
+            statements: vec![Statement::Wait { seconds: 0.1 }],
+        }));
+    }
 }
