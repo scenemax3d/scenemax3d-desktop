@@ -703,22 +703,70 @@ pub(super) fn apply_character_modes(
             .get(&character_mode.target)
             .copied()
             .unwrap_or_default();
-        support_samples.push((character_mode.target.clone(), transform));
-        insert_tnua_character_controller(commands, entity, character_mode, character_configs);
+        let dimensions = character_dimensions_for_transform(&transform);
+        support_samples.push((character_mode.target.clone(), transform, dimensions));
+        insert_tnua_character_controller(
+            commands,
+            entity,
+            character_mode,
+            transform,
+            character_configs,
+        );
     }
     spawn_character_stage_support(commands, &support_samples);
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SceneMaxCharacterDimensions {
+    pub(super) capsule_radius: f32,
+    pub(super) capsule_height: f32,
+    pub(super) capsule_center_y: f32,
+    pub(super) float_height: f32,
+    pub(super) foot_contact_offset: f32,
+    pub(super) visual_drop: f32,
+}
+
+pub(super) fn character_dimensions_for_transform(
+    transform: &Transform,
+) -> SceneMaxCharacterDimensions {
+    let character_scale = transform.scale.abs().max_element().max(1.0);
+    let capsule_radius = DEFAULT_CHARACTER_CAPSULE_RADIUS * character_scale;
+    let capsule_height = DEFAULT_CHARACTER_CAPSULE_HEIGHT * character_scale;
+    let visual_drop = DEFAULT_CHARACTER_VISUAL_DROP * character_scale;
+    let capsule_half_height = character_capsule_half_height(capsule_radius, capsule_height);
+    SceneMaxCharacterDimensions {
+        capsule_radius,
+        capsule_height,
+        capsule_center_y: capsule_half_height,
+        float_height: DEFAULT_CHARACTER_FLOAT_HEIGHT * character_scale,
+        foot_contact_offset: DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET * character_scale,
+        visual_drop,
+    }
+}
+
+pub(super) fn character_capsule_half_height(radius: f32, height: f32) -> f32 {
+    height * 0.5 + radius
 }
 
 pub(super) fn insert_tnua_character_controller(
     commands: &mut Commands,
     entity: Entity,
     character_mode: &CharacterModeStatement,
+    transform: Transform,
     character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
 ) {
     let gravity = character_mode.gravity.unwrap_or(DEFAULT_CHARACTER_GRAVITY);
-    let radius = DEFAULT_CHARACTER_CAPSULE_RADIUS;
-    let height = DEFAULT_CHARACTER_CAPSULE_HEIGHT;
-    let float_height = DEFAULT_CHARACTER_FLOAT_HEIGHT;
+    let dimensions = character_dimensions_for_transform(&transform);
+    let radius = dimensions.capsule_radius;
+    let height = dimensions.capsule_height;
+    let float_height = dimensions.float_height;
+    let capsule_center_y = dimensions.capsule_center_y;
+    let foot_contact_offset = dimensions.foot_contact_offset;
+    let capsule_collider = AvianCollider::compound(vec![(
+        Vec3::Y * capsule_center_y,
+        Quat::IDENTITY,
+        AvianCollider::capsule(radius, height),
+    )]);
     let config = character_configs.add(SceneMaxControlSchemeConfig {
         basis: TnuaBuiltinWalkConfig {
             speed: DEFAULT_CHARACTER_MOVE_SPEED,
@@ -738,10 +786,14 @@ pub(super) fn insert_tnua_character_controller(
         SceneMaxCharacterController {
             move_speed: DEFAULT_CHARACTER_MOVE_SPEED,
             gravity,
+            capsule_radius: radius,
+            capsule_height: height,
+            capsule_center_y,
+            float_height,
         },
         SceneMaxCharacterMotor::default(),
         AvianRigidBody::Dynamic,
-        AvianCollider::capsule(radius, height),
+        capsule_collider,
         character_collision_layers(),
         LinearVelocity::ZERO,
         AngularVelocity::ZERO,
@@ -757,21 +809,33 @@ pub(super) fn insert_tnua_character_controller(
     tracing::info!(
         target = character_mode.target,
         gravity,
+        radius,
+        height,
+        capsule_center_y,
+        float_height,
+        foot_contact_offset,
+        visual_drop = dimensions.visual_drop,
         "enabled Tnua SceneMax character mode"
     );
+    write_runtime_diagnostic_line(format!(
+        "CHARACTER target={} scale=({:.3},{:.3},{:.3}) capsule_radius={:.3} capsule_height={:.3} capsule_center_y={:.3} float_height={:.3} foot_contact_offset={:.3} visual_drop={:.3}",
+        character_mode.target,
+        transform.scale.x,
+        transform.scale.y,
+        transform.scale.z,
+        radius,
+        height,
+        capsule_center_y,
+        float_height,
+        foot_contact_offset,
+        dimensions.visual_drop,
+    ));
 }
 
 pub(super) fn apply_pending_character_modes(
     mut commands: Commands,
     mut character_configs: ResMut<Assets<SceneMaxControlSchemeConfig>>,
     pending: Query<(Entity, &Transform, &PendingCharacterMode)>,
-    active_characters: Query<
-        (&SceneMaxEntity, &Transform),
-        (
-            With<SceneMaxCharacterController>,
-            Without<PendingCharacterMode>,
-        ),
-    >,
     supports: Query<Entity, With<SceneMaxStageSupport>>,
 ) {
     let pending_modes = pending.iter().collect::<Vec<_>>();
@@ -779,19 +843,17 @@ pub(super) fn apply_pending_character_modes(
         return;
     }
 
-    for support_entity in &supports {
-        commands.entity(support_entity).despawn();
-    }
-    let support_samples = pending_modes
-        .iter()
-        .map(|(_, transform, pending_mode)| (pending_mode.0.target.clone(), **transform))
-        .chain(
-            active_characters
-                .iter()
-                .map(|(scene_entity, transform)| (scene_entity.name.clone(), *transform)),
-        )
-        .collect::<Vec<_>>();
-    if !support_samples.is_empty() {
+    if supports.is_empty() {
+        let support_samples = pending_modes
+            .iter()
+            .map(|(_, transform, pending_mode)| {
+                (
+                    pending_mode.0.target.clone(),
+                    **transform,
+                    character_dimensions_for_transform(transform),
+                )
+            })
+            .collect::<Vec<_>>();
         spawn_character_stage_support(&mut commands, &support_samples);
     }
 
@@ -800,6 +862,7 @@ pub(super) fn apply_pending_character_modes(
             &mut commands,
             entity,
             &pending_mode.0,
+            *_transform,
             &mut character_configs,
         );
         commands.entity(entity).remove::<PendingCharacterMode>();
@@ -843,7 +906,7 @@ pub(super) fn clear_character_mode(commands: &mut Commands, entity: Entity) {
 
 pub(super) fn spawn_character_stage_support(
     commands: &mut Commands,
-    samples: &[(String, Transform)],
+    samples: &[(String, Transform, SceneMaxCharacterDimensions)],
 ) {
     let support_samples = preferred_stage_support_samples(samples);
     if support_samples.is_empty() {
@@ -853,13 +916,19 @@ pub(super) fn spawn_character_stage_support(
     let sample_count = support_samples.len() as f32;
     let center = support_samples
         .iter()
-        .map(|(_, transform)| transform.translation)
+        .map(|(_, transform, _)| transform.translation)
         .fold(Vec3::ZERO, |sum, translation| sum + translation)
         / sample_count;
-    let support_y = character_stage_support_y(center.y);
+    let support_y = support_samples
+        .iter()
+        .map(|(_, transform, dimensions)| {
+            character_stage_support_y(transform.translation.y, *dimensions)
+        })
+        .sum::<f32>()
+        / sample_count;
     let spread = support_samples
         .iter()
-        .map(|(_, transform)| {
+        .map(|(_, transform, _)| {
             Vec2::new(
                 transform.translation.x - center.x,
                 transform.translation.z - center.z,
@@ -889,8 +958,11 @@ pub(super) fn spawn_character_stage_support(
     );
 }
 
-pub(super) fn character_stage_support_y(center_y: f32) -> f32 {
-    center_y - DEFAULT_CHARACTER_FLOAT_HEIGHT - DEFAULT_CHARACTER_VISUAL_DROP
+pub(super) fn character_stage_support_y(
+    center_y: f32,
+    dimensions: SceneMaxCharacterDimensions,
+) -> f32 {
+    center_y - dimensions.float_height - dimensions.foot_contact_offset
 }
 
 pub(super) fn update_scenemax_debug_gizmos(
@@ -903,7 +975,7 @@ pub(super) fn update_scenemax_debug_gizmos(
     >,
     scene_entities: Query<(Entity, &SceneMaxEntity, &Transform)>,
     stage_supports: Query<(&SceneMaxStageSupport, &Transform)>,
-    characters: Query<(&SceneMaxEntity, &Transform), With<SceneMaxCharacterController>>,
+    characters: Query<(&SceneMaxEntity, &Transform, &SceneMaxCharacterController)>,
     virtual_colliders: Query<(), With<SceneMaxVirtualCollider>>,
 ) {
     let target_visibility = if debug_mode.enabled {
@@ -949,24 +1021,26 @@ pub(super) fn update_scenemax_debug_gizmos(
         gizmos.cube(support_transform, support_color);
     }
 
-    for (_scene_entity, transform) in &characters {
+    for (_scene_entity, transform, controller) in &characters {
+        let capsule_center =
+            transform.translation + transform.rotation * (Vec3::Y * controller.capsule_center_y);
         draw_debug_capsule(
             &mut gizmos,
-            transform.translation,
+            capsule_center,
             transform.rotation,
-            DEFAULT_CHARACTER_CAPSULE_RADIUS,
-            DEFAULT_CHARACTER_CAPSULE_HEIGHT * 0.5,
+            controller.capsule_radius,
+            controller.capsule_height * 0.5,
             character_color,
         );
 
-        let float_bottom = transform.translation - Vec3::Y * DEFAULT_CHARACTER_FLOAT_HEIGHT;
+        let float_bottom = transform.translation - Vec3::Y * controller.float_height;
         gizmos.line(transform.translation, float_bottom, float_color);
 
         let mut sensor_transform = Transform::from_translation(float_bottom);
         sensor_transform.scale = Vec3::new(
-            DEFAULT_CHARACTER_CAPSULE_RADIUS * 2.0,
+            controller.capsule_radius * 2.0,
             DEFAULT_CHARACTER_SENSOR_HEIGHT,
-            DEFAULT_CHARACTER_CAPSULE_RADIUS * 2.0,
+            controller.capsule_radius * 2.0,
         );
         gizmos.cube(sensor_transform, float_color);
     }
@@ -1032,11 +1106,11 @@ fn draw_debug_capsule(
 }
 
 pub(super) fn preferred_stage_support_samples(
-    samples: &[(String, Transform)],
-) -> Vec<(String, Transform)> {
+    samples: &[(String, Transform, SceneMaxCharacterDimensions)],
+) -> Vec<(String, Transform, SceneMaxCharacterDimensions)> {
     let player_samples = samples
         .iter()
-        .filter(|(name, _)| name.to_ascii_lowercase().starts_with("player"))
+        .filter(|(name, _, _)| name.to_ascii_lowercase().starts_with("player"))
         .cloned()
         .collect::<Vec<_>>();
     if player_samples.is_empty() {

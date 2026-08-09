@@ -722,6 +722,10 @@ struct TimedJump {
 struct SceneMaxCharacterController {
     move_speed: f32,
     gravity: f32,
+    capsule_radius: f32,
+    capsule_height: f32,
+    capsule_center_y: f32,
+    float_height: f32,
 }
 
 #[derive(Debug, Component, Default)]
@@ -768,9 +772,10 @@ const BUILTIN_PLAYER_TURN_SPEED_RADIANS: f32 = std::f32::consts::FRAC_PI_2;
 const DEFAULT_CHARACTER_GRAVITY: f32 = 60.0;
 const DEFAULT_CHARACTER_MOVE_SPEED: f32 = 7.0;
 const DEFAULT_CHARACTER_CAPSULE_RADIUS: f32 = 0.35;
-const DEFAULT_CHARACTER_CAPSULE_HEIGHT: f32 = 0.9;
+const DEFAULT_CHARACTER_CAPSULE_HEIGHT: f32 = 1.1;
 const DEFAULT_CHARACTER_FLOAT_HEIGHT: f32 = 0.95;
 const DEFAULT_CHARACTER_SENSOR_HEIGHT: f32 = 0.08;
+const DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET: f32 = 0.08;
 const DEFAULT_CHARACTER_VISUAL_DROP: f32 = 1.25;
 const DEFAULT_STAGE_SUPPORT_HALF_SIZE: f32 = 160.0;
 const CHARACTER_INPUT_TTL_SECONDS: f32 = 0.12;
@@ -1213,9 +1218,38 @@ mod tests {
 
     #[test]
     fn character_support_y_tracks_current_character_height() {
+        let transform = Transform::from_scale(Vec3::ONE);
+        let dimensions = character_dimensions_for_transform(&transform);
         assert_eq!(
-            character_stage_support_y(-88.03695),
-            -88.03695 - DEFAULT_CHARACTER_FLOAT_HEIGHT - DEFAULT_CHARACTER_VISUAL_DROP
+            character_stage_support_y(-88.03695, dimensions),
+            -88.03695 - DEFAULT_CHARACTER_FLOAT_HEIGHT - DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET
+        );
+    }
+
+    #[test]
+    fn character_dimensions_scale_up_for_large_imported_models() {
+        let transform = Transform::from_scale(Vec3::splat(3.0));
+        let dimensions = character_dimensions_for_transform(&transform);
+
+        assert_eq!(
+            character_stage_support_y(-88.03695, dimensions),
+            -88.03695
+                - (DEFAULT_CHARACTER_FLOAT_HEIGHT * 3.0)
+                - (DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET * 3.0)
+        );
+    }
+
+    #[test]
+    fn character_capsule_bottom_aligns_to_visual_feet() {
+        let transform = Transform::from_scale(Vec3::splat(3.0));
+        let dimensions = character_dimensions_for_transform(&transform);
+        let capsule_half_height =
+            character_capsule_half_height(dimensions.capsule_radius, dimensions.capsule_height);
+        let capsule_bottom_y = dimensions.capsule_center_y - capsule_half_height;
+
+        assert!(capsule_bottom_y.abs() < 0.0001);
+        assert!(
+            (dimensions.capsule_height - (DEFAULT_CHARACTER_CAPSULE_HEIGHT * 3.0)).abs() < 0.0001
         );
     }
 
