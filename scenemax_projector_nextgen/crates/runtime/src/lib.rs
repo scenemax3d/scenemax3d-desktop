@@ -234,6 +234,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             (
                 clear_scenemax_ui_on_scene_change,
                 apply_scenemax_ui_actions,
+                update_deferred_draw_clears,
                 update_scenemax_ui_eases,
                 update_scenemax_ui_message_animations,
                 update_scenemax_ui_bitmap_message_animations,
@@ -456,6 +457,7 @@ struct SceneMaxUiRuntime {
     font_index_root: Option<PathBuf>,
     bitmap_fonts: HashMap<String, SceneMaxBitmapFont>,
     draw_channels: HashMap<String, Entity>,
+    pending_draw_clears: Vec<PendingSceneMaxDrawClear>,
 }
 
 #[derive(Debug, Default)]
@@ -528,6 +530,12 @@ struct SceneMaxUiWidget {
 
 #[derive(Debug, Clone, Component)]
 struct SceneMaxDrawChannel;
+
+#[derive(Debug, Clone)]
+struct PendingSceneMaxDrawClear {
+    channel: String,
+    remaining_seconds: f32,
+}
 
 #[derive(Debug, Clone, Copy, Component)]
 struct SceneMaxUiSpriteSheet {

@@ -1,5 +1,7 @@
 use super::*;
 
+const SAME_BATCH_DRAW_CLEAR_MIN_SECONDS: f32 = 0.35;
+
 pub(super) fn scenemax_ui_action_from_statement(action: &Statement) -> Option<SceneMaxUiAction> {
     match action {
         Statement::UiLoad { name } => Some(SceneMaxUiAction::Load { name: name.clone() }),
@@ -58,6 +60,7 @@ pub(super) fn clear_scenemax_ui_on_scene_change(
     ui_runtime.active_ui_name = None;
     ui_runtime.loaded.clear();
     ui_runtime.draw_channels.clear();
+    ui_runtime.pending_draw_clears.clear();
     ui_queue.actions.clear();
     ui_runtime.scene_script_root = current_scene_root;
 
@@ -94,9 +97,32 @@ pub(super) fn apply_scenemax_ui_actions(
     if actions.is_empty() {
         return;
     }
+    let mut drawn_channels_this_batch = HashSet::new();
     for action in actions {
         match action {
             SceneMaxUiAction::Draw(draw) => {
+                if draw.clear && drawn_channels_this_batch.contains(&draw.channel) {
+                    ui_runtime
+                        .pending_draw_clears
+                        .retain(|pending| pending.channel != draw.channel);
+                    ui_runtime
+                        .pending_draw_clears
+                        .push(PendingSceneMaxDrawClear {
+                            channel: draw.channel.clone(),
+                            remaining_seconds: SAME_BATCH_DRAW_CLEAR_MIN_SECONDS,
+                        });
+                    write_runtime_diagnostic_line(format!(
+                        "deferred clear for draw channel {} by {:.2}s because draw and clear were queued together",
+                        draw.channel, SAME_BATCH_DRAW_CLEAR_MIN_SECONDS
+                    ));
+                    continue;
+                }
+                if !draw.clear {
+                    drawn_channels_this_batch.insert(draw.channel.clone());
+                    ui_runtime
+                        .pending_draw_clears
+                        .retain(|pending| pending.channel != draw.channel);
+                }
                 apply_scenemax_draw_action(
                     draw,
                     &mut commands,
@@ -333,6 +359,36 @@ pub(super) fn apply_scenemax_ui_actions(
                     ));
                 }
             }
+        }
+    }
+}
+
+pub(super) fn update_deferred_draw_clears(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut ui_runtime: ResMut<SceneMaxUiRuntime>,
+) {
+    if ui_runtime.pending_draw_clears.is_empty() {
+        return;
+    }
+
+    let delta = time.delta_secs();
+    let mut ready_channels = Vec::new();
+    let mut pending = Vec::new();
+    for mut clear in ui_runtime.pending_draw_clears.drain(..) {
+        clear.remaining_seconds -= delta;
+        if clear.remaining_seconds <= 0.0 {
+            ready_channels.push(clear.channel);
+        } else {
+            pending.push(clear);
+        }
+    }
+    ui_runtime.pending_draw_clears = pending;
+
+    for channel in ready_channels {
+        if let Some(entity) = ui_runtime.draw_channels.remove(&channel) {
+            commands.entity(entity).despawn();
+            write_runtime_diagnostic_line(format!("cleared deferred draw channel {channel}"));
         }
     }
 }
