@@ -38,8 +38,8 @@ use scenemax_parser::{
     AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement,
     CameraAttachStatement, ChannelDrawStatement, CharacterJumpStatement, CharacterModeStatement,
     CinematicLookAt, CinematicPlayStatement, Condition, EntityOptions, KeyTrigger, LoggerLevel,
-    LoggerMessage, LoggerStatement, MoveDirection, MoveToDestination, ObjectPoolStatement,
-    PoolReleaseStatement, PositionExpr, PositionStatement, PositionValue, Program, SceneMaxAxis,
+    LoggerMessage, LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement,
+    ObjectPoolStatement, PoolReleaseStatement, PositionExpr, PositionValue, Program, SceneMaxAxis,
     SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3, SpritePlayStatement, Statement,
     UiEaseDirection, UiTargetPath,
 };
@@ -997,6 +997,35 @@ mod tests {
     }
 
     #[test]
+    fn resolves_runtime_expression_function_args_without_losing_entity_args() {
+        let mut vars = SceneMaxVars::default();
+        vars.0.insert("score".to_owned(), 7.0);
+        let mut transforms = HashMap::from([(
+            "player1".to_owned(),
+            Transform::from_translation(Vec3::new(3.0, 0.0, 0.0)),
+        )]);
+
+        let args = resolve_call_args(
+            &[
+                "player1".to_owned(),
+                "score+10".to_owned(),
+                "player1.x+4".to_owned(),
+            ],
+            &vars,
+            None,
+            &HashMap::new(),
+            Some(&transforms),
+            None,
+        );
+
+        assert_eq!(
+            args,
+            vec!["player1".to_owned(), "17".to_owned(), "7".to_owned()]
+        );
+        transforms.clear();
+    }
+
+    #[test]
     fn evaluates_reference_enemy_ai_guard_with_constants_and_params() {
         let program = scenemax_parser::parse_program(
             "var GAME_STATE_START = 1, GAME_STATE_OVER = 2\nvar @enemy_ai_allowed = enemy_ko==0 && op_hit==0 && player1_ko==0 && game_status!=GAME_STATE_OVER && slow_motion==0 && player2.data.trapped == 0\n[op_hit!=1 && player1_ko==0 && enemy_ko==0 && op_action==0 && game_status==GAME_STATE_START && slow_motion==0 && player2.data.trapped == 0 && p2.data.is_jumping == 0]\nopponent_ai(p1, p2) = {\n  p2.look at (p1)\n}",
@@ -1269,8 +1298,11 @@ mod tests {
         let animation = sprite_animation_from_statement(&SpritePlayStatement {
             target: "b".to_owned(),
             from_frame: 0,
+            from_frame_value: AssignmentValue::Number(0 as f32),
             to_frame: 13,
+            to_frame_value: AssignmentValue::Number(13 as f32),
             duration_seconds: 1.0,
+            duration_value: AssignmentValue::Number(1.0),
             looped: true,
         });
 
@@ -1743,6 +1775,7 @@ mod tests {
             &CharacterJumpStatement {
                 target: "player1".to_owned(),
                 speed: 35.0,
+                speed_value: AssignmentValue::Number(35.0),
                 async_run: false,
             },
             &Transform::from_translation(Vec3::new(0.0, 10.0, 0.0)),
@@ -1762,12 +1795,14 @@ mod tests {
             target: "player1".to_owned(),
             clip: "big_jump".to_owned(),
             speed: 1.0,
+            speed_value: AssignmentValue::Number(1.0),
             looped: false,
             blocking: true,
         };
         let punch_animation = AnimationStatement {
             clip: "CrossPunch".to_owned(),
             speed: 2.5,
+            speed_value: AssignmentValue::Number(2.5),
             ..jump_animation.clone()
         };
 
@@ -1784,6 +1819,7 @@ mod tests {
             target: "player2".to_owned(),
             clip: "HighKick".to_owned(),
             speed: 3.0,
+            speed_value: AssignmentValue::Number(3.0),
             looped: false,
             blocking: true,
         };
@@ -1796,7 +1832,9 @@ mod tests {
         let turn = timed_turn_from_statement(&scenemax_parser::TurnStatement {
             target: "axe".to_owned(),
             degrees: 360.0,
+            degrees_value: AssignmentValue::Number(360.0),
             duration_seconds: 1.0,
+            duration_value: AssignmentValue::Number(1.0),
             loop_condition: Some(Condition::EqualsValue {
                 left: AssignmentValue::Number(1.0),
                 right: AssignmentValue::Number(1.0),
@@ -1813,14 +1851,18 @@ mod tests {
         let blocking_turn = Statement::Turn(scenemax_parser::TurnStatement {
             target: "gemini".to_owned(),
             degrees: 360.0,
+            degrees_value: AssignmentValue::Number(360.0),
             duration_seconds: 3.0,
+            duration_value: AssignmentValue::Number(3.0),
             loop_condition: None,
             async_run: false,
         });
         let looped_turn = Statement::Turn(scenemax_parser::TurnStatement {
             target: "gemini".to_owned(),
             degrees: 360.0,
+            degrees_value: AssignmentValue::Number(360.0),
             duration_seconds: 3.0,
+            duration_value: AssignmentValue::Number(3.0),
             loop_condition: Some(Condition::EqualsValue {
                 left: AssignmentValue::Number(1.0),
                 right: AssignmentValue::Number(1.0),
@@ -1839,7 +1881,9 @@ mod tests {
                 target: "player1".to_owned(),
                 direction: MoveDirection::Forward,
                 distance: 0.2,
+                distance_value: AssignmentValue::Number(0.2),
                 duration_seconds: 0.5,
+                duration_value: AssignmentValue::Number(0.5),
                 loop_condition: Some(Condition::EqualsNumber {
                     name: "move_forward".to_owned(),
                     value: 1.0,
@@ -1860,7 +1904,9 @@ mod tests {
             target: "player1".to_owned(),
             direction: MoveDirection::Forward,
             distance: 0.2,
+            distance_value: AssignmentValue::Number(0.2),
             duration_seconds: 0.5,
+            duration_value: AssignmentValue::Number(0.5),
             loop_condition: None,
             async_run: false,
         };
@@ -1877,7 +1923,9 @@ mod tests {
             target: "player1".to_owned(),
             direction: MoveDirection::Forward,
             distance: 0.2,
+            distance_value: AssignmentValue::Number(0.2),
             duration_seconds: 0.5,
+            duration_value: AssignmentValue::Number(0.5),
             loop_condition: None,
             async_run: false,
         });
@@ -1893,7 +1941,9 @@ mod tests {
                 target: "gemini".to_owned(),
                 direction: MoveDirection::Left,
                 distance: 4.0,
+                distance_value: AssignmentValue::Number(4.0),
                 duration_seconds: 2.0,
+                duration_value: AssignmentValue::Number(2.0),
                 loop_condition: None,
                 async_run: false,
             },
@@ -1904,7 +1954,9 @@ mod tests {
                 target: "gemini".to_owned(),
                 direction: MoveDirection::Right,
                 distance: 4.0,
+                distance_value: AssignmentValue::Number(4.0),
                 duration_seconds: 2.0,
+                duration_value: AssignmentValue::Number(2.0),
                 loop_condition: None,
                 async_run: false,
             },
@@ -1923,7 +1975,9 @@ mod tests {
                 target: "gemini".to_owned(),
                 direction: MoveDirection::Up,
                 distance: 3.0,
+                distance_value: AssignmentValue::Number(3.0),
                 duration_seconds: 1.5,
+                duration_value: AssignmentValue::Number(1.5),
                 loop_condition: None,
                 async_run: false,
             },
@@ -1985,7 +2039,7 @@ mod tests {
         );
         assert_eq!(
             evaluate_position_statement(
-                &PositionStatement {
+                &scenemax_parser::PositionStatement {
                     target: "fx".to_owned(),
                     position: PositionValue::Coordinates(vec![
                         PositionExpr::EntityAxis {
@@ -2084,6 +2138,24 @@ mod tests {
             program.statements.first(),
             Some(Statement::UiLoad { name }) if name == "game_intro_ui"
         ));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn default_script_path_finds_single_scripts_subdir_main() {
+        let root = std::env::temp_dir().join(format!(
+            "scenemax_nextgen_scripts_root_{}",
+            std::process::id()
+        ));
+        let script_dir = root.join("scripts").join("Bevy Tests");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&script_dir).unwrap();
+        fs::write(script_dir.join("main"), "add \"expressions.code\" Code\n").unwrap();
+
+        assert_eq!(
+            default_script_path(Some(&root)),
+            Some(script_dir.join("main"))
+        );
         let _ = fs::remove_dir_all(&root);
     }
 

@@ -517,12 +517,13 @@ pub(super) fn animation_percent_from_elapsed(elapsed: f32, duration: f32) -> f32
     ((elapsed / duration.max(0.001)) * 100.0).clamp(0.0, 100.0)
 }
 
-pub(super) fn animation_speed_override(
-    animation_speed: &AnimationSpeedStatement,
+pub(super) fn animation_speed_override_resolved(
+    speed: f32,
+    duration_seconds: Option<f32>,
 ) -> AnimationSpeedOverride {
     AnimationSpeedOverride {
-        speed: animation_speed.speed.max(0.001),
-        remaining_seconds: animation_speed.duration_seconds,
+        speed: speed.max(0.001),
+        remaining_seconds: duration_seconds,
         applied: false,
     }
 }

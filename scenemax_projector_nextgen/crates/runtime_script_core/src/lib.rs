@@ -132,14 +132,35 @@ pub fn substitute_statement(
             target: substitute_path(&animation.target, bindings),
             clip: animation.clip.clone(),
             speed: animation.speed,
+            speed_value: substitute_assignment_value(&animation.speed_value, bindings),
             looped: animation.looped,
             blocking: animation.blocking,
         }),
+        Statement::SpritePlay(sprite_play) => {
+            Statement::SpritePlay(scenemax_parser::SpritePlayStatement {
+                target: substitute_path(&sprite_play.target, bindings),
+                from_frame: sprite_play.from_frame,
+                from_frame_value: substitute_assignment_value(
+                    &sprite_play.from_frame_value,
+                    bindings,
+                ),
+                to_frame: sprite_play.to_frame,
+                to_frame_value: substitute_assignment_value(&sprite_play.to_frame_value, bindings),
+                duration_seconds: sprite_play.duration_seconds,
+                duration_value: substitute_assignment_value(&sprite_play.duration_value, bindings),
+                looped: sprite_play.looped,
+            })
+        }
         Statement::AnimationSpeed(animation_speed) => {
             Statement::AnimationSpeed(AnimationSpeedStatement {
                 target: substitute_path(&animation_speed.target, bindings),
                 speed: animation_speed.speed,
+                speed_value: substitute_assignment_value(&animation_speed.speed_value, bindings),
                 duration_seconds: animation_speed.duration_seconds,
+                duration_value: animation_speed
+                    .duration_value
+                    .as_ref()
+                    .map(|value| substitute_assignment_value(value, bindings)),
                 condition: animation_speed
                     .condition
                     .as_ref()
@@ -161,7 +182,9 @@ pub fn substitute_statement(
         Statement::Turn(turn) => Statement::Turn(scenemax_parser::TurnStatement {
             target: substitute_path(&turn.target, bindings),
             degrees: turn.degrees,
+            degrees_value: substitute_assignment_value(&turn.degrees_value, bindings),
             duration_seconds: turn.duration_seconds,
+            duration_value: substitute_assignment_value(&turn.duration_value, bindings),
             loop_condition: turn
                 .loop_condition
                 .as_ref()
@@ -172,7 +195,9 @@ pub fn substitute_statement(
             target: substitute_path(&movement.target, bindings),
             direction: movement.direction,
             distance: movement.distance,
+            distance_value: substitute_assignment_value(&movement.distance_value, bindings),
             duration_seconds: movement.duration_seconds,
+            duration_value: substitute_assignment_value(&movement.duration_value, bindings),
             loop_condition: movement
                 .loop_condition
                 .as_ref()
@@ -183,6 +208,7 @@ pub fn substitute_statement(
             target: substitute_path(&move_to.target, bindings),
             destination: substitute_move_to_destination(&move_to.destination, bindings),
             duration_seconds: move_to.duration_seconds,
+            duration_value: substitute_assignment_value(&move_to.duration_value, bindings),
             async_run: move_to.async_run,
         }),
         Statement::CameraChase { target } => Statement::CameraChase {
@@ -201,6 +227,10 @@ pub fn substitute_statement(
             Statement::CharacterMode(CharacterModeStatement {
                 target: substitute_path(&character_mode.target, bindings),
                 gravity: character_mode.gravity,
+                gravity_value: character_mode
+                    .gravity_value
+                    .as_ref()
+                    .map(|value| substitute_assignment_value(value, bindings)),
             })
         }
         Statement::ClearCharacterMode { target } => Statement::ClearCharacterMode {
@@ -215,6 +245,7 @@ pub fn substitute_statement(
         Statement::CharacterJump(jump) => Statement::CharacterJump(CharacterJumpStatement {
             target: substitute_path(&jump.target, bindings),
             speed: jump.speed,
+            speed_value: substitute_assignment_value(&jump.speed_value, bindings),
             async_run: jump.async_run,
         }),
         Statement::PhysicsImpulse(impulse) => {
@@ -222,6 +253,7 @@ pub fn substitute_statement(
                 target: substitute_path(&impulse.target, bindings),
                 direction: impulse.direction,
                 strength: impulse.strength,
+                strength_value: substitute_assignment_value(&impulse.strength_value, bindings),
             })
         }
         Statement::PhysicsStop { target } => Statement::PhysicsStop {
@@ -358,6 +390,7 @@ pub fn substitute_statement(
             name,
             args,
             interval_seconds,
+            interval_value,
         } => Statement::RunEvery {
             name: name.clone(),
             args: args
@@ -365,6 +398,7 @@ pub fn substitute_statement(
                 .map(|arg| substitute_reference(arg, bindings))
                 .collect(),
             interval_seconds: *interval_seconds,
+            interval_value: substitute_assignment_value(interval_value, bindings),
         },
         statement => statement.clone(),
     }
@@ -435,6 +469,9 @@ pub fn substitute_position_value(
                 .iter()
                 .map(|value| match value {
                     PositionExpr::Number(value) => PositionExpr::Number(*value),
+                    PositionExpr::Value(value) => {
+                        PositionExpr::Value(substitute_assignment_value(value, bindings))
+                    }
                     PositionExpr::EntityAxis {
                         entity,
                         axis,
@@ -460,12 +497,15 @@ pub fn substitute_move_to_destination(
                 position, bindings,
             ))
         }
-        scenemax_parser::MoveToDestination::EntityForward { entity, distance } => {
-            scenemax_parser::MoveToDestination::EntityForward {
-                entity: substitute_path(entity, bindings),
-                distance: *distance,
-            }
-        }
+        scenemax_parser::MoveToDestination::EntityForward {
+            entity,
+            distance,
+            distance_value,
+        } => scenemax_parser::MoveToDestination::EntityForward {
+            entity: substitute_path(entity, bindings),
+            distance: *distance,
+            distance_value: substitute_assignment_value(distance_value, bindings),
+        },
     }
 }
 
@@ -727,6 +767,7 @@ mod tests {
                 target: "d".to_owned(),
                 clip: "idle".to_owned(),
                 speed: 1.0,
+                speed_value: AssignmentValue::Number(1.0),
                 looped: true,
                 blocking: false,
             })
@@ -739,6 +780,7 @@ mod tests {
             target: "player2".to_owned(),
             clip: "FlyKick".to_owned(),
             speed: 2.9,
+            speed_value: AssignmentValue::Number(2.9),
             looped: false,
             blocking: true,
         })];
@@ -764,6 +806,7 @@ mod tests {
                     target: "player2".to_owned(),
                     clip: "Idle".to_owned(),
                     speed: 1.0,
+                    speed_value: AssignmentValue::Number(1.0),
                     looped: true,
                     blocking: false,
                 })],
@@ -822,7 +865,9 @@ mod tests {
                     target: "player2".to_owned(),
                     direction: MoveDirection::Forward,
                     distance: 0.2,
+                    distance_value: AssignmentValue::Number(0.2),
                     duration_seconds: 0.2,
+                    duration_value: AssignmentValue::Number(0.2),
                     loop_condition: None,
                     async_run: false,
                 }),
@@ -839,6 +884,7 @@ mod tests {
                         target: "player2".to_owned(),
                         clip: "CrossPunch".to_owned(),
                         speed: 1.0,
+                        speed_value: AssignmentValue::Number(1.0),
                         looped: false,
                         blocking: true,
                     })],

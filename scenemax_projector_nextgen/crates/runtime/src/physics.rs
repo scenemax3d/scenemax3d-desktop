@@ -1448,53 +1448,65 @@ pub(super) fn transform_from_options(
 }
 
 pub(super) fn timed_turn_from_statement(turn: &scenemax_parser::TurnStatement) -> TimedTurn {
-    let duration = turn.duration_seconds.max(0.001);
+    timed_turn_from_statement_resolved(turn, turn.degrees, turn.duration_seconds)
+}
+
+pub(super) fn timed_turn_from_statement_resolved(
+    turn: &scenemax_parser::TurnStatement,
+    degrees: f32,
+    duration_seconds: f32,
+) -> TimedTurn {
+    let duration = duration_seconds.max(0.001);
     TimedTurn {
         remaining_seconds: duration,
         duration_seconds: duration,
-        radians_per_second: turn.degrees.to_radians() / duration,
+        radians_per_second: degrees.to_radians() / duration,
         loop_condition: turn.loop_condition.clone(),
     }
 }
 
+#[cfg(test)]
 pub(super) fn timed_move_from_statement(
     movement: &scenemax_parser::MoveStatement,
     transform: &Transform,
 ) -> TimedMove {
-    let duration = movement.duration_seconds.max(0.001);
+    timed_move_from_statement_resolved(
+        movement,
+        transform,
+        movement.distance,
+        movement.duration_seconds,
+    )
+}
+
+pub(super) fn timed_move_from_statement_resolved(
+    movement: &scenemax_parser::MoveStatement,
+    transform: &Transform,
+    distance: f32,
+    duration_seconds: f32,
+) -> TimedMove {
+    let duration = duration_seconds.max(0.001);
     let direction = movement_direction_vector(movement.direction, transform);
 
     TimedMove {
         remaining_seconds: duration,
         duration_seconds: duration,
-        velocity: direction * directional_move_speed(movement),
+        velocity: direction * directional_move_speed_resolved(distance, duration_seconds),
         final_translation: None,
         loop_condition: movement.loop_condition.clone(),
     }
 }
 
+#[cfg(test)]
 pub(super) fn directional_move_speed(movement: &scenemax_parser::MoveStatement) -> f32 {
-    if movement.duration_seconds > 0.0 {
-        movement.distance / movement.duration_seconds.max(0.001)
-    } else {
-        movement.distance / 0.001
-    }
+    directional_move_speed_resolved(movement.distance, movement.duration_seconds)
 }
 
-pub(super) fn timed_move_to_from_statement(
-    movement: &scenemax_parser::MoveToStatement,
-    transform: &Transform,
-    transforms_by_name: &HashMap<String, Transform>,
-) -> Option<TimedMove> {
-    let destination = evaluate_move_to_destination(&movement.destination, transforms_by_name)?;
-    let duration = movement.duration_seconds.max(0.001);
-    Some(TimedMove {
-        remaining_seconds: duration,
-        duration_seconds: duration,
-        velocity: (destination - transform.translation) / duration,
-        final_translation: Some(destination),
-        loop_condition: None,
-    })
+pub(super) fn directional_move_speed_resolved(distance: f32, duration_seconds: f32) -> f32 {
+    if duration_seconds > 0.0 {
+        distance / duration_seconds.max(0.001)
+    } else {
+        distance / 0.001
+    }
 }
 
 pub(super) fn append_timed_move(commands: &mut Commands, entity: Entity, timed_move: TimedMove) {
@@ -1513,43 +1525,38 @@ pub(super) fn append_timed_move(commands: &mut Commands, entity: Entity, timed_m
     });
 }
 
+#[cfg(test)]
 pub(super) fn timed_jump_from_statement(
     jump: &CharacterJumpStatement,
     transform: &Transform,
 ) -> TimedJump {
+    timed_jump_from_statement_resolved(jump, transform, jump.speed)
+}
+
+pub(super) fn timed_jump_from_statement_resolved(
+    _jump: &CharacterJumpStatement,
+    transform: &Transform,
+    speed: f32,
+) -> TimedJump {
     TimedJump {
         elapsed_seconds: 0.0,
-        duration_seconds: jump_duration_seconds(jump.speed),
+        duration_seconds: jump_duration_seconds(speed),
         start_y: transform.translation.y,
-        height: jump_height(jump.speed),
+        height: jump_height(speed),
     }
 }
 
-pub(super) fn evaluate_move_to_destination(
-    destination: &scenemax_parser::MoveToDestination,
-    transforms_by_name: &HashMap<String, Transform>,
-) -> Option<Vec3> {
-    match destination {
-        scenemax_parser::MoveToDestination::Position(position) => {
-            evaluate_position_value(position, transforms_by_name)
-        }
-        scenemax_parser::MoveToDestination::EntityForward { entity, distance } => {
-            let transform = transforms_by_name.get(entity)?;
-            Some(transform.translation + horizontal_forward(transform) * *distance)
-        }
-    }
-}
-
-pub(super) fn apply_physics_impulse(
+pub(super) fn apply_physics_impulse_resolved(
     commands: &mut Commands,
     entity: Entity,
     transform: &Transform,
     impulse: &scenemax_parser::PhysicsImpulseStatement,
+    strength: f32,
 ) {
     let direction = physics_direction_vector(impulse.direction, transform);
     commands
         .entity(entity)
-        .insert(LinearVelocity(direction * impulse.strength));
+        .insert(LinearVelocity(direction * strength));
 }
 
 pub(super) fn apply_physics_stop(commands: &mut Commands, entity: Entity) {
@@ -1598,15 +1605,21 @@ pub(super) fn physics_direction_vector(
     }
 }
 
-pub(super) fn set_character_move_intent(
+pub(super) fn set_character_move_intent_resolved(
     motor: &mut SceneMaxCharacterMotor,
     controller: &SceneMaxCharacterController,
     movement: &scenemax_parser::MoveStatement,
     transform: &Transform,
+    distance: f32,
+    duration_seconds: f32,
     continuous_delta_seconds: Option<f32>,
 ) {
-    let duration = movement.duration_seconds.max(0.001);
-    let speed = character_directional_move_speed(movement, continuous_delta_seconds);
+    let duration = duration_seconds.max(0.001);
+    let speed = character_directional_move_speed_resolved(
+        distance,
+        duration_seconds,
+        continuous_delta_seconds,
+    );
     let direction = movement_direction_vector(movement.direction, transform);
     let speed_ratio = speed / controller.move_speed.max(0.001);
 
@@ -1618,14 +1631,27 @@ pub(super) fn set_character_move_intent(
     }
 }
 
+#[cfg(test)]
 pub(super) fn character_directional_move_speed(
     movement: &scenemax_parser::MoveStatement,
     continuous_delta_seconds: Option<f32>,
 ) -> f32 {
+    character_directional_move_speed_resolved(
+        movement.distance,
+        movement.duration_seconds,
+        continuous_delta_seconds,
+    )
+}
+
+pub(super) fn character_directional_move_speed_resolved(
+    distance: f32,
+    duration_seconds: f32,
+    continuous_delta_seconds: Option<f32>,
+) -> f32 {
     if let Some(delta_seconds) = continuous_delta_seconds {
-        movement.distance / delta_seconds.max(0.001)
+        distance / delta_seconds.max(0.001)
     } else {
-        directional_move_speed(movement)
+        directional_move_speed_resolved(distance, duration_seconds)
     }
 }
 
@@ -1650,14 +1676,11 @@ pub(super) fn set_character_motion(
     motor.motion_ttl_seconds = ttl_seconds;
 }
 
-pub(super) fn set_character_jump_intent(
-    motor: &mut SceneMaxCharacterMotor,
-    jump: &CharacterJumpStatement,
-) {
-    motor.pending_jump_speed = Some(jump.speed);
+pub(super) fn set_character_jump_intent_resolved(motor: &mut SceneMaxCharacterMotor, speed: f32) {
+    motor.pending_jump_speed = Some(speed);
     motor.jump_hold_seconds = motor
         .jump_hold_seconds
-        .max(character_jump_feed_seconds(jump.speed));
+        .max(character_jump_feed_seconds(speed));
 }
 
 pub(super) fn jump_height(speed: f32) -> f32 {
@@ -1695,13 +1718,15 @@ pub(super) fn horizontal_right(transform: &Transform) -> Vec3 {
     direction.normalize()
 }
 
+#[cfg(test)]
 pub(super) fn evaluate_position_statement(
-    position: &PositionStatement,
+    position: &scenemax_parser::PositionStatement,
     transforms_by_name: &HashMap<String, Transform>,
 ) -> Option<Vec3> {
     evaluate_position_value(&position.position, transforms_by_name)
 }
 
+#[cfg(test)]
 pub(super) fn evaluate_position_value(
     position: &PositionValue,
     transforms_by_name: &HashMap<String, Transform>,
@@ -1719,12 +1744,14 @@ pub(super) fn evaluate_position_value(
     }
 }
 
+#[cfg(test)]
 pub(super) fn evaluate_position_expr(
     value: &PositionExpr,
     transforms_by_name: &HashMap<String, Transform>,
 ) -> Option<f32> {
     match value {
         PositionExpr::Number(value) => Some(*value),
+        PositionExpr::Value(_) => None,
         PositionExpr::EntityAxis {
             entity,
             axis,

@@ -470,14 +470,34 @@ pub(super) fn resolve_code_path(script_dir: &Path, path: &str) -> PathBuf {
 
 pub(super) fn default_script_path(project_root: Option<&Path>) -> Option<PathBuf> {
     let root = project_root?;
-    [
+    let direct = [
         root.join("running").join("main"),
         root.join("running").join("main.code"),
         root.join("main"),
         root.join("main.code"),
     ]
     .into_iter()
-    .find(|path| path.is_file())
+    .find(|path| path.is_file());
+    direct.or_else(|| default_scripts_subdir_main(root))
+}
+
+fn default_scripts_subdir_main(root: &Path) -> Option<PathBuf> {
+    let scripts_dir = root.join("scripts");
+    let entries = fs::read_dir(scripts_dir).ok()?;
+    let mut candidates = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        for file_name in ["main", "main.code"] {
+            let candidate = path.join(file_name);
+            if candidate.is_file() {
+                candidates.push(candidate);
+            }
+        }
+    }
+    (candidates.len() == 1).then(|| candidates.remove(0))
 }
 
 pub(super) fn setup_scenemax_program(

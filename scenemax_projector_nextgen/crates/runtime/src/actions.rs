@@ -129,9 +129,17 @@ pub(super) fn apply_startup_action_sequence(
                     tracing::debug!(name, "startup SceneMax function was not parsed");
                     continue;
                 };
+                let resolved_args = resolve_call_args(
+                    args,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
                 if !function_guard_matches(
                     function,
-                    args,
+                    &resolved_args,
                     vars,
                     guards_by_name,
                     Some(transforms_by_name),
@@ -141,7 +149,7 @@ pub(super) fn apply_startup_action_sequence(
                     continue;
                 }
                 let function_actions = actions_with_parent_continuation(
-                    instantiate_function_actions(function, args),
+                    instantiate_function_actions(function, &resolved_args),
                     parent_action_tail(actions, index),
                 );
                 let result = apply_startup_action_sequence(
@@ -361,9 +369,17 @@ pub(super) fn apply_startup_function_by_name(
         tracing::debug!(name, "startup SceneMax function was not parsed");
         return ActionSequenceResult::Completed;
     };
+    let resolved_args = resolve_call_args(
+        args,
+        vars,
+        None,
+        guards_by_name,
+        Some(transforms_by_name),
+        None,
+    );
     if !function_guard_matches(
         function,
-        args,
+        &resolved_args,
         vars,
         guards_by_name,
         Some(transforms_by_name),
@@ -374,7 +390,7 @@ pub(super) fn apply_startup_function_by_name(
     }
 
     tracing::info!(name, "running SceneMax startup function");
-    let actions = instantiate_function_actions(function, args);
+    let actions = instantiate_function_actions(function, &resolved_args);
     for action in &actions {
         let result = apply_startup_action(
             action,
@@ -692,10 +708,19 @@ pub(super) fn apply_startup_action(
                 entities_by_name.get(&animation.target),
                 gltfs_by_name.get(&animation.target),
             ) {
+                let speed = resolve_animation_speed_value(
+                    &animation.speed_value,
+                    animation.speed,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
                 commands.entity(*entity).insert(AnimationToPlay {
                     clip: animation.clip.clone(),
                     looped: animation.looped,
-                    speed: animation.speed,
+                    speed,
                     gltf: gltf.clone(),
                 });
             }
@@ -703,9 +728,14 @@ pub(super) fn apply_startup_action(
         }
         Statement::SpritePlay(sprite_play) => {
             if let Some(entity) = entities_by_name.get(&sprite_play.target) {
-                commands
-                    .entity(*entity)
-                    .insert(sprite_animation_from_statement(sprite_play));
+                commands.entity(*entity).insert(resolved_sprite_animation(
+                    sprite_play,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                ));
                 write_runtime_diagnostic_line(format!(
                     "started sprite animation target={} frames={}..{} duration={:.3}s loop={}",
                     sprite_play.target,
@@ -730,7 +760,14 @@ pub(super) fn apply_startup_action(
             if let Some(entity) = entities_by_name.get(&animation_speed.target) {
                 commands
                     .entity(*entity)
-                    .insert(animation_speed_override(animation_speed));
+                    .insert(resolved_animation_speed_override(
+                        animation_speed,
+                        vars,
+                        None,
+                        guards_by_name,
+                        Some(transforms_by_name),
+                        None,
+                    ));
             }
             ActionSequenceResult::Completed
         }
@@ -738,7 +775,14 @@ pub(super) fn apply_startup_action(
             if let Some(entity) = entities_by_name.get(&character_mode.target) {
                 commands
                     .entity(*entity)
-                    .insert(PendingCharacterMode(character_mode.clone()));
+                    .insert(PendingCharacterMode(resolved_character_mode(
+                        character_mode,
+                        vars,
+                        None,
+                        guards_by_name,
+                        Some(transforms_by_name),
+                        None,
+                    )));
             }
             ActionSequenceResult::Completed
         }
@@ -774,8 +818,14 @@ pub(super) fn apply_startup_action(
             let Some(entity) = entities_by_name.get(&position.target) else {
                 return ActionSequenceResult::Completed;
             };
-            let Some(translation) = evaluate_position_statement(position, transforms_by_name)
-            else {
+            let Some(translation) = evaluate_position_value_runtime(
+                &position.position,
+                vars,
+                None,
+                guards_by_name,
+                transforms_by_name,
+                None,
+            ) else {
                 return ActionSequenceResult::Completed;
             };
             let mut transform = transforms_by_name
@@ -789,9 +839,31 @@ pub(super) fn apply_startup_action(
         }
         Statement::Turn(turn) => {
             if let Some(entity) = entities_by_name.get(&turn.target) {
+                let degrees = resolve_draw_value(
+                    Some(&turn.degrees_value),
+                    turn.degrees,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
+                let duration_seconds = resolve_duration_value(
+                    &turn.duration_value,
+                    turn.duration_seconds,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
                 commands
                     .entity(*entity)
-                    .insert(timed_turn_from_statement(turn));
+                    .insert(timed_turn_from_statement_resolved(
+                        turn,
+                        degrees,
+                        duration_seconds,
+                    ));
             }
             ActionSequenceResult::Completed
         }
@@ -800,10 +872,33 @@ pub(super) fn apply_startup_action(
                 entities_by_name.get(&movement.target),
                 transforms_by_name.get(&movement.target),
             ) {
+                let distance = resolve_draw_value(
+                    Some(&movement.distance_value),
+                    movement.distance,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
+                let duration_seconds = resolve_draw_value(
+                    Some(&movement.duration_value),
+                    movement.duration_seconds,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
                 append_timed_move(
                     commands,
                     *entity,
-                    timed_move_from_statement(movement, transform),
+                    timed_move_from_statement_resolved(
+                        movement,
+                        transform,
+                        distance,
+                        duration_seconds,
+                    ),
                 );
             }
             ActionSequenceResult::Completed
@@ -813,9 +908,15 @@ pub(super) fn apply_startup_action(
                 entities_by_name.get(&move_to.target),
                 transforms_by_name.get(&move_to.target),
             ) {
-                if let Some(timed_move) =
-                    timed_move_to_from_statement(move_to, transform, transforms_by_name)
-                {
+                if let Some(timed_move) = resolved_move_to(
+                    move_to,
+                    transform,
+                    vars,
+                    None,
+                    guards_by_name,
+                    transforms_by_name,
+                    None,
+                ) {
                     append_timed_move(commands, *entity, timed_move);
                 }
             }
@@ -826,9 +927,18 @@ pub(super) fn apply_startup_action(
                 entities_by_name.get(&jump.target),
                 transforms_by_name.get(&jump.target),
             ) {
+                let speed = resolve_draw_value(
+                    Some(&jump.speed_value),
+                    jump.speed,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
                 commands
                     .entity(*entity)
-                    .insert(timed_jump_from_statement(jump, transform));
+                    .insert(timed_jump_from_statement_resolved(jump, transform, speed));
             }
             ActionSequenceResult::Completed
         }
@@ -837,7 +947,16 @@ pub(super) fn apply_startup_action(
                 entities_by_name.get(&impulse.target),
                 transforms_by_name.get(&impulse.target),
             ) {
-                apply_physics_impulse(commands, *entity, transform, impulse);
+                let strength = resolve_draw_value(
+                    Some(&impulse.strength_value),
+                    impulse.strength,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
+                apply_physics_impulse_resolved(commands, *entity, transform, impulse, strength);
             }
             ActionSequenceResult::Completed
         }
@@ -1507,16 +1626,30 @@ pub(super) fn update_recurring_runs(
 
     let delta = time.delta_secs();
     let mut due_runs = Vec::new();
+    let mut transforms_by_name =
+        build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
+    let functions_by_name = collect_functions_by_name(program);
+    let guards_by_name = collect_guards_by_name(program);
     for (index, statement) in program.statements.iter().enumerate() {
         let Statement::RunEvery {
             name,
             args,
             interval_seconds,
+            interval_value,
         } = statement
         else {
             continue;
         };
-        let interval = interval_seconds.max(0.001);
+        let interval = resolve_duration_value(
+            interval_value,
+            *interval_seconds,
+            &vars,
+            None,
+            &guards_by_name,
+            Some(&transforms_by_name),
+            Some(&collider_bounds),
+        )
+        .max(0.001);
         let remaining = recurring_timers
             .remaining_by_statement
             .entry(index)
@@ -1538,11 +1671,6 @@ pub(super) fn update_recurring_runs(
     if due_runs.is_empty() {
         return;
     }
-
-    let mut transforms_by_name =
-        build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
-    let functions_by_name = collect_functions_by_name(program);
-    let guards_by_name = collect_guards_by_name(program);
 
     for (index, name, args) in due_runs {
         let mut queued_animations = HashMap::new();
@@ -1842,9 +1970,17 @@ pub(super) fn apply_action_sequence(
                     );
                     continue;
                 };
+                let resolved_args = resolve_call_args(
+                    args,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
                 if !function_guard_matches(
                     function,
-                    args,
+                    &resolved_args,
                     vars,
                     guards_by_name,
                     Some(transforms_by_name),
@@ -1855,7 +1991,7 @@ pub(super) fn apply_action_sequence(
                 }
 
                 let function_actions = actions_with_parent_continuation(
-                    instantiate_function_actions(function, args),
+                    instantiate_function_actions(function, &resolved_args),
                     parent_action_tail(actions, index),
                 );
                 let mut function_scope = scope.as_deref().cloned().unwrap_or_default();
@@ -2670,10 +2806,19 @@ pub(super) fn apply_key_action(
                     continue;
                 }
                 if let Some(gltf) = gltf {
+                    let speed = resolve_animation_speed_value(
+                        &animation.speed_value,
+                        animation.speed,
+                        vars,
+                        scope.as_deref(),
+                        guards_by_name,
+                        Some(transforms_by_name),
+                        Some(collider_bounds),
+                    );
                     commands.entity(entity).insert(AnimationToPlay {
                         clip: animation.clip.clone(),
                         looped: animation.looped,
-                        speed: animation.speed,
+                        speed,
                         gltf: gltf.gltf.clone(),
                     });
                     queued_animations.insert(entity, (animation.clip.clone(), animation.looped));
@@ -2687,9 +2832,14 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
-                commands
-                    .entity(entity)
-                    .insert(sprite_animation_from_statement(sprite_play));
+                commands.entity(entity).insert(resolved_sprite_animation(
+                    sprite_play,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                ));
                 write_runtime_diagnostic_line(format!(
                     "started sprite animation target={} frames={}..{} duration={:.3}s loop={}",
                     scene_entity.name,
@@ -2709,7 +2859,14 @@ pub(super) fn apply_key_action(
             {
                 commands
                     .entity(entity)
-                    .insert(animation_speed_override(animation_speed));
+                    .insert(resolved_animation_speed_override(
+                        animation_speed,
+                        vars,
+                        scope.as_deref(),
+                        guards_by_name,
+                        Some(transforms_by_name),
+                        Some(collider_bounds),
+                    ));
             }
             Statement::LookAt { target, subject }
                 if target_matches_alias(
@@ -2740,8 +2897,14 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
-                if let Some(translation) = evaluate_position_statement(position, transforms_by_name)
-                {
+                if let Some(translation) = evaluate_position_value_runtime(
+                    &position.position,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    transforms_by_name,
+                    Some(collider_bounds),
+                ) {
                     transform.translation = translation;
                     sync_live_transform(
                         transforms_by_name,
@@ -2760,8 +2923,27 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
+                let degrees = resolve_draw_value(
+                    Some(&turn.degrees_value),
+                    turn.degrees,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
+                let duration_seconds = resolve_duration_value(
+                    &turn.duration_value,
+                    turn.duration_seconds,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
                 if let Some(delta_seconds) = continuous_delta_seconds {
-                    let timed_turn = timed_turn_from_statement(turn);
+                    let timed_turn =
+                        timed_turn_from_statement_resolved(turn, degrees, duration_seconds);
                     transform.rotate_y(timed_turn.radians_per_second * delta_seconds);
                     sync_live_transform(
                         transforms_by_name,
@@ -2773,7 +2955,11 @@ pub(super) fn apply_key_action(
                 } else {
                     commands
                         .entity(entity)
-                        .insert(timed_turn_from_statement(turn));
+                        .insert(timed_turn_from_statement_resolved(
+                            turn,
+                            degrees,
+                            duration_seconds,
+                        ));
                 }
             }
             Statement::Move(movement)
@@ -2784,15 +2970,40 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
-                let timed_move = timed_move_from_statement(movement, &transform);
+                let distance = resolve_draw_value(
+                    Some(&movement.distance_value),
+                    movement.distance,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
+                let duration_seconds = resolve_draw_value(
+                    Some(&movement.duration_value),
+                    movement.duration_seconds,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
+                let timed_move = timed_move_from_statement_resolved(
+                    movement,
+                    &transform,
+                    distance,
+                    duration_seconds,
+                );
                 if let (Some(character_controller), Some(character_motor)) =
                     (character_controller, character_motor.as_deref_mut())
                 {
-                    set_character_move_intent(
+                    set_character_move_intent_resolved(
                         character_motor,
                         character_controller,
                         movement,
                         &transform,
+                        distance,
+                        duration_seconds,
                         continuous_delta_seconds,
                     );
                     if let Some(delta_seconds) = continuous_delta_seconds {
@@ -2830,9 +3041,15 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
-                if let Some(timed_move) =
-                    timed_move_to_from_statement(move_to, &transform, transforms_by_name)
-                {
+                if let Some(timed_move) = resolved_move_to(
+                    move_to,
+                    &transform,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    transforms_by_name,
+                    Some(collider_bounds),
+                ) {
                     if let Some(delta_seconds) = continuous_delta_seconds {
                         let delta = delta_seconds.min(timed_move.remaining_seconds);
                         transform.translation += timed_move.velocity * delta;
@@ -2856,15 +3073,24 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
+                let speed = resolve_draw_value(
+                    Some(&jump.speed_value),
+                    jump.speed,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
                 if let Some(character_motor) = character_motor.as_deref_mut() {
-                    set_character_jump_intent(character_motor, jump);
+                    set_character_jump_intent_resolved(character_motor, speed);
                     commands
                         .entity(entity)
-                        .insert(timed_jump_from_statement(jump, &transform));
+                        .insert(timed_jump_from_statement_resolved(jump, &transform, speed));
                 } else {
                     commands
                         .entity(entity)
-                        .insert(timed_jump_from_statement(jump, &transform));
+                        .insert(timed_jump_from_statement_resolved(jump, &transform, speed));
                 }
             }
             Statement::CharacterMode(character_mode)
@@ -2877,7 +3103,14 @@ pub(super) fn apply_key_action(
             {
                 commands
                     .entity(entity)
-                    .insert(PendingCharacterMode(character_mode.clone()));
+                    .insert(PendingCharacterMode(resolved_character_mode(
+                        character_mode,
+                        vars,
+                        scope.as_deref(),
+                        guards_by_name,
+                        Some(transforms_by_name),
+                        Some(collider_bounds),
+                    )));
             }
             Statement::ClearCharacterMode { target }
                 if target_matches_alias(
@@ -2911,7 +3144,16 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
-                apply_physics_impulse(commands, entity, &transform, impulse);
+                let strength = resolve_draw_value(
+                    Some(&impulse.strength_value),
+                    impulse.strength,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
+                apply_physics_impulse_resolved(commands, entity, &transform, impulse, strength);
             }
             Statement::PhysicsStop { target }
                 if target_matches_alias(
@@ -3073,9 +3315,17 @@ pub(super) fn apply_function_by_name(
         );
         return ActionSequenceResult::Completed;
     };
+    let resolved_args = resolve_call_args(
+        args,
+        vars,
+        scope.as_deref(),
+        guards_by_name,
+        Some(transforms_by_name),
+        Some(collider_bounds),
+    );
     if !function_guard_matches(
         function,
-        args,
+        &resolved_args,
         vars,
         guards_by_name,
         Some(transforms_by_name),
@@ -3085,7 +3335,7 @@ pub(super) fn apply_function_by_name(
         return ActionSequenceResult::Completed;
     }
 
-    let actions = instantiate_function_actions(function, args);
+    let actions = instantiate_function_actions(function, &resolved_args);
     let mut function_scope = scope.cloned().unwrap_or_default();
     apply_action_sequence(
         &actions,
@@ -3756,6 +4006,343 @@ fn resolve_draw_value(
         })
         .filter(|value| value.is_finite())
         .unwrap_or(default_value)
+}
+
+fn resolve_animation_speed_value(
+    value: &AssignmentValue,
+    fallback: f32,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> f32 {
+    resolve_draw_value(
+        Some(value),
+        fallback,
+        vars,
+        scope,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
+    .max(0.001)
+}
+
+fn resolve_frame_value(
+    value: &AssignmentValue,
+    fallback: usize,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> usize {
+    resolve_draw_value(
+        Some(value),
+        fallback as f32,
+        vars,
+        scope,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
+    .max(0.0)
+    .round() as usize
+}
+
+fn resolve_duration_value(
+    value: &AssignmentValue,
+    fallback: f32,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> f32 {
+    resolve_draw_value(
+        Some(value),
+        fallback,
+        vars,
+        scope,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
+}
+
+fn resolved_animation_speed_override(
+    animation_speed: &AnimationSpeedStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> AnimationSpeedOverride {
+    let speed = resolve_animation_speed_value(
+        &animation_speed.speed_value,
+        animation_speed.speed,
+        vars,
+        scope,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    );
+    let duration_seconds = animation_speed.duration_value.as_ref().map(|value| {
+        resolve_duration_value(
+            value,
+            animation_speed.duration_seconds.unwrap_or_default(),
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        )
+    });
+    animation_speed_override_resolved(speed, duration_seconds)
+}
+
+fn resolved_character_mode(
+    character_mode: &CharacterModeStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> CharacterModeStatement {
+    let mut character_mode = character_mode.clone();
+    if let Some(value) = character_mode.gravity_value.as_ref() {
+        character_mode.gravity = Some(resolve_draw_value(
+            Some(value),
+            character_mode.gravity.unwrap_or_default(),
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ));
+    }
+    character_mode
+}
+
+fn resolved_sprite_animation(
+    sprite_play: &SpritePlayStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> SceneMaxSpriteAnimation {
+    sprite_animation_from_statement_resolved(
+        sprite_play,
+        resolve_frame_value(
+            &sprite_play.from_frame_value,
+            sprite_play.from_frame,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+        resolve_frame_value(
+            &sprite_play.to_frame_value,
+            sprite_play.to_frame,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+        resolve_duration_value(
+            &sprite_play.duration_value,
+            sprite_play.duration_seconds,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+    )
+}
+
+fn resolved_move_to(
+    move_to: &MoveToStatement,
+    transform: &Transform,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<TimedMove> {
+    let destination = evaluate_move_to_destination_runtime(
+        &move_to.destination,
+        vars,
+        scope,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )?;
+    let duration = resolve_duration_value(
+        &move_to.duration_value,
+        move_to.duration_seconds,
+        vars,
+        scope,
+        guards_by_name,
+        Some(transforms_by_name),
+        collider_bounds,
+    )
+    .max(0.001);
+    Some(TimedMove {
+        remaining_seconds: duration,
+        duration_seconds: duration,
+        velocity: (destination - transform.translation) / duration,
+        final_translation: Some(destination),
+        loop_condition: None,
+    })
+}
+
+fn evaluate_move_to_destination_runtime(
+    destination: &MoveToDestination,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<Vec3> {
+    match destination {
+        MoveToDestination::Position(position) => evaluate_position_value_runtime(
+            position,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+        MoveToDestination::EntityForward {
+            entity,
+            distance,
+            distance_value,
+        } => {
+            let transform = transforms_by_name.get(entity)?;
+            let distance = resolve_draw_value(
+                Some(distance_value),
+                *distance,
+                vars,
+                scope,
+                guards_by_name,
+                Some(transforms_by_name),
+                collider_bounds,
+            );
+            Some(transform.translation + horizontal_forward(transform) * distance)
+        }
+    }
+}
+
+fn evaluate_position_value_runtime(
+    position: &PositionValue,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<Vec3> {
+    match position {
+        PositionValue::Entity(entity) => {
+            Some(lookup_subject_transform(entity, transforms_by_name)?.translation)
+        }
+        PositionValue::Coordinates(values) if values.len() == 3 => Some(Vec3::new(
+            evaluate_position_expr_runtime(
+                &values[0],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+            evaluate_position_expr_runtime(
+                &values[1],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+            evaluate_position_expr_runtime(
+                &values[2],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+        )),
+        _ => None,
+    }
+}
+
+fn evaluate_position_expr_runtime(
+    value: &PositionExpr,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<f32> {
+    match value {
+        PositionExpr::Number(value) => Some(*value),
+        PositionExpr::Value(value) => resolve_assignment_value_scoped_with_guards(
+            value,
+            vars,
+            scope,
+            guards_by_name,
+            Some(transforms_by_name),
+            collider_bounds,
+        ),
+        PositionExpr::EntityAxis {
+            entity,
+            axis,
+            offset,
+        } => {
+            let transform = transforms_by_name.get(entity)?;
+            let base = match axis {
+                SceneMaxAxis::X => transform.translation.x,
+                SceneMaxAxis::Y => transform.translation.y,
+                SceneMaxAxis::Z => transform.translation.z,
+            };
+            Some(base + offset)
+        }
+    }
+}
+
+pub(super) fn resolve_call_args(
+    args: &[String],
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Vec<String> {
+    args.iter()
+        .map(|arg| {
+            let trimmed = arg.trim();
+            if trimmed.starts_with('"') || trimmed.starts_with('\'') {
+                return arg.clone();
+            }
+            let Ok(Some(value)) = scenemax_parser::parse_runtime_value(trimmed) else {
+                return arg.clone();
+            };
+            resolve_assignment_value_scoped_with_guards(
+                &value,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
+            .map(format_scenemax_number)
+            .unwrap_or_else(|| arg.clone())
+        })
+        .collect()
 }
 
 pub(super) struct RuntimeVmSpatial<'a> {

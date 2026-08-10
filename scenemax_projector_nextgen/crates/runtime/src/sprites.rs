@@ -238,13 +238,28 @@ pub(super) fn sprite_frame_uvs(frame: usize, cols: usize, rows: usize) -> Vec<[f
     vec![[u0, v1], [u1, v1], [u1, v0], [u0, v0]]
 }
 
+#[cfg(test)]
 pub(super) fn sprite_animation_from_statement(
     sprite_play: &SpritePlayStatement,
 ) -> SceneMaxSpriteAnimation {
+    sprite_animation_from_statement_resolved(
+        sprite_play,
+        sprite_play.from_frame,
+        sprite_play.to_frame,
+        sprite_play.duration_seconds,
+    )
+}
+
+pub(super) fn sprite_animation_from_statement_resolved(
+    sprite_play: &SpritePlayStatement,
+    from_frame: usize,
+    to_frame: usize,
+    duration_seconds: f32,
+) -> SceneMaxSpriteAnimation {
     SceneMaxSpriteAnimation {
-        from_frame: sprite_play.from_frame,
-        to_frame: sprite_play.to_frame,
-        duration_seconds: sprite_play.duration_seconds.max(0.001),
+        from_frame,
+        to_frame,
+        duration_seconds: duration_seconds.max(0.001),
         elapsed_seconds: 0.0,
         looped: sprite_play.looped,
     }
