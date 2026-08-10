@@ -36,11 +36,12 @@ use bevy_tnua::{
 use bevy_tnua_avian3d::prelude::{TnuaAvian3dPlugin, TnuaAvian3dSensorShape};
 use scenemax_parser::{
     AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement,
-    CameraAttachStatement, CharacterJumpStatement, CharacterModeStatement, Condition,
-    EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage, LoggerStatement, MoveDirection,
-    MoveToDestination, ObjectPoolStatement, PoolReleaseStatement, PositionExpr, PositionStatement,
-    PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3,
-    SpritePlayStatement, Statement, UiEaseDirection, UiTargetPath,
+    CameraAttachStatement, CharacterJumpStatement, CharacterModeStatement, CinematicLookAt,
+    CinematicPlayStatement, Condition, EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage,
+    LoggerStatement, MoveDirection, MoveToDestination, ObjectPoolStatement, PoolReleaseStatement,
+    PositionExpr, PositionStatement, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
+    SceneMaxCollisionShape, SceneMaxVec3, SpritePlayStatement, Statement, UiEaseDirection,
+    UiTargetPath,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
@@ -216,6 +217,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_timed_turns,
                 update_timed_moves,
                 update_timed_jumps,
+                update_cinematic_camera,
                 update_fighting_camera,
                 update_third_person_camera,
                 update_attached_camera,
@@ -334,6 +336,9 @@ struct SceneMaxCameraSystem {
     third_person: HashMap<String, ThirdPersonCameraRuntime>,
     selected: Option<String>,
     attached: Option<CameraAttachmentRuntime>,
+    cinematic_vars: HashMap<String, CinematicCameraRuntimeRef>,
+    cinematic_rigs: HashMap<String, RuntimeCinematicRig>,
+    active_cinematic: Option<ActiveCinematicCamera>,
 }
 
 #[derive(Debug, Resource, Default)]
@@ -627,6 +632,68 @@ struct ThirdPersonCameraRuntime {
 struct CameraAttachmentRuntime {
     target: String,
     offset: Vec3,
+}
+
+#[derive(Debug, Clone)]
+struct CinematicCameraRuntimeRef {
+    rig_id: String,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeCinematicRig {
+    id: String,
+    name: String,
+    position: Vec3,
+    rotation: Quat,
+    scale: Vec3,
+    target_entity_name: String,
+    target_offset: Vec3,
+    ease_in: String,
+    ease_out: String,
+    tracks_by_id: HashMap<String, RuntimeCinematicTrack>,
+    segments: Vec<RuntimeCinematicSegment>,
+    has_relative_target_placement: bool,
+    relative_rig_position_to_target: Vec3,
+    relative_rig_rotation_to_target: Quat,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeCinematicTrack {
+    id: String,
+    local_position: Vec3,
+    local_rotation: Quat,
+    local_scale: Vec3,
+    radius_x: f32,
+    radius_z: f32,
+    anchor_count: i32,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeCinematicSegment {
+    track_id: String,
+    start_anchor: i32,
+    end_anchor: i32,
+}
+
+#[derive(Debug, Clone)]
+struct ActiveCinematicCamera {
+    rig: RuntimeCinematicRig,
+    playback: Vec<CinematicPlaybackSegment>,
+    elapsed_seconds: f32,
+    duration_seconds: f32,
+    look_at: Option<CinematicLookAt>,
+    reverse: bool,
+    locked_target_placement_rotation: Option<Quat>,
+}
+
+#[derive(Debug, Clone)]
+struct CinematicPlaybackSegment {
+    track: RuntimeCinematicTrack,
+    start_anchor: i32,
+    anchor_distance: f32,
+    duration_seconds: f32,
+    first_segment: bool,
+    last_segment: bool,
 }
 
 #[derive(Debug, Component)]
@@ -1758,6 +1825,38 @@ mod tests {
         assert_eq!(movement.duration_seconds, 0.5);
         assert!((movement.velocity.length() - 0.4).abs() < 0.001);
         assert!(movement.loop_condition.is_some());
+    }
+
+    #[test]
+    fn continuous_character_move_matches_java_walk_vector_speed() {
+        let movement = scenemax_parser::MoveStatement {
+            target: "player1".to_owned(),
+            direction: MoveDirection::Forward,
+            distance: 0.2,
+            duration_seconds: 0.5,
+            loop_condition: None,
+            async_run: false,
+        };
+
+        assert!((directional_move_speed(&movement) - 0.4).abs() < 0.001);
+        assert!(
+            (character_directional_move_speed(&movement, Some(1.0 / 60.0)) - 12.0).abs() < 0.001
+        );
+    }
+
+    #[test]
+    fn continuous_when_movement_does_not_use_blocking_timed_path() {
+        let movement = Statement::Move(scenemax_parser::MoveStatement {
+            target: "player1".to_owned(),
+            direction: MoveDirection::Forward,
+            distance: 0.2,
+            duration_seconds: 0.5,
+            loop_condition: None,
+            async_run: false,
+        });
+
+        assert_eq!(blocking_timed_action_seconds(&movement), Some(0.5));
+        assert!(continuous_timed_action_applies_per_frame(&movement));
     }
 
     #[test]

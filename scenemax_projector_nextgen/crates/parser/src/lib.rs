@@ -32,6 +32,7 @@ pub enum Statement {
     ObjectPool(ObjectPoolStatement),
     Animate(AnimationStatement),
     SpritePlay(SpritePlayStatement),
+    CinematicPlay(CinematicPlayStatement),
     AnimationSpeed(AnimationSpeedStatement),
     Visibility {
         target: String,
@@ -204,6 +205,21 @@ pub struct SpritePlayStatement {
     pub to_frame: usize,
     pub duration_seconds: f32,
     pub looped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CinematicPlayStatement {
+    pub target: String,
+    pub look_at: Option<CinematicLookAt>,
+    pub duration_seconds: f32,
+    pub reverse: bool,
+    pub async_run: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CinematicLookAt {
+    Entity(String),
+    RelativePosition(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1796,14 +1812,18 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(Statement::PhysicsThrowAt(throw_at));
     }
 
+    if let Some(sprite_play) = parse_sprite_play(line)? {
+        return Ok(Statement::SpritePlay(sprite_play));
+    }
+
+    if let Some(cinematic_play) = parse_cinematic_play(line)? {
+        return Ok(Statement::CinematicPlay(cinematic_play));
+    }
+
     if is_runtime_noop_command(line) {
         return Ok(Statement::NoOp {
             text: line.to_owned(),
         });
-    }
-
-    if let Some(sprite_play) = parse_sprite_play(line)? {
-        return Ok(Statement::SpritePlay(sprite_play));
     }
 
     if is_unsupported_dotted_runtime_command(line) {
@@ -3361,6 +3381,95 @@ fn parse_sprite_play(line: &str) -> Result<Option<SpritePlayStatement>, ParseErr
     }))
 }
 
+fn parse_cinematic_play(line: &str) -> Result<Option<CinematicPlayStatement>, ParseError> {
+    let Some((target, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
+    let rest = rest.trim();
+    let lower = rest.to_ascii_lowercase();
+    if !lower.starts_with("play") || lower.contains("frame") {
+        return Ok(None);
+    }
+
+    let options_text = rest
+        .split_once(':')
+        .map(|(_, options)| options.trim())
+        .or_else(|| {
+            split_once_case_insensitive(rest, " having ").map(|(_, options)| options.trim())
+        })
+        .unwrap_or("");
+    if options_text.is_empty() {
+        return Ok(None);
+    }
+
+    let mut look_at = None;
+    let mut duration_seconds = 10.0;
+    let mut reverse = false;
+    let mut has_cinematic_option = false;
+    for option in split_cinematic_play_options(options_text) {
+        let option = option.trim();
+        if option.is_empty() {
+            continue;
+        }
+        if option.eq_ignore_ascii_case("reverse") {
+            reverse = true;
+            has_cinematic_option = true;
+            continue;
+        }
+        if let Some(value) = option_value_after_keyword(option, "duration") {
+            let raw_duration = value.split_whitespace().next().unwrap_or(value);
+            duration_seconds = raw_duration
+                .parse::<f32>()
+                .map_err(|_| ParseError::InvalidNumber(raw_duration.to_owned()))?
+                .max(0.1);
+            has_cinematic_option = true;
+            continue;
+        }
+        if let Some(value) = option_value_after_keyword(option, "target") {
+            let value = value.trim();
+            if value.starts_with('(') && value.ends_with(')') {
+                look_at = Some(CinematicLookAt::RelativePosition(
+                    value[1..value.len() - 1].trim().to_owned(),
+                ));
+            } else {
+                let entity = normalize_entity_reference(value);
+                if !entity.is_empty() {
+                    look_at = Some(CinematicLookAt::Entity(entity));
+                }
+            }
+        }
+    }
+    if !has_cinematic_option {
+        return Ok(None);
+    }
+
+    Ok(Some(CinematicPlayStatement {
+        target,
+        look_at,
+        duration_seconds,
+        reverse,
+        async_run: contains_keyword(rest, "async"),
+    }))
+}
+
+fn split_cinematic_play_options(text: &str) -> Vec<&str> {
+    split_top_level_comma(text)
+        .into_iter()
+        .flat_map(|part| {
+            split_once_case_insensitive(part, " and ")
+                .map_or(vec![part], |(left, right)| vec![left, right])
+        })
+        .collect()
+}
+
+fn option_value_after_keyword<'a>(text: &'a str, keyword: &str) -> Option<&'a str> {
+    if !starts_with_keyword(text, keyword) {
+        return None;
+    }
+    let rest = text[keyword.len()..].trim_start();
+    Some(rest.strip_prefix('=').unwrap_or(rest).trim())
+}
+
 fn parse_animation_speed(line: &str) -> Result<Option<AnimationSpeedStatement>, ParseError> {
     let Some((target, rest)) = split_dot_command_rest(line) else {
         return Ok(None);
@@ -3915,6 +4024,63 @@ mod tests {
                     looped: true,
                 }),
             ]
+        );
+    }
+
+    #[test]
+    fn parses_cinematic_camera_play_options() {
+        let program = parse_program(
+            "cam=>cinematic.camera.cinematic1\ncam.play : target axe, duration 1.5, reverse",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements[1],
+            Statement::CinematicPlay(CinematicPlayStatement {
+                target: "cam".to_owned(),
+                look_at: Some(CinematicLookAt::Entity("axe".to_owned())),
+                duration_seconds: 1.5,
+                reverse: true,
+                async_run: false,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_cinematic_camera_relative_target() {
+        let program =
+            parse_program("cincam1.play : target (player1 forward 1 up 3), duration 2.8").unwrap();
+
+        assert_eq!(
+            program.statements[0],
+            Statement::CinematicPlay(CinematicPlayStatement {
+                target: "cincam1".to_owned(),
+                look_at: Some(CinematicLookAt::RelativePosition(
+                    "player1 forward 1 up 3".to_owned()
+                )),
+                duration_seconds: 2.8,
+                reverse: false,
+                async_run: false,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_cinematic_camera_async_suffix_after_duration() {
+        let program =
+            parse_program("intro_camera.play : target (model_1 up 30), duration 10 Async").unwrap();
+
+        assert_eq!(
+            program.statements[0],
+            Statement::CinematicPlay(CinematicPlayStatement {
+                target: "intro_camera".to_owned(),
+                look_at: Some(CinematicLookAt::RelativePosition(
+                    "model_1 up 30".to_owned()
+                )),
+                duration_seconds: 10.0,
+                reverse: false,
+                async_run: true,
+            })
         );
     }
 
@@ -6086,9 +6252,13 @@ mod tests {
                     Statement::NoOp {
                         text: "fight_cam.apply hit_fx : duration 0.35".to_owned(),
                     },
-                    Statement::NoOp {
-                        text: "axe_throw_cam.play : target axe, duration 1.5".to_owned(),
-                    },
+                    Statement::CinematicPlay(CinematicPlayStatement {
+                        target: "axe_throw_cam".to_owned(),
+                        look_at: Some(CinematicLookAt::Entity("axe".to_owned())),
+                        duration_seconds: 1.5,
+                        reverse: false,
+                        async_run: false,
+                    }),
                     Statement::CameraChase {
                         target: "player1".to_owned(),
                     },
