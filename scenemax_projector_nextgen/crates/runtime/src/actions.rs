@@ -461,6 +461,17 @@ pub(super) fn apply_startup_action(
                 .push(SceneMaxUiAction::Load { name: name.clone() });
             ActionSequenceResult::Completed
         }
+        Statement::ChannelDraw(draw) => {
+            ui_queue.actions.push(scenemax_draw_action_from_statement(
+                draw,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            ));
+            ActionSequenceResult::Completed
+        }
         Statement::UiShowHide(show_hide) => {
             ui_queue.actions.push(SceneMaxUiAction::ShowHide {
                 target: show_hide.target.clone(),
@@ -2514,6 +2525,19 @@ pub(super) fn apply_key_action(
         }
         return ActionSequenceResult::Completed;
     }
+    if let Statement::ChannelDraw(draw) = action {
+        if let Some(ui_queue) = ui_queue.as_deref_mut() {
+            ui_queue.actions.push(scenemax_draw_action_from_statement(
+                draw,
+                vars,
+                scope.as_deref(),
+                guards_by_name,
+                Some(transforms_by_name),
+                Some(collider_bounds),
+            ));
+        }
+        return ActionSequenceResult::Completed;
+    }
     if let Some(ui_action) = scenemax_ui_action_from_statement(action)
         && let Some(ui_queue) = ui_queue.as_deref_mut()
     {
@@ -3639,6 +3663,99 @@ pub(super) fn apply_logger_statement(
         .unwrap_or_else(|| "null".to_owned()),
     };
     write_runtime_log_line(logger.level, &message);
+}
+
+pub(super) fn scenemax_draw_action_from_statement(
+    draw: &ChannelDrawStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> SceneMaxUiAction {
+    SceneMaxUiAction::Draw(SceneMaxDrawAction {
+        channel: draw.channel.clone(),
+        resource: draw.resource.clone(),
+        clear: draw.clear,
+        pos_x: resolve_draw_value(
+            draw.pos_x.as_ref(),
+            0.0,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+        pos_y: resolve_draw_value(
+            draw.pos_y.as_ref(),
+            0.0,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+        width: draw.width.as_ref().map(|value| {
+            resolve_draw_value(
+                Some(value),
+                0.0,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
+            .max(0.0)
+        }),
+        height: draw.height.as_ref().map(|value| {
+            resolve_draw_value(
+                Some(value),
+                0.0,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
+            .max(0.0)
+        }),
+        frame: resolve_draw_value(
+            draw.frame.as_ref(),
+            0.0,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        )
+        .round()
+        .max(0.0) as usize,
+        stretch: draw.stretch,
+    })
+}
+
+fn resolve_draw_value(
+    value: Option<&AssignmentValue>,
+    default_value: f32,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> f32 {
+    value
+        .and_then(|value| {
+            resolve_assignment_value_scoped_with_guards(
+                value,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
+        })
+        .filter(|value| value.is_finite())
+        .unwrap_or(default_value)
 }
 
 pub(super) struct RuntimeVmSpatial<'a> {

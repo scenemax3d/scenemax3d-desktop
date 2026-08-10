@@ -415,7 +415,10 @@ pub(super) fn has_ui_runtime_content(program: &Program) -> bool {
 }
 
 pub(super) fn statement_has_ui_runtime_content(statement: &Statement) -> bool {
-    if matches!(statement, Statement::UiSetProperty(_)) {
+    if matches!(
+        statement,
+        Statement::UiSetProperty(_) | Statement::ChannelDraw(_)
+    ) {
         return true;
     }
     if scenemax_ui_action_from_statement(statement).is_some() {

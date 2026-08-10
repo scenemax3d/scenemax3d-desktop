@@ -244,6 +244,34 @@ pub fn substitute_statement(
         Statement::UiLoad { name } => Statement::UiLoad {
             name: substitute_reference(name, bindings),
         },
+        Statement::ChannelDraw(draw) => {
+            Statement::ChannelDraw(scenemax_parser::ChannelDrawStatement {
+                channel: substitute_path(&draw.channel, bindings),
+                resource: substitute_reference(&draw.resource, bindings),
+                clear: draw.clear,
+                pos_x: draw
+                    .pos_x
+                    .as_ref()
+                    .map(|value| substitute_assignment_value(value, bindings)),
+                pos_y: draw
+                    .pos_y
+                    .as_ref()
+                    .map(|value| substitute_assignment_value(value, bindings)),
+                width: draw
+                    .width
+                    .as_ref()
+                    .map(|value| substitute_assignment_value(value, bindings)),
+                height: draw
+                    .height
+                    .as_ref()
+                    .map(|value| substitute_assignment_value(value, bindings)),
+                frame: draw
+                    .frame
+                    .as_ref()
+                    .map(|value| substitute_assignment_value(value, bindings)),
+                stretch: draw.stretch,
+            })
+        }
         Statement::UiShowHide(show_hide) => {
             Statement::UiShowHide(scenemax_parser::UiShowHideStatement {
                 target: substitute_ui_target_path(&show_hide.target, bindings),

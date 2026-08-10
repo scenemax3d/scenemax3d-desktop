@@ -139,6 +139,7 @@ pub enum Statement {
     AddCode {
         path: String,
     },
+    ChannelDraw(ChannelDrawStatement),
     UiLoad {
         name: String,
     },
@@ -206,6 +207,19 @@ pub struct SpritePlayStatement {
     pub to_frame: usize,
     pub duration_seconds: f32,
     pub looped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChannelDrawStatement {
+    pub channel: String,
+    pub resource: String,
+    pub clear: bool,
+    pub pos_x: Option<AssignmentValue>,
+    pub pos_y: Option<AssignmentValue>,
+    pub width: Option<AssignmentValue>,
+    pub height: Option<AssignmentValue>,
+    pub frame: Option<AssignmentValue>,
+    pub stretch: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1835,6 +1849,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(Statement::SpritePlay(sprite_play));
     }
 
+    if let Some(draw) = parse_channel_draw(line)? {
+        return Ok(Statement::ChannelDraw(draw));
+    }
+
     if let Some(cinematic_play) = parse_cinematic_play(line)? {
         return Ok(Statement::CinematicPlay(cinematic_play));
     }
@@ -3403,6 +3421,155 @@ fn parse_sprite_play(line: &str) -> Result<Option<SpritePlayStatement>, ParseErr
     }))
 }
 
+fn parse_channel_draw(line: &str) -> Result<Option<ChannelDrawStatement>, ParseError> {
+    let Some((channel, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
+    let rest = rest.trim();
+    if !starts_with_keyword(rest, "draw") {
+        return Ok(None);
+    }
+    let after_draw = rest["draw".len()..].trim();
+    if after_draw.is_empty() {
+        return Ok(None);
+    }
+    let (resource_text, attrs_text) = split_channel_draw_resource_and_attrs(after_draw);
+    let resource = resource_text.trim();
+    if !is_variable_name(resource) && !resource.eq_ignore_ascii_case("clear") {
+        return Ok(None);
+    }
+
+    let mut statement = ChannelDrawStatement {
+        channel,
+        resource: resource.to_owned(),
+        clear: resource.eq_ignore_ascii_case("clear"),
+        pos_x: None,
+        pos_y: None,
+        width: None,
+        height: None,
+        frame: None,
+        stretch: false,
+    };
+    parse_channel_draw_attrs(attrs_text, &mut statement)?;
+    Ok(Some(statement))
+}
+
+fn split_channel_draw_resource_and_attrs(text: &str) -> (&str, &str) {
+    let mut resource_end = text.len();
+    if let Some(index) = text.find(':') {
+        resource_end = resource_end.min(index);
+    }
+    if let Some((before, _)) = split_once_case_insensitive(text, " having ") {
+        resource_end = resource_end.min(before.len());
+    }
+    let resource = text[..resource_end].trim();
+    let attrs = text[resource_end..]
+        .trim()
+        .trim_start_matches(':')
+        .trim()
+        .strip_prefix("having ")
+        .or_else(|| text[resource_end..].trim().strip_prefix("Having "))
+        .unwrap_or_else(|| text[resource_end..].trim())
+        .trim();
+    (resource, attrs)
+}
+
+fn parse_channel_draw_attrs(
+    attrs_text: &str,
+    statement: &mut ChannelDrawStatement,
+) -> Result<(), ParseError> {
+    if attrs_text.is_empty() {
+        return Ok(());
+    }
+    for attr in split_channel_draw_attrs(attrs_text) {
+        let attr = attr.trim().trim_start_matches(':').trim();
+        if attr.is_empty() {
+            continue;
+        }
+        if attr.eq_ignore_ascii_case("stretch") {
+            statement.stretch = true;
+            continue;
+        }
+        if starts_with_keyword(attr, "stretch") {
+            statement.stretch = true;
+            continue;
+        }
+        if starts_with_keyword(attr, "frames") || starts_with_keyword(attr, "frame") {
+            let value = attr
+                .split_once(char::is_whitespace)
+                .map(|(_, value)| value.trim())
+                .unwrap_or_default();
+            if let Some(frame) = parse_assignment_value(clean_assignment_value(value))? {
+                statement.frame = Some(frame);
+            }
+            continue;
+        }
+        if starts_with_keyword(attr, "pos") {
+            if let Some((x, y)) = parse_channel_draw_pair(attr, "pos")? {
+                statement.pos_x = Some(x);
+                statement.pos_y = Some(y);
+            }
+            continue;
+        }
+        if starts_with_keyword(attr, "size") {
+            if let Some((width, height)) = parse_channel_draw_pair(attr, "size")? {
+                statement.width = Some(width);
+                statement.height = Some(height);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn split_channel_draw_attrs(text: &str) -> Vec<&str> {
+    split_top_level_comma(text)
+        .into_iter()
+        .flat_map(split_top_level_and)
+        .collect()
+}
+
+fn split_top_level_and(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut remaining = text.trim();
+    while let Some((left, right)) = split_once_case_insensitive(remaining, " and ") {
+        let left = left.trim();
+        if !left.is_empty() {
+            parts.push(left);
+        }
+        remaining = right.trim();
+    }
+    if !remaining.is_empty() {
+        parts.push(remaining);
+    }
+    parts
+}
+
+fn parse_channel_draw_pair(
+    attr: &str,
+    keyword: &str,
+) -> Result<Option<(AssignmentValue, AssignmentValue)>, ParseError> {
+    let Some(open_index) = attr.find('(') else {
+        return Ok(None);
+    };
+    if !attr[..open_index].trim().eq_ignore_ascii_case(keyword) {
+        return Ok(None);
+    }
+    let Some(close_index) = attr.rfind(')') else {
+        return Ok(None);
+    };
+    let parts = split_top_level_comma(&attr[open_index + 1..close_index]);
+    let (Some(x), Some(y)) = (parts.first(), parts.get(1)) else {
+        return Ok(None);
+    };
+    let Some(x) = parse_assignment_value(clean_assignment_value(x))? else {
+        return Ok(None);
+    };
+    let Some(y) = parse_assignment_value(clean_assignment_value(y))? else {
+        return Ok(None);
+    };
+    Ok(Some((x, y)))
+}
+
 fn parse_cinematic_play(line: &str) -> Result<Option<CinematicPlayStatement>, ParseError> {
     let Some((target, rest)) = split_dot_command_rest(line) else {
         return Ok(None);
@@ -3530,10 +3697,7 @@ fn is_unsupported_dotted_runtime_command(line: &str) -> bool {
         return false;
     };
     let lower = rest.trim().to_ascii_lowercase();
-    lower == "draw clear"
-        || lower.starts_with("draw clear ")
-        || lower.starts_with("draw ")
-        || lower.starts_with("switch ")
+    lower.starts_with("switch ")
         || lower.starts_with("play ")
         || lower.starts_with("stop ")
         || lower.starts_with("clear ")
@@ -4123,13 +4287,57 @@ mod tests {
     }
 
     #[test]
-    fn leaves_draw_clear_out_of_animation_parser() {
+    fn parses_channel_draw_clear_out_of_animation_parser() {
         let program = parse_program("intro.draw clear").unwrap();
 
         assert!(matches!(
             program.statements.as_slice(),
-            [Statement::Unsupported { text }] if text == "intro.draw clear"
+            [Statement::ChannelDraw(ChannelDrawStatement { channel, clear, .. })]
+                if channel == "intro" && *clear
         ));
+    }
+
+    #[test]
+    fn parses_channel_draw_stretched_splash_screen() {
+        let program = parse_program("intro.draw intro_page: stretch").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::ChannelDraw(ChannelDrawStatement {
+                channel: "intro".to_owned(),
+                resource: "intro_page".to_owned(),
+                clear: false,
+                pos_x: None,
+                pos_y: None,
+                width: None,
+                height: None,
+                frame: None,
+                stretch: true,
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_channel_draw_frame_position_and_size() {
+        let program = parse_program(
+            "intro.draw intro_page having pos (10, 20) and frames frame_index and size (320, 180)",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::ChannelDraw(ChannelDrawStatement {
+                channel: "intro".to_owned(),
+                resource: "intro_page".to_owned(),
+                clear: false,
+                pos_x: Some(AssignmentValue::Number(10.0)),
+                pos_y: Some(AssignmentValue::Number(20.0)),
+                width: Some(AssignmentValue::Number(320.0)),
+                height: Some(AssignmentValue::Number(180.0)),
+                frame: Some(AssignmentValue::Symbol("frame_index".to_owned())),
+                stretch: false,
+            })]
+        );
     }
 
     #[test]

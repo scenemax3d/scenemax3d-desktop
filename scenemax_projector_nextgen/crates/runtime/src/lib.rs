@@ -36,12 +36,12 @@ use bevy_tnua::{
 use bevy_tnua_avian3d::prelude::{TnuaAvian3dPlugin, TnuaAvian3dSensorShape};
 use scenemax_parser::{
     AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement,
-    CameraAttachStatement, CharacterJumpStatement, CharacterModeStatement, CinematicLookAt,
-    CinematicPlayStatement, Condition, EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage,
-    LoggerStatement, MoveDirection, MoveToDestination, ObjectPoolStatement, PoolReleaseStatement,
-    PositionExpr, PositionStatement, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
-    SceneMaxCollisionShape, SceneMaxVec3, SpritePlayStatement, Statement, UiEaseDirection,
-    UiTargetPath,
+    CameraAttachStatement, ChannelDrawStatement, CharacterJumpStatement, CharacterModeStatement,
+    CinematicLookAt, CinematicPlayStatement, Condition, EntityOptions, KeyTrigger, LoggerLevel,
+    LoggerMessage, LoggerStatement, MoveDirection, MoveToDestination, ObjectPoolStatement,
+    PoolReleaseStatement, PositionExpr, PositionStatement, PositionValue, Program, SceneMaxAxis,
+    SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3, SpritePlayStatement, Statement,
+    UiEaseDirection, UiTargetPath,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
@@ -455,6 +455,7 @@ struct SceneMaxUiRuntime {
     font_index: HashMap<String, SceneMaxBitmapFontAsset>,
     font_index_root: Option<PathBuf>,
     bitmap_fonts: HashMap<String, SceneMaxBitmapFont>,
+    draw_channels: HashMap<String, Entity>,
 }
 
 #[derive(Debug, Default)]
@@ -501,6 +502,20 @@ enum SceneMaxUiAction {
         property: String,
         value: String,
     },
+    Draw(SceneMaxDrawAction),
+}
+
+#[derive(Debug, Clone)]
+struct SceneMaxDrawAction {
+    channel: String,
+    resource: String,
+    clear: bool,
+    pos_x: f32,
+    pos_y: f32,
+    width: Option<f32>,
+    height: Option<f32>,
+    frame: usize,
+    stretch: bool,
 }
 
 #[allow(dead_code)]
@@ -510,6 +525,9 @@ struct SceneMaxUiWidget {
     layer: String,
     widget_path: Vec<String>,
 }
+
+#[derive(Debug, Clone, Component)]
+struct SceneMaxDrawChannel;
 
 #[derive(Debug, Clone, Copy, Component)]
 struct SceneMaxUiSpriteSheet {
