@@ -509,6 +509,12 @@ pub(super) fn setup_scenemax_program(
     collider_bounds.clear();
     apply_initial_assignments(program, &mut vars);
     apply_camera_systems(program, &mut camera_system);
+    load_cinematic_rigs(
+        program,
+        &mut camera_system,
+        context.script_root.as_deref(),
+        context.asset_root.as_deref(),
+    );
     spawn_scenemax_program(
         &mut commands,
         &asset_server,

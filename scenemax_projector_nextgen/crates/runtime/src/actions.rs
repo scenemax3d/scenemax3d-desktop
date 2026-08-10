@@ -709,6 +709,10 @@ pub(super) fn apply_startup_action(
             }
             ActionSequenceResult::Completed
         }
+        Statement::CinematicPlay(play) => {
+            start_cinematic_camera(play, transforms_by_name, object_pools, None, camera_system);
+            ActionSequenceResult::Completed
+        }
         Statement::AnimationSpeed(animation_speed) => {
             if let Some(entity) = entities_by_name.get(&animation_speed.target) {
                 commands
@@ -911,6 +915,13 @@ pub(super) fn switch_scene_on_key(
             collider_bounds.clear();
             apply_initial_assignments(&program, &mut vars);
             apply_camera_systems(&program, &mut camera_system);
+            let scene_script_root = scene_main.parent().map(Path::to_path_buf);
+            load_cinematic_rigs(
+                &program,
+                &mut camera_system,
+                scene_script_root.as_deref(),
+                context.asset_root.as_deref(),
+            );
             let mut scene_ui_queue = SceneMaxUiActionQueue::default();
             spawn_scenemax_program(
                 &mut commands,
@@ -929,7 +940,7 @@ pub(super) fn switch_scene_on_key(
                 &mut character_configs,
             );
             startup_program.0 = Some(program);
-            startup_program.1 = scene_main.parent().map(Path::to_path_buf);
+            startup_program.1 = scene_script_root;
             tracing::info!(scene, path = %scene_main.display(), "switched SceneMax scene");
             write_runtime_diagnostic_line(format!(
                 "switched SceneMax scene {scene} from {}",
@@ -1515,6 +1526,7 @@ pub(super) fn update_recurring_runs(
 
 pub(super) fn update_delayed_actions(
     time: Res<Time>,
+    keyboard: Res<ButtonInput<KeyCode>>,
     startup_program: Res<SceneMaxStartupProgram>,
     runtime_assets: Res<SceneMaxRuntimeAssets>,
     animation_durations: Res<SceneMaxAnimationDurations>,
@@ -1570,6 +1582,15 @@ pub(super) fn update_delayed_actions(
     let guards_by_name = collect_guards_by_name(program);
 
     for mut delayed in ready_actions {
+        if let Some(Statement::WaitForKey { key }) = delayed.actions.first() {
+            if is_pressed_key(key, &keyboard) {
+                delayed.actions.remove(0);
+            } else {
+                delayed.remaining_seconds = LOOP_CONTINUE_DELAY_SECONDS;
+                delayed_actions.actions.push(delayed);
+                continue;
+            }
+        }
         if delayed.actions.is_empty() {
             if let Some(owner) = delayed.owner {
                 active_controllers.running.remove(&owner);
@@ -1725,6 +1746,18 @@ pub(super) fn apply_action_sequence(
                     }
                     return ActionSequenceResult::Completed;
                 }
+            }
+            Statement::WaitForKey { .. } => {
+                if enqueue_delayed_actions(
+                    delayed_actions.as_deref_mut(),
+                    LOOP_CONTINUE_DELAY_SECONDS,
+                    actions[index..].to_vec(),
+                    owner.clone(),
+                    scope.as_deref().cloned(),
+                ) {
+                    return ActionSequenceResult::Suspended;
+                }
+                return ActionSequenceResult::Completed;
             }
             Statement::AnimationSpeed(animation_speed)
                 if animation_speed.condition.is_some()
@@ -2005,6 +2038,31 @@ pub(super) fn apply_action_sequence(
                 }
             }
             action if blocking_timed_action_seconds(action).is_some() => {
+                if continuous_delta_seconds.is_some()
+                    && continuous_timed_action_applies_per_frame(action)
+                {
+                    apply_key_action(
+                        action,
+                        transforms_by_name,
+                        vars,
+                        object_pools,
+                        camera_system.as_deref_mut(),
+                        functions_by_name,
+                        guards_by_name,
+                        queued_animations,
+                        runtime_assets,
+                        animation_durations,
+                        collider_bounds,
+                        delayed_actions.as_deref_mut(),
+                        ui_queue.as_deref_mut(),
+                        owner.clone(),
+                        scope.as_deref_mut(),
+                        continuous_delta_seconds,
+                        commands,
+                        scene_entities,
+                    );
+                    continue;
+                }
                 let seconds = blocking_timed_action_seconds(action).unwrap_or_default();
                 apply_key_action(
                     action,
@@ -2101,6 +2159,13 @@ pub(super) fn apply_action_sequence(
         }
     }
     ActionSequenceResult::Completed
+}
+
+pub(super) fn continuous_timed_action_applies_per_frame(action: &Statement) -> bool {
+    matches!(
+        action,
+        Statement::Move(_) | Statement::MoveTo(_) | Statement::Turn(_)
+    )
 }
 
 pub(super) fn apply_runtime_model_decl(
@@ -2239,6 +2304,9 @@ pub(super) fn apply_key_action(
         options,
     } = action
     {
+        if cinematic_resource_id(resource).is_some() {
+            return ActionSequenceResult::Completed;
+        }
         apply_runtime_model_decl(
             name,
             resource,
@@ -2249,6 +2317,18 @@ pub(super) fn apply_key_action(
             commands,
             scene_entities,
         );
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::CinematicPlay(play) = action {
+        if let Some(camera_system) = camera_system.as_deref_mut() {
+            start_cinematic_camera(
+                play,
+                transforms_by_name,
+                object_pools,
+                scope.as_deref(),
+                camera_system,
+            );
+        }
         return ActionSequenceResult::Completed;
     }
     if let Statement::Assignment(assignment) | Statement::LocalAssignment(assignment) = action {
@@ -2993,7 +3073,7 @@ pub(super) fn apply_transform_aliases(
     }
 }
 
-fn build_action_transform_map(
+pub(super) fn build_action_transform_map(
     program: &Program,
     object_pools: &SceneMaxObjectPools,
     scene_entities: Query<(Entity, &SceneMaxEntity, &Transform)>,
@@ -3055,6 +3135,11 @@ fn collect_bone_alias_targets_from_statements(
             }
             Statement::LookAt { subject, .. } => {
                 collect_bone_alias_target_from_subject(subject, seen, targets);
+            }
+            Statement::CinematicPlay(play) => {
+                if let Some(CinematicLookAt::Entity(subject)) = &play.look_at {
+                    collect_bone_alias_target_from_subject(subject, seen, targets);
+                }
             }
             Statement::KeyEvent(event) => {
                 collect_bone_alias_targets_from_statements(&event.actions, seen, targets);

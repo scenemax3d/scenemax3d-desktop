@@ -82,6 +82,9 @@ pub(super) fn collect_model_declarations(program: &Program) -> Vec<ModelRuntimeD
             else {
                 return None;
             };
+            if cinematic_resource_id(resource).is_some() {
+                return None;
+            }
             Some(ModelRuntimeDecl {
                 name: name.clone(),
                 resource: resource.clone(),
@@ -1603,7 +1606,7 @@ pub(super) fn set_character_move_intent(
     continuous_delta_seconds: Option<f32>,
 ) {
     let duration = movement.duration_seconds.max(0.001);
-    let speed = directional_move_speed(movement);
+    let speed = character_directional_move_speed(movement, continuous_delta_seconds);
     let direction = movement_direction_vector(movement.direction, transform);
     let speed_ratio = speed / controller.move_speed.max(0.001);
 
@@ -1612,6 +1615,17 @@ pub(super) fn set_character_move_intent(
     } else {
         motor.timed_motion = direction.normalize_or_zero() * speed_ratio;
         motor.timed_motion_remaining_seconds = duration;
+    }
+}
+
+pub(super) fn character_directional_move_speed(
+    movement: &scenemax_parser::MoveStatement,
+    continuous_delta_seconds: Option<f32>,
+) -> f32 {
+    if let Some(delta_seconds) = continuous_delta_seconds {
+        movement.distance / delta_seconds.max(0.001)
+    } else {
+        directional_move_speed(movement)
     }
 }
 
