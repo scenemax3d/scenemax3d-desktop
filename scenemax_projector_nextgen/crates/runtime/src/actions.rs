@@ -412,7 +412,9 @@ pub(super) fn apply_startup_action(
     depth: usize,
 ) -> ActionSequenceResult {
     match action {
-        Statement::Assignment(assignment) | Statement::LocalAssignment(assignment) => {
+        Statement::Assignment(assignment)
+        | Statement::SharedAssignment(assignment)
+        | Statement::LocalAssignment(assignment) => {
             apply_assignment(
                 assignment,
                 vars,
@@ -906,7 +908,7 @@ pub(super) fn switch_scene_on_key(
                 *camera = camera_transform_from_program(&program);
             }
 
-            vars.0.clear();
+            retain_scene_switch_shared_vars(&mut vars, startup_program.0.as_ref(), &program);
             object_pools.aliases.clear();
             object_pools.pools.clear();
             delayed_actions.actions.clear();
@@ -959,6 +961,45 @@ pub(super) fn switch_scene_on_key(
                 scene_main.display()
             ));
         }
+    }
+}
+
+pub(super) fn retain_scene_switch_shared_vars(
+    vars: &mut SceneMaxVars,
+    previous_program: Option<&Program>,
+    next_program: &Program,
+) {
+    let Some(previous_program) = previous_program else {
+        vars.0.clear();
+        return;
+    };
+    let previous_shared = collect_shared_assignment_names(previous_program);
+    let next_shared = collect_shared_assignment_names(next_program);
+    vars.0
+        .retain(|name, _| previous_shared.contains(name) && next_shared.contains(name));
+}
+
+#[cfg(test)]
+mod scene_switch_tests {
+    use super::*;
+    use scenemax_parser::parse_program;
+
+    #[test]
+    fn scene_switch_retains_only_shared_values_declared_by_both_scenes() {
+        let previous_program =
+            parse_program("shared var score = 0\nshared var timer = 0\nvar life2 = 10").unwrap();
+        let next_program = parse_program("shared var score = 0\nvar timer = 0").unwrap();
+        let mut vars = SceneMaxVars(HashMap::from([
+            ("score".to_owned(), 25.0),
+            ("timer".to_owned(), 12.0),
+            ("life2".to_owned(), 3.0),
+        ]));
+
+        retain_scene_switch_shared_vars(&mut vars, Some(&previous_program), &next_program);
+
+        assert_eq!(vars.0.get("score").copied(), Some(25.0));
+        assert_eq!(vars.0.get("timer"), None);
+        assert_eq!(vars.0.get("life2"), None);
     }
 }
 
@@ -2331,7 +2372,10 @@ pub(super) fn apply_key_action(
         }
         return ActionSequenceResult::Completed;
     }
-    if let Statement::Assignment(assignment) | Statement::LocalAssignment(assignment) = action {
+    if let Statement::Assignment(assignment)
+    | Statement::SharedAssignment(assignment)
+    | Statement::LocalAssignment(assignment) = action
+    {
         if let AssignmentValue::PoolAcquire { pool } = &assignment.value {
             let Some(member) = acquire_pool_member(pool, object_pools) else {
                 tracing::debug!(pool, "SceneMax object pool has no available members");
@@ -3561,8 +3605,14 @@ pub(super) fn key_code_from_scenemax(key: &str) -> Option<KeyCode> {
 pub(super) fn apply_initial_assignments(program: &Program, vars: &mut SceneMaxVars) {
     let guards_by_name = collect_guards_by_name(program);
     for statement in &program.statements {
-        if let Statement::Assignment(assignment) = statement {
-            apply_assignment(assignment, vars, None, &guards_by_name, None);
+        match statement {
+            Statement::Assignment(assignment) => {
+                apply_assignment(assignment, vars, None, &guards_by_name, None);
+            }
+            Statement::SharedAssignment(assignment) if !vars.0.contains_key(&assignment.name) => {
+                apply_assignment(assignment, vars, None, &guards_by_name, None);
+            }
+            _ => {}
         }
     }
 }

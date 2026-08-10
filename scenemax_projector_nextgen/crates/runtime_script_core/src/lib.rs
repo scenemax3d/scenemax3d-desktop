@@ -304,13 +304,17 @@ pub fn substitute_statement(
         Statement::Async { actions } => Statement::Async {
             actions: substitute_statements(actions, bindings),
         },
-        Statement::Assignment(assignment) | Statement::LocalAssignment(assignment) => {
+        Statement::Assignment(assignment)
+        | Statement::SharedAssignment(assignment)
+        | Statement::LocalAssignment(assignment) => {
             let assignment = scenemax_parser::AssignmentStatement {
                 name: substitute_path(&assignment.name, bindings),
                 value: substitute_assignment_value(&assignment.value, bindings),
             };
             if matches!(statement, Statement::LocalAssignment(_)) {
                 Statement::LocalAssignment(assignment)
+            } else if matches!(statement, Statement::SharedAssignment(_)) {
+                Statement::SharedAssignment(assignment)
             } else {
                 Statement::Assignment(assignment)
             }
@@ -627,6 +631,17 @@ pub fn repeat_actions(actions: &[Statement], times: usize) -> Vec<Statement> {
     repeated
 }
 
+pub fn collect_shared_assignment_names(program: &Program) -> std::collections::HashSet<String> {
+    program
+        .statements
+        .iter()
+        .filter_map(|statement| match statement {
+            Statement::SharedAssignment(assignment) => Some(assignment.name.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 pub fn actions_with_parent_continuation(
     mut block_actions: Vec<Statement>,
     parent_tail: &[Statement],
@@ -749,6 +764,16 @@ mod tests {
             &normalized_animation_name("HighKick")
         ));
         assert!(requested_animation_names_match("idle2", "Idle 2"));
+    }
+
+    #[test]
+    fn collects_shared_assignment_names_for_scene_switch_state() {
+        let program = parse_program("shared var score = 0, timer = 30\nvar life2 = 10").unwrap();
+        let shared = collect_shared_assignment_names(&program);
+
+        assert!(shared.contains("score"));
+        assert!(shared.contains("timer"));
+        assert!(!shared.contains("life2"));
     }
 
     #[test]

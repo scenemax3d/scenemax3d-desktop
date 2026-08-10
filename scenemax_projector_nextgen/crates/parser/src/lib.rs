@@ -102,6 +102,7 @@ pub enum Statement {
         value: AssignmentValue,
     },
     Assignment(AssignmentStatement),
+    SharedAssignment(AssignmentStatement),
     LocalAssignment(AssignmentStatement),
     FightingCamera(FightingCameraStatement),
     ThirdPersonCamera(ThirdPersonCameraStatement),
@@ -737,7 +738,11 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
         }
 
         if let Some(assignments) = parse_assignment_list(line)? {
-            statements.extend(assignments.into_iter().map(Statement::Assignment));
+            if is_shared_var_line(line) {
+                statements.extend(assignments.into_iter().map(Statement::SharedAssignment));
+            } else {
+                statements.extend(assignments.into_iter().map(Statement::Assignment));
+            }
             index += 1;
             continue;
         }
@@ -1476,6 +1481,14 @@ fn parse_action_statements(line: &str) -> Result<Vec<Statement>, ParseError> {
     if let Some(statement) = parse_ui_statement(line)? {
         return Ok(vec![statement]);
     }
+    if is_shared_var_line(line) {
+        if let Some(assignments) = parse_assignment_list(line)? {
+            return Ok(assignments
+                .into_iter()
+                .map(Statement::SharedAssignment)
+                .collect());
+        }
+    }
     if is_local_assignment_line(line) {
         if let Some(assignments) = parse_assignment_list(line)? {
             return Ok(assignments
@@ -1694,6 +1707,12 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
 
     if let Some(run_function) = parse_run_function_statement(line) {
         return Ok(run_function);
+    }
+
+    if is_shared_var_line(line) {
+        if let Some(assignment) = parse_assignment(line)? {
+            return Ok(Statement::SharedAssignment(assignment));
+        }
     }
 
     if is_local_assignment_line(line) {
@@ -2365,8 +2384,11 @@ fn parse_assignment(line: &str) -> Result<Option<AssignmentStatement>, ParseErro
 
 fn is_local_assignment_line(line: &str) -> bool {
     let line = line.trim();
-    (starts_with_keyword(line, "var") || starts_with_two_keywords(line, "shared", "var"))
-        && !strip_var_prefix(line).trim_start().starts_with('@')
+    starts_with_keyword(line, "var") && !strip_var_prefix(line).trim_start().starts_with('@')
+}
+
+fn is_shared_var_line(line: &str) -> bool {
+    starts_with_two_keywords(line.trim(), "shared", "var")
 }
 
 fn parse_assignment_list(line: &str) -> Result<Option<Vec<AssignmentStatement>>, ParseError> {
@@ -5009,6 +5031,28 @@ mod tests {
                 .contains(&Statement::Assignment(AssignmentStatement {
                     name: "GAME_STATE_OVER".to_owned(),
                     value: AssignmentValue::Number(2.0),
+                },))
+        );
+    }
+
+    #[test]
+    fn parses_shared_var_declarations_as_shared_assignments() {
+        let program = parse_program("shared var timer=0 [0..],\n    life1=100 [0..100]").unwrap();
+
+        assert!(
+            program
+                .statements
+                .contains(&Statement::SharedAssignment(AssignmentStatement {
+                    name: "timer".to_owned(),
+                    value: AssignmentValue::Number(0.0),
+                },))
+        );
+        assert!(
+            program
+                .statements
+                .contains(&Statement::SharedAssignment(AssignmentStatement {
+                    name: "life1".to_owned(),
+                    value: AssignmentValue::Number(100.0),
                 },))
         );
     }
