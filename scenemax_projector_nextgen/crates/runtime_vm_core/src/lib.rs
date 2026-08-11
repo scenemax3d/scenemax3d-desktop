@@ -54,15 +54,28 @@ pub fn apply_initial_assignments(program: &Program, vars: &mut SceneMaxVars) {
     let guards_by_name = scenemax_runtime_script_core::collect_guards_by_name(program);
     let spatial = NoSceneMaxVmSpatial;
     for statement in &program.statements {
-        if let Statement::Assignment(assignment) = statement {
-            let _ = apply_assignment_with_spatial(
-                assignment,
-                vars,
-                None,
-                &guards_by_name,
-                &spatial,
-                false,
-            );
+        match statement {
+            Statement::Assignment(assignment) => {
+                let _ = apply_assignment_with_spatial(
+                    assignment,
+                    vars,
+                    None,
+                    &guards_by_name,
+                    &spatial,
+                    false,
+                );
+            }
+            Statement::SharedAssignment(assignment) if !vars.0.contains_key(&assignment.name) => {
+                let _ = apply_assignment_with_spatial(
+                    assignment,
+                    vars,
+                    None,
+                    &guards_by_name,
+                    &spatial,
+                    false,
+                );
+            }
+            _ => {}
         }
     }
 }
@@ -160,6 +173,7 @@ pub fn resolve_assignment_value_scoped_with_guards(
     match value {
         AssignmentValue::Number(value) => Some(*value),
         AssignmentValue::Symbol(name) => resolve_symbol_value_scoped(name, vars, scope, spatial),
+        AssignmentValue::CameraModifier(_) => None,
         AssignmentValue::Condition(condition) => {
             Some(
                 condition_matches_scoped(condition, vars, scope, guards_by_name, spatial) as u8
@@ -517,6 +531,20 @@ mod tests {
         apply_initial_assignments(&program, &mut vars);
 
         assert_eq!(vars.0.get("score").copied(), Some(15.0));
+    }
+
+    #[test]
+    fn shared_initial_assignment_does_not_overwrite_existing_value() {
+        let program = parse_program("shared var score = 0 [0..]\nvar life2 = 10").unwrap();
+        let mut vars = SceneMaxVars(HashMap::from([
+            ("score".to_owned(), 42.0),
+            ("life2".to_owned(), 3.0),
+        ]));
+
+        apply_initial_assignments(&program, &mut vars);
+
+        assert_eq!(vars.0.get("score").copied(), Some(42.0));
+        assert_eq!(vars.0.get("life2").copied(), Some(10.0));
     }
 
     #[test]

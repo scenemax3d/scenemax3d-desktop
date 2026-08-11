@@ -102,6 +102,7 @@ pub enum Statement {
         value: AssignmentValue,
     },
     Assignment(AssignmentStatement),
+    SharedAssignment(AssignmentStatement),
     LocalAssignment(AssignmentStatement),
     FightingCamera(FightingCameraStatement),
     ThirdPersonCamera(ThirdPersonCameraStatement),
@@ -111,6 +112,7 @@ pub enum Statement {
     CameraChase {
         target: String,
     },
+    CameraModifierApply(CameraModifierApplyStatement),
     CameraAttach(CameraAttachStatement),
     CameraAttachStop,
     Logger(LoggerStatement),
@@ -126,9 +128,12 @@ pub enum Statement {
         name: String,
         args: Vec<String>,
         interval_seconds: f32,
+        interval_value: AssignmentValue,
     },
     CameraPosition(SceneMaxVec3),
     CameraRotation(SceneMaxVec3),
+    CameraMove(CameraMoveStatement),
+    Audio(AudioStatement),
     WaitForKey {
         key: String,
     },
@@ -138,6 +143,7 @@ pub enum Statement {
     AddCode {
         path: String,
     },
+    ChannelDraw(ChannelDrawStatement),
     UiLoad {
         name: String,
     },
@@ -153,16 +159,26 @@ pub enum Statement {
     },
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct EntityOptions {
     pub position: Option<SceneMaxVec3>,
+    pub position_value: Option<PositionValue>,
     pub rotation_degrees: Option<SceneMaxVec3>,
     pub scale: Option<SceneMaxVec3>,
     pub size: Option<SceneMaxVec3>,
+    pub material: Option<String>,
     pub hidden: bool,
     pub collider: bool,
     pub sprite: bool,
     pub radius: Option<f32>,
+    pub radius_top: Option<f32>,
+    pub radius_bottom: Option<f32>,
+    pub inner_radius_top: Option<f32>,
+    pub inner_radius_bottom: Option<f32>,
+    pub height: Option<f32>,
+    pub steps: Option<usize>,
+    pub thickness: Option<f32>,
+    pub segments: Option<usize>,
     pub body_kind: Option<SceneMaxBodyKind>,
     pub collision_shape: Option<SceneMaxCollisionShape>,
 }
@@ -194,6 +210,7 @@ pub struct AnimationStatement {
     pub target: String,
     pub clip: String,
     pub speed: f32,
+    pub speed_value: AssignmentValue,
     pub looped: bool,
     pub blocking: bool,
 }
@@ -202,9 +219,25 @@ pub struct AnimationStatement {
 pub struct SpritePlayStatement {
     pub target: String,
     pub from_frame: usize,
+    pub from_frame_value: AssignmentValue,
     pub to_frame: usize,
+    pub to_frame_value: AssignmentValue,
     pub duration_seconds: f32,
+    pub duration_value: AssignmentValue,
     pub looped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChannelDrawStatement {
+    pub channel: String,
+    pub resource: String,
+    pub clear: bool,
+    pub pos_x: Option<AssignmentValue>,
+    pub pos_y: Option<AssignmentValue>,
+    pub width: Option<AssignmentValue>,
+    pub height: Option<AssignmentValue>,
+    pub frame: Option<AssignmentValue>,
+    pub stretch: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -226,7 +259,9 @@ pub enum CinematicLookAt {
 pub struct AnimationSpeedStatement {
     pub target: String,
     pub speed: f32,
+    pub speed_value: AssignmentValue,
     pub duration_seconds: Option<f32>,
+    pub duration_value: Option<AssignmentValue>,
     pub condition: Option<Condition>,
 }
 
@@ -234,7 +269,9 @@ pub struct AnimationSpeedStatement {
 pub struct TurnStatement {
     pub target: String,
     pub degrees: f32,
+    pub degrees_value: AssignmentValue,
     pub duration_seconds: f32,
+    pub duration_value: AssignmentValue,
     pub loop_condition: Option<Condition>,
     pub async_run: bool,
 }
@@ -244,7 +281,9 @@ pub struct MoveStatement {
     pub target: String,
     pub direction: MoveDirection,
     pub distance: f32,
+    pub distance_value: AssignmentValue,
     pub duration_seconds: f32,
+    pub duration_value: AssignmentValue,
     pub loop_condition: Option<Condition>,
     pub async_run: bool,
 }
@@ -254,19 +293,25 @@ pub struct MoveToStatement {
     pub target: String,
     pub destination: MoveToDestination,
     pub duration_seconds: f32,
+    pub duration_value: AssignmentValue,
     pub async_run: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MoveToDestination {
     Position(PositionValue),
-    EntityForward { entity: String, distance: f32 },
+    EntityForward {
+        entity: String,
+        distance: f32,
+        distance_value: AssignmentValue,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CharacterModeStatement {
     pub target: String,
     pub gravity: Option<f32>,
+    pub gravity_value: Option<AssignmentValue>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -279,6 +324,7 @@ pub struct CharacterIgnoreStatement {
 pub struct CharacterJumpStatement {
     pub target: String,
     pub speed: f32,
+    pub speed_value: AssignmentValue,
     pub async_run: bool,
 }
 
@@ -287,6 +333,7 @@ pub struct PhysicsImpulseStatement {
     pub target: String,
     pub direction: PhysicsDirection,
     pub strength: f32,
+    pub strength_value: AssignmentValue,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -301,6 +348,31 @@ pub struct ObjectPoolStatement {
     pub name: String,
     pub factory: String,
     pub size: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CameraMoveStatement {
+    pub axis: SceneMaxAxis,
+    pub distance: f32,
+    pub distance_value: AssignmentValue,
+    pub duration_seconds: f32,
+    pub duration_value: AssignmentValue,
+    pub async_run: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AudioStatement {
+    pub action: AudioAction,
+    pub sound: Option<String>,
+    pub sound_value: Option<AssignmentValue>,
+    pub looped: bool,
+    pub volume: Option<AssignmentValue>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudioAction {
+    Play,
+    Stop,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -341,6 +413,7 @@ pub enum PositionValue {
 #[derive(Debug, Clone, PartialEq)]
 pub enum PositionExpr {
     Number(f32),
+    Value(AssignmentValue),
     EntityAxis {
         entity: String,
         axis: SceneMaxAxis,
@@ -456,6 +529,7 @@ pub struct AssignmentStatement {
 pub enum AssignmentValue {
     Number(f32),
     Symbol(String),
+    CameraModifier(CameraModifierValue),
     Condition(Box<Condition>),
     RandomInt {
         max: Box<AssignmentValue>,
@@ -477,6 +551,21 @@ pub enum AssignmentValue {
     },
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct CameraModifierValue {
+    pub modifier_type: String,
+    pub duration: f32,
+    pub amplitude: f32,
+    pub frequency: f32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub rx: f32,
+    pub ry: f32,
+    pub rz: f32,
+    pub fov: f32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ArithmeticOperator {
     Add,
@@ -496,7 +585,11 @@ pub struct FightingCameraStatement {
     pub side: f32,
     pub min_distance: f32,
     pub max_distance: f32,
+    pub zoom_factor: f32,
     pub damping: f32,
+    pub look_ahead: f32,
+    pub fov: f32,
+    pub max_fov: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -516,6 +609,13 @@ pub struct ThirdPersonCameraStatement {
 pub struct CameraAttachStatement {
     pub target: String,
     pub offset: SceneMaxVec3,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CameraModifierApplyStatement {
+    pub target: String,
+    pub modifier: String,
+    pub overrides: Vec<(String, AssignmentValue)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -737,7 +837,11 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
         }
 
         if let Some(assignments) = parse_assignment_list(line)? {
-            statements.extend(assignments.into_iter().map(Statement::Assignment));
+            if is_shared_var_line(line) {
+                statements.extend(assignments.into_iter().map(Statement::SharedAssignment));
+            } else {
+                statements.extend(assignments.into_iter().map(Statement::Assignment));
+            }
             index += 1;
             continue;
         }
@@ -1036,7 +1140,8 @@ fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
             AssignmentValue::Number(value) => Condition::NotEqualsNumber { name, value },
             AssignmentValue::Symbol(value) => Condition::NotEqualsSymbol { name, value },
             AssignmentValue::Binary { .. } => return Ok(None),
-            AssignmentValue::Condition(_)
+            AssignmentValue::CameraModifier(_)
+            | AssignmentValue::Condition(_)
             | AssignmentValue::RandomInt { .. }
             | AssignmentValue::Round { .. }
             | AssignmentValue::Distance { .. }
@@ -1054,7 +1159,8 @@ fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
             AssignmentValue::Number(value) => Condition::EqualsNumber { name, value },
             AssignmentValue::Symbol(value) => Condition::EqualsSymbol { name, value },
             AssignmentValue::Binary { .. } => return Ok(None),
-            AssignmentValue::Condition(_)
+            AssignmentValue::CameraModifier(_)
+            | AssignmentValue::Condition(_)
             | AssignmentValue::RandomInt { .. }
             | AssignmentValue::Round { .. }
             | AssignmentValue::Distance { .. }
@@ -1476,6 +1582,14 @@ fn parse_action_statements(line: &str) -> Result<Vec<Statement>, ParseError> {
     if let Some(statement) = parse_ui_statement(line)? {
         return Ok(vec![statement]);
     }
+    if is_shared_var_line(line) {
+        if let Some(assignments) = parse_assignment_list(line)? {
+            return Ok(assignments
+                .into_iter()
+                .map(Statement::SharedAssignment)
+                .collect());
+        }
+    }
     if is_local_assignment_line(line) {
         if let Some(assignments) = parse_assignment_list(line)? {
             return Ok(assignments
@@ -1676,11 +1790,12 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         });
     }
 
-    if let Some((name, interval_seconds)) = parse_run_every(line)? {
+    if let Some((name, interval_value, interval_seconds)) = parse_run_every(line)? {
         return Ok(Statement::RunEvery {
             name,
             args: parse_call_args(line),
             interval_seconds,
+            interval_value,
         });
     }
 
@@ -1694,6 +1809,12 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
 
     if let Some(run_function) = parse_run_function_statement(line) {
         return Ok(run_function);
+    }
+
+    if is_shared_var_line(line) {
+        if let Some(assignment) = parse_assignment(line)? {
+            return Ok(Statement::SharedAssignment(assignment));
+        }
     }
 
     if is_local_assignment_line(line) {
@@ -1748,8 +1869,20 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(Statement::CameraRotation(rotation));
     }
 
+    if let Some(camera_move) = parse_camera_move(line)? {
+        return Ok(Statement::CameraMove(camera_move));
+    }
+
+    if let Some(audio) = parse_audio_statement(line)? {
+        return Ok(Statement::Audio(audio));
+    }
+
     if let Some(chase) = parse_camera_chase(line)? {
         return Ok(chase);
+    }
+
+    if let Some(modifier_apply) = parse_camera_modifier_apply(line)? {
+        return Ok(Statement::CameraModifierApply(modifier_apply));
     }
 
     if let Some(attach) = parse_camera_attach(line)? {
@@ -1814,6 +1947,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
 
     if let Some(sprite_play) = parse_sprite_play(line)? {
         return Ok(Statement::SpritePlay(sprite_play));
+    }
+
+    if let Some(draw) = parse_channel_draw(line)? {
+        return Ok(Statement::ChannelDraw(draw));
     }
 
     if let Some(cinematic_play) = parse_cinematic_play(line)? {
@@ -2071,7 +2208,7 @@ fn parse_run_function_statement(line: &str) -> Option<Statement> {
     }
 }
 
-fn parse_run_every(line: &str) -> Result<Option<(String, f32)>, ParseError> {
+fn parse_run_every(line: &str) -> Result<Option<(String, AssignmentValue, f32)>, ParseError> {
     let lower = line.to_ascii_lowercase();
     if !starts_with_keyword(line, "run") || !lower.contains(" every ") {
         return Ok(None);
@@ -2088,14 +2225,15 @@ fn parse_run_every(line: &str) -> Result<Option<(String, f32)>, ParseError> {
     if !is_variable_name(name) {
         return Ok(None);
     }
-    let raw_interval = every_text.split_whitespace().next().unwrap_or_default();
+    let raw_interval = take_until_clause(every_text.trim(), &[" seconds", " second", " async"]);
     if raw_interval.is_empty() {
         return Ok(None);
     }
-    let interval_seconds = raw_interval
-        .parse::<f32>()
-        .map_err(|_| ParseError::InvalidNumber(raw_interval.to_owned()))?;
-    Ok(Some((name.to_owned(), interval_seconds)))
+    let Some(interval_value) = parse_assignment_value(raw_interval)? else {
+        return Err(ParseError::InvalidNumber(raw_interval.to_owned()));
+    };
+    let interval_seconds = static_assignment_number(&interval_value).unwrap_or(0.0);
+    Ok(Some((name.to_owned(), interval_value, interval_seconds)))
 }
 
 fn parse_call_args(text: &str) -> Vec<String> {
@@ -2252,10 +2390,102 @@ fn unquote_ui_text(text: &str) -> String {
 }
 
 fn split_once_case_insensitive<'a>(text: &'a str, needle: &str) -> Option<(&'a str, &'a str)> {
-    let index = text
-        .to_ascii_lowercase()
-        .find(&needle.to_ascii_lowercase())?;
-    Some((&text[..index], &text[index + needle.len()..]))
+    let (start, end) = find_case_insensitive_span(text, needle)?;
+    Some((&text[..start], &text[end..]))
+}
+
+fn find_case_insensitive_span(text: &str, needle: &str) -> Option<(usize, usize)> {
+    if !needle.chars().any(char::is_whitespace) {
+        let index = text
+            .to_ascii_lowercase()
+            .find(&needle.to_ascii_lowercase())?;
+        return Some((index, index + needle.len()));
+    }
+
+    let tokens = needle.split_whitespace().collect::<Vec<_>>();
+    let first = tokens.first()?;
+    let lower = text.to_ascii_lowercase();
+    let first_lower = first.to_ascii_lowercase();
+    let include_leading_ws = needle.chars().next().is_some_and(char::is_whitespace);
+    let include_trailing_ws = needle.chars().last().is_some_and(char::is_whitespace);
+    let mut search_from = 0usize;
+
+    while let Some(relative_index) = lower[search_from..].find(&first_lower) {
+        let token_start = search_from + relative_index;
+        let mut span_start = token_start;
+
+        if include_leading_ws {
+            if token_start == 0 {
+                search_from = token_start + first.len();
+                continue;
+            }
+            let mut cursor = token_start;
+            while let Some((prev_index, prev_char)) = text[..cursor].char_indices().next_back() {
+                if !prev_char.is_whitespace() {
+                    break;
+                }
+                cursor = prev_index;
+            }
+            if cursor == token_start {
+                search_from = token_start + first.len();
+                continue;
+            }
+            span_start = cursor;
+        }
+
+        let mut cursor = token_start;
+        let mut matched = true;
+        for (token_index, token) in tokens.iter().enumerate() {
+            let token_len = token.len();
+            let Some(candidate) = text.get(cursor..cursor + token_len) else {
+                matched = false;
+                break;
+            };
+            if !candidate.eq_ignore_ascii_case(token) {
+                matched = false;
+                break;
+            }
+            cursor += token_len;
+
+            if token_index + 1 < tokens.len() {
+                let next_cursor = consume_required_whitespace(text, cursor);
+                if next_cursor == cursor {
+                    matched = false;
+                    break;
+                }
+                cursor = next_cursor;
+            }
+        }
+
+        if !matched {
+            search_from = token_start + first.len();
+            continue;
+        }
+
+        if include_trailing_ws {
+            let next_cursor = consume_required_whitespace(text, cursor);
+            if next_cursor == cursor {
+                search_from = token_start + first.len();
+                continue;
+            }
+            cursor = next_cursor;
+        }
+
+        return Some((span_start, cursor));
+    }
+
+    None
+}
+
+fn consume_required_whitespace(text: &str, cursor: usize) -> usize {
+    let mut next_cursor = cursor;
+    while let Some(value) = text[next_cursor..].chars().next() {
+        if !value.is_whitespace() {
+            break;
+        }
+        next_cursor += value.len_utf8();
+    }
+    next_cursor
 }
 
 fn starts_with_case_insensitive(text: &str, prefix: &str) -> bool {
@@ -2294,11 +2524,18 @@ fn parse_fighting_camera(line: &str) -> Result<Option<FightingCameraStatement>, 
         target_a: (*target_a).to_owned(),
         target_b: (*target_b).to_owned(),
         depth: parse_named_argument(args_text, "depth")?.unwrap_or(18.0),
-        height: parse_named_argument(args_text, "height")?.unwrap_or(3.0),
+        height: parse_named_argument(args_text, "height")?.unwrap_or(4.0),
         side: parse_named_argument(args_text, "side")?.unwrap_or(0.0),
-        min_distance: parse_named_argument(args_text, "min distance")?.unwrap_or(8.0),
-        max_distance: parse_named_argument(args_text, "max distance")?.unwrap_or(28.0),
-        damping: parse_named_argument(args_text, "damping")?.unwrap_or(8.0),
+        min_distance: parse_named_argument(args_text, "min distance")?.unwrap_or(10.0),
+        max_distance: parse_named_argument(args_text, "max distance")?.unwrap_or(24.0),
+        zoom_factor: parse_named_argument(args_text, "zoom factor")?
+            .or(parse_named_argument(args_text, "zoom_factor")?)
+            .or(parse_named_argument(args_text, "zoomfactor")?)
+            .unwrap_or(1.15),
+        damping: parse_named_argument(args_text, "damping")?.unwrap_or(7.5),
+        look_ahead: parse_named_argument(args_text, "look ahead")?.unwrap_or(0.0),
+        fov: parse_named_argument(args_text, "fov")?.unwrap_or(50.0),
+        max_fov: parse_named_argument(args_text, "max fov")?.unwrap_or(62.0),
     }))
 }
 
@@ -2365,8 +2602,11 @@ fn parse_assignment(line: &str) -> Result<Option<AssignmentStatement>, ParseErro
 
 fn is_local_assignment_line(line: &str) -> bool {
     let line = line.trim();
-    (starts_with_keyword(line, "var") || starts_with_two_keywords(line, "shared", "var"))
-        && !strip_var_prefix(line).trim_start().starts_with('@')
+    starts_with_keyword(line, "var") && !strip_var_prefix(line).trim_start().starts_with('@')
+}
+
+fn is_shared_var_line(line: &str) -> bool {
+    starts_with_two_keywords(line.trim(), "shared", "var")
 }
 
 fn parse_assignment_list(line: &str) -> Result<Option<Vec<AssignmentStatement>>, ParseError> {
@@ -2479,6 +2719,9 @@ fn parse_assignment_value(raw_value: &str) -> Result<Option<AssignmentValue>, Pa
             }));
         }
     }
+    if let Some(modifier) = parse_camera_modifier_value(raw_value) {
+        return Ok(Some(AssignmentValue::CameraModifier(modifier)));
+    }
     if let Some((left, operator, right)) = split_assignment_binary(raw_value) {
         let Some(left) = parse_assignment_value(left)? else {
             return Ok(None);
@@ -2509,6 +2752,159 @@ fn parse_assignment_value(raw_value: &str) -> Result<Option<AssignmentValue>, Pa
         return Ok(Some(AssignmentValue::Condition(Box::new(condition))));
     }
     Ok(None)
+}
+
+fn parse_camera_modifier_value(raw_value: &str) -> Option<CameraModifierValue> {
+    let modifier_type = raw_value
+        .strip_prefix("camera.system.modifiers.")
+        .or_else(|| raw_value.strip_prefix("Camera.System.Modifiers."))?
+        .trim()
+        .to_ascii_lowercase();
+    create_camera_modifier_preset(&modifier_type)
+}
+
+fn create_camera_modifier_preset(modifier_type: &str) -> Option<CameraModifierValue> {
+    let mut value = CameraModifierValue {
+        modifier_type: modifier_type.to_owned(),
+        duration: 0.3,
+        amplitude: 1.0,
+        frequency: 12.0,
+        x: 0.08,
+        y: 0.08,
+        z: 0.08,
+        rx: 0.8,
+        ry: 0.8,
+        rz: 0.8,
+        fov: 0.4,
+    };
+    match modifier_type {
+        "hit_modifier" => {
+            value.duration = 0.24;
+            value.amplitude = 1.0;
+            value.frequency = 16.0;
+            value.x = 0.18;
+            value.y = 0.08;
+            value.z = 0.12;
+            value.rx = 1.8;
+            value.ry = 2.8;
+            value.rz = 1.0;
+            value.fov = 0.6;
+        }
+        "fall_modifier" => {
+            value.duration = 0.65;
+            value.amplitude = 0.55;
+            value.frequency = 5.0;
+            value.x = 0.04;
+            value.y = 0.16;
+            value.z = 0.06;
+            value.rx = 0.6;
+            value.ry = 0.4;
+            value.rz = 0.5;
+            value.fov = 0.1;
+        }
+        "shooting_modifier" => {
+            value.duration = 0.18;
+            value.amplitude = 0.4;
+            value.frequency = 28.0;
+            value.x = 0.03;
+            value.y = 0.03;
+            value.z = 0.09;
+            value.rx = 1.2;
+            value.ry = 0.4;
+            value.rz = 0.25;
+            value.fov = 0.3;
+        }
+        "accelerating_modifier" => {
+            value.duration = 0.35;
+            value.amplitude = 0.5;
+            value.frequency = 10.0;
+            value.x = 0.04;
+            value.y = 0.03;
+            value.z = 0.18;
+            value.rx = 0.5;
+            value.ry = 0.2;
+            value.rz = 0.15;
+            value.fov = 1.0;
+        }
+        "decelerating_modifier" => {
+            value.duration = 0.32;
+            value.amplitude = 0.45;
+            value.frequency = 9.0;
+            value.x = 0.03;
+            value.y = 0.04;
+            value.z = 0.14;
+            value.rx = 0.65;
+            value.ry = 0.2;
+            value.rz = 0.15;
+            value.fov = 0.5;
+        }
+        "bump_modifier" => {
+            value.duration = 0.28;
+            value.amplitude = 0.75;
+            value.frequency = 14.0;
+            value.x = 0.08;
+            value.y = 0.22;
+            value.z = 0.05;
+            value.rx = 1.0;
+            value.ry = 0.5;
+            value.rz = 0.7;
+            value.fov = 0.2;
+        }
+        "landing_modifier" => {
+            value.duration = 0.32;
+            value.amplitude = 0.9;
+            value.frequency = 13.0;
+            value.x = 0.06;
+            value.y = 0.3;
+            value.z = 0.08;
+            value.rx = 1.5;
+            value.ry = 0.4;
+            value.rz = 0.6;
+            value.fov = 0.4;
+        }
+        "earthquake_modifier" => {
+            value.duration = 1.5;
+            value.amplitude = 1.2;
+            value.frequency = 7.0;
+            value.x = 0.35;
+            value.y = 0.3;
+            value.z = 0.35;
+            value.rx = 1.8;
+            value.ry = 1.5;
+            value.rz = 1.6;
+            value.fov = 1.5;
+        }
+        "explosion_modifier" => {
+            value.duration = 0.55;
+            value.amplitude = 1.1;
+            value.frequency = 18.0;
+            value.x = 0.28;
+            value.y = 0.22;
+            value.z = 0.24;
+            value.rx = 1.9;
+            value.ry = 1.6;
+            value.rz = 1.2;
+            value.fov = 1.2;
+        }
+        "near_miss_modifier" => {
+            value.duration = 0.22;
+            value.amplitude = 0.8;
+            value.frequency = 20.0;
+            value.x = 0.32;
+            value.y = 0.06;
+            value.z = 0.08;
+            value.rx = 0.5;
+            value.ry = 1.8;
+            value.rz = 1.0;
+            value.fov = 0.4;
+        }
+        _ => return None,
+    }
+    Some(value)
+}
+
+pub fn parse_runtime_value(raw_value: &str) -> Result<Option<AssignmentValue>, ParseError> {
+    parse_assignment_value(raw_value)
 }
 
 fn parse_function_assignment_arg<'a>(text: &'a str, name: &str) -> Option<&'a str> {
@@ -2554,6 +2950,29 @@ fn split_assignment_binary(text: &str) -> Option<(&str, ArithmeticOperator, &str
         }
     }
     None
+}
+
+fn static_assignment_number(value: &AssignmentValue) -> Option<f32> {
+    match value {
+        AssignmentValue::Number(value) => Some(*value),
+        AssignmentValue::Binary {
+            left,
+            operator,
+            right,
+        } => {
+            let left = static_assignment_number(left)?;
+            let right = static_assignment_number(right)?;
+            Some(match operator {
+                ArithmeticOperator::Add => left + right,
+                ArithmeticOperator::Subtract => left - right,
+                ArithmeticOperator::Multiply => left * right,
+                ArithmeticOperator::Divide if right.abs() > f32::EPSILON => left / right,
+                ArithmeticOperator::Modulo if right.abs() > f32::EPSILON => left % right,
+                ArithmeticOperator::Divide | ArithmeticOperator::Modulo => return None,
+            })
+        }
+        _ => None,
+    }
 }
 
 fn is_variable_name(name: &str) -> bool {
@@ -2618,6 +3037,66 @@ fn parse_camera_command(line: &str, command: &str) -> Result<Option<SceneMaxVec3
     parse_vec3_after(line, command).map(Some)
 }
 
+fn parse_camera_move(line: &str) -> Result<Option<CameraMoveStatement>, ParseError> {
+    let line = line.trim();
+    if !line.to_ascii_lowercase().starts_with("camera.move") {
+        return Ok(None);
+    }
+    let Some(raw_destination) = values_inside_first_parens(line) else {
+        return Ok(None);
+    };
+    let Some((axis, distance_value)) = parse_camera_axis_delta(raw_destination)? else {
+        return Ok(None);
+    };
+    let (duration_value, duration_seconds) =
+        parse_directional_move_duration_value(line)?.unwrap_or((AssignmentValue::Number(0.0), 0.0));
+    let distance = static_assignment_number(&distance_value).unwrap_or(0.0);
+
+    Ok(Some(CameraMoveStatement {
+        axis,
+        distance,
+        distance_value,
+        duration_seconds,
+        duration_value,
+        async_run: contains_keyword(line, "async"),
+    }))
+}
+
+fn parse_camera_axis_delta(
+    text: &str,
+) -> Result<Option<(SceneMaxAxis, AssignmentValue)>, ParseError> {
+    let raw = text.trim();
+    let Some(axis_char) = raw.chars().next() else {
+        return Ok(None);
+    };
+    let axis = match axis_char.to_ascii_lowercase() {
+        'x' => SceneMaxAxis::X,
+        'y' => SceneMaxAxis::Y,
+        'z' => SceneMaxAxis::Z,
+        _ => return Ok(None),
+    };
+    let after_axis = raw[axis_char.len_utf8()..].trim();
+    let Some(sign) = after_axis.chars().next() else {
+        return Ok(None);
+    };
+    if sign != '+' && sign != '-' {
+        return Ok(None);
+    }
+    let raw_distance = after_axis[sign.len_utf8()..].trim();
+    if raw_distance.is_empty() {
+        return Err(ParseError::InvalidNumber(raw_distance.to_owned()));
+    }
+    let Some(value) = parse_assignment_value(raw_distance)? else {
+        return Err(ParseError::InvalidNumber(raw_distance.to_owned()));
+    };
+    let value = if sign == '-' {
+        negate_assignment_value(value)
+    } else {
+        value
+    };
+    Ok(Some((axis, value)))
+}
+
 fn parse_camera_attach(line: &str) -> Result<Option<Statement>, ParseError> {
     let line = line.trim();
     if line.eq_ignore_ascii_case("camera.attach stop") {
@@ -2663,6 +3142,162 @@ fn parse_camera_chase(line: &str) -> Result<Option<Statement>, ParseError> {
         return Ok(None);
     }
     Ok(Some(Statement::CameraChase { target }))
+}
+
+fn parse_camera_modifier_apply(
+    line: &str,
+) -> Result<Option<CameraModifierApplyStatement>, ParseError> {
+    let Some((target, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
+    let rest = rest.trim();
+    if !starts_with_keyword(rest, "apply") {
+        return Ok(None);
+    }
+    let after_apply = rest["apply".len()..].trim_start();
+    let (modifier_text, options_text) = split_once_case_insensitive(after_apply, ":")
+        .map(|(modifier, options)| (modifier.trim(), options.trim()))
+        .unwrap_or((after_apply.trim(), ""));
+    let modifier = modifier_text
+        .split(|value: char| value.is_whitespace() || value == ',')
+        .next()
+        .unwrap_or_default()
+        .trim();
+    if !is_variable_path(&target) || !is_variable_path(modifier) {
+        return Ok(None);
+    }
+
+    let mut overrides = Vec::new();
+    for option in split_top_level_comma(options_text) {
+        let option = option.trim();
+        if option.is_empty() {
+            continue;
+        }
+        let mut parts = option.splitn(2, char::is_whitespace);
+        let name = parts.next().unwrap_or_default().trim().to_ascii_lowercase();
+        let raw_value = parts.next().unwrap_or_default().trim();
+        if !is_camera_modifier_override_name(&name) || raw_value.is_empty() {
+            continue;
+        }
+        let Some(value) = parse_assignment_value(raw_value)? else {
+            return Err(ParseError::InvalidNumber(raw_value.to_owned()));
+        };
+        overrides.push((name, value));
+    }
+
+    Ok(Some(CameraModifierApplyStatement {
+        target,
+        modifier: modifier.to_owned(),
+        overrides,
+    }))
+}
+
+fn is_camera_modifier_override_name(name: &str) -> bool {
+    matches!(
+        name,
+        "duration" | "amplitude" | "frequency" | "x" | "y" | "z" | "rx" | "ry" | "rz" | "fov"
+    )
+}
+
+fn parse_audio_statement(line: &str) -> Result<Option<AudioStatement>, ParseError> {
+    let line = line.trim();
+    let lower = line.to_ascii_lowercase();
+    if lower.starts_with("audio.stop ") {
+        let rest = line["audio.stop ".len()..].trim();
+        let sound = parse_quoted_strings(rest)
+            .into_iter()
+            .next()
+            .or_else(|| (!rest.is_empty()).then(|| clean_assignment_value(rest).to_owned()));
+        return Ok(Some(AudioStatement {
+            action: AudioAction::Stop,
+            sound,
+            sound_value: None,
+            looped: false,
+            volume: None,
+        }));
+    }
+
+    if lower.starts_with("audio.play ") {
+        return parse_audio_play(line["audio.play ".len()..].trim());
+    }
+
+    if lower.starts_with("play sound ") {
+        let rest = line["play sound ".len()..].trim();
+        let sound_text = take_until_clause(rest, &[" loop ", " loop"]).trim();
+        let sound = (!sound_text.is_empty()).then(|| sound_text.to_owned());
+        return Ok(Some(AudioStatement {
+            action: AudioAction::Play,
+            sound,
+            sound_value: None,
+            looped: contains_keyword(rest, "loop"),
+            volume: None,
+        }));
+    }
+
+    Ok(None)
+}
+
+fn parse_audio_play(rest: &str) -> Result<Option<AudioStatement>, ParseError> {
+    let sound_text = take_until_clause(rest, &[" having ", " loop ", " loop"]).trim();
+    let (sound, sound_value) =
+        if let Some(sound) = parse_quoted_strings(sound_text).into_iter().next() {
+            (Some(sound), None)
+        } else {
+            let Some(value) = parse_assignment_value(clean_assignment_value(sound_text))? else {
+                return Ok(None);
+            };
+            (None, Some(value))
+        };
+    Ok(Some(AudioStatement {
+        action: AudioAction::Play,
+        sound,
+        sound_value,
+        looped: contains_keyword(rest, "loop"),
+        volume: parse_audio_volume_value(rest)?,
+    }))
+}
+
+fn parse_audio_volume_value(rest: &str) -> Result<Option<AssignmentValue>, ParseError> {
+    let Some(index) = find_keyword_index(rest, "having") else {
+        return Ok(None);
+    };
+    let options = take_until_clause(&rest[index + "having".len()..], &[" loop ", " loop"]).trim();
+    let lower_options = options.to_ascii_lowercase();
+    let Some(volume_index) = lower_options.find("volume") else {
+        return Ok(None);
+    };
+    let after_volume = options[volume_index + "volume".len()..]
+        .trim_start()
+        .trim_start_matches('=')
+        .trim_start();
+    let raw_volume = take_until_clause(after_volume, &[" and ", ",", " loop ", " loop"]).trim();
+    if raw_volume.is_empty() {
+        return Ok(None);
+    }
+    parse_assignment_value(clean_assignment_value(raw_volume))
+}
+
+fn find_keyword_index(text: &str, keyword: &str) -> Option<usize> {
+    let lower = text.to_ascii_lowercase();
+    let keyword = keyword.to_ascii_lowercase();
+    let mut start = 0;
+    while let Some(relative_index) = lower[start..].find(&keyword) {
+        let index = start + relative_index;
+        let before = lower[..index]
+            .chars()
+            .next_back()
+            .is_none_or(|ch| !ch.is_ascii_alphanumeric() && ch != '_');
+        let after_index = index + keyword.len();
+        let after = lower[after_index..]
+            .chars()
+            .next()
+            .is_none_or(|ch| !ch.is_ascii_alphanumeric() && ch != '_');
+        if before && after {
+            return Some(index);
+        }
+        start = after_index;
+    }
+    None
 }
 
 fn parse_model_decl(line: &str) -> Result<Option<Statement>, ParseError> {
@@ -2882,6 +3517,9 @@ fn parse_position_expr(text: &str) -> Result<PositionExpr, ParseError> {
         return Ok(PositionExpr::Number(value));
     }
     let Some((reference, axis)) = parse_entity_axis_reference(text) else {
+        if let Some(value) = parse_assignment_value(text)? {
+            return Ok(PositionExpr::Value(value));
+        }
         return Err(ParseError::InvalidNumber(text.to_owned()));
     };
     Ok(PositionExpr::EntityAxis {
@@ -2951,26 +3589,48 @@ fn parse_turn(line: &str) -> Result<Option<TurnStatement>, ParseError> {
         return Ok(None);
     }
 
-    let parts = rest.split_whitespace().collect::<Vec<_>>();
-    let Some(degree_index) = parts.iter().position(|part| part.parse::<f32>().is_ok()) else {
+    let mut degree_text = take_until_clause(
+        rest.trim(),
+        &[" in ", " for ", " loop ", " while ", " async"],
+    )
+    .trim();
+    if degree_text.is_empty() {
         return Ok(None);
-    };
-    let mut degrees = parts[degree_index]
-        .parse::<f32>()
-        .map_err(|_| ParseError::InvalidNumber(parts[degree_index].to_owned()))?;
-    if parts
-        .get(degree_index.saturating_sub(1))
-        .is_some_and(|part| part.eq_ignore_ascii_case("right"))
-    {
-        degrees = -degrees;
     }
+    let turn_right = degree_text
+        .split_whitespace()
+        .next()
+        .is_some_and(|part| part.eq_ignore_ascii_case("right"));
+    if degree_text
+        .split_whitespace()
+        .next()
+        .is_some_and(|part| part.eq_ignore_ascii_case("left") || part.eq_ignore_ascii_case("right"))
+    {
+        degree_text = degree_text
+            .split_once(char::is_whitespace)
+            .map(|(_, value)| value.trim())
+            .unwrap_or_default();
+    }
+    if degree_text.is_empty() {
+        return Ok(None);
+    }
+    let Some(mut degrees_value) = parse_assignment_value(degree_text)? else {
+        return Err(ParseError::InvalidNumber(degree_text.to_owned()));
+    };
+    if turn_right {
+        degrees_value = negate_assignment_value(degrees_value);
+    }
+    let degrees = static_assignment_number(&degrees_value).unwrap_or(0.0);
 
-    let duration_seconds = parse_duration_seconds(rest)?.unwrap_or(0.0);
+    let (duration_value, duration_seconds) =
+        parse_directional_move_duration_value(rest)?.unwrap_or((AssignmentValue::Number(0.0), 0.0));
     let loop_condition = parse_loop_while_condition(rest)?;
     Ok(Some(TurnStatement {
         target: target.to_owned(),
         degrees,
+        degrees_value,
         duration_seconds,
+        duration_value,
         loop_condition,
         async_run: contains_keyword(rest, "async"),
     }))
@@ -2987,15 +3647,19 @@ fn parse_rotate_turn(line: &str) -> Result<Option<TurnStatement>, ParseError> {
     let Some((inner, after_rotate)) = rest.split_once(')') else {
         return Ok(None);
     };
-    let Some(degrees) = parse_relative_y_rotation(inner)? else {
+    let Some(degrees_value) = parse_relative_y_rotation(inner)? else {
         return Ok(None);
     };
-    let duration_seconds = parse_duration_seconds(after_rotate)?.unwrap_or(0.0);
+    let degrees = static_assignment_number(&degrees_value).unwrap_or(0.0);
+    let (duration_value, duration_seconds) = parse_directional_move_duration_value(after_rotate)?
+        .unwrap_or((AssignmentValue::Number(0.0), 0.0));
     let loop_condition = parse_loop_while_condition(after_rotate)?;
     Ok(Some(TurnStatement {
         target: target.to_owned(),
         degrees,
+        degrees_value,
         duration_seconds,
+        duration_value,
         loop_condition,
         async_run: contains_keyword(after_rotate, "async"),
     }))
@@ -3008,27 +3672,72 @@ fn parse_loop_while_condition(text: &str) -> Result<Option<Condition>, ParseErro
     parse_condition(condition_text.trim())
 }
 
-fn parse_relative_y_rotation(text: &str) -> Result<Option<f32>, ParseError> {
+fn parse_relative_y_rotation(text: &str) -> Result<Option<AssignmentValue>, ParseError> {
     let normalized = text.trim().replace(' ', "");
-    let Some(raw_degrees) = normalized
+    if let Some(raw_degrees) = normalized
         .strip_prefix("y+")
         .or_else(|| normalized.strip_prefix("Y+"))
-    else {
-        if let Some(raw_degrees) = normalized
-            .strip_prefix("y-")
-            .or_else(|| normalized.strip_prefix("Y-"))
-        {
-            let degrees = raw_degrees
-                .parse::<f32>()
-                .map_err(|_| ParseError::InvalidNumber(raw_degrees.to_owned()))?;
-            return Ok(Some(-degrees));
-        }
+    {
+        let Some(value) = parse_assignment_value(raw_degrees)? else {
+            return Err(ParseError::InvalidNumber(raw_degrees.to_owned()));
+        };
+        return Ok(Some(value));
+    }
+    if let Some(raw_degrees) = normalized
+        .strip_prefix("y-")
+        .or_else(|| normalized.strip_prefix("Y-"))
+    {
+        let Some(value) = parse_assignment_value(raw_degrees)? else {
+            return Err(ParseError::InvalidNumber(raw_degrees.to_owned()));
+        };
+        return Ok(Some(negate_assignment_value(value)));
+    }
+    {
         return Ok(None);
+    }
+}
+
+fn parse_directional_move_distance_text<'a>(
+    rest: &'a str,
+    direction_text: &str,
+) -> Result<&'a str, ParseError> {
+    let after_move = rest
+        .trim_start()
+        .get("move".len()..)
+        .unwrap_or_default()
+        .trim_start();
+    let Some(after_direction) = after_move.strip_prefix(direction_text) else {
+        return Ok("");
     };
-    raw_degrees
-        .parse::<f32>()
-        .map(Some)
-        .map_err(|_| ParseError::InvalidNumber(raw_degrees.to_owned()))
+    let raw_distance = take_until_move_clause(after_direction.trim_start()).trim();
+    if raw_distance.is_empty() {
+        return Err(ParseError::InvalidNumber(raw_distance.to_owned()));
+    }
+    Ok(raw_distance)
+}
+
+fn take_until_move_clause(text: &str) -> &str {
+    take_until_clause(text, &[" in ", " for ", " loop ", " while ", " async"])
+}
+
+fn take_until_clause<'a>(text: &'a str, needles: &[&str]) -> &'a str {
+    let end = needles
+        .iter()
+        .filter_map(|needle| find_case_insensitive_span(text, needle).map(|(start, _)| start))
+        .min()
+        .unwrap_or(text.len());
+    &text[..end]
+}
+
+fn negate_assignment_value(value: AssignmentValue) -> AssignmentValue {
+    match value {
+        AssignmentValue::Number(value) => AssignmentValue::Number(-value),
+        value => AssignmentValue::Binary {
+            left: Box::new(AssignmentValue::Number(0.0)),
+            operator: ArithmeticOperator::Subtract,
+            right: Box::new(value),
+        },
+    }
 }
 
 fn parse_move(line: &str) -> Result<Option<MoveStatement>, ParseError> {
@@ -3054,18 +3763,22 @@ fn parse_move(line: &str) -> Result<Option<MoveStatement>, ParseError> {
         "down" => MoveDirection::Down,
         _ => return Ok(None),
     };
-    let raw_distance = parts.get(2).copied().unwrap_or_default();
-    let distance = raw_distance
-        .parse::<f32>()
-        .map_err(|_| ParseError::InvalidNumber(raw_distance.to_owned()))?;
-    let duration_seconds = parse_directional_move_duration_seconds(rest)?.unwrap_or(0.0);
+    let raw_distance = parse_directional_move_distance_text(rest, direction_text)?;
+    let Some(distance_value) = parse_assignment_value(raw_distance)? else {
+        return Err(ParseError::InvalidNumber(raw_distance.to_owned()));
+    };
+    let distance = static_assignment_number(&distance_value).unwrap_or(0.0);
+    let (duration_value, duration_seconds) =
+        parse_directional_move_duration_value(rest)?.unwrap_or((AssignmentValue::Number(0.0), 0.0));
     let loop_condition = parse_loop_while_condition(rest)?;
 
     Ok(Some(MoveStatement {
         target,
         direction,
         distance,
+        distance_value,
         duration_seconds,
+        duration_value,
         loop_condition,
         async_run: contains_keyword(rest, "async"),
     }))
@@ -3083,12 +3796,14 @@ fn parse_move_to(line: &str) -> Result<Option<MoveToStatement>, ParseError> {
         return Ok(None);
     };
     let destination = parse_move_to_destination(raw_destination)?;
-    let duration_seconds = parse_duration_seconds(rest)?.unwrap_or(0.0);
+    let (duration_value, duration_seconds) =
+        parse_directional_move_duration_value(rest)?.unwrap_or((AssignmentValue::Number(0.0), 0.0));
 
     Ok(Some(MoveToStatement {
         target,
         destination,
         duration_seconds,
+        duration_value,
         async_run: contains_keyword(rest, "async"),
     }))
 }
@@ -3105,13 +3820,22 @@ fn parse_move_to_destination(text: &str) -> Result<MoveToDestination, ParseError
     }
 
     let tokens = text.split_whitespace().collect::<Vec<_>>();
-    if tokens.len() == 3 && tokens[1].eq_ignore_ascii_case("forward") {
-        let distance = tokens[2]
-            .parse::<f32>()
-            .map_err(|_| ParseError::InvalidNumber(tokens[2].to_owned()))?;
+    if tokens.len() >= 3 && tokens[1].eq_ignore_ascii_case("forward") {
+        let raw_distance = text
+            .split_once(tokens[1])
+            .map(|(_, value)| value.trim())
+            .unwrap_or_default();
+        let Some(distance_value) = parse_assignment_value(raw_distance)? else {
+            return Err(ParseError::InvalidNumber(raw_distance.to_owned()));
+        };
+        let distance = static_assignment_number(&distance_value).unwrap_or(0.0);
         let entity = normalize_entity_reference(tokens[0]);
         if is_variable_path(&entity) {
-            return Ok(MoveToDestination::EntityForward { entity, distance });
+            return Ok(MoveToDestination::EntityForward {
+                entity,
+                distance,
+                distance_value,
+            });
         }
     }
 
@@ -3135,26 +3859,29 @@ fn parse_character_mode(line: &str) -> Result<Option<CharacterModeStatement>, Pa
         return Ok(None);
     }
 
-    let gravity = if let Some((_, after_gravity)) = split_once_case_insensitive(rest, "gravity") {
-        let raw_gravity = after_gravity
-            .trim_start_matches(|value: char| value.is_whitespace() || value == ':' || value == '=')
-            .split(|value: char| value.is_whitespace() || value == ',' || value == ':')
-            .next()
-            .unwrap_or_default();
-        if raw_gravity.is_empty() {
-            None
+    let (gravity, gravity_value) =
+        if let Some((_, after_gravity)) = split_once_case_insensitive(rest, "gravity") {
+            let after_gravity = after_gravity.trim_start_matches(|value: char| {
+                value.is_whitespace() || value == ':' || value == '='
+            });
+            let raw_gravity = take_until_clause(after_gravity, &[",", " async"]).trim();
+            if raw_gravity.is_empty() {
+                (None, None)
+            } else {
+                let Some(value) = parse_assignment_value(raw_gravity)? else {
+                    return Err(ParseError::InvalidNumber(raw_gravity.to_owned()));
+                };
+                (static_assignment_number(&value), Some(value))
+            }
         } else {
-            Some(
-                raw_gravity
-                    .parse::<f32>()
-                    .map_err(|_| ParseError::InvalidNumber(raw_gravity.to_owned()))?,
-            )
-        }
-    } else {
-        None
-    };
+            (None, None)
+        };
 
-    Ok(Some(CharacterModeStatement { target, gravity }))
+    Ok(Some(CharacterModeStatement {
+        target,
+        gravity,
+        gravity_value,
+    }))
 }
 
 fn parse_clear_character_mode(line: &str) -> Option<String> {
@@ -3202,20 +3929,22 @@ fn parse_character_jump(line: &str) -> Result<Option<CharacterJumpStatement>, Pa
     } else {
         "speed"
     };
-    let raw_speed = rest[speed_index + speed_prefix.len()..]
-        .trim()
-        .split(|value: char| value.is_whitespace() || value == ',' || value == ':')
-        .next()
-        .unwrap_or_default();
+    let raw_speed = take_until_clause(
+        rest[speed_index + speed_prefix.len()..].trim(),
+        &[",", ":", " async"],
+    )
+    .trim();
     if raw_speed.is_empty() {
         return Ok(None);
     }
-    let speed = raw_speed
-        .parse::<f32>()
-        .map_err(|_| ParseError::InvalidNumber(raw_speed.to_owned()))?;
+    let Some(speed_value) = parse_assignment_value(raw_speed)? else {
+        return Err(ParseError::InvalidNumber(raw_speed.to_owned()));
+    };
+    let speed = static_assignment_number(&speed_value).unwrap_or(0.0);
     Ok(Some(CharacterJumpStatement {
         target: target.to_owned(),
         speed,
+        speed_value,
         async_run: contains_keyword(rest, "async"),
     }))
 }
@@ -3238,13 +3967,22 @@ fn parse_physics_command(line: &str) -> Result<Option<Statement>, ParseError> {
     let Some(direction) = parse_physics_direction(parts[2]) else {
         return Ok(None);
     };
-    let strength = parts[3]
-        .parse::<f32>()
-        .map_err(|_| ParseError::InvalidNumber(parts[3].to_owned()))?;
+    let raw_strength = take_until_clause(
+        rest.split_once(parts[2])
+            .map(|(_, value)| value.trim())
+            .unwrap_or_default(),
+        &[" for ", " in ", " async"],
+    )
+    .trim();
+    let Some(strength_value) = parse_assignment_value(raw_strength)? else {
+        return Err(ParseError::InvalidNumber(raw_strength.to_owned()));
+    };
+    let strength = static_assignment_number(&strength_value).unwrap_or(0.0);
     Ok(Some(Statement::PhysicsImpulse(PhysicsImpulseStatement {
         target,
         direction,
         strength,
+        strength_value,
     })))
 }
 
@@ -3331,10 +4069,13 @@ fn parse_animation(line: &str) -> Result<Option<AnimationStatement>, ParseError>
     let looped = contains_keyword(after_clip, "loop");
     let async_animation = contains_keyword(after_clip, "async");
 
+    let speed_value = parse_speed_value(after_clip)?;
+    let speed = static_assignment_number(&speed_value).unwrap_or(1.0);
     Ok(Some(AnimationStatement {
         target: target.to_owned(),
         clip,
-        speed: parse_speed(after_clip)?,
+        speed,
+        speed_value,
         looped,
         blocking: !looped && !async_animation,
     }))
@@ -3356,29 +4097,185 @@ fn parse_sprite_play(line: &str) -> Result<Option<SpritePlayStatement>, ParseErr
     let Some((from_text, after_from)) = split_once_case_insensitive(frame_text, " to ") else {
         return Ok(None);
     };
-    let from_frame = from_text
-        .trim()
-        .parse::<usize>()
-        .map_err(|_| ParseError::InvalidNumber(from_text.trim().to_owned()))?;
-    let to_raw = after_from
-        .trim()
-        .split(|value: char| value.is_whitespace() || value == ')' || value == ',')
-        .next()
-        .unwrap_or_default();
+    let Some(from_frame_value) = parse_assignment_value(from_text.trim())? else {
+        return Err(ParseError::InvalidNumber(from_text.trim().to_owned()));
+    };
+    let from_frame = static_assignment_number(&from_frame_value)
+        .unwrap_or(0.0)
+        .max(0.0) as usize;
+    let to_raw =
+        take_until_clause(after_from.trim(), &[" in ", " for ", " loop ", ")", ","]).trim();
     if to_raw.is_empty() {
         return Ok(None);
     }
-    let to_frame = to_raw
-        .parse::<usize>()
-        .map_err(|_| ParseError::InvalidNumber(to_raw.to_owned()))?;
-    let duration_seconds = parse_duration_seconds(rest)?.unwrap_or(0.0).max(0.001);
+    let Some(to_frame_value) = parse_assignment_value(to_raw)? else {
+        return Err(ParseError::InvalidNumber(to_raw.to_owned()));
+    };
+    let to_frame = static_assignment_number(&to_frame_value)
+        .unwrap_or(0.0)
+        .max(0.0) as usize;
+    let (duration_value, duration_seconds) =
+        parse_directional_move_duration_value(rest)?.unwrap_or((AssignmentValue::Number(0.0), 0.0));
+    let duration_seconds = duration_seconds.max(0.001);
     Ok(Some(SpritePlayStatement {
         target: target.to_owned(),
         from_frame,
+        from_frame_value,
         to_frame,
+        to_frame_value,
         duration_seconds,
+        duration_value,
         looped: contains_keyword(rest, "loop"),
     }))
+}
+
+fn parse_channel_draw(line: &str) -> Result<Option<ChannelDrawStatement>, ParseError> {
+    let Some((channel, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
+    let rest = rest.trim();
+    if !starts_with_keyword(rest, "draw") {
+        return Ok(None);
+    }
+    let after_draw = rest["draw".len()..].trim();
+    if after_draw.is_empty() {
+        return Ok(None);
+    }
+    let (resource_text, attrs_text) = split_channel_draw_resource_and_attrs(after_draw);
+    let resource = resource_text.trim();
+    if !is_variable_name(resource) && !resource.eq_ignore_ascii_case("clear") {
+        return Ok(None);
+    }
+
+    let mut statement = ChannelDrawStatement {
+        channel,
+        resource: resource.to_owned(),
+        clear: resource.eq_ignore_ascii_case("clear"),
+        pos_x: None,
+        pos_y: None,
+        width: None,
+        height: None,
+        frame: None,
+        stretch: false,
+    };
+    parse_channel_draw_attrs(attrs_text, &mut statement)?;
+    Ok(Some(statement))
+}
+
+fn split_channel_draw_resource_and_attrs(text: &str) -> (&str, &str) {
+    let mut resource_end = text.len();
+    if let Some(index) = text.find(':') {
+        resource_end = resource_end.min(index);
+    }
+    if let Some((before, _)) = split_once_case_insensitive(text, " having ") {
+        resource_end = resource_end.min(before.len());
+    }
+    let resource = text[..resource_end].trim();
+    let attrs = text[resource_end..]
+        .trim()
+        .trim_start_matches(':')
+        .trim()
+        .strip_prefix("having ")
+        .or_else(|| text[resource_end..].trim().strip_prefix("Having "))
+        .unwrap_or_else(|| text[resource_end..].trim())
+        .trim();
+    (resource, attrs)
+}
+
+fn parse_channel_draw_attrs(
+    attrs_text: &str,
+    statement: &mut ChannelDrawStatement,
+) -> Result<(), ParseError> {
+    if attrs_text.is_empty() {
+        return Ok(());
+    }
+    for attr in split_channel_draw_attrs(attrs_text) {
+        let attr = attr.trim().trim_start_matches(':').trim();
+        if attr.is_empty() {
+            continue;
+        }
+        if attr.eq_ignore_ascii_case("stretch") {
+            statement.stretch = true;
+            continue;
+        }
+        if starts_with_keyword(attr, "stretch") {
+            statement.stretch = true;
+            continue;
+        }
+        if starts_with_keyword(attr, "frames") || starts_with_keyword(attr, "frame") {
+            let value = attr
+                .split_once(char::is_whitespace)
+                .map(|(_, value)| value.trim())
+                .unwrap_or_default();
+            if let Some(frame) = parse_assignment_value(clean_assignment_value(value))? {
+                statement.frame = Some(frame);
+            }
+            continue;
+        }
+        if starts_with_keyword(attr, "pos") {
+            if let Some((x, y)) = parse_channel_draw_pair(attr, "pos")? {
+                statement.pos_x = Some(x);
+                statement.pos_y = Some(y);
+            }
+            continue;
+        }
+        if starts_with_keyword(attr, "size") {
+            if let Some((width, height)) = parse_channel_draw_pair(attr, "size")? {
+                statement.width = Some(width);
+                statement.height = Some(height);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn split_channel_draw_attrs(text: &str) -> Vec<&str> {
+    split_top_level_comma(text)
+        .into_iter()
+        .flat_map(split_top_level_and)
+        .collect()
+}
+
+fn split_top_level_and(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut remaining = text.trim();
+    while let Some((left, right)) = split_once_case_insensitive(remaining, " and ") {
+        let left = left.trim();
+        if !left.is_empty() {
+            parts.push(left);
+        }
+        remaining = right.trim();
+    }
+    if !remaining.is_empty() {
+        parts.push(remaining);
+    }
+    parts
+}
+
+fn parse_channel_draw_pair(
+    attr: &str,
+    keyword: &str,
+) -> Result<Option<(AssignmentValue, AssignmentValue)>, ParseError> {
+    let Some(open_index) = attr.find('(') else {
+        return Ok(None);
+    };
+    if !attr[..open_index].trim().eq_ignore_ascii_case(keyword) {
+        return Ok(None);
+    }
+    let Some(close_index) = attr.rfind(')') else {
+        return Ok(None);
+    };
+    let parts = split_top_level_comma(&attr[open_index + 1..close_index]);
+    let (Some(x), Some(y)) = (parts.first(), parts.get(1)) else {
+        return Ok(None);
+    };
+    let Some(x) = parse_assignment_value(clean_assignment_value(x))? else {
+        return Ok(None);
+    };
+    let Some(y) = parse_assignment_value(clean_assignment_value(y))? else {
+        return Ok(None);
+    };
+    Ok(Some((x, y)))
 }
 
 fn parse_cinematic_play(line: &str) -> Result<Option<CinematicPlayStatement>, ParseError> {
@@ -3479,18 +4376,23 @@ fn parse_animation_speed(line: &str) -> Result<Option<AnimationSpeedStatement>, 
     if !lower.starts_with("animation speed") {
         return Ok(None);
     }
-    let raw_speed = rest["animation speed".len()..]
-        .trim()
-        .split(|value: char| value.is_whitespace() || value == ',' || value == ':')
-        .next()
-        .unwrap_or_default();
+    let raw_speed = take_until_clause(
+        rest["animation speed".len()..].trim(),
+        &[",", ":", " for ", " when ", " async"],
+    )
+    .trim();
     if raw_speed.is_empty() {
         return Ok(None);
     }
-    let speed = raw_speed
-        .parse::<f32>()
-        .map_err(|_| ParseError::InvalidNumber(raw_speed.to_owned()))?;
-    let duration_seconds = parse_for_duration_seconds_tolerant(rest);
+    let Some(speed_value) = parse_assignment_value(raw_speed)? else {
+        return Err(ParseError::InvalidNumber(raw_speed.to_owned()));
+    };
+    let speed = static_assignment_number(&speed_value).unwrap_or(0.0);
+    let duration = parse_duration_assignment_value(rest, " for ")?;
+    let (duration_value, duration_seconds) = match duration {
+        Some((value, seconds)) => (Some(value), Some(seconds)),
+        None => (None, None),
+    };
     let condition = split_once_case_insensitive(rest, " when ")
         .map(|(_, condition_text)| parse_condition(condition_text.trim()))
         .transpose()?
@@ -3498,7 +4400,9 @@ fn parse_animation_speed(line: &str) -> Result<Option<AnimationSpeedStatement>, 
     Ok(Some(AnimationSpeedStatement {
         target: target.to_owned(),
         speed,
+        speed_value,
         duration_seconds,
+        duration_value,
         condition,
     }))
 }
@@ -3508,10 +4412,7 @@ fn is_unsupported_dotted_runtime_command(line: &str) -> bool {
         return false;
     };
     let lower = rest.trim().to_ascii_lowercase();
-    lower == "draw clear"
-        || lower.starts_with("draw clear ")
-        || lower.starts_with("draw ")
-        || lower.starts_with("switch ")
+    lower.starts_with("switch ")
         || lower.starts_with("play ")
         || lower.starts_with("stop ")
         || lower.starts_with("clear ")
@@ -3520,9 +4421,6 @@ fn is_unsupported_dotted_runtime_command(line: &str) -> bool {
 fn is_runtime_noop_command(line: &str) -> bool {
     let line = line.trim();
     let lower = line.to_ascii_lowercase();
-    if lower.starts_with("audio.play ") || lower.starts_with("audio.stop ") {
-        return true;
-    }
     if lower.starts_with("camera.chase ") || lower == "camera.chase stop" {
         return true;
     }
@@ -3547,70 +4445,58 @@ fn is_runtime_noop_command(line: &str) -> bool {
         || rest.starts_with("clear ")
 }
 
-fn parse_speed(text: &str) -> Result<f32, ParseError> {
+fn parse_speed_value(text: &str) -> Result<AssignmentValue, ParseError> {
     let lower = text.to_ascii_lowercase();
     let Some(index) = lower.find("speed of") else {
-        return Ok(1.0);
+        return Ok(AssignmentValue::Number(1.0));
     };
-    let raw = text[index + "speed of".len()..]
-        .trim()
-        .split(|value: char| value.is_whitespace() || value == ',' || value == ':')
-        .next()
-        .unwrap_or("1");
-    raw.parse::<f32>()
-        .map_err(|_| ParseError::InvalidNumber(raw.to_owned()))
+    let raw = take_until_clause(
+        text[index + "speed of".len()..].trim(),
+        &[
+            ",", ":", " loop ", " loop", " async", " when ", " for ", " in ",
+        ],
+    )
+    .trim();
+    if raw.is_empty() {
+        return Ok(AssignmentValue::Number(1.0));
+    }
+    let Some(value) = parse_assignment_value(raw)? else {
+        return Err(ParseError::InvalidNumber(raw.to_owned()));
+    };
+    Ok(value)
 }
 
-fn parse_for_duration_seconds(text: &str) -> Result<Option<f32>, ParseError> {
-    let lower = text.to_ascii_lowercase();
-    let Some(for_index) = lower.find(" for ") else {
+fn parse_directional_move_duration_value(
+    text: &str,
+) -> Result<Option<(AssignmentValue, f32)>, ParseError> {
+    match parse_duration_assignment_value(text, " for ")? {
+        Some(value) => Ok(Some(value)),
+        None => parse_duration_assignment_value(text, " in "),
+    }
+}
+
+fn parse_duration_assignment_value(
+    text: &str,
+    marker: &str,
+) -> Result<Option<(AssignmentValue, f32)>, ParseError> {
+    let Some((_, marker_end)) = find_case_insensitive_span(text, marker) else {
         return Ok(None);
     };
-    let raw = text[for_index + " for ".len()..]
-        .trim()
-        .split_whitespace()
-        .next()
-        .unwrap_or_default();
+    let after = text[marker_end..].trim_start();
+    let end = [" seconds", " second", " loop ", " while ", " async"]
+        .into_iter()
+        .filter_map(|needle| find_case_insensitive_span(after, needle).map(|(start, _)| start))
+        .min()
+        .unwrap_or(after.len());
+    let raw = after[..end].trim();
     if raw.is_empty() {
         return Ok(None);
     }
-    Ok(raw.parse::<f32>().ok())
-}
-
-fn parse_directional_move_duration_seconds(text: &str) -> Result<Option<f32>, ParseError> {
-    match parse_for_duration_seconds(text)? {
-        Some(seconds) => Ok(Some(seconds)),
-        None => parse_duration_seconds(text),
-    }
-}
-
-fn parse_for_duration_seconds_tolerant(text: &str) -> Option<f32> {
-    let lower = text.to_ascii_lowercase();
-    let for_index = lower.find(" for ")?;
-    let raw = text[for_index + " for ".len()..]
-        .trim()
-        .split_whitespace()
-        .next()
-        .unwrap_or_default();
-    raw.parse::<f32>().ok()
-}
-
-fn parse_duration_seconds(text: &str) -> Result<Option<f32>, ParseError> {
-    let lower = text.to_ascii_lowercase();
-    let Some(in_index) = lower.find(" in ") else {
-        return Ok(None);
+    let Some(value) = parse_assignment_value(raw)? else {
+        return Err(ParseError::InvalidNumber(raw.to_owned()));
     };
-    let raw = text[in_index + " in ".len()..]
-        .trim()
-        .split_whitespace()
-        .next()
-        .unwrap_or_default();
-    if raw.is_empty() {
-        return Ok(None);
-    }
-    raw.parse::<f32>()
-        .map(Some)
-        .map_err(|_| ParseError::InvalidNumber(raw.to_owned()))
+    let seconds = static_assignment_number(&value).unwrap_or(0.0);
+    Ok(Some((value, seconds)))
 }
 
 fn split_resource_and_options(rest: &str) -> (&str, &str) {
@@ -3631,17 +4517,131 @@ fn split_resource_and_options(rest: &str) -> (&str, &str) {
 }
 
 fn normalize_resource(resource: &str) -> String {
-    let mut parts = resource.split_whitespace().filter(|part| {
-        !part.eq_ignore_ascii_case("dynamic")
-            && !part.eq_ignore_ascii_case("static")
-            && !part.eq_ignore_ascii_case("collider")
-    });
-    parts.next().unwrap_or(resource.trim()).trim().to_owned()
+    let parts = resource
+        .split_whitespace()
+        .filter(|part| {
+            !part.eq_ignore_ascii_case("dynamic")
+                && !part.eq_ignore_ascii_case("static")
+                && !part.eq_ignore_ascii_case("collider")
+        })
+        .collect::<Vec<_>>();
+    let normalized = parts.join(" ");
+    if is_java_primitive_resource(&normalized) {
+        return normalized;
+    }
+    parts.first().unwrap_or(&resource.trim()).trim().to_owned()
+}
+
+fn is_java_primitive_resource(resource: &str) -> bool {
+    matches!(
+        resource.to_ascii_lowercase().as_str(),
+        "sphere"
+            | "box"
+            | "cylinder"
+            | "hollow cylinder"
+            | "quad"
+            | "wedge"
+            | "cone"
+            | "stairs"
+            | "arch"
+    )
 }
 
 fn is_deferred_or_non_model_resource(_raw_resource: &str, resource: &str) -> bool {
     let resource_lower = resource.to_ascii_lowercase();
     resource_lower.starts_with("object.pool")
+}
+
+fn parse_size_after(text: &str) -> Result<Option<SceneMaxVec3>, ParseError> {
+    let Some(values) = parse_float_list_after(text, "size")? else {
+        return Ok(None);
+    };
+    match values.as_slice() {
+        [x, y] => Ok(Some(SceneMaxVec3 {
+            x: *x,
+            y: *y,
+            z: 1.0,
+        })),
+        [x, y, z] => Ok(Some(SceneMaxVec3 {
+            x: *x,
+            y: *y,
+            z: *z,
+        })),
+        _ => Err(ParseError::InvalidNumber(
+            values
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        )),
+    }
+}
+
+fn parse_float_pair_after(text: &str, name: &str) -> Result<Option<(f32, f32)>, ParseError> {
+    let Some(values) = parse_float_list_after(text, name)? else {
+        return Ok(None);
+    };
+    match values.as_slice() {
+        [left, right] => Ok(Some((*left, *right))),
+        _ => Err(ParseError::InvalidNumber(
+            values
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        )),
+    }
+}
+
+fn parse_float_list_after(text: &str, name: &str) -> Result<Option<Vec<f32>>, ParseError> {
+    let lower = text.to_ascii_lowercase();
+    let needle = name.to_ascii_lowercase();
+    let Some(after_open) = lower.match_indices(&needle).find_map(|(index, _)| {
+        let after_name = &text[index + name.len()..];
+        after_name.trim_start().strip_prefix('(')
+    }) else {
+        return Ok(None);
+    };
+    let Some(close_index) = after_open.find(')') else {
+        return Err(ParseError::InvalidNumber(name.to_owned()));
+    };
+    let raw_values = &after_open[..close_index];
+    raw_values
+        .split(',')
+        .map(|raw| {
+            let value = raw.trim();
+            value
+                .parse::<f32>()
+                .map_err(|_| ParseError::InvalidNumber(value.to_owned()))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
+fn parse_usize_after(text: &str, name: &str) -> Option<usize> {
+    parse_scalar_after(text, name)
+        .ok()
+        .flatten()
+        .map(|value| value.round().max(1.0) as usize)
+}
+
+fn parse_inner_radius_pair_after(text: &str) -> Result<Option<(f32, f32)>, ParseError> {
+    let lower = text.to_ascii_lowercase();
+    let Some(index) = lower.find("inner radius") else {
+        return Ok(None);
+    };
+    parse_float_pair_after(&text[index + "inner ".len()..], "radius")
+}
+
+fn parse_outer_radius_pair_after(text: &str) -> Result<Option<(f32, f32)>, ParseError> {
+    let lower = text.to_ascii_lowercase();
+    let Some(index) = lower.find("radius") else {
+        return Ok(None);
+    };
+    if lower[..index].ends_with("inner ") {
+        return Ok(None);
+    }
+    parse_float_pair_after(&text[index..], "radius")
 }
 
 fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseError> {
@@ -3650,18 +4650,86 @@ fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseErr
         y: value,
         z: value,
     });
+    let outer_radius = parse_outer_radius_pair_after(text)?;
+    let inner_radius = parse_inner_radius_pair_after(text)?;
+    let position = parse_vec3_after(text, "pos").ok();
+    let position_value = parse_position_value_after(text, "pos")?;
     Ok(EntityOptions {
-        position: parse_vec3_after(text, "pos").ok(),
+        position,
+        position_value,
         rotation_degrees: parse_vec3_after(text, "rotate").ok(),
         scale,
-        size: parse_vec3_after(text, "size").ok(),
+        size: parse_size_after(text)?,
+        material: parse_quoted_value_after(text, "material"),
         hidden: contains_keyword(text, "hidden"),
         collider: contains_keyword(raw, "collider"),
         radius: parse_scalar_after(text, "radius")?,
+        radius_top: outer_radius.map(|value| value.0),
+        radius_bottom: outer_radius.map(|value| value.1),
+        inner_radius_top: inner_radius.map(|value| value.0),
+        inner_radius_bottom: inner_radius.map(|value| value.1),
+        height: parse_scalar_after(text, "height")?,
+        steps: parse_usize_after(text, "steps"),
+        thickness: parse_scalar_after(text, "thickness")?,
+        segments: parse_usize_after(text, "segments"),
         body_kind: parse_body_kind(raw),
         collision_shape: parse_collision_shape(raw),
         sprite: contains_keyword(raw, "sprite"),
     })
+}
+
+fn parse_quoted_value_after(text: &str, name: &str) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    let name = name.to_ascii_lowercase();
+    let index = lower.find(&name)?;
+    let after_name = text[index + name.len()..].trim_start();
+    parse_quoted_strings(after_name).into_iter().next()
+}
+
+fn parse_position_value_after(text: &str, name: &str) -> Result<Option<PositionValue>, ParseError> {
+    let lower = text.to_ascii_lowercase();
+    let Some(after_open) =
+        lower
+            .match_indices(&name.to_ascii_lowercase())
+            .find_map(|(index, _)| {
+                let after_name = &text[index + name.len()..];
+                after_name.trim_start().strip_prefix('(')
+            })
+    else {
+        return Ok(None);
+    };
+    let Some(close_index) = matching_close_paren_index(after_open) else {
+        return Ok(None);
+    };
+    let raw_values = &after_open[..close_index];
+    let parts = split_top_level_comma(raw_values);
+    if parts.len() != 3 {
+        return Ok(None);
+    }
+    let values = parts
+        .into_iter()
+        .map(parse_position_expr)
+        .collect::<Result<Vec<_>, _>>()?;
+    if values
+        .iter()
+        .all(|value| matches!(value, PositionExpr::Number(_)))
+    {
+        return Ok(None);
+    }
+    Ok(Some(PositionValue::Coordinates(values)))
+}
+
+fn matching_close_paren_index(text_after_open: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, value) in text_after_open.char_indices() {
+        match value {
+            '(' => depth += 1,
+            ')' if depth == 0 => return Some(index),
+            ')' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn parse_body_kind(text: &str) -> Option<SceneMaxBodyKind> {
@@ -3992,6 +5060,7 @@ mod tests {
                         target: "d".to_owned(),
                         clip: "fly".to_owned(),
                         speed: 1.0,
+                        speed_value: AssignmentValue::Number(1.0),
                         looped: true,
                         blocking: false,
                     }),
@@ -4019,8 +5088,11 @@ mod tests {
                 Statement::SpritePlay(SpritePlayStatement {
                     target: "b".to_owned(),
                     from_frame: 0,
+                    from_frame_value: AssignmentValue::Number(0 as f32),
                     to_frame: 13,
+                    to_frame_value: AssignmentValue::Number(13 as f32),
                     duration_seconds: 1.0,
+                    duration_value: AssignmentValue::Number(1.0),
                     looped: true,
                 }),
             ]
@@ -4094,6 +5166,7 @@ mod tests {
                 target: "d".to_owned(),
                 clip: "Fly Forward".to_owned(),
                 speed: 0.5,
+                speed_value: AssignmentValue::Number(0.5),
                 looped: true,
                 blocking: false,
             })]
@@ -4101,13 +5174,57 @@ mod tests {
     }
 
     #[test]
-    fn leaves_draw_clear_out_of_animation_parser() {
+    fn parses_channel_draw_clear_out_of_animation_parser() {
         let program = parse_program("intro.draw clear").unwrap();
 
         assert!(matches!(
             program.statements.as_slice(),
-            [Statement::Unsupported { text }] if text == "intro.draw clear"
+            [Statement::ChannelDraw(ChannelDrawStatement { channel, clear, .. })]
+                if channel == "intro" && *clear
         ));
+    }
+
+    #[test]
+    fn parses_channel_draw_stretched_splash_screen() {
+        let program = parse_program("intro.draw intro_page: stretch").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::ChannelDraw(ChannelDrawStatement {
+                channel: "intro".to_owned(),
+                resource: "intro_page".to_owned(),
+                clear: false,
+                pos_x: None,
+                pos_y: None,
+                width: None,
+                height: None,
+                frame: None,
+                stretch: true,
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_channel_draw_frame_position_and_size() {
+        let program = parse_program(
+            "intro.draw intro_page having pos (10, 20) and frames frame_index and size (320, 180)",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::ChannelDraw(ChannelDrawStatement {
+                channel: "intro".to_owned(),
+                resource: "intro_page".to_owned(),
+                clear: false,
+                pos_x: Some(AssignmentValue::Number(10.0)),
+                pos_y: Some(AssignmentValue::Number(20.0)),
+                width: Some(AssignmentValue::Number(320.0)),
+                height: Some(AssignmentValue::Number(180.0)),
+                frame: Some(AssignmentValue::Symbol("frame_index".to_owned())),
+                stretch: false,
+            })]
+        );
     }
 
     #[test]
@@ -4119,6 +5236,7 @@ mod tests {
             vec![Statement::CharacterMode(CharacterModeStatement {
                 target: "player1".to_owned(),
                 gravity: Some(60.0),
+                gravity_value: Some(AssignmentValue::Number(60.0)),
             })]
         );
     }
@@ -4159,6 +5277,7 @@ mod tests {
                 target: "player1".to_owned(),
                 clip: "right_death1".to_owned(),
                 speed: 1.2,
+                speed_value: AssignmentValue::Number(1.2),
                 looped: false,
                 blocking: true,
             })]
@@ -4175,7 +5294,9 @@ mod tests {
             vec![Statement::AnimationSpeed(AnimationSpeedStatement {
                 target: "player2".to_owned(),
                 speed: 3.0,
+                speed_value: AssignmentValue::Number(3.0),
                 duration_seconds: Some(0.2),
+                duration_value: Some(AssignmentValue::Number(0.2)),
                 condition: Some(Condition::Compare {
                     name: "frames".to_owned(),
                     operator: ComparisonOperator::Greater,
@@ -4194,10 +5315,64 @@ mod tests {
             vec![Statement::AnimationSpeed(AnimationSpeedStatement {
                 target: "player1".to_owned(),
                 speed: 0.01,
-                duration_seconds: None,
+                speed_value: AssignmentValue::Number(0.01),
+                duration_seconds: Some(0.0),
+                duration_value: Some(AssignmentValue::Symbol("tm".to_owned())),
                 condition: None,
             })]
         );
+    }
+
+    #[test]
+    fn parses_animation_speed_command_with_tabbed_duration_clause() {
+        let program =
+            parse_program("player2.animation speed 0.01\tfor tm seconds when frames > frame_count")
+                .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::AnimationSpeed(AnimationSpeedStatement {
+                target: "player2".to_owned(),
+                speed: 0.01,
+                speed_value: AssignmentValue::Number(0.01),
+                duration_seconds: Some(0.0),
+                duration_value: Some(AssignmentValue::Symbol("tm".to_owned())),
+                condition: Some(Condition::Compare {
+                    name: "frames".to_owned(),
+                    operator: ComparisonOperator::Greater,
+                    value: AssignmentValue::Symbol("frame_count".to_owned()),
+                }),
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_function_with_tabbed_animation_speed_before_following_when() {
+        let program = parse_program(
+            "player1_slow_motion (tm, frame_count) = {\n\
+             player2.animation speed 0.01\tfor tm seconds\n\
+             player1.animation speed 0.01\tfor tm seconds when frames > frame_count\n\
+             }\n\
+             when player1_ko == 1 do\n\
+             player1_ko=0\n\
+             end do",
+        )
+        .unwrap();
+
+        assert_eq!(program.statements.len(), 2);
+        assert!(matches!(
+            &program.statements[0],
+            Statement::FunctionDef(function) if function.name == "player1_slow_motion"
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::WhenEvent(when_event)
+                if matches!(
+                    &when_event.condition,
+                    Condition::EqualsNumber { name, value }
+                        if name == "player1_ko" && (*value - 1.0).abs() < f32::EPSILON
+                )
+        ));
     }
 
     #[test]
@@ -4209,6 +5384,7 @@ mod tests {
             vec![Statement::CharacterJump(CharacterJumpStatement {
                 target: "player1".to_owned(),
                 speed: 35.0,
+                speed_value: AssignmentValue::Number(35.0),
                 async_run: true,
             })]
         );
@@ -4301,6 +5477,7 @@ mod tests {
                     radius: None,
                     body_kind: Some(SceneMaxBodyKind::Kinematic),
                     collision_shape: None,
+                    ..Default::default()
                 },
             }]
         );
@@ -4334,6 +5511,7 @@ mod tests {
                         radius: None,
                         body_kind: Some(SceneMaxBodyKind::Static),
                         collision_shape: Some(SceneMaxCollisionShape::Box),
+                        ..Default::default()
                     },
                 },
                 Statement::ModelDecl {
@@ -4415,6 +5593,40 @@ mod tests {
     }
 
     #[test]
+    fn parses_camera_relative_move() {
+        let program = parse_program("camera.move (z+5) in 5 seconds").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::CameraMove(CameraMoveStatement {
+                axis: SceneMaxAxis::Z,
+                distance: 5.0,
+                distance_value: AssignmentValue::Number(5.0),
+                duration_seconds: 5.0,
+                duration_value: AssignmentValue::Number(5.0),
+                async_run: false,
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_camera_relative_move_async_negative_axis_delta() {
+        let program = parse_program("camera.move (x-2.5) for tm seconds async").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::CameraMove(CameraMoveStatement {
+                axis: SceneMaxAxis::X,
+                distance: -2.5,
+                distance_value: AssignmentValue::Number(-2.5),
+                duration_seconds: 0.0,
+                duration_value: AssignmentValue::Symbol("tm".to_owned()),
+                async_run: true,
+            })]
+        );
+    }
+
+    #[test]
     fn parses_wait_for_key() {
         let program = parse_program("wait for key space to be pressed").unwrap();
 
@@ -4458,6 +5670,7 @@ mod tests {
                         radius: None,
                         body_kind: Some(SceneMaxBodyKind::Static),
                         collision_shape: None,
+                        ..Default::default()
                     },
                 },
                 Statement::Visibility {
@@ -4471,7 +5684,9 @@ mod tests {
                 Statement::Turn(TurnStatement {
                     target: "ring".to_owned(),
                     degrees: 360.0,
+                    degrees_value: AssignmentValue::Number(360.0),
                     duration_seconds: 50.0,
+                    duration_value: AssignmentValue::Number(50.0),
                     loop_condition: None,
                     async_run: true,
                 }),
@@ -4488,7 +5703,9 @@ mod tests {
             vec![Statement::Turn(TurnStatement {
                 target: "axe".to_owned(),
                 degrees: 360.0,
+                degrees_value: AssignmentValue::Number(360.0),
                 duration_seconds: 1.0,
+                duration_value: AssignmentValue::Number(1.0),
                 loop_condition: Some(Condition::EqualsValue {
                     left: AssignmentValue::Number(1.0),
                     right: AssignmentValue::Number(1.0),
@@ -4496,6 +5713,99 @@ mod tests {
                 async_run: false,
             })]
         );
+    }
+
+    #[test]
+    fn parses_java_projector_primitives_and_quad_size() {
+        let program = parse_program(
+            "q => quad : size (4,3)\n\
+             cyl => cylinder : radius (0.5,1), height 2.5\n\
+             hc => hollow cylinder : radius (1.2,1), inner radius (0.4,0.3), height 2\n\
+             w => wedge : size (2,3,4)\n\
+             co => cone : radius (0,1), height 2\n\
+             st => stairs : size (2,0.25,0.4), steps 7\n\
+             ar => arch : size (3,4,0.5), thickness 0.4, segments 10",
+        )
+        .unwrap();
+
+        assert_eq!(program.statements.len(), 7);
+        assert!(matches!(
+            &program.statements[0],
+            Statement::ModelDecl { resource, options, .. }
+                if resource == "quad"
+                    && options.size == Some(SceneMaxVec3 { x: 4.0, y: 3.0, z: 1.0 })
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::ModelDecl { resource, options, .. }
+                if resource == "cylinder"
+                    && options.radius_top == Some(0.5)
+                    && options.radius_bottom == Some(1.0)
+                    && options.height == Some(2.5)
+        ));
+        assert!(matches!(
+            &program.statements[2],
+            Statement::ModelDecl { resource, options, .. }
+                if resource == "hollow cylinder"
+                    && options.radius_top == Some(1.2)
+                    && options.radius_bottom == Some(1.0)
+                    && options.inner_radius_top == Some(0.4)
+                    && options.inner_radius_bottom == Some(0.3)
+                    && options.height == Some(2.0)
+        ));
+        assert!(matches!(
+            &program.statements[3],
+            Statement::ModelDecl { resource, options, .. }
+                if resource == "wedge"
+                    && options.size == Some(SceneMaxVec3 { x: 2.0, y: 3.0, z: 4.0 })
+        ));
+        assert!(matches!(
+            &program.statements[4],
+            Statement::ModelDecl { resource, options, .. }
+                if resource == "cone"
+                    && options.radius_top == Some(0.0)
+                    && options.radius_bottom == Some(1.0)
+                    && options.height == Some(2.0)
+        ));
+        assert!(matches!(
+            &program.statements[5],
+            Statement::ModelDecl { resource, options, .. }
+                if resource == "stairs" && options.steps == Some(7)
+        ));
+        assert!(matches!(
+            &program.statements[6],
+            Statement::ModelDecl { resource, options, .. }
+                if resource == "arch"
+                    && options.thickness == Some(0.4)
+                    && options.segments == Some(10)
+        ));
+    }
+
+    #[test]
+    fn parses_primitive_material_option() {
+        let program = parse_program("quad_1 => quad : size (1,1), material \"wall\"").unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::ModelDecl { options, .. }
+                if options.material.as_deref() == Some("wall")
+        ));
+    }
+
+    #[test]
+    fn parses_expression_position_on_model_declaration() {
+        let program =
+            parse_program("box_test => box : pos (rnd(20)-10, rnd(4)+1, rnd(20)-10)").unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::ModelDecl { options, .. }
+                if options.position.is_none()
+                    && matches!(
+                        options.position_value,
+                        Some(PositionValue::Coordinates(ref values)) if values.len() == 3
+                    )
+        ));
     }
 
     #[test]
@@ -4508,7 +5818,9 @@ mod tests {
                 target: "player1".to_owned(),
                 direction: MoveDirection::Forward,
                 distance: 0.5,
+                distance_value: AssignmentValue::Number(0.5),
                 duration_seconds: 0.25,
+                duration_value: AssignmentValue::Number(0.25),
                 loop_condition: None,
                 async_run: true,
             })]
@@ -4525,11 +5837,132 @@ mod tests {
                 target: "g".to_owned(),
                 direction: MoveDirection::Up,
                 distance: 4.0,
+                distance_value: AssignmentValue::Number(4.0),
                 duration_seconds: 3.0,
+                duration_value: AssignmentValue::Number(3.0),
                 loop_condition: None,
                 async_run: false,
             })]
         );
+    }
+
+    #[test]
+    fn parses_classic_directional_move_runtime_expression() {
+        let program =
+            parse_program("\ng => gemini\ng.move left 2+rnd(5)*1.3 in 10 Seconds\n").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::ModelDecl {
+                    name: "g".to_owned(),
+                    resource: "gemini".to_owned(),
+                    options: EntityOptions::default(),
+                },
+                Statement::Move(MoveStatement {
+                    target: "g".to_owned(),
+                    direction: MoveDirection::Left,
+                    distance: 0.0,
+                    distance_value: AssignmentValue::Binary {
+                        left: Box::new(AssignmentValue::Number(2.0)),
+                        operator: ArithmeticOperator::Add,
+                        right: Box::new(AssignmentValue::Binary {
+                            left: Box::new(AssignmentValue::RandomInt {
+                                max: Box::new(AssignmentValue::Number(5.0)),
+                            }),
+                            operator: ArithmeticOperator::Multiply,
+                            right: Box::new(AssignmentValue::Number(1.3)),
+                        }),
+                    },
+                    duration_seconds: 10.0,
+                    duration_value: AssignmentValue::Number(10.0),
+                    loop_condition: None,
+                    async_run: false,
+                })
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_runtime_expressions_for_action_scalars() {
+        let program = parse_program(
+            r#"
+player.walk at speed of base+rnd(2) loop
+player.turn right angle+15 in turn_time+0.5 seconds
+player.move to (enemy forward dist+2) in move_time seconds async
+player.character.jump at speed of jump_speed+5 async
+player.physics impulse up force*2
+player.animation speed speed_scale+0.1 for speed_time seconds
+sprites.play frame start_frame+1 to end_frame-1 in sprite_time/2 seconds loop
+run tick(score+10) every tick_time+0.25 seconds
+"#,
+        )
+        .unwrap();
+
+        let mut saw_animation = false;
+        let mut saw_turn = false;
+        let mut saw_move_to = false;
+        let mut saw_jump = false;
+        let mut saw_impulse = false;
+        let mut saw_animation_speed = false;
+        let mut saw_sprite = false;
+        let mut saw_recurring = false;
+
+        for statement in &program.statements {
+            match statement {
+                Statement::Animate(animation) => {
+                    saw_animation = matches!(animation.speed_value, AssignmentValue::Binary { .. });
+                }
+                Statement::Turn(turn) => {
+                    saw_turn = matches!(turn.degrees_value, AssignmentValue::Binary { .. })
+                        && matches!(turn.duration_value, AssignmentValue::Binary { .. });
+                }
+                Statement::MoveTo(move_to) => {
+                    let forward_is_expression = matches!(
+                        &move_to.destination,
+                        MoveToDestination::EntityForward {
+                            distance_value: AssignmentValue::Binary { .. },
+                            ..
+                        }
+                    );
+                    saw_move_to = forward_is_expression
+                        && matches!(move_to.duration_value, AssignmentValue::Symbol(_));
+                }
+                Statement::CharacterJump(jump) => {
+                    saw_jump = matches!(jump.speed_value, AssignmentValue::Binary { .. });
+                }
+                Statement::PhysicsImpulse(impulse) => {
+                    saw_impulse = matches!(impulse.strength_value, AssignmentValue::Binary { .. });
+                }
+                Statement::AnimationSpeed(animation_speed) => {
+                    saw_animation_speed =
+                        matches!(animation_speed.speed_value, AssignmentValue::Binary { .. })
+                            && matches!(
+                                animation_speed.duration_value,
+                                Some(AssignmentValue::Symbol(_))
+                            );
+                }
+                Statement::SpritePlay(sprite_play) => {
+                    saw_sprite =
+                        matches!(sprite_play.from_frame_value, AssignmentValue::Binary { .. })
+                            && matches!(sprite_play.to_frame_value, AssignmentValue::Binary { .. })
+                            && matches!(sprite_play.duration_value, AssignmentValue::Binary { .. });
+                }
+                Statement::RunEvery { interval_value, .. } => {
+                    saw_recurring = matches!(interval_value, AssignmentValue::Binary { .. });
+                }
+                _ => {}
+            }
+        }
+
+        assert!(saw_animation);
+        assert!(saw_turn);
+        assert!(saw_move_to);
+        assert!(saw_jump);
+        assert!(saw_impulse);
+        assert!(saw_animation_speed);
+        assert!(saw_sprite);
+        assert!(saw_recurring);
     }
 
     #[test]
@@ -4554,7 +5987,9 @@ mod tests {
                             target: "g".to_owned(),
                             direction: MoveDirection::Left,
                             distance: 4.0,
+                            distance_value: AssignmentValue::Number(4.0),
                             duration_seconds: 3.0,
+                            duration_value: AssignmentValue::Number(3.0),
                             loop_condition: None,
                             async_run: false,
                         }),
@@ -4562,7 +5997,9 @@ mod tests {
                             target: "g".to_owned(),
                             direction: MoveDirection::Right,
                             distance: 4.0,
+                            distance_value: AssignmentValue::Number(4.0),
                             duration_seconds: 2.0,
+                            duration_value: AssignmentValue::Number(2.0),
                             loop_condition: None,
                             async_run: false,
                         }),
@@ -4570,7 +6007,9 @@ mod tests {
                             target: "g".to_owned(),
                             direction: MoveDirection::Up,
                             distance: 2.0,
+                            distance_value: AssignmentValue::Number(2.0),
                             duration_seconds: 1.0,
+                            duration_value: AssignmentValue::Number(1.0),
                             loop_condition: None,
                             async_run: false,
                         }),
@@ -4578,7 +6017,9 @@ mod tests {
                             target: "g".to_owned(),
                             direction: MoveDirection::Down,
                             distance: 3.0,
+                            distance_value: AssignmentValue::Number(3.0),
                             duration_seconds: 2.0,
+                            duration_value: AssignmentValue::Number(2.0),
                             loop_condition: None,
                             async_run: false,
                         }),
@@ -4600,7 +6041,9 @@ mod tests {
                 target: "player1".to_owned(),
                 direction: MoveDirection::Forward,
                 distance: 0.2,
+                distance_value: AssignmentValue::Number(0.2),
                 duration_seconds: 0.5,
+                duration_value: AssignmentValue::Number(0.5),
                 loop_condition: Some(Condition::EqualsNumber {
                     name: "move_forward".to_owned(),
                     value: 1.0,
@@ -4624,6 +6067,7 @@ mod tests {
                     PositionExpr::Number(99.0),
                 ])),
                 duration_seconds: 0.36,
+                duration_value: AssignmentValue::Number(0.36),
                 async_run: false,
             })]
         );
@@ -4641,8 +6085,10 @@ mod tests {
                 destination: MoveToDestination::EntityForward {
                     entity: "player1".to_owned(),
                     distance: 4.0,
+                    distance_value: AssignmentValue::Number(4.0),
                 },
                 duration_seconds: 0.5,
+                duration_value: AssignmentValue::Number(0.5),
                 async_run: true,
             })]
         );
@@ -4662,6 +6108,7 @@ mod tests {
                     target: "r".to_owned(),
                     direction: PhysicsDirection::Up,
                     strength: 100.0,
+                    strength_value: AssignmentValue::Number(100.0),
                 }),
                 Statement::PhysicsStop {
                     target: "r".to_owned(),
@@ -4724,7 +6171,9 @@ mod tests {
             vec![Statement::Turn(TurnStatement {
                 target: "player2".to_owned(),
                 degrees: 360.0,
+                degrees_value: AssignmentValue::Number(360.0),
                 duration_seconds: 0.5,
+                duration_value: AssignmentValue::Number(0.5),
                 loop_condition: None,
                 async_run: false,
             })]
@@ -4799,7 +6248,9 @@ mod tests {
                         target: "player1".to_owned(),
                         direction: MoveDirection::Forward,
                         distance: 0.3,
+                        distance_value: AssignmentValue::Number(0.3),
                         duration_seconds: 0.2,
+                        duration_value: AssignmentValue::Number(0.2),
                         loop_condition: None,
                         async_run: true,
                     }),
@@ -4807,6 +6258,7 @@ mod tests {
                         target: "player1".to_owned(),
                         clip: "mma_kick1".to_owned(),
                         speed: 2.5,
+                        speed_value: AssignmentValue::Number(2.5),
                         looped: false,
                         blocking: false,
                     }),
@@ -4833,6 +6285,7 @@ mod tests {
                         target: "player1".to_owned(),
                         clip: "pull_start".to_owned(),
                         speed: 4.0,
+                        speed_value: AssignmentValue::Number(4.0),
                         looped: false,
                         blocking: true,
                     }),
@@ -4852,7 +6305,9 @@ mod tests {
                                 actions: vec![Statement::Turn(TurnStatement {
                                     target: "player1".to_owned(),
                                     degrees: 360.0,
+                                    degrees_value: AssignmentValue::Number(360.0),
                                     duration_seconds: 0.5,
+                                    duration_value: AssignmentValue::Number(0.5),
                                     loop_condition: None,
                                     async_run: true,
                                 })],
@@ -4862,6 +6317,7 @@ mod tests {
                                 target: "player1".to_owned(),
                                 clip: "kip_up".to_owned(),
                                 speed: 1.0,
+                                speed_value: AssignmentValue::Number(1.0),
                                 looped: false,
                                 blocking: true,
                             }),
@@ -4870,6 +6326,7 @@ mod tests {
                             target: "player1".to_owned(),
                             clip: "idle2".to_owned(),
                             speed: 1.0,
+                            speed_value: AssignmentValue::Number(1.0),
                             looped: true,
                             blocking: false,
                         })],
@@ -4901,6 +6358,7 @@ mod tests {
                         target: "player2".to_owned(),
                         clip: "CrossPunch".to_owned(),
                         speed: 1.0,
+                        speed_value: AssignmentValue::Number(1.0),
                         looped: false,
                         blocking: true,
                     })],
@@ -4913,6 +6371,7 @@ mod tests {
                             target: "player2".to_owned(),
                             clip: "HighKick".to_owned(),
                             speed: 1.0,
+                            speed_value: AssignmentValue::Number(1.0),
                             looped: false,
                             blocking: true,
                         })],
@@ -4925,6 +6384,7 @@ mod tests {
                                 target: "player2".to_owned(),
                                 clip: "ButterflyKick".to_owned(),
                                 speed: 1.0,
+                                speed_value: AssignmentValue::Number(1.0),
                                 looped: false,
                                 blocking: true,
                             })],
@@ -4932,6 +6392,7 @@ mod tests {
                                 target: "player2".to_owned(),
                                 clip: "Idle".to_owned(),
                                 speed: 1.0,
+                                speed_value: AssignmentValue::Number(1.0),
                                 looped: true,
                                 blocking: false,
                             })],
@@ -5009,6 +6470,28 @@ mod tests {
                 .contains(&Statement::Assignment(AssignmentStatement {
                     name: "GAME_STATE_OVER".to_owned(),
                     value: AssignmentValue::Number(2.0),
+                },))
+        );
+    }
+
+    #[test]
+    fn parses_shared_var_declarations_as_shared_assignments() {
+        let program = parse_program("shared var timer=0 [0..],\n    life1=100 [0..100]").unwrap();
+
+        assert!(
+            program
+                .statements
+                .contains(&Statement::SharedAssignment(AssignmentStatement {
+                    name: "timer".to_owned(),
+                    value: AssignmentValue::Number(0.0),
+                },))
+        );
+        assert!(
+            program
+                .statements
+                .contains(&Statement::SharedAssignment(AssignmentStatement {
+                    name: "life1".to_owned(),
+                    value: AssignmentValue::Number(100.0),
                 },))
         );
     }
@@ -5120,6 +6603,7 @@ mod tests {
                         target: "player1".to_owned(),
                         clip: "flying_kick".to_owned(),
                         speed: 2.0,
+                        speed_value: AssignmentValue::Number(2.0),
                         looped: false,
                         blocking: true,
                     })],
@@ -5160,6 +6644,7 @@ mod tests {
                     target: "player1".to_owned(),
                     clip: "pull_start".to_owned(),
                     speed: 1.0,
+                    speed_value: AssignmentValue::Number(1.0),
                     looped: false,
                     blocking: true,
                 })],
@@ -5194,6 +6679,7 @@ mod tests {
                         target: "player1".to_owned(),
                         clip: "duck_right1".to_owned(),
                         speed: 1.0,
+                        speed_value: AssignmentValue::Number(1.0),
                         looped: false,
                         blocking: false,
                     }),
@@ -5202,6 +6688,7 @@ mod tests {
                         target: "player1".to_owned(),
                         clip: "idle2".to_owned(),
                         speed: 1.0,
+                        speed_value: AssignmentValue::Number(1.0),
                         looped: true,
                         blocking: false,
                     }),
@@ -5274,6 +6761,7 @@ mod tests {
                         target: "player2".to_owned(),
                         clip: "Idle".to_owned(),
                         speed: 1.0,
+                        speed_value: AssignmentValue::Number(1.0),
                         looped: true,
                         blocking: false,
                     }),
@@ -5500,6 +6988,7 @@ mod tests {
                                                 target: "p2".to_owned(),
                                                 clip: "FlyKick".to_owned(),
                                                 speed: 2.9,
+                                                speed_value: AssignmentValue::Number(2.9),
                                                 looped: false,
                                                 blocking: true,
                                             }),
@@ -5513,6 +7002,7 @@ mod tests {
                                                 target: "p2".to_owned(),
                                                 clip: "HighKick".to_owned(),
                                                 speed: 2.3,
+                                                speed_value: AssignmentValue::Number(2.3),
                                                 looped: false,
                                                 blocking: true,
                                             }),
@@ -5529,6 +7019,7 @@ mod tests {
                     name: "opponent_ai".to_owned(),
                     args: vec!["player1".to_owned(), "player2".to_owned()],
                     interval_seconds: 0.65,
+                    interval_value: AssignmentValue::Number(0.65),
                 },
             ]
         );
@@ -5593,6 +7084,7 @@ mod tests {
                         target: "player1".to_owned(),
                         clip: "run_sword".to_owned(),
                         speed: 1.0,
+                        speed_value: AssignmentValue::Number(1.0),
                         looped: true,
                         blocking: false,
                     }),
@@ -5600,7 +7092,9 @@ mod tests {
                         target: "player1".to_owned(),
                         direction: MoveDirection::Forward,
                         distance: 0.2,
+                        distance_value: AssignmentValue::Number(0.2),
                         duration_seconds: 0.5,
+                        duration_value: AssignmentValue::Number(0.5),
                         loop_condition: None,
                         async_run: false,
                     }),
@@ -5629,6 +7123,7 @@ mod tests {
                     target: "player1".to_owned(),
                     clip: "leg_takedown_attacker".to_owned(),
                     speed: 2.5,
+                    speed_value: AssignmentValue::Number(2.5),
                     looped: false,
                     blocking: true,
                 })],
@@ -5685,6 +7180,7 @@ mod tests {
                     target: "player1".to_owned(),
                     clip: "back_death1".to_owned(),
                     speed: 1.0,
+                    speed_value: AssignmentValue::Number(1.0),
                     looped: false,
                     blocking: true,
                 })],
@@ -5717,6 +7213,7 @@ mod tests {
                         target: "player2".to_owned(),
                         clip: "CrossPunch".to_owned(),
                         speed: 1.0,
+                        speed_value: AssignmentValue::Number(1.0),
                         looped: false,
                         blocking: true,
                     })],
@@ -5737,6 +7234,7 @@ mod tests {
                             target: "player2".to_owned(),
                             clip: "HighKick".to_owned(),
                             speed: 1.0,
+                            speed_value: AssignmentValue::Number(1.0),
                             looped: false,
                             blocking: true,
                         })],
@@ -5834,7 +7332,9 @@ mod tests {
                 actions: vec![Statement::Turn(TurnStatement {
                     target: "player1".to_owned(),
                     degrees: 3.0,
+                    degrees_value: AssignmentValue::Number(3.0),
                     duration_seconds: 0.1,
+                    duration_value: AssignmentValue::Number(0.1),
                     loop_condition: None,
                     async_run: true,
                 })],
@@ -5895,7 +7395,11 @@ mod tests {
                 side: 1.5,
                 min_distance: 10.0,
                 max_distance: 28.0,
+                zoom_factor: 1.15,
                 damping: 8.0,
+                look_ahead: 0.0,
+                fov: 50.0,
+                max_fov: 62.0,
             })]
         );
     }
@@ -5923,6 +7427,7 @@ mod tests {
                             target: "boss".to_owned(),
                             clip: "Idle".to_owned(),
                             speed: 1.0,
+                            speed_value: AssignmentValue::Number(1.0),
                             looped: true,
                             blocking: false,
                         }),
@@ -5950,6 +7455,7 @@ mod tests {
                 name: "enemy_turn".to_owned(),
                 args: Vec::new(),
                 interval_seconds: 1.2,
+                interval_value: AssignmentValue::Number(1.2),
             }]
         );
     }
@@ -5973,7 +7479,9 @@ mod tests {
                             target: "p2".to_owned(),
                             direction: MoveDirection::Forward,
                             distance: 0.2,
+                            distance_value: AssignmentValue::Number(0.2),
                             duration_seconds: 0.2,
+                            duration_value: AssignmentValue::Number(0.2),
                             loop_condition: None,
                             async_run: true,
                         }),
@@ -5981,6 +7489,7 @@ mod tests {
                             target: "p2".to_owned(),
                             clip: "CrossPunch".to_owned(),
                             speed: 1.8,
+                            speed_value: AssignmentValue::Number(1.8),
                             looped: false,
                             blocking: true,
                         }),
@@ -5994,6 +7503,7 @@ mod tests {
                     name: "opponent_ai".to_owned(),
                     args: vec!["player1".to_owned(), "player2".to_owned()],
                     interval_seconds: 0.65,
+                    interval_value: AssignmentValue::Number(0.65),
                 },
             ]
         );
@@ -6022,6 +7532,7 @@ mod tests {
                     name: "opponent_ai".to_owned(),
                     args: vec!["player1".to_owned(), "player2".to_owned()],
                     interval_seconds: 0.65,
+                    interval_value: AssignmentValue::Number(0.65),
                 },
             ]
         );
@@ -6167,6 +7678,55 @@ mod tests {
     }
 
     #[test]
+    fn parses_audio_play_loop_stop_expression_and_volume() {
+        let program = parse_program(
+            "audio.play \"drums_music1\" loop\n\
+             audio.stop \"drums_music1\"\n\
+             audio.play selected_sound having volume music_volume loop\n\
+             play sound punch1",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::Audio(AudioStatement {
+                action: AudioAction::Play,
+                sound: Some(sound),
+                sound_value: None,
+                looped: true,
+                volume: None,
+            }) if sound == "drums_music1"
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::Audio(AudioStatement {
+                action: AudioAction::Stop,
+                sound: Some(sound),
+                ..
+            }) if sound == "drums_music1"
+        ));
+        assert!(matches!(
+            &program.statements[2],
+            Statement::Audio(AudioStatement {
+                action: AudioAction::Play,
+                sound: None,
+                sound_value: Some(AssignmentValue::Symbol(sound)),
+                looped: true,
+                volume: Some(AssignmentValue::Symbol(volume)),
+            }) if sound == "selected_sound" && volume == "music_volume"
+        ));
+        assert!(matches!(
+            &program.statements[3],
+            Statement::Audio(AudioStatement {
+                action: AudioAction::Play,
+                sound: Some(sound),
+                looped: false,
+                ..
+            }) if sound == "punch1"
+        ));
+    }
+
+    #[test]
     fn parses_local_comma_assignments_inside_function_blocks() {
         let program = parse_program(
             "print_status = {\n  var frame1=round(life1*16/INITIAL_PLAYER_STRENGTH),\n      frame2=round(life2*16/INITIAL_PLAYER_STRENGTH),\n      player_percent=round(life1*100/INITIAL_PLAYER_STRENGTH),\n      opponent_percent=round(life2*100/INITIAL_PLAYER_STRENGTH)\n  UI.layer1.playerHud.playerHealthValue.text = player_percent + \"%\"\n}",
@@ -6230,7 +7790,41 @@ mod tests {
     }
 
     #[test]
-    fn preserves_runtime_noop_commands_in_action_flow() {
+    fn parses_camera_modifier_declaration_and_apply() {
+        let program = parse_program(
+            "hit_fx = camera.system.modifiers.hit_modifier\nfight_cam.apply hit_fx : duration 0.35, amplitude power",
+        )
+        .unwrap();
+
+        let Statement::Assignment(assignment) = &program.statements[0] else {
+            panic!("expected camera modifier assignment");
+        };
+        assert_eq!(assignment.name, "hit_fx");
+        assert!(matches!(
+            assignment.value,
+            AssignmentValue::CameraModifier(CameraModifierValue {
+                ref modifier_type,
+                ..
+            }) if modifier_type == "hit_modifier"
+        ));
+        assert_eq!(
+            program.statements[1],
+            Statement::CameraModifierApply(CameraModifierApplyStatement {
+                target: "fight_cam".to_owned(),
+                modifier: "hit_fx".to_owned(),
+                overrides: vec![
+                    ("duration".to_owned(), AssignmentValue::Number(0.35)),
+                    (
+                        "amplitude".to_owned(),
+                        AssignmentValue::Symbol("power".to_owned()),
+                    ),
+                ],
+            })
+        );
+    }
+
+    #[test]
+    fn parses_audio_and_preserves_runtime_noop_commands_in_action_flow() {
         let program = parse_program(
             "fx_test = {\n  audio.play \"kick1\"\n  laser_effect.play pos (player1)\n  fight_cam.apply hit_fx : duration 0.35\n  axe_throw_cam.play : target axe, duration 1.5\n  camera.chase player1\n  camera.chase stop\n  player2.HighKick at speed of 2.4\n}",
         )
@@ -6243,15 +7837,21 @@ mod tests {
                 params: Vec::new(),
                 guard: None,
                 actions: vec![
-                    Statement::NoOp {
-                        text: "audio.play \"kick1\"".to_owned(),
-                    },
+                    Statement::Audio(AudioStatement {
+                        action: AudioAction::Play,
+                        sound: Some("kick1".to_owned()),
+                        sound_value: None,
+                        looped: false,
+                        volume: None,
+                    }),
                     Statement::NoOp {
                         text: "laser_effect.play pos (player1)".to_owned(),
                     },
-                    Statement::NoOp {
-                        text: "fight_cam.apply hit_fx : duration 0.35".to_owned(),
-                    },
+                    Statement::CameraModifierApply(CameraModifierApplyStatement {
+                        target: "fight_cam".to_owned(),
+                        modifier: "hit_fx".to_owned(),
+                        overrides: vec![("duration".to_owned(), AssignmentValue::Number(0.35),)],
+                    }),
                     Statement::CinematicPlay(CinematicPlayStatement {
                         target: "axe_throw_cam".to_owned(),
                         look_at: Some(CinematicLookAt::Entity("axe".to_owned())),
@@ -6267,6 +7867,7 @@ mod tests {
                         target: "player2".to_owned(),
                         clip: "HighKick".to_owned(),
                         speed: 2.4,
+                        speed_value: AssignmentValue::Number(2.4),
                         looped: false,
                         blocking: true,
                     }),
@@ -6415,7 +8016,9 @@ mod tests {
                 target: "player1".to_owned(),
                 direction: MoveDirection::Forward,
                 distance: 0.2,
+                distance_value: AssignmentValue::Number(0.2),
                 duration_seconds: 0.5,
+                duration_value: AssignmentValue::Number(0.5),
                 loop_condition: None,
                 async_run: false,
             })]

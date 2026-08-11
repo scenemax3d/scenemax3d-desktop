@@ -3,8 +3,8 @@ use std::{
     env, fs,
     io::Write,
     path::{Path, PathBuf},
-    sync::Mutex,
     sync::atomic::{AtomicU64, Ordering},
+    sync::{Mutex, OnceLock},
 };
 
 use anyhow::Result;
@@ -19,6 +19,7 @@ use avian3d::{
 use bevy::{
     animation::AnimationTargetId,
     asset::{AssetApp, AssetPlugin, RenderAssetUsages, io::AssetSourceBuilder},
+    audio::{PlaybackMode, PlaybackSettings, Volume},
     ecs::system::SystemParam,
     gltf::Gltf,
     log::LogPlugin,
@@ -35,20 +36,22 @@ use bevy_tnua::{
 };
 use bevy_tnua_avian3d::prelude::{TnuaAvian3dPlugin, TnuaAvian3dSensorShape};
 use scenemax_parser::{
-    AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement,
-    CameraAttachStatement, CharacterJumpStatement, CharacterModeStatement, CinematicLookAt,
+    AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement, AudioAction,
+    AudioStatement, CameraAttachStatement, CameraModifierValue, CameraMoveStatement,
+    ChannelDrawStatement, CharacterJumpStatement, CharacterModeStatement, CinematicLookAt,
     CinematicPlayStatement, Condition, EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage,
-    LoggerStatement, MoveDirection, MoveToDestination, ObjectPoolStatement, PoolReleaseStatement,
-    PositionExpr, PositionStatement, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
+    LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement, ObjectPoolStatement,
+    PoolReleaseStatement, PositionExpr, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
     SceneMaxCollisionShape, SceneMaxVec3, SpritePlayStatement, Statement, UiEaseDirection,
     UiTargetPath,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
     animation_name_matches, collect_animations_by_target, collect_attaches_by_target,
-    collect_functions_by_name, collect_guards_by_name, collect_turn_by_target,
-    collect_visibility_by_target, instantiate_function_actions, normalized_animation_name,
-    repeat_actions, requested_animation_names_match, substitute_function_condition,
+    collect_functions_by_name, collect_guards_by_name, collect_shared_assignment_names,
+    collect_turn_by_target, collect_visibility_by_target, instantiate_function_actions,
+    normalized_animation_name, repeat_actions, requested_animation_names_match,
+    substitute_function_condition,
 };
 use scenemax_runtime_ui_core::{
     SceneMaxSpriteAsset, SceneMaxUiDocument, SceneMaxUiWidgetDef, UiLayoutRect, document_scale,
@@ -58,6 +61,7 @@ use scenemax_runtime_vm_core::{SceneMaxScopeFrame, SceneMaxVars, SceneMaxVmSpati
 
 mod actions;
 mod animation;
+mod audio;
 mod camera;
 mod physics;
 mod sprites;
@@ -66,6 +70,7 @@ mod ui;
 
 use actions::*;
 use animation::*;
+use audio::*;
 use camera::*;
 use physics::*;
 use sprites::*;
@@ -99,6 +104,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .as_deref()
         .and_then(Path::parent)
         .map(Path::to_path_buf);
+    initialize_runtime_logger(project_root.as_deref(), script_root.as_deref());
     let scene_program = load_startup_program(&launch);
     let effective_script_root = scene_program.1.clone().or_else(|| script_root.clone());
     let asset_root = project_root
@@ -110,8 +116,6 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         effective_script_root.as_deref(),
         asset_root.as_deref(),
     );
-    initialize_runtime_logger(project_root.as_deref(), effective_script_root.as_deref());
-
     let mut app = App::new();
     if let Some(builtin_asset_root) = builtin_asset_root.as_ref() {
         let source_path = builtin_asset_root.to_string_lossy().to_string();
@@ -145,6 +149,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<SceneMaxCameraSystem>()
         .init_resource::<SceneMaxRuntimeAssets>()
         .init_resource::<SceneMaxAnimationDurations>()
+        .init_resource::<SceneMaxStartupActionState>()
         .init_resource::<DelayedActionQueue>()
         .init_resource::<RecurringRunTimers>()
         .init_resource::<ActiveCollisionEvents>()
@@ -193,6 +198,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             PhysicsSchedule,
             feed_tnua_character_controllers.in_set(TnuaUserControlsSystems),
         )
+        .add_systems(Update, apply_startup_runs_when_ready)
         .add_systems(
             Update,
             (
@@ -217,10 +223,13 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_timed_turns,
                 update_timed_moves,
                 update_timed_jumps,
+                restore_camera_modifier_base,
+                update_timed_camera_moves,
                 update_cinematic_camera,
                 update_fighting_camera,
                 update_third_person_camera,
                 update_attached_camera,
+                update_camera_modifiers,
                 update_sprite_animations,
                 restore_default_idle_animations,
                 play_pending_animations,
@@ -233,6 +242,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             (
                 clear_scenemax_ui_on_scene_change,
                 apply_scenemax_ui_actions,
+                update_deferred_draw_clears,
                 update_scenemax_ui_eases,
                 update_scenemax_ui_message_animations,
                 update_scenemax_ui_bitmap_message_animations,
@@ -336,6 +346,9 @@ struct SceneMaxCameraSystem {
     third_person: HashMap<String, ThirdPersonCameraRuntime>,
     selected: Option<String>,
     attached: Option<CameraAttachmentRuntime>,
+    modifiers: HashMap<String, RuntimeCameraModifier>,
+    active_modifiers: Vec<ActiveCameraModifier>,
+    modifier_seed_counter: u32,
     cinematic_vars: HashMap<String, CinematicCameraRuntimeRef>,
     cinematic_rigs: HashMap<String, RuntimeCinematicRig>,
     active_cinematic: Option<ActiveCinematicCamera>,
@@ -348,6 +361,7 @@ struct DelayedActionQueue {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum SceneMaxControllerKey {
+    Key(usize),
     When(usize),
     Recurring(usize),
 }
@@ -410,6 +424,36 @@ impl SceneMaxColliderBounds {
 struct SceneMaxRuntimeAssets {
     placeholder_mesh: Option<Handle<Mesh>>,
     placeholder_material: Option<Handle<StandardMaterial>>,
+    audio_by_name: HashMap<String, SceneMaxAudioAsset>,
+    looping_audio_by_name: HashMap<String, Entity>,
+}
+
+#[derive(Debug, Clone)]
+struct SceneMaxAudioAsset {
+    name: String,
+    path: String,
+    handle: Handle<AudioSource>,
+}
+
+#[derive(Debug, Resource, Default)]
+struct SceneMaxStartupActionState {
+    applied: bool,
+    waiting_gltfs: Vec<Handle<Gltf>>,
+    waiting_logged: bool,
+    ready_frames: u8,
+    wait_seconds: f32,
+}
+
+impl SceneMaxStartupActionState {
+    fn waiting_for_gltfs(waiting_gltfs: Vec<Handle<Gltf>>) -> Self {
+        Self {
+            applied: false,
+            waiting_gltfs,
+            waiting_logged: false,
+            ready_frames: 0,
+            wait_seconds: 0.0,
+        }
+    }
 }
 
 #[derive(Debug, Resource, Default)]
@@ -454,6 +498,8 @@ struct SceneMaxUiRuntime {
     font_index: HashMap<String, SceneMaxBitmapFontAsset>,
     font_index_root: Option<PathBuf>,
     bitmap_fonts: HashMap<String, SceneMaxBitmapFont>,
+    draw_channels: HashMap<String, Entity>,
+    pending_draw_clears: Vec<PendingSceneMaxDrawClear>,
 }
 
 #[derive(Debug, Default)]
@@ -500,6 +546,20 @@ enum SceneMaxUiAction {
         property: String,
         value: String,
     },
+    Draw(SceneMaxDrawAction),
+}
+
+#[derive(Debug, Clone)]
+struct SceneMaxDrawAction {
+    channel: String,
+    resource: String,
+    clear: bool,
+    pos_x: f32,
+    pos_y: f32,
+    width: Option<f32>,
+    height: Option<f32>,
+    frame: usize,
+    stretch: bool,
 }
 
 #[allow(dead_code)]
@@ -508,6 +568,15 @@ struct SceneMaxUiWidget {
     ui_name: String,
     layer: String,
     widget_path: Vec<String>,
+}
+
+#[derive(Debug, Clone, Component)]
+struct SceneMaxDrawChannel;
+
+#[derive(Debug, Clone)]
+struct PendingSceneMaxDrawClear {
+    channel: String,
+    remaining_seconds: f32,
 }
 
 #[derive(Debug, Clone, Copy, Component)]
@@ -607,12 +676,18 @@ struct FightingCameraRuntime {
     name: String,
     target_a: String,
     target_b: String,
-    depth: f32,
     height: f32,
     side: f32,
     min_distance: f32,
     max_distance: f32,
+    zoom_factor: f32,
     damping: f32,
+    look_ahead: f32,
+    fov: f32,
+    max_fov: f32,
+    initialized: bool,
+    smoothed_look_at: Vec3,
+    last_side_dir: Vec3,
 }
 
 #[derive(Debug, Clone)]
@@ -632,6 +707,36 @@ struct ThirdPersonCameraRuntime {
 struct CameraAttachmentRuntime {
     target: String,
     offset: Vec3,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeCameraModifier {
+    modifier_type: String,
+    duration: f32,
+    amplitude: f32,
+    frequency: f32,
+    x: f32,
+    y: f32,
+    z: f32,
+    rx: f32,
+    ry: f32,
+    rz: f32,
+    fov: f32,
+}
+
+#[derive(Debug, Clone)]
+struct ActiveCameraModifier {
+    value: RuntimeCameraModifier,
+    seed: f32,
+    elapsed_seconds: f32,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct CameraModifierFrame {
+    position_offset: Vec3,
+    look_at_offset: Vec3,
+    rotation_degrees: Vec3,
+    fov_offset_degrees: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -785,6 +890,13 @@ struct TimedJump {
     height: f32,
 }
 
+#[derive(Debug, Component, Default)]
+struct SceneMaxCameraModifierState {
+    base_transform: Option<Transform>,
+    base_look_at: Option<Vec3>,
+    base_fov_radians: Option<f32>,
+}
+
 #[derive(Debug, Component)]
 struct SceneMaxCharacterController {
     move_speed: f32,
@@ -895,6 +1007,23 @@ mod tests {
     }
 
     #[test]
+    fn scenemax_camera_yaw_180_faces_negative_z_like_classic_projector() {
+        let program = scenemax_parser::parse_program(
+            "camera.pos(0.0,2.0,10.0)\ncamera.rotate(0.0,180.0,0.0)",
+        )
+        .unwrap();
+        let transform = camera_transform_from_program(&program);
+
+        assert_eq!(transform.translation, Vec3::new(0.0, 2.0, 10.0));
+        assert!(
+            transform
+                .forward()
+                .as_vec3()
+                .abs_diff_eq(Vec3::new(0.0, 0.0, -1.0), 0.0001)
+        );
+    }
+
+    #[test]
     fn detects_space_switch_after_wait_statement() {
         let program = scenemax_parser::parse_program(
             "run show_game_intro_ui async\nwait for key space to be pressed\nswitch to \"game_level1\"",
@@ -967,6 +1096,35 @@ mod tests {
             None,
             None,
         ));
+    }
+
+    #[test]
+    fn resolves_runtime_expression_function_args_without_losing_entity_args() {
+        let mut vars = SceneMaxVars::default();
+        vars.0.insert("score".to_owned(), 7.0);
+        let mut transforms = HashMap::from([(
+            "player1".to_owned(),
+            Transform::from_translation(Vec3::new(3.0, 0.0, 0.0)),
+        )]);
+
+        let args = resolve_call_args(
+            &[
+                "player1".to_owned(),
+                "score+10".to_owned(),
+                "player1.x+4".to_owned(),
+            ],
+            &vars,
+            None,
+            &HashMap::new(),
+            Some(&transforms),
+            None,
+        );
+
+        assert_eq!(
+            args,
+            vec!["player1".to_owned(), "17".to_owned(), "7".to_owned()]
+        );
+        transforms.clear();
     }
 
     #[test]
@@ -1242,8 +1400,11 @@ mod tests {
         let animation = sprite_animation_from_statement(&SpritePlayStatement {
             target: "b".to_owned(),
             from_frame: 0,
+            from_frame_value: AssignmentValue::Number(0 as f32),
             to_frame: 13,
+            to_frame_value: AssignmentValue::Number(13 as f32),
             duration_seconds: 1.0,
+            duration_value: AssignmentValue::Number(1.0),
             looped: true,
         });
 
@@ -1716,6 +1877,7 @@ mod tests {
             &CharacterJumpStatement {
                 target: "player1".to_owned(),
                 speed: 35.0,
+                speed_value: AssignmentValue::Number(35.0),
                 async_run: false,
             },
             &Transform::from_translation(Vec3::new(0.0, 10.0, 0.0)),
@@ -1735,12 +1897,14 @@ mod tests {
             target: "player1".to_owned(),
             clip: "big_jump".to_owned(),
             speed: 1.0,
+            speed_value: AssignmentValue::Number(1.0),
             looped: false,
             blocking: true,
         };
         let punch_animation = AnimationStatement {
             clip: "CrossPunch".to_owned(),
             speed: 2.5,
+            speed_value: AssignmentValue::Number(2.5),
             ..jump_animation.clone()
         };
 
@@ -1757,6 +1921,7 @@ mod tests {
             target: "player2".to_owned(),
             clip: "HighKick".to_owned(),
             speed: 3.0,
+            speed_value: AssignmentValue::Number(3.0),
             looped: false,
             blocking: true,
         };
@@ -1769,7 +1934,9 @@ mod tests {
         let turn = timed_turn_from_statement(&scenemax_parser::TurnStatement {
             target: "axe".to_owned(),
             degrees: 360.0,
+            degrees_value: AssignmentValue::Number(360.0),
             duration_seconds: 1.0,
+            duration_value: AssignmentValue::Number(1.0),
             loop_condition: Some(Condition::EqualsValue {
                 left: AssignmentValue::Number(1.0),
                 right: AssignmentValue::Number(1.0),
@@ -1786,14 +1953,18 @@ mod tests {
         let blocking_turn = Statement::Turn(scenemax_parser::TurnStatement {
             target: "gemini".to_owned(),
             degrees: 360.0,
+            degrees_value: AssignmentValue::Number(360.0),
             duration_seconds: 3.0,
+            duration_value: AssignmentValue::Number(3.0),
             loop_condition: None,
             async_run: false,
         });
         let looped_turn = Statement::Turn(scenemax_parser::TurnStatement {
             target: "gemini".to_owned(),
             degrees: 360.0,
+            degrees_value: AssignmentValue::Number(360.0),
             duration_seconds: 3.0,
+            duration_value: AssignmentValue::Number(3.0),
             loop_condition: Some(Condition::EqualsValue {
                 left: AssignmentValue::Number(1.0),
                 right: AssignmentValue::Number(1.0),
@@ -1812,7 +1983,9 @@ mod tests {
                 target: "player1".to_owned(),
                 direction: MoveDirection::Forward,
                 distance: 0.2,
+                distance_value: AssignmentValue::Number(0.2),
                 duration_seconds: 0.5,
+                duration_value: AssignmentValue::Number(0.5),
                 loop_condition: Some(Condition::EqualsNumber {
                     name: "move_forward".to_owned(),
                     value: 1.0,
@@ -1833,7 +2006,9 @@ mod tests {
             target: "player1".to_owned(),
             direction: MoveDirection::Forward,
             distance: 0.2,
+            distance_value: AssignmentValue::Number(0.2),
             duration_seconds: 0.5,
+            duration_value: AssignmentValue::Number(0.5),
             loop_condition: None,
             async_run: false,
         };
@@ -1850,7 +2025,9 @@ mod tests {
             target: "player1".to_owned(),
             direction: MoveDirection::Forward,
             distance: 0.2,
+            distance_value: AssignmentValue::Number(0.2),
             duration_seconds: 0.5,
+            duration_value: AssignmentValue::Number(0.5),
             loop_condition: None,
             async_run: false,
         });
@@ -1860,13 +2037,95 @@ mod tests {
     }
 
     #[test]
+    fn camera_move_blocks_only_when_not_async() {
+        let blocking = Statement::CameraMove(CameraMoveStatement {
+            axis: SceneMaxAxis::Z,
+            distance: 5.0,
+            distance_value: AssignmentValue::Number(5.0),
+            duration_seconds: 5.0,
+            duration_value: AssignmentValue::Number(5.0),
+            async_run: false,
+        });
+        let async_move = Statement::CameraMove(CameraMoveStatement {
+            axis: SceneMaxAxis::Z,
+            distance: 5.0,
+            distance_value: AssignmentValue::Number(5.0),
+            duration_seconds: 5.0,
+            duration_value: AssignmentValue::Number(5.0),
+            async_run: true,
+        });
+
+        assert_eq!(blocking_timed_action_seconds(&blocking), Some(5.0));
+        assert_eq!(blocking_timed_action_seconds(&async_move), None);
+    }
+
+    #[test]
+    fn resolved_duration_expression_drives_sync_blocking() {
+        let action = Statement::CameraMove(CameraMoveStatement {
+            axis: SceneMaxAxis::Z,
+            distance: 5.0,
+            distance_value: AssignmentValue::Number(5.0),
+            duration_seconds: 0.0,
+            duration_value: AssignmentValue::Symbol("intro_seconds".to_owned()),
+            async_run: false,
+        });
+        let vars = SceneMaxVars(HashMap::from([("intro_seconds".to_owned(), 5.0)]));
+        let guards = HashMap::new();
+        let transforms = HashMap::new();
+
+        assert_eq!(blocking_timed_action_seconds(&action), None);
+        assert_eq!(
+            resolved_blocking_timed_action_seconds(
+                &action,
+                &vars,
+                None,
+                &guards,
+                Some(&transforms),
+                None,
+            ),
+            Some(5.0)
+        );
+    }
+
+    #[test]
+    fn resolved_async_duration_expression_never_blocks_parent() {
+        let action = Statement::Move(scenemax_parser::MoveStatement {
+            target: "player1".to_owned(),
+            direction: MoveDirection::Forward,
+            distance: 2.0,
+            distance_value: AssignmentValue::Number(2.0),
+            duration_seconds: 0.0,
+            duration_value: AssignmentValue::Symbol("move_seconds".to_owned()),
+            loop_condition: None,
+            async_run: true,
+        });
+        let vars = SceneMaxVars(HashMap::from([("move_seconds".to_owned(), 1.25)]));
+        let guards = HashMap::new();
+        let transforms = HashMap::new();
+
+        assert_eq!(
+            resolved_blocking_timed_action_seconds(
+                &action,
+                &vars,
+                None,
+                &guards,
+                Some(&transforms),
+                None,
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn timed_move_uses_lateral_direction_and_duration() {
         let left = timed_move_from_statement(
             &scenemax_parser::MoveStatement {
                 target: "gemini".to_owned(),
                 direction: MoveDirection::Left,
                 distance: 4.0,
+                distance_value: AssignmentValue::Number(4.0),
                 duration_seconds: 2.0,
+                duration_value: AssignmentValue::Number(2.0),
                 loop_condition: None,
                 async_run: false,
             },
@@ -1877,7 +2136,9 @@ mod tests {
                 target: "gemini".to_owned(),
                 direction: MoveDirection::Right,
                 distance: 4.0,
+                distance_value: AssignmentValue::Number(4.0),
                 duration_seconds: 2.0,
+                duration_value: AssignmentValue::Number(2.0),
                 loop_condition: None,
                 async_run: false,
             },
@@ -1896,7 +2157,9 @@ mod tests {
                 target: "gemini".to_owned(),
                 direction: MoveDirection::Up,
                 distance: 3.0,
+                distance_value: AssignmentValue::Number(3.0),
                 duration_seconds: 1.5,
+                duration_value: AssignmentValue::Number(1.5),
                 loop_condition: None,
                 async_run: false,
             },
@@ -1958,7 +2221,7 @@ mod tests {
         );
         assert_eq!(
             evaluate_position_statement(
-                &PositionStatement {
+                &scenemax_parser::PositionStatement {
                     target: "fx".to_owned(),
                     position: PositionValue::Coordinates(vec![
                         PositionExpr::EntityAxis {
@@ -2057,6 +2320,24 @@ mod tests {
             program.statements.first(),
             Some(Statement::UiLoad { name }) if name == "game_intro_ui"
         ));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn default_script_path_finds_single_scripts_subdir_main() {
+        let root = std::env::temp_dir().join(format!(
+            "scenemax_nextgen_scripts_root_{}",
+            std::process::id()
+        ));
+        let script_dir = root.join("scripts").join("Bevy Tests");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&script_dir).unwrap();
+        fs::write(script_dir.join("main"), "add \"expressions.code\" Code\n").unwrap();
+
+        assert_eq!(
+            default_script_path(Some(&root)),
+            Some(script_dir.join("main"))
+        );
         let _ = fs::remove_dir_all(&root);
     }
 

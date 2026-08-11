@@ -81,6 +81,20 @@ pub(super) fn write_runtime_diagnostic_line(message: impl AsRef<str>) {
     }
 }
 
+pub(super) fn runtime_verbose_logging() -> bool {
+    static VERBOSE: OnceLock<bool> = OnceLock::new();
+    *VERBOSE.get_or_init(|| {
+        env::var("SCENEMAX_RUNTIME_VERBOSE_LOG")
+            .map(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            })
+            .unwrap_or(false)
+    })
+}
+
 pub(super) fn write_runtime_log_line(level: LoggerLevel, message: &str) {
     let level_text = match level {
         LoggerLevel::Info => "INFO",
@@ -105,71 +119,20 @@ pub(super) fn write_key_event_probe(
     prefix: &str,
     key: &str,
     trigger: KeyTrigger,
-    vars: &SceneMaxVars,
-    guards_by_name: &HashMap<String, Condition>,
-    transforms_by_name: &HashMap<String, Transform>,
-    collider_bounds: &SceneMaxColliderBounds,
+    _vars: &SceneMaxVars,
+    _guards_by_name: &HashMap<String, Condition>,
+    _transforms_by_name: &HashMap<String, Transform>,
+    _collider_bounds: &SceneMaxColliderBounds,
 ) {
+    if !runtime_verbose_logging() {
+        return;
+    }
     let message = format!(
-        "{prefix} key={} trigger={} action={} move_forward={} player_hit={} player1_ko={} \
-         game_status={} p1_jump={} p2_down={} p1_attack_legs={} allow_move={} asd_go={}",
+        "{prefix} key={} trigger={}",
         key,
-        key_trigger_label(trigger),
-        key_probe_var(vars, "action"),
-        key_probe_var(vars, "move_forward"),
-        key_probe_var(vars, "player_hit"),
-        key_probe_var(vars, "player1_ko"),
-        key_probe_var(vars, "game_status"),
-        key_probe_var(vars, "player1.data.is_jumping"),
-        key_probe_var(vars, "player2.data.is_down"),
-        key_probe_var(vars, "player1.data.attack_legs"),
-        key_probe_guard(
-            "allow_move",
-            vars,
-            guards_by_name,
-            transforms_by_name,
-            collider_bounds
-        ),
-        key_probe_guard(
-            "asd_go_condition",
-            vars,
-            guards_by_name,
-            transforms_by_name,
-            collider_bounds
-        ),
+        key_trigger_label(trigger)
     );
     write_runtime_log_line(LoggerLevel::Info, &message);
-}
-
-pub(super) fn key_probe_var(vars: &SceneMaxVars, name: &str) -> String {
-    vars.0
-        .get(name)
-        .copied()
-        .map(format_scenemax_number)
-        .unwrap_or_else(|| "null".to_owned())
-}
-
-pub(super) fn key_probe_guard(
-    name: &str,
-    vars: &SceneMaxVars,
-    guards_by_name: &HashMap<String, Condition>,
-    transforms_by_name: &HashMap<String, Transform>,
-    collider_bounds: &SceneMaxColliderBounds,
-) -> &'static str {
-    let Some(guard) = guards_by_name.get(name) else {
-        return "missing";
-    };
-    if condition_matches(
-        guard,
-        vars,
-        guards_by_name,
-        Some(transforms_by_name),
-        Some(collider_bounds),
-    ) {
-        "true"
-    } else {
-        "false"
-    }
 }
 
 pub(super) fn key_trigger_label(trigger: KeyTrigger) -> &'static str {
@@ -186,23 +149,10 @@ pub(super) fn write_state_assignment_probe(
     value: f32,
     force_local: bool,
 ) {
-    const WATCHED_ASSIGNMENTS: &[&str] = &[
-        "action",
-        "op_action",
-        "player_hit",
-        "op_hit",
-        "player1_ko",
-        "enemy_ko",
-        "slow_motion",
-        "game_status",
-        "player1.data.is_jumping",
-        "player2.data.is_jumping",
-        "player2.data.is_down",
-        "player1.data.attack_legs",
-        "player1.data.hand_attack_hit",
-        "player2.data.trapped",
-    ];
-    if !WATCHED_ASSIGNMENTS.contains(&name) {
+    if !runtime_verbose_logging() {
+        return;
+    }
+    if previous.is_some_and(|previous| (previous - value).abs() <= f32::EPSILON) {
         return;
     }
     let previous = previous
@@ -232,6 +182,18 @@ pub(super) fn load_startup_program(launch: &ProjectorLaunch) -> SceneMaxStartupP
 
     match load_scene_entry_program(&script_path) {
         Ok((program, script_root)) => {
+            let function_names = sorted_function_names(&program);
+            write_runtime_diagnostic_line(format!(
+                "SCRIPT:READY root={} statements={} functions={}",
+                script_root.display(),
+                program.statements.len(),
+                if function_names.is_empty() {
+                    "<none>".to_owned()
+                } else {
+                    function_names.join(",")
+                }
+            ));
+            log_lifecycle_when_summary(&program);
             tracing::info!(
                 path = %script_path.display(),
                 effective_root = %script_root.display(),
@@ -251,16 +213,31 @@ pub(super) fn load_startup_program(launch: &ProjectorLaunch) -> SceneMaxStartupP
     }
 }
 
+pub(super) fn log_lifecycle_when_summary(program: &Program) {
+    for (index, statement) in program.statements.iter().enumerate() {
+        let Statement::WhenEvent(event) = statement else {
+            continue;
+        };
+        if lifecycle_probe_condition(&event.condition) {
+            write_runtime_diagnostic_line(format!(
+                "SCRIPT:LIFECYCLE_WHEN stmt={} guard={} condition={} actions={}",
+                index,
+                event
+                    .guard
+                    .as_ref()
+                    .map(describe_condition_brief)
+                    .unwrap_or_else(|| "-".to_owned()),
+                describe_condition_brief(&event.condition),
+                describe_statement_list(&event.actions)
+            ));
+        }
+    }
+}
+
 pub(super) fn load_scene_entry_program(script_path: &Path) -> Result<(Program, PathBuf)> {
-    let root_program = load_script_with_adds(script_path, &mut HashSet::new())?;
+    let (root_program, root_script_dir) = load_script_with_adds(script_path, &mut HashSet::new())?;
     if has_scene_content(&root_program) {
-        return Ok((
-            root_program,
-            script_path
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .to_path_buf(),
-        ));
+        return Ok((root_program, root_script_dir));
     }
 
     if let Some(scene) = root_program
@@ -271,76 +248,185 @@ pub(super) fn load_scene_entry_program(script_path: &Path) -> Result<(Program, P
             _ => None,
         })
     {
-        let scene_main = script_path
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join(scene)
-            .join("main");
+        let scene_main = root_script_dir.join(scene).join("main");
         tracing::info!(
             scene,
             path = %scene_main.display(),
             "startup script switches to scene"
         );
-        let program = load_script_with_adds(&scene_main, &mut HashSet::new())?;
+        let (program, scene_script_dir) = load_script_with_adds(&scene_main, &mut HashSet::new())?;
+        return Ok((program, scene_script_dir));
+    }
+
+    Ok((root_program, root_script_dir))
+}
+
+pub(super) fn load_script_with_adds(
+    script_path: &Path,
+    visited: &mut HashSet<PathBuf>,
+) -> Result<(Program, PathBuf)> {
+    let script_path = normalize_script_path(script_path);
+    if !visited.insert(script_path.clone()) {
+        tracing::warn!(path = %script_path.display(), "skipping recursive Add Code include");
         return Ok((
-            program,
-            scene_main
+            Program {
+                statements: Vec::new(),
+            },
+            script_path
                 .parent()
                 .unwrap_or_else(|| Path::new("."))
                 .to_path_buf(),
         ));
     }
 
-    Ok((
-        root_program,
-        script_path
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .to_path_buf(),
-    ))
-}
-
-pub(super) fn load_script_with_adds(
-    script_path: &Path,
-    visited: &mut HashSet<PathBuf>,
-) -> Result<Program> {
-    let script_path = normalize_script_path(script_path);
-    if !visited.insert(script_path.clone()) {
-        tracing::warn!(path = %script_path.display(), "skipping recursive Add Code include");
-        return Ok(Program {
-            statements: Vec::new(),
-        });
-    }
-
-    let source = fs::read_to_string(&script_path)?;
+    let raw_source = fs::read_to_string(&script_path)?;
+    let (source, source_rel) = strip_staged_source_metadata(&raw_source);
+    let script_dir = staged_script_dir(&script_path, source_rel.as_deref());
     let parsed = scenemax_parser::parse_program(&source)?;
     log_unsupported_summary(&script_path, &parsed);
+    write_runtime_diagnostic_line(format!(
+        "SCRIPT:LOAD path={} dir={} statements={} source_rel={}",
+        script_path.display(),
+        script_dir.display(),
+        parsed.statements.len(),
+        source_rel
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "<none>".to_owned())
+    ));
     let mut statements = Vec::new();
-    let script_dir = script_path.parent().unwrap_or_else(|| Path::new("."));
 
     for statement in parsed.statements {
         match statement {
             Statement::AddCode { path } => {
-                let include_path = resolve_code_path(script_dir, &path);
+                let include_path = resolve_code_path(&script_dir, &path);
                 tracing::info!(
                     path,
                     resolved = %include_path.display(),
                     "loading Add Code include"
                 );
+                write_runtime_diagnostic_line(format!(
+                    "SCRIPT:ADD path={} resolved={}",
+                    path,
+                    include_path.display()
+                ));
                 match load_script_with_adds(&include_path, visited) {
-                    Ok(program) => statements.extend(program.statements),
-                    Err(error) => tracing::warn!(
-                        path = %include_path.display(),
-                        %error,
-                        "failed to load Add Code include"
-                    ),
+                    Ok((program, _)) => statements.extend(program.statements),
+                    Err(error) => {
+                        write_runtime_diagnostic_line(format!(
+                            "SCRIPT:ADD_FAIL path={} error={error}",
+                            include_path.display()
+                        ));
+                        tracing::warn!(
+                            path = %include_path.display(),
+                            %error,
+                            "failed to load Add Code include"
+                        );
+                    }
                 }
             }
             statement => statements.push(statement),
         }
     }
 
-    Ok(Program { statements })
+    Ok((Program { statements }, script_dir))
+}
+
+fn strip_staged_source_metadata(source: &str) -> (String, Option<PathBuf>) {
+    let mut rest = source;
+    let mut source_rel = None;
+    let mut consumed_any = false;
+
+    while let Some(after_marker) = rest.strip_prefix("//$[") {
+        let Some(key_end) = after_marker.find("]=") else {
+            break;
+        };
+        let key = &after_marker[..key_end];
+        let after_key = &after_marker[key_end + 2..];
+        let Some(value_end) = after_key.find(';') else {
+            break;
+        };
+        let value = &after_key[..value_end];
+        if key == "source_rel" {
+            let normalized = value
+                .trim()
+                .trim_start_matches(|character| character == '/' || character == '\\');
+            if !normalized.is_empty() {
+                source_rel = Some(PathBuf::from(normalized));
+            }
+        }
+        rest = &after_key[value_end + 1..];
+        consumed_any = true;
+    }
+
+    if consumed_any {
+        (rest.to_owned(), source_rel)
+    } else {
+        (source.to_owned(), None)
+    }
+}
+
+fn staged_script_dir(script_path: &Path, source_rel: Option<&Path>) -> PathBuf {
+    let base_dir = script_path.parent().unwrap_or_else(|| Path::new("."));
+    source_rel
+        .and_then(Path::parent)
+        .map(|parent| base_dir.join(parent))
+        .unwrap_or_else(|| base_dir.to_path_buf())
+}
+
+fn sorted_function_names(program: &Program) -> Vec<String> {
+    let mut names = collect_functions_by_name(program)
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    names.sort();
+    names
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn staged_source_rel_preserves_first_statement_and_resolves_relative_adds() {
+        let root = std::env::temp_dir().join(format!(
+            "scenemax_staged_source_rel_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let running_dir = root.join("running");
+        let scene_dir = running_dir.join("game_intro");
+        fs::create_dir_all(&scene_dir).unwrap();
+        fs::write(
+            running_dir.join("main"),
+            "//$[source_rel]=/game_intro/main;//$[project]=fighting_game_project;intro.draw intro_page: stretch\nadd \"game_intro_ui_fx.code\" code\nrun show_game_intro_ui async\n",
+        )
+        .unwrap();
+        fs::write(
+            scene_dir.join("game_intro_ui_fx.code"),
+            "show_game_intro_ui = {\n  UI.load \"game_intro_ui\"\n}\n",
+        )
+        .unwrap();
+
+        let (program, script_root) = load_scene_entry_program(&running_dir.join("main")).unwrap();
+
+        assert_eq!(script_root, scene_dir);
+        assert!(matches!(
+            program.statements.first(),
+            Some(Statement::ChannelDraw(draw)) if draw.channel == "intro" && !draw.clear
+        ));
+        assert!(collect_functions_by_name(&program).contains_key("show_game_intro_ui"));
+        assert!(program.statements.iter().any(|statement| matches!(
+            statement,
+            Statement::Async { actions }
+                if matches!(actions.first(), Some(Statement::RunFunction { name, .. }) if name == "show_game_intro_ui")
+        )));
+
+        let _ = fs::remove_dir_all(root);
+    }
 }
 
 pub(super) fn log_unsupported_summary(script_path: &Path, program: &Program) {
@@ -415,7 +501,10 @@ pub(super) fn has_ui_runtime_content(program: &Program) -> bool {
 }
 
 pub(super) fn statement_has_ui_runtime_content(statement: &Statement) -> bool {
-    if matches!(statement, Statement::UiSetProperty(_)) {
+    if matches!(
+        statement,
+        Statement::UiSetProperty(_) | Statement::ChannelDraw(_)
+    ) {
         return true;
     }
     if scenemax_ui_action_from_statement(statement).is_some() {
@@ -467,14 +556,34 @@ pub(super) fn resolve_code_path(script_dir: &Path, path: &str) -> PathBuf {
 
 pub(super) fn default_script_path(project_root: Option<&Path>) -> Option<PathBuf> {
     let root = project_root?;
-    [
+    let direct = [
         root.join("running").join("main"),
         root.join("running").join("main.code"),
         root.join("main"),
         root.join("main.code"),
     ]
     .into_iter()
-    .find(|path| path.is_file())
+    .find(|path| path.is_file());
+    direct.or_else(|| default_scripts_subdir_main(root))
+}
+
+fn default_scripts_subdir_main(root: &Path) -> Option<PathBuf> {
+    let scripts_dir = root.join("scripts");
+    let entries = fs::read_dir(scripts_dir).ok()?;
+    let mut candidates = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        for file_name in ["main", "main.code"] {
+            let candidate = path.join(file_name);
+            if candidate.is_file() {
+                candidates.push(candidate);
+            }
+        }
+    }
+    (candidates.len() == 1).then(|| candidates.remove(0))
 }
 
 pub(super) fn setup_scenemax_program(
@@ -515,7 +624,7 @@ pub(super) fn setup_scenemax_program(
         context.script_root.as_deref(),
         context.asset_root.as_deref(),
     );
-    spawn_scenemax_program(
+    let startup_gltfs = spawn_scenemax_program(
         &mut commands,
         &asset_server,
         asset_root,
@@ -531,6 +640,7 @@ pub(super) fn setup_scenemax_program(
         &mut materials,
         &mut character_configs,
     );
+    commands.insert_resource(SceneMaxStartupActionState::waiting_for_gltfs(startup_gltfs));
 }
 
 pub(super) fn spawn_scenemax_program(
@@ -541,20 +651,21 @@ pub(super) fn spawn_scenemax_program(
     program: &Program,
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
-    camera_system: &mut SceneMaxCameraSystem,
-    delayed_actions: &mut DelayedActionQueue,
-    ui_queue: &mut SceneMaxUiActionQueue,
+    _camera_system: &mut SceneMaxCameraSystem,
+    _delayed_actions: &mut DelayedActionQueue,
+    _ui_queue: &mut SceneMaxUiActionQueue,
     collider_bounds: &mut SceneMaxColliderBounds,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
     character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
-) {
+) -> Vec<Handle<Gltf>> {
     let animations_by_target = collect_animations_by_target(program);
     let visibility_by_target = collect_visibility_by_target(program);
     let turn_by_target = collect_turn_by_target(program);
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
     let attaches_by_target = collect_attaches_by_target(program);
+    let mut startup_gltfs = Vec::new();
     let mut model_declarations = collect_model_declarations(program);
     model_declarations.extend(instantiate_object_pool_declarations(
         program,
@@ -564,7 +675,6 @@ pub(super) fn spawn_scenemax_program(
     let mut spawned_any = false;
     let mut entities_by_name = HashMap::new();
     let mut transforms_by_name = HashMap::new();
-    let mut gltfs_by_name = HashMap::new();
     let sprite_index = load_sprite_index(asset_root, builtin_asset_root);
     let sprite_context = SceneMaxLaunchContext {
         script_root: None,
@@ -581,8 +691,15 @@ pub(super) fn spawn_scenemax_program(
     } in &model_declarations
     {
         if options.collider {
-            let transform =
-                collider_decl_transform(name, options, &attaches_by_target, &transforms_by_name);
+            let transform = collider_decl_transform(
+                name,
+                options,
+                &attaches_by_target,
+                &transforms_by_name,
+                vars,
+                &guards_by_name,
+                Some(collider_bounds),
+            );
             let entity = spawn_scenemax_collider_decl(
                 commands,
                 name,
@@ -628,8 +745,22 @@ pub(super) fn spawn_scenemax_program(
             ));
         }
 
-        if let Some(primitive) = primitive_mesh(resource, meshes, materials) {
-            let transform = primitive_transform_from_options(options);
+        if let Some(primitive) = primitive_mesh(
+            options,
+            resource,
+            asset_server,
+            asset_root,
+            builtin_asset_root,
+            meshes,
+            materials,
+        ) {
+            let transform = primitive_transform_from_options_resolved(
+                options,
+                vars,
+                &guards_by_name,
+                Some(&transforms_by_name),
+                Some(collider_bounds),
+            );
             let entity = commands
                 .spawn((
                     SceneMaxEntity {
@@ -662,7 +793,14 @@ pub(super) fn spawn_scenemax_program(
                 let scene = WorldAssetRoot(
                     asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())),
                 );
-                let transform = transform_from_options(options, model.scale);
+                let transform = transform_from_options_resolved(
+                    options,
+                    model.scale,
+                    vars,
+                    &guards_by_name,
+                    Some(&transforms_by_name),
+                    Some(collider_bounds),
+                );
                 let entity_id = commands
                     .spawn((
                         SceneMaxEntity {
@@ -688,7 +826,7 @@ pub(super) fn spawn_scenemax_program(
 
                 entities_by_name.insert(name.clone(), entity_id);
                 transforms_by_name.insert(name.clone(), transform);
-                gltfs_by_name.insert(name.clone(), gltf);
+                startup_gltfs.push(gltf);
                 spawned_any = true;
                 tracing::info!(
                     name,
@@ -703,7 +841,14 @@ pub(super) fn spawn_scenemax_program(
             Err(scenemax_assets::AssetLookupError::UnsupportedModelFormat {
                 asset_path, ..
             }) => {
-                let transform = transform_from_options(options, None);
+                let transform = transform_from_options_resolved(
+                    options,
+                    None,
+                    vars,
+                    &guards_by_name,
+                    Some(&transforms_by_name),
+                    Some(collider_bounds),
+                );
                 let entity_id = spawn_unsupported_model_placeholder(
                     commands,
                     meshes,
@@ -729,7 +874,14 @@ pub(super) fn spawn_scenemax_program(
                 ));
             }
             Err(scenemax_assets::AssetLookupError::ModelNotFound(_)) => {
-                let transform = transform_from_options(options, None);
+                let transform = transform_from_options_resolved(
+                    options,
+                    None,
+                    vars,
+                    &guards_by_name,
+                    Some(&transforms_by_name),
+                    Some(collider_bounds),
+                );
                 let entity_id = spawn_unsupported_model_placeholder(
                     commands,
                     meshes,
@@ -787,22 +939,7 @@ pub(super) fn spawn_scenemax_program(
         }
     }
 
-    apply_startup_runs(
-        program,
-        commands,
-        vars,
-        object_pools,
-        camera_system,
-        delayed_actions,
-        ui_queue,
-        &functions_by_name,
-        &entities_by_name,
-        &mut transforms_by_name,
-        &gltfs_by_name,
-        &guards_by_name,
-    );
-
-    if !spawned_any && (has_ui_runtime_content(program) || !ui_queue.actions.is_empty()) {
+    if !spawned_any && has_ui_runtime_content(program) {
         write_runtime_diagnostic_line(
             "skipped default placeholder because the program contains UI runtime content",
         );
@@ -812,4 +949,92 @@ pub(super) fn spawn_scenemax_program(
         );
         spawn_placeholder_model(commands, meshes, materials);
     }
+    startup_gltfs
+}
+
+pub(super) fn apply_startup_runs_when_ready(
+    time: Res<Time>,
+    asset_server: Res<AssetServer>,
+    startup_program: Res<SceneMaxStartupProgram>,
+    mut startup_action_state: ResMut<SceneMaxStartupActionState>,
+    mut commands: Commands,
+    mut vars: ResMut<SceneMaxVars>,
+    mut object_pools: ResMut<SceneMaxObjectPools>,
+    mut camera_system: ResMut<SceneMaxCameraSystem>,
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
+    mut delayed_actions: ResMut<DelayedActionQueue>,
+    mut ui_queue: ResMut<SceneMaxUiActionQueue>,
+    scene_entities: Query<(Entity, &SceneMaxEntity, &Transform, Option<&SceneMaxGltf>)>,
+) {
+    if startup_action_state.applied {
+        return;
+    }
+    let Some(program) = startup_program.0.as_ref() else {
+        startup_action_state.applied = true;
+        return;
+    };
+
+    if !startup_action_state
+        .waiting_gltfs
+        .iter()
+        .all(|handle| asset_server.is_loaded_with_dependencies(handle))
+    {
+        startup_action_state.wait_seconds += time.delta_secs();
+        if !startup_action_state.waiting_logged {
+            startup_action_state.waiting_logged = true;
+            write_runtime_diagnostic_line(format!(
+                "STARTUP:WAIT_ASSETS gltf_count={}",
+                startup_action_state.waiting_gltfs.len()
+            ));
+        }
+        return;
+    }
+
+    if startup_action_state.ready_frames == 0 {
+        write_runtime_diagnostic_line(format!(
+            "STARTUP:ASSETS_READY gltf_count={} wait_seconds={}",
+            startup_action_state.waiting_gltfs.len(),
+            format_scenemax_number(startup_action_state.wait_seconds)
+        ));
+    }
+    startup_action_state.ready_frames = startup_action_state.ready_frames.saturating_add(1);
+    if startup_action_state.ready_frames < 2 {
+        return;
+    }
+
+    let mut entities_by_name = HashMap::new();
+    let mut transforms_by_name = HashMap::new();
+    let mut gltfs_by_name = HashMap::new();
+    for (entity, scene_entity, transform, gltf) in &scene_entities {
+        entities_by_name.insert(scene_entity.name.clone(), entity);
+        transforms_by_name.insert(scene_entity.name.clone(), *transform);
+        if let Some(gltf) = gltf {
+            gltfs_by_name.insert(scene_entity.name.clone(), gltf.gltf.clone());
+        }
+    }
+
+    let functions_by_name = collect_functions_by_name(program);
+    let guards_by_name = collect_guards_by_name(program);
+    write_runtime_diagnostic_line(format!(
+        "STARTUP:APPLY_RUNS entities={} gltfs={} ready_frames={}",
+        entities_by_name.len(),
+        gltfs_by_name.len(),
+        startup_action_state.ready_frames
+    ));
+    apply_startup_runs(
+        program,
+        &mut commands,
+        &mut vars,
+        &mut object_pools,
+        &mut camera_system,
+        &mut runtime_assets,
+        &mut delayed_actions,
+        &mut ui_queue,
+        &functions_by_name,
+        &entities_by_name,
+        &mut transforms_by_name,
+        &gltfs_by_name,
+        &guards_by_name,
+    );
+    startup_action_state.applied = true;
 }

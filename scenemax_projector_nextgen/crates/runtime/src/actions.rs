@@ -6,6 +6,7 @@ pub(super) fn apply_startup_runs(
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     delayed_actions: &mut DelayedActionQueue,
     ui_queue: &mut SceneMaxUiActionQueue,
     functions_by_name: &HashMap<String, FunctionRuntime>,
@@ -26,12 +27,18 @@ pub(super) fn apply_startup_runs(
         .filter(|statement| is_startup_action(statement))
         .cloned()
         .collect::<Vec<_>>();
+    write_runtime_diagnostic_line(format!(
+        "STARTUP:RUNS collected={} actions={}",
+        actions.len(),
+        describe_statement_list(&actions)
+    ));
     let _ = apply_startup_action_sequence(
         &actions,
         commands,
         vars,
         object_pools,
         camera_system,
+        runtime_assets,
         delayed_actions,
         ui_queue,
         functions_by_name,
@@ -71,6 +78,7 @@ pub(super) fn apply_startup_action_sequence(
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     delayed_actions: &mut DelayedActionQueue,
     ui_queue: &mut SceneMaxUiActionQueue,
     functions_by_name: &HashMap<String, FunctionRuntime>,
@@ -126,22 +134,40 @@ pub(super) fn apply_startup_action_sequence(
             }
             Statement::RunFunction { name, args } => {
                 let Some(function) = functions_by_name.get(name) else {
+                    write_runtime_diagnostic_line(format!(
+                        "FUNCTION:MISS phase=startup_sequence name={name}"
+                    ));
                     tracing::debug!(name, "startup SceneMax function was not parsed");
                     continue;
                 };
+                let resolved_args = resolve_call_args(
+                    args,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
                 if !function_guard_matches(
                     function,
-                    args,
+                    &resolved_args,
                     vars,
                     guards_by_name,
                     Some(transforms_by_name),
                     None,
                 ) {
+                    write_runtime_diagnostic_line(format!(
+                        "FUNCTION:SKIP phase=startup_sequence name={name} reason=guard_false"
+                    ));
                     tracing::debug!(name, "startup SceneMax function guard is false");
                     continue;
                 }
+                write_runtime_diagnostic_line(format!(
+                    "FUNCTION:RUN phase=startup_sequence name={name} actions={}",
+                    describe_statement_list(&function.actions)
+                ));
                 let function_actions = actions_with_parent_continuation(
-                    instantiate_function_actions(function, args),
+                    instantiate_function_actions(function, &resolved_args),
                     parent_action_tail(actions, index),
                 );
                 let result = apply_startup_action_sequence(
@@ -150,6 +176,7 @@ pub(super) fn apply_startup_action_sequence(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     delayed_actions,
                     ui_queue,
                     functions_by_name,
@@ -173,6 +200,7 @@ pub(super) fn apply_startup_action_sequence(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     delayed_actions,
                     ui_queue,
                     functions_by_name,
@@ -197,6 +225,7 @@ pub(super) fn apply_startup_action_sequence(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     delayed_actions,
                     ui_queue,
                     functions_by_name,
@@ -233,6 +262,7 @@ pub(super) fn apply_startup_action_sequence(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     delayed_actions,
                     ui_queue,
                     functions_by_name,
@@ -268,6 +298,7 @@ pub(super) fn apply_startup_action_sequence(
                         vars,
                         object_pools,
                         camera_system,
+                        runtime_assets,
                         delayed_actions,
                         ui_queue,
                         functions_by_name,
@@ -283,14 +314,39 @@ pub(super) fn apply_startup_action_sequence(
                     return ActionSequenceResult::Completed;
                 }
             }
-            action if blocking_timed_action_seconds(action).is_some() => {
-                let seconds = blocking_timed_action_seconds(action).unwrap_or_default();
+            action
+                if resolved_blocking_timed_action_seconds(
+                    action,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                )
+                .is_some() =>
+            {
+                let seconds = resolved_blocking_timed_action_seconds(
+                    action,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                )
+                .unwrap_or_default();
+                write_runtime_diagnostic_line(format!(
+                    "STARTUP:BLOCKING action={} seconds={} tail={}",
+                    describe_statement(action),
+                    format_scenemax_number(seconds),
+                    describe_statement_list(&actions[index + 1..])
+                ));
                 let result = apply_startup_action(
                     action,
                     commands,
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     ui_queue,
                     functions_by_name,
                     entities_by_name,
@@ -320,6 +376,7 @@ pub(super) fn apply_startup_action_sequence(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     ui_queue,
                     functions_by_name,
                     entities_by_name,
@@ -345,6 +402,7 @@ pub(super) fn apply_startup_function_by_name(
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     ui_queue: &mut SceneMaxUiActionQueue,
     functions_by_name: &HashMap<String, FunctionRuntime>,
     entities_by_name: &HashMap<String, Entity>,
@@ -358,23 +416,39 @@ pub(super) fn apply_startup_function_by_name(
         return ActionSequenceResult::Completed;
     }
     let Some(function) = functions_by_name.get(name) else {
+        write_runtime_diagnostic_line(format!("FUNCTION:MISS phase=startup name={name}"));
         tracing::debug!(name, "startup SceneMax function was not parsed");
         return ActionSequenceResult::Completed;
     };
+    let resolved_args = resolve_call_args(
+        args,
+        vars,
+        None,
+        guards_by_name,
+        Some(transforms_by_name),
+        None,
+    );
     if !function_guard_matches(
         function,
-        args,
+        &resolved_args,
         vars,
         guards_by_name,
         Some(transforms_by_name),
         None,
     ) {
+        write_runtime_diagnostic_line(format!(
+            "FUNCTION:SKIP phase=startup name={name} reason=guard_false"
+        ));
         tracing::debug!(name, "startup SceneMax function guard is false");
         return ActionSequenceResult::Completed;
     }
 
+    write_runtime_diagnostic_line(format!(
+        "FUNCTION:RUN phase=startup name={name} actions={}",
+        describe_statement_list(&function.actions)
+    ));
     tracing::info!(name, "running SceneMax startup function");
-    let actions = instantiate_function_actions(function, args);
+    let actions = instantiate_function_actions(function, &resolved_args);
     for action in &actions {
         let result = apply_startup_action(
             action,
@@ -382,6 +456,7 @@ pub(super) fn apply_startup_function_by_name(
             vars,
             object_pools,
             camera_system,
+            runtime_assets,
             ui_queue,
             functions_by_name,
             entities_by_name,
@@ -403,6 +478,7 @@ pub(super) fn apply_startup_action(
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     ui_queue: &mut SceneMaxUiActionQueue,
     functions_by_name: &HashMap<String, FunctionRuntime>,
     entities_by_name: &HashMap<String, Entity>,
@@ -412,14 +488,20 @@ pub(super) fn apply_startup_action(
     depth: usize,
 ) -> ActionSequenceResult {
     match action {
-        Statement::Assignment(assignment) | Statement::LocalAssignment(assignment) => {
-            apply_assignment(
-                assignment,
-                vars,
-                Some(transforms_by_name),
-                guards_by_name,
-                None,
-            );
+        Statement::Assignment(assignment)
+        | Statement::SharedAssignment(assignment)
+        | Statement::LocalAssignment(assignment) => {
+            if let AssignmentValue::CameraModifier(value) = &assignment.value {
+                register_camera_modifier(camera_system, &assignment.name, value);
+            } else {
+                apply_assignment(
+                    assignment,
+                    vars,
+                    Some(transforms_by_name),
+                    guards_by_name,
+                    None,
+                );
+            }
             ActionSequenceResult::Completed
         }
         Statement::CameraSystemSelect { name } => {
@@ -438,6 +520,50 @@ pub(super) fn apply_startup_action(
             stop_camera_attachment(camera_system);
             ActionSequenceResult::Completed
         }
+        Statement::CameraModifierApply(apply) => {
+            let overrides = resolved_camera_modifier_overrides(
+                &apply.overrides,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            apply_camera_modifier(camera_system, &apply.target, &apply.modifier, &overrides);
+            ActionSequenceResult::Completed
+        }
+        Statement::CameraMove(camera_move) => {
+            let distance = resolve_draw_value(
+                Some(&camera_move.distance_value),
+                camera_move.distance,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            let duration_seconds = resolve_duration_value(
+                &camera_move.duration_value,
+                camera_move.duration_seconds,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            append_timed_camera_move(
+                commands,
+                timed_camera_move_from_statement_resolved(camera_move, distance, duration_seconds),
+            );
+            write_runtime_diagnostic_line(format!(
+                "CAMERA:MOVE queue source=startup axis={} distance={} duration={} async={}",
+                axis_label(camera_move.axis),
+                format_scenemax_number(distance),
+                format_scenemax_number(duration_seconds),
+                camera_move.async_run as u8
+            ));
+            ActionSequenceResult::Completed
+        }
         Statement::Logger(logger) => {
             apply_logger_statement(
                 logger,
@@ -449,14 +575,39 @@ pub(super) fn apply_startup_action(
             );
             ActionSequenceResult::Completed
         }
+        Statement::Audio(audio) => {
+            apply_audio_statement(
+                audio,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+                runtime_assets,
+                commands,
+            );
+            ActionSequenceResult::Completed
+        }
         Statement::DebugMode { enabled } => {
             set_debug_mode(commands, *enabled);
             ActionSequenceResult::Completed
         }
         Statement::UiLoad { name } => {
+            write_runtime_diagnostic_line(format!("UI:QUEUE load {name} source=startup"));
             ui_queue
                 .actions
                 .push(SceneMaxUiAction::Load { name: name.clone() });
+            ActionSequenceResult::Completed
+        }
+        Statement::ChannelDraw(draw) => {
+            ui_queue.actions.push(scenemax_draw_action_from_statement(
+                draw,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            ));
             ActionSequenceResult::Completed
         }
         Statement::UiShowHide(show_hide) => {
@@ -508,6 +659,7 @@ pub(super) fn apply_startup_action(
                 vars,
                 object_pools,
                 camera_system,
+                runtime_assets,
                 ui_queue,
                 functions_by_name,
                 entities_by_name,
@@ -530,6 +682,7 @@ pub(super) fn apply_startup_action(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     ui_queue,
                     functions_by_name,
                     entities_by_name,
@@ -563,6 +716,7 @@ pub(super) fn apply_startup_action(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     ui_queue,
                     functions_by_name,
                     entities_by_name,
@@ -592,6 +746,7 @@ pub(super) fn apply_startup_action(
                         vars,
                         object_pools,
                         camera_system,
+                        runtime_assets,
                         ui_queue,
                         functions_by_name,
                         entities_by_name,
@@ -616,6 +771,7 @@ pub(super) fn apply_startup_action(
                         vars,
                         object_pools,
                         camera_system,
+                        runtime_assets,
                         ui_queue,
                         functions_by_name,
                         entities_by_name,
@@ -640,6 +796,7 @@ pub(super) fn apply_startup_action(
                         vars,
                         object_pools,
                         camera_system,
+                        runtime_assets,
                         ui_queue,
                         functions_by_name,
                         entities_by_name,
@@ -679,10 +836,19 @@ pub(super) fn apply_startup_action(
                 entities_by_name.get(&animation.target),
                 gltfs_by_name.get(&animation.target),
             ) {
+                let speed = resolve_animation_speed_value(
+                    &animation.speed_value,
+                    animation.speed,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
                 commands.entity(*entity).insert(AnimationToPlay {
                     clip: animation.clip.clone(),
                     looped: animation.looped,
-                    speed: animation.speed,
+                    speed,
                     gltf: gltf.clone(),
                 });
             }
@@ -690,9 +856,14 @@ pub(super) fn apply_startup_action(
         }
         Statement::SpritePlay(sprite_play) => {
             if let Some(entity) = entities_by_name.get(&sprite_play.target) {
-                commands
-                    .entity(*entity)
-                    .insert(sprite_animation_from_statement(sprite_play));
+                commands.entity(*entity).insert(resolved_sprite_animation(
+                    sprite_play,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                ));
                 write_runtime_diagnostic_line(format!(
                     "started sprite animation target={} frames={}..{} duration={:.3}s loop={}",
                     sprite_play.target,
@@ -717,7 +888,14 @@ pub(super) fn apply_startup_action(
             if let Some(entity) = entities_by_name.get(&animation_speed.target) {
                 commands
                     .entity(*entity)
-                    .insert(animation_speed_override(animation_speed));
+                    .insert(resolved_animation_speed_override(
+                        animation_speed,
+                        vars,
+                        None,
+                        guards_by_name,
+                        Some(transforms_by_name),
+                        None,
+                    ));
             }
             ActionSequenceResult::Completed
         }
@@ -725,7 +903,14 @@ pub(super) fn apply_startup_action(
             if let Some(entity) = entities_by_name.get(&character_mode.target) {
                 commands
                     .entity(*entity)
-                    .insert(PendingCharacterMode(character_mode.clone()));
+                    .insert(PendingCharacterMode(resolved_character_mode(
+                        character_mode,
+                        vars,
+                        None,
+                        guards_by_name,
+                        Some(transforms_by_name),
+                        None,
+                    )));
             }
             ActionSequenceResult::Completed
         }
@@ -761,8 +946,14 @@ pub(super) fn apply_startup_action(
             let Some(entity) = entities_by_name.get(&position.target) else {
                 return ActionSequenceResult::Completed;
             };
-            let Some(translation) = evaluate_position_statement(position, transforms_by_name)
-            else {
+            let Some(translation) = evaluate_position_value_runtime(
+                &position.position,
+                vars,
+                None,
+                guards_by_name,
+                transforms_by_name,
+                None,
+            ) else {
                 return ActionSequenceResult::Completed;
             };
             let mut transform = transforms_by_name
@@ -776,9 +967,31 @@ pub(super) fn apply_startup_action(
         }
         Statement::Turn(turn) => {
             if let Some(entity) = entities_by_name.get(&turn.target) {
+                let degrees = resolve_draw_value(
+                    Some(&turn.degrees_value),
+                    turn.degrees,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
+                let duration_seconds = resolve_duration_value(
+                    &turn.duration_value,
+                    turn.duration_seconds,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
                 commands
                     .entity(*entity)
-                    .insert(timed_turn_from_statement(turn));
+                    .insert(timed_turn_from_statement_resolved(
+                        turn,
+                        degrees,
+                        duration_seconds,
+                    ));
             }
             ActionSequenceResult::Completed
         }
@@ -787,10 +1000,33 @@ pub(super) fn apply_startup_action(
                 entities_by_name.get(&movement.target),
                 transforms_by_name.get(&movement.target),
             ) {
+                let distance = resolve_draw_value(
+                    Some(&movement.distance_value),
+                    movement.distance,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
+                let duration_seconds = resolve_draw_value(
+                    Some(&movement.duration_value),
+                    movement.duration_seconds,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
                 append_timed_move(
                     commands,
                     *entity,
-                    timed_move_from_statement(movement, transform),
+                    timed_move_from_statement_resolved(
+                        movement,
+                        transform,
+                        distance,
+                        duration_seconds,
+                    ),
                 );
             }
             ActionSequenceResult::Completed
@@ -800,9 +1036,15 @@ pub(super) fn apply_startup_action(
                 entities_by_name.get(&move_to.target),
                 transforms_by_name.get(&move_to.target),
             ) {
-                if let Some(timed_move) =
-                    timed_move_to_from_statement(move_to, transform, transforms_by_name)
-                {
+                if let Some(timed_move) = resolved_move_to(
+                    move_to,
+                    transform,
+                    vars,
+                    None,
+                    guards_by_name,
+                    transforms_by_name,
+                    None,
+                ) {
                     append_timed_move(commands, *entity, timed_move);
                 }
             }
@@ -813,9 +1055,18 @@ pub(super) fn apply_startup_action(
                 entities_by_name.get(&jump.target),
                 transforms_by_name.get(&jump.target),
             ) {
+                let speed = resolve_draw_value(
+                    Some(&jump.speed_value),
+                    jump.speed,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
                 commands
                     .entity(*entity)
-                    .insert(timed_jump_from_statement(jump, transform));
+                    .insert(timed_jump_from_statement_resolved(jump, transform, speed));
             }
             ActionSequenceResult::Completed
         }
@@ -824,7 +1075,16 @@ pub(super) fn apply_startup_action(
                 entities_by_name.get(&impulse.target),
                 transforms_by_name.get(&impulse.target),
             ) {
-                apply_physics_impulse(commands, *entity, transform, impulse);
+                let strength = resolve_draw_value(
+                    Some(&impulse.strength_value),
+                    impulse.strength,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
+                apply_physics_impulse_resolved(commands, *entity, transform, impulse, strength);
             }
             ActionSequenceResult::Completed
         }
@@ -897,7 +1157,7 @@ pub(super) fn switch_scene_on_key(
         scene_main.display()
     ));
     match load_script_with_adds(&scene_main, &mut HashSet::new()) {
-        Ok(program) => {
+        Ok((program, scene_script_root)) => {
             for entity in &scene_queries.p0() {
                 commands.entity(entity).despawn();
             }
@@ -906,24 +1166,24 @@ pub(super) fn switch_scene_on_key(
                 *camera = camera_transform_from_program(&program);
             }
 
-            vars.0.clear();
+            retain_scene_switch_shared_vars(&mut vars, startup_program.0.as_ref(), &program);
             object_pools.aliases.clear();
             object_pools.pools.clear();
             delayed_actions.actions.clear();
             recurring_timers.remaining_by_statement.clear();
+            commands.insert_resource(ActiveActionControllers::default());
             physics_contacts.active_pairs.clear();
             collider_bounds.clear();
             apply_initial_assignments(&program, &mut vars);
             apply_camera_systems(&program, &mut camera_system);
-            let scene_script_root = scene_main.parent().map(Path::to_path_buf);
             load_cinematic_rigs(
                 &program,
                 &mut camera_system,
-                scene_script_root.as_deref(),
+                Some(&scene_script_root),
                 context.asset_root.as_deref(),
             );
             let mut scene_ui_queue = SceneMaxUiActionQueue::default();
-            spawn_scenemax_program(
+            let startup_gltfs = spawn_scenemax_program(
                 &mut commands,
                 &asset_server,
                 asset_root,
@@ -939,8 +1199,12 @@ pub(super) fn switch_scene_on_key(
                 &mut materials,
                 &mut character_configs,
             );
+            commands.insert_resource(SceneMaxStartupActionState::waiting_for_gltfs(startup_gltfs));
             startup_program.0 = Some(program);
-            startup_program.1 = scene_script_root;
+            startup_program.1 = Some(scene_script_root);
+            if let Some(program) = startup_program.0.as_ref() {
+                log_lifecycle_when_summary(program);
+            }
             tracing::info!(scene, path = %scene_main.display(), "switched SceneMax scene");
             write_runtime_diagnostic_line(format!(
                 "switched SceneMax scene {scene} from {}",
@@ -962,6 +1226,45 @@ pub(super) fn switch_scene_on_key(
     }
 }
 
+pub(super) fn retain_scene_switch_shared_vars(
+    vars: &mut SceneMaxVars,
+    previous_program: Option<&Program>,
+    next_program: &Program,
+) {
+    let Some(previous_program) = previous_program else {
+        vars.0.clear();
+        return;
+    };
+    let previous_shared = collect_shared_assignment_names(previous_program);
+    let next_shared = collect_shared_assignment_names(next_program);
+    vars.0
+        .retain(|name, _| previous_shared.contains(name) && next_shared.contains(name));
+}
+
+#[cfg(test)]
+mod scene_switch_tests {
+    use super::*;
+    use scenemax_parser::parse_program;
+
+    #[test]
+    fn scene_switch_retains_only_shared_values_declared_by_both_scenes() {
+        let previous_program =
+            parse_program("shared var score = 0\nshared var timer = 0\nvar life2 = 10").unwrap();
+        let next_program = parse_program("shared var score = 0\nvar timer = 0").unwrap();
+        let mut vars = SceneMaxVars(HashMap::from([
+            ("score".to_owned(), 25.0),
+            ("timer".to_owned(), 12.0),
+            ("life2".to_owned(), 3.0),
+        ]));
+
+        retain_scene_switch_shared_vars(&mut vars, Some(&previous_program), &next_program);
+
+        assert_eq!(vars.0.get("score").copied(), Some(25.0));
+        assert_eq!(vars.0.get("timer"), None);
+        assert_eq!(vars.0.get("life2"), None);
+    }
+}
+
 pub(super) fn scene_main_path(current_script_root: &Path, scene: &str) -> PathBuf {
     current_script_root
         .parent()
@@ -974,7 +1277,7 @@ pub(super) fn apply_key_events(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
     startup_program: Res<SceneMaxStartupProgram>,
-    runtime_assets: Res<SceneMaxRuntimeAssets>,
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
     animation_durations: Res<SceneMaxAnimationDurations>,
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
@@ -982,6 +1285,7 @@ pub(super) fn apply_key_events(
     mut camera_system: ResMut<SceneMaxCameraSystem>,
     mut delayed_actions: ResMut<DelayedActionQueue>,
     mut ui_queue: ResMut<SceneMaxUiActionQueue>,
+    mut active_controllers: ResMut<ActiveActionControllers>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
         Query<(Entity, &SceneMaxEntity, &Transform)>,
@@ -1010,7 +1314,7 @@ pub(super) fn apply_key_events(
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
 
-    for statement in &program.statements {
+    for (statement_index, statement) in program.statements.iter().enumerate() {
         let Statement::KeyEvent(event) = statement else {
             continue;
         };
@@ -1038,6 +1342,49 @@ pub(super) fn apply_key_events(
             );
             continue;
         }
+        let owner = key_event_controller_key(statement_index, event.trigger);
+        if owner
+            .as_ref()
+            .is_some_and(|owner| active_controllers.running.contains(owner))
+        {
+            if owner
+                .as_ref()
+                .is_some_and(|owner| !delayed_actions_has_owner(&delayed_actions, owner))
+            {
+                if let Some(owner) = &owner {
+                    write_runtime_diagnostic_line(format!(
+                        "CTRL:KEY_STALE_OWNER_RECOVER stmt={} key={} owner={} active={} delayed={} state={}",
+                        statement_index,
+                        event.key,
+                        describe_controller_key(owner),
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                    active_controllers.running.remove(owner);
+                }
+            } else {
+                if runtime_verbose_logging() {
+                    write_runtime_diagnostic_line(format!(
+                        "KEY:SKIP_RUNNING stmt={} key={} trigger={} owner={} active={} delayed={} state={}",
+                        statement_index,
+                        event.key,
+                        key_trigger_label(event.trigger),
+                        owner
+                            .as_ref()
+                            .map(describe_controller_key)
+                            .unwrap_or_else(|| "-".to_owned()),
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                }
+                continue;
+            }
+        }
+        if let Some(owner) = &owner {
+            cancel_other_key_handlers(owner, &mut active_controllers, &mut delayed_actions);
+        }
         write_key_event_probe(
             "KEY:FIRE",
             &event.key,
@@ -1047,11 +1394,29 @@ pub(super) fn apply_key_events(
             &transforms_by_name,
             &collider_bounds,
         );
+        if runtime_verbose_logging() {
+            write_runtime_diagnostic_line(format!(
+                "CTRL:KEY_FIRE_CONTEXT stmt={} key={} trigger={} owner={} active={} delayed={} state={}",
+                statement_index,
+                event.key,
+                key_trigger_label(event.trigger),
+                owner
+                    .as_ref()
+                    .map(describe_controller_key)
+                    .unwrap_or_else(|| "-".to_owned()),
+                describe_active_controllers(&active_controllers),
+                describe_delayed_queue(&delayed_actions),
+                describe_runtime_state(&vars)
+            ));
+        }
 
         let mut queued_animations = HashMap::new();
         let continuous_delta_seconds =
             (event.trigger == KeyTrigger::Pressed).then_some(time.delta_secs());
-        apply_action_sequence(
+        if let Some(owner) = &owner {
+            active_controllers.running.insert(owner.clone());
+        }
+        let result = apply_action_sequence(
             &event.actions,
             &mut transforms_by_name,
             &mut vars,
@@ -1060,16 +1425,248 @@ pub(super) fn apply_key_events(
             &functions_by_name,
             &guards_by_name,
             &mut queued_animations,
-            &runtime_assets,
+            &mut runtime_assets,
             &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
             Some(&mut ui_queue),
-            None,
+            owner.clone(),
             None,
             continuous_delta_seconds,
             &mut commands,
             &mut scene_entities,
+        );
+        if !result.is_suspended()
+            && let Some(owner) = owner
+            && !delayed_actions_has_owner(&delayed_actions, &owner)
+        {
+            active_controllers.running.remove(&owner);
+        }
+    }
+}
+
+pub(super) fn cancel_other_key_handlers(
+    owner: &SceneMaxControllerKey,
+    active_controllers: &mut ActiveActionControllers,
+    delayed_actions: &mut DelayedActionQueue,
+) {
+    let SceneMaxControllerKey::Key(_) = owner else {
+        return;
+    };
+    let active_before = describe_active_controllers(active_controllers);
+    let delayed_before = describe_delayed_queue(delayed_actions);
+    active_controllers
+        .running
+        .retain(|running| !matches!(running, SceneMaxControllerKey::Key(_)) || running == owner);
+    delayed_actions
+        .actions
+        .retain(|delayed| !delayed_owner_is_other_key(delayed.owner.as_ref(), owner));
+    let active_after = describe_active_controllers(active_controllers);
+    let delayed_after = describe_delayed_queue(delayed_actions);
+    if active_before != active_after || delayed_before != delayed_after {
+        write_runtime_diagnostic_line(format!(
+            "CTRL:KEY_CANCEL_OTHERS owner={} active_before={} active_after={} delayed_before={} delayed_after={}",
+            describe_controller_key(owner),
+            active_before,
+            active_after,
+            delayed_before,
+            delayed_after
+        ));
+    }
+}
+
+pub(super) fn delayed_owner_is_other_key(
+    delayed_owner: Option<&SceneMaxControllerKey>,
+    owner: &SceneMaxControllerKey,
+) -> bool {
+    matches!(delayed_owner, Some(SceneMaxControllerKey::Key(_))) && delayed_owner != Some(owner)
+}
+
+pub(super) fn delayed_actions_has_owner(
+    delayed_actions: &DelayedActionQueue,
+    owner: &SceneMaxControllerKey,
+) -> bool {
+    delayed_actions
+        .actions
+        .iter()
+        .any(|delayed| delayed.owner.as_ref() == Some(owner))
+}
+
+pub(super) fn describe_controller_key(owner: &SceneMaxControllerKey) -> String {
+    match owner {
+        SceneMaxControllerKey::Key(index) => format!("K{index}"),
+        SceneMaxControllerKey::When(index) => format!("W{index}"),
+        SceneMaxControllerKey::Recurring(index) => format!("R{index}"),
+    }
+}
+
+pub(super) fn describe_active_controllers(active_controllers: &ActiveActionControllers) -> String {
+    if active_controllers.running.is_empty() {
+        return "<empty>".to_owned();
+    }
+    let mut owners = active_controllers
+        .running
+        .iter()
+        .map(describe_controller_key)
+        .collect::<Vec<_>>();
+    owners.sort();
+    owners.join(",")
+}
+
+pub(super) fn describe_delayed_queue(delayed_actions: &DelayedActionQueue) -> String {
+    if delayed_actions.actions.is_empty() {
+        return "count=0".to_owned();
+    }
+    let entries = delayed_actions
+        .actions
+        .iter()
+        .take(10)
+        .enumerate()
+        .map(|(index, delayed)| {
+            let owner = delayed
+                .owner
+                .as_ref()
+                .map(describe_controller_key)
+                .unwrap_or_else(|| "-".to_owned());
+            let first = delayed
+                .actions
+                .first()
+                .map(describe_statement)
+                .unwrap_or_else(|| "<empty>".to_owned());
+            format!(
+                "{}:{}s:{}:{}",
+                index,
+                format_scenemax_number(delayed.remaining_seconds.max(0.0)),
+                owner,
+                first
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" | ");
+    format!("count={} [{}]", delayed_actions.actions.len(), entries)
+}
+
+pub(super) fn describe_runtime_state(vars: &SceneMaxVars) -> String {
+    let mut names = vars.0.keys().map(String::as_str).collect::<Vec<_>>();
+    names.sort_unstable();
+    let entries = names
+        .iter()
+        .take(16)
+        .map(|name| {
+            let value = vars
+                .0
+                .get(*name)
+                .map(|value| format_scenemax_number(*value))
+                .unwrap_or_else(|| "null".to_owned());
+            format!("{name}={value}")
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    if vars.0.len() > 16 {
+        format!("vars={} [{} ...]", vars.0.len(), entries)
+    } else {
+        format!("vars={} [{}]", vars.0.len(), entries)
+    }
+}
+
+pub(super) fn truncate_log_field(value: String, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let truncated = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() {
+        format!("{truncated}...")
+    } else {
+        truncated
+    }
+}
+
+pub(super) fn describe_condition_brief(condition: &Condition) -> String {
+    truncate_log_field(format!("{condition:?}"), 180)
+}
+
+pub(super) fn lifecycle_probe_condition(condition: &Condition) -> bool {
+    !condition_contains_collision(condition)
+}
+
+pub(super) fn key_event_controller_key(
+    statement_index: usize,
+    trigger: KeyTrigger,
+) -> Option<SceneMaxControllerKey> {
+    (trigger == KeyTrigger::PressedOnce).then_some(SceneMaxControllerKey::Key(statement_index))
+}
+
+#[cfg(test)]
+mod key_event_controller_tests {
+    use super::*;
+
+    #[test]
+    fn pressed_once_key_events_are_owned_by_statement_index() {
+        assert_eq!(
+            key_event_controller_key(7, KeyTrigger::PressedOnce),
+            Some(SceneMaxControllerKey::Key(7))
+        );
+        assert_eq!(key_event_controller_key(7, KeyTrigger::Pressed), None);
+        assert_eq!(key_event_controller_key(7, KeyTrigger::Released), None);
+    }
+
+    #[test]
+    fn changing_pressed_once_keys_cancels_previous_key_continuations() {
+        let first = SceneMaxControllerKey::Key(1);
+        let second = SceneMaxControllerKey::Key(2);
+        let recurring = SceneMaxControllerKey::Recurring(3);
+        let mut active_controllers = ActiveActionControllers {
+            running: HashSet::from([first.clone(), second.clone(), recurring.clone()]),
+        };
+        let mut delayed_actions = DelayedActionQueue {
+            actions: vec![
+                DelayedActions {
+                    remaining_seconds: 0.1,
+                    actions: vec![Statement::NoOp {
+                        text: "first".to_owned(),
+                    }],
+                    owner: Some(first.clone()),
+                    scope: None,
+                },
+                DelayedActions {
+                    remaining_seconds: 0.1,
+                    actions: vec![Statement::NoOp {
+                        text: "second".to_owned(),
+                    }],
+                    owner: Some(second.clone()),
+                    scope: None,
+                },
+                DelayedActions {
+                    remaining_seconds: 0.1,
+                    actions: vec![Statement::NoOp {
+                        text: "recurring".to_owned(),
+                    }],
+                    owner: Some(recurring.clone()),
+                    scope: None,
+                },
+                DelayedActions {
+                    remaining_seconds: 0.1,
+                    actions: vec![Statement::NoOp {
+                        text: "detached async".to_owned(),
+                    }],
+                    owner: None,
+                    scope: None,
+                },
+            ],
+        };
+
+        cancel_other_key_handlers(&second, &mut active_controllers, &mut delayed_actions);
+
+        assert!(!active_controllers.running.contains(&first));
+        assert!(active_controllers.running.contains(&second));
+        assert!(active_controllers.running.contains(&recurring));
+        assert_eq!(delayed_actions.actions.len(), 3);
+        assert!(!delayed_actions_has_owner(&delayed_actions, &first));
+        assert!(delayed_actions_has_owner(&delayed_actions, &second));
+        assert!(delayed_actions_has_owner(&delayed_actions, &recurring));
+        assert!(
+            delayed_actions
+                .actions
+                .iter()
+                .any(|delayed| delayed.owner.is_none())
         );
     }
 }
@@ -1077,7 +1674,7 @@ pub(super) fn apply_key_events(
 pub(super) fn apply_when_events(
     time: Res<Time>,
     startup_program: Res<SceneMaxStartupProgram>,
-    runtime_assets: Res<SceneMaxRuntimeAssets>,
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
     animation_durations: Res<SceneMaxAnimationDurations>,
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
@@ -1137,6 +1734,19 @@ pub(super) fn apply_when_events(
             &physics_contacts,
             &object_pools,
         );
+        let lifecycle_probe = lifecycle_probe_condition(&event.condition);
+        if lifecycle_probe && runtime_verbose_logging() {
+            write_runtime_diagnostic_line(format!(
+                "WHEN:PROBE stmt={} guard={} condition={} matches={} active={} delayed={} state={}",
+                statement_index,
+                guard_matches as u8,
+                describe_condition_brief(&event.condition),
+                condition_matches_now as u8,
+                describe_active_controllers(&active_controllers),
+                describe_delayed_queue(&delayed_actions),
+                describe_runtime_state(&vars)
+            ));
+        }
         if let Some(after_condition) = &event.after_condition {
             let after_matches = when_condition_matches(
                 after_condition,
@@ -1206,11 +1816,41 @@ pub(super) fn apply_when_events(
         }
         let owner = SceneMaxControllerKey::When(statement_index);
         if active_controllers.running.contains(&owner) {
-            continue;
+            if delayed_actions_has_owner(&delayed_actions, &owner) {
+                write_runtime_diagnostic_line(format!(
+                    "WHEN:SKIP_RUNNING stmt={} owner={} condition={} active={} delayed={} state={}",
+                    statement_index,
+                    describe_controller_key(&owner),
+                    describe_condition_brief(&event.condition),
+                    describe_active_controllers(&active_controllers),
+                    describe_delayed_queue(&delayed_actions),
+                    describe_runtime_state(&vars)
+                ));
+                continue;
+            }
+            write_runtime_diagnostic_line(format!(
+                "CTRL:WHEN_STALE_OWNER_RECOVER stmt={} owner={} condition={} active={} delayed={} state={}",
+                statement_index,
+                describe_controller_key(&owner),
+                describe_condition_brief(&event.condition),
+                describe_active_controllers(&active_controllers),
+                describe_delayed_queue(&delayed_actions),
+                describe_runtime_state(&vars)
+            ));
+            active_controllers.running.remove(&owner);
         }
 
         let mut queued_animations = HashMap::new();
         active_controllers.running.insert(owner.clone());
+        write_runtime_diagnostic_line(format!(
+            "WHEN:FIRE stmt={} owner={} condition={} active={} delayed={} state={}",
+            statement_index,
+            describe_controller_key(&owner),
+            describe_condition_brief(&event.condition),
+            describe_active_controllers(&active_controllers),
+            describe_delayed_queue(&delayed_actions),
+            describe_runtime_state(&vars)
+        ));
         let result = apply_action_sequence(
             &event.actions,
             &mut transforms_by_name,
@@ -1220,7 +1860,7 @@ pub(super) fn apply_when_events(
             &functions_by_name,
             &guards_by_name,
             &mut queued_animations,
-            &runtime_assets,
+            &mut runtime_assets,
             &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
@@ -1231,7 +1871,17 @@ pub(super) fn apply_when_events(
             &mut commands,
             &mut scene_entities,
         );
-        if !result.is_suspended() {
+        if result.is_suspended() {
+            write_runtime_diagnostic_line(format!(
+                "WHEN:PASS_SUSPEND stmt={} owner={} active={} delayed={} state={}",
+                statement_index,
+                describe_controller_key(&owner),
+                describe_active_controllers(&active_controllers),
+                describe_delayed_queue(&delayed_actions),
+                describe_runtime_state(&vars)
+            ));
+            break;
+        } else {
             active_controllers.running.remove(&owner);
         }
     }
@@ -1421,7 +2071,7 @@ pub(super) fn collision_pair_distance_report(
 pub(super) fn update_recurring_runs(
     time: Res<Time>,
     startup_program: Res<SceneMaxStartupProgram>,
-    runtime_assets: Res<SceneMaxRuntimeAssets>,
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
     animation_durations: Res<SceneMaxAnimationDurations>,
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
@@ -1455,16 +2105,30 @@ pub(super) fn update_recurring_runs(
 
     let delta = time.delta_secs();
     let mut due_runs = Vec::new();
+    let mut transforms_by_name =
+        build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
+    let functions_by_name = collect_functions_by_name(program);
+    let guards_by_name = collect_guards_by_name(program);
     for (index, statement) in program.statements.iter().enumerate() {
         let Statement::RunEvery {
             name,
             args,
             interval_seconds,
+            interval_value,
         } = statement
         else {
             continue;
         };
-        let interval = interval_seconds.max(0.001);
+        let interval = resolve_duration_value(
+            interval_value,
+            *interval_seconds,
+            &vars,
+            None,
+            &guards_by_name,
+            Some(&transforms_by_name),
+            Some(&collider_bounds),
+        )
+        .max(0.001);
         let remaining = recurring_timers
             .remaining_by_statement
             .entry(index)
@@ -1473,7 +2137,35 @@ pub(super) fn update_recurring_runs(
         if *remaining <= 0.0 {
             let owner = SceneMaxControllerKey::Recurring(index);
             if active_controllers.running.contains(&owner) {
-                *remaining = 0.0;
+                if delayed_actions_has_owner(&delayed_actions, &owner) {
+                    if runtime_verbose_logging() {
+                        write_runtime_diagnostic_line(format!(
+                            "RECUR:SKIP_RUNNING stmt={} name={} owner={} active={} delayed={} state={}",
+                            index,
+                            name,
+                            describe_controller_key(&owner),
+                            describe_active_controllers(&active_controllers),
+                            describe_delayed_queue(&delayed_actions),
+                            describe_runtime_state(&vars)
+                        ));
+                    }
+                    *remaining = 0.0;
+                } else {
+                    write_runtime_diagnostic_line(format!(
+                        "CTRL:RECUR_STALE_OWNER_RECOVER stmt={} name={} owner={} active={} delayed={} state={}",
+                        index,
+                        name,
+                        describe_controller_key(&owner),
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                    active_controllers.running.remove(&owner);
+                    due_runs.push((index, name.clone(), args.clone()));
+                    while *remaining <= 0.0 {
+                        *remaining += interval;
+                    }
+                }
             } else {
                 due_runs.push((index, name.clone(), args.clone()));
                 while *remaining <= 0.0 {
@@ -1487,15 +2179,21 @@ pub(super) fn update_recurring_runs(
         return;
     }
 
-    let mut transforms_by_name =
-        build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
-    let functions_by_name = collect_functions_by_name(program);
-    let guards_by_name = collect_guards_by_name(program);
-
     for (index, name, args) in due_runs {
         let mut queued_animations = HashMap::new();
         let owner = SceneMaxControllerKey::Recurring(index);
         active_controllers.running.insert(owner.clone());
+        if runtime_verbose_logging() {
+            write_runtime_diagnostic_line(format!(
+                "RECUR:FIRE stmt={} name={} owner={} active={} delayed={} state={}",
+                index,
+                name,
+                describe_controller_key(&owner),
+                describe_active_controllers(&active_controllers),
+                describe_delayed_queue(&delayed_actions),
+                describe_runtime_state(&vars)
+            ));
+        }
         let result = apply_function_by_name(
             &name,
             &args,
@@ -1506,7 +2204,7 @@ pub(super) fn update_recurring_runs(
             &functions_by_name,
             &guards_by_name,
             &mut queued_animations,
-            &runtime_assets,
+            &mut runtime_assets,
             &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
@@ -1521,6 +2219,18 @@ pub(super) fn update_recurring_runs(
         if !result.is_suspended() {
             active_controllers.running.remove(&owner);
         }
+        if runtime_verbose_logging() {
+            write_runtime_diagnostic_line(format!(
+                "RECUR:DONE stmt={} name={} owner={} result={:?} active={} delayed={} state={}",
+                index,
+                name,
+                describe_controller_key(&owner),
+                result,
+                describe_active_controllers(&active_controllers),
+                describe_delayed_queue(&delayed_actions),
+                describe_runtime_state(&vars)
+            ));
+        }
     }
 }
 
@@ -1528,7 +2238,7 @@ pub(super) fn update_delayed_actions(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
     startup_program: Res<SceneMaxStartupProgram>,
-    runtime_assets: Res<SceneMaxRuntimeAssets>,
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
     animation_durations: Res<SceneMaxAnimationDurations>,
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
@@ -1575,6 +2285,30 @@ pub(super) fn update_delayed_actions(
     if ready_actions.is_empty() {
         return;
     }
+    if runtime_verbose_logging() {
+        write_runtime_diagnostic_line(format!(
+            "DELAY:READY count={} active={} pending={} state={} actions={}",
+            ready_actions.len(),
+            describe_active_controllers(&active_controllers),
+            describe_delayed_queue(&delayed_actions),
+            describe_runtime_state(&vars),
+            ready_actions
+                .iter()
+                .map(|delayed| {
+                    format!(
+                        "owner={} {}",
+                        delayed
+                            .owner
+                            .as_ref()
+                            .map(describe_controller_key)
+                            .unwrap_or_else(|| "-".to_owned()),
+                        describe_statement_list(&delayed.actions)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" || ")
+        ));
+    }
 
     let mut transforms_by_name =
         build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
@@ -1584,8 +2318,36 @@ pub(super) fn update_delayed_actions(
     for mut delayed in ready_actions {
         if let Some(Statement::WaitForKey { key }) = delayed.actions.first() {
             if is_pressed_key(key, &keyboard) {
+                if runtime_verbose_logging() {
+                    write_runtime_diagnostic_line(format!(
+                        "DELAY:WAIT_FOR_KEY_ACCEPT key={} owner={} active={} delayed={} state={}",
+                        key,
+                        delayed
+                            .owner
+                            .as_ref()
+                            .map(describe_controller_key)
+                            .unwrap_or_else(|| "-".to_owned()),
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                }
                 delayed.actions.remove(0);
             } else {
+                if runtime_verbose_logging() {
+                    write_runtime_diagnostic_line(format!(
+                        "DELAY:WAIT_FOR_KEY_POLL key={} owner={} active={} delayed={} state={}",
+                        key,
+                        delayed
+                            .owner
+                            .as_ref()
+                            .map(describe_controller_key)
+                            .unwrap_or_else(|| "-".to_owned()),
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                }
                 delayed.remaining_seconds = LOOP_CONTINUE_DELAY_SECONDS;
                 delayed_actions.actions.push(delayed);
                 continue;
@@ -1593,7 +2355,18 @@ pub(super) fn update_delayed_actions(
         }
         if delayed.actions.is_empty() {
             if let Some(owner) = delayed.owner {
-                active_controllers.running.remove(&owner);
+                if !delayed_actions_has_owner(&delayed_actions, &owner) {
+                    active_controllers.running.remove(&owner);
+                }
+                if runtime_verbose_logging() {
+                    write_runtime_diagnostic_line(format!(
+                        "DELAY:DONE_EMPTY owner={} active={} delayed={} state={}",
+                        describe_controller_key(&owner),
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                }
             }
             continue;
         }
@@ -1607,7 +2380,7 @@ pub(super) fn update_delayed_actions(
             &functions_by_name,
             &guards_by_name,
             &mut queued_animations,
-            &runtime_assets,
+            &mut runtime_assets,
             &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
@@ -1620,7 +2393,19 @@ pub(super) fn update_delayed_actions(
         );
         if !result.is_suspended() {
             if let Some(owner) = delayed.owner {
-                active_controllers.running.remove(&owner);
+                if !delayed_actions_has_owner(&delayed_actions, &owner) {
+                    active_controllers.running.remove(&owner);
+                }
+                if runtime_verbose_logging() {
+                    write_runtime_diagnostic_line(format!(
+                        "DELAY:DONE owner={} result={:?} active={} delayed={} state={}",
+                        describe_controller_key(&owner),
+                        result,
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                }
             }
         }
     }
@@ -1645,7 +2430,156 @@ pub(super) fn enqueue_delayed_actions(
         owner,
         scope,
     });
+    if runtime_verbose_logging() {
+        let delayed = delayed_actions.actions.last().unwrap();
+        write_runtime_diagnostic_line(format!(
+            "DELAY:ENQUEUE seconds={} actions={} owner={}",
+            format_scenemax_number(seconds.max(0.0)),
+            describe_statement_list(&delayed.actions),
+            delayed
+                .owner
+                .as_ref()
+                .map(describe_controller_key)
+                .unwrap_or_else(|| "-".to_owned())
+        ));
+    }
     true
+}
+
+pub(super) fn describe_statement_list(actions: &[Statement]) -> String {
+    if actions.is_empty() {
+        return "<empty>".to_owned();
+    }
+    actions
+        .iter()
+        .take(8)
+        .map(describe_statement)
+        .collect::<Vec<_>>()
+        .join(" -> ")
+}
+
+pub(super) fn describe_statement(action: &Statement) -> String {
+    match action {
+        Statement::CameraMove(camera_move) => format!(
+            "CameraMove({} {} {}s async={})",
+            axis_label(camera_move.axis),
+            format_scenemax_number(camera_move.distance),
+            format_scenemax_number(camera_move.duration_seconds),
+            camera_move.async_run as u8
+        ),
+        Statement::CinematicPlay(play) => format!(
+            "CinematicPlay({} {}s async={})",
+            play.target,
+            format_scenemax_number(play.duration_seconds),
+            play.async_run as u8
+        ),
+        Statement::Async { actions } => format!("Async({})", describe_statement_list(actions)),
+        Statement::RunFunction { name, .. } => format!("RunFunction({name})"),
+        Statement::Audio(audio) => format!(
+            "Audio({} {} loop={})",
+            match audio.action {
+                AudioAction::Play => "play",
+                AudioAction::Stop => "stop",
+            },
+            audio
+                .sound
+                .as_deref()
+                .unwrap_or_else(|| audio.sound_value.as_ref().map_or("<expr>", |_| "<expr>")),
+            audio.looped as u8
+        ),
+        Statement::UiLoad { name } => format!("UiLoad({name})"),
+        Statement::UiEase(ease) => format!("UiEase({:?})", ease.target),
+        Statement::UiMessage(message) => format!("UiMessage({:?})", message.target),
+        Statement::Wait { seconds } => format!("Wait({}s)", format_scenemax_number(*seconds)),
+        Statement::WaitValue { .. } => "WaitValue".to_owned(),
+        Statement::WaitForKey { key } => format!("WaitForKey({key})"),
+        Statement::ChannelDraw(draw) if draw.clear => format!("ChannelDrawClear({})", draw.channel),
+        Statement::ChannelDraw(draw) => format!("ChannelDraw({})", draw.channel),
+        Statement::Unsupported { text } => format!("Unsupported({text})"),
+        other => format!("{other:?}"),
+    }
+}
+
+pub(super) fn axis_label(axis: SceneMaxAxis) -> &'static str {
+    match axis {
+        SceneMaxAxis::X => "x",
+        SceneMaxAxis::Y => "y",
+        SceneMaxAxis::Z => "z",
+    }
+}
+
+pub(super) fn resolved_blocking_timed_action_seconds(
+    action: &Statement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<f32> {
+    match action {
+        Statement::Turn(turn) if !turn.async_run && turn.loop_condition.is_none() => {
+            let seconds = resolve_duration_value(
+                &turn.duration_value,
+                turn.duration_seconds,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            );
+            (seconds > f32::EPSILON).then_some(seconds.max(0.001))
+        }
+        Statement::Move(movement) if !movement.async_run && movement.loop_condition.is_none() => {
+            let seconds = resolve_duration_value(
+                &movement.duration_value,
+                movement.duration_seconds,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            );
+            (seconds > f32::EPSILON).then_some(seconds.max(0.001))
+        }
+        Statement::MoveTo(move_to) if !move_to.async_run => {
+            let seconds = resolve_duration_value(
+                &move_to.duration_value,
+                move_to.duration_seconds,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            );
+            (seconds > f32::EPSILON).then_some(seconds.max(0.001))
+        }
+        Statement::CameraMove(camera_move) if !camera_move.async_run => {
+            let seconds = resolve_duration_value(
+                &camera_move.duration_value,
+                camera_move.duration_seconds,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            );
+            (seconds > f32::EPSILON).then_some(seconds.max(0.001))
+        }
+        Statement::CharacterJump(jump) if !jump.async_run => {
+            let speed = resolve_animation_speed_value(
+                &jump.speed_value,
+                jump.speed,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            );
+            Some(jump_duration_seconds(speed))
+        }
+        Statement::CinematicPlay(play) if !play.async_run => Some(play.duration_seconds.max(0.1)),
+        _ => None,
+    }
 }
 
 pub(super) fn apply_action_sequence(
@@ -1657,7 +2591,7 @@ pub(super) fn apply_action_sequence(
     functions_by_name: &HashMap<String, FunctionRuntime>,
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
-    runtime_assets: &SceneMaxRuntimeAssets,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     animation_durations: &SceneMaxAnimationDurations,
     collider_bounds: &mut SceneMaxColliderBounds,
     mut delayed_actions: Option<&mut DelayedActionQueue>,
@@ -1784,26 +2718,48 @@ pub(super) fn apply_action_sequence(
             }
             Statement::RunFunction { name, args } => {
                 let Some(function) = functions_by_name.get(name) else {
+                    write_runtime_diagnostic_line(format!(
+                        "FUNCTION:MISS phase=runtime_sequence name={name}"
+                    ));
                     tracing::debug!(
                         name,
                         "SceneMax function is not implemented or was not parsed"
                     );
                     continue;
                 };
+                let resolved_args = resolve_call_args(
+                    args,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
                 if !function_guard_matches(
                     function,
-                    args,
+                    &resolved_args,
                     vars,
                     guards_by_name,
                     Some(transforms_by_name),
                     Some(collider_bounds),
                 ) {
+                    if runtime_verbose_logging() {
+                        write_runtime_diagnostic_line(format!(
+                            "FUNCTION:SKIP phase=runtime_sequence name={name} reason=guard_false"
+                        ));
+                    }
                     tracing::debug!(name, "SceneMax function guard is false");
                     continue;
                 }
 
+                if runtime_verbose_logging() {
+                    write_runtime_diagnostic_line(format!(
+                        "FUNCTION:RUN phase=runtime_sequence name={name} actions={}",
+                        describe_statement_list(&function.actions)
+                    ));
+                }
                 let function_actions = actions_with_parent_continuation(
-                    instantiate_function_actions(function, args),
+                    instantiate_function_actions(function, &resolved_args),
                     parent_action_tail(actions, index),
                 );
                 let mut function_scope = scope.as_deref().cloned().unwrap_or_default();
@@ -1833,6 +2789,7 @@ pub(super) fn apply_action_sequence(
                 return ActionSequenceResult::Completed;
             }
             Statement::Async { actions } => {
+                let mut async_scope = scope.as_deref().cloned();
                 let _ = apply_action_sequence(
                     actions,
                     transforms_by_name,
@@ -1848,7 +2805,7 @@ pub(super) fn apply_action_sequence(
                     delayed_actions.as_deref_mut(),
                     ui_queue.as_deref_mut(),
                     None,
-                    scope.as_deref_mut(),
+                    async_scope.as_mut(),
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
@@ -2037,7 +2994,17 @@ pub(super) fn apply_action_sequence(
                     return ActionSequenceResult::Completed;
                 }
             }
-            action if blocking_timed_action_seconds(action).is_some() => {
+            action
+                if resolved_blocking_timed_action_seconds(
+                    action,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                )
+                .is_some() =>
+            {
                 if continuous_delta_seconds.is_some()
                     && continuous_timed_action_applies_per_frame(action)
                 {
@@ -2063,7 +3030,21 @@ pub(super) fn apply_action_sequence(
                     );
                     continue;
                 }
-                let seconds = blocking_timed_action_seconds(action).unwrap_or_default();
+                let seconds = resolved_blocking_timed_action_seconds(
+                    action,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                )
+                .unwrap_or_default();
+                write_runtime_diagnostic_line(format!(
+                    "RUNTIME:BLOCKING action={} seconds={} tail={}",
+                    describe_statement(action),
+                    format_scenemax_number(seconds),
+                    describe_statement_list(&actions[index + 1..])
+                ));
                 apply_key_action(
                     action,
                     transforms_by_name,
@@ -2173,7 +3154,9 @@ pub(super) fn apply_runtime_model_decl(
     resource: &str,
     options: &EntityOptions,
     transforms_by_name: &mut HashMap<String, Transform>,
-    runtime_assets: &SceneMaxRuntimeAssets,
+    vars: &SceneMaxVars,
+    guards_by_name: &HashMap<String, Condition>,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     collider_bounds: &mut SceneMaxColliderBounds,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
@@ -2190,7 +3173,13 @@ pub(super) fn apply_runtime_model_decl(
         )>,
     )>,
 ) {
-    let transform = primitive_transform_from_options(options);
+    let transform = primitive_transform_from_options_resolved(
+        options,
+        vars,
+        guards_by_name,
+        Some(transforms_by_name),
+        Some(collider_bounds),
+    );
     for (entity, scene_entity, mut existing_transform, _, _, visibility, _, _) in
         &mut scene_entities.p1()
     {
@@ -2268,7 +3257,7 @@ pub(super) fn apply_key_action(
     functions_by_name: &HashMap<String, FunctionRuntime>,
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
-    runtime_assets: &SceneMaxRuntimeAssets,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     animation_durations: &SceneMaxAnimationDurations,
     collider_bounds: &mut SceneMaxColliderBounds,
     delayed_actions: Option<&mut DelayedActionQueue>,
@@ -2312,6 +3301,8 @@ pub(super) fn apply_key_action(
             resource,
             options,
             transforms_by_name,
+            vars,
+            guards_by_name,
             runtime_assets,
             collider_bounds,
             commands,
@@ -2331,7 +3322,10 @@ pub(super) fn apply_key_action(
         }
         return ActionSequenceResult::Completed;
     }
-    if let Statement::Assignment(assignment) | Statement::LocalAssignment(assignment) = action {
+    if let Statement::Assignment(assignment)
+    | Statement::SharedAssignment(assignment)
+    | Statement::LocalAssignment(assignment) = action
+    {
         if let AssignmentValue::PoolAcquire { pool } = &assignment.value {
             let Some(member) = acquire_pool_member(pool, object_pools) else {
                 tracing::debug!(pool, "SceneMax object pool has no available members");
@@ -2367,6 +3361,12 @@ pub(super) fn apply_key_action(
                         .insert((LinearVelocity::ZERO, AngularVelocity::ZERO));
                     break;
                 }
+            }
+            return ActionSequenceResult::Completed;
+        }
+        if let AssignmentValue::CameraModifier(value) = &assignment.value {
+            if let Some(camera_system) = camera_system.as_deref_mut() {
+                register_camera_modifier(camera_system, &assignment.name, value);
             }
             return ActionSequenceResult::Completed;
         }
@@ -2437,6 +3437,52 @@ pub(super) fn apply_key_action(
         }
         return ActionSequenceResult::Completed;
     }
+    if let Statement::CameraModifierApply(apply) = action {
+        if let Some(camera_system) = camera_system {
+            let overrides = resolved_camera_modifier_overrides(
+                &apply.overrides,
+                vars,
+                scope.as_deref(),
+                guards_by_name,
+                Some(transforms_by_name),
+                Some(collider_bounds),
+            );
+            apply_camera_modifier(camera_system, &apply.target, &apply.modifier, &overrides);
+        }
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::CameraMove(camera_move) = action {
+        let distance = resolve_draw_value(
+            Some(&camera_move.distance_value),
+            camera_move.distance,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
+        let duration_seconds = resolve_duration_value(
+            &camera_move.duration_value,
+            camera_move.duration_seconds,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
+        append_timed_camera_move(
+            commands,
+            timed_camera_move_from_statement_resolved(camera_move, distance, duration_seconds),
+        );
+        write_runtime_diagnostic_line(format!(
+            "CAMERA:MOVE queue source=runtime axis={} distance={} duration={} async={}",
+            axis_label(camera_move.axis),
+            format_scenemax_number(distance),
+            format_scenemax_number(duration_seconds),
+            camera_move.async_run as u8
+        ));
+        return ActionSequenceResult::Completed;
+    }
     if let Statement::Logger(logger) = action {
         apply_logger_statement(
             logger,
@@ -2445,6 +3491,19 @@ pub(super) fn apply_key_action(
             guards_by_name,
             Some(transforms_by_name),
             Some(collider_bounds),
+        );
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::Audio(audio) = action {
+        apply_audio_statement(
+            audio,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+            runtime_assets,
+            commands,
         );
         return ActionSequenceResult::Completed;
     }
@@ -2467,6 +3526,19 @@ pub(super) fn apply_key_action(
                 property: property.property.clone(),
                 value,
             });
+        }
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::ChannelDraw(draw) = action {
+        if let Some(ui_queue) = ui_queue.as_deref_mut() {
+            ui_queue.actions.push(scenemax_draw_action_from_statement(
+                draw,
+                vars,
+                scope.as_deref(),
+                guards_by_name,
+                Some(transforms_by_name),
+                Some(collider_bounds),
+            ));
         }
         return ActionSequenceResult::Completed;
     }
@@ -2602,10 +3674,19 @@ pub(super) fn apply_key_action(
                     continue;
                 }
                 if let Some(gltf) = gltf {
+                    let speed = resolve_animation_speed_value(
+                        &animation.speed_value,
+                        animation.speed,
+                        vars,
+                        scope.as_deref(),
+                        guards_by_name,
+                        Some(transforms_by_name),
+                        Some(collider_bounds),
+                    );
                     commands.entity(entity).insert(AnimationToPlay {
                         clip: animation.clip.clone(),
                         looped: animation.looped,
-                        speed: animation.speed,
+                        speed,
                         gltf: gltf.gltf.clone(),
                     });
                     queued_animations.insert(entity, (animation.clip.clone(), animation.looped));
@@ -2619,9 +3700,14 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
-                commands
-                    .entity(entity)
-                    .insert(sprite_animation_from_statement(sprite_play));
+                commands.entity(entity).insert(resolved_sprite_animation(
+                    sprite_play,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                ));
                 write_runtime_diagnostic_line(format!(
                     "started sprite animation target={} frames={}..{} duration={:.3}s loop={}",
                     scene_entity.name,
@@ -2641,7 +3727,14 @@ pub(super) fn apply_key_action(
             {
                 commands
                     .entity(entity)
-                    .insert(animation_speed_override(animation_speed));
+                    .insert(resolved_animation_speed_override(
+                        animation_speed,
+                        vars,
+                        scope.as_deref(),
+                        guards_by_name,
+                        Some(transforms_by_name),
+                        Some(collider_bounds),
+                    ));
             }
             Statement::LookAt { target, subject }
                 if target_matches_alias(
@@ -2672,8 +3765,14 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
-                if let Some(translation) = evaluate_position_statement(position, transforms_by_name)
-                {
+                if let Some(translation) = evaluate_position_value_runtime(
+                    &position.position,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    transforms_by_name,
+                    Some(collider_bounds),
+                ) {
                     transform.translation = translation;
                     sync_live_transform(
                         transforms_by_name,
@@ -2692,8 +3791,27 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
+                let degrees = resolve_draw_value(
+                    Some(&turn.degrees_value),
+                    turn.degrees,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
+                let duration_seconds = resolve_duration_value(
+                    &turn.duration_value,
+                    turn.duration_seconds,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
                 if let Some(delta_seconds) = continuous_delta_seconds {
-                    let timed_turn = timed_turn_from_statement(turn);
+                    let timed_turn =
+                        timed_turn_from_statement_resolved(turn, degrees, duration_seconds);
                     transform.rotate_y(timed_turn.radians_per_second * delta_seconds);
                     sync_live_transform(
                         transforms_by_name,
@@ -2705,7 +3823,11 @@ pub(super) fn apply_key_action(
                 } else {
                     commands
                         .entity(entity)
-                        .insert(timed_turn_from_statement(turn));
+                        .insert(timed_turn_from_statement_resolved(
+                            turn,
+                            degrees,
+                            duration_seconds,
+                        ));
                 }
             }
             Statement::Move(movement)
@@ -2716,15 +3838,40 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
-                let timed_move = timed_move_from_statement(movement, &transform);
+                let distance = resolve_draw_value(
+                    Some(&movement.distance_value),
+                    movement.distance,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
+                let duration_seconds = resolve_draw_value(
+                    Some(&movement.duration_value),
+                    movement.duration_seconds,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
+                let timed_move = timed_move_from_statement_resolved(
+                    movement,
+                    &transform,
+                    distance,
+                    duration_seconds,
+                );
                 if let (Some(character_controller), Some(character_motor)) =
                     (character_controller, character_motor.as_deref_mut())
                 {
-                    set_character_move_intent(
+                    set_character_move_intent_resolved(
                         character_motor,
                         character_controller,
                         movement,
                         &transform,
+                        distance,
+                        duration_seconds,
                         continuous_delta_seconds,
                     );
                     if let Some(delta_seconds) = continuous_delta_seconds {
@@ -2762,9 +3909,15 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
-                if let Some(timed_move) =
-                    timed_move_to_from_statement(move_to, &transform, transforms_by_name)
-                {
+                if let Some(timed_move) = resolved_move_to(
+                    move_to,
+                    &transform,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    transforms_by_name,
+                    Some(collider_bounds),
+                ) {
                     if let Some(delta_seconds) = continuous_delta_seconds {
                         let delta = delta_seconds.min(timed_move.remaining_seconds);
                         transform.translation += timed_move.velocity * delta;
@@ -2788,15 +3941,24 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
+                let speed = resolve_draw_value(
+                    Some(&jump.speed_value),
+                    jump.speed,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
                 if let Some(character_motor) = character_motor.as_deref_mut() {
-                    set_character_jump_intent(character_motor, jump);
+                    set_character_jump_intent_resolved(character_motor, speed);
                     commands
                         .entity(entity)
-                        .insert(timed_jump_from_statement(jump, &transform));
+                        .insert(timed_jump_from_statement_resolved(jump, &transform, speed));
                 } else {
                     commands
                         .entity(entity)
-                        .insert(timed_jump_from_statement(jump, &transform));
+                        .insert(timed_jump_from_statement_resolved(jump, &transform, speed));
                 }
             }
             Statement::CharacterMode(character_mode)
@@ -2809,7 +3971,14 @@ pub(super) fn apply_key_action(
             {
                 commands
                     .entity(entity)
-                    .insert(PendingCharacterMode(character_mode.clone()));
+                    .insert(PendingCharacterMode(resolved_character_mode(
+                        character_mode,
+                        vars,
+                        scope.as_deref(),
+                        guards_by_name,
+                        Some(transforms_by_name),
+                        Some(collider_bounds),
+                    )));
             }
             Statement::ClearCharacterMode { target }
                 if target_matches_alias(
@@ -2843,7 +4012,16 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
-                apply_physics_impulse(commands, entity, &transform, impulse);
+                let strength = resolve_draw_value(
+                    Some(&impulse.strength_value),
+                    impulse.strength,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
+                apply_physics_impulse_resolved(commands, entity, &transform, impulse, strength);
             }
             Statement::PhysicsStop { target }
                 if target_matches_alias(
@@ -2970,10 +4148,10 @@ pub(super) fn apply_function_by_name(
     functions_by_name: &HashMap<String, FunctionRuntime>,
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
-    runtime_assets: &SceneMaxRuntimeAssets,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     animation_durations: &SceneMaxAnimationDurations,
     collider_bounds: &mut SceneMaxColliderBounds,
-    delayed_actions: Option<&mut DelayedActionQueue>,
+    mut delayed_actions: Option<&mut DelayedActionQueue>,
     ui_queue: Option<&mut SceneMaxUiActionQueue>,
     owner: Option<SceneMaxControllerKey>,
     scope: Option<&mut SceneMaxScopeFrame>,
@@ -2999,27 +4177,47 @@ pub(super) fn apply_function_by_name(
         return ActionSequenceResult::Completed;
     }
     let Some(function) = functions_by_name.get(name) else {
+        write_runtime_diagnostic_line(format!("FUNCTION:MISS phase=runtime name={name}"));
         tracing::debug!(
             name,
             "SceneMax function is not implemented or was not parsed"
         );
         return ActionSequenceResult::Completed;
     };
+    let resolved_args = resolve_call_args(
+        args,
+        vars,
+        scope.as_deref(),
+        guards_by_name,
+        Some(transforms_by_name),
+        Some(collider_bounds),
+    );
     if !function_guard_matches(
         function,
-        args,
+        &resolved_args,
         vars,
         guards_by_name,
         Some(transforms_by_name),
         Some(collider_bounds),
     ) {
+        if runtime_verbose_logging() {
+            write_runtime_diagnostic_line(format!(
+                "FUNCTION:SKIP phase=runtime name={name} reason=guard_false"
+            ));
+        }
         tracing::debug!(name, "SceneMax function guard is false");
         return ActionSequenceResult::Completed;
     }
 
-    let actions = instantiate_function_actions(function, args);
+    if runtime_verbose_logging() {
+        write_runtime_diagnostic_line(format!(
+            "FUNCTION:RUN phase=runtime name={name} actions={}",
+            describe_statement_list(&function.actions)
+        ));
+    }
+    let actions = instantiate_function_actions(function, &resolved_args);
     let mut function_scope = scope.cloned().unwrap_or_default();
-    apply_action_sequence(
+    let result = apply_action_sequence(
         &actions,
         transforms_by_name,
         vars,
@@ -3031,14 +4229,15 @@ pub(super) fn apply_function_by_name(
         runtime_assets,
         animation_durations,
         collider_bounds,
-        delayed_actions,
+        delayed_actions.as_deref_mut(),
         ui_queue,
         owner,
         Some(&mut function_scope),
         continuous_delta_seconds,
         commands,
         scene_entities,
-    )
+    );
+    result
 }
 
 pub(super) fn function_guard_matches(
@@ -3561,8 +4760,14 @@ pub(super) fn key_code_from_scenemax(key: &str) -> Option<KeyCode> {
 pub(super) fn apply_initial_assignments(program: &Program, vars: &mut SceneMaxVars) {
     let guards_by_name = collect_guards_by_name(program);
     for statement in &program.statements {
-        if let Statement::Assignment(assignment) = statement {
-            apply_assignment(assignment, vars, None, &guards_by_name, None);
+        match statement {
+            Statement::Assignment(assignment) => {
+                apply_assignment(assignment, vars, None, &guards_by_name, None);
+            }
+            Statement::SharedAssignment(assignment) if !vars.0.contains_key(&assignment.name) => {
+                apply_assignment(assignment, vars, None, &guards_by_name, None);
+            }
+            _ => {}
         }
     }
 }
@@ -3589,6 +4794,461 @@ pub(super) fn apply_logger_statement(
         .unwrap_or_else(|| "null".to_owned()),
     };
     write_runtime_log_line(logger.level, &message);
+}
+
+pub(super) fn scenemax_draw_action_from_statement(
+    draw: &ChannelDrawStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> SceneMaxUiAction {
+    SceneMaxUiAction::Draw(SceneMaxDrawAction {
+        channel: draw.channel.clone(),
+        resource: draw.resource.clone(),
+        clear: draw.clear,
+        pos_x: resolve_draw_value(
+            draw.pos_x.as_ref(),
+            0.0,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+        pos_y: resolve_draw_value(
+            draw.pos_y.as_ref(),
+            0.0,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+        width: draw.width.as_ref().map(|value| {
+            resolve_draw_value(
+                Some(value),
+                0.0,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
+            .max(0.0)
+        }),
+        height: draw.height.as_ref().map(|value| {
+            resolve_draw_value(
+                Some(value),
+                0.0,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
+            .max(0.0)
+        }),
+        frame: resolve_draw_value(
+            draw.frame.as_ref(),
+            0.0,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        )
+        .round()
+        .max(0.0) as usize,
+        stretch: draw.stretch,
+    })
+}
+
+fn resolve_draw_value(
+    value: Option<&AssignmentValue>,
+    default_value: f32,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> f32 {
+    value
+        .and_then(|value| {
+            resolve_assignment_value_scoped_with_guards(
+                value,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
+        })
+        .filter(|value| value.is_finite())
+        .unwrap_or(default_value)
+}
+
+fn resolved_camera_modifier_overrides(
+    overrides: &[(String, AssignmentValue)],
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Vec<(String, f32)> {
+    overrides
+        .iter()
+        .filter_map(|(name, value)| {
+            resolve_assignment_value_scoped_with_guards(
+                value,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
+            .filter(|value| value.is_finite())
+            .map(|value| (name.clone(), value))
+        })
+        .collect()
+}
+
+fn resolve_animation_speed_value(
+    value: &AssignmentValue,
+    fallback: f32,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> f32 {
+    resolve_draw_value(
+        Some(value),
+        fallback,
+        vars,
+        scope,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
+    .max(0.001)
+}
+
+fn resolve_frame_value(
+    value: &AssignmentValue,
+    fallback: usize,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> usize {
+    resolve_draw_value(
+        Some(value),
+        fallback as f32,
+        vars,
+        scope,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
+    .max(0.0)
+    .round() as usize
+}
+
+fn resolve_duration_value(
+    value: &AssignmentValue,
+    fallback: f32,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> f32 {
+    resolve_draw_value(
+        Some(value),
+        fallback,
+        vars,
+        scope,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
+}
+
+fn resolved_animation_speed_override(
+    animation_speed: &AnimationSpeedStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> AnimationSpeedOverride {
+    let speed = resolve_animation_speed_value(
+        &animation_speed.speed_value,
+        animation_speed.speed,
+        vars,
+        scope,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    );
+    let duration_seconds = animation_speed.duration_value.as_ref().map(|value| {
+        resolve_duration_value(
+            value,
+            animation_speed.duration_seconds.unwrap_or_default(),
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        )
+    });
+    animation_speed_override_resolved(speed, duration_seconds)
+}
+
+fn resolved_character_mode(
+    character_mode: &CharacterModeStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> CharacterModeStatement {
+    let mut character_mode = character_mode.clone();
+    if let Some(value) = character_mode.gravity_value.as_ref() {
+        character_mode.gravity = Some(resolve_draw_value(
+            Some(value),
+            character_mode.gravity.unwrap_or_default(),
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ));
+    }
+    character_mode
+}
+
+fn resolved_sprite_animation(
+    sprite_play: &SpritePlayStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> SceneMaxSpriteAnimation {
+    sprite_animation_from_statement_resolved(
+        sprite_play,
+        resolve_frame_value(
+            &sprite_play.from_frame_value,
+            sprite_play.from_frame,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+        resolve_frame_value(
+            &sprite_play.to_frame_value,
+            sprite_play.to_frame,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+        resolve_duration_value(
+            &sprite_play.duration_value,
+            sprite_play.duration_seconds,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+    )
+}
+
+fn resolved_move_to(
+    move_to: &MoveToStatement,
+    transform: &Transform,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<TimedMove> {
+    let destination = evaluate_move_to_destination_runtime(
+        &move_to.destination,
+        vars,
+        scope,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )?;
+    let duration = resolve_duration_value(
+        &move_to.duration_value,
+        move_to.duration_seconds,
+        vars,
+        scope,
+        guards_by_name,
+        Some(transforms_by_name),
+        collider_bounds,
+    )
+    .max(0.001);
+    Some(TimedMove {
+        remaining_seconds: duration,
+        duration_seconds: duration,
+        velocity: (destination - transform.translation) / duration,
+        final_translation: Some(destination),
+        loop_condition: None,
+    })
+}
+
+fn evaluate_move_to_destination_runtime(
+    destination: &MoveToDestination,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<Vec3> {
+    match destination {
+        MoveToDestination::Position(position) => evaluate_position_value_runtime(
+            position,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+        MoveToDestination::EntityForward {
+            entity,
+            distance,
+            distance_value,
+        } => {
+            let transform = transforms_by_name.get(entity)?;
+            let distance = resolve_draw_value(
+                Some(distance_value),
+                *distance,
+                vars,
+                scope,
+                guards_by_name,
+                Some(transforms_by_name),
+                collider_bounds,
+            );
+            Some(transform.translation + horizontal_forward(transform) * distance)
+        }
+    }
+}
+
+fn evaluate_position_value_runtime(
+    position: &PositionValue,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<Vec3> {
+    match position {
+        PositionValue::Entity(entity) => {
+            Some(lookup_subject_transform(entity, transforms_by_name)?.translation)
+        }
+        PositionValue::Coordinates(values) if values.len() == 3 => Some(Vec3::new(
+            evaluate_position_expr_runtime(
+                &values[0],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+            evaluate_position_expr_runtime(
+                &values[1],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+            evaluate_position_expr_runtime(
+                &values[2],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+        )),
+        _ => None,
+    }
+}
+
+fn evaluate_position_expr_runtime(
+    value: &PositionExpr,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<f32> {
+    match value {
+        PositionExpr::Number(value) => Some(*value),
+        PositionExpr::Value(value) => resolve_assignment_value_scoped_with_guards(
+            value,
+            vars,
+            scope,
+            guards_by_name,
+            Some(transforms_by_name),
+            collider_bounds,
+        ),
+        PositionExpr::EntityAxis {
+            entity,
+            axis,
+            offset,
+        } => {
+            let transform = transforms_by_name.get(entity)?;
+            let base = match axis {
+                SceneMaxAxis::X => transform.translation.x,
+                SceneMaxAxis::Y => transform.translation.y,
+                SceneMaxAxis::Z => transform.translation.z,
+            };
+            Some(base + offset)
+        }
+    }
+}
+
+pub(super) fn resolve_call_args(
+    args: &[String],
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Vec<String> {
+    args.iter()
+        .map(|arg| {
+            let trimmed = arg.trim();
+            if trimmed.starts_with('"') || trimmed.starts_with('\'') {
+                return arg.clone();
+            }
+            let Ok(Some(value)) = scenemax_parser::parse_runtime_value(trimmed) else {
+                return arg.clone();
+            };
+            resolve_assignment_value_scoped_with_guards(
+                &value,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
+            .map(format_scenemax_number)
+            .unwrap_or_else(|| arg.clone())
+        })
+        .collect()
 }
 
 pub(super) struct RuntimeVmSpatial<'a> {
@@ -3686,7 +5346,7 @@ fn resolve_ui_property_value_part(
     }
 }
 
-fn assignment_value_fallback_text(value: &AssignmentValue) -> String {
+pub(super) fn assignment_value_fallback_text(value: &AssignmentValue) -> String {
     match value {
         AssignmentValue::Number(value) => format_scenemax_number(*value),
         AssignmentValue::Symbol(name) => name.clone(),

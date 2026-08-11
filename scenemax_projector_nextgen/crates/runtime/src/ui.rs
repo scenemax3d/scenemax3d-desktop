@@ -1,5 +1,7 @@
 use super::*;
 
+const SAME_BATCH_DRAW_CLEAR_MIN_SECONDS: f32 = 0.35;
+
 pub(super) fn scenemax_ui_action_from_statement(action: &Statement) -> Option<SceneMaxUiAction> {
     match action {
         Statement::UiLoad { name } => Some(SceneMaxUiAction::Load { name: name.clone() }),
@@ -50,15 +52,21 @@ pub(super) fn clear_scenemax_ui_on_scene_change(
             commands.entity(*entity).despawn();
         }
     }
+    let draw_count = ui_runtime.draw_channels.len();
+    for entity in ui_runtime.draw_channels.values() {
+        commands.entity(*entity).despawn();
+    }
 
     ui_runtime.active_ui_name = None;
     ui_runtime.loaded.clear();
+    ui_runtime.draw_channels.clear();
+    ui_runtime.pending_draw_clears.clear();
     ui_queue.actions.clear();
     ui_runtime.scene_script_root = current_scene_root;
 
     tracing::info!(ui_count, "cleared SceneMax UI after scene switch");
     write_runtime_diagnostic_line(format!(
-        "cleared {ui_count} SceneMax UI document(s) after scene switch"
+        "cleared {ui_count} SceneMax UI document(s) and {draw_count} draw channel(s) after scene switch"
     ));
 }
 
@@ -89,9 +97,42 @@ pub(super) fn apply_scenemax_ui_actions(
     if actions.is_empty() {
         return;
     }
+    let mut drawn_channels_this_batch = HashSet::new();
     for action in actions {
         match action {
+            SceneMaxUiAction::Draw(draw) => {
+                if draw.clear && drawn_channels_this_batch.contains(&draw.channel) {
+                    ui_runtime
+                        .pending_draw_clears
+                        .retain(|pending| pending.channel != draw.channel);
+                    ui_runtime
+                        .pending_draw_clears
+                        .push(PendingSceneMaxDrawClear {
+                            channel: draw.channel.clone(),
+                            remaining_seconds: SAME_BATCH_DRAW_CLEAR_MIN_SECONDS,
+                        });
+                    write_runtime_diagnostic_line(format!(
+                        "deferred clear for draw channel {} by {:.2}s because draw and clear were queued together",
+                        draw.channel, SAME_BATCH_DRAW_CLEAR_MIN_SECONDS
+                    ));
+                    continue;
+                }
+                if !draw.clear {
+                    drawn_channels_this_batch.insert(draw.channel.clone());
+                    ui_runtime
+                        .pending_draw_clears
+                        .retain(|pending| pending.channel != draw.channel);
+                }
+                apply_scenemax_draw_action(
+                    draw,
+                    &mut commands,
+                    &asset_server,
+                    &context,
+                    &mut ui_runtime,
+                );
+            }
             SceneMaxUiAction::Load { name } => {
+                write_runtime_diagnostic_line(format!("UI:APPLY load {name}"));
                 if let Err(error) = load_scenemax_ui_document(
                     &name,
                     &mut commands,
@@ -320,6 +361,200 @@ pub(super) fn apply_scenemax_ui_actions(
                 }
             }
         }
+    }
+}
+
+pub(super) fn update_deferred_draw_clears(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut ui_runtime: ResMut<SceneMaxUiRuntime>,
+) {
+    if ui_runtime.pending_draw_clears.is_empty() {
+        return;
+    }
+
+    let delta = time.delta_secs();
+    let mut ready_channels = Vec::new();
+    let mut pending = Vec::new();
+    for mut clear in ui_runtime.pending_draw_clears.drain(..) {
+        clear.remaining_seconds -= delta;
+        if clear.remaining_seconds <= 0.0 {
+            ready_channels.push(clear.channel);
+        } else {
+            pending.push(clear);
+        }
+    }
+    ui_runtime.pending_draw_clears = pending;
+
+    for channel in ready_channels {
+        if let Some(entity) = ui_runtime.draw_channels.remove(&channel) {
+            commands.entity(entity).despawn();
+            write_runtime_diagnostic_line(format!("cleared deferred draw channel {channel}"));
+        }
+    }
+}
+
+pub(super) fn apply_scenemax_draw_action(
+    draw: SceneMaxDrawAction,
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    context: &SceneMaxLaunchContext,
+    ui_runtime: &mut SceneMaxUiRuntime,
+) {
+    if draw.clear {
+        if let Some(entity) = ui_runtime.draw_channels.remove(&draw.channel) {
+            commands.entity(entity).despawn();
+            write_runtime_diagnostic_line(format!("cleared draw channel {}", draw.channel));
+        }
+        return;
+    }
+
+    refresh_sprite_index(ui_runtime, context);
+    let Some((asset_path, sprite_asset)) = resolve_draw_asset(&draw.resource, context, ui_runtime)
+    else {
+        tracing::warn!(
+            channel = draw.channel,
+            resource = draw.resource,
+            "SceneMax draw resource was not found"
+        );
+        write_runtime_diagnostic_line(format!(
+            "draw channel {} resource {} was not found",
+            draw.channel, draw.resource
+        ));
+        return;
+    };
+
+    if let Some(entity) = ui_runtime.draw_channels.remove(&draw.channel) {
+        commands.entity(entity).despawn();
+    }
+
+    let image_size =
+        ui_asset_file_path(&asset_path, context).and_then(|path| ui_png_dimensions(&path));
+    let mut image_node = ImageNode::new(asset_server.load(asset_path.clone()));
+    image_node.image_mode = NodeImageMode::Stretch;
+    if let Some((image_width, image_height)) = image_size
+        && (sprite_asset.cols > 1 || sprite_asset.rows > 1)
+    {
+        image_node.rect = Some(ui_sprite_frame_rect(
+            draw.frame,
+            sprite_asset.cols,
+            sprite_asset.rows,
+            image_width,
+            image_height,
+        ));
+    }
+
+    let node = draw_node(&draw, &sprite_asset, image_size, context);
+    let entity = commands
+        .spawn((
+            Name::new(format!("draw.{}", draw.channel)),
+            node,
+            image_node,
+            UiTransform::default(),
+            Visibility::Inherited,
+            GlobalZIndex(-1000),
+            SceneMaxDrawChannel,
+        ))
+        .id();
+    ui_runtime
+        .draw_channels
+        .insert(draw.channel.clone(), entity);
+    write_runtime_diagnostic_line(format!(
+        "drew resource {} on channel {} stretch={} frame={}",
+        draw.resource, draw.channel, draw.stretch, draw.frame
+    ));
+}
+
+pub(super) fn resolve_draw_asset(
+    resource: &str,
+    context: &SceneMaxLaunchContext,
+    ui_runtime: &SceneMaxUiRuntime,
+) -> Option<(String, SceneMaxSpriteAsset)> {
+    let sprite = ui_runtime
+        .sprite_index
+        .get(resource)
+        .or_else(|| ui_runtime.sprite_index.get(&resource.to_ascii_lowercase()));
+    if let Some(sprite) = sprite
+        && ui_asset_path_exists(&sprite.path, context)
+    {
+        return Some((sprite.path.clone(), sprite.clone()));
+    }
+
+    draw_asset_candidates(resource, context)
+        .into_iter()
+        .find(|candidate| ui_asset_path_exists(candidate, context))
+        .map(|path| {
+            (
+                path.clone(),
+                SceneMaxSpriteAsset {
+                    path,
+                    rows: 1,
+                    cols: 1,
+                },
+            )
+        })
+}
+
+pub(super) fn draw_asset_candidates(
+    resource: &str,
+    context: &SceneMaxLaunchContext,
+) -> Vec<String> {
+    let normalized = normalize_asset_path(resource);
+    let mut candidates = Vec::new();
+    candidates.push(normalized.clone());
+    if !normalized.to_ascii_lowercase().ends_with(".png")
+        && !normalized.to_ascii_lowercase().ends_with(".jpg")
+        && !normalized.to_ascii_lowercase().ends_with(".jpeg")
+    {
+        candidates.push(format!("sprites/{resource}.png"));
+        candidates.push(format!("sprites/{}.png", resource.to_ascii_lowercase()));
+        candidates.push(format!("{normalized}.png"));
+    }
+    if context.builtin_asset_root.is_some() {
+        let current = candidates.clone();
+        candidates.extend(current.into_iter().map(|candidate| {
+            if candidate.starts_with("builtin://") {
+                candidate
+            } else {
+                format!("builtin://{candidate}")
+            }
+        }));
+    }
+    candidates
+}
+
+pub(super) fn draw_node(
+    draw: &SceneMaxDrawAction,
+    sprite: &SceneMaxSpriteAsset,
+    image_size: Option<(u32, u32)>,
+    context: &SceneMaxLaunchContext,
+) -> Node {
+    if draw.stretch {
+        return Node {
+            position_type: PositionType::Absolute,
+            left: Val::ZERO,
+            top: Val::ZERO,
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            ..default()
+        };
+    }
+
+    let (default_width, default_height) = image_size
+        .map(|(width, height)| {
+            (
+                width as f32 / sprite.cols.max(1) as f32,
+                height as f32 / sprite.rows.max(1) as f32,
+            )
+        })
+        .unwrap_or((context.window_width as f32, context.window_height as f32));
+    Node {
+        position_type: PositionType::Absolute,
+        left: Val::Px(draw.pos_x),
+        top: Val::Px(draw.pos_y),
+        width: Val::Px(draw.width.unwrap_or(default_width)),
+        height: Val::Px(draw.height.unwrap_or(default_height)),
+        ..default()
     }
 }
 

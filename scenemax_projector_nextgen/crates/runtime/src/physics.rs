@@ -5,6 +5,9 @@ pub(super) fn collider_decl_transform(
     options: &EntityOptions,
     attaches_by_target: &HashMap<String, AttachStatement>,
     transforms_by_name: &HashMap<String, Transform>,
+    vars: &SceneMaxVars,
+    guards_by_name: &HashMap<String, Condition>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> Transform {
     if let Some(attach) = attaches_by_target.get(name) {
         let owner = attach_owner(&attach.subject);
@@ -12,7 +15,13 @@ pub(super) fn collider_decl_transform(
             return virtual_collider_transform(owner_transform, attach_fallback_offset(attach));
         }
     }
-    primitive_transform_from_options(options)
+    primitive_transform_from_options_resolved(
+        options,
+        vars,
+        guards_by_name,
+        Some(transforms_by_name),
+        collider_bounds,
+    )
 }
 
 pub(super) fn spawn_scenemax_collider_decl(
@@ -56,17 +65,659 @@ pub(super) fn spawn_scenemax_collider_decl(
 }
 
 pub(super) fn primitive_mesh(
+    options: &EntityOptions,
     resource: &str,
+    asset_server: &AssetServer,
+    asset_root: &Path,
+    builtin_asset_root: Option<&Path>,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
 ) -> Option<(Mesh3d, MeshMaterial3d<StandardMaterial>)> {
-    let mesh = match resource.to_ascii_lowercase().as_str() {
-        "box" | "quad" => meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-        "sphere" => meshes.add(Sphere::new(1.0)),
-        _ => return None,
+    let mesh = match primitive_kind(resource)? {
+        SceneMaxPrimitiveKind::Box => {
+            let size = options.size.unwrap_or(SceneMaxVec3 {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            });
+            meshes.add(Cuboid::new(
+                size.x.abs().max(0.001),
+                size.y.abs().max(0.001),
+                size.z.abs().max(0.001),
+            ))
+        }
+        SceneMaxPrimitiveKind::Sphere => {
+            meshes.add(Sphere::new(options.radius.unwrap_or(1.0).abs().max(0.001)))
+        }
+        SceneMaxPrimitiveKind::Cylinder => meshes.add(cylinder_like_mesh(
+            options.radius_top.unwrap_or(1.0),
+            options.radius_bottom.unwrap_or(1.0),
+            options.height.unwrap_or(2.0),
+            32,
+            true,
+        )),
+        SceneMaxPrimitiveKind::HollowCylinder => meshes.add(hollow_cylinder_mesh(
+            options.radius_top.unwrap_or(1.0),
+            options.radius_bottom.unwrap_or(1.0),
+            options.inner_radius_top.unwrap_or(0.5),
+            options.inner_radius_bottom.unwrap_or(0.5),
+            options.height.unwrap_or(2.0),
+            32,
+        )),
+        SceneMaxPrimitiveKind::Quad => {
+            let size = options.size.unwrap_or(SceneMaxVec3 {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            });
+            meshes.add(quad_mesh(size.x, size.y))
+        }
+        SceneMaxPrimitiveKind::Wedge => {
+            let size = options.size.unwrap_or(SceneMaxVec3 {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            });
+            meshes.add(wedge_mesh(size.x, size.y, size.z))
+        }
+        SceneMaxPrimitiveKind::Cone => meshes.add(cylinder_like_mesh(
+            options.radius_top.unwrap_or(0.0),
+            options.radius_bottom.unwrap_or(1.0),
+            options.height.unwrap_or(2.0),
+            32,
+            true,
+        )),
+        SceneMaxPrimitiveKind::Stairs => {
+            let size = options.size.unwrap_or(SceneMaxVec3 {
+                x: 2.0,
+                y: 0.25,
+                z: 0.4,
+            });
+            meshes.add(stairs_mesh(
+                size.x,
+                size.y,
+                size.z,
+                options.steps.unwrap_or(6),
+            ))
+        }
+        SceneMaxPrimitiveKind::Arch => {
+            let size = options.size.unwrap_or(SceneMaxVec3 {
+                x: 2.0,
+                y: 2.5,
+                z: 0.5,
+            });
+            meshes.add(arch_mesh(
+                size.x,
+                size.y,
+                size.z,
+                options.thickness.unwrap_or(0.35),
+                options.segments.unwrap_or(12),
+            ))
+        }
     };
-    let material = materials.add(Color::srgb_u8(120, 135, 150));
-    Some((Mesh3d(mesh), MeshMaterial3d(material)))
+    let material = primitive_standard_material(
+        options,
+        resource,
+        asset_server,
+        asset_root,
+        builtin_asset_root,
+    );
+    Some((Mesh3d(mesh), MeshMaterial3d(materials.add(material))))
+}
+
+pub(super) fn primitive_fallback_color(resource: &str) -> Option<Color> {
+    Some(match primitive_kind(resource)? {
+        SceneMaxPrimitiveKind::Box => Color::srgb_u8(120, 135, 150),
+        SceneMaxPrimitiveKind::Sphere => Color::srgb_u8(80, 170, 230),
+        SceneMaxPrimitiveKind::Cylinder => Color::srgb_u8(90, 190, 160),
+        SceneMaxPrimitiveKind::HollowCylinder => Color::srgb_u8(60, 200, 210),
+        SceneMaxPrimitiveKind::Quad => Color::srgb_u8(210, 80, 190),
+        SceneMaxPrimitiveKind::Wedge => Color::srgb_u8(220, 140, 45),
+        SceneMaxPrimitiveKind::Cone => Color::srgb_u8(230, 210, 60),
+        SceneMaxPrimitiveKind::Stairs => Color::srgb_u8(150, 95, 45),
+        SceneMaxPrimitiveKind::Arch => Color::srgb_u8(170, 175, 180),
+    })
+}
+
+fn primitive_standard_material(
+    options: &EntityOptions,
+    resource: &str,
+    asset_server: &AssetServer,
+    asset_root: &Path,
+    builtin_asset_root: Option<&Path>,
+) -> StandardMaterial {
+    let fallback = primitive_fallback_color(resource).unwrap_or(Color::WHITE);
+    let Some(material_name) = options.material.as_deref() else {
+        return StandardMaterial {
+            base_color: fallback,
+            ..default()
+        };
+    };
+    match resolve_scenemax_material(material_name, asset_root, builtin_asset_root) {
+        Some(material) => {
+            let mut standard = StandardMaterial {
+                base_color: material.diffuse.unwrap_or(Color::WHITE),
+                base_color_texture: material
+                    .diffuse_map
+                    .as_ref()
+                    .map(|path| asset_server.load(path.clone())),
+                normal_map_texture: material
+                    .normal_map
+                    .as_ref()
+                    .map(|path| asset_server.load(path.clone())),
+                emissive: material.glow_color.unwrap_or(LinearRgba::BLACK),
+                emissive_texture: material
+                    .glow_map
+                    .as_ref()
+                    .map(|path| asset_server.load(path.clone())),
+                double_sided: material.double_sided,
+                cull_mode: if material.double_sided {
+                    None
+                } else {
+                    Some(bevy::render::render_resource::Face::Back)
+                },
+                alpha_mode: if material.transparent {
+                    AlphaMode::Blend
+                } else {
+                    AlphaMode::Opaque
+                },
+                ..default()
+            };
+            if standard.emissive_texture.is_some() && standard.emissive == LinearRgba::BLACK {
+                standard.emissive = LinearRgba::WHITE;
+            }
+            write_runtime_diagnostic_line(format!(
+                "MATERIAL:APPLY name={} diffuse={} normal={} glow={} double_sided={} transparent={}",
+                material_name,
+                material.diffuse_map.as_deref().unwrap_or("<none>"),
+                material.normal_map.as_deref().unwrap_or("<none>"),
+                material.glow_map.as_deref().unwrap_or("<none>"),
+                material.double_sided as u8,
+                material.transparent as u8
+            ));
+            standard
+        }
+        None => {
+            write_runtime_diagnostic_line(format!(
+                "MATERIAL:MISS name={} primitive={}",
+                material_name, resource
+            ));
+            StandardMaterial {
+                base_color: fallback,
+                ..default()
+            }
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct SceneMaxResolvedMaterial {
+    diffuse: Option<Color>,
+    diffuse_map: Option<String>,
+    normal_map: Option<String>,
+    glow_color: Option<LinearRgba>,
+    glow_map: Option<String>,
+    double_sided: bool,
+    transparent: bool,
+}
+
+fn resolve_scenemax_material(
+    name: &str,
+    asset_root: &Path,
+    builtin_asset_root: Option<&Path>,
+) -> Option<SceneMaxResolvedMaterial> {
+    resolve_scenemax_material_in_root(name, asset_root, "").or_else(|| {
+        builtin_asset_root
+            .and_then(|root| resolve_scenemax_material_in_root(name, root, "builtin://"))
+    })
+}
+
+fn resolve_scenemax_material_in_root(
+    name: &str,
+    root: &Path,
+    asset_prefix: &str,
+) -> Option<SceneMaxResolvedMaterial> {
+    let index_path = root.join("material").join("materials-ext.json");
+    let index_text = fs::read_to_string(index_path).ok()?;
+    let index: serde_json::Value = serde_json::from_str(&index_text).ok()?;
+    let entry = index
+        .get("materials")
+        .and_then(serde_json::Value::as_array)?
+        .iter()
+        .find(|entry| {
+            entry
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|value| value.eq_ignore_ascii_case(name))
+        })?;
+    let material_path = entry.get("path").and_then(serde_json::Value::as_str)?;
+    let material_text = fs::read_to_string(root.join(material_path)).ok()?;
+    let mut material = parse_j3m_material(&material_text, asset_prefix);
+    material.double_sided = entry
+        .get("doubleSided")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(material.double_sided);
+    material.transparent = entry
+        .get("transparent")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(material.transparent);
+    Some(material)
+}
+
+fn parse_j3m_material(source: &str, asset_prefix: &str) -> SceneMaxResolvedMaterial {
+    let mut material = SceneMaxResolvedMaterial::default();
+    for line in source.lines() {
+        let line = line.trim();
+        if let Some(value) = line.strip_prefix("DiffuseMap") {
+            material.diffuse_map = j3m_map_path(value, asset_prefix);
+        } else if let Some(value) = line.strip_prefix("NormalMap") {
+            material.normal_map = j3m_map_path(value, asset_prefix);
+        } else if let Some(value) = line.strip_prefix("GlowMap") {
+            material.glow_map = j3m_map_path(value, asset_prefix);
+        } else if let Some(value) = line.strip_prefix("Diffuse") {
+            material.diffuse = j3m_color(value).map(|[r, g, b, a]| Color::srgba(r, g, b, a));
+        } else if let Some(value) = line.strip_prefix("GlowColor") {
+            material.glow_color = j3m_color(value).map(|[r, g, b, a]| LinearRgba::new(r, g, b, a));
+        }
+    }
+    material
+}
+
+fn j3m_map_path(value: &str, asset_prefix: &str) -> Option<String> {
+    let (_, path) = value.split_once(':')?;
+    let path = path.trim().replace('\\', "/");
+    if path.is_empty() {
+        None
+    } else {
+        Some(format!("{asset_prefix}{path}"))
+    }
+}
+
+fn j3m_color(value: &str) -> Option<[f32; 4]> {
+    let (_, values) = value.split_once(':')?;
+    let values = values
+        .split_whitespace()
+        .map(str::parse::<f32>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    match values.as_slice() {
+        [r, g, b] => Some([*r, *g, *b, 1.0]),
+        [r, g, b, a] => Some([*r, *g, *b, *a]),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SceneMaxPrimitiveKind {
+    Box,
+    Sphere,
+    Cylinder,
+    HollowCylinder,
+    Quad,
+    Wedge,
+    Cone,
+    Stairs,
+    Arch,
+}
+
+fn primitive_kind(resource: &str) -> Option<SceneMaxPrimitiveKind> {
+    match resource.to_ascii_lowercase().as_str() {
+        "box" => Some(SceneMaxPrimitiveKind::Box),
+        "sphere" => Some(SceneMaxPrimitiveKind::Sphere),
+        "cylinder" => Some(SceneMaxPrimitiveKind::Cylinder),
+        "hollow cylinder" | "hollowcylinder" => Some(SceneMaxPrimitiveKind::HollowCylinder),
+        "quad" => Some(SceneMaxPrimitiveKind::Quad),
+        "wedge" => Some(SceneMaxPrimitiveKind::Wedge),
+        "cone" => Some(SceneMaxPrimitiveKind::Cone),
+        "stairs" => Some(SceneMaxPrimitiveKind::Stairs),
+        "arch" => Some(SceneMaxPrimitiveKind::Arch),
+        _ => return None,
+    }
+}
+
+fn quad_mesh(width: f32, height: f32) -> Mesh {
+    let width = width.abs().max(0.001);
+    let height = height.abs().max(0.001);
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_POSITION,
+        vec![
+            [0.0, 0.0, 0.0],
+            [width, 0.0, 0.0],
+            [width, height, 0.0],
+            [0.0, height, 0.0],
+        ],
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 0.0, 1.0]; 4])
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_UV_0,
+        vec![[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]],
+    )
+    .with_inserted_indices(Indices::U32(vec![0, 1, 2, 2, 3, 0]));
+    let _ = mesh.generate_tangents();
+    mesh
+}
+
+fn wedge_mesh(width: f32, height: f32, depth: f32) -> Mesh {
+    let half_width = width.abs().max(0.001) * 0.5;
+    let half_height = height.abs().max(0.001) * 0.5;
+    let half_depth = depth.abs().max(0.001) * 0.5;
+    let positions = vec![
+        [-half_width, -half_height, -half_depth],
+        [half_width, -half_height, -half_depth],
+        [-half_width, -half_height, half_depth],
+        [half_width, -half_height, half_depth],
+        [-half_width, half_height, half_depth],
+        [half_width, half_height, half_depth],
+    ];
+    let indices = vec![
+        0, 2, 1, 1, 2, 3, 2, 4, 3, 3, 4, 5, 0, 1, 4, 1, 5, 4, 0, 4, 2, 1, 3, 5,
+    ];
+    mesh_from_positions_indices(positions, indices)
+}
+
+fn cylinder_like_mesh(
+    radius_top: f32,
+    radius_bottom: f32,
+    height: f32,
+    segments: usize,
+    capped: bool,
+) -> Mesh {
+    let segments = segments.max(3);
+    let radius_top = radius_top.abs().max(0.0001);
+    let radius_bottom = radius_bottom.abs().max(0.0001);
+    let half_height = height.abs().max(0.0001) * 0.5;
+    let mut positions = Vec::with_capacity(segments * 2 + if capped { 2 } else { 0 });
+    for y in [half_height, -half_height] {
+        let radius = if y > 0.0 { radius_top } else { radius_bottom };
+        for i in 0..segments {
+            let angle = std::f32::consts::TAU * i as f32 / segments as f32;
+            positions.push([angle.cos() * radius, y, angle.sin() * radius]);
+        }
+    }
+
+    let mut indices = Vec::with_capacity(segments * 12);
+    for i in 0..segments {
+        let next = (i + 1) % segments;
+        let top_a = i as u32;
+        let top_b = next as u32;
+        let bottom_a = (segments + i) as u32;
+        let bottom_b = (segments + next) as u32;
+        indices.extend_from_slice(&[top_a, bottom_a, top_b, top_b, bottom_a, bottom_b]);
+    }
+    if capped {
+        let top_center = positions.len() as u32;
+        positions.push([0.0, half_height, 0.0]);
+        let bottom_center = positions.len() as u32;
+        positions.push([0.0, -half_height, 0.0]);
+        for i in 0..segments {
+            let next = (i + 1) % segments;
+            indices.extend_from_slice(&[top_center, next as u32, i as u32]);
+            indices.extend_from_slice(&[
+                bottom_center,
+                (segments + i) as u32,
+                (segments + next) as u32,
+            ]);
+        }
+    }
+    mesh_from_positions_indices(positions, indices)
+}
+
+fn hollow_cylinder_mesh(
+    outer_top: f32,
+    outer_bottom: f32,
+    inner_top: f32,
+    inner_bottom: f32,
+    height: f32,
+    segments: usize,
+) -> Mesh {
+    let segments = segments.max(3);
+    let outer_top = outer_top.abs().max(0.0001);
+    let outer_bottom = outer_bottom.abs().max(0.0001);
+    let inner_top = inner_top.abs().min(outer_top * 0.95).max(0.0001);
+    let inner_bottom = inner_bottom.abs().min(outer_bottom * 0.95).max(0.0001);
+    let half_height = height.abs().max(0.0001) * 0.5;
+    let mut positions = Vec::with_capacity(segments * 4);
+    for (radius, y) in [
+        (outer_top, half_height),
+        (outer_bottom, -half_height),
+        (inner_top, half_height),
+        (inner_bottom, -half_height),
+    ] {
+        for i in 0..segments {
+            let angle = std::f32::consts::TAU * i as f32 / segments as f32;
+            positions.push([angle.cos() * radius, y, angle.sin() * radius]);
+        }
+    }
+
+    let outer_top_offset = 0;
+    let outer_bottom_offset = segments;
+    let inner_top_offset = segments * 2;
+    let inner_bottom_offset = segments * 3;
+    let mut indices = Vec::with_capacity(segments * 24);
+    for i in 0..segments {
+        let next = (i + 1) % segments;
+        push_ring_quad(
+            &mut indices,
+            outer_top_offset + i,
+            outer_bottom_offset + i,
+            outer_top_offset + next,
+            outer_bottom_offset + next,
+        );
+        push_ring_quad(
+            &mut indices,
+            inner_top_offset + next,
+            inner_bottom_offset + next,
+            inner_top_offset + i,
+            inner_bottom_offset + i,
+        );
+        push_ring_quad(
+            &mut indices,
+            outer_top_offset + next,
+            inner_top_offset + next,
+            outer_top_offset + i,
+            inner_top_offset + i,
+        );
+        push_ring_quad(
+            &mut indices,
+            outer_bottom_offset + i,
+            inner_bottom_offset + i,
+            outer_bottom_offset + next,
+            inner_bottom_offset + next,
+        );
+    }
+    mesh_from_positions_indices(positions, indices)
+}
+
+fn stairs_mesh(width: f32, step_height: f32, step_depth: f32, steps: usize) -> Mesh {
+    let width = width.abs().max(0.05);
+    let step_height = step_height.abs().max(0.01);
+    let step_depth = step_depth.abs().max(0.01);
+    let steps = steps.max(1);
+    let total_height = step_height * steps as f32;
+    let total_depth = step_depth * steps as f32;
+    let mut builder = BoxMeshBuilder::default();
+    for i in 0..steps {
+        let box_height = step_height * (i + 1) as f32;
+        let center = Vec3::new(
+            0.0,
+            -total_height * 0.5 + box_height * 0.5,
+            -total_depth * 0.5 + step_depth * (i as f32 + 0.5),
+        );
+        builder.add_box(width, box_height, step_depth, center, Quat::IDENTITY);
+    }
+    builder.finish()
+}
+
+fn arch_mesh(width: f32, height: f32, depth: f32, thickness: f32, segments: usize) -> Mesh {
+    let width = width.abs().max(0.2);
+    let height = height.abs().max(0.2);
+    let depth = depth.abs().max(0.05);
+    let thickness = thickness.abs().max(0.05).min(width * 0.45);
+    let segments = segments.max(4);
+    let outer_radius = width * 0.5;
+    let inner_radius = (outer_radius - thickness).max(0.05);
+    let spring_height = (height - outer_radius).max(0.0);
+    let total_height = spring_height + outer_radius;
+    let y_offset = -total_height * 0.5;
+    let leg_height = spring_height.max(0.05);
+    let mut builder = BoxMeshBuilder::default();
+    builder.add_box(
+        thickness,
+        leg_height,
+        depth,
+        Vec3::new(
+            -width * 0.5 + thickness * 0.5,
+            y_offset + leg_height * 0.5,
+            0.0,
+        ),
+        Quat::IDENTITY,
+    );
+    builder.add_box(
+        thickness,
+        leg_height,
+        depth,
+        Vec3::new(
+            width * 0.5 - thickness * 0.5,
+            y_offset + leg_height * 0.5,
+            0.0,
+        ),
+        Quat::IDENTITY,
+    );
+
+    let radius_mid = (outer_radius + inner_radius) * 0.5;
+    let segment_length = (radius_mid * std::f32::consts::PI / segments as f32).max(0.05);
+    let segment_thickness = (outer_radius - inner_radius).max(0.05);
+    let center_y = y_offset + leg_height;
+    for i in 0..segments {
+        let t0 = std::f32::consts::PI - (std::f32::consts::PI * i as f32 / segments as f32);
+        let t1 = std::f32::consts::PI - (std::f32::consts::PI * (i + 1) as f32 / segments as f32);
+        let angle = (t0 + t1) * 0.5;
+        let center = Vec3::new(
+            angle.cos() * radius_mid,
+            center_y + angle.sin() * radius_mid,
+            0.0,
+        );
+        builder.add_box(
+            segment_length,
+            segment_thickness,
+            depth,
+            center,
+            Quat::from_rotation_z(angle - std::f32::consts::FRAC_PI_2),
+        );
+    }
+    builder.finish()
+}
+
+fn push_ring_quad(indices: &mut Vec<u32>, a: usize, b: usize, c: usize, d: usize) {
+    indices.extend_from_slice(&[a as u32, b as u32, c as u32, c as u32, b as u32, d as u32]);
+}
+
+fn mesh_from_positions_indices(positions: Vec<[f32; 3]>, indices: Vec<u32>) -> Mesh {
+    let normals = smooth_normals(&positions, &indices);
+    let uvs = vec![[0.0, 0.0]; positions.len()];
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+    .with_inserted_indices(Indices::U32(indices))
+}
+
+fn smooth_normals(positions: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 3]> {
+    let mut normals = vec![Vec3::ZERO; positions.len()];
+    for triangle in indices.chunks_exact(3) {
+        let a = Vec3::from_array(positions[triangle[0] as usize]);
+        let b = Vec3::from_array(positions[triangle[1] as usize]);
+        let c = Vec3::from_array(positions[triangle[2] as usize]);
+        let normal = (b - a).cross(c - a);
+        if normal.length_squared() <= f32::EPSILON {
+            continue;
+        }
+        let normal = normal.normalize();
+        for index in triangle {
+            normals[*index as usize] += normal;
+        }
+    }
+    normals
+        .into_iter()
+        .map(|normal| normal.try_normalize().unwrap_or(Vec3::Y).to_array())
+        .collect()
+}
+
+#[derive(Default)]
+struct BoxMeshBuilder {
+    positions: Vec<[f32; 3]>,
+    indices: Vec<u32>,
+}
+
+impl BoxMeshBuilder {
+    fn add_box(&mut self, width: f32, height: f32, depth: f32, center: Vec3, rotation: Quat) {
+        let half = Vec3::new(width * 0.5, height * 0.5, depth * 0.5);
+        let base = self.positions.len() as u32;
+        let corners = [
+            Vec3::new(-half.x, -half.y, -half.z),
+            Vec3::new(half.x, -half.y, -half.z),
+            Vec3::new(half.x, half.y, -half.z),
+            Vec3::new(-half.x, half.y, -half.z),
+            Vec3::new(-half.x, -half.y, half.z),
+            Vec3::new(half.x, -half.y, half.z),
+            Vec3::new(half.x, half.y, half.z),
+            Vec3::new(-half.x, half.y, half.z),
+        ];
+        self.positions.extend(
+            corners
+                .into_iter()
+                .map(|corner| (center + rotation * corner).to_array()),
+        );
+        self.indices.extend_from_slice(&[
+            base,
+            base + 2,
+            base + 1,
+            base,
+            base + 3,
+            base + 2,
+            base + 4,
+            base + 5,
+            base + 6,
+            base + 4,
+            base + 6,
+            base + 7,
+            base,
+            base + 1,
+            base + 5,
+            base,
+            base + 5,
+            base + 4,
+            base + 3,
+            base + 6,
+            base + 2,
+            base + 3,
+            base + 7,
+            base + 6,
+            base + 1,
+            base + 2,
+            base + 6,
+            base + 1,
+            base + 6,
+            base + 5,
+            base,
+            base + 4,
+            base + 7,
+            base,
+            base + 7,
+            base + 3,
+        ]);
+    }
+
+    fn finish(self) -> Mesh {
+        mesh_from_positions_indices(self.positions, self.indices)
+    }
 }
 
 pub(super) fn collect_model_declarations(program: &Program) -> Vec<ModelRuntimeDecl> {
@@ -88,7 +739,7 @@ pub(super) fn collect_model_declarations(program: &Program) -> Vec<ModelRuntimeD
             Some(ModelRuntimeDecl {
                 name: name.clone(),
                 resource: resource.clone(),
-                options: *options,
+                options: options.clone(),
             })
         })
         .collect()
@@ -118,7 +769,7 @@ pub(super) fn instantiate_object_pool_declarations(
             let member_name = format!("__pool_{}_{}", pool.name, index);
             runtime.available.push(member_name.clone());
             runtime.members.insert(member_name.clone());
-            let mut options = prototype.options;
+            let mut options = prototype.options.clone();
             options.hidden = true;
             declarations.push(ModelRuntimeDecl {
                 name: member_name,
@@ -167,7 +818,7 @@ pub(super) fn object_pool_prototype(
         Some(ModelRuntimeDecl {
             name: String::new(),
             resource: resource.clone(),
-            options: *options,
+            options: options.clone(),
         })
     })
 }
@@ -242,14 +893,21 @@ pub(super) fn initial_visibility(
     }
 }
 
-pub(super) fn primitive_transform_from_options(options: &EntityOptions) -> Transform {
-    let mut transform = transform_from_options(options, None);
-    if options.scale.is_none() {
-        if let Some(size) = options.size {
-            transform.scale = vec3_from_scenemax(size);
-        }
-    }
-    transform
+pub(super) fn primitive_transform_from_options_resolved(
+    options: &EntityOptions,
+    vars: &SceneMaxVars,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Transform {
+    transform_from_options_resolved(
+        options,
+        None,
+        vars,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
 }
 
 pub(super) fn insert_physics_components(
@@ -1447,54 +2105,90 @@ pub(super) fn transform_from_options(
     }
 }
 
+pub(super) fn transform_from_options_resolved(
+    options: &EntityOptions,
+    asset_scale: Option<[f32; 3]>,
+    vars: &SceneMaxVars,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Transform {
+    let mut transform = transform_from_options(options, asset_scale);
+    if let Some(position) = options.position_value.as_ref().and_then(|position| {
+        resolve_position_value_runtime(
+            position,
+            vars,
+            None,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        )
+    }) {
+        transform.translation = position;
+    }
+    transform
+}
+
 pub(super) fn timed_turn_from_statement(turn: &scenemax_parser::TurnStatement) -> TimedTurn {
-    let duration = turn.duration_seconds.max(0.001);
+    timed_turn_from_statement_resolved(turn, turn.degrees, turn.duration_seconds)
+}
+
+pub(super) fn timed_turn_from_statement_resolved(
+    turn: &scenemax_parser::TurnStatement,
+    degrees: f32,
+    duration_seconds: f32,
+) -> TimedTurn {
+    let duration = duration_seconds.max(0.001);
     TimedTurn {
         remaining_seconds: duration,
         duration_seconds: duration,
-        radians_per_second: turn.degrees.to_radians() / duration,
+        radians_per_second: degrees.to_radians() / duration,
         loop_condition: turn.loop_condition.clone(),
     }
 }
 
+#[cfg(test)]
 pub(super) fn timed_move_from_statement(
     movement: &scenemax_parser::MoveStatement,
     transform: &Transform,
 ) -> TimedMove {
-    let duration = movement.duration_seconds.max(0.001);
+    timed_move_from_statement_resolved(
+        movement,
+        transform,
+        movement.distance,
+        movement.duration_seconds,
+    )
+}
+
+pub(super) fn timed_move_from_statement_resolved(
+    movement: &scenemax_parser::MoveStatement,
+    transform: &Transform,
+    distance: f32,
+    duration_seconds: f32,
+) -> TimedMove {
+    let duration = duration_seconds.max(0.001);
     let direction = movement_direction_vector(movement.direction, transform);
 
     TimedMove {
         remaining_seconds: duration,
         duration_seconds: duration,
-        velocity: direction * directional_move_speed(movement),
+        velocity: direction * directional_move_speed_resolved(distance, duration_seconds),
         final_translation: None,
         loop_condition: movement.loop_condition.clone(),
     }
 }
 
+#[cfg(test)]
 pub(super) fn directional_move_speed(movement: &scenemax_parser::MoveStatement) -> f32 {
-    if movement.duration_seconds > 0.0 {
-        movement.distance / movement.duration_seconds.max(0.001)
-    } else {
-        movement.distance / 0.001
-    }
+    directional_move_speed_resolved(movement.distance, movement.duration_seconds)
 }
 
-pub(super) fn timed_move_to_from_statement(
-    movement: &scenemax_parser::MoveToStatement,
-    transform: &Transform,
-    transforms_by_name: &HashMap<String, Transform>,
-) -> Option<TimedMove> {
-    let destination = evaluate_move_to_destination(&movement.destination, transforms_by_name)?;
-    let duration = movement.duration_seconds.max(0.001);
-    Some(TimedMove {
-        remaining_seconds: duration,
-        duration_seconds: duration,
-        velocity: (destination - transform.translation) / duration,
-        final_translation: Some(destination),
-        loop_condition: None,
-    })
+pub(super) fn directional_move_speed_resolved(distance: f32, duration_seconds: f32) -> f32 {
+    if duration_seconds > 0.0 {
+        distance / duration_seconds.max(0.001)
+    } else {
+        distance / 0.001
+    }
 }
 
 pub(super) fn append_timed_move(commands: &mut Commands, entity: Entity, timed_move: TimedMove) {
@@ -1513,43 +2207,38 @@ pub(super) fn append_timed_move(commands: &mut Commands, entity: Entity, timed_m
     });
 }
 
+#[cfg(test)]
 pub(super) fn timed_jump_from_statement(
     jump: &CharacterJumpStatement,
     transform: &Transform,
 ) -> TimedJump {
+    timed_jump_from_statement_resolved(jump, transform, jump.speed)
+}
+
+pub(super) fn timed_jump_from_statement_resolved(
+    _jump: &CharacterJumpStatement,
+    transform: &Transform,
+    speed: f32,
+) -> TimedJump {
     TimedJump {
         elapsed_seconds: 0.0,
-        duration_seconds: jump_duration_seconds(jump.speed),
+        duration_seconds: jump_duration_seconds(speed),
         start_y: transform.translation.y,
-        height: jump_height(jump.speed),
+        height: jump_height(speed),
     }
 }
 
-pub(super) fn evaluate_move_to_destination(
-    destination: &scenemax_parser::MoveToDestination,
-    transforms_by_name: &HashMap<String, Transform>,
-) -> Option<Vec3> {
-    match destination {
-        scenemax_parser::MoveToDestination::Position(position) => {
-            evaluate_position_value(position, transforms_by_name)
-        }
-        scenemax_parser::MoveToDestination::EntityForward { entity, distance } => {
-            let transform = transforms_by_name.get(entity)?;
-            Some(transform.translation + horizontal_forward(transform) * *distance)
-        }
-    }
-}
-
-pub(super) fn apply_physics_impulse(
+pub(super) fn apply_physics_impulse_resolved(
     commands: &mut Commands,
     entity: Entity,
     transform: &Transform,
     impulse: &scenemax_parser::PhysicsImpulseStatement,
+    strength: f32,
 ) {
     let direction = physics_direction_vector(impulse.direction, transform);
     commands
         .entity(entity)
-        .insert(LinearVelocity(direction * impulse.strength));
+        .insert(LinearVelocity(direction * strength));
 }
 
 pub(super) fn apply_physics_stop(commands: &mut Commands, entity: Entity) {
@@ -1598,15 +2287,21 @@ pub(super) fn physics_direction_vector(
     }
 }
 
-pub(super) fn set_character_move_intent(
+pub(super) fn set_character_move_intent_resolved(
     motor: &mut SceneMaxCharacterMotor,
     controller: &SceneMaxCharacterController,
     movement: &scenemax_parser::MoveStatement,
     transform: &Transform,
+    distance: f32,
+    duration_seconds: f32,
     continuous_delta_seconds: Option<f32>,
 ) {
-    let duration = movement.duration_seconds.max(0.001);
-    let speed = character_directional_move_speed(movement, continuous_delta_seconds);
+    let duration = duration_seconds.max(0.001);
+    let speed = character_directional_move_speed_resolved(
+        distance,
+        duration_seconds,
+        continuous_delta_seconds,
+    );
     let direction = movement_direction_vector(movement.direction, transform);
     let speed_ratio = speed / controller.move_speed.max(0.001);
 
@@ -1618,14 +2313,27 @@ pub(super) fn set_character_move_intent(
     }
 }
 
+#[cfg(test)]
 pub(super) fn character_directional_move_speed(
     movement: &scenemax_parser::MoveStatement,
     continuous_delta_seconds: Option<f32>,
 ) -> f32 {
+    character_directional_move_speed_resolved(
+        movement.distance,
+        movement.duration_seconds,
+        continuous_delta_seconds,
+    )
+}
+
+pub(super) fn character_directional_move_speed_resolved(
+    distance: f32,
+    duration_seconds: f32,
+    continuous_delta_seconds: Option<f32>,
+) -> f32 {
     if let Some(delta_seconds) = continuous_delta_seconds {
-        movement.distance / delta_seconds.max(0.001)
+        distance / delta_seconds.max(0.001)
     } else {
-        directional_move_speed(movement)
+        directional_move_speed_resolved(distance, duration_seconds)
     }
 }
 
@@ -1650,14 +2358,11 @@ pub(super) fn set_character_motion(
     motor.motion_ttl_seconds = ttl_seconds;
 }
 
-pub(super) fn set_character_jump_intent(
-    motor: &mut SceneMaxCharacterMotor,
-    jump: &CharacterJumpStatement,
-) {
-    motor.pending_jump_speed = Some(jump.speed);
+pub(super) fn set_character_jump_intent_resolved(motor: &mut SceneMaxCharacterMotor, speed: f32) {
+    motor.pending_jump_speed = Some(speed);
     motor.jump_hold_seconds = motor
         .jump_hold_seconds
-        .max(character_jump_feed_seconds(jump.speed));
+        .max(character_jump_feed_seconds(speed));
 }
 
 pub(super) fn jump_height(speed: f32) -> f32 {
@@ -1695,13 +2400,15 @@ pub(super) fn horizontal_right(transform: &Transform) -> Vec3 {
     direction.normalize()
 }
 
+#[cfg(test)]
 pub(super) fn evaluate_position_statement(
-    position: &PositionStatement,
+    position: &scenemax_parser::PositionStatement,
     transforms_by_name: &HashMap<String, Transform>,
 ) -> Option<Vec3> {
     evaluate_position_value(&position.position, transforms_by_name)
 }
 
+#[cfg(test)]
 pub(super) fn evaluate_position_value(
     position: &PositionValue,
     transforms_by_name: &HashMap<String, Transform>,
@@ -1719,12 +2426,90 @@ pub(super) fn evaluate_position_value(
     }
 }
 
+pub(super) fn resolve_position_value_runtime(
+    position: &PositionValue,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<Vec3> {
+    match position {
+        PositionValue::Entity(entity) => {
+            Some(lookup_subject_transform(entity, transforms_by_name?)?.translation)
+        }
+        PositionValue::Coordinates(values) if values.len() == 3 => Some(Vec3::new(
+            resolve_position_expr_runtime(
+                &values[0],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+            resolve_position_expr_runtime(
+                &values[1],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+            resolve_position_expr_runtime(
+                &values[2],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+        )),
+        _ => None,
+    }
+}
+
+pub(super) fn resolve_position_expr_runtime(
+    value: &PositionExpr,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<f32> {
+    match value {
+        PositionExpr::Number(value) => Some(*value),
+        PositionExpr::Value(value) => resolve_assignment_value_scoped_with_guards(
+            value,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+        PositionExpr::EntityAxis {
+            entity,
+            axis,
+            offset,
+        } => {
+            let transform = transforms_by_name?.get(entity)?;
+            let base = match axis {
+                SceneMaxAxis::X => transform.translation.x,
+                SceneMaxAxis::Y => transform.translation.y,
+                SceneMaxAxis::Z => transform.translation.z,
+            };
+            Some(base + offset)
+        }
+    }
+}
+
+#[cfg(test)]
 pub(super) fn evaluate_position_expr(
     value: &PositionExpr,
     transforms_by_name: &HashMap<String, Transform>,
 ) -> Option<f32> {
     match value {
         PositionExpr::Number(value) => Some(*value),
+        PositionExpr::Value(_) => None,
         PositionExpr::EntityAxis {
             entity,
             axis,
@@ -1936,4 +2721,62 @@ pub(super) fn rotation_from_degrees(value: SceneMaxVec3) -> Quat {
         value.y.to_radians(),
         value.z.to_radians(),
     )
+}
+
+#[cfg(test)]
+mod material_tests {
+    use super::*;
+
+    #[test]
+    fn parses_j3m_texture_maps_for_bevy_materials() {
+        let material = parse_j3m_material(
+            r#"
+Material wall : Common/MatDefs/Light/Lighting.j3md {
+    MaterialParameters {
+        Diffuse : 0.78 0.8 0.84 1.0
+        GlowColor : 0.1 0.2 0.3 1.0
+        DiffuseMap : material/wall/diffuse_diffuse.png
+        NormalMap : material/wall/normal_normal.png
+        GlowMap : material/wall/glow_glow.png
+    }
+}
+"#,
+            "",
+        );
+
+        assert_eq!(
+            material.diffuse_map.as_deref(),
+            Some("material/wall/diffuse_diffuse.png")
+        );
+        assert_eq!(
+            material.normal_map.as_deref(),
+            Some("material/wall/normal_normal.png")
+        );
+        assert_eq!(
+            material.glow_map.as_deref(),
+            Some("material/wall/glow_glow.png")
+        );
+        assert!(material.diffuse.is_some());
+        assert!(material.glow_color.is_some());
+    }
+
+    #[test]
+    fn quad_mesh_origin_matches_jme_quad() {
+        let mesh = quad_mesh(2.0, 3.0);
+        let positions = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap();
+
+        let bevy::mesh::VertexAttributeValues::Float32x3(positions) = positions else {
+            panic!("quad mesh positions should be Float32x3");
+        };
+
+        assert_eq!(
+            positions,
+            &vec![
+                [0.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [2.0, 3.0, 0.0],
+                [0.0, 3.0, 0.0],
+            ]
+        );
+    }
 }

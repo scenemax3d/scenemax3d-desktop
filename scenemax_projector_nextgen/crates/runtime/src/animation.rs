@@ -1,5 +1,6 @@
 use super::*;
 
+#[cfg(test)]
 pub(super) fn blocking_timed_action_seconds(action: &Statement) -> Option<f32> {
     match action {
         Statement::Turn(turn)
@@ -20,6 +21,11 @@ pub(super) fn blocking_timed_action_seconds(action: &Statement) -> Option<f32> {
             if !move_to.async_run && move_to.duration_seconds > f32::EPSILON =>
         {
             Some(move_to.duration_seconds.max(0.001))
+        }
+        Statement::CameraMove(camera_move)
+            if !camera_move.async_run && camera_move.duration_seconds > f32::EPSILON =>
+        {
+            Some(camera_move.duration_seconds.max(0.001))
         }
         Statement::CharacterJump(jump) if !jump.async_run => {
             Some(jump_duration_seconds(jump.speed))
@@ -517,12 +523,13 @@ pub(super) fn animation_percent_from_elapsed(elapsed: f32, duration: f32) -> f32
     ((elapsed / duration.max(0.001)) * 100.0).clamp(0.0, 100.0)
 }
 
-pub(super) fn animation_speed_override(
-    animation_speed: &AnimationSpeedStatement,
+pub(super) fn animation_speed_override_resolved(
+    speed: f32,
+    duration_seconds: Option<f32>,
 ) -> AnimationSpeedOverride {
     AnimationSpeedOverride {
-        speed: animation_speed.speed.max(0.001),
-        remaining_seconds: animation_speed.duration_seconds,
+        speed: speed.max(0.001),
+        remaining_seconds: duration_seconds,
         applied: false,
     }
 }
