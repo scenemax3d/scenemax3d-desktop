@@ -355,6 +355,7 @@ struct DelayedActionQueue {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum SceneMaxControllerKey {
+    Key(usize),
     When(usize),
     Recurring(usize),
 }

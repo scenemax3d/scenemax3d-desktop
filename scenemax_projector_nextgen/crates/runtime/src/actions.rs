@@ -1155,6 +1155,7 @@ pub(super) fn switch_scene_on_key(
             object_pools.pools.clear();
             delayed_actions.actions.clear();
             recurring_timers.remaining_by_statement.clear();
+            commands.insert_resource(ActiveActionControllers::default());
             physics_contacts.active_pairs.clear();
             collider_bounds.clear();
             apply_initial_assignments(&program, &mut vars);
@@ -1265,6 +1266,7 @@ pub(super) fn apply_key_events(
     mut camera_system: ResMut<SceneMaxCameraSystem>,
     mut delayed_actions: ResMut<DelayedActionQueue>,
     mut ui_queue: ResMut<SceneMaxUiActionQueue>,
+    mut active_controllers: ResMut<ActiveActionControllers>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
         Query<(Entity, &SceneMaxEntity, &Transform)>,
@@ -1293,7 +1295,7 @@ pub(super) fn apply_key_events(
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
 
-    for statement in &program.statements {
+    for (statement_index, statement) in program.statements.iter().enumerate() {
         let Statement::KeyEvent(event) = statement else {
             continue;
         };
@@ -1321,6 +1323,22 @@ pub(super) fn apply_key_events(
             );
             continue;
         }
+        let owner = key_event_controller_key(statement_index, event.trigger);
+        if owner
+            .as_ref()
+            .is_some_and(|owner| active_controllers.running.contains(owner))
+        {
+            write_runtime_diagnostic_line(format!(
+                "KEY:SKIP_RUNNING stmt={} key={} trigger={}",
+                statement_index,
+                event.key,
+                key_trigger_label(event.trigger)
+            ));
+            continue;
+        }
+        if let Some(owner) = &owner {
+            cancel_other_key_handlers(owner, &mut active_controllers, &mut delayed_actions);
+        }
         write_key_event_probe(
             "KEY:FIRE",
             &event.key,
@@ -1334,7 +1352,10 @@ pub(super) fn apply_key_events(
         let mut queued_animations = HashMap::new();
         let continuous_delta_seconds =
             (event.trigger == KeyTrigger::Pressed).then_some(time.delta_secs());
-        apply_action_sequence(
+        if let Some(owner) = &owner {
+            active_controllers.running.insert(owner.clone());
+        }
+        let result = apply_action_sequence(
             &event.actions,
             &mut transforms_by_name,
             &mut vars,
@@ -1348,12 +1369,121 @@ pub(super) fn apply_key_events(
             &mut collider_bounds,
             Some(&mut delayed_actions),
             Some(&mut ui_queue),
-            None,
+            owner.clone(),
             None,
             continuous_delta_seconds,
             &mut commands,
             &mut scene_entities,
         );
+        if !result.is_suspended()
+            && let Some(owner) = owner
+            && !delayed_actions_has_owner(&delayed_actions, &owner)
+        {
+            active_controllers.running.remove(&owner);
+        }
+    }
+}
+
+pub(super) fn cancel_other_key_handlers(
+    owner: &SceneMaxControllerKey,
+    active_controllers: &mut ActiveActionControllers,
+    delayed_actions: &mut DelayedActionQueue,
+) {
+    let SceneMaxControllerKey::Key(_) = owner else {
+        return;
+    };
+    active_controllers
+        .running
+        .retain(|running| !matches!(running, SceneMaxControllerKey::Key(_)) || running == owner);
+    delayed_actions
+        .actions
+        .retain(|delayed| !delayed_owner_is_other_key(delayed.owner.as_ref(), owner));
+}
+
+pub(super) fn delayed_owner_is_other_key(
+    delayed_owner: Option<&SceneMaxControllerKey>,
+    owner: &SceneMaxControllerKey,
+) -> bool {
+    matches!(delayed_owner, Some(SceneMaxControllerKey::Key(_))) && delayed_owner != Some(owner)
+}
+
+pub(super) fn delayed_actions_has_owner(
+    delayed_actions: &DelayedActionQueue,
+    owner: &SceneMaxControllerKey,
+) -> bool {
+    delayed_actions
+        .actions
+        .iter()
+        .any(|delayed| delayed.owner.as_ref() == Some(owner))
+}
+
+pub(super) fn key_event_controller_key(
+    statement_index: usize,
+    trigger: KeyTrigger,
+) -> Option<SceneMaxControllerKey> {
+    (trigger == KeyTrigger::PressedOnce).then_some(SceneMaxControllerKey::Key(statement_index))
+}
+
+#[cfg(test)]
+mod key_event_controller_tests {
+    use super::*;
+
+    #[test]
+    fn pressed_once_key_events_are_owned_by_statement_index() {
+        assert_eq!(
+            key_event_controller_key(7, KeyTrigger::PressedOnce),
+            Some(SceneMaxControllerKey::Key(7))
+        );
+        assert_eq!(key_event_controller_key(7, KeyTrigger::Pressed), None);
+        assert_eq!(key_event_controller_key(7, KeyTrigger::Released), None);
+    }
+
+    #[test]
+    fn changing_pressed_once_keys_cancels_previous_key_continuations() {
+        let first = SceneMaxControllerKey::Key(1);
+        let second = SceneMaxControllerKey::Key(2);
+        let recurring = SceneMaxControllerKey::Recurring(3);
+        let mut active_controllers = ActiveActionControllers {
+            running: HashSet::from([first.clone(), second.clone(), recurring.clone()]),
+        };
+        let mut delayed_actions = DelayedActionQueue {
+            actions: vec![
+                DelayedActions {
+                    remaining_seconds: 0.1,
+                    actions: vec![Statement::NoOp {
+                        text: "first".to_owned(),
+                    }],
+                    owner: Some(first.clone()),
+                    scope: None,
+                },
+                DelayedActions {
+                    remaining_seconds: 0.1,
+                    actions: vec![Statement::NoOp {
+                        text: "second".to_owned(),
+                    }],
+                    owner: Some(second.clone()),
+                    scope: None,
+                },
+                DelayedActions {
+                    remaining_seconds: 0.1,
+                    actions: vec![Statement::NoOp {
+                        text: "recurring".to_owned(),
+                    }],
+                    owner: Some(recurring.clone()),
+                    scope: None,
+                },
+            ],
+        };
+
+        cancel_other_key_handlers(&second, &mut active_controllers, &mut delayed_actions);
+
+        assert!(!active_controllers.running.contains(&first));
+        assert!(active_controllers.running.contains(&second));
+        assert!(active_controllers.running.contains(&recurring));
+        assert_eq!(delayed_actions.actions.len(), 2);
+        assert!(!delayed_actions_has_owner(&delayed_actions, &first));
+        assert!(delayed_actions_has_owner(&delayed_actions, &second));
+        assert!(delayed_actions_has_owner(&delayed_actions, &recurring));
     }
 }
 
@@ -2309,7 +2439,7 @@ pub(super) fn apply_action_sequence(
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     ui_queue.as_deref_mut(),
-                    None,
+                    owner.clone(),
                     scope.as_deref_mut(),
                     continuous_delta_seconds,
                     commands,
