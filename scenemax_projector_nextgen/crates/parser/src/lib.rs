@@ -2356,10 +2356,102 @@ fn unquote_ui_text(text: &str) -> String {
 }
 
 fn split_once_case_insensitive<'a>(text: &'a str, needle: &str) -> Option<(&'a str, &'a str)> {
-    let index = text
-        .to_ascii_lowercase()
-        .find(&needle.to_ascii_lowercase())?;
-    Some((&text[..index], &text[index + needle.len()..]))
+    let (start, end) = find_case_insensitive_span(text, needle)?;
+    Some((&text[..start], &text[end..]))
+}
+
+fn find_case_insensitive_span(text: &str, needle: &str) -> Option<(usize, usize)> {
+    if !needle.chars().any(char::is_whitespace) {
+        let index = text
+            .to_ascii_lowercase()
+            .find(&needle.to_ascii_lowercase())?;
+        return Some((index, index + needle.len()));
+    }
+
+    let tokens = needle.split_whitespace().collect::<Vec<_>>();
+    let first = tokens.first()?;
+    let lower = text.to_ascii_lowercase();
+    let first_lower = first.to_ascii_lowercase();
+    let include_leading_ws = needle.chars().next().is_some_and(char::is_whitespace);
+    let include_trailing_ws = needle.chars().last().is_some_and(char::is_whitespace);
+    let mut search_from = 0usize;
+
+    while let Some(relative_index) = lower[search_from..].find(&first_lower) {
+        let token_start = search_from + relative_index;
+        let mut span_start = token_start;
+
+        if include_leading_ws {
+            if token_start == 0 {
+                search_from = token_start + first.len();
+                continue;
+            }
+            let mut cursor = token_start;
+            while let Some((prev_index, prev_char)) = text[..cursor].char_indices().next_back() {
+                if !prev_char.is_whitespace() {
+                    break;
+                }
+                cursor = prev_index;
+            }
+            if cursor == token_start {
+                search_from = token_start + first.len();
+                continue;
+            }
+            span_start = cursor;
+        }
+
+        let mut cursor = token_start;
+        let mut matched = true;
+        for (token_index, token) in tokens.iter().enumerate() {
+            let token_len = token.len();
+            let Some(candidate) = text.get(cursor..cursor + token_len) else {
+                matched = false;
+                break;
+            };
+            if !candidate.eq_ignore_ascii_case(token) {
+                matched = false;
+                break;
+            }
+            cursor += token_len;
+
+            if token_index + 1 < tokens.len() {
+                let next_cursor = consume_required_whitespace(text, cursor);
+                if next_cursor == cursor {
+                    matched = false;
+                    break;
+                }
+                cursor = next_cursor;
+            }
+        }
+
+        if !matched {
+            search_from = token_start + first.len();
+            continue;
+        }
+
+        if include_trailing_ws {
+            let next_cursor = consume_required_whitespace(text, cursor);
+            if next_cursor == cursor {
+                search_from = token_start + first.len();
+                continue;
+            }
+            cursor = next_cursor;
+        }
+
+        return Some((span_start, cursor));
+    }
+
+    None
+}
+
+fn consume_required_whitespace(text: &str, cursor: usize) -> usize {
+    let mut next_cursor = cursor;
+    while let Some(value) = text[next_cursor..].chars().next() {
+        if !value.is_whitespace() {
+            break;
+        }
+        next_cursor += value.len_utf8();
+    }
+    next_cursor
 }
 
 fn starts_with_case_insensitive(text: &str, prefix: &str) -> bool {
@@ -3381,10 +3473,9 @@ fn take_until_move_clause(text: &str) -> &str {
 }
 
 fn take_until_clause<'a>(text: &'a str, needles: &[&str]) -> &'a str {
-    let lower = text.to_ascii_lowercase();
     let end = needles
         .iter()
-        .filter_map(|needle| lower.find(*needle))
+        .filter_map(|needle| find_case_insensitive_span(text, needle).map(|(start, _)| start))
         .min()
         .unwrap_or(text.len());
     &text[..end]
@@ -4140,15 +4231,13 @@ fn parse_duration_assignment_value(
     text: &str,
     marker: &str,
 ) -> Result<Option<(AssignmentValue, f32)>, ParseError> {
-    let lower = text.to_ascii_lowercase();
-    let Some(index) = lower.find(marker) else {
+    let Some((_, marker_end)) = find_case_insensitive_span(text, marker) else {
         return Ok(None);
     };
-    let after = text[index + marker.len()..].trim_start();
-    let lower_after = after.to_ascii_lowercase();
+    let after = text[marker_end..].trim_start();
     let end = [" seconds", " second", " loop ", " while ", " async"]
         .into_iter()
-        .filter_map(|needle| lower_after.find(needle))
+        .filter_map(|needle| find_case_insensitive_span(after, needle).map(|(start, _)| start))
         .min()
         .unwrap_or(after.len());
     let raw = after[..end].trim();
@@ -4984,6 +5073,58 @@ mod tests {
                 condition: None,
             })]
         );
+    }
+
+    #[test]
+    fn parses_animation_speed_command_with_tabbed_duration_clause() {
+        let program =
+            parse_program("player2.animation speed 0.01\tfor tm seconds when frames > frame_count")
+                .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::AnimationSpeed(AnimationSpeedStatement {
+                target: "player2".to_owned(),
+                speed: 0.01,
+                speed_value: AssignmentValue::Number(0.01),
+                duration_seconds: Some(0.0),
+                duration_value: Some(AssignmentValue::Symbol("tm".to_owned())),
+                condition: Some(Condition::Compare {
+                    name: "frames".to_owned(),
+                    operator: ComparisonOperator::Greater,
+                    value: AssignmentValue::Symbol("frame_count".to_owned()),
+                }),
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_function_with_tabbed_animation_speed_before_following_when() {
+        let program = parse_program(
+            "player1_slow_motion (tm, frame_count) = {\n\
+             player2.animation speed 0.01\tfor tm seconds\n\
+             player1.animation speed 0.01\tfor tm seconds when frames > frame_count\n\
+             }\n\
+             when player1_ko == 1 do\n\
+             player1_ko=0\n\
+             end do",
+        )
+        .unwrap();
+
+        assert_eq!(program.statements.len(), 2);
+        assert!(matches!(
+            &program.statements[0],
+            Statement::FunctionDef(function) if function.name == "player1_slow_motion"
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::WhenEvent(when_event)
+                if matches!(
+                    &when_event.condition,
+                    Condition::EqualsNumber { name, value }
+                        if name == "player1_ko" && (*value - 1.0).abs() < f32::EPSILON
+                )
+        ));
     }
 
     #[test]
@@ -7397,7 +7538,7 @@ run tick(score+10) every tick_time+0.25 seconds
     }
 
     #[test]
-    fn preserves_runtime_noop_commands_in_action_flow() {
+    fn parses_audio_and_preserves_runtime_noop_commands_in_action_flow() {
         let program = parse_program(
             "fx_test = {\n  audio.play \"kick1\"\n  laser_effect.play pos (player1)\n  fight_cam.apply hit_fx : duration 0.35\n  axe_throw_cam.play : target axe, duration 1.5\n  camera.chase player1\n  camera.chase stop\n  player2.HighKick at speed of 2.4\n}",
         )
@@ -7410,9 +7551,13 @@ run tick(score+10) every tick_time+0.25 seconds
                 params: Vec::new(),
                 guard: None,
                 actions: vec![
-                    Statement::NoOp {
-                        text: "audio.play \"kick1\"".to_owned(),
-                    },
+                    Statement::Audio(AudioStatement {
+                        action: AudioAction::Play,
+                        sound: Some("kick1".to_owned()),
+                        sound_value: None,
+                        looped: false,
+                        volume: None,
+                    }),
                     Statement::NoOp {
                         text: "laser_effect.play pos (player1)".to_owned(),
                     },

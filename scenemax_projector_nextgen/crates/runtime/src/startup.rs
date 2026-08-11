@@ -81,6 +81,20 @@ pub(super) fn write_runtime_diagnostic_line(message: impl AsRef<str>) {
     }
 }
 
+pub(super) fn runtime_verbose_logging() -> bool {
+    static VERBOSE: OnceLock<bool> = OnceLock::new();
+    *VERBOSE.get_or_init(|| {
+        env::var("SCENEMAX_RUNTIME_VERBOSE_LOG")
+            .map(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            })
+            .unwrap_or(false)
+    })
+}
+
 pub(super) fn write_runtime_log_line(level: LoggerLevel, message: &str) {
     let level_text = match level {
         LoggerLevel::Info => "INFO",
@@ -105,71 +119,20 @@ pub(super) fn write_key_event_probe(
     prefix: &str,
     key: &str,
     trigger: KeyTrigger,
-    vars: &SceneMaxVars,
-    guards_by_name: &HashMap<String, Condition>,
-    transforms_by_name: &HashMap<String, Transform>,
-    collider_bounds: &SceneMaxColliderBounds,
+    _vars: &SceneMaxVars,
+    _guards_by_name: &HashMap<String, Condition>,
+    _transforms_by_name: &HashMap<String, Transform>,
+    _collider_bounds: &SceneMaxColliderBounds,
 ) {
+    if !runtime_verbose_logging() {
+        return;
+    }
     let message = format!(
-        "{prefix} key={} trigger={} action={} move_forward={} player_hit={} player1_ko={} \
-         game_status={} p1_jump={} p2_down={} p1_attack_legs={} allow_move={} asd_go={}",
+        "{prefix} key={} trigger={}",
         key,
-        key_trigger_label(trigger),
-        key_probe_var(vars, "action"),
-        key_probe_var(vars, "move_forward"),
-        key_probe_var(vars, "player_hit"),
-        key_probe_var(vars, "player1_ko"),
-        key_probe_var(vars, "game_status"),
-        key_probe_var(vars, "player1.data.is_jumping"),
-        key_probe_var(vars, "player2.data.is_down"),
-        key_probe_var(vars, "player1.data.attack_legs"),
-        key_probe_guard(
-            "allow_move",
-            vars,
-            guards_by_name,
-            transforms_by_name,
-            collider_bounds
-        ),
-        key_probe_guard(
-            "asd_go_condition",
-            vars,
-            guards_by_name,
-            transforms_by_name,
-            collider_bounds
-        ),
+        key_trigger_label(trigger)
     );
     write_runtime_log_line(LoggerLevel::Info, &message);
-}
-
-pub(super) fn key_probe_var(vars: &SceneMaxVars, name: &str) -> String {
-    vars.0
-        .get(name)
-        .copied()
-        .map(format_scenemax_number)
-        .unwrap_or_else(|| "null".to_owned())
-}
-
-pub(super) fn key_probe_guard(
-    name: &str,
-    vars: &SceneMaxVars,
-    guards_by_name: &HashMap<String, Condition>,
-    transforms_by_name: &HashMap<String, Transform>,
-    collider_bounds: &SceneMaxColliderBounds,
-) -> &'static str {
-    let Some(guard) = guards_by_name.get(name) else {
-        return "missing";
-    };
-    if condition_matches(
-        guard,
-        vars,
-        guards_by_name,
-        Some(transforms_by_name),
-        Some(collider_bounds),
-    ) {
-        "true"
-    } else {
-        "false"
-    }
 }
 
 pub(super) fn key_trigger_label(trigger: KeyTrigger) -> &'static str {
@@ -186,23 +149,10 @@ pub(super) fn write_state_assignment_probe(
     value: f32,
     force_local: bool,
 ) {
-    const WATCHED_ASSIGNMENTS: &[&str] = &[
-        "action",
-        "op_action",
-        "player_hit",
-        "op_hit",
-        "player1_ko",
-        "enemy_ko",
-        "slow_motion",
-        "game_status",
-        "player1.data.is_jumping",
-        "player2.data.is_jumping",
-        "player2.data.is_down",
-        "player1.data.attack_legs",
-        "player1.data.hand_attack_hit",
-        "player2.data.trapped",
-    ];
-    if !WATCHED_ASSIGNMENTS.contains(&name) {
+    if !runtime_verbose_logging() {
+        return;
+    }
+    if previous.is_some_and(|previous| (previous - value).abs() <= f32::EPSILON) {
         return;
     }
     let previous = previous
@@ -243,6 +193,7 @@ pub(super) fn load_startup_program(launch: &ProjectorLaunch) -> SceneMaxStartupP
                     function_names.join(",")
                 }
             ));
+            log_lifecycle_when_summary(&program);
             tracing::info!(
                 path = %script_path.display(),
                 effective_root = %script_root.display(),
@@ -258,6 +209,27 @@ pub(super) fn load_startup_program(launch: &ProjectorLaunch) -> SceneMaxStartupP
                 "failed to load SceneMax startup script graph"
             );
             SceneMaxStartupProgram::default()
+        }
+    }
+}
+
+pub(super) fn log_lifecycle_when_summary(program: &Program) {
+    for (index, statement) in program.statements.iter().enumerate() {
+        let Statement::WhenEvent(event) = statement else {
+            continue;
+        };
+        if lifecycle_probe_condition(&event.condition) {
+            write_runtime_diagnostic_line(format!(
+                "SCRIPT:LIFECYCLE_WHEN stmt={} guard={} condition={} actions={}",
+                index,
+                event
+                    .guard
+                    .as_ref()
+                    .map(describe_condition_brief)
+                    .unwrap_or_else(|| "-".to_owned()),
+                describe_condition_brief(&event.condition),
+                describe_statement_list(&event.actions)
+            ));
         }
     }
 }

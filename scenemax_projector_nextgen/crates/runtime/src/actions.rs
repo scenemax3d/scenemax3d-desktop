@@ -1186,6 +1186,9 @@ pub(super) fn switch_scene_on_key(
             commands.insert_resource(SceneMaxStartupActionState::waiting_for_gltfs(startup_gltfs));
             startup_program.0 = Some(program);
             startup_program.1 = Some(scene_script_root);
+            if let Some(program) = startup_program.0.as_ref() {
+                log_lifecycle_when_summary(program);
+            }
             tracing::info!(scene, path = %scene_main.display(), "switched SceneMax scene");
             write_runtime_diagnostic_line(format!(
                 "switched SceneMax scene {scene} from {}",
@@ -1328,13 +1331,40 @@ pub(super) fn apply_key_events(
             .as_ref()
             .is_some_and(|owner| active_controllers.running.contains(owner))
         {
-            write_runtime_diagnostic_line(format!(
-                "KEY:SKIP_RUNNING stmt={} key={} trigger={}",
-                statement_index,
-                event.key,
-                key_trigger_label(event.trigger)
-            ));
-            continue;
+            if owner
+                .as_ref()
+                .is_some_and(|owner| !delayed_actions_has_owner(&delayed_actions, owner))
+            {
+                if let Some(owner) = &owner {
+                    write_runtime_diagnostic_line(format!(
+                        "CTRL:KEY_STALE_OWNER_RECOVER stmt={} key={} owner={} active={} delayed={} state={}",
+                        statement_index,
+                        event.key,
+                        describe_controller_key(owner),
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                    active_controllers.running.remove(owner);
+                }
+            } else {
+                if runtime_verbose_logging() {
+                    write_runtime_diagnostic_line(format!(
+                        "KEY:SKIP_RUNNING stmt={} key={} trigger={} owner={} active={} delayed={} state={}",
+                        statement_index,
+                        event.key,
+                        key_trigger_label(event.trigger),
+                        owner
+                            .as_ref()
+                            .map(describe_controller_key)
+                            .unwrap_or_else(|| "-".to_owned()),
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                }
+                continue;
+            }
         }
         if let Some(owner) = &owner {
             cancel_other_key_handlers(owner, &mut active_controllers, &mut delayed_actions);
@@ -1348,6 +1378,21 @@ pub(super) fn apply_key_events(
             &transforms_by_name,
             &collider_bounds,
         );
+        if runtime_verbose_logging() {
+            write_runtime_diagnostic_line(format!(
+                "CTRL:KEY_FIRE_CONTEXT stmt={} key={} trigger={} owner={} active={} delayed={} state={}",
+                statement_index,
+                event.key,
+                key_trigger_label(event.trigger),
+                owner
+                    .as_ref()
+                    .map(describe_controller_key)
+                    .unwrap_or_else(|| "-".to_owned()),
+                describe_active_controllers(&active_controllers),
+                describe_delayed_queue(&delayed_actions),
+                describe_runtime_state(&vars)
+            ));
+        }
 
         let mut queued_animations = HashMap::new();
         let continuous_delta_seconds =
@@ -1392,12 +1437,26 @@ pub(super) fn cancel_other_key_handlers(
     let SceneMaxControllerKey::Key(_) = owner else {
         return;
     };
+    let active_before = describe_active_controllers(active_controllers);
+    let delayed_before = describe_delayed_queue(delayed_actions);
     active_controllers
         .running
         .retain(|running| !matches!(running, SceneMaxControllerKey::Key(_)) || running == owner);
     delayed_actions
         .actions
         .retain(|delayed| !delayed_owner_is_other_key(delayed.owner.as_ref(), owner));
+    let active_after = describe_active_controllers(active_controllers);
+    let delayed_after = describe_delayed_queue(delayed_actions);
+    if active_before != active_after || delayed_before != delayed_after {
+        write_runtime_diagnostic_line(format!(
+            "CTRL:KEY_CANCEL_OTHERS owner={} active_before={} active_after={} delayed_before={} delayed_after={}",
+            describe_controller_key(owner),
+            active_before,
+            active_after,
+            delayed_before,
+            delayed_after
+        ));
+    }
 }
 
 pub(super) fn delayed_owner_is_other_key(
@@ -1415,6 +1474,101 @@ pub(super) fn delayed_actions_has_owner(
         .actions
         .iter()
         .any(|delayed| delayed.owner.as_ref() == Some(owner))
+}
+
+pub(super) fn describe_controller_key(owner: &SceneMaxControllerKey) -> String {
+    match owner {
+        SceneMaxControllerKey::Key(index) => format!("K{index}"),
+        SceneMaxControllerKey::When(index) => format!("W{index}"),
+        SceneMaxControllerKey::Recurring(index) => format!("R{index}"),
+    }
+}
+
+pub(super) fn describe_active_controllers(active_controllers: &ActiveActionControllers) -> String {
+    if active_controllers.running.is_empty() {
+        return "<empty>".to_owned();
+    }
+    let mut owners = active_controllers
+        .running
+        .iter()
+        .map(describe_controller_key)
+        .collect::<Vec<_>>();
+    owners.sort();
+    owners.join(",")
+}
+
+pub(super) fn describe_delayed_queue(delayed_actions: &DelayedActionQueue) -> String {
+    if delayed_actions.actions.is_empty() {
+        return "count=0".to_owned();
+    }
+    let entries = delayed_actions
+        .actions
+        .iter()
+        .take(10)
+        .enumerate()
+        .map(|(index, delayed)| {
+            let owner = delayed
+                .owner
+                .as_ref()
+                .map(describe_controller_key)
+                .unwrap_or_else(|| "-".to_owned());
+            let first = delayed
+                .actions
+                .first()
+                .map(describe_statement)
+                .unwrap_or_else(|| "<empty>".to_owned());
+            format!(
+                "{}:{}s:{}:{}",
+                index,
+                format_scenemax_number(delayed.remaining_seconds.max(0.0)),
+                owner,
+                first
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" | ");
+    format!("count={} [{}]", delayed_actions.actions.len(), entries)
+}
+
+pub(super) fn describe_runtime_state(vars: &SceneMaxVars) -> String {
+    let mut names = vars.0.keys().map(String::as_str).collect::<Vec<_>>();
+    names.sort_unstable();
+    let entries = names
+        .iter()
+        .take(16)
+        .map(|name| {
+            let value = vars
+                .0
+                .get(*name)
+                .map(|value| format_scenemax_number(*value))
+                .unwrap_or_else(|| "null".to_owned());
+            format!("{name}={value}")
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    if vars.0.len() > 16 {
+        format!("vars={} [{} ...]", vars.0.len(), entries)
+    } else {
+        format!("vars={} [{}]", vars.0.len(), entries)
+    }
+}
+
+pub(super) fn truncate_log_field(value: String, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let truncated = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() {
+        format!("{truncated}...")
+    } else {
+        truncated
+    }
+}
+
+pub(super) fn describe_condition_brief(condition: &Condition) -> String {
+    truncate_log_field(format!("{condition:?}"), 180)
+}
+
+pub(super) fn lifecycle_probe_condition(condition: &Condition) -> bool {
+    !condition_contains_collision(condition)
 }
 
 pub(super) fn key_event_controller_key(
@@ -1472,6 +1626,14 @@ mod key_event_controller_tests {
                     owner: Some(recurring.clone()),
                     scope: None,
                 },
+                DelayedActions {
+                    remaining_seconds: 0.1,
+                    actions: vec![Statement::NoOp {
+                        text: "detached async".to_owned(),
+                    }],
+                    owner: None,
+                    scope: None,
+                },
             ],
         };
 
@@ -1480,10 +1642,16 @@ mod key_event_controller_tests {
         assert!(!active_controllers.running.contains(&first));
         assert!(active_controllers.running.contains(&second));
         assert!(active_controllers.running.contains(&recurring));
-        assert_eq!(delayed_actions.actions.len(), 2);
+        assert_eq!(delayed_actions.actions.len(), 3);
         assert!(!delayed_actions_has_owner(&delayed_actions, &first));
         assert!(delayed_actions_has_owner(&delayed_actions, &second));
         assert!(delayed_actions_has_owner(&delayed_actions, &recurring));
+        assert!(
+            delayed_actions
+                .actions
+                .iter()
+                .any(|delayed| delayed.owner.is_none())
+        );
     }
 }
 
@@ -1550,6 +1718,19 @@ pub(super) fn apply_when_events(
             &physics_contacts,
             &object_pools,
         );
+        let lifecycle_probe = lifecycle_probe_condition(&event.condition);
+        if lifecycle_probe && runtime_verbose_logging() {
+            write_runtime_diagnostic_line(format!(
+                "WHEN:PROBE stmt={} guard={} condition={} matches={} active={} delayed={} state={}",
+                statement_index,
+                guard_matches as u8,
+                describe_condition_brief(&event.condition),
+                condition_matches_now as u8,
+                describe_active_controllers(&active_controllers),
+                describe_delayed_queue(&delayed_actions),
+                describe_runtime_state(&vars)
+            ));
+        }
         if let Some(after_condition) = &event.after_condition {
             let after_matches = when_condition_matches(
                 after_condition,
@@ -1619,11 +1800,41 @@ pub(super) fn apply_when_events(
         }
         let owner = SceneMaxControllerKey::When(statement_index);
         if active_controllers.running.contains(&owner) {
-            continue;
+            if delayed_actions_has_owner(&delayed_actions, &owner) {
+                write_runtime_diagnostic_line(format!(
+                    "WHEN:SKIP_RUNNING stmt={} owner={} condition={} active={} delayed={} state={}",
+                    statement_index,
+                    describe_controller_key(&owner),
+                    describe_condition_brief(&event.condition),
+                    describe_active_controllers(&active_controllers),
+                    describe_delayed_queue(&delayed_actions),
+                    describe_runtime_state(&vars)
+                ));
+                continue;
+            }
+            write_runtime_diagnostic_line(format!(
+                "CTRL:WHEN_STALE_OWNER_RECOVER stmt={} owner={} condition={} active={} delayed={} state={}",
+                statement_index,
+                describe_controller_key(&owner),
+                describe_condition_brief(&event.condition),
+                describe_active_controllers(&active_controllers),
+                describe_delayed_queue(&delayed_actions),
+                describe_runtime_state(&vars)
+            ));
+            active_controllers.running.remove(&owner);
         }
 
         let mut queued_animations = HashMap::new();
         active_controllers.running.insert(owner.clone());
+        write_runtime_diagnostic_line(format!(
+            "WHEN:FIRE stmt={} owner={} condition={} active={} delayed={} state={}",
+            statement_index,
+            describe_controller_key(&owner),
+            describe_condition_brief(&event.condition),
+            describe_active_controllers(&active_controllers),
+            describe_delayed_queue(&delayed_actions),
+            describe_runtime_state(&vars)
+        ));
         let result = apply_action_sequence(
             &event.actions,
             &mut transforms_by_name,
@@ -1644,7 +1855,17 @@ pub(super) fn apply_when_events(
             &mut commands,
             &mut scene_entities,
         );
-        if !result.is_suspended() {
+        if result.is_suspended() {
+            write_runtime_diagnostic_line(format!(
+                "WHEN:PASS_SUSPEND stmt={} owner={} active={} delayed={} state={}",
+                statement_index,
+                describe_controller_key(&owner),
+                describe_active_controllers(&active_controllers),
+                describe_delayed_queue(&delayed_actions),
+                describe_runtime_state(&vars)
+            ));
+            break;
+        } else {
             active_controllers.running.remove(&owner);
         }
     }
@@ -1900,7 +2121,35 @@ pub(super) fn update_recurring_runs(
         if *remaining <= 0.0 {
             let owner = SceneMaxControllerKey::Recurring(index);
             if active_controllers.running.contains(&owner) {
-                *remaining = 0.0;
+                if delayed_actions_has_owner(&delayed_actions, &owner) {
+                    if runtime_verbose_logging() {
+                        write_runtime_diagnostic_line(format!(
+                            "RECUR:SKIP_RUNNING stmt={} name={} owner={} active={} delayed={} state={}",
+                            index,
+                            name,
+                            describe_controller_key(&owner),
+                            describe_active_controllers(&active_controllers),
+                            describe_delayed_queue(&delayed_actions),
+                            describe_runtime_state(&vars)
+                        ));
+                    }
+                    *remaining = 0.0;
+                } else {
+                    write_runtime_diagnostic_line(format!(
+                        "CTRL:RECUR_STALE_OWNER_RECOVER stmt={} name={} owner={} active={} delayed={} state={}",
+                        index,
+                        name,
+                        describe_controller_key(&owner),
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                    active_controllers.running.remove(&owner);
+                    due_runs.push((index, name.clone(), args.clone()));
+                    while *remaining <= 0.0 {
+                        *remaining += interval;
+                    }
+                }
             } else {
                 due_runs.push((index, name.clone(), args.clone()));
                 while *remaining <= 0.0 {
@@ -1918,6 +2167,17 @@ pub(super) fn update_recurring_runs(
         let mut queued_animations = HashMap::new();
         let owner = SceneMaxControllerKey::Recurring(index);
         active_controllers.running.insert(owner.clone());
+        if runtime_verbose_logging() {
+            write_runtime_diagnostic_line(format!(
+                "RECUR:FIRE stmt={} name={} owner={} active={} delayed={} state={}",
+                index,
+                name,
+                describe_controller_key(&owner),
+                describe_active_controllers(&active_controllers),
+                describe_delayed_queue(&delayed_actions),
+                describe_runtime_state(&vars)
+            ));
+        }
         let result = apply_function_by_name(
             &name,
             &args,
@@ -1942,6 +2202,18 @@ pub(super) fn update_recurring_runs(
         );
         if !result.is_suspended() {
             active_controllers.running.remove(&owner);
+        }
+        if runtime_verbose_logging() {
+            write_runtime_diagnostic_line(format!(
+                "RECUR:DONE stmt={} name={} owner={} result={:?} active={} delayed={} state={}",
+                index,
+                name,
+                describe_controller_key(&owner),
+                result,
+                describe_active_controllers(&active_controllers),
+                describe_delayed_queue(&delayed_actions),
+                describe_runtime_state(&vars)
+            ));
         }
     }
 }
@@ -1997,15 +2269,30 @@ pub(super) fn update_delayed_actions(
     if ready_actions.is_empty() {
         return;
     }
-    write_runtime_diagnostic_line(format!(
-        "DELAY:READY count={} actions={}",
-        ready_actions.len(),
-        ready_actions
-            .iter()
-            .map(|delayed| describe_statement_list(&delayed.actions))
-            .collect::<Vec<_>>()
-            .join(" || ")
-    ));
+    if runtime_verbose_logging() {
+        write_runtime_diagnostic_line(format!(
+            "DELAY:READY count={} active={} pending={} state={} actions={}",
+            ready_actions.len(),
+            describe_active_controllers(&active_controllers),
+            describe_delayed_queue(&delayed_actions),
+            describe_runtime_state(&vars),
+            ready_actions
+                .iter()
+                .map(|delayed| {
+                    format!(
+                        "owner={} {}",
+                        delayed
+                            .owner
+                            .as_ref()
+                            .map(describe_controller_key)
+                            .unwrap_or_else(|| "-".to_owned()),
+                        describe_statement_list(&delayed.actions)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" || ")
+        ));
+    }
 
     let mut transforms_by_name =
         build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
@@ -2015,8 +2302,36 @@ pub(super) fn update_delayed_actions(
     for mut delayed in ready_actions {
         if let Some(Statement::WaitForKey { key }) = delayed.actions.first() {
             if is_pressed_key(key, &keyboard) {
+                if runtime_verbose_logging() {
+                    write_runtime_diagnostic_line(format!(
+                        "DELAY:WAIT_FOR_KEY_ACCEPT key={} owner={} active={} delayed={} state={}",
+                        key,
+                        delayed
+                            .owner
+                            .as_ref()
+                            .map(describe_controller_key)
+                            .unwrap_or_else(|| "-".to_owned()),
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                }
                 delayed.actions.remove(0);
             } else {
+                if runtime_verbose_logging() {
+                    write_runtime_diagnostic_line(format!(
+                        "DELAY:WAIT_FOR_KEY_POLL key={} owner={} active={} delayed={} state={}",
+                        key,
+                        delayed
+                            .owner
+                            .as_ref()
+                            .map(describe_controller_key)
+                            .unwrap_or_else(|| "-".to_owned()),
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                }
                 delayed.remaining_seconds = LOOP_CONTINUE_DELAY_SECONDS;
                 delayed_actions.actions.push(delayed);
                 continue;
@@ -2024,7 +2339,18 @@ pub(super) fn update_delayed_actions(
         }
         if delayed.actions.is_empty() {
             if let Some(owner) = delayed.owner {
-                active_controllers.running.remove(&owner);
+                if !delayed_actions_has_owner(&delayed_actions, &owner) {
+                    active_controllers.running.remove(&owner);
+                }
+                if runtime_verbose_logging() {
+                    write_runtime_diagnostic_line(format!(
+                        "DELAY:DONE_EMPTY owner={} active={} delayed={} state={}",
+                        describe_controller_key(&owner),
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                }
             }
             continue;
         }
@@ -2051,7 +2377,19 @@ pub(super) fn update_delayed_actions(
         );
         if !result.is_suspended() {
             if let Some(owner) = delayed.owner {
-                active_controllers.running.remove(&owner);
+                if !delayed_actions_has_owner(&delayed_actions, &owner) {
+                    active_controllers.running.remove(&owner);
+                }
+                if runtime_verbose_logging() {
+                    write_runtime_diagnostic_line(format!(
+                        "DELAY:DONE owner={} result={:?} active={} delayed={} state={}",
+                        describe_controller_key(&owner),
+                        result,
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                }
             }
         }
     }
@@ -2076,13 +2414,19 @@ pub(super) fn enqueue_delayed_actions(
         owner,
         scope,
     });
-    let delayed = delayed_actions.actions.last().unwrap();
-    write_runtime_diagnostic_line(format!(
-        "DELAY:ENQUEUE seconds={} actions={} owner={}",
-        format_scenemax_number(seconds.max(0.0)),
-        describe_statement_list(&delayed.actions),
-        delayed.owner.is_some() as u8
-    ));
+    if runtime_verbose_logging() {
+        let delayed = delayed_actions.actions.last().unwrap();
+        write_runtime_diagnostic_line(format!(
+            "DELAY:ENQUEUE seconds={} actions={} owner={}",
+            format_scenemax_number(seconds.max(0.0)),
+            describe_statement_list(&delayed.actions),
+            delayed
+                .owner
+                .as_ref()
+                .map(describe_controller_key)
+                .unwrap_or_else(|| "-".to_owned())
+        ));
+    }
     true
 }
 
@@ -2383,17 +2727,21 @@ pub(super) fn apply_action_sequence(
                     Some(transforms_by_name),
                     Some(collider_bounds),
                 ) {
-                    write_runtime_diagnostic_line(format!(
-                        "FUNCTION:SKIP phase=runtime_sequence name={name} reason=guard_false"
-                    ));
+                    if runtime_verbose_logging() {
+                        write_runtime_diagnostic_line(format!(
+                            "FUNCTION:SKIP phase=runtime_sequence name={name} reason=guard_false"
+                        ));
+                    }
                     tracing::debug!(name, "SceneMax function guard is false");
                     continue;
                 }
 
-                write_runtime_diagnostic_line(format!(
-                    "FUNCTION:RUN phase=runtime_sequence name={name} actions={}",
-                    describe_statement_list(&function.actions)
-                ));
+                if runtime_verbose_logging() {
+                    write_runtime_diagnostic_line(format!(
+                        "FUNCTION:RUN phase=runtime_sequence name={name} actions={}",
+                        describe_statement_list(&function.actions)
+                    ));
+                }
                 let function_actions = actions_with_parent_continuation(
                     instantiate_function_actions(function, &resolved_args),
                     parent_action_tail(actions, index),
@@ -2425,6 +2773,7 @@ pub(super) fn apply_action_sequence(
                 return ActionSequenceResult::Completed;
             }
             Statement::Async { actions } => {
+                let mut async_scope = scope.as_deref().cloned();
                 let _ = apply_action_sequence(
                     actions,
                     transforms_by_name,
@@ -2439,8 +2788,8 @@ pub(super) fn apply_action_sequence(
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     ui_queue.as_deref_mut(),
-                    owner.clone(),
-                    scope.as_deref_mut(),
+                    None,
+                    async_scope.as_mut(),
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
@@ -3766,7 +4115,7 @@ pub(super) fn apply_function_by_name(
     runtime_assets: &mut SceneMaxRuntimeAssets,
     animation_durations: &SceneMaxAnimationDurations,
     collider_bounds: &mut SceneMaxColliderBounds,
-    delayed_actions: Option<&mut DelayedActionQueue>,
+    mut delayed_actions: Option<&mut DelayedActionQueue>,
     ui_queue: Option<&mut SceneMaxUiActionQueue>,
     owner: Option<SceneMaxControllerKey>,
     scope: Option<&mut SceneMaxScopeFrame>,
@@ -3815,20 +4164,24 @@ pub(super) fn apply_function_by_name(
         Some(transforms_by_name),
         Some(collider_bounds),
     ) {
-        write_runtime_diagnostic_line(format!(
-            "FUNCTION:SKIP phase=runtime name={name} reason=guard_false"
-        ));
+        if runtime_verbose_logging() {
+            write_runtime_diagnostic_line(format!(
+                "FUNCTION:SKIP phase=runtime name={name} reason=guard_false"
+            ));
+        }
         tracing::debug!(name, "SceneMax function guard is false");
         return ActionSequenceResult::Completed;
     }
 
-    write_runtime_diagnostic_line(format!(
-        "FUNCTION:RUN phase=runtime name={name} actions={}",
-        describe_statement_list(&function.actions)
-    ));
+    if runtime_verbose_logging() {
+        write_runtime_diagnostic_line(format!(
+            "FUNCTION:RUN phase=runtime name={name} actions={}",
+            describe_statement_list(&function.actions)
+        ));
+    }
     let actions = instantiate_function_actions(function, &resolved_args);
     let mut function_scope = scope.cloned().unwrap_or_default();
-    apply_action_sequence(
+    let result = apply_action_sequence(
         &actions,
         transforms_by_name,
         vars,
@@ -3840,14 +4193,15 @@ pub(super) fn apply_function_by_name(
         runtime_assets,
         animation_durations,
         collider_bounds,
-        delayed_actions,
+        delayed_actions.as_deref_mut(),
         ui_queue,
         owner,
         Some(&mut function_scope),
         continuous_delta_seconds,
         commands,
         scene_entities,
-    )
+    );
+    result
 }
 
 pub(super) fn function_guard_matches(

@@ -3,8 +3,8 @@ use std::{
     env, fs,
     io::Write,
     path::{Path, PathBuf},
-    sync::Mutex,
     sync::atomic::{AtomicU64, Ordering},
+    sync::{Mutex, OnceLock},
 };
 
 use anyhow::Result;
