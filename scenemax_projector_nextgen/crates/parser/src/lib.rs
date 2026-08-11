@@ -164,6 +164,7 @@ pub struct EntityOptions {
     pub rotation_degrees: Option<SceneMaxVec3>,
     pub scale: Option<SceneMaxVec3>,
     pub size: Option<SceneMaxVec3>,
+    pub material: Option<String>,
     pub hidden: bool,
     pub collider: bool,
     pub sprite: bool,
@@ -4204,6 +4205,7 @@ fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseErr
         rotation_degrees: parse_vec3_after(text, "rotate").ok(),
         scale,
         size: parse_size_after(text)?,
+        material: parse_quoted_value_after(text, "material"),
         hidden: contains_keyword(text, "hidden"),
         collider: contains_keyword(raw, "collider"),
         radius: parse_scalar_after(text, "radius")?,
@@ -4219,6 +4221,14 @@ fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseErr
         collision_shape: parse_collision_shape(raw),
         sprite: contains_keyword(raw, "sprite"),
     })
+}
+
+fn parse_quoted_value_after(text: &str, name: &str) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    let name = name.to_ascii_lowercase();
+    let index = lower.find(&name)?;
+    let after_name = text[index + name.len()..].trim_start();
+    parse_quoted_strings(after_name).into_iter().next()
 }
 
 fn parse_position_value_after(text: &str, name: &str) -> Result<Option<PositionValue>, ParseError> {
@@ -5261,6 +5271,17 @@ mod tests {
                 if resource == "arch"
                     && options.thickness == Some(0.4)
                     && options.segments == Some(10)
+        ));
+    }
+
+    #[test]
+    fn parses_primitive_material_option() {
+        let program = parse_program("quad_1 => quad : size (1,1), material \"wall\"").unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::ModelDecl { options, .. }
+                if options.material.as_deref() == Some("wall")
         ));
     }
 

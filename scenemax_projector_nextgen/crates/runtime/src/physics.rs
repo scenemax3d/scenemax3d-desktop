@@ -67,6 +67,9 @@ pub(super) fn spawn_scenemax_collider_decl(
 pub(super) fn primitive_mesh(
     options: &EntityOptions,
     resource: &str,
+    asset_server: &AssetServer,
+    asset_root: &Path,
+    builtin_asset_root: Option<&Path>,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
 ) -> Option<(Mesh3d, MeshMaterial3d<StandardMaterial>)> {
@@ -152,7 +155,18 @@ pub(super) fn primitive_mesh(
             ))
         }
     };
-    let color = match primitive_kind(resource)? {
+    let material = primitive_standard_material(
+        options,
+        resource,
+        asset_server,
+        asset_root,
+        builtin_asset_root,
+    );
+    Some((Mesh3d(mesh), MeshMaterial3d(materials.add(material))))
+}
+
+pub(super) fn primitive_fallback_color(resource: &str) -> Option<Color> {
+    Some(match primitive_kind(resource)? {
         SceneMaxPrimitiveKind::Box => Color::srgb_u8(120, 135, 150),
         SceneMaxPrimitiveKind::Sphere => Color::srgb_u8(80, 170, 230),
         SceneMaxPrimitiveKind::Cylinder => Color::srgb_u8(90, 190, 160),
@@ -162,9 +176,175 @@ pub(super) fn primitive_mesh(
         SceneMaxPrimitiveKind::Cone => Color::srgb_u8(230, 210, 60),
         SceneMaxPrimitiveKind::Stairs => Color::srgb_u8(150, 95, 45),
         SceneMaxPrimitiveKind::Arch => Color::srgb_u8(170, 175, 180),
+    })
+}
+
+fn primitive_standard_material(
+    options: &EntityOptions,
+    resource: &str,
+    asset_server: &AssetServer,
+    asset_root: &Path,
+    builtin_asset_root: Option<&Path>,
+) -> StandardMaterial {
+    let fallback = primitive_fallback_color(resource).unwrap_or(Color::WHITE);
+    let Some(material_name) = options.material.as_deref() else {
+        return StandardMaterial {
+            base_color: fallback,
+            ..default()
+        };
     };
-    let material = materials.add(color);
-    Some((Mesh3d(mesh), MeshMaterial3d(material)))
+    match resolve_scenemax_material(material_name, asset_root, builtin_asset_root) {
+        Some(material) => {
+            let mut standard = StandardMaterial {
+                base_color: material.diffuse.unwrap_or(Color::WHITE),
+                base_color_texture: material
+                    .diffuse_map
+                    .as_ref()
+                    .map(|path| asset_server.load(path.clone())),
+                normal_map_texture: material
+                    .normal_map
+                    .as_ref()
+                    .map(|path| asset_server.load(path.clone())),
+                emissive: material.glow_color.unwrap_or(LinearRgba::BLACK),
+                emissive_texture: material
+                    .glow_map
+                    .as_ref()
+                    .map(|path| asset_server.load(path.clone())),
+                double_sided: material.double_sided,
+                cull_mode: if material.double_sided {
+                    None
+                } else {
+                    Some(bevy::render::render_resource::Face::Back)
+                },
+                alpha_mode: if material.transparent {
+                    AlphaMode::Blend
+                } else {
+                    AlphaMode::Opaque
+                },
+                ..default()
+            };
+            if standard.emissive_texture.is_some() && standard.emissive == LinearRgba::BLACK {
+                standard.emissive = LinearRgba::WHITE;
+            }
+            write_runtime_diagnostic_line(format!(
+                "MATERIAL:APPLY name={} diffuse={} normal={} glow={} double_sided={} transparent={}",
+                material_name,
+                material.diffuse_map.as_deref().unwrap_or("<none>"),
+                material.normal_map.as_deref().unwrap_or("<none>"),
+                material.glow_map.as_deref().unwrap_or("<none>"),
+                material.double_sided as u8,
+                material.transparent as u8
+            ));
+            standard
+        }
+        None => {
+            write_runtime_diagnostic_line(format!(
+                "MATERIAL:MISS name={} primitive={}",
+                material_name, resource
+            ));
+            StandardMaterial {
+                base_color: fallback,
+                ..default()
+            }
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct SceneMaxResolvedMaterial {
+    diffuse: Option<Color>,
+    diffuse_map: Option<String>,
+    normal_map: Option<String>,
+    glow_color: Option<LinearRgba>,
+    glow_map: Option<String>,
+    double_sided: bool,
+    transparent: bool,
+}
+
+fn resolve_scenemax_material(
+    name: &str,
+    asset_root: &Path,
+    builtin_asset_root: Option<&Path>,
+) -> Option<SceneMaxResolvedMaterial> {
+    resolve_scenemax_material_in_root(name, asset_root, "").or_else(|| {
+        builtin_asset_root
+            .and_then(|root| resolve_scenemax_material_in_root(name, root, "builtin://"))
+    })
+}
+
+fn resolve_scenemax_material_in_root(
+    name: &str,
+    root: &Path,
+    asset_prefix: &str,
+) -> Option<SceneMaxResolvedMaterial> {
+    let index_path = root.join("material").join("materials-ext.json");
+    let index_text = fs::read_to_string(index_path).ok()?;
+    let index: serde_json::Value = serde_json::from_str(&index_text).ok()?;
+    let entry = index
+        .get("materials")
+        .and_then(serde_json::Value::as_array)?
+        .iter()
+        .find(|entry| {
+            entry
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|value| value.eq_ignore_ascii_case(name))
+        })?;
+    let material_path = entry.get("path").and_then(serde_json::Value::as_str)?;
+    let material_text = fs::read_to_string(root.join(material_path)).ok()?;
+    let mut material = parse_j3m_material(&material_text, asset_prefix);
+    material.double_sided = entry
+        .get("doubleSided")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(material.double_sided);
+    material.transparent = entry
+        .get("transparent")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(material.transparent);
+    Some(material)
+}
+
+fn parse_j3m_material(source: &str, asset_prefix: &str) -> SceneMaxResolvedMaterial {
+    let mut material = SceneMaxResolvedMaterial::default();
+    for line in source.lines() {
+        let line = line.trim();
+        if let Some(value) = line.strip_prefix("DiffuseMap") {
+            material.diffuse_map = j3m_map_path(value, asset_prefix);
+        } else if let Some(value) = line.strip_prefix("NormalMap") {
+            material.normal_map = j3m_map_path(value, asset_prefix);
+        } else if let Some(value) = line.strip_prefix("GlowMap") {
+            material.glow_map = j3m_map_path(value, asset_prefix);
+        } else if let Some(value) = line.strip_prefix("Diffuse") {
+            material.diffuse = j3m_color(value).map(|[r, g, b, a]| Color::srgba(r, g, b, a));
+        } else if let Some(value) = line.strip_prefix("GlowColor") {
+            material.glow_color = j3m_color(value).map(|[r, g, b, a]| LinearRgba::new(r, g, b, a));
+        }
+    }
+    material
+}
+
+fn j3m_map_path(value: &str, asset_prefix: &str) -> Option<String> {
+    let (_, path) = value.split_once(':')?;
+    let path = path.trim().replace('\\', "/");
+    if path.is_empty() {
+        None
+    } else {
+        Some(format!("{asset_prefix}{path}"))
+    }
+}
+
+fn j3m_color(value: &str) -> Option<[f32; 4]> {
+    let (_, values) = value.split_once(':')?;
+    let values = values
+        .split_whitespace()
+        .map(str::parse::<f32>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    match values.as_slice() {
+        [r, g, b] => Some([*r, *g, *b, 1.0]),
+        [r, g, b, a] => Some([*r, *g, *b, *a]),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,19 +376,19 @@ fn primitive_kind(resource: &str) -> Option<SceneMaxPrimitiveKind> {
 }
 
 fn quad_mesh(width: f32, height: f32) -> Mesh {
-    let half_width = width.abs().max(0.001) * 0.5;
-    let half_height = height.abs().max(0.001) * 0.5;
-    Mesh::new(
+    let width = width.abs().max(0.001);
+    let height = height.abs().max(0.001);
+    let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
         RenderAssetUsages::default(),
     )
     .with_inserted_attribute(
         Mesh::ATTRIBUTE_POSITION,
         vec![
-            [-half_width, -half_height, 0.0],
-            [half_width, -half_height, 0.0],
-            [half_width, half_height, 0.0],
-            [-half_width, half_height, 0.0],
+            [0.0, 0.0, 0.0],
+            [width, 0.0, 0.0],
+            [width, height, 0.0],
+            [0.0, height, 0.0],
         ],
     )
     .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 0.0, 1.0]; 4])
@@ -216,7 +396,9 @@ fn quad_mesh(width: f32, height: f32) -> Mesh {
         Mesh::ATTRIBUTE_UV_0,
         vec![[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]],
     )
-    .with_inserted_indices(Indices::U32(vec![0, 1, 2, 2, 3, 0]))
+    .with_inserted_indices(Indices::U32(vec![0, 1, 2, 2, 3, 0]));
+    let _ = mesh.generate_tangents();
+    mesh
 }
 
 fn wedge_mesh(width: f32, height: f32, depth: f32) -> Mesh {
@@ -2539,4 +2721,62 @@ pub(super) fn rotation_from_degrees(value: SceneMaxVec3) -> Quat {
         value.y.to_radians(),
         value.z.to_radians(),
     )
+}
+
+#[cfg(test)]
+mod material_tests {
+    use super::*;
+
+    #[test]
+    fn parses_j3m_texture_maps_for_bevy_materials() {
+        let material = parse_j3m_material(
+            r#"
+Material wall : Common/MatDefs/Light/Lighting.j3md {
+    MaterialParameters {
+        Diffuse : 0.78 0.8 0.84 1.0
+        GlowColor : 0.1 0.2 0.3 1.0
+        DiffuseMap : material/wall/diffuse_diffuse.png
+        NormalMap : material/wall/normal_normal.png
+        GlowMap : material/wall/glow_glow.png
+    }
+}
+"#,
+            "",
+        );
+
+        assert_eq!(
+            material.diffuse_map.as_deref(),
+            Some("material/wall/diffuse_diffuse.png")
+        );
+        assert_eq!(
+            material.normal_map.as_deref(),
+            Some("material/wall/normal_normal.png")
+        );
+        assert_eq!(
+            material.glow_map.as_deref(),
+            Some("material/wall/glow_glow.png")
+        );
+        assert!(material.diffuse.is_some());
+        assert!(material.glow_color.is_some());
+    }
+
+    #[test]
+    fn quad_mesh_origin_matches_jme_quad() {
+        let mesh = quad_mesh(2.0, 3.0);
+        let positions = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap();
+
+        let bevy::mesh::VertexAttributeValues::Float32x3(positions) = positions else {
+            panic!("quad mesh positions should be Float32x3");
+        };
+
+        assert_eq!(
+            positions,
+            &vec![
+                [0.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [2.0, 3.0, 0.0],
+                [0.0, 3.0, 0.0],
+            ]
+        );
+    }
 }

@@ -773,7 +773,15 @@ pub(super) fn spawn_scenemax_program(
             ));
         }
 
-        if let Some(primitive) = primitive_mesh(options, resource, meshes, materials) {
+        if let Some(primitive) = primitive_mesh(
+            options,
+            resource,
+            asset_server,
+            asset_root,
+            builtin_asset_root,
+            meshes,
+            materials,
+        ) {
             let transform = primitive_transform_from_options_resolved(
                 options,
                 vars,
