@@ -6,6 +6,7 @@ pub(super) fn apply_startup_runs(
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     delayed_actions: &mut DelayedActionQueue,
     ui_queue: &mut SceneMaxUiActionQueue,
     functions_by_name: &HashMap<String, FunctionRuntime>,
@@ -37,6 +38,7 @@ pub(super) fn apply_startup_runs(
         vars,
         object_pools,
         camera_system,
+        runtime_assets,
         delayed_actions,
         ui_queue,
         functions_by_name,
@@ -76,6 +78,7 @@ pub(super) fn apply_startup_action_sequence(
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     delayed_actions: &mut DelayedActionQueue,
     ui_queue: &mut SceneMaxUiActionQueue,
     functions_by_name: &HashMap<String, FunctionRuntime>,
@@ -173,6 +176,7 @@ pub(super) fn apply_startup_action_sequence(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     delayed_actions,
                     ui_queue,
                     functions_by_name,
@@ -196,6 +200,7 @@ pub(super) fn apply_startup_action_sequence(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     delayed_actions,
                     ui_queue,
                     functions_by_name,
@@ -220,6 +225,7 @@ pub(super) fn apply_startup_action_sequence(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     delayed_actions,
                     ui_queue,
                     functions_by_name,
@@ -256,6 +262,7 @@ pub(super) fn apply_startup_action_sequence(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     delayed_actions,
                     ui_queue,
                     functions_by_name,
@@ -291,6 +298,7 @@ pub(super) fn apply_startup_action_sequence(
                         vars,
                         object_pools,
                         camera_system,
+                        runtime_assets,
                         delayed_actions,
                         ui_queue,
                         functions_by_name,
@@ -338,6 +346,7 @@ pub(super) fn apply_startup_action_sequence(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     ui_queue,
                     functions_by_name,
                     entities_by_name,
@@ -367,6 +376,7 @@ pub(super) fn apply_startup_action_sequence(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     ui_queue,
                     functions_by_name,
                     entities_by_name,
@@ -392,6 +402,7 @@ pub(super) fn apply_startup_function_by_name(
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     ui_queue: &mut SceneMaxUiActionQueue,
     functions_by_name: &HashMap<String, FunctionRuntime>,
     entities_by_name: &HashMap<String, Entity>,
@@ -445,6 +456,7 @@ pub(super) fn apply_startup_function_by_name(
             vars,
             object_pools,
             camera_system,
+            runtime_assets,
             ui_queue,
             functions_by_name,
             entities_by_name,
@@ -466,6 +478,7 @@ pub(super) fn apply_startup_action(
     vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
     camera_system: &mut SceneMaxCameraSystem,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     ui_queue: &mut SceneMaxUiActionQueue,
     functions_by_name: &HashMap<String, FunctionRuntime>,
     entities_by_name: &HashMap<String, Entity>,
@@ -546,6 +559,19 @@ pub(super) fn apply_startup_action(
             );
             ActionSequenceResult::Completed
         }
+        Statement::Audio(audio) => {
+            apply_audio_statement(
+                audio,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+                runtime_assets,
+                commands,
+            );
+            ActionSequenceResult::Completed
+        }
         Statement::DebugMode { enabled } => {
             set_debug_mode(commands, *enabled);
             ActionSequenceResult::Completed
@@ -617,6 +643,7 @@ pub(super) fn apply_startup_action(
                 vars,
                 object_pools,
                 camera_system,
+                runtime_assets,
                 ui_queue,
                 functions_by_name,
                 entities_by_name,
@@ -639,6 +666,7 @@ pub(super) fn apply_startup_action(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     ui_queue,
                     functions_by_name,
                     entities_by_name,
@@ -672,6 +700,7 @@ pub(super) fn apply_startup_action(
                     vars,
                     object_pools,
                     camera_system,
+                    runtime_assets,
                     ui_queue,
                     functions_by_name,
                     entities_by_name,
@@ -701,6 +730,7 @@ pub(super) fn apply_startup_action(
                         vars,
                         object_pools,
                         camera_system,
+                        runtime_assets,
                         ui_queue,
                         functions_by_name,
                         entities_by_name,
@@ -725,6 +755,7 @@ pub(super) fn apply_startup_action(
                         vars,
                         object_pools,
                         camera_system,
+                        runtime_assets,
                         ui_queue,
                         functions_by_name,
                         entities_by_name,
@@ -749,6 +780,7 @@ pub(super) fn apply_startup_action(
                         vars,
                         object_pools,
                         camera_system,
+                        runtime_assets,
                         ui_queue,
                         functions_by_name,
                         entities_by_name,
@@ -1225,7 +1257,7 @@ pub(super) fn apply_key_events(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
     startup_program: Res<SceneMaxStartupProgram>,
-    runtime_assets: Res<SceneMaxRuntimeAssets>,
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
     animation_durations: Res<SceneMaxAnimationDurations>,
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
@@ -1311,7 +1343,7 @@ pub(super) fn apply_key_events(
             &functions_by_name,
             &guards_by_name,
             &mut queued_animations,
-            &runtime_assets,
+            &mut runtime_assets,
             &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
@@ -1328,7 +1360,7 @@ pub(super) fn apply_key_events(
 pub(super) fn apply_when_events(
     time: Res<Time>,
     startup_program: Res<SceneMaxStartupProgram>,
-    runtime_assets: Res<SceneMaxRuntimeAssets>,
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
     animation_durations: Res<SceneMaxAnimationDurations>,
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
@@ -1471,7 +1503,7 @@ pub(super) fn apply_when_events(
             &functions_by_name,
             &guards_by_name,
             &mut queued_animations,
-            &runtime_assets,
+            &mut runtime_assets,
             &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
@@ -1672,7 +1704,7 @@ pub(super) fn collision_pair_distance_report(
 pub(super) fn update_recurring_runs(
     time: Res<Time>,
     startup_program: Res<SceneMaxStartupProgram>,
-    runtime_assets: Res<SceneMaxRuntimeAssets>,
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
     animation_durations: Res<SceneMaxAnimationDurations>,
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
@@ -1766,7 +1798,7 @@ pub(super) fn update_recurring_runs(
             &functions_by_name,
             &guards_by_name,
             &mut queued_animations,
-            &runtime_assets,
+            &mut runtime_assets,
             &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
@@ -1788,7 +1820,7 @@ pub(super) fn update_delayed_actions(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
     startup_program: Res<SceneMaxStartupProgram>,
-    runtime_assets: Res<SceneMaxRuntimeAssets>,
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
     animation_durations: Res<SceneMaxAnimationDurations>,
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut vars: ResMut<SceneMaxVars>,
@@ -1876,7 +1908,7 @@ pub(super) fn update_delayed_actions(
             &functions_by_name,
             &guards_by_name,
             &mut queued_animations,
-            &runtime_assets,
+            &mut runtime_assets,
             &animation_durations,
             &mut collider_bounds,
             Some(&mut delayed_actions),
@@ -1953,6 +1985,18 @@ pub(super) fn describe_statement(action: &Statement) -> String {
         ),
         Statement::Async { actions } => format!("Async({})", describe_statement_list(actions)),
         Statement::RunFunction { name, .. } => format!("RunFunction({name})"),
+        Statement::Audio(audio) => format!(
+            "Audio({} {} loop={})",
+            match audio.action {
+                AudioAction::Play => "play",
+                AudioAction::Stop => "stop",
+            },
+            audio
+                .sound
+                .as_deref()
+                .unwrap_or_else(|| audio.sound_value.as_ref().map_or("<expr>", |_| "<expr>")),
+            audio.looped as u8
+        ),
         Statement::UiLoad { name } => format!("UiLoad({name})"),
         Statement::UiEase(ease) => format!("UiEase({:?})", ease.target),
         Statement::UiMessage(message) => format!("UiMessage({:?})", message.target),
@@ -2057,7 +2101,7 @@ pub(super) fn apply_action_sequence(
     functions_by_name: &HashMap<String, FunctionRuntime>,
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
-    runtime_assets: &SceneMaxRuntimeAssets,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     animation_durations: &SceneMaxAnimationDurations,
     collider_bounds: &mut SceneMaxColliderBounds,
     mut delayed_actions: Option<&mut DelayedActionQueue>,
@@ -2617,7 +2661,7 @@ pub(super) fn apply_runtime_model_decl(
     transforms_by_name: &mut HashMap<String, Transform>,
     vars: &SceneMaxVars,
     guards_by_name: &HashMap<String, Condition>,
-    runtime_assets: &SceneMaxRuntimeAssets,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     collider_bounds: &mut SceneMaxColliderBounds,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
@@ -2718,7 +2762,7 @@ pub(super) fn apply_key_action(
     functions_by_name: &HashMap<String, FunctionRuntime>,
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
-    runtime_assets: &SceneMaxRuntimeAssets,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     animation_durations: &SceneMaxAnimationDurations,
     collider_bounds: &mut SceneMaxColliderBounds,
     delayed_actions: Option<&mut DelayedActionQueue>,
@@ -2932,6 +2976,19 @@ pub(super) fn apply_key_action(
             guards_by_name,
             Some(transforms_by_name),
             Some(collider_bounds),
+        );
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::Audio(audio) = action {
+        apply_audio_statement(
+            audio,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+            runtime_assets,
+            commands,
         );
         return ActionSequenceResult::Completed;
     }
@@ -3576,7 +3633,7 @@ pub(super) fn apply_function_by_name(
     functions_by_name: &HashMap<String, FunctionRuntime>,
     guards_by_name: &HashMap<String, Condition>,
     queued_animations: &mut HashMap<Entity, (String, bool)>,
-    runtime_assets: &SceneMaxRuntimeAssets,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     animation_durations: &SceneMaxAnimationDurations,
     collider_bounds: &mut SceneMaxColliderBounds,
     delayed_actions: Option<&mut DelayedActionQueue>,
@@ -4744,7 +4801,7 @@ fn resolve_ui_property_value_part(
     }
 }
 
-fn assignment_value_fallback_text(value: &AssignmentValue) -> String {
+pub(super) fn assignment_value_fallback_text(value: &AssignmentValue) -> String {
     match value {
         AssignmentValue::Number(value) => format_scenemax_number(*value),
         AssignmentValue::Symbol(name) => name.clone(),

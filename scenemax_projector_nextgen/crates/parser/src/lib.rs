@@ -132,6 +132,7 @@ pub enum Statement {
     CameraPosition(SceneMaxVec3),
     CameraRotation(SceneMaxVec3),
     CameraMove(CameraMoveStatement),
+    Audio(AudioStatement),
     WaitForKey {
         key: String,
     },
@@ -356,6 +357,21 @@ pub struct CameraMoveStatement {
     pub duration_seconds: f32,
     pub duration_value: AssignmentValue,
     pub async_run: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AudioStatement {
+    pub action: AudioAction,
+    pub sound: Option<String>,
+    pub sound_value: Option<AssignmentValue>,
+    pub looped: bool,
+    pub volume: Option<AssignmentValue>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudioAction {
+    Play,
+    Stop,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1827,6 +1843,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(Statement::CameraMove(camera_move));
     }
 
+    if let Some(audio) = parse_audio_statement(line)? {
+        return Ok(Statement::Audio(audio));
+    }
+
     if let Some(chase) = parse_camera_chase(line)? {
         return Ok(chase);
     }
@@ -2837,6 +2857,107 @@ fn parse_camera_chase(line: &str) -> Result<Option<Statement>, ParseError> {
         return Ok(None);
     }
     Ok(Some(Statement::CameraChase { target }))
+}
+
+fn parse_audio_statement(line: &str) -> Result<Option<AudioStatement>, ParseError> {
+    let line = line.trim();
+    let lower = line.to_ascii_lowercase();
+    if lower.starts_with("audio.stop ") {
+        let rest = line["audio.stop ".len()..].trim();
+        let sound = parse_quoted_strings(rest)
+            .into_iter()
+            .next()
+            .or_else(|| (!rest.is_empty()).then(|| clean_assignment_value(rest).to_owned()));
+        return Ok(Some(AudioStatement {
+            action: AudioAction::Stop,
+            sound,
+            sound_value: None,
+            looped: false,
+            volume: None,
+        }));
+    }
+
+    if lower.starts_with("audio.play ") {
+        return parse_audio_play(line["audio.play ".len()..].trim());
+    }
+
+    if lower.starts_with("play sound ") {
+        let rest = line["play sound ".len()..].trim();
+        let sound_text = take_until_clause(rest, &[" loop ", " loop"]).trim();
+        let sound = (!sound_text.is_empty()).then(|| sound_text.to_owned());
+        return Ok(Some(AudioStatement {
+            action: AudioAction::Play,
+            sound,
+            sound_value: None,
+            looped: contains_keyword(rest, "loop"),
+            volume: None,
+        }));
+    }
+
+    Ok(None)
+}
+
+fn parse_audio_play(rest: &str) -> Result<Option<AudioStatement>, ParseError> {
+    let sound_text = take_until_clause(rest, &[" having ", " loop ", " loop"]).trim();
+    let (sound, sound_value) =
+        if let Some(sound) = parse_quoted_strings(sound_text).into_iter().next() {
+            (Some(sound), None)
+        } else {
+            let Some(value) = parse_assignment_value(clean_assignment_value(sound_text))? else {
+                return Ok(None);
+            };
+            (None, Some(value))
+        };
+    Ok(Some(AudioStatement {
+        action: AudioAction::Play,
+        sound,
+        sound_value,
+        looped: contains_keyword(rest, "loop"),
+        volume: parse_audio_volume_value(rest)?,
+    }))
+}
+
+fn parse_audio_volume_value(rest: &str) -> Result<Option<AssignmentValue>, ParseError> {
+    let Some(index) = find_keyword_index(rest, "having") else {
+        return Ok(None);
+    };
+    let options = take_until_clause(&rest[index + "having".len()..], &[" loop ", " loop"]).trim();
+    let lower_options = options.to_ascii_lowercase();
+    let Some(volume_index) = lower_options.find("volume") else {
+        return Ok(None);
+    };
+    let after_volume = options[volume_index + "volume".len()..]
+        .trim_start()
+        .trim_start_matches('=')
+        .trim_start();
+    let raw_volume = take_until_clause(after_volume, &[" and ", ",", " loop ", " loop"]).trim();
+    if raw_volume.is_empty() {
+        return Ok(None);
+    }
+    parse_assignment_value(clean_assignment_value(raw_volume))
+}
+
+fn find_keyword_index(text: &str, keyword: &str) -> Option<usize> {
+    let lower = text.to_ascii_lowercase();
+    let keyword = keyword.to_ascii_lowercase();
+    let mut start = 0;
+    while let Some(relative_index) = lower[start..].find(&keyword) {
+        let index = start + relative_index;
+        let before = lower[..index]
+            .chars()
+            .next_back()
+            .is_none_or(|ch| !ch.is_ascii_alphanumeric() && ch != '_');
+        let after_index = index + keyword.len();
+        let after = lower[after_index..]
+            .chars()
+            .next()
+            .is_none_or(|ch| !ch.is_ascii_alphanumeric() && ch != '_');
+        if before && after {
+            return Some(index);
+        }
+        start = after_index;
+    }
+    None
 }
 
 fn parse_model_decl(line: &str) -> Result<Option<Statement>, ParseError> {
@@ -3961,9 +4082,6 @@ fn is_unsupported_dotted_runtime_command(line: &str) -> bool {
 fn is_runtime_noop_command(line: &str) -> bool {
     let line = line.trim();
     let lower = line.to_ascii_lowercase();
-    if lower.starts_with("audio.play ") || lower.starts_with("audio.stop ") {
-        return true;
-    }
     if lower.starts_with("camera.chase ") || lower == "camera.chase stop" {
         return true;
     }
@@ -7163,6 +7281,55 @@ run tick(score+10) every tick_time+0.25 seconds
                         UiPropertyValuePart::Literal("timer = ".to_owned()),
                         UiPropertyValuePart::Expression(AssignmentValue::Symbol("timer".to_owned())),
                     ])
+        ));
+    }
+
+    #[test]
+    fn parses_audio_play_loop_stop_expression_and_volume() {
+        let program = parse_program(
+            "audio.play \"drums_music1\" loop\n\
+             audio.stop \"drums_music1\"\n\
+             audio.play selected_sound having volume music_volume loop\n\
+             play sound punch1",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::Audio(AudioStatement {
+                action: AudioAction::Play,
+                sound: Some(sound),
+                sound_value: None,
+                looped: true,
+                volume: None,
+            }) if sound == "drums_music1"
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::Audio(AudioStatement {
+                action: AudioAction::Stop,
+                sound: Some(sound),
+                ..
+            }) if sound == "drums_music1"
+        ));
+        assert!(matches!(
+            &program.statements[2],
+            Statement::Audio(AudioStatement {
+                action: AudioAction::Play,
+                sound: None,
+                sound_value: Some(AssignmentValue::Symbol(sound)),
+                looped: true,
+                volume: Some(AssignmentValue::Symbol(volume)),
+            }) if sound == "selected_sound" && volume == "music_volume"
+        ));
+        assert!(matches!(
+            &program.statements[3],
+            Statement::Audio(AudioStatement {
+                action: AudioAction::Play,
+                sound: Some(sound),
+                looped: false,
+                ..
+            }) if sound == "punch1"
         ));
     }
 

@@ -1272,6 +1272,8 @@ pub(super) fn update_attached_camera(
 
 pub(super) fn setup_camera_and_lights(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    context: Res<SceneMaxLaunchContext>,
     startup_program: Res<SceneMaxStartupProgram>,
     mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -1279,6 +1281,15 @@ pub(super) fn setup_camera_and_lights(
 ) {
     runtime_assets.placeholder_mesh = Some(meshes.add(Cuboid::new(1.0, 1.0, 1.0)));
     runtime_assets.placeholder_material = Some(materials.add(Color::srgb_u8(185, 150, 65)));
+    runtime_assets.audio_by_name = load_audio_index(
+        &asset_server,
+        context.asset_root.as_deref(),
+        context.builtin_asset_root.as_deref(),
+    );
+    write_runtime_diagnostic_line(format!(
+        "AUDIO:INDEX loaded={}",
+        runtime_assets.audio_by_name.len()
+    ));
 
     commands.insert_resource(GlobalAmbientLight {
         color: Color::WHITE,

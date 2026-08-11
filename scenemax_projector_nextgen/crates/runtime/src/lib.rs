@@ -19,6 +19,7 @@ use avian3d::{
 use bevy::{
     animation::AnimationTargetId,
     asset::{AssetApp, AssetPlugin, RenderAssetUsages, io::AssetSourceBuilder},
+    audio::{PlaybackMode, PlaybackSettings, Volume},
     ecs::system::SystemParam,
     gltf::Gltf,
     log::LogPlugin,
@@ -35,13 +36,13 @@ use bevy_tnua::{
 };
 use bevy_tnua_avian3d::prelude::{TnuaAvian3dPlugin, TnuaAvian3dSensorShape};
 use scenemax_parser::{
-    AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement,
-    CameraAttachStatement, CameraMoveStatement, ChannelDrawStatement, CharacterJumpStatement,
-    CharacterModeStatement, CinematicLookAt, CinematicPlayStatement, Condition, EntityOptions,
-    KeyTrigger, LoggerLevel, LoggerMessage, LoggerStatement, MoveDirection, MoveToDestination,
-    MoveToStatement, ObjectPoolStatement, PoolReleaseStatement, PositionExpr, PositionValue,
-    Program, SceneMaxAxis, SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3,
-    SpritePlayStatement, Statement, UiEaseDirection, UiTargetPath,
+    AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement, AudioAction,
+    AudioStatement, CameraAttachStatement, CameraMoveStatement, ChannelDrawStatement,
+    CharacterJumpStatement, CharacterModeStatement, CinematicLookAt, CinematicPlayStatement,
+    Condition, EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage, LoggerStatement,
+    MoveDirection, MoveToDestination, MoveToStatement, ObjectPoolStatement, PoolReleaseStatement,
+    PositionExpr, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind, SceneMaxCollisionShape,
+    SceneMaxVec3, SpritePlayStatement, Statement, UiEaseDirection, UiTargetPath,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
@@ -59,6 +60,7 @@ use scenemax_runtime_vm_core::{SceneMaxScopeFrame, SceneMaxVars, SceneMaxVmSpati
 
 mod actions;
 mod animation;
+mod audio;
 mod camera;
 mod physics;
 mod sprites;
@@ -67,6 +69,7 @@ mod ui;
 
 use actions::*;
 use animation::*;
+use audio::*;
 use camera::*;
 use physics::*;
 use sprites::*;
@@ -414,6 +417,15 @@ impl SceneMaxColliderBounds {
 struct SceneMaxRuntimeAssets {
     placeholder_mesh: Option<Handle<Mesh>>,
     placeholder_material: Option<Handle<StandardMaterial>>,
+    audio_by_name: HashMap<String, SceneMaxAudioAsset>,
+    looping_audio_by_name: HashMap<String, Entity>,
+}
+
+#[derive(Debug, Clone)]
+struct SceneMaxAudioAsset {
+    name: String,
+    path: String,
+    handle: Handle<AudioSource>,
 }
 
 #[derive(Debug, Resource, Default)]
