@@ -306,8 +306,26 @@ pub(super) fn apply_startup_action_sequence(
                     return ActionSequenceResult::Completed;
                 }
             }
-            action if blocking_timed_action_seconds(action).is_some() => {
-                let seconds = blocking_timed_action_seconds(action).unwrap_or_default();
+            action
+                if resolved_blocking_timed_action_seconds(
+                    action,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                )
+                .is_some() =>
+            {
+                let seconds = resolved_blocking_timed_action_seconds(
+                    action,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                )
+                .unwrap_or_default();
                 write_runtime_diagnostic_line(format!(
                     "STARTUP:BLOCKING action={} seconds={} tail={}",
                     describe_statement(action),
@@ -1956,6 +1974,80 @@ pub(super) fn axis_label(axis: SceneMaxAxis) -> &'static str {
     }
 }
 
+pub(super) fn resolved_blocking_timed_action_seconds(
+    action: &Statement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<f32> {
+    match action {
+        Statement::Turn(turn) if !turn.async_run && turn.loop_condition.is_none() => {
+            let seconds = resolve_duration_value(
+                &turn.duration_value,
+                turn.duration_seconds,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            );
+            (seconds > f32::EPSILON).then_some(seconds.max(0.001))
+        }
+        Statement::Move(movement) if !movement.async_run && movement.loop_condition.is_none() => {
+            let seconds = resolve_duration_value(
+                &movement.duration_value,
+                movement.duration_seconds,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            );
+            (seconds > f32::EPSILON).then_some(seconds.max(0.001))
+        }
+        Statement::MoveTo(move_to) if !move_to.async_run => {
+            let seconds = resolve_duration_value(
+                &move_to.duration_value,
+                move_to.duration_seconds,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            );
+            (seconds > f32::EPSILON).then_some(seconds.max(0.001))
+        }
+        Statement::CameraMove(camera_move) if !camera_move.async_run => {
+            let seconds = resolve_duration_value(
+                &camera_move.duration_value,
+                camera_move.duration_seconds,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            );
+            (seconds > f32::EPSILON).then_some(seconds.max(0.001))
+        }
+        Statement::CharacterJump(jump) if !jump.async_run => {
+            let speed = resolve_animation_speed_value(
+                &jump.speed_value,
+                jump.speed,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            );
+            Some(jump_duration_seconds(speed))
+        }
+        Statement::CinematicPlay(play) if !play.async_run => Some(play.duration_seconds.max(0.1)),
+        _ => None,
+    }
+}
+
 pub(super) fn apply_action_sequence(
     actions: &[Statement],
     transforms_by_name: &mut HashMap<String, Transform>,
@@ -2363,7 +2455,17 @@ pub(super) fn apply_action_sequence(
                     return ActionSequenceResult::Completed;
                 }
             }
-            action if blocking_timed_action_seconds(action).is_some() => {
+            action
+                if resolved_blocking_timed_action_seconds(
+                    action,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                )
+                .is_some() =>
+            {
                 if continuous_delta_seconds.is_some()
                     && continuous_timed_action_applies_per_frame(action)
                 {
@@ -2389,7 +2491,15 @@ pub(super) fn apply_action_sequence(
                     );
                     continue;
                 }
-                let seconds = blocking_timed_action_seconds(action).unwrap_or_default();
+                let seconds = resolved_blocking_timed_action_seconds(
+                    action,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                )
+                .unwrap_or_default();
                 write_runtime_diagnostic_line(format!(
                     "RUNTIME:BLOCKING action={} seconds={} tail={}",
                     describe_statement(action),

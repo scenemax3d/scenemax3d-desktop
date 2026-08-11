@@ -1998,6 +1998,63 @@ mod tests {
     }
 
     #[test]
+    fn resolved_duration_expression_drives_sync_blocking() {
+        let action = Statement::CameraMove(CameraMoveStatement {
+            axis: SceneMaxAxis::Z,
+            distance: 5.0,
+            distance_value: AssignmentValue::Number(5.0),
+            duration_seconds: 0.0,
+            duration_value: AssignmentValue::Symbol("intro_seconds".to_owned()),
+            async_run: false,
+        });
+        let vars = SceneMaxVars(HashMap::from([("intro_seconds".to_owned(), 5.0)]));
+        let guards = HashMap::new();
+        let transforms = HashMap::new();
+
+        assert_eq!(blocking_timed_action_seconds(&action), None);
+        assert_eq!(
+            resolved_blocking_timed_action_seconds(
+                &action,
+                &vars,
+                None,
+                &guards,
+                Some(&transforms),
+                None,
+            ),
+            Some(5.0)
+        );
+    }
+
+    #[test]
+    fn resolved_async_duration_expression_never_blocks_parent() {
+        let action = Statement::Move(scenemax_parser::MoveStatement {
+            target: "player1".to_owned(),
+            direction: MoveDirection::Forward,
+            distance: 2.0,
+            distance_value: AssignmentValue::Number(2.0),
+            duration_seconds: 0.0,
+            duration_value: AssignmentValue::Symbol("move_seconds".to_owned()),
+            loop_condition: None,
+            async_run: true,
+        });
+        let vars = SceneMaxVars(HashMap::from([("move_seconds".to_owned(), 1.25)]));
+        let guards = HashMap::new();
+        let transforms = HashMap::new();
+
+        assert_eq!(
+            resolved_blocking_timed_action_seconds(
+                &action,
+                &vars,
+                None,
+                &guards,
+                Some(&transforms),
+                None,
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn timed_move_uses_lateral_direction_and_duration() {
         let left = timed_move_from_statement(
             &scenemax_parser::MoveStatement {

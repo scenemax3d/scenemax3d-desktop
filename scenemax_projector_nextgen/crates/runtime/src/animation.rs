@@ -1,5 +1,6 @@
 use super::*;
 
+#[cfg(test)]
 pub(super) fn blocking_timed_action_seconds(action: &Statement) -> Option<f32> {
     match action {
         Statement::Turn(turn)
