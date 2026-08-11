@@ -37,12 +37,13 @@ use bevy_tnua::{
 use bevy_tnua_avian3d::prelude::{TnuaAvian3dPlugin, TnuaAvian3dSensorShape};
 use scenemax_parser::{
     AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement, AudioAction,
-    AudioStatement, CameraAttachStatement, CameraMoveStatement, ChannelDrawStatement,
-    CharacterJumpStatement, CharacterModeStatement, CinematicLookAt, CinematicPlayStatement,
-    Condition, EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage, LoggerStatement,
-    MoveDirection, MoveToDestination, MoveToStatement, ObjectPoolStatement, PoolReleaseStatement,
-    PositionExpr, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind, SceneMaxCollisionShape,
-    SceneMaxVec3, SpritePlayStatement, Statement, UiEaseDirection, UiTargetPath,
+    AudioStatement, CameraAttachStatement, CameraModifierValue, CameraMoveStatement,
+    ChannelDrawStatement, CharacterJumpStatement, CharacterModeStatement, CinematicLookAt,
+    CinematicPlayStatement, Condition, EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage,
+    LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement, ObjectPoolStatement,
+    PoolReleaseStatement, PositionExpr, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
+    SceneMaxCollisionShape, SceneMaxVec3, SpritePlayStatement, Statement, UiEaseDirection,
+    UiTargetPath,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
@@ -222,11 +223,13 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_timed_turns,
                 update_timed_moves,
                 update_timed_jumps,
+                restore_camera_modifier_base,
                 update_timed_camera_moves,
                 update_cinematic_camera,
                 update_fighting_camera,
                 update_third_person_camera,
                 update_attached_camera,
+                update_camera_modifiers,
                 update_sprite_animations,
                 restore_default_idle_animations,
                 play_pending_animations,
@@ -343,6 +346,9 @@ struct SceneMaxCameraSystem {
     third_person: HashMap<String, ThirdPersonCameraRuntime>,
     selected: Option<String>,
     attached: Option<CameraAttachmentRuntime>,
+    modifiers: HashMap<String, RuntimeCameraModifier>,
+    active_modifiers: Vec<ActiveCameraModifier>,
+    modifier_seed_counter: u32,
     cinematic_vars: HashMap<String, CinematicCameraRuntimeRef>,
     cinematic_rigs: HashMap<String, RuntimeCinematicRig>,
     active_cinematic: Option<ActiveCinematicCamera>,
@@ -670,12 +676,18 @@ struct FightingCameraRuntime {
     name: String,
     target_a: String,
     target_b: String,
-    depth: f32,
     height: f32,
     side: f32,
     min_distance: f32,
     max_distance: f32,
+    zoom_factor: f32,
     damping: f32,
+    look_ahead: f32,
+    fov: f32,
+    max_fov: f32,
+    initialized: bool,
+    smoothed_look_at: Vec3,
+    last_side_dir: Vec3,
 }
 
 #[derive(Debug, Clone)]
@@ -695,6 +707,36 @@ struct ThirdPersonCameraRuntime {
 struct CameraAttachmentRuntime {
     target: String,
     offset: Vec3,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeCameraModifier {
+    modifier_type: String,
+    duration: f32,
+    amplitude: f32,
+    frequency: f32,
+    x: f32,
+    y: f32,
+    z: f32,
+    rx: f32,
+    ry: f32,
+    rz: f32,
+    fov: f32,
+}
+
+#[derive(Debug, Clone)]
+struct ActiveCameraModifier {
+    value: RuntimeCameraModifier,
+    seed: f32,
+    elapsed_seconds: f32,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct CameraModifierFrame {
+    position_offset: Vec3,
+    look_at_offset: Vec3,
+    rotation_degrees: Vec3,
+    fov_offset_degrees: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -846,6 +888,13 @@ struct TimedJump {
     duration_seconds: f32,
     start_y: f32,
     height: f32,
+}
+
+#[derive(Debug, Component, Default)]
+struct SceneMaxCameraModifierState {
+    base_transform: Option<Transform>,
+    base_look_at: Option<Vec3>,
+    base_fov_radians: Option<f32>,
 }
 
 #[derive(Debug, Component)]

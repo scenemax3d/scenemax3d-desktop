@@ -491,13 +491,17 @@ pub(super) fn apply_startup_action(
         Statement::Assignment(assignment)
         | Statement::SharedAssignment(assignment)
         | Statement::LocalAssignment(assignment) => {
-            apply_assignment(
-                assignment,
-                vars,
-                Some(transforms_by_name),
-                guards_by_name,
-                None,
-            );
+            if let AssignmentValue::CameraModifier(value) = &assignment.value {
+                register_camera_modifier(camera_system, &assignment.name, value);
+            } else {
+                apply_assignment(
+                    assignment,
+                    vars,
+                    Some(transforms_by_name),
+                    guards_by_name,
+                    None,
+                );
+            }
             ActionSequenceResult::Completed
         }
         Statement::CameraSystemSelect { name } => {
@@ -514,6 +518,18 @@ pub(super) fn apply_startup_action(
         }
         Statement::CameraAttachStop => {
             stop_camera_attachment(camera_system);
+            ActionSequenceResult::Completed
+        }
+        Statement::CameraModifierApply(apply) => {
+            let overrides = resolved_camera_modifier_overrides(
+                &apply.overrides,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            apply_camera_modifier(camera_system, &apply.target, &apply.modifier, &overrides);
             ActionSequenceResult::Completed
         }
         Statement::CameraMove(camera_move) => {
@@ -3348,6 +3364,12 @@ pub(super) fn apply_key_action(
             }
             return ActionSequenceResult::Completed;
         }
+        if let AssignmentValue::CameraModifier(value) = &assignment.value {
+            if let Some(camera_system) = camera_system.as_deref_mut() {
+                register_camera_modifier(camera_system, &assignment.name, value);
+            }
+            return ActionSequenceResult::Completed;
+        }
         let assigned_value = apply_assignment_scoped(
             assignment,
             vars,
@@ -3412,6 +3434,20 @@ pub(super) fn apply_key_action(
     if matches!(action, Statement::CameraAttachStop) {
         if let Some(camera_system) = camera_system {
             stop_camera_attachment(camera_system);
+        }
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::CameraModifierApply(apply) = action {
+        if let Some(camera_system) = camera_system {
+            let overrides = resolved_camera_modifier_overrides(
+                &apply.overrides,
+                vars,
+                scope.as_deref(),
+                guards_by_name,
+                Some(transforms_by_name),
+                Some(collider_bounds),
+            );
+            apply_camera_modifier(camera_system, &apply.target, &apply.modifier, &overrides);
         }
         return ActionSequenceResult::Completed;
     }
@@ -4851,6 +4887,31 @@ fn resolve_draw_value(
         })
         .filter(|value| value.is_finite())
         .unwrap_or(default_value)
+}
+
+fn resolved_camera_modifier_overrides(
+    overrides: &[(String, AssignmentValue)],
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Vec<(String, f32)> {
+    overrides
+        .iter()
+        .filter_map(|(name, value)| {
+            resolve_assignment_value_scoped_with_guards(
+                value,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
+            .filter(|value| value.is_finite())
+            .map(|value| (name.clone(), value))
+        })
+        .collect()
 }
 
 fn resolve_animation_speed_value(

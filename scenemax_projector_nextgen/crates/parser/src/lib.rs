@@ -112,6 +112,7 @@ pub enum Statement {
     CameraChase {
         target: String,
     },
+    CameraModifierApply(CameraModifierApplyStatement),
     CameraAttach(CameraAttachStatement),
     CameraAttachStop,
     Logger(LoggerStatement),
@@ -528,6 +529,7 @@ pub struct AssignmentStatement {
 pub enum AssignmentValue {
     Number(f32),
     Symbol(String),
+    CameraModifier(CameraModifierValue),
     Condition(Box<Condition>),
     RandomInt {
         max: Box<AssignmentValue>,
@@ -549,6 +551,21 @@ pub enum AssignmentValue {
     },
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct CameraModifierValue {
+    pub modifier_type: String,
+    pub duration: f32,
+    pub amplitude: f32,
+    pub frequency: f32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub rx: f32,
+    pub ry: f32,
+    pub rz: f32,
+    pub fov: f32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ArithmeticOperator {
     Add,
@@ -568,7 +585,11 @@ pub struct FightingCameraStatement {
     pub side: f32,
     pub min_distance: f32,
     pub max_distance: f32,
+    pub zoom_factor: f32,
     pub damping: f32,
+    pub look_ahead: f32,
+    pub fov: f32,
+    pub max_fov: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -588,6 +609,13 @@ pub struct ThirdPersonCameraStatement {
 pub struct CameraAttachStatement {
     pub target: String,
     pub offset: SceneMaxVec3,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CameraModifierApplyStatement {
+    pub target: String,
+    pub modifier: String,
+    pub overrides: Vec<(String, AssignmentValue)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1112,7 +1140,8 @@ fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
             AssignmentValue::Number(value) => Condition::NotEqualsNumber { name, value },
             AssignmentValue::Symbol(value) => Condition::NotEqualsSymbol { name, value },
             AssignmentValue::Binary { .. } => return Ok(None),
-            AssignmentValue::Condition(_)
+            AssignmentValue::CameraModifier(_)
+            | AssignmentValue::Condition(_)
             | AssignmentValue::RandomInt { .. }
             | AssignmentValue::Round { .. }
             | AssignmentValue::Distance { .. }
@@ -1130,7 +1159,8 @@ fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
             AssignmentValue::Number(value) => Condition::EqualsNumber { name, value },
             AssignmentValue::Symbol(value) => Condition::EqualsSymbol { name, value },
             AssignmentValue::Binary { .. } => return Ok(None),
-            AssignmentValue::Condition(_)
+            AssignmentValue::CameraModifier(_)
+            | AssignmentValue::Condition(_)
             | AssignmentValue::RandomInt { .. }
             | AssignmentValue::Round { .. }
             | AssignmentValue::Distance { .. }
@@ -1851,6 +1881,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(chase);
     }
 
+    if let Some(modifier_apply) = parse_camera_modifier_apply(line)? {
+        return Ok(Statement::CameraModifierApply(modifier_apply));
+    }
+
     if let Some(attach) = parse_camera_attach(line)? {
         return Ok(attach);
     }
@@ -2490,11 +2524,18 @@ fn parse_fighting_camera(line: &str) -> Result<Option<FightingCameraStatement>, 
         target_a: (*target_a).to_owned(),
         target_b: (*target_b).to_owned(),
         depth: parse_named_argument(args_text, "depth")?.unwrap_or(18.0),
-        height: parse_named_argument(args_text, "height")?.unwrap_or(3.0),
+        height: parse_named_argument(args_text, "height")?.unwrap_or(4.0),
         side: parse_named_argument(args_text, "side")?.unwrap_or(0.0),
-        min_distance: parse_named_argument(args_text, "min distance")?.unwrap_or(8.0),
-        max_distance: parse_named_argument(args_text, "max distance")?.unwrap_or(28.0),
-        damping: parse_named_argument(args_text, "damping")?.unwrap_or(8.0),
+        min_distance: parse_named_argument(args_text, "min distance")?.unwrap_or(10.0),
+        max_distance: parse_named_argument(args_text, "max distance")?.unwrap_or(24.0),
+        zoom_factor: parse_named_argument(args_text, "zoom factor")?
+            .or(parse_named_argument(args_text, "zoom_factor")?)
+            .or(parse_named_argument(args_text, "zoomfactor")?)
+            .unwrap_or(1.15),
+        damping: parse_named_argument(args_text, "damping")?.unwrap_or(7.5),
+        look_ahead: parse_named_argument(args_text, "look ahead")?.unwrap_or(0.0),
+        fov: parse_named_argument(args_text, "fov")?.unwrap_or(50.0),
+        max_fov: parse_named_argument(args_text, "max fov")?.unwrap_or(62.0),
     }))
 }
 
@@ -2678,6 +2719,9 @@ fn parse_assignment_value(raw_value: &str) -> Result<Option<AssignmentValue>, Pa
             }));
         }
     }
+    if let Some(modifier) = parse_camera_modifier_value(raw_value) {
+        return Ok(Some(AssignmentValue::CameraModifier(modifier)));
+    }
     if let Some((left, operator, right)) = split_assignment_binary(raw_value) {
         let Some(left) = parse_assignment_value(left)? else {
             return Ok(None);
@@ -2708,6 +2752,155 @@ fn parse_assignment_value(raw_value: &str) -> Result<Option<AssignmentValue>, Pa
         return Ok(Some(AssignmentValue::Condition(Box::new(condition))));
     }
     Ok(None)
+}
+
+fn parse_camera_modifier_value(raw_value: &str) -> Option<CameraModifierValue> {
+    let modifier_type = raw_value
+        .strip_prefix("camera.system.modifiers.")
+        .or_else(|| raw_value.strip_prefix("Camera.System.Modifiers."))?
+        .trim()
+        .to_ascii_lowercase();
+    create_camera_modifier_preset(&modifier_type)
+}
+
+fn create_camera_modifier_preset(modifier_type: &str) -> Option<CameraModifierValue> {
+    let mut value = CameraModifierValue {
+        modifier_type: modifier_type.to_owned(),
+        duration: 0.3,
+        amplitude: 1.0,
+        frequency: 12.0,
+        x: 0.08,
+        y: 0.08,
+        z: 0.08,
+        rx: 0.8,
+        ry: 0.8,
+        rz: 0.8,
+        fov: 0.4,
+    };
+    match modifier_type {
+        "hit_modifier" => {
+            value.duration = 0.24;
+            value.amplitude = 1.0;
+            value.frequency = 16.0;
+            value.x = 0.18;
+            value.y = 0.08;
+            value.z = 0.12;
+            value.rx = 1.8;
+            value.ry = 2.8;
+            value.rz = 1.0;
+            value.fov = 0.6;
+        }
+        "fall_modifier" => {
+            value.duration = 0.65;
+            value.amplitude = 0.55;
+            value.frequency = 5.0;
+            value.x = 0.04;
+            value.y = 0.16;
+            value.z = 0.06;
+            value.rx = 0.6;
+            value.ry = 0.4;
+            value.rz = 0.5;
+            value.fov = 0.1;
+        }
+        "shooting_modifier" => {
+            value.duration = 0.18;
+            value.amplitude = 0.4;
+            value.frequency = 28.0;
+            value.x = 0.03;
+            value.y = 0.03;
+            value.z = 0.09;
+            value.rx = 1.2;
+            value.ry = 0.4;
+            value.rz = 0.25;
+            value.fov = 0.3;
+        }
+        "accelerating_modifier" => {
+            value.duration = 0.35;
+            value.amplitude = 0.5;
+            value.frequency = 10.0;
+            value.x = 0.04;
+            value.y = 0.03;
+            value.z = 0.18;
+            value.rx = 0.5;
+            value.ry = 0.2;
+            value.rz = 0.15;
+            value.fov = 1.0;
+        }
+        "decelerating_modifier" => {
+            value.duration = 0.32;
+            value.amplitude = 0.45;
+            value.frequency = 9.0;
+            value.x = 0.03;
+            value.y = 0.04;
+            value.z = 0.14;
+            value.rx = 0.65;
+            value.ry = 0.2;
+            value.rz = 0.15;
+            value.fov = 0.5;
+        }
+        "bump_modifier" => {
+            value.duration = 0.28;
+            value.amplitude = 0.75;
+            value.frequency = 14.0;
+            value.x = 0.08;
+            value.y = 0.22;
+            value.z = 0.05;
+            value.rx = 1.0;
+            value.ry = 0.5;
+            value.rz = 0.7;
+            value.fov = 0.2;
+        }
+        "landing_modifier" => {
+            value.duration = 0.32;
+            value.amplitude = 0.9;
+            value.frequency = 13.0;
+            value.x = 0.06;
+            value.y = 0.3;
+            value.z = 0.08;
+            value.rx = 1.5;
+            value.ry = 0.4;
+            value.rz = 0.6;
+            value.fov = 0.4;
+        }
+        "earthquake_modifier" => {
+            value.duration = 1.5;
+            value.amplitude = 1.2;
+            value.frequency = 7.0;
+            value.x = 0.35;
+            value.y = 0.3;
+            value.z = 0.35;
+            value.rx = 1.8;
+            value.ry = 1.5;
+            value.rz = 1.6;
+            value.fov = 1.5;
+        }
+        "explosion_modifier" => {
+            value.duration = 0.55;
+            value.amplitude = 1.1;
+            value.frequency = 18.0;
+            value.x = 0.28;
+            value.y = 0.22;
+            value.z = 0.24;
+            value.rx = 1.9;
+            value.ry = 1.6;
+            value.rz = 1.2;
+            value.fov = 1.2;
+        }
+        "near_miss_modifier" => {
+            value.duration = 0.22;
+            value.amplitude = 0.8;
+            value.frequency = 20.0;
+            value.x = 0.32;
+            value.y = 0.06;
+            value.z = 0.08;
+            value.rx = 0.5;
+            value.ry = 1.8;
+            value.rz = 1.0;
+            value.fov = 0.4;
+        }
+        _ => return None,
+    }
+    Some(value)
 }
 
 pub fn parse_runtime_value(raw_value: &str) -> Result<Option<AssignmentValue>, ParseError> {
@@ -2949,6 +3142,61 @@ fn parse_camera_chase(line: &str) -> Result<Option<Statement>, ParseError> {
         return Ok(None);
     }
     Ok(Some(Statement::CameraChase { target }))
+}
+
+fn parse_camera_modifier_apply(
+    line: &str,
+) -> Result<Option<CameraModifierApplyStatement>, ParseError> {
+    let Some((target, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
+    let rest = rest.trim();
+    if !starts_with_keyword(rest, "apply") {
+        return Ok(None);
+    }
+    let after_apply = rest["apply".len()..].trim_start();
+    let (modifier_text, options_text) = split_once_case_insensitive(after_apply, ":")
+        .map(|(modifier, options)| (modifier.trim(), options.trim()))
+        .unwrap_or((after_apply.trim(), ""));
+    let modifier = modifier_text
+        .split(|value: char| value.is_whitespace() || value == ',')
+        .next()
+        .unwrap_or_default()
+        .trim();
+    if !is_variable_path(&target) || !is_variable_path(modifier) {
+        return Ok(None);
+    }
+
+    let mut overrides = Vec::new();
+    for option in split_top_level_comma(options_text) {
+        let option = option.trim();
+        if option.is_empty() {
+            continue;
+        }
+        let mut parts = option.splitn(2, char::is_whitespace);
+        let name = parts.next().unwrap_or_default().trim().to_ascii_lowercase();
+        let raw_value = parts.next().unwrap_or_default().trim();
+        if !is_camera_modifier_override_name(&name) || raw_value.is_empty() {
+            continue;
+        }
+        let Some(value) = parse_assignment_value(raw_value)? else {
+            return Err(ParseError::InvalidNumber(raw_value.to_owned()));
+        };
+        overrides.push((name, value));
+    }
+
+    Ok(Some(CameraModifierApplyStatement {
+        target,
+        modifier: modifier.to_owned(),
+        overrides,
+    }))
+}
+
+fn is_camera_modifier_override_name(name: &str) -> bool {
+    matches!(
+        name,
+        "duration" | "amplitude" | "frequency" | "x" | "y" | "z" | "rx" | "ry" | "rz" | "fov"
+    )
 }
 
 fn parse_audio_statement(line: &str) -> Result<Option<AudioStatement>, ParseError> {
@@ -7147,7 +7395,11 @@ run tick(score+10) every tick_time+0.25 seconds
                 side: 1.5,
                 min_distance: 10.0,
                 max_distance: 28.0,
+                zoom_factor: 1.15,
                 damping: 8.0,
+                look_ahead: 0.0,
+                fov: 50.0,
+                max_fov: 62.0,
             })]
         );
     }
@@ -7538,6 +7790,40 @@ run tick(score+10) every tick_time+0.25 seconds
     }
 
     #[test]
+    fn parses_camera_modifier_declaration_and_apply() {
+        let program = parse_program(
+            "hit_fx = camera.system.modifiers.hit_modifier\nfight_cam.apply hit_fx : duration 0.35, amplitude power",
+        )
+        .unwrap();
+
+        let Statement::Assignment(assignment) = &program.statements[0] else {
+            panic!("expected camera modifier assignment");
+        };
+        assert_eq!(assignment.name, "hit_fx");
+        assert!(matches!(
+            assignment.value,
+            AssignmentValue::CameraModifier(CameraModifierValue {
+                ref modifier_type,
+                ..
+            }) if modifier_type == "hit_modifier"
+        ));
+        assert_eq!(
+            program.statements[1],
+            Statement::CameraModifierApply(CameraModifierApplyStatement {
+                target: "fight_cam".to_owned(),
+                modifier: "hit_fx".to_owned(),
+                overrides: vec![
+                    ("duration".to_owned(), AssignmentValue::Number(0.35)),
+                    (
+                        "amplitude".to_owned(),
+                        AssignmentValue::Symbol("power".to_owned()),
+                    ),
+                ],
+            })
+        );
+    }
+
+    #[test]
     fn parses_audio_and_preserves_runtime_noop_commands_in_action_flow() {
         let program = parse_program(
             "fx_test = {\n  audio.play \"kick1\"\n  laser_effect.play pos (player1)\n  fight_cam.apply hit_fx : duration 0.35\n  axe_throw_cam.play : target axe, duration 1.5\n  camera.chase player1\n  camera.chase stop\n  player2.HighKick at speed of 2.4\n}",
@@ -7561,9 +7847,11 @@ run tick(score+10) every tick_time+0.25 seconds
                     Statement::NoOp {
                         text: "laser_effect.play pos (player1)".to_owned(),
                     },
-                    Statement::NoOp {
-                        text: "fight_cam.apply hit_fx : duration 0.35".to_owned(),
-                    },
+                    Statement::CameraModifierApply(CameraModifierApplyStatement {
+                        target: "fight_cam".to_owned(),
+                        modifier: "hit_fx".to_owned(),
+                        overrides: vec![("duration".to_owned(), AssignmentValue::Number(0.35),)],
+                    }),
                     Statement::CinematicPlay(CinematicPlayStatement {
                         target: "axe_throw_cam".to_owned(),
                         look_at: Some(CinematicLookAt::Entity("axe".to_owned())),

@@ -119,6 +119,9 @@ pub(super) fn apply_camera_systems(program: &Program, camera_system: &mut SceneM
     camera_system.third_person.clear();
     camera_system.selected = None;
     camera_system.attached = None;
+    camera_system.modifiers.clear();
+    camera_system.active_modifiers.clear();
+    camera_system.modifier_seed_counter = 0;
     camera_system.cinematic_vars.clear();
     camera_system.cinematic_rigs.clear();
     camera_system.active_cinematic = None;
@@ -131,12 +134,18 @@ pub(super) fn apply_camera_systems(program: &Program, camera_system: &mut SceneM
             name: camera.name.clone(),
             target_a: camera.target_a.clone(),
             target_b: camera.target_b.clone(),
-            depth: camera.depth,
             height: camera.height,
             side: camera.side,
             min_distance: camera.min_distance,
             max_distance: camera.max_distance,
+            zoom_factor: camera.zoom_factor,
             damping: camera.damping,
+            look_ahead: camera.look_ahead,
+            fov: camera.fov,
+            max_fov: camera.max_fov,
+            initialized: false,
+            smoothed_look_at: Vec3::ZERO,
+            last_side_dir: Vec3::Z,
         })
     });
     register_cinematic_camera_declarations(&program.statements, camera_system);
@@ -178,6 +187,99 @@ pub(super) fn apply_camera_systems(program: &Program, camera_system: &mut SceneM
             target = %camera.target,
             "registered SceneMax third-person camera"
         );
+    }
+}
+
+pub(super) fn register_camera_modifier(
+    camera_system: &mut SceneMaxCameraSystem,
+    name: &str,
+    value: &CameraModifierValue,
+) {
+    camera_system
+        .modifiers
+        .insert(name.to_owned(), runtime_camera_modifier_from_parser(value));
+    write_runtime_diagnostic_line(format!(
+        "CAMERA:MODIFIER register name={name} type={}",
+        value.modifier_type
+    ));
+}
+
+pub(super) fn apply_camera_modifier(
+    camera_system: &mut SceneMaxCameraSystem,
+    target: &str,
+    modifier: &str,
+    overrides: &[(String, f32)],
+) {
+    if !camera_system_has_target(camera_system, target) {
+        write_runtime_diagnostic_line(format!(
+            "CAMERA:MODIFIER skip target={target} modifier={modifier} reason=unknown_camera_system"
+        ));
+        return;
+    }
+    let Some(base_value) = camera_system.modifiers.get(modifier) else {
+        write_runtime_diagnostic_line(format!(
+            "CAMERA:MODIFIER skip target={target} modifier={modifier} reason=unknown_modifier"
+        ));
+        return;
+    };
+    let mut value = base_value.clone();
+    apply_camera_modifier_overrides(&mut value, overrides);
+    camera_system.modifier_seed_counter += 1;
+    let seed = camera_system.modifier_seed_counter as f32 * 0.731;
+    camera_system.active_modifiers.push(ActiveCameraModifier {
+        value,
+        seed,
+        elapsed_seconds: 0.0,
+    });
+    write_runtime_diagnostic_line(format!(
+        "CAMERA:MODIFIER apply target={target} modifier={modifier} active={}",
+        camera_system.active_modifiers.len()
+    ));
+}
+
+fn runtime_camera_modifier_from_parser(value: &CameraModifierValue) -> RuntimeCameraModifier {
+    RuntimeCameraModifier {
+        modifier_type: value.modifier_type.clone(),
+        duration: value.duration,
+        amplitude: value.amplitude,
+        frequency: value.frequency,
+        x: value.x,
+        y: value.y,
+        z: value.z,
+        rx: value.rx,
+        ry: value.ry,
+        rz: value.rz,
+        fov: value.fov,
+    }
+}
+
+fn camera_system_has_target(camera_system: &SceneMaxCameraSystem, target: &str) -> bool {
+    camera_system
+        .fighting
+        .as_ref()
+        .is_some_and(|camera| camera.name == target)
+        || camera_system.third_person.contains_key(target)
+        || camera_system
+            .selected
+            .as_ref()
+            .is_some_and(|selected| selected == target)
+}
+
+fn apply_camera_modifier_overrides(value: &mut RuntimeCameraModifier, overrides: &[(String, f32)]) {
+    for (name, override_value) in overrides {
+        match name.as_str() {
+            "duration" => value.duration = *override_value,
+            "amplitude" => value.amplitude = *override_value,
+            "frequency" => value.frequency = *override_value,
+            "x" => value.x = *override_value,
+            "y" => value.y = *override_value,
+            "z" => value.z = *override_value,
+            "rx" => value.rx = *override_value,
+            "ry" => value.ry = *override_value,
+            "rz" => value.rz = *override_value,
+            "fov" => value.fov = *override_value,
+            _ => {}
+        }
     }
 }
 
@@ -764,7 +866,10 @@ pub(super) fn update_cinematic_camera(
     startup_program: Res<SceneMaxStartupProgram>,
     scene_entities: Query<(Entity, &SceneMaxEntity, &Transform)>,
     bone_queries: SceneMaxBoneQueries,
-    mut cameras: Query<&mut Transform, (With<Camera3d>, Without<SceneMaxEntity>)>,
+    mut cameras: Query<
+        (&mut Transform, &mut SceneMaxCameraModifierState),
+        (With<Camera3d>, Without<SceneMaxEntity>),
+    >,
 ) {
     let Some(mut active) = camera_system.active_cinematic.take() else {
         return;
@@ -778,11 +883,12 @@ pub(super) fn update_cinematic_camera(
 
     let delta = time.delta_secs();
     active.elapsed_seconds = (active.elapsed_seconds + delta).min(active.duration_seconds);
-    if let Ok(mut camera) = cameras.single_mut()
+    if let Ok((mut camera, mut modifier_state)) = cameras.single_mut()
         && let Some((camera_pos, look_at)) = cinematic_camera_frame(&active, &transforms_by_name)
     {
         camera.translation = camera_pos;
         camera.look_at(look_at, Vec3::Y);
+        modifier_state.base_look_at = Some(look_at);
     }
 
     if active.elapsed_seconds < active.duration_seconds - 0.000001 {
@@ -1138,18 +1244,25 @@ fn quat_json(value: Option<&serde_json::Value>, fallback: Quat) -> Quat {
 
 pub(super) fn update_fighting_camera(
     time: Res<Time>,
-    camera_system: Res<SceneMaxCameraSystem>,
+    mut camera_system: ResMut<SceneMaxCameraSystem>,
     entities: Query<(&SceneMaxEntity, &Transform)>,
-    mut cameras: Query<&mut Transform, (With<Camera3d>, Without<SceneMaxEntity>)>,
+    mut cameras: Query<
+        (
+            &mut Transform,
+            &mut SceneMaxCameraModifierState,
+            Option<&mut Projection>,
+        ),
+        (With<Camera3d>, Without<SceneMaxEntity>),
+    >,
 ) {
     if camera_system.active_cinematic.is_some() {
         return;
     }
-    let Some(camera_settings) = camera_system.fighting.as_ref() else {
+    let selected = camera_system.selected.clone();
+    let Some(camera_settings) = camera_system.fighting.as_mut() else {
         return;
     };
-    if camera_system
-        .selected
+    if selected
         .as_ref()
         .is_some_and(|selected| selected != &camera_settings.name)
     {
@@ -1169,41 +1282,90 @@ pub(super) fn update_fighting_camera(
     let (Some(target_a), Some(target_b)) = (target_a, target_b) else {
         return;
     };
-    let Ok(mut camera) = cameras.single_mut() else {
+    let Ok((mut camera, mut modifier_state, projection)) = cameras.single_mut() else {
         return;
     };
+    let mut projection = projection;
 
     let midpoint = (target_a.translation + target_b.translation) * 0.5;
     let mut fighter_axis = target_b.translation - target_a.translation;
     fighter_axis.y = 0.0;
     if fighter_axis.length_squared() <= f32::EPSILON {
-        fighter_axis = Vec3::Z;
+        fighter_axis = camera_settings.last_side_dir.cross(Vec3::Y);
     }
     fighter_axis = fighter_axis.normalize();
 
-    let view_axis = Vec3::new(fighter_axis.z, 0.0, -fighter_axis.x).normalize();
-    let fighter_distance = target_a
-        .translation
-        .distance(target_b.translation)
-        .clamp(camera_settings.min_distance, camera_settings.max_distance);
-    let desired_depth = camera_settings.depth.max(fighter_distance * 0.65);
-    let look_target = midpoint + Vec3::Y * camera_settings.height.max(1.0) * 0.35;
-    let desired_translation = midpoint
-        + view_axis * desired_depth
-        + fighter_axis * camera_settings.side
-        + Vec3::Y * camera_settings.height;
+    let mut side_dir = fighter_axis.cross(Vec3::Y);
+    if side_dir.length_squared() <= f32::EPSILON {
+        side_dir = Vec3::Z;
+    }
+    side_dir = side_dir.normalize();
+    if side_dir.dot(camera_settings.last_side_dir) < 0.0 {
+        side_dir = -side_dir;
+    }
+    camera_settings.last_side_dir = side_dir;
 
-    let damping = camera_settings.damping.max(0.001);
+    let planar_distance = (target_b.translation - target_a.translation)
+        .with_y(0.0)
+        .length()
+        .max(1.0);
+    let desired_depth = (planar_distance * camera_settings.zoom_factor)
+        .clamp(camera_settings.min_distance, camera_settings.max_distance);
+    let mut look_target = midpoint + Vec3::Y * camera_settings.height * 0.35;
+    if camera_settings.look_ahead != 0.0 {
+        look_target += fighter_axis * camera_settings.look_ahead;
+    }
+
+    let damping = camera_settings.damping.max(0.01);
     let blend = 1.0 - (-damping * time.delta_secs()).exp();
-    camera.translation = camera.translation.lerp(desired_translation, blend);
-    camera.look_at(look_target, Vec3::Y);
+    let initialized_this_frame = !camera_settings.initialized;
+    if initialized_this_frame {
+        camera_settings.initialized = true;
+        camera_settings.smoothed_look_at = look_target;
+    } else {
+        camera_settings.smoothed_look_at =
+            camera_settings.smoothed_look_at.lerp(look_target, blend);
+    }
+
+    let desired_translation = camera_settings.smoothed_look_at
+        + Vec3::Y * camera_settings.height
+        + side_dir * desired_depth
+        + fighter_axis * camera_settings.side;
+    camera.translation = if initialized_this_frame {
+        desired_translation
+    } else {
+        camera.translation.lerp(desired_translation, blend)
+    };
+    camera.look_at(camera_settings.smoothed_look_at, Vec3::Y);
+    modifier_state.base_look_at = Some(camera_settings.smoothed_look_at);
+
+    let distance_factor = ((planar_distance - camera_settings.min_distance)
+        / (camera_settings.max_distance - camera_settings.min_distance).max(0.001))
+    .clamp(0.0, 1.0);
+    let target_fov = camera_settings
+        .fov
+        .lerp(camera_settings.max_fov, distance_factor);
+    let current_fov = projection
+        .as_deref_mut()
+        .and_then(perspective_fov_radians)
+        .map(f32::to_degrees)
+        .unwrap_or(camera_settings.fov);
+    let smoothed_fov = if initialized_this_frame {
+        target_fov
+    } else {
+        current_fov.lerp(target_fov, blend)
+    };
+    set_perspective_fov_degrees(projection, smoothed_fov);
 }
 
 pub(super) fn update_third_person_camera(
     time: Res<Time>,
     camera_system: Res<SceneMaxCameraSystem>,
     entities: Query<(&SceneMaxEntity, &Transform)>,
-    mut cameras: Query<&mut Transform, (With<Camera3d>, Without<SceneMaxEntity>)>,
+    mut cameras: Query<
+        (&mut Transform, &mut SceneMaxCameraModifierState),
+        (With<Camera3d>, Without<SceneMaxEntity>),
+    >,
 ) {
     if camera_system.active_cinematic.is_some() {
         return;
@@ -1220,7 +1382,7 @@ pub(super) fn update_third_person_camera(
     }) else {
         return;
     };
-    let Ok(mut camera) = cameras.single_mut() else {
+    let Ok((mut camera, mut modifier_state)) = cameras.single_mut() else {
         return;
     };
 
@@ -1237,6 +1399,7 @@ pub(super) fn update_third_person_camera(
     let blend = 1.0 - (-damping * time.delta_secs()).exp();
     camera.translation = camera.translation.lerp(desired_translation, blend);
     camera.look_at(look_target, Vec3::Y);
+    modifier_state.base_look_at = Some(look_target);
 
     let _ = (camera_settings.fov, camera_settings.max_fov);
 }
@@ -1244,7 +1407,10 @@ pub(super) fn update_third_person_camera(
 pub(super) fn update_attached_camera(
     camera_system: Res<SceneMaxCameraSystem>,
     entities: Query<(&SceneMaxEntity, &Transform)>,
-    mut cameras: Query<&mut Transform, (With<Camera3d>, Without<SceneMaxEntity>)>,
+    mut cameras: Query<
+        (&mut Transform, &mut SceneMaxCameraModifierState),
+        (With<Camera3d>, Without<SceneMaxEntity>),
+    >,
 ) {
     if camera_system.active_cinematic.is_some() {
         return;
@@ -1258,16 +1424,242 @@ pub(super) fn update_attached_camera(
     else {
         return;
     };
-    let Ok(mut camera) = cameras.single_mut() else {
+    let Ok((mut camera, mut modifier_state)) = cameras.single_mut() else {
         return;
     };
 
     let desired_translation = target.translation + target.rotation * attachment.offset;
+    let look_target = target.translation + Vec3::Y * attachment.offset.y.max(1.0) * 0.35;
     camera.translation = desired_translation;
-    camera.look_at(
-        target.translation + Vec3::Y * attachment.offset.y.max(1.0) * 0.35,
-        Vec3::Y,
+    camera.look_at(look_target, Vec3::Y);
+    modifier_state.base_look_at = Some(look_target);
+}
+
+pub(super) fn restore_camera_modifier_base(
+    mut cameras: Query<
+        (
+            &mut Transform,
+            &mut SceneMaxCameraModifierState,
+            Option<&mut Projection>,
+        ),
+        (With<Camera3d>, Without<SceneMaxEntity>),
+    >,
+) {
+    let Ok((mut transform, mut modifier_state, projection)) = cameras.single_mut() else {
+        return;
+    };
+    if let Some(base_transform) = modifier_state.base_transform.take() {
+        *transform = base_transform;
+    }
+    if let Some(base_fov) = modifier_state.base_fov_radians.take()
+        && let Some(mut projection) = projection
+        && let Projection::Perspective(perspective) = projection.as_mut()
+    {
+        perspective.fov = base_fov;
+    }
+}
+
+// Java modifier offsets are authored for the JME camera/world scale; convert them to Bevy's
+// noticeably more sensitive camera response at the final application point.
+const CAMERA_MODIFIER_POSITION_SCALE: f32 = 0.28;
+const CAMERA_MODIFIER_LOOK_AT_SCALE: f32 = 0.18;
+const CAMERA_MODIFIER_ROTATION_SCALE: f32 = 0.22;
+const CAMERA_MODIFIER_FOV_SCALE: f32 = 0.35;
+
+pub(super) fn update_camera_modifiers(
+    time: Res<Time>,
+    mut camera_system: ResMut<SceneMaxCameraSystem>,
+    mut cameras: Query<
+        (
+            &mut Transform,
+            &mut SceneMaxCameraModifierState,
+            Option<&mut Projection>,
+        ),
+        (With<Camera3d>, Without<SceneMaxEntity>),
+    >,
+) {
+    let Ok((mut transform, mut modifier_state, projection)) = cameras.single_mut() else {
+        return;
+    };
+    if camera_system.active_modifiers.is_empty() {
+        return;
+    }
+
+    let base_transform = *transform;
+    let mut projection = projection;
+    let base_fov = projection.as_deref_mut().and_then(perspective_fov_radians);
+    modifier_state.base_transform = Some(base_transform);
+    modifier_state.base_fov_radians = base_fov;
+
+    let frame = update_camera_modifier_frame(
+        time.delta_secs(),
+        &base_transform,
+        &mut camera_system.active_modifiers,
     );
+    let forward = base_transform.forward().as_vec3();
+    let base_look_at = modifier_state
+        .base_look_at
+        .unwrap_or(base_transform.translation + forward * 16.0);
+    let mut modified = base_transform;
+    modified.translation =
+        base_transform.translation + frame.position_offset * CAMERA_MODIFIER_POSITION_SCALE;
+    let look_target = base_look_at + frame.look_at_offset * CAMERA_MODIFIER_LOOK_AT_SCALE;
+    if modified.translation.distance_squared(look_target) > 0.000001 {
+        modified.look_at(look_target, Vec3::Y);
+    }
+    modified.rotation *= Quat::from_euler(
+        EulerRot::XYZ,
+        (frame.rotation_degrees.x * CAMERA_MODIFIER_ROTATION_SCALE).to_radians(),
+        (frame.rotation_degrees.y * CAMERA_MODIFIER_ROTATION_SCALE).to_radians(),
+        (frame.rotation_degrees.z * CAMERA_MODIFIER_ROTATION_SCALE).to_radians(),
+    );
+    *transform = modified;
+
+    if let (Some(base_fov), Some(mut projection)) = (base_fov, projection)
+        && let Projection::Perspective(perspective) = projection.as_mut()
+    {
+        let fov = base_fov + (frame.fov_offset_degrees * CAMERA_MODIFIER_FOV_SCALE).to_radians();
+        perspective.fov = fov.clamp(5.0_f32.to_radians(), 130.0_f32.to_radians());
+    }
+}
+
+fn perspective_fov_radians(projection: &mut Projection) -> Option<f32> {
+    match projection {
+        Projection::Perspective(perspective) => Some(perspective.fov),
+        _ => None,
+    }
+}
+
+fn set_perspective_fov_degrees(projection: Option<Mut<Projection>>, fov_degrees: f32) {
+    let Some(mut projection) = projection else {
+        return;
+    };
+    let Projection::Perspective(perspective) = projection.as_mut() else {
+        return;
+    };
+    perspective.fov = fov_degrees
+        .to_radians()
+        .clamp(5.0_f32.to_radians(), 130.0_f32.to_radians());
+}
+
+fn update_camera_modifier_frame(
+    delta_seconds: f32,
+    base_transform: &Transform,
+    active_modifiers: &mut Vec<ActiveCameraModifier>,
+) -> CameraModifierFrame {
+    let mut frame = CameraModifierFrame::default();
+    let forward = normalized_or(base_transform.forward().as_vec3(), Vec3::Z);
+    let right = normalized_or(forward.cross(Vec3::Y), Vec3::X);
+    let up = Vec3::Y;
+
+    let mut index = 0;
+    while index < active_modifiers.len() {
+        let modifier = &mut active_modifiers[index];
+        modifier.elapsed_seconds += delta_seconds;
+        let duration = modifier.value.duration.max(0.01);
+        let progress = (modifier.elapsed_seconds / duration).clamp(0.0, 1.0);
+        let envelope = camera_modifier_envelope(&modifier.value.modifier_type, progress);
+        if progress >= 1.0 && envelope <= 0.0001 {
+            active_modifiers.remove(index);
+            continue;
+        }
+
+        let amplitude = modifier.value.amplitude * envelope;
+        let frequency = modifier.value.frequency.max(0.1);
+        let time = modifier.elapsed_seconds;
+        let nx = camera_modifier_signal(time, frequency, modifier.seed + 0.11);
+        let ny = camera_modifier_signal(time, frequency * 1.09, modifier.seed + 1.33);
+        let nz = camera_modifier_signal(time, frequency * 0.93, modifier.seed + 2.57);
+
+        apply_camera_modifier_directional_bias(
+            &modifier.value.modifier_type,
+            progress,
+            amplitude,
+            &mut frame,
+            forward,
+            right,
+            up,
+        );
+
+        frame.position_offset += right * nx * modifier.value.x * amplitude;
+        frame.position_offset += up * ny * modifier.value.y * amplitude;
+        frame.position_offset += forward * nz * modifier.value.z * amplitude;
+        frame.look_at_offset += right * nx * modifier.value.x * amplitude * 0.35;
+        frame.look_at_offset += up * ny * modifier.value.y * amplitude * 0.35;
+        frame.rotation_degrees.x += ny * modifier.value.rx * amplitude;
+        frame.rotation_degrees.y += nx * modifier.value.ry * amplitude;
+        frame.rotation_degrees.z += nz * modifier.value.rz * amplitude;
+        frame.fov_offset_degrees += envelope * modifier.value.fov * amplitude;
+        index += 1;
+    }
+
+    frame
+}
+
+fn normalized_or(value: Vec3, fallback: Vec3) -> Vec3 {
+    if value.length_squared() <= f32::EPSILON {
+        fallback
+    } else {
+        value.normalize()
+    }
+}
+
+fn camera_modifier_signal(time: f32, frequency: f32, seed: f32) -> f32 {
+    (((time + seed) * frequency * std::f32::consts::TAU).sin()
+        + 0.5 * ((time * 1.73 + seed * 1.91) * frequency * std::f32::consts::TAU).sin()
+        + 0.25 * ((time * 0.63 + seed * 0.47) * frequency * std::f32::consts::TAU).cos())
+        / 1.75
+}
+
+fn camera_modifier_envelope(modifier_type: &str, progress: f32) -> f32 {
+    let p = progress.clamp(0.0, 1.0);
+    match modifier_type {
+        "earthquake_modifier" => {
+            (0.7 + 0.3 * ((1.0 - p) * std::f32::consts::PI).sin()) * (1.0 - p).powf(0.6)
+        }
+        "fall_modifier" | "accelerating_modifier" | "decelerating_modifier" => {
+            (p * std::f32::consts::PI).sin()
+        }
+        "shooting_modifier" => (1.0 - p).powf(1.8),
+        _ => (1.0 - p).powf(1.25) * (0.55 + 0.45 * (p * std::f32::consts::PI).sin()),
+    }
+}
+
+fn apply_camera_modifier_directional_bias(
+    modifier_type: &str,
+    progress: f32,
+    amplitude: f32,
+    frame: &mut CameraModifierFrame,
+    forward: Vec3,
+    right: Vec3,
+    up: Vec3,
+) {
+    let impulse = amplitude * (1.0 - progress);
+    match modifier_type {
+        "hit_modifier" | "near_miss_modifier" => {
+            frame.position_offset += right * 0.12 * impulse;
+            frame.look_at_offset += right * 0.04 * impulse;
+        }
+        "fall_modifier" => {
+            frame.position_offset += up * -0.08 * amplitude;
+        }
+        "shooting_modifier" => {
+            frame.position_offset += forward * -0.05 * impulse;
+        }
+        "accelerating_modifier" => {
+            frame.position_offset += forward * -0.08 * amplitude;
+        }
+        "decelerating_modifier" => {
+            frame.position_offset += forward * 0.06 * amplitude;
+        }
+        "bump_modifier" | "landing_modifier" => {
+            frame.position_offset += up * -0.1 * impulse;
+        }
+        "explosion_modifier" => {
+            frame.position_offset += forward * -0.12 * impulse;
+        }
+        _ => {}
+    }
 }
 
 pub(super) fn setup_camera_and_lights(
@@ -1333,6 +1725,7 @@ pub(super) fn setup_camera_and_lights(
     commands.spawn((
         Camera3d::default(),
         IsDefaultUiCamera,
+        SceneMaxCameraModifierState::default(),
         startup_program
             .0
             .as_ref()

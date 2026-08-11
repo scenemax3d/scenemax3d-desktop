@@ -224,6 +224,19 @@ pub fn substitute_statement(
         Statement::CameraChase { target } => Statement::CameraChase {
             target: substitute_path(target, bindings),
         },
+        Statement::CameraModifierApply(apply) => {
+            Statement::CameraModifierApply(scenemax_parser::CameraModifierApplyStatement {
+                target: substitute_path(&apply.target, bindings),
+                modifier: substitute_path(&apply.modifier, bindings),
+                overrides: apply
+                    .overrides
+                    .iter()
+                    .map(|(name, value)| {
+                        (name.clone(), substitute_assignment_value(value, bindings))
+                    })
+                    .collect(),
+            })
+        }
         Statement::CameraAttach(attach) => Statement::CameraAttach(CameraAttachStatement {
             target: substitute_path(&attach.target, bindings),
             offset: attach.offset,
@@ -602,6 +615,7 @@ pub fn substitute_assignment_value(
 ) -> AssignmentValue {
     match value {
         AssignmentValue::Number(value) => AssignmentValue::Number(*value),
+        AssignmentValue::CameraModifier(value) => AssignmentValue::CameraModifier(value.clone()),
         AssignmentValue::Condition(condition) => {
             AssignmentValue::Condition(Box::new(substitute_condition(condition, bindings)))
         }
