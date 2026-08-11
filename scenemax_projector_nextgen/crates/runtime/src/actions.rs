@@ -2361,6 +2361,8 @@ pub(super) fn apply_runtime_model_decl(
     resource: &str,
     options: &EntityOptions,
     transforms_by_name: &mut HashMap<String, Transform>,
+    vars: &SceneMaxVars,
+    guards_by_name: &HashMap<String, Condition>,
     runtime_assets: &SceneMaxRuntimeAssets,
     collider_bounds: &mut SceneMaxColliderBounds,
     commands: &mut Commands,
@@ -2378,7 +2380,13 @@ pub(super) fn apply_runtime_model_decl(
         )>,
     )>,
 ) {
-    let transform = primitive_transform_from_options(options);
+    let transform = primitive_transform_from_options_resolved(
+        options,
+        vars,
+        guards_by_name,
+        Some(transforms_by_name),
+        Some(collider_bounds),
+    );
     for (entity, scene_entity, mut existing_transform, _, _, visibility, _, _) in
         &mut scene_entities.p1()
     {
@@ -2500,6 +2508,8 @@ pub(super) fn apply_key_action(
             resource,
             options,
             transforms_by_name,
+            vars,
+            guards_by_name,
             runtime_assets,
             collider_bounds,
             commands,

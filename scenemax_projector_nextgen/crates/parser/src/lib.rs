@@ -156,9 +156,10 @@ pub enum Statement {
     },
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct EntityOptions {
     pub position: Option<SceneMaxVec3>,
+    pub position_value: Option<PositionValue>,
     pub rotation_degrees: Option<SceneMaxVec3>,
     pub scale: Option<SceneMaxVec3>,
     pub size: Option<SceneMaxVec3>,
@@ -166,6 +167,14 @@ pub struct EntityOptions {
     pub collider: bool,
     pub sprite: bool,
     pub radius: Option<f32>,
+    pub radius_top: Option<f32>,
+    pub radius_bottom: Option<f32>,
+    pub inner_radius_top: Option<f32>,
+    pub inner_radius_bottom: Option<f32>,
+    pub height: Option<f32>,
+    pub steps: Option<usize>,
+    pub thickness: Option<f32>,
+    pub segments: Option<usize>,
     pub body_kind: Option<SceneMaxBodyKind>,
     pub collision_shape: Option<SceneMaxCollisionShape>,
 }
@@ -3977,17 +3986,131 @@ fn split_resource_and_options(rest: &str) -> (&str, &str) {
 }
 
 fn normalize_resource(resource: &str) -> String {
-    let mut parts = resource.split_whitespace().filter(|part| {
-        !part.eq_ignore_ascii_case("dynamic")
-            && !part.eq_ignore_ascii_case("static")
-            && !part.eq_ignore_ascii_case("collider")
-    });
-    parts.next().unwrap_or(resource.trim()).trim().to_owned()
+    let parts = resource
+        .split_whitespace()
+        .filter(|part| {
+            !part.eq_ignore_ascii_case("dynamic")
+                && !part.eq_ignore_ascii_case("static")
+                && !part.eq_ignore_ascii_case("collider")
+        })
+        .collect::<Vec<_>>();
+    let normalized = parts.join(" ");
+    if is_java_primitive_resource(&normalized) {
+        return normalized;
+    }
+    parts.first().unwrap_or(&resource.trim()).trim().to_owned()
+}
+
+fn is_java_primitive_resource(resource: &str) -> bool {
+    matches!(
+        resource.to_ascii_lowercase().as_str(),
+        "sphere"
+            | "box"
+            | "cylinder"
+            | "hollow cylinder"
+            | "quad"
+            | "wedge"
+            | "cone"
+            | "stairs"
+            | "arch"
+    )
 }
 
 fn is_deferred_or_non_model_resource(_raw_resource: &str, resource: &str) -> bool {
     let resource_lower = resource.to_ascii_lowercase();
     resource_lower.starts_with("object.pool")
+}
+
+fn parse_size_after(text: &str) -> Result<Option<SceneMaxVec3>, ParseError> {
+    let Some(values) = parse_float_list_after(text, "size")? else {
+        return Ok(None);
+    };
+    match values.as_slice() {
+        [x, y] => Ok(Some(SceneMaxVec3 {
+            x: *x,
+            y: *y,
+            z: 1.0,
+        })),
+        [x, y, z] => Ok(Some(SceneMaxVec3 {
+            x: *x,
+            y: *y,
+            z: *z,
+        })),
+        _ => Err(ParseError::InvalidNumber(
+            values
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        )),
+    }
+}
+
+fn parse_float_pair_after(text: &str, name: &str) -> Result<Option<(f32, f32)>, ParseError> {
+    let Some(values) = parse_float_list_after(text, name)? else {
+        return Ok(None);
+    };
+    match values.as_slice() {
+        [left, right] => Ok(Some((*left, *right))),
+        _ => Err(ParseError::InvalidNumber(
+            values
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        )),
+    }
+}
+
+fn parse_float_list_after(text: &str, name: &str) -> Result<Option<Vec<f32>>, ParseError> {
+    let lower = text.to_ascii_lowercase();
+    let needle = name.to_ascii_lowercase();
+    let Some(after_open) = lower.match_indices(&needle).find_map(|(index, _)| {
+        let after_name = &text[index + name.len()..];
+        after_name.trim_start().strip_prefix('(')
+    }) else {
+        return Ok(None);
+    };
+    let Some(close_index) = after_open.find(')') else {
+        return Err(ParseError::InvalidNumber(name.to_owned()));
+    };
+    let raw_values = &after_open[..close_index];
+    raw_values
+        .split(',')
+        .map(|raw| {
+            let value = raw.trim();
+            value
+                .parse::<f32>()
+                .map_err(|_| ParseError::InvalidNumber(value.to_owned()))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
+fn parse_usize_after(text: &str, name: &str) -> Option<usize> {
+    parse_scalar_after(text, name)
+        .ok()
+        .flatten()
+        .map(|value| value.round().max(1.0) as usize)
+}
+
+fn parse_inner_radius_pair_after(text: &str) -> Result<Option<(f32, f32)>, ParseError> {
+    let lower = text.to_ascii_lowercase();
+    let Some(index) = lower.find("inner radius") else {
+        return Ok(None);
+    };
+    parse_float_pair_after(&text[index + "inner ".len()..], "radius")
+}
+
+fn parse_outer_radius_pair_after(text: &str) -> Result<Option<(f32, f32)>, ParseError> {
+    let lower = text.to_ascii_lowercase();
+    let Some(index) = lower.find("radius") else {
+        return Ok(None);
+    };
+    if lower[..index].ends_with("inner ") {
+        return Ok(None);
+    }
+    parse_float_pair_after(&text[index..], "radius")
 }
 
 fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseError> {
@@ -3996,18 +4119,77 @@ fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseErr
         y: value,
         z: value,
     });
+    let outer_radius = parse_outer_radius_pair_after(text)?;
+    let inner_radius = parse_inner_radius_pair_after(text)?;
+    let position = parse_vec3_after(text, "pos").ok();
+    let position_value = parse_position_value_after(text, "pos")?;
     Ok(EntityOptions {
-        position: parse_vec3_after(text, "pos").ok(),
+        position,
+        position_value,
         rotation_degrees: parse_vec3_after(text, "rotate").ok(),
         scale,
-        size: parse_vec3_after(text, "size").ok(),
+        size: parse_size_after(text)?,
         hidden: contains_keyword(text, "hidden"),
         collider: contains_keyword(raw, "collider"),
         radius: parse_scalar_after(text, "radius")?,
+        radius_top: outer_radius.map(|value| value.0),
+        radius_bottom: outer_radius.map(|value| value.1),
+        inner_radius_top: inner_radius.map(|value| value.0),
+        inner_radius_bottom: inner_radius.map(|value| value.1),
+        height: parse_scalar_after(text, "height")?,
+        steps: parse_usize_after(text, "steps"),
+        thickness: parse_scalar_after(text, "thickness")?,
+        segments: parse_usize_after(text, "segments"),
         body_kind: parse_body_kind(raw),
         collision_shape: parse_collision_shape(raw),
         sprite: contains_keyword(raw, "sprite"),
     })
+}
+
+fn parse_position_value_after(text: &str, name: &str) -> Result<Option<PositionValue>, ParseError> {
+    let lower = text.to_ascii_lowercase();
+    let Some(after_open) =
+        lower
+            .match_indices(&name.to_ascii_lowercase())
+            .find_map(|(index, _)| {
+                let after_name = &text[index + name.len()..];
+                after_name.trim_start().strip_prefix('(')
+            })
+    else {
+        return Ok(None);
+    };
+    let Some(close_index) = matching_close_paren_index(after_open) else {
+        return Ok(None);
+    };
+    let raw_values = &after_open[..close_index];
+    let parts = split_top_level_comma(raw_values);
+    if parts.len() != 3 {
+        return Ok(None);
+    }
+    let values = parts
+        .into_iter()
+        .map(parse_position_expr)
+        .collect::<Result<Vec<_>, _>>()?;
+    if values
+        .iter()
+        .all(|value| matches!(value, PositionExpr::Number(_)))
+    {
+        return Ok(None);
+    }
+    Ok(Some(PositionValue::Coordinates(values)))
+}
+
+fn matching_close_paren_index(text_after_open: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, value) in text_after_open.char_indices() {
+        match value {
+            '(' => depth += 1,
+            ')' if depth == 0 => return Some(index),
+            ')' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn parse_body_kind(text: &str) -> Option<SceneMaxBodyKind> {
@@ -4703,6 +4885,7 @@ mod tests {
                     radius: None,
                     body_kind: Some(SceneMaxBodyKind::Kinematic),
                     collision_shape: None,
+                    ..Default::default()
                 },
             }]
         );
@@ -4736,6 +4919,7 @@ mod tests {
                         radius: None,
                         body_kind: Some(SceneMaxBodyKind::Static),
                         collision_shape: Some(SceneMaxCollisionShape::Box),
+                        ..Default::default()
                     },
                 },
                 Statement::ModelDecl {
@@ -4860,6 +5044,7 @@ mod tests {
                         radius: None,
                         body_kind: Some(SceneMaxBodyKind::Static),
                         collision_shape: None,
+                        ..Default::default()
                     },
                 },
                 Statement::Visibility {
@@ -4902,6 +5087,88 @@ mod tests {
                 async_run: false,
             })]
         );
+    }
+
+    #[test]
+    fn parses_java_projector_primitives_and_quad_size() {
+        let program = parse_program(
+            "q => quad : size (4,3)\n\
+             cyl => cylinder : radius (0.5,1), height 2.5\n\
+             hc => hollow cylinder : radius (1.2,1), inner radius (0.4,0.3), height 2\n\
+             w => wedge : size (2,3,4)\n\
+             co => cone : radius (0,1), height 2\n\
+             st => stairs : size (2,0.25,0.4), steps 7\n\
+             ar => arch : size (3,4,0.5), thickness 0.4, segments 10",
+        )
+        .unwrap();
+
+        assert_eq!(program.statements.len(), 7);
+        assert!(matches!(
+            &program.statements[0],
+            Statement::ModelDecl { resource, options, .. }
+                if resource == "quad"
+                    && options.size == Some(SceneMaxVec3 { x: 4.0, y: 3.0, z: 1.0 })
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::ModelDecl { resource, options, .. }
+                if resource == "cylinder"
+                    && options.radius_top == Some(0.5)
+                    && options.radius_bottom == Some(1.0)
+                    && options.height == Some(2.5)
+        ));
+        assert!(matches!(
+            &program.statements[2],
+            Statement::ModelDecl { resource, options, .. }
+                if resource == "hollow cylinder"
+                    && options.radius_top == Some(1.2)
+                    && options.radius_bottom == Some(1.0)
+                    && options.inner_radius_top == Some(0.4)
+                    && options.inner_radius_bottom == Some(0.3)
+                    && options.height == Some(2.0)
+        ));
+        assert!(matches!(
+            &program.statements[3],
+            Statement::ModelDecl { resource, options, .. }
+                if resource == "wedge"
+                    && options.size == Some(SceneMaxVec3 { x: 2.0, y: 3.0, z: 4.0 })
+        ));
+        assert!(matches!(
+            &program.statements[4],
+            Statement::ModelDecl { resource, options, .. }
+                if resource == "cone"
+                    && options.radius_top == Some(0.0)
+                    && options.radius_bottom == Some(1.0)
+                    && options.height == Some(2.0)
+        ));
+        assert!(matches!(
+            &program.statements[5],
+            Statement::ModelDecl { resource, options, .. }
+                if resource == "stairs" && options.steps == Some(7)
+        ));
+        assert!(matches!(
+            &program.statements[6],
+            Statement::ModelDecl { resource, options, .. }
+                if resource == "arch"
+                    && options.thickness == Some(0.4)
+                    && options.segments == Some(10)
+        ));
+    }
+
+    #[test]
+    fn parses_expression_position_on_model_declaration() {
+        let program =
+            parse_program("box_test => box : pos (rnd(20)-10, rnd(4)+1, rnd(20)-10)").unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::ModelDecl { options, .. }
+                if options.position.is_none()
+                    && matches!(
+                        options.position_value,
+                        Some(PositionValue::Coordinates(ref values)) if values.len() == 3
+                    )
+        ));
     }
 
     #[test]

@@ -11,7 +11,9 @@ import javax.swing.*;
 import java.io.*;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -418,14 +420,22 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
 
             List<String> command = new ArrayList<>();
             File processDirectory;
-            if (debugExe.isFile()) {
+            File cargoExe = resolveCargoExecutable();
+            boolean useCargo = cargoExe.isFile() && isNextGenExecutableStale(nextGenRoot, debugExe, releaseExe);
+            if (useCargo) {
+                command.add(cargoExe.getAbsolutePath());
+                command.add("run");
+                command.add("-p");
+                command.add("scenemax_projector_nextgen");
+                command.add("--");
+                processDirectory = nextGenRoot;
+            } else if (debugExe.isFile()) {
                 command.add(debugExe.getAbsolutePath());
                 processDirectory = nextGenRoot;
             } else if (releaseExe.isFile()) {
                 command.add(releaseExe.getAbsolutePath());
                 processDirectory = nextGenRoot;
             } else {
-                File cargoExe = resolveCargoExecutable();
                 if (!cargoExe.isFile()) {
                     throw new IOException("SceneMax NextGen projector is not built and Cargo was not found at: "
                             + cargoExe.getAbsolutePath());
@@ -498,6 +508,57 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             return configured;
         }
         return new File(Util.getWorkingDir(), "scenemax_projector_nextgen");
+    }
+
+    private boolean isNextGenExecutableStale(File nextGenRoot, File debugExe, File releaseExe) {
+        File newestExe = newestExistingFile(debugExe, releaseExe);
+        if (newestExe == null) {
+            return true;
+        }
+        long newestSource = newestRustSourceTimestamp(nextGenRoot);
+        return newestSource > newestExe.lastModified();
+    }
+
+    private File newestExistingFile(File... files) {
+        File newest = null;
+        for (File file : files) {
+            if (file == null || !file.isFile()) {
+                continue;
+            }
+            if (newest == null || file.lastModified() > newest.lastModified()) {
+                newest = file;
+            }
+        }
+        return newest;
+    }
+
+    private long newestRustSourceTimestamp(File nextGenRoot) {
+        long newest = 0L;
+        Deque<File> pending = new ArrayDeque<>();
+        pending.add(new File(nextGenRoot, "crates"));
+        pending.add(new File(nextGenRoot, "Cargo.toml"));
+        pending.add(new File(nextGenRoot, "Cargo.lock"));
+        while (!pending.isEmpty()) {
+            File file = pending.removeFirst();
+            if (file == null || !file.exists()) {
+                continue;
+            }
+            if (file.isDirectory()) {
+                File[] children = file.listFiles();
+                if (children == null) {
+                    continue;
+                }
+                for (File child : children) {
+                    pending.add(child);
+                }
+                continue;
+            }
+            String name = file.getName().toLowerCase();
+            if (name.endsWith(".rs") || "cargo.toml".equals(name) || "cargo.lock".equals(name)) {
+                newest = Math.max(newest, file.lastModified());
+            }
+        }
+        return newest;
     }
 
     private File resolveCargoExecutable() {

@@ -604,8 +604,15 @@ pub(super) fn spawn_scenemax_program(
     } in &model_declarations
     {
         if options.collider {
-            let transform =
-                collider_decl_transform(name, options, &attaches_by_target, &transforms_by_name);
+            let transform = collider_decl_transform(
+                name,
+                options,
+                &attaches_by_target,
+                &transforms_by_name,
+                vars,
+                &guards_by_name,
+                Some(collider_bounds),
+            );
             let entity = spawn_scenemax_collider_decl(
                 commands,
                 name,
@@ -651,8 +658,14 @@ pub(super) fn spawn_scenemax_program(
             ));
         }
 
-        if let Some(primitive) = primitive_mesh(resource, meshes, materials) {
-            let transform = primitive_transform_from_options(options);
+        if let Some(primitive) = primitive_mesh(options, resource, meshes, materials) {
+            let transform = primitive_transform_from_options_resolved(
+                options,
+                vars,
+                &guards_by_name,
+                Some(&transforms_by_name),
+                Some(collider_bounds),
+            );
             let entity = commands
                 .spawn((
                     SceneMaxEntity {
@@ -685,7 +698,14 @@ pub(super) fn spawn_scenemax_program(
                 let scene = WorldAssetRoot(
                     asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())),
                 );
-                let transform = transform_from_options(options, model.scale);
+                let transform = transform_from_options_resolved(
+                    options,
+                    model.scale,
+                    vars,
+                    &guards_by_name,
+                    Some(&transforms_by_name),
+                    Some(collider_bounds),
+                );
                 let entity_id = commands
                     .spawn((
                         SceneMaxEntity {
@@ -726,7 +746,14 @@ pub(super) fn spawn_scenemax_program(
             Err(scenemax_assets::AssetLookupError::UnsupportedModelFormat {
                 asset_path, ..
             }) => {
-                let transform = transform_from_options(options, None);
+                let transform = transform_from_options_resolved(
+                    options,
+                    None,
+                    vars,
+                    &guards_by_name,
+                    Some(&transforms_by_name),
+                    Some(collider_bounds),
+                );
                 let entity_id = spawn_unsupported_model_placeholder(
                     commands,
                     meshes,
@@ -752,7 +779,14 @@ pub(super) fn spawn_scenemax_program(
                 ));
             }
             Err(scenemax_assets::AssetLookupError::ModelNotFound(_)) => {
-                let transform = transform_from_options(options, None);
+                let transform = transform_from_options_resolved(
+                    options,
+                    None,
+                    vars,
+                    &guards_by_name,
+                    Some(&transforms_by_name),
+                    Some(collider_bounds),
+                );
                 let entity_id = spawn_unsupported_model_placeholder(
                     commands,
                     meshes,

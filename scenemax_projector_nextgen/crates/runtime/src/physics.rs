@@ -5,6 +5,9 @@ pub(super) fn collider_decl_transform(
     options: &EntityOptions,
     attaches_by_target: &HashMap<String, AttachStatement>,
     transforms_by_name: &HashMap<String, Transform>,
+    vars: &SceneMaxVars,
+    guards_by_name: &HashMap<String, Condition>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> Transform {
     if let Some(attach) = attaches_by_target.get(name) {
         let owner = attach_owner(&attach.subject);
@@ -12,7 +15,13 @@ pub(super) fn collider_decl_transform(
             return virtual_collider_transform(owner_transform, attach_fallback_offset(attach));
         }
     }
-    primitive_transform_from_options(options)
+    primitive_transform_from_options_resolved(
+        options,
+        vars,
+        guards_by_name,
+        Some(transforms_by_name),
+        collider_bounds,
+    )
 }
 
 pub(super) fn spawn_scenemax_collider_decl(
@@ -56,17 +65,477 @@ pub(super) fn spawn_scenemax_collider_decl(
 }
 
 pub(super) fn primitive_mesh(
+    options: &EntityOptions,
     resource: &str,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
 ) -> Option<(Mesh3d, MeshMaterial3d<StandardMaterial>)> {
-    let mesh = match resource.to_ascii_lowercase().as_str() {
-        "box" | "quad" => meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-        "sphere" => meshes.add(Sphere::new(1.0)),
-        _ => return None,
+    let mesh = match primitive_kind(resource)? {
+        SceneMaxPrimitiveKind::Box => {
+            let size = options.size.unwrap_or(SceneMaxVec3 {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            });
+            meshes.add(Cuboid::new(
+                size.x.abs().max(0.001),
+                size.y.abs().max(0.001),
+                size.z.abs().max(0.001),
+            ))
+        }
+        SceneMaxPrimitiveKind::Sphere => {
+            meshes.add(Sphere::new(options.radius.unwrap_or(1.0).abs().max(0.001)))
+        }
+        SceneMaxPrimitiveKind::Cylinder => meshes.add(cylinder_like_mesh(
+            options.radius_top.unwrap_or(1.0),
+            options.radius_bottom.unwrap_or(1.0),
+            options.height.unwrap_or(2.0),
+            32,
+            true,
+        )),
+        SceneMaxPrimitiveKind::HollowCylinder => meshes.add(hollow_cylinder_mesh(
+            options.radius_top.unwrap_or(1.0),
+            options.radius_bottom.unwrap_or(1.0),
+            options.inner_radius_top.unwrap_or(0.5),
+            options.inner_radius_bottom.unwrap_or(0.5),
+            options.height.unwrap_or(2.0),
+            32,
+        )),
+        SceneMaxPrimitiveKind::Quad => {
+            let size = options.size.unwrap_or(SceneMaxVec3 {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            });
+            meshes.add(quad_mesh(size.x, size.y))
+        }
+        SceneMaxPrimitiveKind::Wedge => {
+            let size = options.size.unwrap_or(SceneMaxVec3 {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            });
+            meshes.add(wedge_mesh(size.x, size.y, size.z))
+        }
+        SceneMaxPrimitiveKind::Cone => meshes.add(cylinder_like_mesh(
+            options.radius_top.unwrap_or(0.0),
+            options.radius_bottom.unwrap_or(1.0),
+            options.height.unwrap_or(2.0),
+            32,
+            true,
+        )),
+        SceneMaxPrimitiveKind::Stairs => {
+            let size = options.size.unwrap_or(SceneMaxVec3 {
+                x: 2.0,
+                y: 0.25,
+                z: 0.4,
+            });
+            meshes.add(stairs_mesh(
+                size.x,
+                size.y,
+                size.z,
+                options.steps.unwrap_or(6),
+            ))
+        }
+        SceneMaxPrimitiveKind::Arch => {
+            let size = options.size.unwrap_or(SceneMaxVec3 {
+                x: 2.0,
+                y: 2.5,
+                z: 0.5,
+            });
+            meshes.add(arch_mesh(
+                size.x,
+                size.y,
+                size.z,
+                options.thickness.unwrap_or(0.35),
+                options.segments.unwrap_or(12),
+            ))
+        }
     };
-    let material = materials.add(Color::srgb_u8(120, 135, 150));
+    let color = match primitive_kind(resource)? {
+        SceneMaxPrimitiveKind::Box => Color::srgb_u8(120, 135, 150),
+        SceneMaxPrimitiveKind::Sphere => Color::srgb_u8(80, 170, 230),
+        SceneMaxPrimitiveKind::Cylinder => Color::srgb_u8(90, 190, 160),
+        SceneMaxPrimitiveKind::HollowCylinder => Color::srgb_u8(60, 200, 210),
+        SceneMaxPrimitiveKind::Quad => Color::srgb_u8(210, 80, 190),
+        SceneMaxPrimitiveKind::Wedge => Color::srgb_u8(220, 140, 45),
+        SceneMaxPrimitiveKind::Cone => Color::srgb_u8(230, 210, 60),
+        SceneMaxPrimitiveKind::Stairs => Color::srgb_u8(150, 95, 45),
+        SceneMaxPrimitiveKind::Arch => Color::srgb_u8(170, 175, 180),
+    };
+    let material = materials.add(color);
     Some((Mesh3d(mesh), MeshMaterial3d(material)))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SceneMaxPrimitiveKind {
+    Box,
+    Sphere,
+    Cylinder,
+    HollowCylinder,
+    Quad,
+    Wedge,
+    Cone,
+    Stairs,
+    Arch,
+}
+
+fn primitive_kind(resource: &str) -> Option<SceneMaxPrimitiveKind> {
+    match resource.to_ascii_lowercase().as_str() {
+        "box" => Some(SceneMaxPrimitiveKind::Box),
+        "sphere" => Some(SceneMaxPrimitiveKind::Sphere),
+        "cylinder" => Some(SceneMaxPrimitiveKind::Cylinder),
+        "hollow cylinder" | "hollowcylinder" => Some(SceneMaxPrimitiveKind::HollowCylinder),
+        "quad" => Some(SceneMaxPrimitiveKind::Quad),
+        "wedge" => Some(SceneMaxPrimitiveKind::Wedge),
+        "cone" => Some(SceneMaxPrimitiveKind::Cone),
+        "stairs" => Some(SceneMaxPrimitiveKind::Stairs),
+        "arch" => Some(SceneMaxPrimitiveKind::Arch),
+        _ => return None,
+    }
+}
+
+fn quad_mesh(width: f32, height: f32) -> Mesh {
+    let half_width = width.abs().max(0.001) * 0.5;
+    let half_height = height.abs().max(0.001) * 0.5;
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_POSITION,
+        vec![
+            [-half_width, -half_height, 0.0],
+            [half_width, -half_height, 0.0],
+            [half_width, half_height, 0.0],
+            [-half_width, half_height, 0.0],
+        ],
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 0.0, 1.0]; 4])
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_UV_0,
+        vec![[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]],
+    )
+    .with_inserted_indices(Indices::U32(vec![0, 1, 2, 2, 3, 0]))
+}
+
+fn wedge_mesh(width: f32, height: f32, depth: f32) -> Mesh {
+    let half_width = width.abs().max(0.001) * 0.5;
+    let half_height = height.abs().max(0.001) * 0.5;
+    let half_depth = depth.abs().max(0.001) * 0.5;
+    let positions = vec![
+        [-half_width, -half_height, -half_depth],
+        [half_width, -half_height, -half_depth],
+        [-half_width, -half_height, half_depth],
+        [half_width, -half_height, half_depth],
+        [-half_width, half_height, half_depth],
+        [half_width, half_height, half_depth],
+    ];
+    let indices = vec![
+        0, 2, 1, 1, 2, 3, 2, 4, 3, 3, 4, 5, 0, 1, 4, 1, 5, 4, 0, 4, 2, 1, 3, 5,
+    ];
+    mesh_from_positions_indices(positions, indices)
+}
+
+fn cylinder_like_mesh(
+    radius_top: f32,
+    radius_bottom: f32,
+    height: f32,
+    segments: usize,
+    capped: bool,
+) -> Mesh {
+    let segments = segments.max(3);
+    let radius_top = radius_top.abs().max(0.0001);
+    let radius_bottom = radius_bottom.abs().max(0.0001);
+    let half_height = height.abs().max(0.0001) * 0.5;
+    let mut positions = Vec::with_capacity(segments * 2 + if capped { 2 } else { 0 });
+    for y in [half_height, -half_height] {
+        let radius = if y > 0.0 { radius_top } else { radius_bottom };
+        for i in 0..segments {
+            let angle = std::f32::consts::TAU * i as f32 / segments as f32;
+            positions.push([angle.cos() * radius, y, angle.sin() * radius]);
+        }
+    }
+
+    let mut indices = Vec::with_capacity(segments * 12);
+    for i in 0..segments {
+        let next = (i + 1) % segments;
+        let top_a = i as u32;
+        let top_b = next as u32;
+        let bottom_a = (segments + i) as u32;
+        let bottom_b = (segments + next) as u32;
+        indices.extend_from_slice(&[top_a, bottom_a, top_b, top_b, bottom_a, bottom_b]);
+    }
+    if capped {
+        let top_center = positions.len() as u32;
+        positions.push([0.0, half_height, 0.0]);
+        let bottom_center = positions.len() as u32;
+        positions.push([0.0, -half_height, 0.0]);
+        for i in 0..segments {
+            let next = (i + 1) % segments;
+            indices.extend_from_slice(&[top_center, next as u32, i as u32]);
+            indices.extend_from_slice(&[
+                bottom_center,
+                (segments + i) as u32,
+                (segments + next) as u32,
+            ]);
+        }
+    }
+    mesh_from_positions_indices(positions, indices)
+}
+
+fn hollow_cylinder_mesh(
+    outer_top: f32,
+    outer_bottom: f32,
+    inner_top: f32,
+    inner_bottom: f32,
+    height: f32,
+    segments: usize,
+) -> Mesh {
+    let segments = segments.max(3);
+    let outer_top = outer_top.abs().max(0.0001);
+    let outer_bottom = outer_bottom.abs().max(0.0001);
+    let inner_top = inner_top.abs().min(outer_top * 0.95).max(0.0001);
+    let inner_bottom = inner_bottom.abs().min(outer_bottom * 0.95).max(0.0001);
+    let half_height = height.abs().max(0.0001) * 0.5;
+    let mut positions = Vec::with_capacity(segments * 4);
+    for (radius, y) in [
+        (outer_top, half_height),
+        (outer_bottom, -half_height),
+        (inner_top, half_height),
+        (inner_bottom, -half_height),
+    ] {
+        for i in 0..segments {
+            let angle = std::f32::consts::TAU * i as f32 / segments as f32;
+            positions.push([angle.cos() * radius, y, angle.sin() * radius]);
+        }
+    }
+
+    let outer_top_offset = 0;
+    let outer_bottom_offset = segments;
+    let inner_top_offset = segments * 2;
+    let inner_bottom_offset = segments * 3;
+    let mut indices = Vec::with_capacity(segments * 24);
+    for i in 0..segments {
+        let next = (i + 1) % segments;
+        push_ring_quad(
+            &mut indices,
+            outer_top_offset + i,
+            outer_bottom_offset + i,
+            outer_top_offset + next,
+            outer_bottom_offset + next,
+        );
+        push_ring_quad(
+            &mut indices,
+            inner_top_offset + next,
+            inner_bottom_offset + next,
+            inner_top_offset + i,
+            inner_bottom_offset + i,
+        );
+        push_ring_quad(
+            &mut indices,
+            outer_top_offset + next,
+            inner_top_offset + next,
+            outer_top_offset + i,
+            inner_top_offset + i,
+        );
+        push_ring_quad(
+            &mut indices,
+            outer_bottom_offset + i,
+            inner_bottom_offset + i,
+            outer_bottom_offset + next,
+            inner_bottom_offset + next,
+        );
+    }
+    mesh_from_positions_indices(positions, indices)
+}
+
+fn stairs_mesh(width: f32, step_height: f32, step_depth: f32, steps: usize) -> Mesh {
+    let width = width.abs().max(0.05);
+    let step_height = step_height.abs().max(0.01);
+    let step_depth = step_depth.abs().max(0.01);
+    let steps = steps.max(1);
+    let total_height = step_height * steps as f32;
+    let total_depth = step_depth * steps as f32;
+    let mut builder = BoxMeshBuilder::default();
+    for i in 0..steps {
+        let box_height = step_height * (i + 1) as f32;
+        let center = Vec3::new(
+            0.0,
+            -total_height * 0.5 + box_height * 0.5,
+            -total_depth * 0.5 + step_depth * (i as f32 + 0.5),
+        );
+        builder.add_box(width, box_height, step_depth, center, Quat::IDENTITY);
+    }
+    builder.finish()
+}
+
+fn arch_mesh(width: f32, height: f32, depth: f32, thickness: f32, segments: usize) -> Mesh {
+    let width = width.abs().max(0.2);
+    let height = height.abs().max(0.2);
+    let depth = depth.abs().max(0.05);
+    let thickness = thickness.abs().max(0.05).min(width * 0.45);
+    let segments = segments.max(4);
+    let outer_radius = width * 0.5;
+    let inner_radius = (outer_radius - thickness).max(0.05);
+    let spring_height = (height - outer_radius).max(0.0);
+    let total_height = spring_height + outer_radius;
+    let y_offset = -total_height * 0.5;
+    let leg_height = spring_height.max(0.05);
+    let mut builder = BoxMeshBuilder::default();
+    builder.add_box(
+        thickness,
+        leg_height,
+        depth,
+        Vec3::new(
+            -width * 0.5 + thickness * 0.5,
+            y_offset + leg_height * 0.5,
+            0.0,
+        ),
+        Quat::IDENTITY,
+    );
+    builder.add_box(
+        thickness,
+        leg_height,
+        depth,
+        Vec3::new(
+            width * 0.5 - thickness * 0.5,
+            y_offset + leg_height * 0.5,
+            0.0,
+        ),
+        Quat::IDENTITY,
+    );
+
+    let radius_mid = (outer_radius + inner_radius) * 0.5;
+    let segment_length = (radius_mid * std::f32::consts::PI / segments as f32).max(0.05);
+    let segment_thickness = (outer_radius - inner_radius).max(0.05);
+    let center_y = y_offset + leg_height;
+    for i in 0..segments {
+        let t0 = std::f32::consts::PI - (std::f32::consts::PI * i as f32 / segments as f32);
+        let t1 = std::f32::consts::PI - (std::f32::consts::PI * (i + 1) as f32 / segments as f32);
+        let angle = (t0 + t1) * 0.5;
+        let center = Vec3::new(
+            angle.cos() * radius_mid,
+            center_y + angle.sin() * radius_mid,
+            0.0,
+        );
+        builder.add_box(
+            segment_length,
+            segment_thickness,
+            depth,
+            center,
+            Quat::from_rotation_z(angle - std::f32::consts::FRAC_PI_2),
+        );
+    }
+    builder.finish()
+}
+
+fn push_ring_quad(indices: &mut Vec<u32>, a: usize, b: usize, c: usize, d: usize) {
+    indices.extend_from_slice(&[a as u32, b as u32, c as u32, c as u32, b as u32, d as u32]);
+}
+
+fn mesh_from_positions_indices(positions: Vec<[f32; 3]>, indices: Vec<u32>) -> Mesh {
+    let normals = smooth_normals(&positions, &indices);
+    let uvs = vec![[0.0, 0.0]; positions.len()];
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+    .with_inserted_indices(Indices::U32(indices))
+}
+
+fn smooth_normals(positions: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 3]> {
+    let mut normals = vec![Vec3::ZERO; positions.len()];
+    for triangle in indices.chunks_exact(3) {
+        let a = Vec3::from_array(positions[triangle[0] as usize]);
+        let b = Vec3::from_array(positions[triangle[1] as usize]);
+        let c = Vec3::from_array(positions[triangle[2] as usize]);
+        let normal = (b - a).cross(c - a);
+        if normal.length_squared() <= f32::EPSILON {
+            continue;
+        }
+        let normal = normal.normalize();
+        for index in triangle {
+            normals[*index as usize] += normal;
+        }
+    }
+    normals
+        .into_iter()
+        .map(|normal| normal.try_normalize().unwrap_or(Vec3::Y).to_array())
+        .collect()
+}
+
+#[derive(Default)]
+struct BoxMeshBuilder {
+    positions: Vec<[f32; 3]>,
+    indices: Vec<u32>,
+}
+
+impl BoxMeshBuilder {
+    fn add_box(&mut self, width: f32, height: f32, depth: f32, center: Vec3, rotation: Quat) {
+        let half = Vec3::new(width * 0.5, height * 0.5, depth * 0.5);
+        let base = self.positions.len() as u32;
+        let corners = [
+            Vec3::new(-half.x, -half.y, -half.z),
+            Vec3::new(half.x, -half.y, -half.z),
+            Vec3::new(half.x, half.y, -half.z),
+            Vec3::new(-half.x, half.y, -half.z),
+            Vec3::new(-half.x, -half.y, half.z),
+            Vec3::new(half.x, -half.y, half.z),
+            Vec3::new(half.x, half.y, half.z),
+            Vec3::new(-half.x, half.y, half.z),
+        ];
+        self.positions.extend(
+            corners
+                .into_iter()
+                .map(|corner| (center + rotation * corner).to_array()),
+        );
+        self.indices.extend_from_slice(&[
+            base,
+            base + 2,
+            base + 1,
+            base,
+            base + 3,
+            base + 2,
+            base + 4,
+            base + 5,
+            base + 6,
+            base + 4,
+            base + 6,
+            base + 7,
+            base,
+            base + 1,
+            base + 5,
+            base,
+            base + 5,
+            base + 4,
+            base + 3,
+            base + 6,
+            base + 2,
+            base + 3,
+            base + 7,
+            base + 6,
+            base + 1,
+            base + 2,
+            base + 6,
+            base + 1,
+            base + 6,
+            base + 5,
+            base,
+            base + 4,
+            base + 7,
+            base,
+            base + 7,
+            base + 3,
+        ]);
+    }
+
+    fn finish(self) -> Mesh {
+        mesh_from_positions_indices(self.positions, self.indices)
+    }
 }
 
 pub(super) fn collect_model_declarations(program: &Program) -> Vec<ModelRuntimeDecl> {
@@ -88,7 +557,7 @@ pub(super) fn collect_model_declarations(program: &Program) -> Vec<ModelRuntimeD
             Some(ModelRuntimeDecl {
                 name: name.clone(),
                 resource: resource.clone(),
-                options: *options,
+                options: options.clone(),
             })
         })
         .collect()
@@ -118,7 +587,7 @@ pub(super) fn instantiate_object_pool_declarations(
             let member_name = format!("__pool_{}_{}", pool.name, index);
             runtime.available.push(member_name.clone());
             runtime.members.insert(member_name.clone());
-            let mut options = prototype.options;
+            let mut options = prototype.options.clone();
             options.hidden = true;
             declarations.push(ModelRuntimeDecl {
                 name: member_name,
@@ -167,7 +636,7 @@ pub(super) fn object_pool_prototype(
         Some(ModelRuntimeDecl {
             name: String::new(),
             resource: resource.clone(),
-            options: *options,
+            options: options.clone(),
         })
     })
 }
@@ -242,14 +711,21 @@ pub(super) fn initial_visibility(
     }
 }
 
-pub(super) fn primitive_transform_from_options(options: &EntityOptions) -> Transform {
-    let mut transform = transform_from_options(options, None);
-    if options.scale.is_none() {
-        if let Some(size) = options.size {
-            transform.scale = vec3_from_scenemax(size);
-        }
-    }
-    transform
+pub(super) fn primitive_transform_from_options_resolved(
+    options: &EntityOptions,
+    vars: &SceneMaxVars,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Transform {
+    transform_from_options_resolved(
+        options,
+        None,
+        vars,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
 }
 
 pub(super) fn insert_physics_components(
@@ -1447,6 +1923,30 @@ pub(super) fn transform_from_options(
     }
 }
 
+pub(super) fn transform_from_options_resolved(
+    options: &EntityOptions,
+    asset_scale: Option<[f32; 3]>,
+    vars: &SceneMaxVars,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Transform {
+    let mut transform = transform_from_options(options, asset_scale);
+    if let Some(position) = options.position_value.as_ref().and_then(|position| {
+        resolve_position_value_runtime(
+            position,
+            vars,
+            None,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        )
+    }) {
+        transform.translation = position;
+    }
+    transform
+}
+
 pub(super) fn timed_turn_from_statement(turn: &scenemax_parser::TurnStatement) -> TimedTurn {
     timed_turn_from_statement_resolved(turn, turn.degrees, turn.duration_seconds)
 }
@@ -1741,6 +2241,82 @@ pub(super) fn evaluate_position_value(
             evaluate_position_expr(&values[2], transforms_by_name)?,
         )),
         _ => None,
+    }
+}
+
+pub(super) fn resolve_position_value_runtime(
+    position: &PositionValue,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<Vec3> {
+    match position {
+        PositionValue::Entity(entity) => {
+            Some(lookup_subject_transform(entity, transforms_by_name?)?.translation)
+        }
+        PositionValue::Coordinates(values) if values.len() == 3 => Some(Vec3::new(
+            resolve_position_expr_runtime(
+                &values[0],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+            resolve_position_expr_runtime(
+                &values[1],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+            resolve_position_expr_runtime(
+                &values[2],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+        )),
+        _ => None,
+    }
+}
+
+pub(super) fn resolve_position_expr_runtime(
+    value: &PositionExpr,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<f32> {
+    match value {
+        PositionExpr::Number(value) => Some(*value),
+        PositionExpr::Value(value) => resolve_assignment_value_scoped_with_guards(
+            value,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+        PositionExpr::EntityAxis {
+            entity,
+            axis,
+            offset,
+        } => {
+            let transform = transforms_by_name?.get(entity)?;
+            let base = match axis {
+                SceneMaxAxis::X => transform.translation.x,
+                SceneMaxAxis::Y => transform.translation.y,
+                SceneMaxAxis::Z => transform.translation.z,
+            };
+            Some(base + offset)
+        }
     }
 }
 
