@@ -36,12 +36,12 @@ use bevy_tnua::{
 use bevy_tnua_avian3d::prelude::{TnuaAvian3dPlugin, TnuaAvian3dSensorShape};
 use scenemax_parser::{
     AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement,
-    CameraAttachStatement, ChannelDrawStatement, CharacterJumpStatement, CharacterModeStatement,
-    CinematicLookAt, CinematicPlayStatement, Condition, EntityOptions, KeyTrigger, LoggerLevel,
-    LoggerMessage, LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement,
-    ObjectPoolStatement, PoolReleaseStatement, PositionExpr, PositionValue, Program, SceneMaxAxis,
-    SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3, SpritePlayStatement, Statement,
-    UiEaseDirection, UiTargetPath,
+    CameraAttachStatement, CameraMoveStatement, ChannelDrawStatement, CharacterJumpStatement,
+    CharacterModeStatement, CinematicLookAt, CinematicPlayStatement, Condition, EntityOptions,
+    KeyTrigger, LoggerLevel, LoggerMessage, LoggerStatement, MoveDirection, MoveToDestination,
+    MoveToStatement, ObjectPoolStatement, PoolReleaseStatement, PositionExpr, PositionValue,
+    Program, SceneMaxAxis, SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3,
+    SpritePlayStatement, Statement, UiEaseDirection, UiTargetPath,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
@@ -100,6 +100,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .as_deref()
         .and_then(Path::parent)
         .map(Path::to_path_buf);
+    initialize_runtime_logger(project_root.as_deref(), script_root.as_deref());
     let scene_program = load_startup_program(&launch);
     let effective_script_root = scene_program.1.clone().or_else(|| script_root.clone());
     let asset_root = project_root
@@ -111,8 +112,6 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         effective_script_root.as_deref(),
         asset_root.as_deref(),
     );
-    initialize_runtime_logger(project_root.as_deref(), effective_script_root.as_deref());
-
     let mut app = App::new();
     if let Some(builtin_asset_root) = builtin_asset_root.as_ref() {
         let source_path = builtin_asset_root.to_string_lossy().to_string();
@@ -146,6 +145,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<SceneMaxCameraSystem>()
         .init_resource::<SceneMaxRuntimeAssets>()
         .init_resource::<SceneMaxAnimationDurations>()
+        .init_resource::<SceneMaxStartupActionState>()
         .init_resource::<DelayedActionQueue>()
         .init_resource::<RecurringRunTimers>()
         .init_resource::<ActiveCollisionEvents>()
@@ -194,6 +194,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             PhysicsSchedule,
             feed_tnua_character_controllers.in_set(TnuaUserControlsSystems),
         )
+        .add_systems(Update, apply_startup_runs_when_ready)
         .add_systems(
             Update,
             (
@@ -218,6 +219,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_timed_turns,
                 update_timed_moves,
                 update_timed_jumps,
+                update_timed_camera_moves,
                 update_cinematic_camera,
                 update_fighting_camera,
                 update_third_person_camera,
@@ -412,6 +414,27 @@ impl SceneMaxColliderBounds {
 struct SceneMaxRuntimeAssets {
     placeholder_mesh: Option<Handle<Mesh>>,
     placeholder_material: Option<Handle<StandardMaterial>>,
+}
+
+#[derive(Debug, Resource, Default)]
+struct SceneMaxStartupActionState {
+    applied: bool,
+    waiting_gltfs: Vec<Handle<Gltf>>,
+    waiting_logged: bool,
+    ready_frames: u8,
+    wait_seconds: f32,
+}
+
+impl SceneMaxStartupActionState {
+    fn waiting_for_gltfs(waiting_gltfs: Vec<Handle<Gltf>>) -> Self {
+        Self {
+            applied: false,
+            waiting_gltfs,
+            waiting_logged: false,
+            ready_frames: 0,
+            wait_seconds: 0.0,
+        }
+    }
 }
 
 #[derive(Debug, Resource, Default)]
@@ -913,6 +936,23 @@ mod tests {
         let transform = default_camera_transform();
 
         assert_eq!(transform.translation, Vec3::new(0.0, 0.0, 10.0));
+        assert!(
+            transform
+                .forward()
+                .as_vec3()
+                .abs_diff_eq(Vec3::new(0.0, 0.0, -1.0), 0.0001)
+        );
+    }
+
+    #[test]
+    fn scenemax_camera_yaw_180_faces_negative_z_like_classic_projector() {
+        let program = scenemax_parser::parse_program(
+            "camera.pos(0.0,2.0,10.0)\ncamera.rotate(0.0,180.0,0.0)",
+        )
+        .unwrap();
+        let transform = camera_transform_from_program(&program);
+
+        assert_eq!(transform.translation, Vec3::new(0.0, 2.0, 10.0));
         assert!(
             transform
                 .forward()
@@ -1932,6 +1972,29 @@ mod tests {
 
         assert_eq!(blocking_timed_action_seconds(&movement), Some(0.5));
         assert!(continuous_timed_action_applies_per_frame(&movement));
+    }
+
+    #[test]
+    fn camera_move_blocks_only_when_not_async() {
+        let blocking = Statement::CameraMove(CameraMoveStatement {
+            axis: SceneMaxAxis::Z,
+            distance: 5.0,
+            distance_value: AssignmentValue::Number(5.0),
+            duration_seconds: 5.0,
+            duration_value: AssignmentValue::Number(5.0),
+            async_run: false,
+        });
+        let async_move = Statement::CameraMove(CameraMoveStatement {
+            axis: SceneMaxAxis::Z,
+            distance: 5.0,
+            distance_value: AssignmentValue::Number(5.0),
+            duration_seconds: 5.0,
+            duration_value: AssignmentValue::Number(5.0),
+            async_run: true,
+        });
+
+        assert_eq!(blocking_timed_action_seconds(&blocking), Some(5.0));
+        assert_eq!(blocking_timed_action_seconds(&async_move), None);
     }
 
     #[test]

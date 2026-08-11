@@ -211,6 +211,16 @@ pub fn substitute_statement(
             duration_value: substitute_assignment_value(&move_to.duration_value, bindings),
             async_run: move_to.async_run,
         }),
+        Statement::CameraMove(camera_move) => {
+            Statement::CameraMove(scenemax_parser::CameraMoveStatement {
+                axis: camera_move.axis,
+                distance: camera_move.distance,
+                distance_value: substitute_assignment_value(&camera_move.distance_value, bindings),
+                duration_seconds: camera_move.duration_seconds,
+                duration_value: substitute_assignment_value(&camera_move.duration_value, bindings),
+                async_run: camera_move.async_run,
+            })
+        }
         Statement::CameraChase { target } => Statement::CameraChase {
             target: substitute_path(target, bindings),
         },

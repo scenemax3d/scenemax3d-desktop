@@ -132,6 +132,7 @@ pub(super) fn apply_scenemax_ui_actions(
                 );
             }
             SceneMaxUiAction::Load { name } => {
+                write_runtime_diagnostic_line(format!("UI:APPLY load {name}"));
                 if let Err(error) = load_scenemax_ui_document(
                     &name,
                     &mut commands,

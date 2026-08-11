@@ -26,6 +26,11 @@ pub(super) fn apply_startup_runs(
         .filter(|statement| is_startup_action(statement))
         .cloned()
         .collect::<Vec<_>>();
+    write_runtime_diagnostic_line(format!(
+        "STARTUP:RUNS collected={} actions={}",
+        actions.len(),
+        describe_statement_list(&actions)
+    ));
     let _ = apply_startup_action_sequence(
         &actions,
         commands,
@@ -126,6 +131,9 @@ pub(super) fn apply_startup_action_sequence(
             }
             Statement::RunFunction { name, args } => {
                 let Some(function) = functions_by_name.get(name) else {
+                    write_runtime_diagnostic_line(format!(
+                        "FUNCTION:MISS phase=startup_sequence name={name}"
+                    ));
                     tracing::debug!(name, "startup SceneMax function was not parsed");
                     continue;
                 };
@@ -145,9 +153,16 @@ pub(super) fn apply_startup_action_sequence(
                     Some(transforms_by_name),
                     None,
                 ) {
+                    write_runtime_diagnostic_line(format!(
+                        "FUNCTION:SKIP phase=startup_sequence name={name} reason=guard_false"
+                    ));
                     tracing::debug!(name, "startup SceneMax function guard is false");
                     continue;
                 }
+                write_runtime_diagnostic_line(format!(
+                    "FUNCTION:RUN phase=startup_sequence name={name} actions={}",
+                    describe_statement_list(&function.actions)
+                ));
                 let function_actions = actions_with_parent_continuation(
                     instantiate_function_actions(function, &resolved_args),
                     parent_action_tail(actions, index),
@@ -293,6 +308,12 @@ pub(super) fn apply_startup_action_sequence(
             }
             action if blocking_timed_action_seconds(action).is_some() => {
                 let seconds = blocking_timed_action_seconds(action).unwrap_or_default();
+                write_runtime_diagnostic_line(format!(
+                    "STARTUP:BLOCKING action={} seconds={} tail={}",
+                    describe_statement(action),
+                    format_scenemax_number(seconds),
+                    describe_statement_list(&actions[index + 1..])
+                ));
                 let result = apply_startup_action(
                     action,
                     commands,
@@ -366,6 +387,7 @@ pub(super) fn apply_startup_function_by_name(
         return ActionSequenceResult::Completed;
     }
     let Some(function) = functions_by_name.get(name) else {
+        write_runtime_diagnostic_line(format!("FUNCTION:MISS phase=startup name={name}"));
         tracing::debug!(name, "startup SceneMax function was not parsed");
         return ActionSequenceResult::Completed;
     };
@@ -385,10 +407,17 @@ pub(super) fn apply_startup_function_by_name(
         Some(transforms_by_name),
         None,
     ) {
+        write_runtime_diagnostic_line(format!(
+            "FUNCTION:SKIP phase=startup name={name} reason=guard_false"
+        ));
         tracing::debug!(name, "startup SceneMax function guard is false");
         return ActionSequenceResult::Completed;
     }
 
+    write_runtime_diagnostic_line(format!(
+        "FUNCTION:RUN phase=startup name={name} actions={}",
+        describe_statement_list(&function.actions)
+    ));
     tracing::info!(name, "running SceneMax startup function");
     let actions = instantiate_function_actions(function, &resolved_args);
     for action in &actions {
@@ -456,6 +485,38 @@ pub(super) fn apply_startup_action(
             stop_camera_attachment(camera_system);
             ActionSequenceResult::Completed
         }
+        Statement::CameraMove(camera_move) => {
+            let distance = resolve_draw_value(
+                Some(&camera_move.distance_value),
+                camera_move.distance,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            let duration_seconds = resolve_duration_value(
+                &camera_move.duration_value,
+                camera_move.duration_seconds,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            append_timed_camera_move(
+                commands,
+                timed_camera_move_from_statement_resolved(camera_move, distance, duration_seconds),
+            );
+            write_runtime_diagnostic_line(format!(
+                "CAMERA:MOVE queue source=startup axis={} distance={} duration={} async={}",
+                axis_label(camera_move.axis),
+                format_scenemax_number(distance),
+                format_scenemax_number(duration_seconds),
+                camera_move.async_run as u8
+            ));
+            ActionSequenceResult::Completed
+        }
         Statement::Logger(logger) => {
             apply_logger_statement(
                 logger,
@@ -472,6 +533,7 @@ pub(super) fn apply_startup_action(
             ActionSequenceResult::Completed
         }
         Statement::UiLoad { name } => {
+            write_runtime_diagnostic_line(format!("UI:QUEUE load {name} source=startup"));
             ui_queue
                 .actions
                 .push(SceneMaxUiAction::Load { name: name.clone() });
@@ -1029,7 +1091,7 @@ pub(super) fn switch_scene_on_key(
         scene_main.display()
     ));
     match load_script_with_adds(&scene_main, &mut HashSet::new()) {
-        Ok(program) => {
+        Ok((program, scene_script_root)) => {
             for entity in &scene_queries.p0() {
                 commands.entity(entity).despawn();
             }
@@ -1047,15 +1109,14 @@ pub(super) fn switch_scene_on_key(
             collider_bounds.clear();
             apply_initial_assignments(&program, &mut vars);
             apply_camera_systems(&program, &mut camera_system);
-            let scene_script_root = scene_main.parent().map(Path::to_path_buf);
             load_cinematic_rigs(
                 &program,
                 &mut camera_system,
-                scene_script_root.as_deref(),
+                Some(&scene_script_root),
                 context.asset_root.as_deref(),
             );
             let mut scene_ui_queue = SceneMaxUiActionQueue::default();
-            spawn_scenemax_program(
+            let startup_gltfs = spawn_scenemax_program(
                 &mut commands,
                 &asset_server,
                 asset_root,
@@ -1071,8 +1132,9 @@ pub(super) fn switch_scene_on_key(
                 &mut materials,
                 &mut character_configs,
             );
+            commands.insert_resource(SceneMaxStartupActionState::waiting_for_gltfs(startup_gltfs));
             startup_program.0 = Some(program);
-            startup_program.1 = scene_script_root;
+            startup_program.1 = Some(scene_script_root);
             tracing::info!(scene, path = %scene_main.display(), "switched SceneMax scene");
             write_runtime_diagnostic_line(format!(
                 "switched SceneMax scene {scene} from {}",
@@ -1755,6 +1817,15 @@ pub(super) fn update_delayed_actions(
     if ready_actions.is_empty() {
         return;
     }
+    write_runtime_diagnostic_line(format!(
+        "DELAY:READY count={} actions={}",
+        ready_actions.len(),
+        ready_actions
+            .iter()
+            .map(|delayed| describe_statement_list(&delayed.actions))
+            .collect::<Vec<_>>()
+            .join(" || ")
+    ));
 
     let mut transforms_by_name =
         build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
@@ -1825,7 +1896,64 @@ pub(super) fn enqueue_delayed_actions(
         owner,
         scope,
     });
+    let delayed = delayed_actions.actions.last().unwrap();
+    write_runtime_diagnostic_line(format!(
+        "DELAY:ENQUEUE seconds={} actions={} owner={}",
+        format_scenemax_number(seconds.max(0.0)),
+        describe_statement_list(&delayed.actions),
+        delayed.owner.is_some() as u8
+    ));
     true
+}
+
+pub(super) fn describe_statement_list(actions: &[Statement]) -> String {
+    if actions.is_empty() {
+        return "<empty>".to_owned();
+    }
+    actions
+        .iter()
+        .take(8)
+        .map(describe_statement)
+        .collect::<Vec<_>>()
+        .join(" -> ")
+}
+
+pub(super) fn describe_statement(action: &Statement) -> String {
+    match action {
+        Statement::CameraMove(camera_move) => format!(
+            "CameraMove({} {} {}s async={})",
+            axis_label(camera_move.axis),
+            format_scenemax_number(camera_move.distance),
+            format_scenemax_number(camera_move.duration_seconds),
+            camera_move.async_run as u8
+        ),
+        Statement::CinematicPlay(play) => format!(
+            "CinematicPlay({} {}s async={})",
+            play.target,
+            format_scenemax_number(play.duration_seconds),
+            play.async_run as u8
+        ),
+        Statement::Async { actions } => format!("Async({})", describe_statement_list(actions)),
+        Statement::RunFunction { name, .. } => format!("RunFunction({name})"),
+        Statement::UiLoad { name } => format!("UiLoad({name})"),
+        Statement::UiEase(ease) => format!("UiEase({:?})", ease.target),
+        Statement::UiMessage(message) => format!("UiMessage({:?})", message.target),
+        Statement::Wait { seconds } => format!("Wait({}s)", format_scenemax_number(*seconds)),
+        Statement::WaitValue { .. } => "WaitValue".to_owned(),
+        Statement::WaitForKey { key } => format!("WaitForKey({key})"),
+        Statement::ChannelDraw(draw) if draw.clear => format!("ChannelDrawClear({})", draw.channel),
+        Statement::ChannelDraw(draw) => format!("ChannelDraw({})", draw.channel),
+        Statement::Unsupported { text } => format!("Unsupported({text})"),
+        other => format!("{other:?}"),
+    }
+}
+
+pub(super) fn axis_label(axis: SceneMaxAxis) -> &'static str {
+    match axis {
+        SceneMaxAxis::X => "x",
+        SceneMaxAxis::Y => "y",
+        SceneMaxAxis::Z => "z",
+    }
 }
 
 pub(super) fn apply_action_sequence(
@@ -1964,6 +2092,9 @@ pub(super) fn apply_action_sequence(
             }
             Statement::RunFunction { name, args } => {
                 let Some(function) = functions_by_name.get(name) else {
+                    write_runtime_diagnostic_line(format!(
+                        "FUNCTION:MISS phase=runtime_sequence name={name}"
+                    ));
                     tracing::debug!(
                         name,
                         "SceneMax function is not implemented or was not parsed"
@@ -1986,10 +2117,17 @@ pub(super) fn apply_action_sequence(
                     Some(transforms_by_name),
                     Some(collider_bounds),
                 ) {
+                    write_runtime_diagnostic_line(format!(
+                        "FUNCTION:SKIP phase=runtime_sequence name={name} reason=guard_false"
+                    ));
                     tracing::debug!(name, "SceneMax function guard is false");
                     continue;
                 }
 
+                write_runtime_diagnostic_line(format!(
+                    "FUNCTION:RUN phase=runtime_sequence name={name} actions={}",
+                    describe_statement_list(&function.actions)
+                ));
                 let function_actions = actions_with_parent_continuation(
                     instantiate_function_actions(function, &resolved_args),
                     parent_action_tail(actions, index),
@@ -2252,6 +2390,12 @@ pub(super) fn apply_action_sequence(
                     continue;
                 }
                 let seconds = blocking_timed_action_seconds(action).unwrap_or_default();
+                write_runtime_diagnostic_line(format!(
+                    "RUNTIME:BLOCKING action={} seconds={} tail={}",
+                    describe_statement(action),
+                    format_scenemax_number(seconds),
+                    describe_statement_list(&actions[index + 1..])
+                ));
                 apply_key_action(
                     action,
                     transforms_by_name,
@@ -2636,6 +2780,38 @@ pub(super) fn apply_key_action(
         if let Some(camera_system) = camera_system {
             stop_camera_attachment(camera_system);
         }
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::CameraMove(camera_move) = action {
+        let distance = resolve_draw_value(
+            Some(&camera_move.distance_value),
+            camera_move.distance,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
+        let duration_seconds = resolve_duration_value(
+            &camera_move.duration_value,
+            camera_move.duration_seconds,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
+        append_timed_camera_move(
+            commands,
+            timed_camera_move_from_statement_resolved(camera_move, distance, duration_seconds),
+        );
+        write_runtime_diagnostic_line(format!(
+            "CAMERA:MOVE queue source=runtime axis={} distance={} duration={} async={}",
+            axis_label(camera_move.axis),
+            format_scenemax_number(distance),
+            format_scenemax_number(duration_seconds),
+            camera_move.async_run as u8
+        ));
         return ActionSequenceResult::Completed;
     }
     if let Statement::Logger(logger) = action {
@@ -3319,6 +3495,7 @@ pub(super) fn apply_function_by_name(
         return ActionSequenceResult::Completed;
     }
     let Some(function) = functions_by_name.get(name) else {
+        write_runtime_diagnostic_line(format!("FUNCTION:MISS phase=runtime name={name}"));
         tracing::debug!(
             name,
             "SceneMax function is not implemented or was not parsed"
@@ -3341,10 +3518,17 @@ pub(super) fn apply_function_by_name(
         Some(transforms_by_name),
         Some(collider_bounds),
     ) {
+        write_runtime_diagnostic_line(format!(
+            "FUNCTION:SKIP phase=runtime name={name} reason=guard_false"
+        ));
         tracing::debug!(name, "SceneMax function guard is false");
         return ActionSequenceResult::Completed;
     }
 
+    write_runtime_diagnostic_line(format!(
+        "FUNCTION:RUN phase=runtime name={name} actions={}",
+        describe_statement_list(&function.actions)
+    ));
     let actions = instantiate_function_actions(function, &resolved_args);
     let mut function_scope = scope.cloned().unwrap_or_default();
     apply_action_sequence(

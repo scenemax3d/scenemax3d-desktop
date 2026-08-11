@@ -21,6 +21,11 @@ pub(super) fn blocking_timed_action_seconds(action: &Statement) -> Option<f32> {
         {
             Some(move_to.duration_seconds.max(0.001))
         }
+        Statement::CameraMove(camera_move)
+            if !camera_move.async_run && camera_move.duration_seconds > f32::EPSILON =>
+        {
+            Some(camera_move.duration_seconds.max(0.001))
+        }
         Statement::CharacterJump(jump) if !jump.async_run => {
             Some(jump_duration_seconds(jump.speed))
         }

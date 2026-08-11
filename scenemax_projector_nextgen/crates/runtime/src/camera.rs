@@ -1,5 +1,119 @@
 use super::*;
 
+#[derive(Component, Debug, Clone)]
+pub(super) struct TimedCameraMoves {
+    pub moves: Vec<TimedCameraMove>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TimedCameraMove {
+    pub axis: SceneMaxAxis,
+    pub total_seconds: f32,
+    pub remaining_seconds: f32,
+    pub velocity: f32,
+    pub next_log_seconds: f32,
+}
+
+pub(super) fn timed_camera_move_from_statement_resolved(
+    camera_move: &CameraMoveStatement,
+    distance: f32,
+    duration_seconds: f32,
+) -> TimedCameraMove {
+    let duration = duration_seconds.max(0.001);
+    TimedCameraMove {
+        axis: camera_move.axis,
+        total_seconds: duration,
+        remaining_seconds: duration,
+        velocity: distance / duration,
+        next_log_seconds: 1.0,
+    }
+}
+
+pub(super) fn append_timed_camera_move(commands: &mut Commands, timed_move: TimedCameraMove) {
+    commands.queue(move |world: &mut World| {
+        let Some((entity, start_position)) = ({
+            let mut query = world
+                .query_filtered::<(Entity, &Transform), (With<Camera3d>, Without<SceneMaxEntity>)>(
+                );
+            query
+                .iter(world)
+                .next()
+                .map(|(entity, transform)| (entity, transform.translation))
+        }) else {
+            write_runtime_diagnostic_line("CAMERA:MOVE attach failed: no default Camera3d found");
+            return;
+        };
+        let Ok(mut entity_mut) = world.get_entity_mut(entity) else {
+            write_runtime_diagnostic_line("CAMERA:MOVE attach failed: camera entity unavailable");
+            return;
+        };
+        let mut timed_move = Some(timed_move);
+        if let Some(mut moves) = entity_mut.get_mut::<TimedCameraMoves>() {
+            moves.moves.push(timed_move.take().unwrap());
+        } else {
+            entity_mut.insert(TimedCameraMoves {
+                moves: vec![timed_move.take().unwrap()],
+            });
+        }
+        write_runtime_diagnostic_line(format!(
+            "CAMERA:MOVE attached to default camera start=({}, {}, {})",
+            format_scenemax_number(start_position.x),
+            format_scenemax_number(start_position.y),
+            format_scenemax_number(start_position.z)
+        ));
+    });
+}
+
+pub(super) fn update_timed_camera_moves(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut cameras: Query<
+        (Entity, &mut Transform, &mut TimedCameraMoves),
+        (With<Camera3d>, Without<SceneMaxEntity>),
+    >,
+) {
+    for (entity, mut transform, mut movements) in &mut cameras {
+        let mut active_moves = Vec::with_capacity(movements.moves.len());
+        for mut movement in movements.moves.drain(..) {
+            let delta = time.delta_secs().min(movement.remaining_seconds);
+            match movement.axis {
+                SceneMaxAxis::X => transform.translation.x += movement.velocity * delta,
+                SceneMaxAxis::Y => transform.translation.y += movement.velocity * delta,
+                SceneMaxAxis::Z => transform.translation.z += movement.velocity * delta,
+            }
+            movement.remaining_seconds -= delta;
+            let elapsed_seconds = movement.total_seconds - movement.remaining_seconds;
+            if elapsed_seconds >= movement.next_log_seconds && movement.remaining_seconds > 0.0 {
+                write_runtime_diagnostic_line(format!(
+                    "CAMERA:MOVE progress axis={} elapsed={} remaining={} pos=({}, {}, {})",
+                    axis_label(movement.axis),
+                    format_scenemax_number(elapsed_seconds),
+                    format_scenemax_number(movement.remaining_seconds),
+                    format_scenemax_number(transform.translation.x),
+                    format_scenemax_number(transform.translation.y),
+                    format_scenemax_number(transform.translation.z)
+                ));
+                movement.next_log_seconds += 1.0;
+            }
+            if movement.remaining_seconds > 0.0 {
+                active_moves.push(movement);
+            } else {
+                write_runtime_diagnostic_line(format!(
+                    "CAMERA:MOVE finished axis={} pos=({}, {}, {})",
+                    axis_label(movement.axis),
+                    format_scenemax_number(transform.translation.x),
+                    format_scenemax_number(transform.translation.y),
+                    format_scenemax_number(transform.translation.z)
+                ));
+            }
+        }
+        movements.moves = active_moves;
+        if movements.moves.is_empty() {
+            commands.entity(entity).remove::<TimedCameraMoves>();
+        }
+    }
+}
+
 pub(super) fn apply_camera_systems(program: &Program, camera_system: &mut SceneMaxCameraSystem) {
     camera_system.fighting = None;
     camera_system.third_person.clear();
@@ -124,9 +238,9 @@ pub(super) fn load_cinematic_rigs(
     script_root: Option<&Path>,
     asset_root: Option<&Path>,
 ) {
-    let mut wanted = HashSet::new();
-    collect_cinematic_rig_ids(&program.statements, &mut wanted);
-    if wanted.is_empty() {
+    let mut remaining = HashSet::new();
+    collect_cinematic_rig_ids(&program.statements, &mut remaining);
+    if remaining.is_empty() {
         return;
     }
 
@@ -139,6 +253,9 @@ pub(super) fn load_cinematic_rigs(
     }
     let mut seen_roots = HashSet::new();
     for root in roots {
+        if remaining.is_empty() {
+            break;
+        }
         let Some(root) = canonicalize_existing(&root) else {
             continue;
         };
@@ -158,7 +275,7 @@ pub(super) fn load_cinematic_rigs(
             };
             parse_cinematic_rigs_from_entities(
                 json.get("entities").and_then(serde_json::Value::as_array),
-                &wanted,
+                &mut remaining,
                 &designer_file,
                 &text,
                 camera_system,
@@ -222,7 +339,7 @@ fn collect_smdesign_files_recursive(root: &Path, result: &mut Vec<PathBuf>, dept
 
 fn parse_cinematic_rigs_from_entities(
     entities: Option<&Vec<serde_json::Value>>,
-    wanted: &HashSet<String>,
+    remaining: &mut HashSet<String>,
     source_path: &Path,
     source_text: &str,
     camera_system: &mut SceneMaxCameraSystem,
@@ -240,7 +357,7 @@ fn parse_cinematic_rigs_from_entities(
                 .or_else(|| string_field(entity, "id"))
                 .unwrap_or_default();
             let key = id.to_ascii_lowercase();
-            if wanted.contains(&key)
+            if remaining.contains(&key)
                 && let Some(rig) = parse_cinematic_rig(entity, source_path, source_text)
             {
                 tracing::info!(
@@ -255,11 +372,12 @@ fn parse_cinematic_rigs_from_entities(
                     source_path.display()
                 ));
                 camera_system.cinematic_rigs.insert(key, rig);
+                remaining.remove(&id.to_ascii_lowercase());
             }
         }
         parse_cinematic_rigs_from_entities(
             entity.get("children").and_then(serde_json::Value::as_array),
-            wanted,
+            remaining,
             source_path,
             source_text,
             camera_system,
@@ -382,6 +500,88 @@ fn find_designer_entity<'a>(
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scene_local_cinematic_rig_is_not_overwritten_by_project_scan() {
+        let root = std::env::temp_dir().join(format!(
+            "scenemax_cinematic_rig_precedence_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let scene_root = root.join("running").join("game_intro");
+        let project_scripts = root.join("scripts").join("other_scene");
+        let asset_root = root.join("resources");
+        fs::create_dir_all(&scene_root).unwrap();
+        fs::create_dir_all(&project_scripts).unwrap();
+        fs::create_dir_all(&asset_root).unwrap();
+        fs::write(
+            scene_root.join("game_intro.smdesign"),
+            cinematic_rig_json("Intro Rig"),
+        )
+        .unwrap();
+        fs::write(
+            project_scripts.join("other.smdesign"),
+            cinematic_rig_json("Other Rig"),
+        )
+        .unwrap();
+        let program = Program {
+            statements: vec![Statement::ModelDecl {
+                name: "intro_camera".to_owned(),
+                resource: "cinematic.camera.cinematic_rig_1".to_owned(),
+                options: EntityOptions::default(),
+            }],
+        };
+        let mut camera_system = SceneMaxCameraSystem::default();
+
+        load_cinematic_rigs(
+            &program,
+            &mut camera_system,
+            Some(&scene_root),
+            Some(&asset_root),
+        );
+
+        assert_eq!(
+            camera_system
+                .cinematic_rigs
+                .get("cinematic_rig_1")
+                .map(|rig| rig.name.as_str()),
+            Some("Intro Rig")
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn cinematic_rig_json(name: &str) -> String {
+        format!(
+            r#"{{
+  "entities": [
+    {{
+      "type": "CINEMATIC_RIG",
+      "cinematicRuntimeId": "cinematic_rig_1",
+      "name": "{name}",
+      "children": [
+        {{
+          "type": "CINEMATIC_TRACK",
+          "id": "track1",
+          "cinematicTrackData": {{"anchorCount": 16}}
+        }}
+      ],
+      "cinematicSegments": [
+        {{"trackId": "track1", "startAnchor": 0, "endAnchor": 8}}
+      ]
+    }}
+  ]
+}}"#
+        )
+    }
 }
 
 pub(super) fn select_camera_system(name: &str, camera_system: &mut SceneMaxCameraSystem) {
@@ -1128,6 +1328,19 @@ pub(super) fn setup_camera_and_lights(
             .map(camera_transform_from_program)
             .unwrap_or_else(default_camera_transform),
     ));
+    if let Some(program) = startup_program.0.as_ref() {
+        let transform = camera_transform_from_program(program);
+        let forward = transform.forward().as_vec3();
+        write_runtime_diagnostic_line(format!(
+            "CAMERA:START pos=({}, {}, {}) forward=({}, {}, {})",
+            format_scenemax_number(transform.translation.x),
+            format_scenemax_number(transform.translation.y),
+            format_scenemax_number(transform.translation.z),
+            format_scenemax_number(forward.x),
+            format_scenemax_number(forward.y),
+            format_scenemax_number(forward.z)
+        ));
+    }
 }
 
 pub(super) fn camera_transform_from_program(program: &Program) -> Transform {
@@ -1138,12 +1351,16 @@ pub(super) fn camera_transform_from_program(program: &Program) -> Transform {
                 camera_transform.translation = vec3_from_scenemax(*position);
             }
             Statement::CameraRotation(rotation) => {
-                camera_transform.rotation = rotation_from_degrees(*rotation);
+                camera_transform.rotation = camera_rotation_from_degrees(*rotation);
             }
             _ => {}
         }
     }
     camera_transform
+}
+
+pub(super) fn camera_rotation_from_degrees(value: SceneMaxVec3) -> Quat {
+    rotation_from_degrees(value) * Quat::from_rotation_y(std::f32::consts::PI)
 }
 
 pub(super) fn default_camera_transform() -> Transform {

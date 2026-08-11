@@ -131,6 +131,7 @@ pub enum Statement {
     },
     CameraPosition(SceneMaxVec3),
     CameraRotation(SceneMaxVec3),
+    CameraMove(CameraMoveStatement),
     WaitForKey {
         key: String,
     },
@@ -344,6 +345,16 @@ pub struct ObjectPoolStatement {
     pub name: String,
     pub factory: String,
     pub size: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CameraMoveStatement {
+    pub axis: SceneMaxAxis,
+    pub distance: f32,
+    pub distance_value: AssignmentValue,
+    pub duration_seconds: f32,
+    pub duration_value: AssignmentValue,
+    pub async_run: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1811,6 +1822,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(Statement::CameraRotation(rotation));
     }
 
+    if let Some(camera_move) = parse_camera_move(line)? {
+        return Ok(Statement::CameraMove(camera_move));
+    }
+
     if let Some(chase) = parse_camera_chase(line)? {
         return Ok(chase);
     }
@@ -2714,6 +2729,66 @@ fn parse_camera_command(line: &str, command: &str) -> Result<Option<SceneMaxVec3
         return Ok(None);
     }
     parse_vec3_after(line, command).map(Some)
+}
+
+fn parse_camera_move(line: &str) -> Result<Option<CameraMoveStatement>, ParseError> {
+    let line = line.trim();
+    if !line.to_ascii_lowercase().starts_with("camera.move") {
+        return Ok(None);
+    }
+    let Some(raw_destination) = values_inside_first_parens(line) else {
+        return Ok(None);
+    };
+    let Some((axis, distance_value)) = parse_camera_axis_delta(raw_destination)? else {
+        return Ok(None);
+    };
+    let (duration_value, duration_seconds) =
+        parse_directional_move_duration_value(line)?.unwrap_or((AssignmentValue::Number(0.0), 0.0));
+    let distance = static_assignment_number(&distance_value).unwrap_or(0.0);
+
+    Ok(Some(CameraMoveStatement {
+        axis,
+        distance,
+        distance_value,
+        duration_seconds,
+        duration_value,
+        async_run: contains_keyword(line, "async"),
+    }))
+}
+
+fn parse_camera_axis_delta(
+    text: &str,
+) -> Result<Option<(SceneMaxAxis, AssignmentValue)>, ParseError> {
+    let raw = text.trim();
+    let Some(axis_char) = raw.chars().next() else {
+        return Ok(None);
+    };
+    let axis = match axis_char.to_ascii_lowercase() {
+        'x' => SceneMaxAxis::X,
+        'y' => SceneMaxAxis::Y,
+        'z' => SceneMaxAxis::Z,
+        _ => return Ok(None),
+    };
+    let after_axis = raw[axis_char.len_utf8()..].trim();
+    let Some(sign) = after_axis.chars().next() else {
+        return Ok(None);
+    };
+    if sign != '+' && sign != '-' {
+        return Ok(None);
+    }
+    let raw_distance = after_axis[sign.len_utf8()..].trim();
+    if raw_distance.is_empty() {
+        return Err(ParseError::InvalidNumber(raw_distance.to_owned()));
+    }
+    let Some(value) = parse_assignment_value(raw_distance)? else {
+        return Err(ParseError::InvalidNumber(raw_distance.to_owned()));
+    };
+    let value = if sign == '-' {
+        negate_assignment_value(value)
+    } else {
+        value
+    };
+    Ok(Some((axis, value)))
 }
 
 fn parse_camera_attach(line: &str) -> Result<Option<Statement>, ParseError> {
@@ -4997,6 +5072,40 @@ mod tests {
                     z: 0.0,
                 }),
             ]
+        );
+    }
+
+    #[test]
+    fn parses_camera_relative_move() {
+        let program = parse_program("camera.move (z+5) in 5 seconds").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::CameraMove(CameraMoveStatement {
+                axis: SceneMaxAxis::Z,
+                distance: 5.0,
+                distance_value: AssignmentValue::Number(5.0),
+                duration_seconds: 5.0,
+                duration_value: AssignmentValue::Number(5.0),
+                async_run: false,
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_camera_relative_move_async_negative_axis_delta() {
+        let program = parse_program("camera.move (x-2.5) for tm seconds async").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::CameraMove(CameraMoveStatement {
+                axis: SceneMaxAxis::X,
+                distance: -2.5,
+                distance_value: AssignmentValue::Number(-2.5),
+                duration_seconds: 0.0,
+                duration_value: AssignmentValue::Symbol("tm".to_owned()),
+                async_run: true,
+            })]
         );
     }
 
