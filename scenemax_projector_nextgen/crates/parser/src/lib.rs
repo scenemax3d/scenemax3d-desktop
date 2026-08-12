@@ -3371,7 +3371,14 @@ fn parse_object_pool(name: &str, rest: &str) -> Result<Option<ObjectPoolStatemen
 fn parse_pool_release(line: &str) -> Option<PoolReleaseStatement> {
     let (pool, rest) = split_dot_command_rest(line)?;
     let rest = rest.trim();
-    let target = rest.strip_prefix("release")?.trim();
+    let rest_lower = rest.to_ascii_lowercase();
+    let target = if rest_lower.starts_with("release") {
+        rest.get("release".len()..)?.trim()
+    } else if rest_lower.starts_with("free") {
+        rest.get("free".len()..)?.trim()
+    } else {
+        return None;
+    };
     if pool.is_empty() || !is_variable_path(&pool) || target.is_empty() || !is_variable_path(target)
     {
         return None;
@@ -3488,7 +3495,7 @@ fn parse_position(line: &str) -> Result<Option<PositionStatement>, ParseError> {
 fn values_inside_first_parens(text: &str) -> Option<&str> {
     let open_index = text.find('(')?;
     let after_open = &text[open_index + 1..];
-    let close_index = after_open.find(')')?;
+    let close_index = matching_close_paren_index(after_open)?;
     Some(after_open[..close_index].trim())
 }
 
@@ -6160,6 +6167,14 @@ run tick(score+10) every tick_time+0.25 seconds
                 },
             ]
         );
+
+        let free_program =
+            parse_program("rocks => Object.Pool(create_rock, 2)\nrocks.free rock").unwrap();
+        assert!(matches!(
+            &free_program.statements[1],
+            Statement::PoolRelease(PoolReleaseStatement { pool, target })
+                if pool == "rocks" && target == "rock"
+        ));
     }
 
     #[test]
@@ -6223,6 +6238,37 @@ run tick(score+10) every tick_time+0.25 seconds
                     position: PositionValue::Entity("player2".to_owned()),
                 }),
             ]
+        );
+    }
+
+    #[test]
+    fn parses_position_with_nested_runtime_expressions() {
+        let program = parse_program("rock.pos(0,-2+index*0.5,0-rnd(10))").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::Position(PositionStatement {
+                target: "rock".to_owned(),
+                position: PositionValue::Coordinates(vec![
+                    PositionExpr::Number(0.0),
+                    PositionExpr::Value(AssignmentValue::Binary {
+                        left: Box::new(AssignmentValue::Number(-2.0)),
+                        operator: ArithmeticOperator::Add,
+                        right: Box::new(AssignmentValue::Binary {
+                            left: Box::new(AssignmentValue::Symbol("index".to_owned())),
+                            operator: ArithmeticOperator::Multiply,
+                            right: Box::new(AssignmentValue::Number(0.5)),
+                        }),
+                    }),
+                    PositionExpr::Value(AssignmentValue::Binary {
+                        left: Box::new(AssignmentValue::Number(0.0)),
+                        operator: ArithmeticOperator::Subtract,
+                        right: Box::new(AssignmentValue::RandomInt {
+                            max: Box::new(AssignmentValue::Number(10.0)),
+                        }),
+                    }),
+                ]),
+            })]
         );
     }
 

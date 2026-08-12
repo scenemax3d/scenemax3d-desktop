@@ -1671,6 +1671,9 @@ pub(super) fn setup_camera_and_lights(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    runtime_assets.asset_server = Some(asset_server.clone());
+    runtime_assets.asset_root = context.asset_root.clone();
+    runtime_assets.builtin_asset_root = context.builtin_asset_root.clone();
     runtime_assets.placeholder_mesh = Some(meshes.add(Cuboid::new(1.0, 1.0, 1.0)));
     runtime_assets.placeholder_material = Some(materials.add(Color::srgb_u8(185, 150, 65)));
     runtime_assets.audio_by_name = load_audio_index(

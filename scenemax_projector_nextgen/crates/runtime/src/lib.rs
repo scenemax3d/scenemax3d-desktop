@@ -208,6 +208,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 apply_pending_character_modes,
                 cleanup_character_supports,
                 update_avian_collision_contacts,
+                activate_pending_pool_members,
                 apply_key_events,
                 update_virtual_colliders,
                 update_scenemax_debug_gizmos,
@@ -335,7 +336,11 @@ struct SceneMaxObjectPools {
 
 #[derive(Debug, Default)]
 struct ObjectPoolRuntime {
+    factory: String,
+    prototype: Option<ModelRuntimeDecl>,
+    created_count: usize,
     available: Vec<String>,
+    pending_available: HashSet<String>,
     in_use: HashSet<String>,
     members: HashSet<String>,
 }
@@ -420,8 +425,11 @@ impl SceneMaxColliderBounds {
     }
 }
 
-#[derive(Debug, Resource, Default)]
+#[derive(Resource, Default)]
 struct SceneMaxRuntimeAssets {
+    asset_server: Option<AssetServer>,
+    asset_root: Option<PathBuf>,
+    builtin_asset_root: Option<PathBuf>,
     placeholder_mesh: Option<Handle<Mesh>>,
     placeholder_material: Option<Handle<StandardMaterial>>,
     audio_by_name: HashMap<String, SceneMaxAudioAsset>,

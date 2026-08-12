@@ -1334,6 +1334,14 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             }
         });
 
+        inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_F12, KeyEvent.CTRL_DOWN_MASK), "run_active_script_file_nextgen");
+        actionMap.put("run_active_script_file_nextgen", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                runActiveEditorScriptFileNextGen();
+            }
+        });
+
         inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_F8, 0), "run_active_script_file");
         actionMap.put("run_active_script_file", new AbstractAction() {
             @Override
@@ -1352,6 +1360,13 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 if (editorTabPanel != null) {
                     editorTabPanel.switchToPreviousTab();
                 }
+                return true;
+            }
+            if (e.getKeyCode() == KeyEvent.VK_F12
+                    && (e.getModifiersEx() & KeyEvent.CTRL_DOWN_MASK) != 0
+                    && (e.getModifiersEx() & KeyEvent.ALT_DOWN_MASK) == 0
+                    && (e.getModifiersEx() & KeyEvent.SHIFT_DOWN_MASK) == 0) {
+                runActiveEditorScriptFileNextGen();
                 return true;
             }
             if (e.getModifiersEx() != 0) {
@@ -4795,6 +4810,14 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     private boolean runActiveEditorScriptFile() {
+        return runActiveEditorScriptFile(RunLauncherTask.RuntimeTarget.CLASSIC);
+    }
+
+    private boolean runActiveEditorScriptFileNextGen() {
+        return runActiveEditorScriptFile(RunLauncherTask.RuntimeTarget.NEXTGEN);
+    }
+
+    private boolean runActiveEditorScriptFile(RunLauncherTask.RuntimeTarget runtimeTarget) {
         if (launcherRunInProgress) {
             return false;
         }
@@ -4818,7 +4841,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         if (active.dirty) {
             editorTabPanel.saveActiveTab();
         }
-        return runScriptFile(target);
+        return runScriptFile(target, runtimeTarget);
     }
 
     private boolean runScriptFile(File scriptFile) {

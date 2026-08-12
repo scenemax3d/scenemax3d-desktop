@@ -2789,7 +2789,7 @@ pub(super) fn apply_action_sequence(
                 return ActionSequenceResult::Completed;
             }
             Statement::Async { actions } => {
-                let mut async_scope = scope.as_deref().cloned();
+                let mut async_scope = scope.as_deref().cloned().unwrap_or_default();
                 let _ = apply_action_sequence(
                     actions,
                     transforms_by_name,
@@ -2805,7 +2805,7 @@ pub(super) fn apply_action_sequence(
                     delayed_actions.as_deref_mut(),
                     ui_queue.as_deref_mut(),
                     None,
-                    async_scope.as_mut(),
+                    Some(&mut async_scope),
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
@@ -3224,6 +3224,20 @@ pub(super) fn apply_runtime_model_decl(
         tracing::info!(name, resource, "spawned runtime SceneMax collider");
         return;
     }
+
+    if let Some(model_transform) = spawn_runtime_gltf_model_decl(
+        name,
+        resource,
+        options,
+        transform,
+        runtime_assets,
+        collider_bounds,
+        commands,
+    ) {
+        transforms_by_name.insert(name.to_owned(), model_transform);
+        return;
+    }
+
     let mut entity = commands.spawn((
         SceneMaxEntity {
             name: name.to_owned(),
@@ -3246,6 +3260,80 @@ pub(super) fn apply_runtime_model_decl(
         resource,
         "spawned runtime SceneMax placeholder entity"
     );
+}
+
+fn spawn_runtime_gltf_model_decl(
+    name: &str,
+    resource: &str,
+    options: &EntityOptions,
+    transform: Transform,
+    runtime_assets: &SceneMaxRuntimeAssets,
+    collider_bounds: &mut SceneMaxColliderBounds,
+    commands: &mut Commands,
+) -> Option<Transform> {
+    let model = runtime_model_resource(resource, runtime_assets)?;
+    let asset_server = runtime_assets.asset_server.as_ref()?;
+
+    let mut model_transform = transform;
+    if options.scale.is_none()
+        && let Some(scale) = model.scale
+    {
+        model_transform.scale *= Vec3::new(scale[0], scale[1], scale[2]);
+    }
+    let asset_path = model.asset_path;
+    let gltf: Handle<Gltf> = asset_server.load(asset_path.clone());
+    let scene =
+        WorldAssetRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())));
+    let entity_id = commands
+        .spawn((
+            SceneMaxEntity {
+                name: name.to_owned(),
+                runtime_name: format!("{name}@runtime"),
+            },
+            SceneMaxGltf { gltf },
+            scene,
+            model_transform,
+            if options.hidden {
+                Visibility::Hidden
+            } else {
+                Visibility::Inherited
+            },
+        ))
+        .id();
+    insert_physics_components(
+        commands,
+        entity_id,
+        name,
+        resource,
+        options,
+        &model_transform,
+    );
+    if options.collider {
+        register_collider_bounds(collider_bounds, name, options, model_transform);
+    }
+    tracing::info!(
+        name,
+        resource,
+        path = %asset_path,
+        "spawned runtime SceneMax GLTF model"
+    );
+    write_runtime_diagnostic_line(format!(
+        "resolved runtime GLTF model {name}=>{resource} at {asset_path}"
+    ));
+    Some(model_transform)
+}
+
+fn runtime_model_resource(
+    resource: &str,
+    runtime_assets: &SceneMaxRuntimeAssets,
+) -> Option<scenemax_assets::ModelResource> {
+    let asset_root = runtime_assets.asset_root.as_deref()?;
+    scenemax_assets::resolve_model_resource_with_builtin_fallback(
+        asset_root,
+        runtime_assets.builtin_asset_root.as_deref(),
+        resource,
+    )
+    .ok()
 }
 
 pub(super) fn apply_key_action(
@@ -3327,7 +3415,17 @@ pub(super) fn apply_key_action(
     | Statement::LocalAssignment(assignment) = action
     {
         if let AssignmentValue::PoolAcquire { pool } = &assignment.value {
-            let Some(member) = acquire_pool_member(pool, object_pools) else {
+            let Some(member) = acquire_pool_member(
+                pool,
+                transforms_by_name,
+                vars,
+                object_pools,
+                guards_by_name,
+                runtime_assets,
+                collider_bounds,
+                commands,
+                scene_entities,
+            ) else {
                 tracing::debug!(pool, "SceneMax object pool has no available members");
                 return ActionSequenceResult::Completed;
             };
@@ -4484,13 +4582,261 @@ pub(super) fn sync_live_transform(
     }
 }
 
+const OBJECT_POOL_MAX_MEMBERS: usize = 256;
+const OBJECT_POOL_RESERVE_LOW_WATERMARK: usize = 4;
+const OBJECT_POOL_GROW_BATCH: usize = 8;
+
+pub(super) fn activate_pending_pool_members(
+    mut object_pools: ResMut<SceneMaxObjectPools>,
+    scene_entities: Query<&SceneMaxEntity>,
+) {
+    if object_pools
+        .pools
+        .values()
+        .all(|runtime| runtime.pending_available.is_empty())
+    {
+        return;
+    }
+    let live_names = scene_entities
+        .iter()
+        .map(|entity| entity.name.clone())
+        .collect::<HashSet<_>>();
+    for (pool, runtime) in &mut object_pools.pools {
+        let ready = runtime
+            .pending_available
+            .iter()
+            .filter(|member| live_names.contains(*member))
+            .cloned()
+            .collect::<Vec<_>>();
+        if ready.is_empty() {
+            continue;
+        }
+        for member in ready {
+            runtime.pending_available.remove(&member);
+            if !runtime.in_use.contains(&member)
+                && !runtime
+                    .available
+                    .iter()
+                    .any(|available| available == &member)
+            {
+                runtime.available.push(member.clone());
+            }
+            write_runtime_diagnostic_line(format!(
+                "object pool {pool} reserve ready {member}; available={} pending={}",
+                runtime.available.len(),
+                runtime.pending_available.len()
+            ));
+        }
+    }
+}
+
 pub(super) fn acquire_pool_member(
     pool: &str,
+    transforms_by_name: &mut HashMap<String, Transform>,
+    vars: &SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
+    guards_by_name: &HashMap<String, Condition>,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+    collider_bounds: &mut SceneMaxColliderBounds,
+    commands: &mut Commands,
+    scene_entities: &mut ParamSet<(
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
+            Option<&mut Visibility>,
+            Option<&SceneMaxCharacterController>,
+            Option<&mut SceneMaxCharacterMotor>,
+        )>,
+    )>,
 ) -> Option<String> {
+    let member = if let Some(member) = object_pools
+        .pools
+        .get_mut(pool)
+        .and_then(|runtime| runtime.available.pop())
+    {
+        member
+    } else {
+        grow_pool_member(
+            pool,
+            transforms_by_name,
+            vars,
+            object_pools,
+            guards_by_name,
+            runtime_assets,
+            collider_bounds,
+            commands,
+            scene_entities,
+            false,
+        )?
+    };
     let runtime = object_pools.pools.get_mut(pool)?;
-    let member = runtime.available.pop()?;
     runtime.in_use.insert(member.clone());
+    write_runtime_diagnostic_line(format!(
+        "object pool {pool} acquire {member}; available={} in_use={}",
+        runtime.available.len(),
+        runtime.in_use.len()
+    ));
+    grow_pool_reserve(
+        pool,
+        transforms_by_name,
+        vars,
+        object_pools,
+        guards_by_name,
+        runtime_assets,
+        collider_bounds,
+        commands,
+        scene_entities,
+    );
+    Some(member)
+}
+
+fn grow_pool_reserve(
+    pool: &str,
+    transforms_by_name: &mut HashMap<String, Transform>,
+    vars: &SceneMaxVars,
+    object_pools: &mut SceneMaxObjectPools,
+    guards_by_name: &HashMap<String, Condition>,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+    collider_bounds: &mut SceneMaxColliderBounds,
+    commands: &mut Commands,
+    scene_entities: &mut ParamSet<(
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
+            Option<&mut Visibility>,
+            Option<&SceneMaxCharacterController>,
+            Option<&mut SceneMaxCharacterMotor>,
+        )>,
+    )>,
+) {
+    let should_grow = object_pools.pools.get(pool).is_some_and(|runtime| {
+        runtime.available.len() <= OBJECT_POOL_RESERVE_LOW_WATERMARK
+            && runtime.members.len() < OBJECT_POOL_MAX_MEMBERS
+    });
+    if !should_grow {
+        return;
+    }
+
+    for _ in 0..OBJECT_POOL_GROW_BATCH {
+        let can_grow = object_pools
+            .pools
+            .get(pool)
+            .is_some_and(|runtime| runtime.members.len() < OBJECT_POOL_MAX_MEMBERS);
+        if !can_grow {
+            break;
+        }
+        let Some(member) = grow_pool_member(
+            pool,
+            transforms_by_name,
+            vars,
+            object_pools,
+            guards_by_name,
+            runtime_assets,
+            collider_bounds,
+            commands,
+            scene_entities,
+            true,
+        ) else {
+            break;
+        };
+        if let Some(runtime) = object_pools.pools.get_mut(pool) {
+            runtime.pending_available.insert(member.clone());
+            write_runtime_diagnostic_line(format!(
+                "object pool {pool} reserve spawning {member}; available={} pending={} in_use={}",
+                runtime.available.len(),
+                runtime.pending_available.len(),
+                runtime.in_use.len()
+            ));
+        }
+    }
+}
+
+fn grow_pool_member(
+    pool: &str,
+    transforms_by_name: &mut HashMap<String, Transform>,
+    vars: &SceneMaxVars,
+    object_pools: &mut SceneMaxObjectPools,
+    guards_by_name: &HashMap<String, Condition>,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+    collider_bounds: &mut SceneMaxColliderBounds,
+    commands: &mut Commands,
+    scene_entities: &mut ParamSet<(
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
+            Option<&mut Visibility>,
+            Option<&SceneMaxCharacterController>,
+            Option<&mut SceneMaxCharacterMotor>,
+        )>,
+    )>,
+    hidden: bool,
+) -> Option<String> {
+    let (member, resource, mut options, factory) = {
+        let runtime = object_pools.pools.get_mut(pool)?;
+        let prototype = runtime.prototype.clone()?;
+        if runtime.members.len() >= OBJECT_POOL_MAX_MEMBERS {
+            write_runtime_diagnostic_line(format!(
+                "object pool {pool} exhausted; max members reached ({OBJECT_POOL_MAX_MEMBERS})"
+            ));
+            tracing::debug!(
+                pool,
+                max_members = OBJECT_POOL_MAX_MEMBERS,
+                "SceneMax object pool reached the runtime member cap"
+            );
+            return None;
+        }
+        if !is_primitive_resource(&prototype.resource)
+            && runtime_model_resource(&prototype.resource, runtime_assets).is_none()
+        {
+            write_runtime_diagnostic_line(format!(
+                "object pool {pool} exhausted; no preloaded members available for model resource {}",
+                prototype.resource
+            ));
+            tracing::debug!(
+                pool,
+                resource = %prototype.resource,
+                "SceneMax object pool exhausted; skipping runtime placeholder growth for model resource"
+            );
+            return None;
+        }
+        let member = format!("__pool_{}_{}", pool, runtime.created_count);
+        runtime.created_count += 1;
+        runtime.members.insert(member.clone());
+        (
+            member,
+            prototype.resource,
+            prototype.options,
+            runtime.factory.clone(),
+        )
+    };
+    if hidden {
+        options.hidden = true;
+    }
+    apply_runtime_model_decl(
+        &member,
+        &resource,
+        &options,
+        transforms_by_name,
+        vars,
+        guards_by_name,
+        runtime_assets,
+        collider_bounds,
+        commands,
+        scene_entities,
+    );
+    tracing::info!(pool, factory, member, "grew SceneMax object pool member");
     Some(member)
 }
 
@@ -4579,6 +4925,11 @@ pub(super) fn release_pool_member(
         runtime.available.push(target.to_owned());
     }
     object_pools.aliases.retain(|_, value| value != target);
+    write_runtime_diagnostic_line(format!(
+        "object pool {pool} release {target}; available={} in_use={}",
+        runtime.available.len(),
+        runtime.in_use.len()
+    ));
     true
 }
 
@@ -4624,7 +4975,10 @@ pub(super) fn hide_and_stop_scene_entity(
         }
         commands
             .entity(entity)
-            .insert((LinearVelocity::ZERO, AngularVelocity::ZERO));
+            .insert((LinearVelocity::ZERO, AngularVelocity::ZERO))
+            .remove::<TimedMoves>()
+            .remove::<TimedTurn>()
+            .remove::<TimedJump>();
         break;
     }
 }

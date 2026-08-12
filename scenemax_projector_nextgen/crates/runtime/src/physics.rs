@@ -375,6 +375,10 @@ fn primitive_kind(resource: &str) -> Option<SceneMaxPrimitiveKind> {
     }
 }
 
+pub(super) fn is_primitive_resource(resource: &str) -> bool {
+    primitive_kind(resource).is_some()
+}
+
 fn quad_mesh(width: f32, height: f32) -> Mesh {
     let width = width.abs().max(0.001);
     let height = height.abs().max(0.001);
@@ -764,7 +768,11 @@ pub(super) fn instantiate_object_pool_declarations(
             continue;
         };
 
-        let mut runtime = ObjectPoolRuntime::default();
+        let mut runtime = ObjectPoolRuntime {
+            factory: pool.factory.clone(),
+            prototype: Some(prototype.clone()),
+            ..Default::default()
+        };
         for index in 0..pool.size.min(256) {
             let member_name = format!("__pool_{}_{}", pool.name, index);
             runtime.available.push(member_name.clone());
@@ -776,6 +784,7 @@ pub(super) fn instantiate_object_pool_declarations(
                 resource: prototype.resource.clone(),
                 options,
             });
+            runtime.created_count += 1;
         }
         runtime.available.reverse();
         object_pools.pools.insert(pool.name.clone(), runtime);
@@ -2088,11 +2097,10 @@ pub(super) fn transform_from_options(
         .position
         .map(vec3_from_scenemax)
         .unwrap_or(Vec3::ZERO);
-    let scale = options
-        .scale
-        .map(vec3_from_scenemax)
-        .or_else(|| asset_scale.map(|scale| Vec3::new(scale[0], scale[1], scale[2])))
+    let asset_scale = asset_scale
+        .map(|scale| Vec3::new(scale[0], scale[1], scale[2]))
         .unwrap_or(Vec3::ONE);
+    let scale = options.scale.map(vec3_from_scenemax).unwrap_or(asset_scale);
     let rotation = options
         .rotation_degrees
         .map(rotation_from_degrees)
@@ -2778,5 +2786,42 @@ Material wall : Common/MatDefs/Light/Lighting.j3md {
                 [0.0, 3.0, 0.0],
             ]
         );
+    }
+
+    #[test]
+    fn model_script_scale_overrides_asset_scale() {
+        let transform = transform_from_options(
+            &EntityOptions {
+                scale: Some(SceneMaxVec3 {
+                    x: 2.0,
+                    y: 2.0,
+                    z: 2.0,
+                }),
+                ..Default::default()
+            },
+            Some([0.02, 0.02, 0.02]),
+        );
+
+        assert_eq!(transform.scale, Vec3::splat(2.0));
+    }
+
+    #[test]
+    fn model_asset_scale_applies_when_script_scale_is_absent() {
+        let transform = transform_from_options(
+            &EntityOptions {
+                scale: None,
+                ..Default::default()
+            },
+            Some([0.02, 0.02, 0.02]),
+        );
+
+        assert_eq!(transform.scale, Vec3::splat(0.02));
+    }
+
+    #[test]
+    fn primitive_resource_detection_stays_generic() {
+        assert!(is_primitive_resource("box"));
+        assert!(is_primitive_resource("sphere"));
+        assert!(!is_primitive_resource("bone"));
     }
 }
