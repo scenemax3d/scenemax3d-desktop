@@ -1404,6 +1404,56 @@ mod tests {
     }
 
     #[test]
+    fn object_pool_acquire_runs_factory_assignment_side_effects() {
+        let mut vars = SceneMaxVars(HashMap::from([("index".to_owned(), 1.0)]));
+        let mut object_pools = SceneMaxObjectPools::default();
+        object_pools.pools.insert(
+            "rocks".to_owned(),
+            ObjectPoolRuntime {
+                factory: "create_rock".to_owned(),
+                ..Default::default()
+            },
+        );
+        let functions = HashMap::from([(
+            "create_rock".to_owned(),
+            FunctionRuntime {
+                params: Vec::new(),
+                guard: None,
+                actions: vec![
+                    Statement::ModelDecl {
+                        name: "rock1".to_owned(),
+                        resource: "bone".to_owned(),
+                        options: EntityOptions::default(),
+                    },
+                    Statement::Assignment(scenemax_parser::AssignmentStatement {
+                        name: "index".to_owned(),
+                        value: AssignmentValue::Binary {
+                            left: Box::new(AssignmentValue::Symbol("index".to_owned())),
+                            operator: scenemax_parser::ArithmeticOperator::Add,
+                            right: Box::new(AssignmentValue::Number(1.0)),
+                        },
+                    }),
+                    Statement::ReturnValue {
+                        value: AssignmentValue::Symbol("rock1".to_owned()),
+                    },
+                ],
+            },
+        )]);
+
+        apply_pool_factory_acquire_side_effects(
+            "rocks",
+            &mut vars,
+            &object_pools,
+            &functions,
+            &HashMap::new(),
+            &HashMap::new(),
+            &SceneMaxColliderBounds::default(),
+        );
+
+        assert_eq!(vars.0.get("index"), Some(&2.0));
+    }
+
+    #[test]
     fn sprite_play_statement_builds_runtime_animation() {
         let animation = sprite_animation_from_statement(&SpritePlayStatement {
             target: "b".to_owned(),

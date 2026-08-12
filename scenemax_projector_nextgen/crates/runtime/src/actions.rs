@@ -3420,6 +3420,7 @@ pub(super) fn apply_key_action(
                 transforms_by_name,
                 vars,
                 object_pools,
+                functions_by_name,
                 guards_by_name,
                 runtime_assets,
                 collider_bounds,
@@ -4633,8 +4634,9 @@ pub(super) fn activate_pending_pool_members(
 pub(super) fn acquire_pool_member(
     pool: &str,
     transforms_by_name: &mut HashMap<String, Transform>,
-    vars: &SceneMaxVars,
+    vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
+    functions_by_name: &HashMap<String, FunctionRuntime>,
     guards_by_name: &HashMap<String, Condition>,
     runtime_assets: &mut SceneMaxRuntimeAssets,
     collider_bounds: &mut SceneMaxColliderBounds,
@@ -4653,6 +4655,15 @@ pub(super) fn acquire_pool_member(
         )>,
     )>,
 ) -> Option<String> {
+    apply_pool_factory_acquire_side_effects(
+        pool,
+        vars,
+        object_pools,
+        functions_by_name,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    );
     let member = if let Some(member) = object_pools
         .pools
         .get_mut(pool)
@@ -4665,6 +4676,7 @@ pub(super) fn acquire_pool_member(
             transforms_by_name,
             vars,
             object_pools,
+            functions_by_name,
             guards_by_name,
             runtime_assets,
             collider_bounds,
@@ -4685,6 +4697,7 @@ pub(super) fn acquire_pool_member(
         transforms_by_name,
         vars,
         object_pools,
+        functions_by_name,
         guards_by_name,
         runtime_assets,
         collider_bounds,
@@ -4699,6 +4712,7 @@ fn grow_pool_reserve(
     transforms_by_name: &mut HashMap<String, Transform>,
     vars: &SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
+    functions_by_name: &HashMap<String, FunctionRuntime>,
     guards_by_name: &HashMap<String, Condition>,
     runtime_assets: &mut SceneMaxRuntimeAssets,
     collider_bounds: &mut SceneMaxColliderBounds,
@@ -4738,6 +4752,7 @@ fn grow_pool_reserve(
             transforms_by_name,
             vars,
             object_pools,
+            functions_by_name,
             guards_by_name,
             runtime_assets,
             collider_bounds,
@@ -4764,6 +4779,7 @@ fn grow_pool_member(
     transforms_by_name: &mut HashMap<String, Transform>,
     vars: &SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
+    _functions_by_name: &HashMap<String, FunctionRuntime>,
     guards_by_name: &HashMap<String, Condition>,
     runtime_assets: &mut SceneMaxRuntimeAssets,
     collider_bounds: &mut SceneMaxColliderBounds,
@@ -4838,6 +4854,56 @@ fn grow_pool_member(
     );
     tracing::info!(pool, factory, member, "grew SceneMax object pool member");
     Some(member)
+}
+
+pub(super) fn apply_pool_factory_acquire_side_effects(
+    pool: &str,
+    vars: &mut SceneMaxVars,
+    object_pools: &SceneMaxObjectPools,
+    functions_by_name: &HashMap<String, FunctionRuntime>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: &SceneMaxColliderBounds,
+) {
+    let Some(factory) = object_pools
+        .pools
+        .get(pool)
+        .map(|runtime| runtime.factory.as_str())
+    else {
+        return;
+    };
+    let Some(function) = functions_by_name.get(factory) else {
+        return;
+    };
+    let mut factory_scope = SceneMaxScopeFrame::default();
+    for action in &function.actions {
+        match action {
+            Statement::Assignment(assignment) | Statement::SharedAssignment(assignment) => {
+                apply_assignment_scoped(
+                    assignment,
+                    vars,
+                    Some(&mut factory_scope),
+                    Some(transforms_by_name),
+                    guards_by_name,
+                    Some(collider_bounds),
+                    false,
+                );
+            }
+            Statement::LocalAssignment(assignment) => {
+                apply_assignment_scoped(
+                    assignment,
+                    vars,
+                    Some(&mut factory_scope),
+                    Some(transforms_by_name),
+                    guards_by_name,
+                    Some(collider_bounds),
+                    true,
+                );
+            }
+            Statement::Return | Statement::ReturnValue { .. } => break,
+            _ => {}
+        }
+    }
 }
 
 pub(super) fn release_pool_action(
