@@ -220,7 +220,6 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .add_systems(
             Update,
             (
-                apply_builtin_navigation_controls,
                 update_timed_turns,
                 update_timed_moves,
                 update_timed_jumps,
@@ -232,7 +231,6 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_attached_camera,
                 update_camera_modifiers,
                 update_sprite_animations,
-                restore_default_idle_animations,
                 play_pending_animations,
                 apply_animation_speed_overrides,
             )
@@ -396,6 +394,7 @@ struct SceneMaxPhysicsContacts {
 struct SceneMaxColliderBounds {
     radius_by_name: HashMap<String, f32>,
     shape_by_name: HashMap<String, ColliderBoundShape>,
+    owner_by_name: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -422,6 +421,7 @@ impl SceneMaxColliderBounds {
     fn clear(&mut self) {
         self.radius_by_name.clear();
         self.shape_by_name.clear();
+        self.owner_by_name.clear();
     }
 }
 
@@ -948,14 +948,6 @@ struct ModelRuntimeDecl {
     options: EntityOptions,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum VirtualColliderShape {
-    Box { half_extents: Vec3 },
-    Sphere { radius: f32 },
-}
-
-const BUILTIN_PLAYER_MOVE_SPEED: f32 = 4.0;
-const BUILTIN_PLAYER_TURN_SPEED_RADIANS: f32 = std::f32::consts::FRAC_PI_2;
 const DEFAULT_CHARACTER_GRAVITY: f32 = 60.0;
 const DEFAULT_CHARACTER_MOVE_SPEED: f32 = 7.0;
 const DEFAULT_CHARACTER_CAPSULE_RADIUS: f32 = 0.35;
@@ -968,7 +960,7 @@ const DEFAULT_STAGE_SUPPORT_HALF_SIZE: f32 = 160.0;
 const CHARACTER_INPUT_TTL_SECONDS: f32 = 0.12;
 const CHARACTER_JUMP_FEED_SECONDS: f32 = 0.2;
 const DEFAULT_ANIMATION_CLIP_SECONDS: f32 = 1.5;
-const MAX_PLAYER_HITBOX_OWNER_DISTANCE: f32 = 3.75;
+const MAX_ATTACHED_COLLIDER_OWNER_DISTANCE: f32 = 3.75;
 const LOOP_CONTINUE_DELAY_SECONDS: f32 = 0.001;
 const PHYSICS_LAYER_WORLD: u32 = 1 << 0;
 const PHYSICS_LAYER_CHARACTER: u32 = 1 << 1;
@@ -1540,7 +1532,7 @@ mod tests {
     }
 
     #[test]
-    fn evaluates_fighter_collision_by_owner_distance() {
+    fn evaluates_attached_collider_collision_by_declared_owner_distance() {
         let transforms = HashMap::from([
             (
                 "player1".to_owned(),
@@ -1548,15 +1540,25 @@ mod tests {
             ),
             (
                 "player2".to_owned(),
-                Transform::from_translation(Vec3::new(0.0, 0.0, 3.5)),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 2.0)),
             ),
         ]);
+        let collider_bounds = SceneMaxColliderBounds {
+            owner_by_name: HashMap::from([
+                ("player1_head_collider".to_owned(), "player1".to_owned()),
+                (
+                    "player2_left_hand_collider".to_owned(),
+                    "player2".to_owned(),
+                ),
+            ]),
+            ..Default::default()
+        };
 
         assert!(collision_condition_matches(
             &["player2_left_hand_collider".to_owned()],
             "player1_head_collider",
             Some(&transforms),
-            None,
+            Some(&collider_bounds),
         ));
     }
 
@@ -1607,6 +1609,7 @@ mod tests {
                 ("small_sphere".to_owned(), 0.5),
             ]),
             shape_by_name: HashMap::new(),
+            owner_by_name: HashMap::new(),
         };
 
         assert!(collision_condition_matches(
@@ -1692,7 +1695,7 @@ mod tests {
     }
 
     #[test]
-    fn player_hitbox_collision_is_gated_by_owner_distance() {
+    fn attached_collider_collision_is_gated_by_owner_distance() {
         let transforms = HashMap::from([
             (
                 "player1".to_owned(),
@@ -1711,12 +1714,22 @@ mod tests {
                 Transform::from_translation(Vec3::new(0.0, 1.5, 0.4)),
             ),
         ]);
+        let collider_bounds = SceneMaxColliderBounds {
+            owner_by_name: HashMap::from([
+                ("player1_head_collider".to_owned(), "player1".to_owned()),
+                (
+                    "player2_left_hand_collider".to_owned(),
+                    "player2".to_owned(),
+                ),
+            ]),
+            ..Default::default()
+        };
 
         assert!(!collision_condition_matches(
             &["player2_left_hand_collider".to_owned()],
             "player1_head_collider",
             Some(&transforms),
-            None,
+            Some(&collider_bounds),
         ));
     }
 
@@ -1752,6 +1765,7 @@ mod tests {
                     ColliderBoundShape::Sphere { radius: 0.24 },
                 ),
             ]),
+            owner_by_name: HashMap::new(),
         };
 
         assert!(!collision_condition_matches(
@@ -1794,6 +1808,7 @@ mod tests {
                     ColliderBoundShape::Sphere { radius: 0.24 },
                 ),
             ]),
+            owner_by_name: HashMap::new(),
         };
 
         assert!(collision_condition_matches(
@@ -1847,16 +1862,32 @@ mod tests {
             &contacts,
             &object_pools,
         ));
-        assert!(physics_contact_matches(
+        assert!(!physics_contact_matches(
             &["player2".to_owned()],
             "player1_head_collider",
             &contacts,
             &object_pools,
         ));
+        let collider_bounds = SceneMaxColliderBounds {
+            owner_by_name: HashMap::from([
+                ("player1_head_collider".to_owned(), "player1".to_owned()),
+                (
+                    "player2_left_hand_collider".to_owned(),
+                    "player2".to_owned(),
+                ),
+            ]),
+            ..Default::default()
+        };
+        assert!(active_physics_contact_matches(
+            "player2",
+            "player1_head_collider",
+            &contacts,
+            Some(&collider_bounds),
+        ));
     }
 
     #[test]
-    fn exact_avian_player_hitbox_contact_is_gated_by_owner_distance() {
+    fn exact_avian_attached_collider_contact_is_gated_by_owner_distance() {
         let contacts = SceneMaxPhysicsContacts {
             active_pairs: HashSet::from([normalized_collision_pair(
                 "player2_left_hand_collider",
@@ -1874,6 +1905,16 @@ mod tests {
                 Transform::from_translation(Vec3::new(0.0, 0.0, 4.5)),
             ),
         ]);
+        let collider_bounds = SceneMaxColliderBounds {
+            owner_by_name: HashMap::from([
+                ("player1_head_collider".to_owned(), "player1".to_owned()),
+                (
+                    "player2_left_hand_collider".to_owned(),
+                    "player2".to_owned(),
+                ),
+            ]),
+            ..Default::default()
+        };
 
         assert!(!physics_contact_condition_matches(
             &["player2_left_hand_collider".to_owned()],
@@ -1881,6 +1922,7 @@ mod tests {
             &contacts,
             &object_pools,
             Some(&transforms),
+            Some(&collider_bounds),
         ));
     }
 
@@ -1903,6 +1945,38 @@ mod tests {
             &contacts,
             &object_pools,
         ));
+    }
+
+    #[test]
+    fn collision_pulse_collection_ignores_arithmetic_state_updates() {
+        let actions = vec![
+            Statement::Assignment(scenemax_parser::AssignmentStatement {
+                name: "enemy_hit".to_owned(),
+                value: AssignmentValue::Number(1.0),
+            }),
+            Statement::Assignment(scenemax_parser::AssignmentStatement {
+                name: "score".to_owned(),
+                value: AssignmentValue::Binary {
+                    left: Box::new(AssignmentValue::Symbol("score".to_owned())),
+                    operator: scenemax_parser::ArithmeticOperator::Add,
+                    right: Box::new(AssignmentValue::Number(10.0)),
+                },
+            }),
+        ];
+        let mut pulses = HashSet::new();
+        collect_transient_collision_assignments(&actions, &mut pulses);
+
+        assert!(pulses.contains("enemy_hit"));
+        assert!(!pulses.contains("score"));
+
+        let mut vars = SceneMaxVars(HashMap::from([
+            ("enemy_hit".to_owned(), 1.0),
+            ("score".to_owned(), 10.0),
+        ]));
+        clear_transient_collision_vars(&mut vars, &pulses);
+
+        assert_eq!(vars.0.get("enemy_hit").copied(), Some(0.0));
+        assert_eq!(vars.0.get("score").copied(), Some(10.0));
     }
 
     #[test]
@@ -2233,7 +2307,7 @@ mod tests {
     }
 
     #[test]
-    fn chooses_kinematic_capsule_for_dynamic_fighter_physics() {
+    fn kinematic_physics_uses_generic_default_shape_unless_explicit() {
         let options = EntityOptions {
             body_kind: Some(SceneMaxBodyKind::Kinematic),
             collision_shape: None,
@@ -2249,6 +2323,21 @@ mod tests {
                 "player2",
                 "old_fighter2_native",
                 &options,
+                SceneMaxBodyKind::Kinematic
+            ),
+            Some(SceneMaxCollisionShape::Box)
+        );
+
+        let explicit_capsule = EntityOptions {
+            body_kind: Some(SceneMaxBodyKind::Kinematic),
+            collision_shape: Some(SceneMaxCollisionShape::Capsule),
+            ..Default::default()
+        };
+        assert_eq!(
+            physics_collision_shape(
+                "player2",
+                "old_fighter2_native",
+                &explicit_capsule,
                 SceneMaxBodyKind::Kinematic
             ),
             Some(SceneMaxCollisionShape::Capsule)

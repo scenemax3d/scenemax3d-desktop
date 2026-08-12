@@ -68,28 +68,6 @@ pub(super) fn animation_clip_duration_seconds(
         .unwrap_or(DEFAULT_ANIMATION_CLIP_SECONDS)
 }
 
-pub(super) fn queue_builtin_player_animation(
-    commands: &mut Commands,
-    entity: Entity,
-    gltf: Option<&SceneMaxGltf>,
-    current_animation: Option<&CurrentAnimation>,
-    clip: &str,
-    looped: bool,
-) {
-    if current_animation.is_some_and(|current| current_animation_matches(current, clip, looped)) {
-        return;
-    }
-    let Some(gltf) = gltf else {
-        return;
-    };
-    commands.entity(entity).insert(AnimationToPlay {
-        clip: clip.to_owned(),
-        looped,
-        speed: 1.0,
-        gltf: gltf.gltf.clone(),
-    });
-}
-
 pub(super) fn current_animation_matches(
     current: &CurrentAnimation,
     requested_clip: &str,
@@ -136,54 +114,6 @@ pub(super) fn key_event_matches(
         KeyTrigger::PressedOnce => keyboard.just_pressed(key_code),
         KeyTrigger::Released => keyboard.just_released(key_code),
     }
-}
-
-pub(super) fn restore_default_idle_animations(
-    mut commands: Commands,
-    vars: Res<SceneMaxVars>,
-    characters: Query<(
-        Entity,
-        &SceneMaxEntity,
-        Option<&SceneMaxGltf>,
-        Option<&CurrentAnimation>,
-        Option<&AnimationToPlay>,
-    )>,
-) {
-    if !scene_is_ready_for_player_idle(&vars) {
-        return;
-    }
-    for (entity, scene_entity, gltf, current_animation, pending_animation) in &characters {
-        if scene_entity.name != "player1" || pending_animation.is_some() {
-            continue;
-        }
-        if current_animation.is_some_and(|current| {
-            current_animation_matches(current, "idle2", true)
-                || (!current.looped && current.elapsed_seconds < current.duration_seconds)
-        }) {
-            continue;
-        }
-        let Some(gltf) = gltf else {
-            continue;
-        };
-        commands.entity(entity).insert(AnimationToPlay {
-            clip: "idle2".to_owned(),
-            looped: true,
-            speed: 1.0,
-            gltf: gltf.gltf.clone(),
-        });
-    }
-}
-
-pub(super) fn scene_is_ready_for_player_idle(vars: &SceneMaxVars) -> bool {
-    variable_is_zero(vars, "action")
-        && variable_is_zero(vars, "move_forward")
-        && variable_is_zero(vars, "player_hit")
-        && variable_is_zero(vars, "player1_ko")
-        && variable_is_zero(vars, "player1.data.is_jumping")
-}
-
-pub(super) fn variable_is_zero(vars: &SceneMaxVars, name: &str) -> bool {
-    scenemax_runtime_vm_core::variable_is_zero(vars, name)
 }
 
 pub(super) fn play_pending_animations(

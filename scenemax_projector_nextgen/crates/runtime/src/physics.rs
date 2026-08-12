@@ -977,16 +977,11 @@ pub(super) fn physics_collision_shape(
 }
 
 pub(super) fn default_collision_shape(
-    name: &str,
+    _name: &str,
     resource: &str,
-    body_kind: SceneMaxBodyKind,
+    _body_kind: SceneMaxBodyKind,
 ) -> SceneMaxCollisionShape {
-    let lower = format!("{} {}", name, resource).to_ascii_lowercase();
-    if body_kind == SceneMaxBodyKind::Kinematic
-        && (lower.contains("player") || lower.contains("fighter") || lower.contains("boss"))
-    {
-        SceneMaxCollisionShape::Capsule
-    } else if resource.eq_ignore_ascii_case("sphere") {
+    if resource.eq_ignore_ascii_case("sphere") {
         SceneMaxCollisionShape::Sphere
     } else {
         SceneMaxCollisionShape::Box
@@ -1065,122 +1060,14 @@ pub(super) fn register_collider_bounds(
     collider_bounds.shape_by_name.insert(name.to_owned(), shape);
 }
 
-pub(super) fn spawn_default_virtual_colliders(
-    commands: &mut Commands,
-    entities_by_name: &mut HashMap<String, Entity>,
-    transforms_by_name: &mut HashMap<String, Transform>,
+pub(super) fn register_collider_owner(
     collider_bounds: &mut SceneMaxColliderBounds,
+    name: &str,
+    owner: &str,
 ) {
-    let owners = ["player1", "player2"];
-    for owner in owners {
-        let Some(owner_transform) = transforms_by_name.get(owner).copied() else {
-            continue;
-        };
-        for spec in default_fighter_virtual_colliders(owner) {
-            if entities_by_name.contains_key(&spec.name) {
-                continue;
-            }
-            let transform = virtual_collider_transform(owner_transform, spec.local_offset);
-            let shape = virtual_collider_bound_shape(spec.shape);
-            let radius = shape.bounding_radius();
-            let entity = commands
-                .spawn((
-                    SceneMaxEntity {
-                        name: spec.name.clone(),
-                        runtime_name: format!("{}@virtual", spec.name),
-                    },
-                    SceneMaxVirtualCollider {
-                        owner: owner.to_owned(),
-                        bone: spec.bone.map(str::to_owned),
-                        local_offset: Vec3::ZERO,
-                        fallback_offset: spec.local_offset,
-                    },
-                    transform,
-                    Visibility::Hidden,
-                    AvianRigidBody::Kinematic,
-                    virtual_collider_shape(spec.shape),
-                    hitbox_collision_layers(),
-                    Sensor,
-                    CollisionEventsEnabled,
-                ))
-                .id();
-            entities_by_name.insert(spec.name.clone(), entity);
-            transforms_by_name.insert(spec.name.clone(), transform);
-            collider_bounds
-                .radius_by_name
-                .insert(spec.name.clone(), radius);
-            collider_bounds
-                .shape_by_name
-                .insert(spec.name.clone(), shape);
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(super) struct VirtualColliderSpec {
-    name: String,
-    bone: Option<&'static str>,
-    local_offset: Vec3,
-    shape: VirtualColliderShape,
-}
-
-pub(super) fn default_fighter_virtual_colliders(owner: &str) -> Vec<VirtualColliderSpec> {
-    vec![
-        VirtualColliderSpec {
-            name: format!("{owner}_body_collider"),
-            bone: None,
-            local_offset: Vec3::new(0.0, 1.0, 0.0),
-            shape: VirtualColliderShape::Box {
-                half_extents: Vec3::new(0.55, 0.9, 0.35),
-            },
-        },
-        VirtualColliderSpec {
-            name: format!("{owner}_head_collider"),
-            bone: Some("mixamorig:Head"),
-            local_offset: Vec3::new(0.0, 1.65, 0.0),
-            shape: VirtualColliderShape::Sphere { radius: 0.28 },
-        },
-        VirtualColliderSpec {
-            name: format!("{owner}_left_hand_collider"),
-            bone: Some("mixamorig:LeftHand"),
-            local_offset: Vec3::new(-0.45, 1.15, 0.2),
-            shape: VirtualColliderShape::Sphere { radius: 0.24 },
-        },
-        VirtualColliderSpec {
-            name: format!("{owner}_right_hand_collider"),
-            bone: Some("mixamorig:RightHand"),
-            local_offset: Vec3::new(0.45, 1.15, 0.2),
-            shape: VirtualColliderShape::Sphere { radius: 0.24 },
-        },
-        VirtualColliderSpec {
-            name: format!("{owner}_left_foot_collider"),
-            bone: Some("mixamorig:LeftFoot"),
-            local_offset: Vec3::new(-0.22, 0.18, 0.18),
-            shape: VirtualColliderShape::Sphere { radius: 0.26 },
-        },
-        VirtualColliderSpec {
-            name: format!("{owner}_right_foot_collider"),
-            bone: Some("mixamorig:RightFoot"),
-            local_offset: Vec3::new(0.22, 0.18, 0.18),
-            shape: VirtualColliderShape::Sphere { radius: 0.26 },
-        },
-    ]
-}
-
-pub(super) fn virtual_collider_shape(shape: VirtualColliderShape) -> AvianCollider {
-    match shape {
-        VirtualColliderShape::Box { half_extents } => {
-            AvianCollider::cuboid(half_extents.x, half_extents.y, half_extents.z)
-        }
-        VirtualColliderShape::Sphere { radius } => AvianCollider::sphere(radius),
-    }
-}
-
-pub(super) fn virtual_collider_bound_shape(shape: VirtualColliderShape) -> ColliderBoundShape {
-    match shape {
-        VirtualColliderShape::Box { half_extents } => ColliderBoundShape::Box { half_extents },
-        VirtualColliderShape::Sphere { radius } => ColliderBoundShape::Sphere { radius },
-    }
+    collider_bounds
+        .owner_by_name
+        .insert(name.to_owned(), owner.to_owned());
 }
 
 pub(super) fn solid_collision_layers(body_kind: SceneMaxBodyKind) -> CollisionLayers {
@@ -1853,15 +1740,20 @@ pub(super) fn collision_condition_matches(
         return false;
     };
     let target_exact = transforms_by_name.get(target).copied();
-    let Some(target_transform) =
-        target_exact.or_else(|| collision_owner_transform(target, transforms_by_name))
+    let Some(target_transform) = target_exact
+        .or_else(|| collision_owner_transform(target, transforms_by_name, collider_bounds))
     else {
         return false;
     };
     sources.iter().any(|source| {
         let source_exact = transforms_by_name.get(source).copied();
         if let (Some(source_transform), Some(target_transform)) = (source_exact, target_exact) {
-            if !player_hitbox_owner_distance_allows(source, target, transforms_by_name) {
+            if !attached_collider_owner_distance_allows(
+                source,
+                target,
+                transforms_by_name,
+                collider_bounds,
+            ) {
                 return false;
             }
             if let Some(matches) = exact_collider_shapes_overlap(
@@ -1878,20 +1770,23 @@ pub(super) fn collision_condition_matches(
                 .distance(target_transform.translation)
                 <= exact_collision_threshold(source, target, collider_bounds);
         }
-        collision_owner_transform(source, transforms_by_name).is_some_and(|source_transform| {
-            source_transform
-                .translation
-                .distance(target_transform.translation)
-                <= collision_threshold(source, target)
-        })
+        collision_owner_transform(source, transforms_by_name, collider_bounds).is_some_and(
+            |source_transform| {
+                source_transform
+                    .translation
+                    .distance(target_transform.translation)
+                    <= collision_threshold(source, target)
+            },
+        )
     })
 }
 
 pub(super) fn collision_owner_transform(
     reference: &str,
     transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> Option<Transform> {
-    let owner = collision_owner(reference);
+    let owner = collision_owner_with_bounds(reference, collider_bounds);
     transforms_by_name
         .get(reference)
         .copied()
@@ -1902,9 +1797,10 @@ pub(super) fn collision_owner_distance(
     source: &str,
     target: &str,
     transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> f32 {
-    let source_owner = collision_owner(source);
-    let target_owner = collision_owner(target);
+    let source_owner = collision_owner_with_bounds(source, collider_bounds);
+    let target_owner = collision_owner_with_bounds(target, collider_bounds);
     let (Some(source_transform), Some(target_transform)) = (
         transforms_by_name.get(&source_owner),
         transforms_by_name.get(&target_owner),
@@ -1916,24 +1812,27 @@ pub(super) fn collision_owner_distance(
         .distance(target_transform.translation)
 }
 
-pub(super) fn player_hitbox_owner_distance_allows(
+pub(super) fn attached_collider_owner_distance_allows(
     source: &str,
     target: &str,
     transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> bool {
-    let source_owner = collision_owner(source);
-    let target_owner = collision_owner(target);
+    let Some(collider_bounds) = collider_bounds else {
+        return true;
+    };
+    let Some(source_owner) = collider_bounds.owner_by_name.get(source) else {
+        return true;
+    };
+    let Some(target_owner) = collider_bounds.owner_by_name.get(target) else {
+        return true;
+    };
     if source_owner == target_owner {
         return true;
     }
-    if !source_owner.starts_with("player") || !target_owner.starts_with("player") {
-        return true;
-    }
-    if !source.contains("_collider") || !target.contains("_collider") {
-        return true;
-    }
-    let owner_distance = collision_owner_distance(source, target, transforms_by_name);
-    !owner_distance.is_finite() || owner_distance <= MAX_PLAYER_HITBOX_OWNER_DISTANCE
+    let owner_distance =
+        collision_owner_distance(source, target, transforms_by_name, Some(collider_bounds));
+    !owner_distance.is_finite() || owner_distance <= MAX_ATTACHED_COLLIDER_OWNER_DISTANCE
 }
 
 pub(super) fn collision_reference_candidates(reference: &str) -> Vec<String> {
@@ -1942,15 +1841,6 @@ pub(super) fn collision_reference_candidates(reference: &str) -> Vec<String> {
 
 pub(super) fn collision_owner(reference: &str) -> String {
     let normalized = reference.trim().trim_matches('"');
-    for owner in ["player1", "player2"] {
-        if normalized == owner
-            || normalized
-                .strip_prefix(owner)
-                .is_some_and(|rest| rest.starts_with('_') || rest.starts_with('.'))
-        {
-            return owner.to_owned();
-        }
-    }
     normalized
         .split(['.', '[', '"'])
         .next()
@@ -1958,14 +1848,20 @@ pub(super) fn collision_owner(reference: &str) -> String {
         .to_owned()
 }
 
+pub(super) fn collision_owner_with_bounds(
+    reference: &str,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> String {
+    let normalized = reference.trim().trim_matches('"');
+    collider_bounds
+        .and_then(|bounds| bounds.owner_by_name.get(normalized))
+        .cloned()
+        .unwrap_or_else(|| collision_owner(reference))
+}
+
 pub(super) fn collision_threshold(source: &str, target: &str) -> f32 {
-    let source_owner = collision_owner(source);
-    let target_owner = collision_owner(target);
-    if source_owner.starts_with("player") && target_owner.starts_with("player") {
-        4.25
-    } else {
-        2.5
-    }
+    let _ = (source, target);
+    2.5
 }
 
 pub(super) fn exact_collider_shapes_overlap(

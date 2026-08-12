@@ -709,6 +709,9 @@ pub(super) fn spawn_scenemax_program(
                 attaches_by_target.get(name),
             );
             register_collider_bounds(collider_bounds, name, options, transform);
+            if let Some(attach) = attaches_by_target.get(name) {
+                register_collider_owner(collider_bounds, name, &attach_owner(&attach.subject));
+            }
             entities_by_name.insert(name.clone(), entity);
             transforms_by_name.insert(name.clone(), transform);
             spawned_any = true;
@@ -924,12 +927,6 @@ pub(super) fn spawn_scenemax_program(
         &entities_by_name,
         &transforms_by_name,
         character_configs,
-    );
-    spawn_default_virtual_colliders(
-        commands,
-        &mut entities_by_name,
-        &mut transforms_by_name,
-        collider_bounds,
     );
     for (target, turn) in turn_by_target {
         if let Some(entity) = entities_by_name.get(&target) {

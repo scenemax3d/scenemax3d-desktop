@@ -385,21 +385,6 @@ pub fn condition_matches_scoped(
     }
 }
 
-pub fn clear_transient_hit_flags(vars: &mut SceneMaxVars) {
-    for field in [
-        "player1.data.hand_attack_hit",
-        "player1.data.foot_attack_hit",
-        "player1.data.head_hit",
-        "player1.data.body_hit",
-        "player2.data.hand_attack_hit",
-        "player2.data.foot_attack_hit",
-        "player2.data.head_hit",
-        "player2.data.body_hit",
-    ] {
-        vars.0.insert(field.to_owned(), 0.0);
-    }
-}
-
 pub fn variable_is_zero(vars: &SceneMaxVars, name: &str) -> bool {
     vars.0.get(name).copied().unwrap_or_default().abs() <= f32::EPSILON
 }
@@ -718,23 +703,5 @@ mod tests {
 
         reset_pseudo_random_for_test(0x1234_5678_9ABC_DEF0);
         assert!(sample_pseudo_random_moduli(4, 16).len() > 1);
-    }
-
-    #[test]
-    fn clears_collision_hit_pulses_after_when_pass() {
-        let mut vars = SceneMaxVars(HashMap::from([
-            ("player1.data.head_hit".to_owned(), 1.0),
-            ("player2.data.hand_attack_hit".to_owned(), 1.0),
-            ("player1.data.is_jumping".to_owned(), 1.0),
-        ]));
-
-        clear_transient_hit_flags(&mut vars);
-
-        assert_eq!(vars.0.get("player1.data.head_hit").copied(), Some(0.0));
-        assert_eq!(
-            vars.0.get("player2.data.hand_attack_hit").copied(),
-            Some(0.0)
-        );
-        assert_eq!(vars.0.get("player1.data.is_jumping").copied(), Some(1.0));
     }
 }

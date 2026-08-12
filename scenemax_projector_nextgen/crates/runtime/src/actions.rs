@@ -1709,6 +1709,7 @@ pub(super) fn apply_when_events(
 
     let mut transforms_by_name =
         build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
+    let mut transient_collision_vars = HashSet::new();
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
 
@@ -1813,6 +1814,7 @@ pub(super) fn apply_when_events(
                 &physics_contacts,
                 &object_pools,
             );
+            collect_transient_collision_assignments(&event.actions, &mut transient_collision_vars);
         }
         let owner = SceneMaxControllerKey::When(statement_index);
         if active_controllers.running.contains(&owner) {
@@ -1885,11 +1887,50 @@ pub(super) fn apply_when_events(
             active_controllers.running.remove(&owner);
         }
     }
-    clear_transient_hit_flags(&mut vars);
+    clear_transient_collision_vars(&mut vars, &transient_collision_vars);
 }
 
-pub(super) fn clear_transient_hit_flags(vars: &mut SceneMaxVars) {
-    scenemax_runtime_vm_core::clear_transient_hit_flags(vars);
+pub(super) fn clear_transient_collision_vars(vars: &mut SceneMaxVars, names: &HashSet<String>) {
+    for name in names {
+        vars.0.insert(name.clone(), 0.0);
+    }
+}
+
+pub(super) fn collect_transient_collision_assignments(
+    actions: &[Statement],
+    names: &mut HashSet<String>,
+) {
+    for action in actions {
+        match action {
+            Statement::Assignment(assignment)
+            | Statement::SharedAssignment(assignment)
+            | Statement::LocalAssignment(assignment)
+                if is_transient_collision_assignment_value(&assignment.value) =>
+            {
+                names.insert(assignment.name.clone());
+            }
+            Statement::Guarded { actions, .. }
+            | Statement::Repeat { actions, .. }
+            | Statement::DoWhile { actions, .. }
+            | Statement::LoopContinue { actions, .. }
+            | Statement::Async { actions } => {
+                collect_transient_collision_assignments(actions, names);
+            }
+            Statement::If(statement) => {
+                collect_transient_collision_assignments(&statement.actions, names);
+                collect_transient_collision_assignments(&statement.else_actions, names);
+            }
+            _ => {}
+        }
+    }
+}
+
+pub(super) fn is_transient_collision_assignment_value(value: &AssignmentValue) -> bool {
+    match value {
+        AssignmentValue::Number(value) => (*value - 1.0).abs() <= f32::EPSILON,
+        AssignmentValue::Condition(_) => true,
+        _ => false,
+    }
 }
 
 pub(super) fn write_collision_event_probe(
@@ -1988,8 +2029,12 @@ pub(super) fn collision_pair_report(
         let source_candidates = collision_reference_candidates_with_alias(source, object_pools);
         for source_name in &source_candidates {
             for target_name in &target_candidates {
-                let avian_contact =
-                    active_physics_contact_matches(source_name, target_name, physics_contacts);
+                let avian_contact = active_physics_contact_matches(
+                    source_name,
+                    target_name,
+                    physics_contacts,
+                    Some(collider_bounds),
+                );
                 let (distance, threshold, fallback_match, owner_distance) =
                     collision_pair_distance_report(
                         source_name,
@@ -2029,14 +2074,15 @@ pub(super) fn collision_pair_distance_report(
 ) -> (f32, f32, bool, f32) {
     let source_exact = transforms_by_name.get(source).copied();
     let target_exact = transforms_by_name.get(target).copied();
-    let owner_distance = collision_owner_distance(source, target, transforms_by_name);
-    let Some(source_transform) =
-        source_exact.or_else(|| collision_owner_transform(source, transforms_by_name))
+    let owner_distance =
+        collision_owner_distance(source, target, transforms_by_name, Some(collider_bounds));
+    let Some(source_transform) = source_exact
+        .or_else(|| collision_owner_transform(source, transforms_by_name, Some(collider_bounds)))
     else {
         return (f32::INFINITY, 0.0, false, owner_distance);
     };
-    let Some(target_transform) =
-        target_exact.or_else(|| collision_owner_transform(target, transforms_by_name))
+    let Some(target_transform) = target_exact
+        .or_else(|| collision_owner_transform(target, transforms_by_name, Some(collider_bounds)))
     else {
         return (f32::INFINITY, 0.0, false, owner_distance);
     };
@@ -2050,7 +2096,12 @@ pub(super) fn collision_pair_distance_report(
         .distance(target_transform.translation);
     let matches =
         if let (Some(source_transform), Some(target_transform)) = (source_exact, target_exact) {
-            if !player_hitbox_owner_distance_allows(source, target, transforms_by_name) {
+            if !attached_collider_owner_distance_allows(
+                source,
+                target,
+                transforms_by_name,
+                Some(collider_bounds),
+            ) {
                 false
             } else {
                 exact_collider_shapes_overlap(
@@ -3469,7 +3520,7 @@ pub(super) fn apply_key_action(
             }
             return ActionSequenceResult::Completed;
         }
-        let assigned_value = apply_assignment_scoped(
+        apply_assignment_scoped(
             assignment,
             vars,
             scope.as_deref_mut(),
@@ -3478,38 +3529,6 @@ pub(super) fn apply_key_action(
             Some(collider_bounds),
             matches!(action, Statement::LocalAssignment(_)),
         );
-        if assignment.name == "action"
-            && assigned_value.is_some_and(|value| value.abs() <= f32::EPSILON)
-        {
-            for (entity, scene_entity, _, gltf, current_animation, _, _, _) in
-                &mut scene_entities.p1()
-            {
-                if scene_entity.name != "player1" {
-                    continue;
-                }
-                let already_queued =
-                    queued_animations
-                        .get(&entity)
-                        .is_some_and(|(clip, looped)| {
-                            *looped && requested_animation_names_match(clip, "idle2")
-                        });
-                let already_current = queued_animations.get(&entity).is_none()
-                    && current_animation
-                        .is_some_and(|current| current_animation_matches(current, "idle2", true));
-                if already_queued || already_current {
-                    continue;
-                }
-                if let Some(gltf) = gltf {
-                    commands.entity(entity).insert(AnimationToPlay {
-                        clip: "idle2".to_owned(),
-                        looped: true,
-                        speed: 1.0,
-                        gltf: gltf.gltf.clone(),
-                    });
-                    queued_animations.insert(entity, ("idle2".to_owned(), true));
-                }
-            }
-        }
         return ActionSequenceResult::Completed;
     }
     if let Statement::CameraSystemSelect { name } = action {
@@ -5053,109 +5072,6 @@ pub(super) fn parent_action_tail(actions: &[Statement], index: usize) -> &[State
     actions.get(index + 1..).unwrap_or_default()
 }
 
-pub(super) fn apply_builtin_navigation_controls(
-    time: Res<Time>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    startup_program: Res<SceneMaxStartupProgram>,
-    mut commands: Commands,
-    mut players: Query<(
-        Entity,
-        &SceneMaxEntity,
-        &mut Transform,
-        Option<&SceneMaxGltf>,
-        Option<&CurrentAnimation>,
-        Option<&SceneMaxCharacterController>,
-        Option<&mut SceneMaxCharacterMotor>,
-    )>,
-) {
-    if startup_program.0.as_ref().is_some_and(|program| {
-        program
-            .statements
-            .iter()
-            .any(|statement| matches!(statement, Statement::KeyEvent(_)))
-    }) {
-        return;
-    }
-
-    let delta_seconds = time.delta_secs();
-    let turn_delta = if keyboard.pressed(KeyCode::ArrowLeft) {
-        BUILTIN_PLAYER_TURN_SPEED_RADIANS * delta_seconds
-    } else if keyboard.pressed(KeyCode::ArrowRight) {
-        -BUILTIN_PLAYER_TURN_SPEED_RADIANS * delta_seconds
-    } else {
-        0.0
-    };
-
-    let move_direction = if keyboard.pressed(KeyCode::ArrowUp) {
-        1.0
-    } else if keyboard.pressed(KeyCode::ArrowDown) {
-        -1.0
-    } else {
-        0.0
-    };
-
-    let should_restore_idle = keyboard.just_released(KeyCode::ArrowUp);
-    if turn_delta == 0.0 && move_direction == 0.0 && !should_restore_idle {
-        return;
-    }
-
-    for (
-        entity,
-        scene_entity,
-        mut transform,
-        gltf,
-        current_animation,
-        character_controller,
-        character_motor,
-    ) in &mut players
-    {
-        if scene_entity.name != "player1" {
-            continue;
-        }
-
-        if turn_delta != 0.0 {
-            transform.rotate_y(turn_delta);
-        }
-
-        if let (Some(character_controller), Some(mut character_motor)) =
-            (character_controller, character_motor)
-        {
-            if move_direction != 0.0 {
-                let direction = horizontal_forward(&transform) * move_direction;
-                set_character_motion(
-                    &mut character_motor,
-                    direction,
-                    BUILTIN_PLAYER_MOVE_SPEED / character_controller.move_speed.max(0.001),
-                    CHARACTER_INPUT_TTL_SECONDS,
-                );
-            }
-        } else if move_direction != 0.0 {
-            let direction = horizontal_forward(&transform) * move_direction;
-            transform.translation += direction * BUILTIN_PLAYER_MOVE_SPEED * delta_seconds;
-        }
-
-        if move_direction > 0.0 {
-            queue_builtin_player_animation(
-                &mut commands,
-                entity,
-                gltf,
-                current_animation,
-                "run_sword",
-                true,
-            );
-        } else if should_restore_idle {
-            queue_builtin_player_animation(
-                &mut commands,
-                entity,
-                gltf,
-                current_animation,
-                "idle2",
-                true,
-            );
-        }
-    }
-}
-
 pub(super) fn key_code_from_scenemax(key: &str) -> Option<KeyCode> {
     match key.to_ascii_lowercase().as_str() {
         "space" => Some(KeyCode::Space),
@@ -5924,6 +5840,7 @@ pub(super) fn when_condition_matches(
                 physics_contacts,
                 object_pools,
                 transforms_by_name,
+                collider_bounds,
             ) || collision_condition_matches(sources, target, transforms_by_name, collider_bounds)
         }
         Condition::Boolean(value) => *value,
@@ -5991,7 +5908,7 @@ pub(super) fn physics_contact_matches(
         let source_candidates = collision_reference_candidates_with_alias(source, object_pools);
         source_candidates.iter().any(|source_name| {
             target_candidates.iter().any(|target_name| {
-                active_physics_contact_matches(source_name, target_name, physics_contacts)
+                active_physics_contact_matches(source_name, target_name, physics_contacts, None)
             })
         })
     })
@@ -6003,20 +5920,26 @@ pub(super) fn physics_contact_condition_matches(
     physics_contacts: &SceneMaxPhysicsContacts,
     object_pools: &SceneMaxObjectPools,
     transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> bool {
     let target_candidates = collision_reference_candidates_with_alias(target, object_pools);
     sources.iter().any(|source| {
         let source_candidates = collision_reference_candidates_with_alias(source, object_pools);
         source_candidates.iter().any(|source_name| {
             target_candidates.iter().any(|target_name| {
-                active_physics_contact_matches(source_name, target_name, physics_contacts)
-                    && transforms_by_name.is_none_or(|transforms_by_name| {
-                        player_hitbox_owner_distance_allows(
-                            source_name,
-                            target_name,
-                            transforms_by_name,
-                        )
-                    })
+                active_physics_contact_matches(
+                    source_name,
+                    target_name,
+                    physics_contacts,
+                    collider_bounds,
+                ) && transforms_by_name.is_none_or(|transforms_by_name| {
+                    attached_collider_owner_distance_allows(
+                        source_name,
+                        target_name,
+                        transforms_by_name,
+                        collider_bounds,
+                    )
+                })
             })
         })
     })
@@ -6040,6 +5963,7 @@ pub(super) fn active_physics_contact_matches(
     source: &str,
     target: &str,
     physics_contacts: &SceneMaxPhysicsContacts,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> bool {
     if physics_contacts
         .active_pairs
@@ -6048,21 +5972,30 @@ pub(super) fn active_physics_contact_matches(
         return true;
     }
 
-    if !is_owner_level_collision_reference(source) && !is_owner_level_collision_reference(target) {
+    if !is_owner_level_collision_reference(source, collider_bounds)
+        && !is_owner_level_collision_reference(target, collider_bounds)
+    {
         return false;
     }
 
-    let expected_owner_pair =
-        normalized_collision_pair(&collision_owner(source), &collision_owner(target));
+    let expected_owner_pair = normalized_collision_pair(
+        &collision_owner_with_bounds(source, collider_bounds),
+        &collision_owner_with_bounds(target, collider_bounds),
+    );
     physics_contacts.active_pairs.iter().any(|(left, right)| {
-        normalized_collision_pair(&collision_owner(left), &collision_owner(right))
-            == expected_owner_pair
+        normalized_collision_pair(
+            &collision_owner_with_bounds(left, collider_bounds),
+            &collision_owner_with_bounds(right, collider_bounds),
+        ) == expected_owner_pair
     })
 }
 
-pub(super) fn is_owner_level_collision_reference(reference: &str) -> bool {
+pub(super) fn is_owner_level_collision_reference(
+    reference: &str,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> bool {
     let normalized = reference.trim().trim_matches('"');
-    collision_owner(normalized) == normalized
+    collision_owner_with_bounds(normalized, collider_bounds) == normalized
 }
 
 pub(super) fn normalized_collision_pair(left: &str, right: &str) -> (String, String) {
