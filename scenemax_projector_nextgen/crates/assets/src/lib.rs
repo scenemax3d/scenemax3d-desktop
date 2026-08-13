@@ -28,6 +28,12 @@ pub struct ModelResource {
     pub scale: Option<[f32; 3]>,
     pub translation: Option<[f32; 3]>,
     pub rotation_y_degrees: Option<f32>,
+    pub character_physics: Option<ModelCharacterPhysics>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelCharacterPhysics {
+    pub bevy_visual_offset_y: Option<f32>,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -64,6 +70,18 @@ struct ModelEntry {
     trans_z: Option<f32>,
     #[serde(rename = "rotateY")]
     rotate_y: Option<f32>,
+    physics: Option<ModelPhysicsEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelPhysicsEntry {
+    character: Option<ModelCharacterPhysicsEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelCharacterPhysicsEntry {
+    #[serde(rename = "bevyVisualOffsetY", alias = "bevyCalibrateY")]
+    bevy_visual_offset_y: Option<f32>,
 }
 
 pub fn audit_project(project_root: &Path) -> Result<AssetAuditReport> {
@@ -193,6 +211,17 @@ fn resolve_model_entry(
         scale: zip_vec3(entry.scale_x, entry.scale_y, entry.scale_z),
         translation: zip_vec3(entry.trans_x, entry.trans_y, entry.trans_z),
         rotation_y_degrees: entry.rotate_y,
+        character_physics: entry
+            .physics
+            .as_ref()
+            .and_then(|physics| physics.character.as_ref())
+            .and_then(|character| {
+                character
+                    .bevy_visual_offset_y
+                    .map(|bevy_visual_offset_y| ModelCharacterPhysics {
+                        bevy_visual_offset_y: Some(bevy_visual_offset_y),
+                    })
+            }),
     })
 }
 
@@ -341,6 +370,7 @@ mod tests {
                 scale: None,
                 translation: None,
                 rotation_y_degrees: None,
+                character_physics: None,
             }
         );
 
@@ -401,6 +431,7 @@ mod tests {
                 scale: Some([3.0, 3.0, 3.0]),
                 translation: None,
                 rotation_y_degrees: None,
+                character_physics: None,
             }
         );
 
@@ -444,6 +475,7 @@ mod tests {
                 scale: Some([0.025, 0.025, 0.025]),
                 translation: None,
                 rotation_y_degrees: None,
+                character_physics: None,
             }
         );
 
@@ -487,7 +519,39 @@ mod tests {
                 scale: Some([1.0, 1.0, 1.0]),
                 translation: None,
                 rotation_y_degrees: None,
+                character_physics: None,
             }
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolves_bevy_character_visual_offset_from_model_physics() {
+        let dir = std::env::temp_dir().join(format!(
+            "scenemax-assets-character-physics-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let models_dir = dir.join("resources").join("Models");
+        fs::create_dir_all(&models_dir).unwrap();
+        fs::write(
+            models_dir.join("models-ext.json"),
+            r#"{"models":[{
+                "name":"avatar",
+                "path":"Models/avatar/avatar.glb",
+                "physics":{"character":{"calibrateY":-2.5,"bevyVisualOffsetY":-0.18}}
+            }]}"#,
+        )
+        .unwrap();
+
+        let model = resolve_model_resource(&dir.join("resources"), "avatar").unwrap();
+
+        assert_eq!(
+            model.character_physics,
+            Some(ModelCharacterPhysics {
+                bevy_visual_offset_y: Some(-0.18)
+            })
         );
 
         let _ = fs::remove_dir_all(&dir);

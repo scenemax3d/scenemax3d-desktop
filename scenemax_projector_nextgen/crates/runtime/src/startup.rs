@@ -792,6 +792,10 @@ pub(super) fn spawn_scenemax_program(
             Ok(model) => {
                 let runtime_name = format!("{name}@1");
                 let asset_path = model.asset_path;
+                let bevy_visual_offset_y = model
+                    .character_physics
+                    .as_ref()
+                    .and_then(|character| character.bevy_visual_offset_y);
                 let gltf: Handle<Gltf> = asset_server.load(asset_path.clone());
                 let scene = WorldAssetRoot(
                     asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())),
@@ -816,6 +820,7 @@ pub(super) fn spawn_scenemax_program(
                         initial_visibility(name, options, &visibility_by_target),
                     ))
                     .id();
+                insert_gltf_visual_offset(commands, entity_id, bevy_visual_offset_y);
 
                 if let Some(animation) = animations_by_target.get(name) {
                     commands.entity(entity_id).insert(AnimationToPlay {

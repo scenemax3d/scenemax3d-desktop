@@ -231,6 +231,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_attached_camera,
                 update_camera_modifiers,
                 update_sprite_animations,
+                apply_gltf_visual_offsets,
                 play_pending_animations,
                 apply_animation_speed_overrides,
             )
@@ -843,6 +844,12 @@ struct SceneMaxGltf {
 }
 
 #[derive(Debug, Component)]
+struct SceneMaxGltfVisualOffset {
+    offset: Vec3,
+    applied: bool,
+}
+
+#[derive(Debug, Component)]
 struct SceneMaxSprite {
     rows: usize,
     cols: usize,
@@ -952,11 +959,13 @@ const DEFAULT_CHARACTER_GRAVITY: f32 = 60.0;
 const DEFAULT_CHARACTER_MOVE_SPEED: f32 = 7.0;
 const DEFAULT_CHARACTER_CAPSULE_RADIUS: f32 = 0.35;
 const DEFAULT_CHARACTER_CAPSULE_HEIGHT: f32 = 1.1;
-const DEFAULT_CHARACTER_FLOAT_HEIGHT: f32 = 0.95;
+const DEFAULT_CHARACTER_FLOAT_HEIGHT: f32 = 0.015;
 const DEFAULT_CHARACTER_SENSOR_HEIGHT: f32 = 0.08;
-const DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET: f32 = 0.08;
+const DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET: f32 = 0.005;
 const DEFAULT_CHARACTER_VISUAL_DROP: f32 = 1.25;
 const DEFAULT_STAGE_SUPPORT_HALF_SIZE: f32 = 160.0;
+const DEFAULT_STAGE_SUPPORT_HALF_HEIGHT: f32 = 0.02;
+const STAGE_SUPPORT_HEIGHT_GROUP_TOLERANCE: f32 = 2.0;
 const CHARACTER_INPUT_TTL_SECONDS: f32 = 0.12;
 const CHARACTER_JUMP_FEED_SECONDS: f32 = 0.2;
 const DEFAULT_ANIMATION_CLIP_SECONDS: f32 = 1.5;
@@ -1511,41 +1520,60 @@ mod tests {
         let transform = Transform::from_scale(Vec3::ONE);
         let dimensions = character_dimensions_for_transform(&transform);
         assert_eq!(
-            character_stage_support_y(-88.03695, dimensions),
+            character_stage_support_top_y(-88.03695, dimensions),
             -88.03695 - DEFAULT_CHARACTER_FLOAT_HEIGHT - DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET
         );
     }
 
     #[test]
-    fn character_support_samples_include_modes_after_startup_wait() {
+    fn character_stage_supports_split_distinct_height_bands() {
         let program = scenemax_parser::parse_program(
-            "boss.switch to character mode\nwait 1 seconds\nplayer1.switch to character mode\nplayer2.switch to character mode",
+            "upper.switch to character mode\nwait 1 seconds\nlower_a.switch to character mode\nlower_b.switch to character mode",
         )
         .unwrap();
         let transforms = HashMap::from([
             (
-                "boss".to_owned(),
+                "upper".to_owned(),
                 Transform::from_translation(Vec3::new(9.0, 0.0, 35.0)),
             ),
             (
-                "player1".to_owned(),
+                "lower_a".to_owned(),
                 Transform::from_translation(Vec3::new(40.0, -89.249504, 30.0)),
             ),
             (
-                "player2".to_owned(),
+                "lower_b".to_owned(),
                 Transform::from_translation(Vec3::new(40.0, -88.03695, 16.5)),
             ),
         ]);
 
         let samples = character_mode_support_samples(&program, &transforms);
-        let preferred = preferred_stage_support_samples(&samples);
+        let supports = stage_support_specs_for_character_samples(&samples);
 
         assert_eq!(samples.len(), 3);
-        assert_eq!(preferred.len(), 2);
-        assert!(
-            preferred
-                .iter()
-                .all(|(name, _, _)| name.starts_with("player"))
+        assert_eq!(supports.len(), 2);
+        assert!(supports.iter().any(|support| support.sample_count == 1));
+        assert!(supports.iter().any(|support| support.sample_count == 2));
+    }
+
+    #[test]
+    fn character_stage_support_band_uses_lowest_contact_height() {
+        let high = Transform::from_translation(Vec3::new(40.0, -88.03695, 16.5))
+            .with_scale(Vec3::splat(3.0));
+        let low = Transform::from_translation(Vec3::new(40.0, -89.249504, 30.0))
+            .with_scale(Vec3::splat(3.0));
+        let high_dimensions = character_dimensions_for_transform(&high);
+        let low_dimensions = character_dimensions_for_transform(&low);
+        let samples = vec![
+            ("high".to_owned(), high, high_dimensions),
+            ("low".to_owned(), low, low_dimensions),
+        ];
+        let supports = stage_support_specs_for_character_samples(&samples);
+        let support = supports.first().unwrap();
+
+        assert_eq!(supports.len(), 1);
+        assert_eq!(
+            support.top_y,
+            character_stage_support_top_y(low.translation.y, low_dimensions)
         );
     }
 
@@ -1555,10 +1583,8 @@ mod tests {
         let dimensions = character_dimensions_for_transform(&transform);
 
         assert_eq!(
-            character_stage_support_y(-88.03695, dimensions),
-            -88.03695
-                - (DEFAULT_CHARACTER_FLOAT_HEIGHT * 3.0)
-                - (DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET * 3.0)
+            character_stage_support_top_y(-88.03695, dimensions),
+            -88.03695 - DEFAULT_CHARACTER_FLOAT_HEIGHT - DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET
         );
     }
 
@@ -1573,6 +1599,39 @@ mod tests {
         assert!(capsule_bottom_y.abs() < 0.0001);
         assert!(
             (dimensions.capsule_height - (DEFAULT_CHARACTER_CAPSULE_HEIGHT * 3.0)).abs() < 0.0001
+        );
+    }
+
+    #[test]
+    fn character_float_height_is_ground_clearance_not_body_height() {
+        let transform = Transform::from_scale(Vec3::splat(3.0));
+        let dimensions = character_dimensions_for_transform(&transform);
+
+        assert_eq!(dimensions.float_height, DEFAULT_CHARACTER_FLOAT_HEIGHT);
+        assert_eq!(
+            dimensions.foot_contact_offset,
+            DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET
+        );
+        assert!(dimensions.float_height < dimensions.capsule_radius);
+        assert!(dimensions.foot_contact_offset < dimensions.float_height);
+    }
+
+    #[test]
+    fn character_stage_support_center_places_top_at_contact_height() {
+        let transform = Transform::from_translation(Vec3::new(40.0, -88.03695, 16.5))
+            .with_scale(Vec3::splat(3.0));
+        let dimensions = character_dimensions_for_transform(&transform);
+        let samples = vec![("lower".to_owned(), transform, dimensions)];
+        let supports = stage_support_specs_for_character_samples(&samples);
+        let support = supports.first().unwrap();
+
+        assert_eq!(
+            support.top_y,
+            character_stage_support_top_y(transform.translation.y, dimensions)
+        );
+        assert_eq!(
+            support.center_y,
+            support.top_y - DEFAULT_STAGE_SUPPORT_HALF_HEIGHT
         );
     }
 

@@ -3331,6 +3331,10 @@ fn spawn_runtime_gltf_model_decl(
     {
         model_transform.scale *= Vec3::new(scale[0], scale[1], scale[2]);
     }
+    let bevy_visual_offset_y = model
+        .character_physics
+        .as_ref()
+        .and_then(|character| character.bevy_visual_offset_y);
     let asset_path = model.asset_path;
     let gltf: Handle<Gltf> = asset_server.load(asset_path.clone());
     let scene =
@@ -3351,6 +3355,7 @@ fn spawn_runtime_gltf_model_decl(
             },
         ))
         .id();
+    insert_gltf_visual_offset(commands, entity_id, bevy_visual_offset_y);
     insert_physics_components(
         commands,
         entity_id,

@@ -1318,8 +1318,8 @@ pub(super) fn character_dimensions_for_transform(
         capsule_radius,
         capsule_height,
         capsule_center_y: capsule_half_height,
-        float_height: DEFAULT_CHARACTER_FLOAT_HEIGHT * character_scale,
-        foot_contact_offset: DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET * character_scale,
+        float_height: DEFAULT_CHARACTER_FLOAT_HEIGHT,
+        foot_contact_offset: DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET,
         visual_drop,
     }
 }
@@ -1488,61 +1488,117 @@ pub(super) fn spawn_character_stage_support(
     commands: &mut Commands,
     samples: &[(String, Transform, SceneMaxCharacterDimensions)],
 ) {
-    let support_samples = preferred_stage_support_samples(samples);
-    if support_samples.is_empty() {
-        return;
+    let supports = stage_support_specs_for_character_samples(samples);
+    for (index, support) in supports.iter().enumerate() {
+        let support_name = if supports.len() == 1 {
+            "__tnua_stage_support".to_owned()
+        } else {
+            format!("__tnua_stage_support_{index}")
+        };
+        commands.spawn((
+            SceneMaxEntity {
+                runtime_name: format!("{support_name}@physics"),
+                name: support_name,
+            },
+            SceneMaxStageSupport {
+                half_size: support.half_size,
+            },
+            Transform::from_translation(Vec3::new(
+                support.center.x,
+                support.center_y,
+                support.center.z,
+            )),
+            Visibility::Hidden,
+            AvianRigidBody::Static,
+            AvianCollider::cuboid(
+                support.half_size,
+                DEFAULT_STAGE_SUPPORT_HALF_HEIGHT,
+                support.half_size,
+            ),
+            world_collision_layers(),
+        ));
+        tracing::info!(
+            support_top_y = support.top_y,
+            support_center_y = support.center_y,
+            half_size = support.half_size,
+            samples = support.sample_count,
+            "spawned coarse SceneMax character stage support"
+        );
     }
-
-    let sample_count = support_samples.len() as f32;
-    let center = support_samples
-        .iter()
-        .map(|(_, transform, _)| transform.translation)
-        .fold(Vec3::ZERO, |sum, translation| sum + translation)
-        / sample_count;
-    let support_y = support_samples
-        .iter()
-        .map(|(_, transform, dimensions)| {
-            character_stage_support_y(transform.translation.y, *dimensions)
-        })
-        .sum::<f32>()
-        / sample_count;
-    let spread = support_samples
-        .iter()
-        .map(|(_, transform, _)| {
-            Vec2::new(
-                transform.translation.x - center.x,
-                transform.translation.z - center.z,
-            )
-            .length()
-        })
-        .fold(DEFAULT_STAGE_SUPPORT_HALF_SIZE, f32::max);
-    let half_size = (spread + 80.0).max(DEFAULT_STAGE_SUPPORT_HALF_SIZE);
-
-    commands.spawn((
-        SceneMaxEntity {
-            name: "__tnua_stage_support".to_owned(),
-            runtime_name: "__tnua_stage_support@physics".to_owned(),
-        },
-        SceneMaxStageSupport { half_size },
-        Transform::from_translation(Vec3::new(center.x, support_y, center.z)),
-        Visibility::Hidden,
-        AvianRigidBody::Static,
-        AvianCollider::cuboid(half_size, 0.2, half_size),
-        world_collision_layers(),
-    ));
-    tracing::info!(
-        support_y,
-        half_size,
-        samples = support_samples.len(),
-        "spawned coarse SceneMax character stage support"
-    );
 }
 
-pub(super) fn character_stage_support_y(
+pub(super) fn character_stage_support_top_y(
     center_y: f32,
     dimensions: SceneMaxCharacterDimensions,
 ) -> f32 {
     center_y - dimensions.float_height - dimensions.foot_contact_offset
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SceneMaxStageSupportSpec {
+    pub(super) center: Vec3,
+    pub(super) top_y: f32,
+    pub(super) center_y: f32,
+    pub(super) half_size: f32,
+    pub(super) sample_count: usize,
+}
+
+pub(super) fn stage_support_specs_for_character_samples(
+    samples: &[(String, Transform, SceneMaxCharacterDimensions)],
+) -> Vec<SceneMaxStageSupportSpec> {
+    let mut groups: Vec<Vec<(Transform, SceneMaxCharacterDimensions)>> = Vec::new();
+    for (_, transform, dimensions) in samples {
+        let sample_support_y = character_stage_support_top_y(transform.translation.y, *dimensions);
+        if let Some(group) = groups.iter_mut().find(|group| {
+            let group_support_y = grouped_stage_support_top_y(group);
+            (group_support_y - sample_support_y).abs() <= STAGE_SUPPORT_HEIGHT_GROUP_TOLERANCE
+        }) {
+            group.push((*transform, *dimensions));
+        } else {
+            groups.push(vec![(*transform, *dimensions)]);
+        }
+    }
+
+    groups
+        .into_iter()
+        .map(|group| {
+            let sample_count = group.len();
+            let sample_count_f32 = sample_count as f32;
+            let center = group
+                .iter()
+                .map(|(transform, _)| transform.translation)
+                .fold(Vec3::ZERO, |sum, translation| sum + translation)
+                / sample_count_f32;
+            let top_y = grouped_stage_support_top_y(&group);
+            let spread = group
+                .iter()
+                .map(|(transform, _)| {
+                    Vec2::new(
+                        transform.translation.x - center.x,
+                        transform.translation.z - center.z,
+                    )
+                    .length()
+                })
+                .fold(DEFAULT_STAGE_SUPPORT_HALF_SIZE, f32::max);
+            let half_size = (spread + 80.0).max(DEFAULT_STAGE_SUPPORT_HALF_SIZE);
+            SceneMaxStageSupportSpec {
+                center,
+                top_y,
+                center_y: top_y - DEFAULT_STAGE_SUPPORT_HALF_HEIGHT,
+                half_size,
+                sample_count,
+            }
+        })
+        .collect()
+}
+
+fn grouped_stage_support_top_y(group: &[(Transform, SceneMaxCharacterDimensions)]) -> f32 {
+    group
+        .iter()
+        .map(|(transform, dimensions)| {
+            character_stage_support_top_y(transform.translation.y, *dimensions)
+        })
+        .fold(f32::INFINITY, f32::min)
 }
 
 pub(super) fn update_scenemax_debug_gizmos(
@@ -1597,7 +1653,11 @@ pub(super) fn update_scenemax_debug_gizmos(
 
     for (support, transform) in &stage_supports {
         let mut support_transform = *transform;
-        support_transform.scale = Vec3::new(support.half_size * 2.0, 0.4, support.half_size * 2.0);
+        support_transform.scale = Vec3::new(
+            support.half_size * 2.0,
+            DEFAULT_STAGE_SUPPORT_HALF_HEIGHT * 2.0,
+            support.half_size * 2.0,
+        );
         gizmos.cube(support_transform, support_color);
     }
 
@@ -1624,6 +1684,46 @@ pub(super) fn update_scenemax_debug_gizmos(
         );
         gizmos.cube(sensor_transform, float_color);
     }
+}
+
+pub(super) fn apply_gltf_visual_offsets(
+    mut roots: Query<(Entity, &Children, &mut SceneMaxGltfVisualOffset), With<SceneMaxGltf>>,
+    mut transforms: Query<&mut Transform>,
+) {
+    for (root, children, mut visual_offset) in &mut roots {
+        if visual_offset.applied || visual_offset.offset.length_squared() <= f32::EPSILON {
+            visual_offset.applied = true;
+            continue;
+        }
+
+        let mut applied = false;
+        for child in children.iter() {
+            if child == root {
+                continue;
+            }
+            if let Ok(mut transform) = transforms.get_mut(child) {
+                transform.translation += visual_offset.offset;
+                applied = true;
+            }
+        }
+        if applied {
+            visual_offset.applied = true;
+        }
+    }
+}
+
+pub(super) fn insert_gltf_visual_offset(
+    commands: &mut Commands,
+    entity: Entity,
+    offset_y: Option<f32>,
+) {
+    let Some(offset_y) = offset_y.filter(|offset| offset.abs() > f32::EPSILON) else {
+        return;
+    };
+    commands.entity(entity).insert(SceneMaxGltfVisualOffset {
+        offset: Vec3::Y * offset_y,
+        applied: false,
+    });
 }
 
 fn draw_debug_collider_shape(
@@ -1682,21 +1782,6 @@ fn draw_debug_capsule(
     for direction in [Vec3::X, -Vec3::X, Vec3::Z, -Vec3::Z] {
         let radial = rotation * direction * radius;
         gizmos.line(top + radial, bottom + radial, color);
-    }
-}
-
-pub(super) fn preferred_stage_support_samples(
-    samples: &[(String, Transform, SceneMaxCharacterDimensions)],
-) -> Vec<(String, Transform, SceneMaxCharacterDimensions)> {
-    let player_samples = samples
-        .iter()
-        .filter(|(name, _, _)| name.to_ascii_lowercase().starts_with("player"))
-        .cloned()
-        .collect::<Vec<_>>();
-    if player_samples.is_empty() {
-        samples.to_vec()
-    } else {
-        player_samples
     }
 }
 
