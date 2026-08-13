@@ -1244,8 +1244,13 @@ pub(super) fn apply_character_modes(
     transforms_by_name: &HashMap<String, Transform>,
     character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
 ) {
-    let mut support_samples = Vec::new();
+    let support_samples = character_mode_support_samples(program, transforms_by_name);
+    spawn_character_stage_support(commands, &support_samples);
+
     for statement in &program.statements {
+        if initial_state_scan_boundary(statement) {
+            break;
+        }
         let Statement::CharacterMode(character_mode) = statement else {
             continue;
         };
@@ -1260,8 +1265,6 @@ pub(super) fn apply_character_modes(
             .get(&character_mode.target)
             .copied()
             .unwrap_or_default();
-        let dimensions = character_dimensions_for_transform(&transform);
-        support_samples.push((character_mode.target.clone(), transform, dimensions));
         insert_tnua_character_controller(
             commands,
             entity,
@@ -1270,7 +1273,27 @@ pub(super) fn apply_character_modes(
             character_configs,
         );
     }
-    spawn_character_stage_support(commands, &support_samples);
+}
+
+pub(super) fn character_mode_support_samples(
+    program: &Program,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Vec<(String, Transform, SceneMaxCharacterDimensions)> {
+    program
+        .statements
+        .iter()
+        .filter_map(|statement| {
+            let Statement::CharacterMode(character_mode) = statement else {
+                return None;
+            };
+            let transform = transforms_by_name
+                .get(&character_mode.target)
+                .copied()
+                .unwrap_or_default();
+            let dimensions = character_dimensions_for_transform(&transform);
+            Some((character_mode.target.clone(), transform, dimensions))
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2619,11 +2642,14 @@ pub(super) fn vec3_from_scenemax(value: SceneMaxVec3) -> Vec3 {
 }
 
 pub(super) fn rotation_from_degrees(value: SceneMaxVec3) -> Quat {
-    Quat::from_euler(
-        EulerRot::XYZ,
-        value.x.to_radians(),
-        value.y.to_radians(),
-        value.z.to_radians(),
+    let (sx, cx) = (value.x.to_radians() * 0.5).sin_cos();
+    let (sy, cy) = (value.y.to_radians() * 0.5).sin_cos();
+    let (sz, cz) = (value.z.to_radians() * 0.5).sin_cos();
+    Quat::from_xyzw(
+        cy * cz * sx + sy * sz * cx,
+        sy * cz * cx + cy * sz * sx,
+        cy * sz * cx - sy * cz * sx,
+        cy * cz * cx - sy * sz * sx,
     )
 }
 

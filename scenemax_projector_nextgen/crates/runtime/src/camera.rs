@@ -168,17 +168,12 @@ pub(super) fn apply_camera_systems(program: &Program, camera_system: &mut SceneM
             },
         );
     }
-    camera_system.selected = camera_system
-        .fighting
-        .as_ref()
-        .map(|camera| camera.name.clone());
-
     if let Some(camera) = &camera_system.fighting {
         tracing::info!(
             name = %camera.name,
             target_a = %camera.target_a,
             target_b = %camera.target_b,
-            "activated SceneMax fighting camera"
+            "registered SceneMax fighting camera"
         );
     }
     for camera in camera_system.third_person.values() {
@@ -607,6 +602,30 @@ fn find_designer_entity<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn camera_system_declaration_does_not_select_until_command_runs() {
+        let program = scenemax_parser::parse_program(
+            "fight_cam = camera.system.fighting(player_a, player_b, depth 18, height 3, side 1.5, min distance 10, max distance 28, damping 8)\nwait 10 seconds\ncamera.system = fight_cam",
+        )
+        .unwrap();
+        let mut camera_system = SceneMaxCameraSystem::default();
+
+        apply_camera_systems(&program, &mut camera_system);
+
+        assert_eq!(
+            camera_system
+                .fighting
+                .as_ref()
+                .map(|camera| camera.name.as_str()),
+            Some("fight_cam")
+        );
+        assert_eq!(camera_system.selected, None);
+
+        select_camera_system("fight_cam", &mut camera_system);
+
+        assert_eq!(camera_system.selected.as_deref(), Some("fight_cam"));
+    }
 
     #[test]
     fn scene_local_cinematic_rig_is_not_overwritten_by_project_scan() {
@@ -1262,10 +1281,7 @@ pub(super) fn update_fighting_camera(
     let Some(camera_settings) = camera_system.fighting.as_mut() else {
         return;
     };
-    if selected
-        .as_ref()
-        .is_some_and(|selected| selected != &camera_settings.name)
-    {
+    if selected.as_deref() != Some(camera_settings.name.as_str()) {
         return;
     }
 

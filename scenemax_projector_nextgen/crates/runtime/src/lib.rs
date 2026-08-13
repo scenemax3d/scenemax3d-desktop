@@ -49,9 +49,9 @@ use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
     animation_name_matches, collect_animations_by_target, collect_attaches_by_target,
     collect_functions_by_name, collect_guards_by_name, collect_shared_assignment_names,
-    collect_turn_by_target, collect_visibility_by_target, instantiate_function_actions,
-    normalized_animation_name, repeat_actions, requested_animation_names_match,
-    substitute_function_condition,
+    collect_turn_by_target, collect_visibility_by_target, initial_state_scan_boundary,
+    instantiate_function_actions, normalized_animation_name, repeat_actions,
+    requested_animation_names_match, substitute_function_condition,
 };
 use scenemax_runtime_ui_core::{
     SceneMaxSpriteAsset, SceneMaxUiDocument, SceneMaxUiWidgetDef, UiLayoutRect, document_scale,
@@ -1024,6 +1024,18 @@ mod tests {
     }
 
     #[test]
+    fn scenemax_rotation_uses_classic_jme_from_angles_order() {
+        let rotation = rotation_from_degrees(SceneMaxVec3 {
+            x: -20.65568,
+            y: 115.06725,
+            z: 0.8177289,
+        });
+        let classic = Quat::from_xyzw(0.09031287, -0.8293289, -0.1550246, -0.52917314);
+
+        assert!(rotation.dot(classic).abs() > 0.99999);
+    }
+
+    #[test]
     fn detects_space_switch_after_wait_statement() {
         let program = scenemax_parser::parse_program(
             "run show_game_intro_ui async\nwait for key space to be pressed\nswitch to \"game_level1\"",
@@ -1501,6 +1513,39 @@ mod tests {
         assert_eq!(
             character_stage_support_y(-88.03695, dimensions),
             -88.03695 - DEFAULT_CHARACTER_FLOAT_HEIGHT - DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET
+        );
+    }
+
+    #[test]
+    fn character_support_samples_include_modes_after_startup_wait() {
+        let program = scenemax_parser::parse_program(
+            "boss.switch to character mode\nwait 1 seconds\nplayer1.switch to character mode\nplayer2.switch to character mode",
+        )
+        .unwrap();
+        let transforms = HashMap::from([
+            (
+                "boss".to_owned(),
+                Transform::from_translation(Vec3::new(9.0, 0.0, 35.0)),
+            ),
+            (
+                "player1".to_owned(),
+                Transform::from_translation(Vec3::new(40.0, -89.249504, 30.0)),
+            ),
+            (
+                "player2".to_owned(),
+                Transform::from_translation(Vec3::new(40.0, -88.03695, 16.5)),
+            ),
+        ]);
+
+        let samples = character_mode_support_samples(&program, &transforms);
+        let preferred = preferred_stage_support_samples(&samples);
+
+        assert_eq!(samples.len(), 3);
+        assert_eq!(preferred.len(), 2);
+        assert!(
+            preferred
+                .iter()
+                .all(|(name, _, _)| name.starts_with("player"))
         );
     }
 
