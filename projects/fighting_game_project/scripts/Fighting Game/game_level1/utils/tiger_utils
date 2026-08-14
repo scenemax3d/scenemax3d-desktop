@@ -14,10 +14,12 @@ level1_dragon_rock_player2_hit_guard=0
 
 tiger_roar(tm) = {
   audio.play "monster_roar"
+  tg.show
   tg.Howl async
   camera.attach to tg : pos (0,1,-12)
   wait tm seconds
   run set_camera_on_player
+  tg.hide
 }
 
 level1_dragon_rock_push_player2 = {
