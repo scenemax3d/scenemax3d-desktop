@@ -880,6 +880,42 @@ pub(super) fn apply_startup_action(
             }
             ActionSequenceResult::Completed
         }
+        Statement::EffekseerPlay(play) => {
+            if let Some(entity) = entities_by_name.get(&play.target) {
+                if let Some(translation) = resolved_effekseer_play_translation(
+                    play,
+                    vars,
+                    None,
+                    guards_by_name,
+                    transforms_by_name,
+                    None,
+                ) {
+                    let mut transform = transforms_by_name
+                        .get(&play.target)
+                        .copied()
+                        .unwrap_or_default();
+                    transform.translation = translation;
+                    commands.entity(*entity).insert(transform);
+                    transforms_by_name.insert(play.target.clone(), transform);
+                }
+                commands.entity(*entity).insert(resolved_effekseer_playback(
+                    play,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                ));
+                write_effekseer_bridge_play(&play.target, play);
+            } else {
+                write_runtime_diagnostic_line(format!(
+                    "EFFEKSEER:PLAY_MISS target={} renderer={}",
+                    play.target,
+                    effekseer_renderer_label()
+                ));
+            }
+            ActionSequenceResult::Completed
+        }
         Statement::CinematicPlay(play) => {
             start_cinematic_camera(play, transforms_by_name, object_pools, None, camera_system);
             ActionSequenceResult::Completed
@@ -2546,6 +2582,9 @@ pub(super) fn describe_statement(action: &Statement) -> String {
         Statement::WaitForKey { key } => format!("WaitForKey({key})"),
         Statement::ChannelDraw(draw) if draw.clear => format!("ChannelDrawClear({})", draw.channel),
         Statement::ChannelDraw(draw) => format!("ChannelDraw({})", draw.channel),
+        Statement::EffekseerPlay(play) => {
+            format!("EffekseerPlay({} loop={})", play.target, play.looped as u8)
+        }
         Statement::Unsupported { text } => format!("Unsupported({text})"),
         other => format!("{other:?}"),
     }
@@ -3231,6 +3270,86 @@ pub(super) fn apply_runtime_model_decl(
         Some(transforms_by_name),
         Some(collider_bounds),
     );
+    let visibility = if options.hidden {
+        Visibility::Hidden
+    } else {
+        Visibility::Inherited
+    };
+    if let Some(asset_id) = effekseer_asset_id(resource) {
+        let effect_path = runtime_assets
+            .asset_root
+            .as_deref()
+            .and_then(|asset_root| resolve_effekseer_effect_path(asset_root, &asset_id));
+        for (entity, scene_entity, mut existing_transform, _, _, existing_visibility, _, _) in
+            &mut scene_entities.p1()
+        {
+            if scene_entity.name != name {
+                continue;
+            }
+            *existing_transform = transform;
+            if let Some(mut existing_visibility) = existing_visibility {
+                *existing_visibility = visibility;
+            } else {
+                commands.entity(entity).insert(visibility);
+            }
+            commands.entity(entity).insert(SceneMaxEffekseerEffect {
+                asset_id: asset_id.clone(),
+                effect_path: effect_path.clone(),
+            });
+            transforms_by_name.insert(name.to_owned(), transform);
+            write_runtime_diagnostic_line(format!(
+                "EFFEKSEER:DECL target={} asset={} path={} renderer={} mode=update",
+                name,
+                asset_id,
+                effect_path
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| "<missing>".to_owned()),
+                effekseer_renderer_label()
+            ));
+            tracing::warn!(
+                name,
+                asset = asset_id,
+                renderer = effekseer_renderer_label(),
+                "updated runtime Effekseer effect for the Bevy bridge"
+            );
+            return;
+        }
+
+        let entity_id = commands
+            .spawn((
+                SceneMaxEntity {
+                    name: name.to_owned(),
+                    runtime_name: format!("{name}@runtime"),
+                },
+                SceneMaxEffekseerEffect {
+                    asset_id: asset_id.clone(),
+                    effect_path: effect_path.clone(),
+                },
+                transform,
+                visibility,
+            ))
+            .id();
+        insert_physics_components(commands, entity_id, name, resource, options, &transform);
+        transforms_by_name.insert(name.to_owned(), transform);
+        write_runtime_diagnostic_line(format!(
+            "EFFEKSEER:DECL target={} asset={} path={} renderer={} mode=spawn",
+            name,
+            asset_id,
+            effect_path
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "<missing>".to_owned()),
+            effekseer_renderer_label()
+        ));
+        tracing::warn!(
+            name,
+            asset = asset_id,
+            renderer = effekseer_renderer_label(),
+            "registered runtime Effekseer effect for the Bevy bridge"
+        );
+        return;
+    }
     for (entity, scene_entity, mut existing_transform, _, _, visibility, _, _) in
         &mut scene_entities.p1()
     {
@@ -3263,11 +3382,6 @@ pub(super) fn apply_runtime_model_decl(
         return;
     }
 
-    let visibility = if options.hidden {
-        Visibility::Hidden
-    } else {
-        Visibility::Inherited
-    };
     if options.collider {
         spawn_scenemax_collider_decl(commands, name, resource, options, transform, None);
         register_collider_bounds(collider_bounds, name, options, transform);
@@ -3311,6 +3425,125 @@ pub(super) fn apply_runtime_model_decl(
         resource,
         "spawned runtime SceneMax placeholder entity"
     );
+}
+
+pub(super) fn effekseer_asset_id(resource: &str) -> Option<String> {
+    let prefix = "effects.effekseer.";
+    let lower = resource.to_ascii_lowercase();
+    lower
+        .starts_with(prefix)
+        .then(|| resource[prefix.len()..].trim())
+        .filter(|asset_id| !asset_id.is_empty())
+        .map(str::to_owned)
+}
+
+pub(super) fn resolve_effekseer_effect_path(asset_root: &Path, asset_id: &str) -> Option<PathBuf> {
+    let folder = asset_root.join("effects").join(asset_id);
+    let entries = fs::read_dir(folder).ok()?;
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| {
+                    extension.eq_ignore_ascii_case("efkefc")
+                        || extension.eq_ignore_ascii_case("efk")
+                })
+        })
+}
+
+fn resolved_effekseer_play_translation(
+    play: &EffekseerPlayStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<Vec3> {
+    evaluate_position_value_runtime(
+        play.position.as_ref()?,
+        vars,
+        scope,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
+}
+
+fn resolved_effekseer_playback(
+    play: &EffekseerPlayStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> SceneMaxEffekseerPlayback {
+    let mut looped = play.looped;
+    let mut playback_speed = 1.0;
+    let mut dynamic_inputs = [0.0; 4];
+    for (key, value) in &play.attrs {
+        let literal_truthy = assignment_value_is_truthy(value);
+        let resolved = resolve_assignment_value_scoped_with_guards(
+            value,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        );
+        match key.as_str() {
+            "loop" => {
+                looped = literal_truthy || resolved.is_some_and(|value| value != 0.0);
+            }
+            "play_back_speed" | "playback_speed" => {
+                playback_speed = resolved.unwrap_or(playback_speed).max(0.001);
+            }
+            "input0" => dynamic_inputs[0] = resolved.unwrap_or(dynamic_inputs[0]),
+            "input1" => dynamic_inputs[1] = resolved.unwrap_or(dynamic_inputs[1]),
+            "input2" => dynamic_inputs[2] = resolved.unwrap_or(dynamic_inputs[2]),
+            "input3" => dynamic_inputs[3] = resolved.unwrap_or(dynamic_inputs[3]),
+            _ => {}
+        }
+    }
+    SceneMaxEffekseerPlayback {
+        looped,
+        play_generation: next_effekseer_play_generation(),
+        playback_speed,
+        dynamic_inputs,
+    }
+}
+
+fn next_effekseer_play_generation() -> u64 {
+    static GENERATION: AtomicU64 = AtomicU64::new(1);
+    GENERATION.fetch_add(1, Ordering::Relaxed)
+}
+
+fn assignment_value_is_truthy(value: &AssignmentValue) -> bool {
+    match value {
+        AssignmentValue::Number(value) => *value != 0.0,
+        AssignmentValue::Symbol(value) => value.eq_ignore_ascii_case("true"),
+        _ => false,
+    }
+}
+
+fn write_effekseer_bridge_play(target: &str, play: &EffekseerPlayStatement) {
+    let playback = play
+        .attrs
+        .iter()
+        .find_map(|(key, value)| {
+            matches!(key.as_str(), "play_back_speed" | "playback_speed")
+                .then(|| format!("{value:?}"))
+        })
+        .unwrap_or_else(|| "1".to_owned());
+    write_runtime_diagnostic_line(format!(
+        "EFFEKSEER:PLAY target={} loop={} speed={} attrs={} renderer={}",
+        target,
+        play.looped as u8,
+        playback,
+        play.attrs.len(),
+        effekseer_renderer_label()
+    ));
 }
 
 fn spawn_runtime_gltf_model_decl(
@@ -3839,6 +4072,41 @@ pub(super) fn apply_key_action(
                     sprite_play.duration_seconds,
                     sprite_play.looped
                 ));
+            }
+            Statement::EffekseerPlay(play)
+                if target_matches_alias(
+                    &play.target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
+            {
+                if let Some(translation) = resolved_effekseer_play_translation(
+                    play,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    transforms_by_name,
+                    Some(collider_bounds),
+                ) {
+                    transform.translation = translation;
+                    sync_live_transform(
+                        transforms_by_name,
+                        object_pools,
+                        scope.as_deref(),
+                        &scene_entity.name,
+                        *transform,
+                    );
+                }
+                commands.entity(entity).insert(resolved_effekseer_playback(
+                    play,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                ));
+                write_effekseer_bridge_play(&scene_entity.name, play);
             }
             Statement::AnimationSpeed(animation_speed)
                 if target_matches_alias(
@@ -4449,6 +4717,11 @@ fn collect_bone_alias_targets_from_statements(
         match statement {
             Statement::Position(position) => {
                 collect_bone_alias_target_from_position_value(&position.position, seen, targets);
+            }
+            Statement::EffekseerPlay(play) => {
+                if let Some(position) = &play.position {
+                    collect_bone_alias_target_from_position_value(position, seen, targets);
+                }
             }
             Statement::MoveTo(move_to) => {
                 if let MoveToDestination::Position(position) = &move_to.destination {

@@ -16,6 +16,11 @@ use avian3d::{
     },
     schedule::PhysicsSchedule,
 };
+#[cfg(feature = "effekseer_native")]
+use bevy::render::{
+    RenderPlugin,
+    settings::{Backends, WgpuSettings},
+};
 use bevy::{
     animation::AnimationTargetId,
     asset::{AssetApp, AssetPlugin, RenderAssetUsages, io::AssetSourceBuilder},
@@ -39,11 +44,11 @@ use scenemax_parser::{
     AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement, AudioAction,
     AudioStatement, CameraAttachStatement, CameraModifierValue, CameraMoveStatement,
     ChannelDrawStatement, CharacterJumpStatement, CharacterModeStatement, CinematicLookAt,
-    CinematicPlayStatement, Condition, EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage,
-    LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement, ObjectPoolStatement,
-    PoolReleaseStatement, PositionExpr, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
-    SceneMaxCollisionShape, SceneMaxVec3, SpritePlayStatement, Statement, UiEaseDirection,
-    UiTargetPath,
+    CinematicPlayStatement, Condition, EffekseerPlayStatement, EntityOptions, KeyTrigger,
+    LoggerLevel, LoggerMessage, LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement,
+    ObjectPoolStatement, PoolReleaseStatement, PositionExpr, PositionValue, Program, SceneMaxAxis,
+    SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3, SpritePlayStatement, Statement,
+    UiEaseDirection, UiTargetPath,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
@@ -63,6 +68,7 @@ mod actions;
 mod animation;
 mod audio;
 mod camera;
+mod effekseer;
 mod physics;
 mod sprites;
 mod startup;
@@ -72,6 +78,7 @@ use actions::*;
 use animation::*;
 use audio::*;
 use camera::*;
+use effekseer::*;
 use physics::*;
 use sprites::*;
 use startup::*;
@@ -135,6 +142,37 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         write_runtime_diagnostic_line("no separate built-in resources folder was discovered");
     }
 
+    let default_plugins = DefaultPlugins
+        .build()
+        .disable::<LogPlugin>()
+        .set(AssetPlugin {
+            file_path: asset_root
+                .as_ref()
+                .map(|path| path.to_string_lossy().to_string())
+                .unwrap_or_else(|| "assets".to_owned()),
+            ..default()
+        })
+        .set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "SceneMax3D NextGen".to_owned(),
+                present_mode: PresentMode::AutoVsync,
+                resolution: WindowResolution::new(launch.window.width, launch.window.height)
+                    .with_scale_factor_override(1.0),
+                ..default()
+            }),
+            ..default()
+        });
+
+    #[cfg(feature = "effekseer_native")]
+    let default_plugins = default_plugins.set(RenderPlugin {
+        render_creation: WgpuSettings {
+            backends: Some(Backends::VULKAN),
+            ..default()
+        }
+        .into(),
+        ..default()
+    });
+
     app.insert_resource(WinitSettings::continuous())
         .insert_resource(SceneMaxLaunchContext {
             script_root: effective_script_root,
@@ -160,35 +198,12 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<SceneMaxUiRuntime>()
         .init_resource::<SceneMaxUiActionQueue>()
         .init_resource::<SceneMaxPerfDebug>()
-        .add_plugins(
-            DefaultPlugins
-                .build()
-                .disable::<LogPlugin>()
-                .set(AssetPlugin {
-                    file_path: asset_root
-                        .as_ref()
-                        .map(|path| path.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "assets".to_owned()),
-                    ..default()
-                })
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "SceneMax3D NextGen".to_owned(),
-                        present_mode: PresentMode::AutoVsync,
-                        resolution: WindowResolution::new(
-                            launch.window.width,
-                            launch.window.height,
-                        )
-                        .with_scale_factor_override(1.0),
-                        ..default()
-                    }),
-                    ..default()
-                }),
-        )
+        .add_plugins(default_plugins)
         .add_plugins((
             PhysicsPlugins::default(),
             TnuaControllerPlugin::<SceneMaxControlScheme>::new(PhysicsSchedule),
             TnuaAvian3dPlugin::new(PhysicsSchedule),
+            SceneMaxEffekseerBridgePlugin,
         ))
         .add_systems(
             Startup,
@@ -815,6 +830,22 @@ struct CinematicPlaybackSegment {
 struct SceneMaxEntity {
     name: String,
     runtime_name: String,
+}
+
+#[derive(Debug, Clone, Component)]
+#[allow(dead_code)]
+struct SceneMaxEffekseerEffect {
+    asset_id: String,
+    effect_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Component)]
+#[allow(dead_code)]
+struct SceneMaxEffekseerPlayback {
+    looped: bool,
+    play_generation: u64,
+    playback_speed: f32,
+    dynamic_inputs: [f32; 4],
 }
 
 #[derive(SystemParam)]

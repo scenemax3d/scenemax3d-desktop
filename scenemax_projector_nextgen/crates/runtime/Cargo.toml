@@ -4,8 +4,13 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+default = []
+effekseer_native = ["dep:ash", "dep:wgpu"]
+
 [dependencies]
 anyhow.workspace = true
+ash = { version = "0.38", optional = true }
 avian3d.workspace = true
 bevy.workspace = true
 bevy-tnua.workspace = true
@@ -20,3 +25,4 @@ scenemax_runtime_vm_core = { path = "../runtime_vm_core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing.workspace = true
+wgpu = { version = "29.0.4", default-features = false, features = ["std", "vulkan", "dx12"], optional = true }

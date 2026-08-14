@@ -719,6 +719,52 @@ pub(super) fn spawn_scenemax_program(
             continue;
         }
 
+        if let Some(asset_id) = effekseer_asset_id(resource) {
+            let transform = transform_from_options_resolved(
+                options,
+                None,
+                vars,
+                &guards_by_name,
+                Some(&transforms_by_name),
+                Some(collider_bounds),
+            );
+            let effect_path = resolve_effekseer_effect_path(asset_root, &asset_id);
+            let entity_id = commands
+                .spawn((
+                    SceneMaxEntity {
+                        name: name.clone(),
+                        runtime_name: format!("{name}@1"),
+                    },
+                    SceneMaxEffekseerEffect {
+                        asset_id: asset_id.clone(),
+                        effect_path: effect_path.clone(),
+                    },
+                    transform,
+                    initial_visibility(name, options, &visibility_by_target),
+                ))
+                .id();
+            entities_by_name.insert(name.clone(), entity_id);
+            transforms_by_name.insert(name.clone(), transform);
+            spawned_any = true;
+            write_runtime_diagnostic_line(format!(
+                "EFFEKSEER:DECL target={} asset={} path={} renderer={}",
+                name,
+                asset_id,
+                effect_path
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| "<missing>".to_owned()),
+                effekseer_renderer_label()
+            ));
+            tracing::warn!(
+                name,
+                asset = asset_id,
+                renderer = effekseer_renderer_label(),
+                "registered Effekseer effect for the Bevy bridge"
+            );
+            continue;
+        }
+
         if options.sprite {
             if let Some((entity_id, transform)) = spawn_scenemax_sprite_decl(
                 commands,

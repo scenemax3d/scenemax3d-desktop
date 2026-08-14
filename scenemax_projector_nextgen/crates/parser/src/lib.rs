@@ -32,6 +32,7 @@ pub enum Statement {
     ObjectPool(ObjectPoolStatement),
     Animate(AnimationStatement),
     SpritePlay(SpritePlayStatement),
+    EffekseerPlay(EffekseerPlayStatement),
     CinematicPlay(CinematicPlayStatement),
     AnimationSpeed(AnimationSpeedStatement),
     Visibility {
@@ -225,6 +226,15 @@ pub struct SpritePlayStatement {
     pub duration_seconds: f32,
     pub duration_value: AssignmentValue,
     pub looped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EffekseerPlayStatement {
+    pub target: String,
+    pub position: Option<PositionValue>,
+    pub looped: bool,
+    pub attrs: Vec<(String, AssignmentValue)>,
+    pub async_run: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1949,6 +1959,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(Statement::SpritePlay(sprite_play));
     }
 
+    if let Some(effekseer_play) = parse_effekseer_play(line)? {
+        return Ok(Statement::EffekseerPlay(effekseer_play));
+    }
+
     if let Some(draw) = parse_channel_draw(line)? {
         return Ok(Statement::ChannelDraw(draw));
     }
@@ -3518,6 +3532,71 @@ fn split_top_level_comma(text: &str) -> Vec<&str> {
     parts.into_iter().filter(|part| !part.is_empty()).collect()
 }
 
+fn split_top_level_options(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut paren_depth = 0usize;
+    let mut bracket_depth = 0usize;
+    let mut quote = false;
+    let mut escaped = false;
+    let mut start = 0usize;
+
+    for (index, value) in text.char_indices() {
+        if quote {
+            if escaped {
+                escaped = false;
+            } else if value == '\\' {
+                escaped = true;
+            } else if value == '"' {
+                quote = false;
+            }
+            continue;
+        }
+
+        match value {
+            '"' => quote = true,
+            '(' => paren_depth += 1,
+            ')' => paren_depth = paren_depth.saturating_sub(1),
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            ',' if paren_depth == 0 && bracket_depth == 0 => {
+                parts.push(text[start..index].trim());
+                start = index + value.len_utf8();
+            }
+            _ => {}
+        }
+    }
+
+    parts.push(text[start..].trim());
+    parts.into_iter().filter(|part| !part.is_empty()).collect()
+}
+
+fn matching_close_bracket_index(text: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut quote = false;
+    let mut escaped = false;
+    for (index, value) in text.char_indices() {
+        if quote {
+            if escaped {
+                escaped = false;
+            } else if value == '\\' {
+                escaped = true;
+            } else if value == '"' {
+                quote = false;
+            }
+            continue;
+        }
+
+        match value {
+            '"' => quote = true,
+            '[' => depth += 1,
+            ']' if depth == 0 => return Some(index),
+            ']' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    None
+}
+
 fn parse_position_expr(text: &str) -> Result<PositionExpr, ParseError> {
     let text = text.trim();
     if let Ok(value) = text.parse::<f32>() {
@@ -4134,6 +4213,125 @@ fn parse_sprite_play(line: &str) -> Result<Option<SpritePlayStatement>, ParseErr
         duration_value,
         looped: contains_keyword(rest, "loop"),
     }))
+}
+
+fn parse_effekseer_play(line: &str) -> Result<Option<EffekseerPlayStatement>, ParseError> {
+    let Some((target, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
+    let rest = rest.trim();
+    if !starts_with_keyword(rest, "play") {
+        return Ok(None);
+    }
+    let options_text = rest["play".len()..].trim();
+    let option_parts = split_top_level_options(options_text);
+    let mut position = None;
+    let mut looped = false;
+    let mut attrs = Vec::new();
+    let async_run = contains_keyword(options_text, "async");
+    let mut recognized_effekseer_option = false;
+
+    for option in option_parts {
+        let option = option.trim();
+        if option.is_empty() {
+            continue;
+        }
+        if starts_with_keyword(option, "pos") {
+            position = parse_effekseer_position_option(option)?;
+            recognized_effekseer_option = true;
+        } else if option.eq_ignore_ascii_case("loop") {
+            looped = true;
+            recognized_effekseer_option = true;
+        } else if option.to_ascii_lowercase().starts_with("attr") {
+            attrs.extend(parse_effekseer_attr_list(option)?);
+            recognized_effekseer_option = true;
+        }
+    }
+    if !recognized_effekseer_option {
+        return Ok(None);
+    }
+
+    if let Some((_, value)) = attrs
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("loop"))
+        && assignment_value_is_truthy_literal(value)
+    {
+        looped = true;
+    }
+
+    Ok(Some(EffekseerPlayStatement {
+        target,
+        position,
+        looped,
+        attrs,
+        async_run,
+    }))
+}
+
+fn parse_effekseer_position_option(option: &str) -> Result<Option<PositionValue>, ParseError> {
+    let Some(raw_values) = values_inside_first_parens(option) else {
+        return Ok(None);
+    };
+    let parts = split_top_level_comma(raw_values);
+    if parts.len() == 3 {
+        return Ok(Some(PositionValue::Coordinates(
+            parts
+                .into_iter()
+                .map(parse_position_expr)
+                .collect::<Result<Vec<_>, _>>()?,
+        )));
+    }
+    let subject = raw_values.trim();
+    Ok((!subject.is_empty()).then(|| PositionValue::Entity(subject.to_owned())))
+}
+
+fn parse_effekseer_attr_list(option: &str) -> Result<Vec<(String, AssignmentValue)>, ParseError> {
+    let Some(open_index) = option.find('[') else {
+        return Ok(Vec::new());
+    };
+    let after_open = &option[open_index + 1..];
+    let Some(close_index) = matching_close_bracket_index(after_open) else {
+        return Ok(Vec::new());
+    };
+    split_top_level_options(&after_open[..close_index])
+        .into_iter()
+        .filter(|part| !part.trim().is_empty())
+        .map(parse_effekseer_attr)
+        .collect()
+}
+
+fn parse_effekseer_attr(part: &str) -> Result<(String, AssignmentValue), ParseError> {
+    let part = part.trim();
+    let (key, value_text) = if let Some(after_open) = part.strip_prefix('"') {
+        let Some(close_index) = after_open.find('"') else {
+            return Err(ParseError::InvalidNumber(part.to_owned()));
+        };
+        (
+            after_open[..close_index].to_owned(),
+            after_open[close_index + 1..].trim(),
+        )
+    } else {
+        let mut pieces = part.splitn(2, char::is_whitespace);
+        (
+            pieces.next().unwrap_or_default().trim().to_owned(),
+            pieces.next().unwrap_or_default().trim(),
+        )
+    };
+    if key.is_empty() || value_text.is_empty() {
+        return Err(ParseError::InvalidNumber(part.to_owned()));
+    }
+    let Some(value) = parse_assignment_value(value_text.trim_start_matches('=').trim())? else {
+        return Err(ParseError::InvalidNumber(value_text.to_owned()));
+    };
+    Ok((key.to_ascii_lowercase(), value))
+}
+
+fn assignment_value_is_truthy_literal(value: &AssignmentValue) -> bool {
+    match value {
+        AssignmentValue::Number(value) => *value != 0.0,
+        AssignmentValue::Symbol(value) => value.eq_ignore_ascii_case("true"),
+        _ => false,
+    }
 }
 
 fn parse_channel_draw(line: &str) -> Result<Option<ChannelDrawStatement>, ParseError> {
@@ -8069,5 +8267,47 @@ run tick(score+10) every tick_time+0.25 seconds
                 async_run: false,
             })]
         );
+    }
+
+    #[test]
+    fn parses_effekseer_declaration_and_play_with_entity_position() {
+        let program = parse_program(
+            "laser_effect => effects.effekseer.Homing_Laser01_3\n\
+             laser_effect.play pos (player1), loop",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::ModelDecl { name, resource, .. }
+                if name == "laser_effect" && resource == "effects.effekseer.Homing_Laser01_3"
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::EffekseerPlay(play)
+                if play.target == "laser_effect"
+                    && play.position == Some(PositionValue::Entity("player1".to_owned()))
+                    && play.looped
+        ));
+    }
+
+    #[test]
+    fn parses_effekseer_play_with_bone_position_and_attrs() {
+        let program = parse_program(
+            "effect => effects.effekseer.A_Salamander1\n\
+             effect.play pos (player1.\"mixamorig:RightHand\"), attr = [\"play_back_speed\" 1.2, \"input0\" 0.9] Async",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &program.statements[1],
+            Statement::EffekseerPlay(play)
+                if play.position == Some(PositionValue::Entity("player1.\"mixamorig:RightHand\"".to_owned()))
+                    && play.attrs == vec![
+                        ("play_back_speed".to_owned(), AssignmentValue::Number(1.2)),
+                        ("input0".to_owned(), AssignmentValue::Number(0.9)),
+                    ]
+                    && play.async_run
+        ));
     }
 }
