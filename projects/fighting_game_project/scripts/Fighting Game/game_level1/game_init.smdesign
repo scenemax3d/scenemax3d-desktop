@@ -29,6 +29,7 @@
         -15,
         0
       ],
+      "multiplayer": false,
       "sizeY": 0.5,
       "sizeZ": 50
     },
@@ -61,7 +62,8 @@
         220,
         -90,
         210
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -92,7 +94,8 @@
         13,
         -12,
         50
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "rotation": [
@@ -145,7 +148,8 @@
         10.163753,
         -5.6443043,
         49.335724
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -176,7 +180,8 @@
         9,
         0,
         35
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "rotation": [
@@ -253,7 +258,8 @@
             40,
             -89.249504,
             30
-          ]
+          ],
+          "multiplayer": false
         },
         {
           "shader": "",
@@ -283,6 +289,7 @@
             0.5,
             2.88586
           ],
+          "multiplayer": false,
           "sizeY": 0.5,
           "sizeZ": 0.5
         },
@@ -335,7 +342,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -386,7 +394,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -437,7 +446,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -488,7 +498,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -539,7 +550,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -615,7 +627,8 @@
             40,
             -88.03695,
             16.5
-          ]
+          ],
+          "multiplayer": false
         },
         {
           "shader": "",
@@ -645,6 +658,7 @@
             0.5,
             0
           ],
+          "multiplayer": false,
           "sizeY": 0.5,
           "sizeZ": 0.5
         },
@@ -697,7 +711,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -748,7 +763,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -799,7 +815,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -850,7 +867,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -901,7 +919,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -1253,7 +1272,8 @@
         22.532026,
         -66.486755,
         148.68306
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -1284,7 +1304,8 @@
         23.844534,
         -88.28118,
         161.98776
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "rotation": [
@@ -1337,7 +1358,8 @@
         23.732,
         -88,
         161.9128
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -1368,7 +1390,8 @@
         23.46958,
         -87.37234,
         147.34291
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "cinematicTargetEntityId": "9623875e-175c-4d46-8104-7f7a6aeb27df",
@@ -1466,6 +1489,7 @@
         -88.97634,
         115.0642
       ],
+      "multiplayer": false,
       "quadHeight": 1
     }
   ],
@@ -1484,15 +1508,15 @@
   },
   "camera": {
     "rotation": [
-      0.17175275,
-      0.7683036,
-      -0.23077796,
-      0.5717974
+      0.06905802,
+      0.8991075,
+      -0.1536895,
+      0.40400025
     ],
     "position": [
-      -20.959812,
-      8.377852,
-      58.025295
+      -53.20494,
+      -53.712193,
+      63.259
     ]
   },
   "version": 1

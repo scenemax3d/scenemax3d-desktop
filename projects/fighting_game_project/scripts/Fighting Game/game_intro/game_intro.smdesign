@@ -43,7 +43,7 @@
       ],
       "modelCollisionShape": "default",
       "type": "MODEL",
-      "sceneMaxCode": "model_1 => static mountain_low_poly_native: pos (0.0,-9.6,-50.0) async",
+      "sceneMaxCode": "model_1 => static mountain_low_poly_native: pos (0.0,-9.6,-50.0), scale 0.1, rotate(0.0,-90.0,0.0) async",
       "staticModel": true,
       "name": "model_1",
       "vehicleModel": false,
@@ -52,7 +52,8 @@
         0,
         -9.6,
         -50
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "cinematicTargetEntityId": "969df9ce-fd0c-49bf-92e6-b99e8a69c4f9",
@@ -150,6 +151,7 @@
         -9.527,
         31.365463
       ],
+      "multiplayer": false,
       "quadHeight": 1
     }
   ],
@@ -168,15 +170,15 @@
   },
   "camera": {
     "rotation": [
-      -0.09904575,
-      0.8923991,
-      -0.23911761,
-      -0.3696438
+      0.06905802,
+      0.8991075,
+      -0.1536895,
+      0.40400025
     ],
     "position": [
-      105.83368,
-      -20.122337,
-      229.707
+      -159.59203,
+      17.378418,
+      82.09793
     ]
   },
   "version": 1
