@@ -28,7 +28,7 @@ use bevy::{
 };
 
 #[cfg(feature = "effekseer_native")]
-use crate::startup::write_runtime_diagnostic_line;
+use crate::startup::{runtime_verbose_logging, write_runtime_diagnostic_line};
 
 use crate::{SceneMaxEffekseerEffect, SceneMaxEffekseerPlayback};
 
@@ -374,7 +374,7 @@ fn render_effekseer_vulkan(
         return NativeEffekseerRenderResult::Rendered;
     }
 
-    if native.render_log_counter < 5 {
+    if runtime_verbose_logging() && native.render_log_counter < 5 {
         for instance in instances.iter().filter(|instance| instance.playing).take(3) {
             let (scale, rotation, _) = Mat4::from_cols_array(&instance.transform)
                 .transpose()
@@ -479,7 +479,9 @@ fn composite_effekseer_vulkan(
     render_pass.draw(0..3, 0..1);
 
     native.composite_log_counter = native.composite_log_counter.saturating_add(1);
-    if native.composite_log_counter <= 10 || native.composite_log_counter % 60 == 0 {
+    if native.composite_log_counter <= 3
+        || (runtime_verbose_logging() && native.composite_log_counter % 300 == 0)
+    {
         write_runtime_diagnostic_line(format!(
             "EFFEKSEER:COMPOSITE ok=1 blend=additive-color target_format={:?} texture={}x{} calls={}",
             target_format, texture.size.x, texture.size.y, native.composite_log_counter
@@ -556,17 +558,23 @@ fn log_native_effekseer_stats(
 ) {
     native.render_log_counter = native.render_log_counter.saturating_add(1);
     let Some(stats) = native_stats(native.renderer) else {
-        write_runtime_diagnostic_line(format!(
-            "EFFEKSEER:NATIVE result={result:?} stats=missing submitted={submitted_instances} status={}",
-            native_status(native.renderer)
-        ));
+        if native.render_log_counter <= 3
+            || (runtime_verbose_logging() && native.render_log_counter % 300 == 0)
+        {
+            write_runtime_diagnostic_line(format!(
+                "EFFEKSEER:NATIVE result={result:?} stats=missing submitted={submitted_instances} status={}",
+                native_status(native.renderer)
+            ));
+        }
         return;
     };
 
     let signature = NativeEffekseerStatsSignature::from_stats(&stats);
-    let should_log = native.render_log_counter <= 10
-        || native.render_log_counter % 60 == 0
-        || native.last_stats_signature != Some(signature);
+    let verbose = runtime_verbose_logging();
+    let should_log = native.render_log_counter <= 3
+        || (verbose
+            && (native.render_log_counter % 300 == 0
+                || native.last_stats_signature != Some(signature)));
     if !should_log {
         return;
     }
