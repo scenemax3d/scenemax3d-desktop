@@ -1244,8 +1244,14 @@ pub(super) fn apply_character_modes(
     transforms_by_name: &HashMap<String, Transform>,
     character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
 ) {
-    let support_samples = character_mode_support_samples(program, transforms_by_name);
+    let support_samples = fallback_character_mode_support_samples(program, transforms_by_name);
     spawn_character_stage_support(commands, &support_samples);
+    let explicit_surfaces = explicit_static_support_surfaces(program, transforms_by_name);
+    write_runtime_diagnostic_line(format!(
+        "CHARACTER:STARTUP_SUPPORTS fallback_count={} explicit_surface_count={}",
+        support_samples.len(),
+        explicit_surfaces.len()
+    ));
 
     for statement in &program.statements {
         if initial_state_scan_boundary(statement) {
@@ -1259,12 +1265,45 @@ pub(super) fn apply_character_modes(
                 target = character_mode.target,
                 "SceneMax character mode target was not spawned"
             );
+            write_runtime_diagnostic_line(format!(
+                "CHARACTER:STARTUP_SWITCH_MISS target={}",
+                character_mode.target
+            ));
             continue;
         };
-        let transform = transforms_by_name
+        let mut transform = transforms_by_name
             .get(&character_mode.target)
             .copied()
             .unwrap_or_default();
+        let before_y = transform.translation.y;
+        if snap_character_transform_to_floor(&mut transform, &explicit_surfaces) {
+            commands.entity(entity).insert(transform);
+            write_runtime_diagnostic_line(format!(
+                "CHARACTER:STARTUP_SNAP target={} y_before={} y_after={} explicit_surface_count={}",
+                character_mode.target,
+                format_scenemax_number(before_y),
+                format_scenemax_number(transform.translation.y),
+                explicit_surfaces.len()
+            ));
+        } else {
+            write_runtime_diagnostic_line(format!(
+                "CHARACTER:STARTUP_NO_SNAP target={} y={} explicit_surface_count={}",
+                character_mode.target,
+                format_scenemax_number(transform.translation.y),
+                explicit_surfaces.len()
+            ));
+        }
+        write_runtime_diagnostic_line(format!(
+            "CHARACTER:STARTUP_SWITCH target={} gravity={} pos=({},{},{})",
+            character_mode.target,
+            character_mode
+                .gravity
+                .map(format_scenemax_number)
+                .unwrap_or_else(|| "default".to_owned()),
+            format_scenemax_number(transform.translation.x),
+            format_scenemax_number(transform.translation.y),
+            format_scenemax_number(transform.translation.z)
+        ));
         insert_tnua_character_controller(
             commands,
             entity,
@@ -1294,6 +1333,174 @@ pub(super) fn character_mode_support_samples(
             Some((character_mode.target.clone(), transform, dimensions))
         })
         .collect()
+}
+
+pub(super) fn fallback_character_mode_support_samples(
+    program: &Program,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Vec<(String, Transform, SceneMaxCharacterDimensions)> {
+    let surfaces = explicit_static_support_surfaces(program, transforms_by_name);
+    character_mode_support_samples(program, transforms_by_name)
+        .into_iter()
+        .filter(|(_, transform, dimensions)| {
+            let has_explicit_support =
+                has_explicit_static_support_below(transform, *dimensions, &surfaces);
+            if has_explicit_support {
+                write_runtime_diagnostic_line(format!(
+                    "CHARACTER:SUPPORT_FALLBACK_SKIP pos=({},{},{}) explicit_surface_count={}",
+                    format_scenemax_number(transform.translation.x),
+                    format_scenemax_number(transform.translation.y),
+                    format_scenemax_number(transform.translation.z),
+                    surfaces.len()
+                ));
+            }
+            !has_explicit_support
+        })
+        .collect()
+}
+
+pub(super) fn snap_character_transform_to_floor(
+    transform: &mut Transform,
+    surfaces: &[SceneMaxExplicitSupportSurface],
+) -> bool {
+    let dimensions = character_dimensions_for_transform(transform);
+    let Some(support_y) = nearest_explicit_static_support_y(transform, dimensions, surfaces) else {
+        return false;
+    };
+    let snapped_y = support_y + dimensions.float_height + dimensions.foot_contact_offset;
+    if snapped_y >= transform.translation.y {
+        return false;
+    }
+    transform.translation.y = snapped_y;
+    true
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SceneMaxExplicitSupportSurface {
+    pub(super) min_x: f32,
+    pub(super) max_x: f32,
+    pub(super) min_z: f32,
+    pub(super) max_z: f32,
+    pub(super) top_y: f32,
+}
+
+pub(super) fn explicit_static_support_surfaces(
+    program: &Program,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Vec<SceneMaxExplicitSupportSurface> {
+    program
+        .statements
+        .iter()
+        .filter_map(|statement| {
+            let Statement::ModelDecl {
+                name,
+                resource,
+                options,
+            } = statement
+            else {
+                return None;
+            };
+            if options.collider {
+                return None;
+            }
+            let body_kind = physics_body_kind(options)?;
+            if body_kind != SceneMaxBodyKind::Static {
+                return None;
+            }
+            let shape = physics_collision_shape(name, resource, options, body_kind)?;
+            if shape != SceneMaxCollisionShape::Box {
+                return None;
+            }
+            let transform = transforms_by_name.get(name).copied().unwrap_or_default();
+            Some(explicit_support_surface_from_box(
+                transform,
+                explicit_support_box_dimensions(options, &transform),
+            ))
+        })
+        .collect()
+}
+
+fn explicit_support_box_dimensions(options: &EntityOptions, transform: &Transform) -> Vec3 {
+    let dimensions = collider_dimensions(options, transform);
+    if options.size.is_some() {
+        dimensions * transform.scale.abs()
+    } else {
+        dimensions
+    }
+}
+
+pub(super) fn explicit_support_surface_from_box(
+    transform: Transform,
+    dimensions: Vec3,
+) -> SceneMaxExplicitSupportSurface {
+    let half = dimensions * 0.5;
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut min_z = f32::INFINITY;
+    let mut max_z = f32::NEG_INFINITY;
+    let mut top_y = f32::NEG_INFINITY;
+
+    for x in [-half.x, half.x] {
+        for y in [-half.y, half.y] {
+            for z in [-half.z, half.z] {
+                let world = transform.translation + transform.rotation * Vec3::new(x, y, z);
+                min_x = min_x.min(world.x);
+                max_x = max_x.max(world.x);
+                min_z = min_z.min(world.z);
+                max_z = max_z.max(world.z);
+                top_y = top_y.max(world.y);
+            }
+        }
+    }
+
+    SceneMaxExplicitSupportSurface {
+        min_x,
+        max_x,
+        min_z,
+        max_z,
+        top_y,
+    }
+}
+
+pub(super) fn has_explicit_static_support_below(
+    transform: &Transform,
+    dimensions: SceneMaxCharacterDimensions,
+    surfaces: &[SceneMaxExplicitSupportSurface],
+) -> bool {
+    let sample_support_y = character_stage_support_top_y(transform.translation.y, dimensions);
+    surfaces.iter().any(|surface| {
+        let horizontal_margin = dimensions.capsule_radius.max(0.05);
+        let within_x = transform.translation.x >= surface.min_x - horizontal_margin
+            && transform.translation.x <= surface.max_x + horizontal_margin;
+        let within_z = transform.translation.z >= surface.min_z - horizontal_margin
+            && transform.translation.z <= surface.max_z + horizontal_margin;
+        let below_or_touching = surface.top_y <= sample_support_y + dimensions.foot_contact_offset;
+        within_x && within_z && below_or_touching
+    })
+}
+
+pub(super) fn nearest_explicit_static_support_y(
+    transform: &Transform,
+    dimensions: SceneMaxCharacterDimensions,
+    surfaces: &[SceneMaxExplicitSupportSurface],
+) -> Option<f32> {
+    let sample_support_y = character_stage_support_top_y(transform.translation.y, dimensions);
+    let max_drop = (dimensions.visual_drop * CHARACTER_EXPLICIT_SUPPORT_MAX_DROP_FACTOR)
+        .max(dimensions.capsule_radius);
+    surfaces
+        .iter()
+        .filter_map(|surface| {
+            let horizontal_margin = dimensions.capsule_radius.max(0.05);
+            let within_x = transform.translation.x >= surface.min_x - horizontal_margin
+                && transform.translation.x <= surface.max_x + horizontal_margin;
+            let within_z = transform.translation.z >= surface.min_z - horizontal_margin
+                && transform.translation.z <= surface.max_z + horizontal_margin;
+            let below_or_touching =
+                surface.top_y <= sample_support_y + dimensions.foot_contact_offset;
+            let close_enough = sample_support_y - surface.top_y <= max_drop;
+            (within_x && within_z && below_or_touching && close_enough).then_some(surface.top_y)
+        })
+        .max_by(|a, b| a.total_cmp(b))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1362,7 +1569,10 @@ pub(super) fn insert_tnua_character_controller(
         },
     });
 
-    commands.entity(entity).insert((
+    let mut entity_commands = commands.entity(entity);
+    entity_commands.remove::<TimedMoves>();
+    entity_commands.remove::<TimedJump>();
+    entity_commands.insert((
         SceneMaxCharacterController {
             move_speed: DEFAULT_CHARACTER_MOVE_SPEED,
             gravity,
@@ -1398,8 +1608,12 @@ pub(super) fn insert_tnua_character_controller(
         "enabled Tnua SceneMax character mode"
     );
     write_runtime_diagnostic_line(format!(
-        "CHARACTER target={} scale=({:.3},{:.3},{:.3}) capsule_radius={:.3} capsule_height={:.3} capsule_center_y={:.3} float_height={:.3} foot_contact_offset={:.3} visual_drop={:.3}",
+        "CHARACTER:ENABLE target={} gravity={} pos=({},{},{}) scale=({:.3},{:.3},{:.3}) capsule_radius={:.3} capsule_height={:.3} capsule_center_y={:.3} float_height={:.3} foot_contact_offset={:.3} visual_drop={:.3}",
         character_mode.target,
+        format_scenemax_number(gravity),
+        format_scenemax_number(transform.translation.x),
+        format_scenemax_number(transform.translation.y),
+        format_scenemax_number(transform.translation.z),
         transform.scale.x,
         transform.scale.y,
         transform.scale.z,
@@ -1415,34 +1629,76 @@ pub(super) fn insert_tnua_character_controller(
 pub(super) fn apply_pending_character_modes(
     mut commands: Commands,
     mut character_configs: ResMut<Assets<SceneMaxControlSchemeConfig>>,
-    pending: Query<(Entity, &Transform, &PendingCharacterMode)>,
+    startup_program: Res<SceneMaxStartupProgram>,
+    mut scene_queries: ParamSet<(
+        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &mut Transform, &PendingCharacterMode)>,
+    )>,
     supports: Query<Entity, With<SceneMaxStageSupport>>,
 ) {
-    let pending_modes = pending.iter().collect::<Vec<_>>();
-    if pending_modes.is_empty() {
+    let transforms_by_name = scene_queries
+        .p0()
+        .iter()
+        .map(|(scene_entity, transform)| (scene_entity.name.clone(), *transform))
+        .collect::<HashMap<_, _>>();
+    let explicit_surfaces = startup_program
+        .0
+        .as_ref()
+        .map(|program| explicit_static_support_surfaces(program, &transforms_by_name))
+        .unwrap_or_default();
+    let mut support_samples = Vec::new();
+    for (_, transform, pending_mode) in scene_queries.p1().iter_mut() {
+        support_samples.push((
+            pending_mode.0.target.clone(),
+            *transform,
+            character_dimensions_for_transform(&transform),
+        ));
+    }
+    if support_samples.is_empty() {
         return;
     }
 
+    write_runtime_diagnostic_line(format!(
+        "CHARACTER:PENDING_BATCH count={} supports_existing={} explicit_surface_count={}",
+        support_samples.len(),
+        !supports.is_empty(),
+        explicit_surfaces.len()
+    ));
+
     if supports.is_empty() {
-        let support_samples = pending_modes
+        let fallback_samples = support_samples
             .iter()
-            .map(|(_, transform, pending_mode)| {
-                (
-                    pending_mode.0.target.clone(),
-                    **transform,
-                    character_dimensions_for_transform(transform),
-                )
+            .cloned()
+            .filter(|(_, transform, dimensions)| {
+                !has_explicit_static_support_below(transform, *dimensions, &explicit_surfaces)
             })
             .collect::<Vec<_>>();
-        spawn_character_stage_support(&mut commands, &support_samples);
+        spawn_character_stage_support(&mut commands, &fallback_samples);
     }
 
-    for (entity, _transform, pending_mode) in pending_modes {
+    for (entity, mut transform, pending_mode) in scene_queries.p1().iter_mut() {
+        let before_y = transform.translation.y;
+        let snapped = snap_character_transform_to_floor(&mut transform, &explicit_surfaces);
+        write_runtime_diagnostic_line(format!(
+            "CHARACTER:PENDING_APPLY target={} gravity={} snapped={} y_before={} y_after={} pos=({},{},{})",
+            pending_mode.0.target,
+            pending_mode
+                .0
+                .gravity
+                .map(format_scenemax_number)
+                .unwrap_or_else(|| "default".to_owned()),
+            snapped as u8,
+            format_scenemax_number(before_y),
+            format_scenemax_number(transform.translation.y),
+            format_scenemax_number(transform.translation.x),
+            format_scenemax_number(transform.translation.y),
+            format_scenemax_number(transform.translation.z)
+        ));
         insert_tnua_character_controller(
             &mut commands,
             entity,
             &pending_mode.0,
-            *_transform,
+            *transform,
             &mut character_configs,
         );
         commands.entity(entity).remove::<PendingCharacterMode>();
@@ -1461,13 +1717,24 @@ pub(super) fn cleanup_character_supports(
     >,
 ) {
     if character_owners.is_empty() {
+        if !supports.is_empty() {
+            write_runtime_diagnostic_line(format!(
+                "CHARACTER:SUPPORT_CLEANUP count={} reason=no_character_owners",
+                supports.iter().count()
+            ));
+        }
         for support_entity in &supports {
             commands.entity(support_entity).despawn();
         }
     }
 }
 
-pub(super) fn clear_character_mode(commands: &mut Commands, entity: Entity) {
+pub(super) fn clear_character_mode(
+    commands: &mut Commands,
+    entity: Entity,
+    target: Option<&str>,
+    transform: Option<&Transform>,
+) {
     let mut entity_commands = commands.entity(entity);
     entity_commands.remove::<SceneMaxCharacterController>();
     entity_commands.remove::<SceneMaxCharacterMotor>();
@@ -1476,11 +1743,29 @@ pub(super) fn clear_character_mode(commands: &mut Commands, entity: Entity) {
     entity_commands.remove::<TnuaConfig<SceneMaxControlScheme>>();
     entity_commands.remove::<TnuaAvian3dSensorShape>();
     entity_commands.remove::<LockedAxes>();
+    entity_commands.remove::<TimedMoves>();
+    entity_commands.remove::<TimedJump>();
     entity_commands.insert((
         AvianRigidBody::Kinematic,
         character_collision_layers(),
         LinearVelocity::ZERO,
         AngularVelocity::ZERO,
+    ));
+    let position = transform
+        .map(|transform| {
+            format!(
+                "pos=({},{},{})",
+                format_scenemax_number(transform.translation.x),
+                format_scenemax_number(transform.translation.y),
+                format_scenemax_number(transform.translation.z)
+            )
+        })
+        .unwrap_or_else(|| "pos=<unknown>".to_owned());
+    write_runtime_diagnostic_line(format!(
+        "CHARACTER:CLEAR target={} entity={:?} {}",
+        target.unwrap_or("<unknown>"),
+        entity,
+        position
     ));
 }
 
@@ -1489,6 +1774,11 @@ pub(super) fn spawn_character_stage_support(
     samples: &[(String, Transform, SceneMaxCharacterDimensions)],
 ) {
     let supports = stage_support_specs_for_character_samples(samples);
+    write_runtime_diagnostic_line(format!(
+        "CHARACTER:SUPPORT_SPAWN_REQUEST samples={} supports={}",
+        samples.len(),
+        supports.len()
+    ));
     for (index, support) in supports.iter().enumerate() {
         let support_name = if supports.len() == 1 {
             "__tnua_stage_support".to_owned()
@@ -1498,7 +1788,7 @@ pub(super) fn spawn_character_stage_support(
         commands.spawn((
             SceneMaxEntity {
                 runtime_name: format!("{support_name}@physics"),
-                name: support_name,
+                name: support_name.clone(),
             },
             SceneMaxStageSupport {
                 half_size: support.half_size,
@@ -1524,6 +1814,16 @@ pub(super) fn spawn_character_stage_support(
             samples = support.sample_count,
             "spawned coarse SceneMax character stage support"
         );
+        write_runtime_diagnostic_line(format!(
+            "CHARACTER:SUPPORT_SPAWN name={} top_y={} center=({},{},{}) half_size={} samples={}",
+            support_name,
+            format_scenemax_number(support.top_y),
+            format_scenemax_number(support.center.x),
+            format_scenemax_number(support.center_y),
+            format_scenemax_number(support.center.z),
+            format_scenemax_number(support.half_size),
+            support.sample_count
+        ));
     }
 }
 

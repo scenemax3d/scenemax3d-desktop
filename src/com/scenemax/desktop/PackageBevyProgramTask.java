@@ -166,6 +166,7 @@ public class PackageBevyProgramTask extends SwingWorker<Integer, String> {
         File packagedBinary = new File(packageFolder, executableName);
         FileUtils.copyFile(runtimeBinary, packagedBinary);
         packagedBinary.setExecutable(true, false);
+        copyRuntimeSidecarLibraries(runtimeBinary, packageFolder, target);
         writeDesktopLaunchers(packageFolder, executableName, gameName, target);
         writePackageReadme(packageFolder, target);
 
@@ -190,6 +191,9 @@ public class PackageBevyProgramTask extends SwingWorker<Integer, String> {
         command.add("-p");
         command.add("scenemax_projector_nextgen");
         command.add("--release");
+        if (target == PackageTarget.WINDOWS) {
+            addNextGenNativeFeatureArgs(command);
+        }
 
         String rustTarget = rustTargetTriple(target);
         if (rustTarget.length() > 0) {
@@ -198,7 +202,7 @@ public class PackageBevyProgramTask extends SwingWorker<Integer, String> {
         }
 
         try {
-            runCommand(command, nextGenRoot, "cargo");
+            runCommand(command, nextGenRoot, "cargo", nextGenBuildEnvironment(target));
         } catch (IOException ex) {
             throw new IOException(buildTargetFailureMessage(target, ex), ex);
         }
@@ -209,6 +213,30 @@ public class PackageBevyProgramTask extends SwingWorker<Integer, String> {
                     + " runtime binary was not found: " + binary.getAbsolutePath());
         }
         return binary;
+    }
+
+    private void addNextGenNativeFeatureArgs(List<String> command) {
+        command.add("--features");
+        command.add("effekseer_native");
+    }
+
+    private Map<String, String> nextGenBuildEnvironment(PackageTarget target) {
+        if (target == PackageTarget.WINDOWS) {
+            Map<String, String> environment = new HashMap<>();
+            environment.put("SCENEMAX_EFFEKSEER_NATIVE_BUILD", "1");
+            return environment;
+        }
+        return Collections.emptyMap();
+    }
+
+    private void copyRuntimeSidecarLibraries(File runtimeBinary, File packageFolder, PackageTarget target) throws IOException {
+        if (target != PackageTarget.WINDOWS || runtimeBinary == null || runtimeBinary.getParentFile() == null) {
+            return;
+        }
+        File nativeBridge = new File(runtimeBinary.getParentFile(), "scenemax_effekseer_bevy.dll");
+        if (nativeBridge.isFile()) {
+            FileUtils.copyFile(nativeBridge, new File(packageFolder, nativeBridge.getName()));
+        }
     }
 
     private File resolvePrebuiltRuntimeBinary(PackageTarget target) {

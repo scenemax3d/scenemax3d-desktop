@@ -450,6 +450,13 @@ pub fn substitute_statement(
                 Statement::Assignment(assignment)
             }
         }
+        Statement::SetShader(shader) => Statement::SetShader(scenemax_parser::SetShaderStatement {
+            target: substitute_path(&shader.target, bindings),
+            shader: substitute_assignment_value(&shader.shader, bindings),
+        }),
+        Statement::SetEnvironmentShader { shader } => Statement::SetEnvironmentShader {
+            shader: substitute_assignment_value(shader, bindings),
+        },
         Statement::RunFunction { name, args } => Statement::RunFunction {
             name: name.clone(),
             args: args

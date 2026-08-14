@@ -427,6 +427,47 @@ mod tests {
 
         let _ = fs::remove_dir_all(root);
     }
+
+    #[test]
+    fn include_expansion_preserves_functions_after_nested_do_while_else() {
+        let root = std::env::temp_dir().join(format!(
+            "scenemax_train_include_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let scene_dir = root.join("scene");
+        let utils_dir = scene_dir.join("utils");
+        let states_dir = scene_dir.join("game_states");
+        fs::create_dir_all(&utils_dir).unwrap();
+        fs::create_dir_all(&states_dir).unwrap();
+        fs::write(
+            scene_dir.join("main"),
+            "add \"utils/train_stage\" code\nadd \"game_states/game_start\" code\nrun game_start\n",
+        )
+        .unwrap();
+        fs::write(
+            utils_dir.join("train_stage"),
+            "train_helicopter_sound_loop = {\n  do\n    wait 0.35 seconds\n    if(game_status==GAME_STATE_START) {\n      if(train_helicopter_sound_playing==0) {\n        train_helicopter_sound_playing=1\n      }\n    } else {\n      if(train_helicopter_sound_playing==1) {\n        train_helicopter_sound_playing=0\n      }\n    }\n  while train_stage_started==1\n\n  if(train_helicopter_sound_playing==1) {\n    train_helicopter_sound_playing=0\n  }\n}\n\ntrain_stage_init = {\n  train_stage_started=1\n}\n\ntrain_start_fighters_from_above = {\n  player1.switch to character mode : gravity 60\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            states_dir.join("game_start"),
+            "game_start = {\n  run train_stage_init\n  run train_start_fighters_from_above Async\n}\n",
+        )
+        .unwrap();
+
+        let (program, _) = load_scene_entry_program(&scene_dir.join("main")).unwrap();
+        let functions = collect_functions_by_name(&program);
+
+        assert!(functions.contains_key("train_helicopter_sound_loop"));
+        assert!(functions.contains_key("train_stage_init"));
+        assert!(functions.contains_key("train_start_fighters_from_above"));
+
+        let _ = fs::remove_dir_all(root);
+    }
 }
 
 pub(super) fn log_unsupported_summary(script_path: &Path, program: &Program) {

@@ -1716,6 +1716,7 @@ pub(super) fn setup_camera_and_lights(
             shadow_normal_bias: 1.8,
             ..default()
         },
+        SceneMaxEnvironmentDirectionalLight,
         Transform::from_xyz(-8.0, 14.0, 8.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 

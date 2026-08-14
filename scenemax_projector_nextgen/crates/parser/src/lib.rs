@@ -135,6 +135,10 @@ pub enum Statement {
     CameraRotation(SceneMaxVec3),
     CameraMove(CameraMoveStatement),
     Audio(AudioStatement),
+    SetShader(SetShaderStatement),
+    SetEnvironmentShader {
+        shader: AssignmentValue,
+    },
     WaitForKey {
         key: String,
     },
@@ -377,6 +381,12 @@ pub struct AudioStatement {
     pub sound_value: Option<AssignmentValue>,
     pub looped: bool,
     pub volume: Option<AssignmentValue>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetShaderStatement {
+    pub target: String,
+    pub shader: AssignmentValue,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -774,7 +784,8 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
 
         let lower = line.to_ascii_lowercase();
         if let Some(times) = parse_repeat_header(line) {
-            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1)?;
+            let (nested_actions, next_index) =
+                parse_action_block(&logical_lines, index + 1, false)?;
             let repeated = Statement::Repeat {
                 times,
                 actions: nested_actions,
@@ -792,7 +803,7 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
         }
 
         if lower == "do async" {
-            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1)?;
+            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1, true)?;
             statements.push(Statement::Async {
                 actions: nested_actions,
             });
@@ -802,7 +813,7 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
         }
 
         if lower == "do" {
-            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1)?;
+            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1, true)?;
             statements.extend(nested_actions);
             pending_guard = None;
             index = next_index;
@@ -940,7 +951,8 @@ fn parse_key_event_block(
         }
 
         if let Some(times) = parse_repeat_header(line) {
-            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+            let (nested_actions, next_index) =
+                parse_action_block(logical_lines, cursor + 1, false)?;
             let repeated = Statement::Repeat {
                 times,
                 actions: nested_actions,
@@ -957,7 +969,7 @@ fn parse_key_event_block(
         }
 
         if lower == "do async" {
-            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1, true)?;
             actions.push(Statement::Async {
                 actions: nested_actions,
             });
@@ -966,7 +978,7 @@ fn parse_key_event_block(
         }
 
         if lower == "do" {
-            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1, true)?;
             actions.extend(nested_actions);
             cursor = next_index;
             continue;
@@ -1010,7 +1022,7 @@ fn parse_when_event_block(
         return Ok(None);
     };
 
-    let (actions, next_index) = parse_action_block(logical_lines, index + 1)?;
+    let (actions, next_index) = parse_action_block(logical_lines, index + 1, false)?;
     Ok(Some((
         WhenEventStatement {
             condition,
@@ -1029,7 +1041,7 @@ fn parse_function_def_block(
     let Some((name, params)) = parse_function_def_header(logical_lines[index].trim()) else {
         return Ok(None);
     };
-    let (actions, next_index) = parse_action_block(logical_lines, index + 1)?;
+    let (actions, next_index) = parse_action_block(logical_lines, index + 1, false)?;
     Ok(Some((
         FunctionDefStatement {
             name,
@@ -1389,8 +1401,27 @@ fn normalize_collision_reference(text: &str) -> String {
 
 fn parse_action_block(
     logical_lines: &[String],
-    mut cursor: usize,
+    cursor: usize,
+    allow_while_terminator: bool,
 ) -> Result<(Vec<Statement>, usize), ParseError> {
+    let (actions, cursor, _) =
+        parse_action_block_with_stop(logical_lines, cursor, allow_while_terminator)?;
+    Ok((actions, cursor))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActionBlockStop {
+    Closed,
+    Else,
+    While,
+    Eof,
+}
+
+fn parse_action_block_with_stop(
+    logical_lines: &[String],
+    mut cursor: usize,
+    allow_while_terminator: bool,
+) -> Result<(Vec<Statement>, usize, ActionBlockStop), ParseError> {
     let mut depth = 1usize;
     let mut actions = Vec::new();
     while cursor < logical_lines.len() {
@@ -1401,21 +1432,25 @@ fn parse_action_block(
             depth = depth.saturating_sub(1);
             cursor += 1;
             if depth == 0 {
-                break;
+                return Ok((actions, cursor, ActionBlockStop::Closed));
             }
             continue;
         }
 
-        if depth == 1 && is_while_terminator(line) {
+        if allow_while_terminator && depth == 1 && is_while_terminator(line) {
             cursor += 1;
             if let Some(condition) = parse_while_terminator(line)? {
-                return Ok((vec![Statement::DoWhile { condition, actions }], cursor));
+                return Ok((
+                    vec![Statement::DoWhile { condition, actions }],
+                    cursor,
+                    ActionBlockStop::While,
+                ));
             }
-            break;
+            return Ok((actions, cursor, ActionBlockStop::While));
         }
 
         if depth == 1 && is_close_else_open(line) {
-            break;
+            return Ok((actions, cursor, ActionBlockStop::Else));
         }
 
         if let Some(condition) = parse_condition_guard(line)? {
@@ -1433,7 +1468,7 @@ fn parse_action_block(
             depth = depth.saturating_sub(1);
             cursor += 1;
             if depth == 0 {
-                break;
+                return Ok((actions, cursor, ActionBlockStop::Closed));
             }
             if lower.ends_with('{') {
                 depth += 1;
@@ -1452,7 +1487,8 @@ fn parse_action_block(
         }
 
         if let Some(times) = parse_repeat_header(line) {
-            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+            let (nested_actions, next_index) =
+                parse_action_block(logical_lines, cursor + 1, false)?;
             let repeated = Statement::Repeat {
                 times,
                 actions: nested_actions,
@@ -1469,7 +1505,7 @@ fn parse_action_block(
         }
 
         if lower == "do async" {
-            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1, true)?;
             actions.push(Statement::Async {
                 actions: nested_actions,
             });
@@ -1478,7 +1514,7 @@ fn parse_action_block(
         }
 
         if lower == "do" {
-            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1, true)?;
             actions.extend(nested_actions);
             cursor = next_index;
             continue;
@@ -1499,7 +1535,7 @@ fn parse_action_block(
         cursor += 1;
     }
 
-    Ok((actions, cursor))
+    Ok((actions, cursor, ActionBlockStop::Eof))
 }
 
 fn parse_if_block(
@@ -1510,9 +1546,13 @@ fn parse_if_block(
         return Ok(None);
     };
 
-    let (actions, mut next_index) = parse_action_block(logical_lines, index + 1)?;
+    let (actions, mut next_index, stop) =
+        parse_action_block_with_stop(logical_lines, index + 1, false)?;
     let mut else_actions = Vec::new();
-    if next_index < logical_lines.len() && is_close_else_open(logical_lines[next_index].trim()) {
+    if stop == ActionBlockStop::Else
+        && next_index < logical_lines.len()
+        && is_close_else_open(logical_lines[next_index].trim())
+    {
         let (parsed_else_actions, after_else) = parse_else_branch(logical_lines, next_index)?;
         else_actions = parsed_else_actions;
         next_index = after_else;
@@ -1534,9 +1574,12 @@ fn parse_else_branch(
 ) -> Result<(Vec<Statement>, usize), ParseError> {
     let line = logical_lines[index].trim();
     if let Some(condition) = parse_else_if_header(line)? {
-        let (actions, mut next_index) = parse_action_block(logical_lines, index + 1)?;
+        let (actions, mut next_index, stop) =
+            parse_action_block_with_stop(logical_lines, index + 1, false)?;
         let mut else_actions = Vec::new();
-        if next_index < logical_lines.len() && is_close_else_open(logical_lines[next_index].trim())
+        if stop == ActionBlockStop::Else
+            && next_index < logical_lines.len()
+            && is_close_else_open(logical_lines[next_index].trim())
         {
             let (parsed_else_actions, after_else) = parse_else_branch(logical_lines, next_index)?;
             else_actions = parsed_else_actions;
@@ -1551,7 +1594,7 @@ fn parse_else_branch(
             next_index,
         ));
     }
-    parse_action_block(logical_lines, index + 1)
+    parse_action_block(logical_lines, index + 1, false)
 }
 
 fn parse_guarded_actions_after(
@@ -1563,14 +1606,14 @@ fn parse_guarded_actions_after(
     };
     let lower = line.to_ascii_lowercase();
     if lower == "do" {
-        return parse_action_block(logical_lines, cursor + 1);
+        return parse_action_block(logical_lines, cursor + 1, false);
     }
     if lower == "do async" {
-        let (actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+        let (actions, next_index) = parse_action_block(logical_lines, cursor + 1, true)?;
         return Ok((vec![Statement::Async { actions }], next_index));
     }
     if let Some(times) = parse_repeat_header(line) {
-        let (actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+        let (actions, next_index) = parse_action_block(logical_lines, cursor + 1, false)?;
         let repeated = Statement::Repeat { times, actions };
         if lower.ends_with(" async") {
             return Ok((
@@ -1590,6 +1633,9 @@ fn parse_guarded_actions_after(
 
 fn parse_action_statements(line: &str) -> Result<Vec<Statement>, ParseError> {
     if let Some(statement) = parse_ui_statement(line)? {
+        return Ok(vec![statement]);
+    }
+    if let Some(statement) = parse_shader_statement(line)? {
         return Ok(vec![statement]);
     }
     if is_shared_var_line(line) {
@@ -1815,6 +1861,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
 
     if let Some(debug_mode) = parse_debug_mode_statement(line) {
         return Ok(debug_mode);
+    }
+
+    if let Some(shader) = parse_shader_statement(line)? {
+        return Ok(shader);
     }
 
     if let Some(run_function) = parse_run_function_statement(line) {
@@ -3312,6 +3362,39 @@ fn find_keyword_index(text: &str, keyword: &str) -> Option<usize> {
         start = after_index;
     }
     None
+}
+
+fn parse_shader_statement(line: &str) -> Result<Option<Statement>, ParseError> {
+    let Some((left, right)) = line.trim().split_once('=') else {
+        return Ok(None);
+    };
+    let target = left.trim();
+    let lower_target = target.to_ascii_lowercase();
+    if lower_target == "scene.environment.shader" || lower_target == "environment.shader" {
+        return Ok(Some(Statement::SetEnvironmentShader {
+            shader: parse_shader_value(right)?,
+        }));
+    }
+    if !lower_target.ends_with(".shader") {
+        return Ok(None);
+    }
+    let target_name = target[..target.len() - ".shader".len()].trim();
+    if target_name.is_empty() || !is_variable_path(target_name) {
+        return Ok(None);
+    }
+    Ok(Some(Statement::SetShader(SetShaderStatement {
+        target: target_name.to_owned(),
+        shader: parse_shader_value(right)?,
+    })))
+}
+
+fn parse_shader_value(raw_value: &str) -> Result<AssignmentValue, ParseError> {
+    let raw_value = clean_assignment_value(raw_value);
+    if is_quoted(raw_value) {
+        return Ok(AssignmentValue::Symbol(unquote_ui_text(raw_value)));
+    }
+    Ok(parse_assignment_value(raw_value)?
+        .unwrap_or_else(|| AssignmentValue::Symbol(clean_call_arg(raw_value).to_owned())))
 }
 
 fn parse_model_decl(line: &str) -> Result<Option<Statement>, ParseError> {
@@ -5249,6 +5332,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parses_model_shader_assignment() {
+        let program = parse_program("hero => avatar\nhero.shader = \"damage_flash\"").unwrap();
+
+        assert_eq!(
+            program.statements[1],
+            Statement::SetShader(SetShaderStatement {
+                target: "hero".to_owned(),
+                shader: AssignmentValue::Symbol("damage_flash".to_owned()),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_environment_shader_assignment() {
+        let program = parse_program("Scene.environment.shader = \"rainy_evening\"").unwrap();
+
+        assert_eq!(
+            program.statements[0],
+            Statement::SetEnvironmentShader {
+                shader: AssignmentValue::Symbol("rainy_evening".to_owned()),
+            }
+        );
+    }
+
+    #[test]
     fn parses_model_and_looping_animation() {
         let program = parse_program("d=>dragon\nd.fly loop").unwrap();
 
@@ -7015,6 +7123,25 @@ run tick(score+10) every tick_time+0.25 seconds
     }
 
     #[test]
+    fn parses_do_while_with_nested_else_without_swallowing_following_function() {
+        let program = parse_program(
+            "looping_fx = {\n  active=0\n\n  do\n    wait 0.35 seconds\n    if(game_status==GAME_STATE_START) {\n      if(active==0) {\n        active=1\n      }\n    } else {\n      if(active==1) {\n        active=0\n      }\n    }\n  while train_stage_started==1\n\n  if(active==1) {\n    active=0\n  }\n}\n\nnext_function = {\n  marker=1\n}\n",
+        )
+        .unwrap();
+
+        let function_names = program
+            .statements
+            .iter()
+            .filter_map(|statement| match statement {
+                Statement::FunctionDef(function) => Some(function.name.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(function_names, vec!["looping_fx", "next_function"]);
+    }
+
+    #[test]
     fn parses_ai_expressions_and_return() {
         let program = parse_program(
             "opponent_ai(p1, p2) = {\n  var dist = distance(p1, p2)\n  var dchoice = rnd(2)\n  var is_desperate = (life2 <= 3)\n  if (rnd(3)==0) {\n    return\n  }\n}\n",
@@ -8088,9 +8215,13 @@ run tick(score+10) every tick_time+0.25 seconds
                         looped: false,
                         volume: None,
                     }),
-                    Statement::NoOp {
-                        text: "laser_effect.play pos (player1)".to_owned(),
-                    },
+                    Statement::EffekseerPlay(EffekseerPlayStatement {
+                        target: "laser_effect".to_owned(),
+                        position: Some(PositionValue::Entity("player1".to_owned())),
+                        looped: false,
+                        attrs: Vec::new(),
+                        async_run: false,
+                    }),
                     Statement::CameraModifierApply(CameraModifierApplyStatement {
                         target: "fight_cam".to_owned(),
                         modifier: "hit_fx".to_owned(),

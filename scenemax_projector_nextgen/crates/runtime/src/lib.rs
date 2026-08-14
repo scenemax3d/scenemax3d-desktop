@@ -70,6 +70,7 @@ mod audio;
 mod camera;
 mod effekseer;
 mod physics;
+mod shader;
 mod sprites;
 mod startup;
 mod ui;
@@ -80,6 +81,7 @@ use audio::*;
 use camera::*;
 use effekseer::*;
 use physics::*;
+use shader::*;
 use sprites::*;
 use startup::*;
 use ui::*;
@@ -383,6 +385,7 @@ enum SceneMaxControllerKey {
     Key(usize),
     When(usize),
     Recurring(usize),
+    AsyncFunction(String),
 }
 
 #[derive(Debug, Resource, Default)]
@@ -997,6 +1000,7 @@ const DEFAULT_CHARACTER_VISUAL_DROP: f32 = 1.25;
 const DEFAULT_STAGE_SUPPORT_HALF_SIZE: f32 = 160.0;
 const DEFAULT_STAGE_SUPPORT_HALF_HEIGHT: f32 = 0.02;
 const STAGE_SUPPORT_HEIGHT_GROUP_TOLERANCE: f32 = 2.0;
+const CHARACTER_EXPLICIT_SUPPORT_MAX_DROP_FACTOR: f32 = 1.35;
 const CHARACTER_INPUT_TTL_SECONDS: f32 = 0.12;
 const CHARACTER_JUMP_FEED_SECONDS: f32 = 0.2;
 const DEFAULT_ANIMATION_CLIP_SECONDS: f32 = 1.5;
@@ -1664,6 +1668,117 @@ mod tests {
             support.center_y,
             support.top_y - DEFAULT_STAGE_SUPPORT_HALF_HEIGHT
         );
+    }
+
+    #[test]
+    fn fallback_character_support_skips_nearby_static_box_below_character() {
+        let program = scenemax_parser::parse_program(
+            "platform => static box : size (8.4,0.3,25.8), pos (40.0,-88.2,22.75)\navatar.switch to character mode : gravity 60",
+        )
+        .unwrap();
+        let transforms = HashMap::from([
+            (
+                "platform".to_owned(),
+                Transform::from_translation(Vec3::new(40.0, -88.2, 22.75)),
+            ),
+            (
+                "avatar".to_owned(),
+                Transform::from_translation(Vec3::new(40.0, -84.79, 30.7))
+                    .with_scale(Vec3::splat(3.0)),
+            ),
+        ]);
+
+        let samples = character_mode_support_samples(&program, &transforms);
+        let fallback_samples = fallback_character_mode_support_samples(&program, &transforms);
+
+        assert_eq!(samples.len(), 1);
+        assert!(fallback_samples.is_empty());
+    }
+
+    #[test]
+    fn fallback_character_support_remains_when_static_box_is_not_under_character() {
+        let program = scenemax_parser::parse_program(
+            "lower_platform => static box : size (80.0,1.0,80.0), pos (200.0,-111.0,22.0)\navatar.switch to character mode : gravity 60",
+        )
+        .unwrap();
+        let transforms = HashMap::from([
+            (
+                "lower_platform".to_owned(),
+                Transform::from_translation(Vec3::new(200.0, -111.0, 22.0)),
+            ),
+            (
+                "avatar".to_owned(),
+                Transform::from_translation(Vec3::new(40.0, -84.79, 30.7))
+                    .with_scale(Vec3::splat(3.0)),
+            ),
+        ]);
+
+        let fallback_samples = fallback_character_mode_support_samples(&program, &transforms);
+
+        assert_eq!(fallback_samples.len(), 1);
+    }
+
+    #[test]
+    fn fallback_character_support_skips_distant_static_box_below_character_column() {
+        let program = scenemax_parser::parse_program(
+            "lower_platform => static box : size (80.0,1.0,80.0), pos (40.0,-111.0,22.0)\navatar.switch to character mode : gravity 60",
+        )
+        .unwrap();
+        let transforms = HashMap::from([
+            (
+                "lower_platform".to_owned(),
+                Transform::from_translation(Vec3::new(40.0, -111.0, 22.0)),
+            ),
+            (
+                "avatar".to_owned(),
+                Transform::from_translation(Vec3::new(40.0, -84.79, 30.7))
+                    .with_scale(Vec3::splat(3.0)),
+            ),
+        ]);
+
+        let fallback_samples = fallback_character_mode_support_samples(&program, &transforms);
+
+        assert!(fallback_samples.is_empty());
+    }
+
+    #[test]
+    fn character_floor_snap_moves_spawned_character_to_nearby_static_box() {
+        let transform =
+            Transform::from_translation(Vec3::new(40.0, -84.79, 30.7)).with_scale(Vec3::splat(3.0));
+        let mut character_transform = transform;
+        let dimensions = character_dimensions_for_transform(&character_transform);
+        let surfaces = vec![explicit_support_surface_from_box(
+            Transform::from_translation(Vec3::new(40.0, -88.2, 22.75)),
+            Vec3::new(8.4, 0.3, 25.8),
+        )];
+
+        assert!(snap_character_transform_to_floor(
+            &mut character_transform,
+            &surfaces
+        ));
+        assert!(
+            (character_transform.translation.y
+                - (-88.05 + dimensions.float_height + dimensions.foot_contact_offset))
+                .abs()
+                < 0.0001
+        );
+    }
+
+    #[test]
+    fn character_floor_snap_ignores_distant_floor() {
+        let mut character_transform =
+            Transform::from_translation(Vec3::new(40.0, -84.79, 30.7)).with_scale(Vec3::splat(3.0));
+        let original_y = character_transform.translation.y;
+        let surfaces = vec![explicit_support_surface_from_box(
+            Transform::from_translation(Vec3::new(40.0, -111.0, 22.0)),
+            Vec3::new(80.0, 1.0, 80.0),
+        )];
+
+        assert!(!snap_character_transform_to_floor(
+            &mut character_transform,
+            &surfaces
+        ));
+        assert_eq!(character_transform.translation.y, original_y);
     }
 
     #[test]

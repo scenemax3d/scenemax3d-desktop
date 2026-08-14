@@ -488,6 +488,37 @@ pub(super) fn apply_startup_action(
     depth: usize,
 ) -> ActionSequenceResult {
     match action {
+        Statement::SetEnvironmentShader { shader } => {
+            let shader_name = resolve_shader_name(
+                shader,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            apply_environment_shader(commands, shader_name, runtime_assets);
+            ActionSequenceResult::Completed
+        }
+        Statement::SetShader(shader) => {
+            let shader_name = resolve_shader_name(
+                &shader.shader,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            if let Some(entity) = entities_by_name.get(&shader.target) {
+                apply_entity_shader(commands, *entity, shader_name, runtime_assets);
+            } else {
+                write_runtime_diagnostic_line(format!(
+                    "SHADER:TARGET_MISS phase=startup target={}",
+                    shader.target
+                ));
+            }
+            ActionSequenceResult::Completed
+        }
         Statement::Assignment(assignment)
         | Statement::SharedAssignment(assignment)
         | Statement::LocalAssignment(assignment) => {
@@ -937,22 +968,46 @@ pub(super) fn apply_startup_action(
         }
         Statement::CharacterMode(character_mode) => {
             if let Some(entity) = entities_by_name.get(&character_mode.target) {
+                let resolved = resolved_character_mode(
+                    character_mode,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
+                write_runtime_diagnostic_line(format!(
+                    "CHARACTER:PENDING_REQUEST phase=startup target={} gravity={} entity={:?}",
+                    resolved.target,
+                    resolved
+                        .gravity
+                        .map(format_scenemax_number)
+                        .unwrap_or_else(|| "default".to_owned()),
+                    entity
+                ));
                 commands
                     .entity(*entity)
-                    .insert(PendingCharacterMode(resolved_character_mode(
-                        character_mode,
-                        vars,
-                        None,
-                        guards_by_name,
-                        Some(transforms_by_name),
-                        None,
-                    )));
+                    .insert(PendingCharacterMode(resolved));
+            } else {
+                write_runtime_diagnostic_line(format!(
+                    "CHARACTER:PENDING_MISS phase=startup target={}",
+                    character_mode.target
+                ));
             }
             ActionSequenceResult::Completed
         }
         Statement::ClearCharacterMode { target } => {
             if let Some(entity) = entities_by_name.get(target) {
-                clear_character_mode(commands, *entity);
+                clear_character_mode(
+                    commands,
+                    *entity,
+                    Some(target),
+                    transforms_by_name.get(target),
+                );
+            } else {
+                write_runtime_diagnostic_line(format!(
+                    "CHARACTER:CLEAR_MISS phase=startup target={target}"
+                ));
             }
             ActionSequenceResult::Completed
         }
@@ -1207,6 +1262,7 @@ pub(super) fn switch_scene_on_key(
             object_pools.pools.clear();
             delayed_actions.actions.clear();
             recurring_timers.remaining_by_statement.clear();
+            clear_environment_shader(&mut commands);
             commands.insert_resource(ActiveActionControllers::default());
             physics_contacts.active_pairs.clear();
             collider_bounds.clear();
@@ -1528,11 +1584,42 @@ pub(super) fn delayed_actions_has_owner(
         .any(|delayed| delayed.owner.as_ref() == Some(owner))
 }
 
+pub(super) fn cancel_delayed_actions_for_owner(
+    delayed_actions: &mut DelayedActionQueue,
+    owner: &SceneMaxControllerKey,
+) {
+    let delayed_before = describe_delayed_queue(delayed_actions);
+    delayed_actions
+        .actions
+        .retain(|delayed| delayed.owner.as_ref() != Some(owner));
+    let delayed_after = describe_delayed_queue(delayed_actions);
+    if delayed_before != delayed_after {
+        write_runtime_diagnostic_line(format!(
+            "CTRL:CANCEL_OWNER owner={} delayed_before={} delayed_after={}",
+            describe_controller_key(owner),
+            delayed_before,
+            delayed_after
+        ));
+    }
+}
+
+pub(super) fn async_function_controller_key(
+    actions: &[Statement],
+) -> Option<SceneMaxControllerKey> {
+    match actions {
+        [Statement::RunFunction { name, .. }] => {
+            Some(SceneMaxControllerKey::AsyncFunction(name.clone()))
+        }
+        _ => None,
+    }
+}
+
 pub(super) fn describe_controller_key(owner: &SceneMaxControllerKey) -> String {
     match owner {
         SceneMaxControllerKey::Key(index) => format!("K{index}"),
         SceneMaxControllerKey::When(index) => format!("W{index}"),
         SceneMaxControllerKey::Recurring(index) => format!("R{index}"),
+        SceneMaxControllerKey::AsyncFunction(name) => format!("A:{name}"),
     }
 }
 
@@ -1698,6 +1785,73 @@ mod key_event_controller_tests {
         assert!(!delayed_actions_has_owner(&delayed_actions, &first));
         assert!(delayed_actions_has_owner(&delayed_actions, &second));
         assert!(delayed_actions_has_owner(&delayed_actions, &recurring));
+        assert!(
+            delayed_actions
+                .actions
+                .iter()
+                .any(|delayed| delayed.owner.is_none())
+        );
+    }
+
+    #[test]
+    fn async_run_function_actions_are_owned_by_function_name() {
+        let owner = async_function_controller_key(&[Statement::RunFunction {
+            name: "spawn_round".to_owned(),
+            args: Vec::new(),
+        }]);
+
+        assert_eq!(
+            owner,
+            Some(SceneMaxControllerKey::AsyncFunction(
+                "spawn_round".to_owned()
+            ))
+        );
+        assert_eq!(
+            async_function_controller_key(&[Statement::NoOp {
+                text: "detached block".to_owned()
+            }]),
+            None
+        );
+    }
+
+    #[test]
+    fn cancel_delayed_actions_for_owner_keeps_unrelated_continuations() {
+        let restart_owner = SceneMaxControllerKey::AsyncFunction("restart".to_owned());
+        let effect_owner = SceneMaxControllerKey::AsyncFunction("effect".to_owned());
+        let mut delayed_actions = DelayedActionQueue {
+            actions: vec![
+                DelayedActions {
+                    remaining_seconds: 0.5,
+                    actions: vec![Statement::NoOp {
+                        text: "old restart".to_owned(),
+                    }],
+                    owner: Some(restart_owner.clone()),
+                    scope: None,
+                },
+                DelayedActions {
+                    remaining_seconds: 0.2,
+                    actions: vec![Statement::NoOp {
+                        text: "effect".to_owned(),
+                    }],
+                    owner: Some(effect_owner.clone()),
+                    scope: None,
+                },
+                DelayedActions {
+                    remaining_seconds: 0.1,
+                    actions: vec![Statement::NoOp {
+                        text: "legacy detached".to_owned(),
+                    }],
+                    owner: None,
+                    scope: None,
+                },
+            ],
+        };
+
+        cancel_delayed_actions_for_owner(&mut delayed_actions, &restart_owner);
+
+        assert_eq!(delayed_actions.actions.len(), 2);
+        assert!(!delayed_actions_has_owner(&delayed_actions, &restart_owner));
+        assert!(delayed_actions_has_owner(&delayed_actions, &effect_owner));
         assert!(
             delayed_actions
                 .actions
@@ -2705,6 +2859,7 @@ pub(super) fn apply_action_sequence(
     )>,
 ) -> ActionSequenceResult {
     apply_scoped_transform_aliases(transforms_by_name, scope.as_deref());
+    let mut runtime_declared_entities = HashMap::<String, Entity>::new();
 
     for (index, action) in actions.iter().enumerate() {
         match action {
@@ -2879,6 +3034,12 @@ pub(super) fn apply_action_sequence(
                 return ActionSequenceResult::Completed;
             }
             Statement::Async { actions } => {
+                let async_owner = async_function_controller_key(actions);
+                if let Some(async_owner) = async_owner.as_ref()
+                    && let Some(delayed_actions) = delayed_actions.as_deref_mut()
+                {
+                    cancel_delayed_actions_for_owner(delayed_actions, async_owner);
+                }
                 let mut async_scope = scope.as_deref().cloned().unwrap_or_default();
                 let _ = apply_action_sequence(
                     actions,
@@ -2894,7 +3055,7 @@ pub(super) fn apply_action_sequence(
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     ui_queue.as_deref_mut(),
-                    None,
+                    async_owner,
                     Some(&mut async_scope),
                     continuous_delta_seconds,
                     commands,
@@ -3117,6 +3278,7 @@ pub(super) fn apply_action_sequence(
                         continuous_delta_seconds,
                         commands,
                         scene_entities,
+                        &mut runtime_declared_entities,
                     );
                     continue;
                 }
@@ -3154,6 +3316,7 @@ pub(super) fn apply_action_sequence(
                     None,
                     commands,
                     scene_entities,
+                    &mut runtime_declared_entities,
                 );
                 let remaining = actions[index + 1..].to_vec();
                 if enqueue_delayed_actions(
@@ -3187,6 +3350,7 @@ pub(super) fn apply_action_sequence(
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
+                    &mut runtime_declared_entities,
                 );
                 if animation.blocking {
                     let remaining = actions[index + 1..].to_vec();
@@ -3222,6 +3386,7 @@ pub(super) fn apply_action_sequence(
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
+                    &mut runtime_declared_entities,
                 );
                 if result.should_stop_parent() {
                     return result;
@@ -3262,7 +3427,7 @@ pub(super) fn apply_runtime_model_decl(
             Option<&mut SceneMaxCharacterMotor>,
         )>,
     )>,
-) {
+) -> Option<Entity> {
     let transform = primitive_transform_from_options_resolved(
         options,
         vars,
@@ -3313,7 +3478,7 @@ pub(super) fn apply_runtime_model_decl(
                 renderer = effekseer_renderer_label(),
                 "updated runtime Effekseer effect for the Bevy bridge"
             );
-            return;
+            return Some(entity);
         }
 
         let entity_id = commands
@@ -3348,7 +3513,7 @@ pub(super) fn apply_runtime_model_decl(
             renderer = effekseer_renderer_label(),
             "registered runtime Effekseer effect for the Bevy bridge"
         );
-        return;
+        return Some(entity_id);
     }
     for (entity, scene_entity, mut existing_transform, _, _, visibility, _, _) in
         &mut scene_entities.p1()
@@ -3379,7 +3544,7 @@ pub(super) fn apply_runtime_model_decl(
             resource,
             "updated runtime SceneMax placeholder entity"
         );
-        return;
+        return Some(entity);
     }
 
     if options.collider {
@@ -3387,7 +3552,7 @@ pub(super) fn apply_runtime_model_decl(
         register_collider_bounds(collider_bounds, name, options, transform);
         transforms_by_name.insert(name.to_owned(), transform);
         tracing::info!(name, resource, "spawned runtime SceneMax collider");
-        return;
+        return None;
     }
 
     if let Some(model_transform) = spawn_runtime_gltf_model_decl(
@@ -3400,7 +3565,7 @@ pub(super) fn apply_runtime_model_decl(
         commands,
     ) {
         transforms_by_name.insert(name.to_owned(), model_transform);
-        return;
+        return None;
     }
 
     let mut entity = commands.spawn((
@@ -3425,6 +3590,7 @@ pub(super) fn apply_runtime_model_decl(
         resource,
         "spawned runtime SceneMax placeholder entity"
     );
+    Some(entity_id)
 }
 
 pub(super) fn effekseer_asset_id(resource: &str) -> Option<String> {
@@ -3656,6 +3822,7 @@ pub(super) fn apply_key_action(
             Option<&mut SceneMaxCharacterMotor>,
         )>,
     )>,
+    runtime_declared_entities: &mut HashMap<String, Entity>,
 ) -> ActionSequenceResult {
     if matches!(action, Statement::NoOp { .. }) {
         return ActionSequenceResult::Completed;
@@ -3673,7 +3840,7 @@ pub(super) fn apply_key_action(
         if cinematic_resource_id(resource).is_some() {
             return ActionSequenceResult::Completed;
         }
-        apply_runtime_model_decl(
+        if let Some(entity) = apply_runtime_model_decl(
             name,
             resource,
             options,
@@ -3684,7 +3851,9 @@ pub(super) fn apply_key_action(
             collider_bounds,
             commands,
             scene_entities,
-        );
+        ) {
+            runtime_declared_entities.insert(name.clone(), entity);
+        }
         return ActionSequenceResult::Completed;
     }
     if let Statement::CinematicPlay(play) = action {
@@ -3696,6 +3865,50 @@ pub(super) fn apply_key_action(
                 scope.as_deref(),
                 camera_system,
             );
+        }
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::SetEnvironmentShader { shader } = action {
+        let shader_name = resolve_shader_name(
+            shader,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
+        apply_environment_shader(commands, shader_name, runtime_assets);
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::SetShader(shader) = action {
+        let shader_name = resolve_shader_name(
+            &shader.shader,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
+        let target_entity =
+            scene_entities
+                .p1()
+                .iter()
+                .find_map(|(entity, scene_entity, _, _, _, _, _, _)| {
+                    target_matches_alias(
+                        &shader.target,
+                        &scene_entity.name,
+                        object_pools,
+                        scope.as_deref(),
+                    )
+                    .then_some(entity)
+                });
+        if let Some(entity) = target_entity {
+            apply_entity_shader(commands, entity, shader_name, runtime_assets);
+        } else {
+            write_runtime_diagnostic_line(format!(
+                "SHADER:TARGET_MISS phase=runtime target={}",
+                shader.target
+            ));
         }
         return ActionSequenceResult::Completed;
     }
@@ -3944,6 +4157,16 @@ pub(super) fn apply_key_action(
         return ActionSequenceResult::Completed;
     }
     if let Statement::Delete { target } = action {
+        let resolved_target = resolve_object_alias(target, object_pools, scope.as_deref());
+        if let Some(entity) = runtime_declared_entities.remove(&resolved_target) {
+            commands.entity(entity).despawn();
+            transforms_by_name.remove(&resolved_target);
+            write_runtime_diagnostic_line(format!(
+                "RUNTIME:DELETE_IMMEDIATE target={} entity={:?}",
+                resolved_target, entity
+            ));
+            return ActionSequenceResult::Completed;
+        }
         delete_scene_object(
             target,
             object_pools,
@@ -3986,12 +4209,49 @@ pub(super) fn apply_key_action(
                 continuous_delta_seconds,
                 commands,
                 scene_entities,
+                runtime_declared_entities,
             );
             if result.should_stop_parent() {
                 return result;
             }
         }
         return ActionSequenceResult::Completed;
+    }
+
+    if let Statement::EffekseerPlay(play) = action {
+        let resolved_target = resolve_object_alias(&play.target, object_pools, scope.as_deref());
+        if let Some(entity) = runtime_declared_entities.get(&resolved_target).copied() {
+            let mut transform = transforms_by_name
+                .get(&resolved_target)
+                .copied()
+                .unwrap_or_default();
+            if let Some(translation) = resolved_effekseer_play_translation(
+                play,
+                vars,
+                scope.as_deref(),
+                guards_by_name,
+                transforms_by_name,
+                Some(collider_bounds),
+            ) {
+                transform.translation = translation;
+                transforms_by_name.insert(resolved_target.clone(), transform);
+                commands.entity(entity).insert(transform);
+            }
+            commands.entity(entity).insert(resolved_effekseer_playback(
+                play,
+                vars,
+                scope.as_deref(),
+                guards_by_name,
+                Some(transforms_by_name),
+                Some(collider_bounds),
+            ));
+            write_runtime_diagnostic_line(format!(
+                "EFFEKSEER:PLAY_IMMEDIATE target={} entity={:?}",
+                resolved_target, entity
+            ));
+            write_effekseer_bridge_play(&resolved_target, play);
+            return ActionSequenceResult::Completed;
+        }
     }
 
     for (
@@ -4360,16 +4620,33 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
+                let resolved = resolved_character_mode(
+                    character_mode,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
+                write_runtime_diagnostic_line(format!(
+                    "CHARACTER:PENDING_REQUEST phase=runtime target={} matched_entity={} gravity={} owner={} pos=({},{},{})",
+                    resolved.target,
+                    scene_entity.name,
+                    resolved
+                        .gravity
+                        .map(format_scenemax_number)
+                        .unwrap_or_else(|| "default".to_owned()),
+                    owner
+                        .as_ref()
+                        .map(describe_controller_key)
+                        .unwrap_or_else(|| "-".to_owned()),
+                    format_scenemax_number(transform.translation.x),
+                    format_scenemax_number(transform.translation.y),
+                    format_scenemax_number(transform.translation.z)
+                ));
                 commands
                     .entity(entity)
-                    .insert(PendingCharacterMode(resolved_character_mode(
-                        character_mode,
-                        vars,
-                        scope.as_deref(),
-                        guards_by_name,
-                        Some(transforms_by_name),
-                        Some(collider_bounds),
-                    )));
+                    .insert(PendingCharacterMode(resolved));
             }
             Statement::ClearCharacterMode { target }
                 if target_matches_alias(
@@ -4379,7 +4656,19 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
-                clear_character_mode(commands, entity);
+                write_runtime_diagnostic_line(format!(
+                    "CHARACTER:CLEAR_REQUEST phase=runtime target={} matched_entity={} owner={} pos=({},{},{})",
+                    target,
+                    scene_entity.name,
+                    owner
+                        .as_ref()
+                        .map(describe_controller_key)
+                        .unwrap_or_else(|| "-".to_owned()),
+                    format_scenemax_number(transform.translation.x),
+                    format_scenemax_number(transform.translation.y),
+                    format_scenemax_number(transform.translation.z)
+                ));
+                clear_character_mode(commands, entity, Some(&scene_entity.name), Some(&transform));
             }
             Statement::CharacterIgnore(ignore)
                 if target_matches_alias(
@@ -5965,6 +6254,30 @@ pub(super) fn assignment_value_fallback_text(value: &AssignmentValue) -> String 
         AssignmentValue::Number(value) => format_scenemax_number(*value),
         AssignmentValue::Symbol(name) => name.clone(),
         _ => "null".to_owned(),
+    }
+}
+
+pub(super) fn resolve_shader_name(
+    value: &AssignmentValue,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> String {
+    match value {
+        AssignmentValue::Symbol(name) => name.clone(),
+        AssignmentValue::Number(value) => format_scenemax_number(*value),
+        _ => resolve_assignment_value_scoped_with_guards(
+            value,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        )
+        .map(format_scenemax_number)
+        .unwrap_or_else(|| assignment_value_fallback_text(value)),
     }
 }
 

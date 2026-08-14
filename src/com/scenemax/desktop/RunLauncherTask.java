@@ -421,12 +421,13 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             List<String> command = new ArrayList<>();
             File processDirectory;
             File cargoExe = resolveCargoExecutable();
-            boolean useCargo = cargoExe.isFile() && isNextGenExecutableStale(nextGenRoot, debugExe, releaseExe);
+            boolean useCargo = cargoExe.isFile();
             if (useCargo) {
                 command.add(cargoExe.getAbsolutePath());
                 command.add("run");
                 command.add("-p");
                 command.add("scenemax_projector_nextgen");
+                addNextGenNativeFeatureArgs(command);
                 command.add("--");
                 processDirectory = nextGenRoot;
             } else if (debugExe.isFile()) {
@@ -444,6 +445,7 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
                 command.add("run");
                 command.add("-p");
                 command.add("scenemax_projector_nextgen");
+                addNextGenNativeFeatureArgs(command);
                 command.add("--");
                 processDirectory = nextGenRoot;
             }
@@ -463,6 +465,9 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             ProcessBuilder processBuilder = new ProcessBuilder();
             processBuilder.command(command);
             processBuilder.directory(processDirectory);
+            if (useCargo) {
+                processBuilder.environment().put("SCENEMAX_EFFEKSEER_NATIVE_BUILD", "1");
+            }
             File log = new File("log");
             if(log.exists()) {
                 log.delete();
@@ -508,6 +513,11 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             return configured;
         }
         return new File(Util.getWorkingDir(), "scenemax_projector_nextgen");
+    }
+
+    private void addNextGenNativeFeatureArgs(List<String> command) {
+        command.add("--features");
+        command.add("effekseer_native");
     }
 
     private boolean isNextGenExecutableStale(File nextGenRoot, File debugExe, File releaseExe) {
