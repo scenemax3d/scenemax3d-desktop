@@ -29,6 +29,7 @@
         -88.2,
         22.75
       ],
+      "multiplayer": false,
       "sizeY": 0.15,
       "sizeZ": 12.9
     },
@@ -60,6 +61,7 @@
         -90.2,
         22.75
       ],
+      "multiplayer": false,
       "sizeY": 1.5,
       "sizeZ": 12.8
     },
@@ -91,6 +93,7 @@
         -89.8,
         9.4
       ],
+      "multiplayer": false,
       "sizeY": 0.8,
       "sizeZ": 1.4
     },
@@ -122,6 +125,7 @@
         -86.7,
         13.5
       ],
+      "multiplayer": false,
       "sizeY": 1.1,
       "sizeZ": 2.5
     },
@@ -153,6 +157,7 @@
         -85.35,
         13.5
       ],
+      "multiplayer": false,
       "sizeY": 0.12,
       "sizeZ": 2.9
     },
@@ -184,6 +189,7 @@
         -87,
         31
       ],
+      "multiplayer": false,
       "sizeY": 0.7,
       "sizeZ": 1.4
     },
@@ -215,6 +221,7 @@
         -85.95,
         31
       ],
+      "multiplayer": false,
       "sizeY": 0.38,
       "sizeZ": 0.9
     },
@@ -246,6 +253,7 @@
         -89.4,
         22.75
       ],
+      "multiplayer": false,
       "sizeY": 0.55,
       "sizeZ": 12.6
     },
@@ -277,6 +285,7 @@
         -89.4,
         22.75
       ],
+      "multiplayer": false,
       "sizeY": 0.55,
       "sizeZ": 12.6
     },
@@ -308,6 +317,7 @@
         -91.8,
         22.75
       ],
+      "multiplayer": false,
       "sizeY": 0.08,
       "sizeZ": 18
     },
@@ -339,6 +349,7 @@
         -91.8,
         22.75
       ],
+      "multiplayer": false,
       "sizeY": 0.08,
       "sizeZ": 18
     },
@@ -370,6 +381,7 @@
         -87.4,
         36
       ],
+      "multiplayer": false,
       "sizeY": 2.4,
       "sizeZ": 0.15
     },
@@ -401,6 +413,7 @@
         -87.4,
         18
       ],
+      "multiplayer": false,
       "sizeY": 2.4,
       "sizeZ": 0.15
     },
@@ -432,6 +445,7 @@
         -87.4,
         0
       ],
+      "multiplayer": false,
       "sizeY": 2.4,
       "sizeZ": 0.15
     },
@@ -463,6 +477,7 @@
         -87.4,
         36
       ],
+      "multiplayer": false,
       "sizeY": 2.4,
       "sizeZ": 0.15
     },
@@ -494,6 +509,7 @@
         -87.4,
         18
       ],
+      "multiplayer": false,
       "sizeY": 2.4,
       "sizeZ": 0.15
     },
@@ -525,6 +541,7 @@
         -87.4,
         0
       ],
+      "multiplayer": false,
       "sizeY": 2.4,
       "sizeZ": 0.15
     },
@@ -559,7 +576,8 @@
             39.98954,
             -84.78974,
             30.700623
-          ]
+          ],
+          "multiplayer": false
         },
         {
           "shader": "",
@@ -589,6 +607,7 @@
             0.5,
             2.7905798
           ],
+          "multiplayer": false,
           "sizeY": 0.5,
           "sizeZ": 0.5
         },
@@ -641,7 +660,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -692,7 +712,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -743,7 +764,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -794,7 +816,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -845,7 +868,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -921,7 +945,8 @@
             40,
             -83.8349,
             11.373871
-          ]
+          ],
+          "multiplayer": false
         },
         {
           "shader": "",
@@ -951,6 +976,7 @@
             0.5,
             0
           ],
+          "multiplayer": false,
           "sizeY": 0.5,
           "sizeZ": 0.5
         },
@@ -1003,7 +1029,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -1054,7 +1081,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -1105,7 +1133,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -1156,7 +1185,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -1207,7 +1237,8 @@
             0.5,
             0
           ],
-          "radius": 0.5
+          "radius": 0.5,
+          "multiplayer": false
         },
         {
           "rotation": [
@@ -1454,6 +1485,7 @@
         -111,
         22
       ],
+      "multiplayer": false,
       "sizeY": 6,
       "sizeZ": 220
     },
@@ -1485,6 +1517,7 @@
         -104,
         96
       ],
+      "multiplayer": false,
       "sizeY": 18,
       "sizeZ": 70
     },
@@ -1517,6 +1550,7 @@
         -92,
         52
       ],
+      "multiplayer": false,
       "height": 18
     },
     {
@@ -1547,6 +1581,7 @@
         -104,
         96
       ],
+      "multiplayer": false,
       "sizeY": 18,
       "sizeZ": 70
     },
@@ -1579,6 +1614,7 @@
         -92,
         10
       ],
+      "multiplayer": false,
       "height": 18
     },
     {
@@ -1609,6 +1645,7 @@
         -78,
         66
       ],
+      "multiplayer": false,
       "sizeY": 2,
       "sizeZ": 8
     },
@@ -1640,6 +1677,7 @@
         -89,
         66
       ],
+      "multiplayer": false,
       "sizeY": 30,
       "sizeZ": 8
     },
@@ -1671,6 +1709,7 @@
         -89,
         66
       ],
+      "multiplayer": false,
       "sizeY": 30,
       "sizeZ": 8
     },
@@ -1702,6 +1741,7 @@
         -76.8,
         62.4
       ],
+      "multiplayer": false,
       "sizeY": 1,
       "sizeZ": 1
     },
@@ -1733,6 +1773,7 @@
         -76.8,
         69.6
       ],
+      "multiplayer": false,
       "sizeY": 1,
       "sizeZ": 1
     },
@@ -1764,6 +1805,7 @@
         -93,
         -18
       ],
+      "multiplayer": false,
       "sizeY": 18,
       "sizeZ": 8
     },
@@ -1795,6 +1837,7 @@
         -93,
         -12
       ],
+      "multiplayer": false,
       "sizeY": 18,
       "sizeZ": 8
     },
@@ -1827,7 +1870,8 @@
         40,
         -94,
         -315.8551
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -1858,7 +1902,8 @@
         -28,
         -95,
         -20
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "dramatic_hit_red",
@@ -1889,7 +1934,8 @@
         300,
         -94,
         -59.041
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -1920,7 +1966,8 @@
         40,
         -96,
         116
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -1951,7 +1998,8 @@
         40.1,
         -98,
         22.75
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -1981,6 +2029,7 @@
         -96,
         22.75
       ],
+      "multiplayer": false,
       "sizeY": 3,
       "sizeZ": 21
     },
@@ -2220,7 +2269,8 @@
         30,
         -97.92707,
         8
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -2251,7 +2301,8 @@
         52,
         -102.9,
         9.5
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -2282,7 +2333,8 @@
         28,
         -99.09984,
         18
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -2313,7 +2365,8 @@
         55,
         -98.13805,
         -68.915245
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -2344,7 +2397,8 @@
         31.5,
         -103,
         31
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -2375,7 +2429,8 @@
         3.8228073,
         -98.07468,
         35.5
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -2406,7 +2461,8 @@
         36,
         -102.6,
         2
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -2437,7 +2493,8 @@
         45,
         -97.96775,
         3
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -2468,7 +2525,8 @@
         34,
         -98.21084,
         45
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -2499,7 +2557,8 @@
         48.5,
         -99.35373,
         47
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -2530,7 +2589,8 @@
         23,
         -103.1,
         24
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -2561,7 +2621,8 @@
         75.4412,
         -98.01564,
         27
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "lightLookAtTarget": "",
@@ -2629,7 +2690,8 @@
         0,
         -8.385735,
         10.961966
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "rotation": [
@@ -2682,7 +2744,8 @@
         40.464985,
         -92.20159,
         -57.988
-      ]
+      ],
+      "multiplayer": false
     },
     {
       "shader": "",
@@ -2695,7 +2758,7 @@
         0,
         1
       ],
-      "resourcePath": "meshy_ai_dragon_gate_0504202330_texture",
+      "resourcePath": "dragon_gate1",
       "jointMapping": "",
       "scale": [
         43.4,
@@ -2704,7 +2767,7 @@
       ],
       "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "model_21 => static meshy_ai_dragon_gate_0504202330_texture: pos (40.464985,-64.232185,-103.70199), scale 43.4, collision shape none async",
+      "sceneMaxCode": "model_21 => static dragon_gate1: pos (40.464985,-64.232185,-103.70199), collision shape none async",
       "staticModel": true,
       "name": "model_21",
       "vehicleModel": false,
@@ -2713,7 +2776,8 @@
         40.464985,
         -64.232185,
         -103.70199
-      ]
+      ],
+      "multiplayer": false
     }
   ],
   "gameCamera": {
@@ -2731,15 +2795,15 @@
   },
   "camera": {
     "rotation": [
-      -0.09904575,
-      0.8923991,
-      -0.2391176,
-      -0.36964384
+      -0.02704136,
+      0.9622321,
+      -0.25010976,
+      -0.10403458
     ],
     "position": [
-      9.185587,
-      7.5,
-      9.185586
+      35.656685,
+      93.00817,
+      162.96957
     ]
   },
   "version": 1

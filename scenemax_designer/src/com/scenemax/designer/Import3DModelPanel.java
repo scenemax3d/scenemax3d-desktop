@@ -4,6 +4,8 @@ import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
 import com.scenemax.designer.animation.AnimationImportProcessRunner;
 import com.scenemax.designer.animation.AnimationImportResult;
+import com.scenemax.designer.animation.GltfTextureOptimizer;
+import com.scenemax.designer.animation.ModelJ3oClipExporter;
 import com.scenemaxeng.common.types.ResourceSetup;
 import com.scenemax.designer.gizmo.GizmoMode;
 import org.apache.commons.io.FileUtils;
@@ -79,6 +81,7 @@ public class Import3DModelPanel extends DesignerPanel {
     private JTextField txtCapsuleRadius, txtCapsuleHeight;
     private JTextField txtStepHeight;
     private JCheckBox chkStatic;
+    private JCheckBox chkConvertToNativeJ3o;
     private JComboBox<String> cmbBundledAnimations;
     private JLabel lblBundledAnimationStatus;
 
@@ -400,6 +403,11 @@ public class Import3DModelPanel extends DesignerPanel {
         chkStatic = new JCheckBox("Static");
         chkStatic.setAlignmentX(Component.LEFT_ALIGNMENT);
         form.add(chkStatic);
+
+        chkConvertToNativeJ3o = new JCheckBox("Convert to native J3O (Java runtime)");
+        chkConvertToNativeJ3o.setAlignmentX(Component.LEFT_ALIGNMENT);
+        chkConvertToNativeJ3o.setToolTipText("Leave unchecked to keep GLB/GLTF imports usable by the Bevy projector.");
+        form.add(chkConvertToNativeJ3o);
 
         form.add(Box.createVerticalStrut(8));
         form.add(createSeparator());
@@ -1097,7 +1105,7 @@ public class Import3DModelPanel extends DesignerPanel {
         }
 
         try {
-            File importedModelFile = AnimationImportProcessRunner.convertModelForRuntime(srcFile, destDir, name);
+            File importedModelFile = importModelFileForSelectedMode(srcFile, destDir, name);
 
             importedModelFilePath = importedModelFile.getAbsolutePath();
             try {
@@ -1177,6 +1185,49 @@ public class Import3DModelPanel extends DesignerPanel {
         scrollPane.setPreferredSize(new Dimension(760, 360));
 
         JOptionPane.showMessageDialog(this, scrollPane, title, JOptionPane.ERROR_MESSAGE);
+    }
+
+    private File importModelFileForSelectedMode(File sourceFile, File outputDir, String modelName) throws IOException {
+        if (shouldConvertToNativeJ3o(sourceFile)) {
+            return AnimationImportProcessRunner.convertModelForRuntime(sourceFile, outputDir, modelName);
+        }
+        return preserveRuntimeReadyModel(sourceFile, outputDir, modelName);
+    }
+
+    private boolean shouldConvertToNativeJ3o(File sourceFile) {
+        if (sourceFile == null) {
+            return true;
+        }
+        String extension = modelExtension(sourceFile.getName());
+        if (".glb".equals(extension) || ".gltf".equals(extension) || ".j3o".equals(extension)) {
+            return chkConvertToNativeJ3o != null && chkConvertToNativeJ3o.isSelected();
+        }
+        return true;
+    }
+
+    private File preserveRuntimeReadyModel(File sourceFile, File outputDir, String modelName) throws IOException {
+        String extension = modelExtension(sourceFile.getName());
+        if (!".glb".equals(extension) && !".gltf".equals(extension) && !".j3o".equals(extension)) {
+            return AnimationImportProcessRunner.convertModelForRuntime(sourceFile, outputDir, modelName);
+        }
+
+        if (!outputDir.exists() && !outputDir.mkdirs()) {
+            throw new IOException("Failed to create model output folder: " + outputDir.getAbsolutePath());
+        }
+
+        File runtimeFile = new File(outputDir, sanitizeForFileName(modelName) + extension);
+        if (".gltf".equals(extension)) {
+            File sourceDir = sourceFile.getParentFile();
+            if (sourceDir != null && sourceDir.isDirectory()) {
+                FileUtils.copyDirectory(sourceDir, outputDir);
+            }
+            if (!sourceFile.getName().equals(runtimeFile.getName())) {
+                Files.copy(sourceFile.toPath(), runtimeFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+        } else {
+            Files.copy(sourceFile.toPath(), runtimeFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
+        return runtimeFile;
     }
 
     private void loadModelPreview() {
@@ -1337,6 +1388,14 @@ public class Import3DModelPanel extends DesignerPanel {
         }
         txtName.setText(finalName);
 
+        ModelJ3oClipExporter.TextureOptimizationOptions textureOptions = chooseGltfTextureOptimizationOptions();
+        if (textureOptions == null) {
+            return;
+        }
+        if (textureOptions.enabled && !optimizeImportedRuntimeModel(textureOptions)) {
+            return;
+        }
+
         updateModelMetadata(finalName);
         deletePendingMarker();
 
@@ -1403,6 +1462,9 @@ public class Import3DModelPanel extends DesignerPanel {
 
         if (targetModel != null) {
             targetModel.put("name", name);
+            if (previewModelAssetPath != null && !previewModelAssetPath.trim().isEmpty()) {
+                targetModel.put("path", previewModelAssetPath);
+            }
             targetModel.put("scaleX", scaleX);
             targetModel.put("scaleY", scaleY);
             targetModel.put("scaleZ", scaleZ);
@@ -1430,7 +1492,10 @@ public class Import3DModelPanel extends DesignerPanel {
                 resSetup = app.getAssetsMapping().get3DModelsIndex().get(name.toLowerCase());
             }
             if (resSetup != null) {
-                ResourceSetup renamedSetup = new ResourceSetup(name, resSetup.path,
+                String resourcePath = previewModelAssetPath != null && !previewModelAssetPath.trim().isEmpty()
+                        ? previewModelAssetPath
+                        : resSetup.path;
+                ResourceSetup renamedSetup = new ResourceSetup(name, resourcePath,
                         scaleX, scaleY, scaleZ, transX, transY, transZ, rotateY);
                 renamedSetup.calibrateX = calX;
                 renamedSetup.calibrateY = calY;
@@ -1459,6 +1524,129 @@ public class Import3DModelPanel extends DesignerPanel {
             }
         }
         importedModelName = name;
+    }
+
+    private ModelJ3oClipExporter.TextureOptimizationOptions chooseGltfTextureOptimizationOptions() {
+        if (!isImportedGltfOrGlb()) {
+            return ModelJ3oClipExporter.TextureOptimizationOptions.disabled();
+        }
+
+        JCheckBox enable = new JCheckBox("Optimize textures for faster game loading", true);
+        JComboBox<String> maxSize = new JComboBox<>(new String[]{
+                "Keep dimensions", "4096 px", "2048 px", "1024 px", "512 px"
+        });
+        maxSize.setSelectedItem("2048 px");
+
+        JSlider quality = new JSlider(50, 95, 82);
+        quality.setMajorTickSpacing(15);
+        quality.setPaintTicks(true);
+        quality.setPaintLabels(true);
+
+        JCheckBox convertColorPng = new JCheckBox("Convert color/gloss/roughness PNG textures to JPEG", true);
+
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.gridwidth = 2;
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.insets = new Insets(0, 0, 8, 0);
+        panel.add(enable, gbc);
+
+        gbc.gridy++;
+        gbc.gridwidth = 1;
+        gbc.insets = new Insets(0, 0, 6, 10);
+        panel.add(new JLabel("Max texture size:"), gbc);
+        gbc.gridx = 1;
+        gbc.insets = new Insets(0, 0, 6, 0);
+        panel.add(maxSize, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.gridwidth = 2;
+        panel.add(new JLabel("JPEG quality:"), gbc);
+        gbc.gridy++;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        panel.add(quality, gbc);
+
+        gbc.gridy++;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.insets = new Insets(6, 0, 0, 0);
+        panel.add(convertColorPng, gbc);
+
+        JLabel note = new JLabel("<html>Normal, bump, height, alpha, opacity, and mask maps stay lossless. GLB files may be saved as GLTF with external textures.</html>");
+        gbc.gridy++;
+        gbc.insets = new Insets(8, 0, 0, 0);
+        panel.add(note, gbc);
+
+        int answer = JOptionPane.showConfirmDialog(this, panel, "GLTF/GLB Texture Optimization",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (answer != JOptionPane.OK_OPTION) {
+            return null;
+        }
+        if (!enable.isSelected()) {
+            return ModelJ3oClipExporter.TextureOptimizationOptions.disabled();
+        }
+        return ModelJ3oClipExporter.TextureOptimizationOptions.enabled(
+                selectedMaxTextureSize(String.valueOf(maxSize.getSelectedItem())),
+                quality.getValue(),
+                convertColorPng.isSelected());
+    }
+
+    private boolean isImportedGltfOrGlb() {
+        String path = importedModelFilePath == null ? "" : importedModelFilePath.toLowerCase(Locale.ROOT);
+        return path.endsWith(".glb") || path.endsWith(".gltf");
+    }
+
+    private boolean optimizeImportedRuntimeModel(ModelJ3oClipExporter.TextureOptimizationOptions textureOptions) {
+        File originalModelFile = new File(importedModelFilePath);
+        try {
+            GltfTextureOptimizer.Result result = GltfTextureOptimizer.optimize(originalModelFile, textureOptions);
+            importedModelFilePath = result.modelFile.getAbsolutePath();
+            previewModelAssetPath = importedModelAssetPath(result.modelFile);
+            if (!originalModelFile.getCanonicalFile().equals(result.modelFile.getCanonicalFile())) {
+                Files.deleteIfExists(originalModelFile.toPath());
+            }
+            JOptionPane.showMessageDialog(this,
+                    "Optimized " + result.textureCount + " texture(s).\n"
+                            + "Before: " + formatBytes(result.bytesBefore) + "\n"
+                            + "After: " + formatBytes(result.bytesAfter) + "\n"
+                            + "Settings: " + result.summary,
+                    "Texture Optimization", JOptionPane.INFORMATION_MESSAGE);
+            return true;
+        } catch (IOException e) {
+            showImportError("Failed to optimize GLTF/GLB textures", e);
+            return false;
+        }
+    }
+
+    private String importedModelAssetPath(File modelFile) {
+        File modelDir = selectedFileDestDir == null ? null : new File(selectedFileDestDir);
+        String folderName = modelDir == null ? txtName.getText().trim() : modelDir.getName();
+        return "Models/" + folderName + "/" + modelFile.getName();
+    }
+
+    private int selectedMaxTextureSize(String value) {
+        if (value == null || value.startsWith("Keep")) {
+            return 0;
+        }
+        String digits = value.replaceAll("[^0-9]", "");
+        try {
+            return Integer.parseInt(digits);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private String formatBytes(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        double kb = bytes / 1024.0;
+        if (kb < 1024) {
+            return String.format(Locale.ROOT, "%.1f KB", kb);
+        }
+        return String.format(Locale.ROOT, "%.1f MB", kb / 1024.0);
     }
 
     private String resolveFinalImportName() {
