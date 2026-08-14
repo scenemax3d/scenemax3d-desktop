@@ -54,6 +54,7 @@ pub(super) fn is_startup_action(statement: &Statement) -> bool {
     !matches!(
         statement,
         Statement::ModelDecl { .. }
+            | Statement::LightDecl(_)
             | Statement::ObjectPool(_)
             | Statement::KeyEvent(_)
             | Statement::WhenEvent(_)
@@ -488,6 +489,32 @@ pub(super) fn apply_startup_action(
     depth: usize,
 ) -> ActionSequenceResult {
     match action {
+        Statement::LightDecl(light) => {
+            let (_entity, transform) = spawn_scenemax_light_decl(
+                commands,
+                light,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            transforms_by_name.insert(light.name.clone(), transform);
+            ActionSequenceResult::Completed
+        }
+        Statement::LightProbeAdd(probe) => {
+            let (_entity, transform) = apply_light_probe_add(
+                commands,
+                probe,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            transforms_by_name.insert(probe.name.clone(), transform);
+            ActionSequenceResult::Completed
+        }
         Statement::SetEnvironmentShader { shader } => {
             let shader_name = resolve_shader_name(
                 shader,
@@ -3458,8 +3485,12 @@ pub(super) fn apply_runtime_model_decl(
                 commands.entity(entity).insert(visibility);
             }
             commands.entity(entity).insert(SceneMaxEffekseerEffect {
+                instance_id: next_effekseer_instance_id(),
                 asset_id: asset_id.clone(),
                 effect_path: effect_path.clone(),
+                one_shot_duration_seconds: effekseer_one_shot_duration_seconds(
+                    effect_path.as_deref(),
+                ),
             });
             transforms_by_name.insert(name.to_owned(), transform);
             write_runtime_diagnostic_line(format!(
@@ -3488,8 +3519,12 @@ pub(super) fn apply_runtime_model_decl(
                     runtime_name: format!("{name}@runtime"),
                 },
                 SceneMaxEffekseerEffect {
+                    instance_id: next_effekseer_instance_id(),
                     asset_id: asset_id.clone(),
                     effect_path: effect_path.clone(),
+                    one_shot_duration_seconds: effekseer_one_shot_duration_seconds(
+                        effect_path.as_deref(),
+                    ),
                 },
                 transform,
                 visibility,
@@ -3619,6 +3654,45 @@ pub(super) fn resolve_effekseer_effect_path(asset_root: &Path, asset_id: &str) -
         })
 }
 
+pub(super) fn effekseer_one_shot_duration_seconds(effect_path: Option<&Path>) -> f32 {
+    const FALLBACK_SECONDS: f32 = 2.0;
+    let Some(effect_path) = effect_path else {
+        return FALLBACK_SECONDS;
+    };
+    let Some(parent) = effect_path.parent() else {
+        return FALLBACK_SECONDS;
+    };
+    let Ok(entries) = fs::read_dir(parent) else {
+        return FALLBACK_SECONDS;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("efkproj"))
+        {
+            continue;
+        }
+        let Ok(source) = fs::read_to_string(path) else {
+            continue;
+        };
+        let start = xml_numeric_tag(&source, "StartFrame").unwrap_or(0.0);
+        if let Some(end) = xml_numeric_tag(&source, "EndFrame") {
+            return ((end - start).max(1.0) / 60.0).max(0.1);
+        }
+    }
+    FALLBACK_SECONDS
+}
+
+fn xml_numeric_tag(source: &str, tag: &str) -> Option<f32> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = source.find(&open)? + open.len();
+    let end = source[start..].find(&close)? + start;
+    source[start..end].trim().parse::<f32>().ok()
+}
+
 fn resolved_effekseer_play_translation(
     play: &EffekseerPlayStatement,
     vars: &SceneMaxVars,
@@ -3677,6 +3751,7 @@ fn resolved_effekseer_playback(
         play_generation: next_effekseer_play_generation(),
         playback_speed,
         dynamic_inputs,
+        elapsed_seconds: 0.0,
     }
 }
 
@@ -3829,6 +3904,46 @@ pub(super) fn apply_key_action(
     }
     if let Statement::Unsupported { text } = action {
         tracing::debug!(text, "skipping unsupported SceneMax runtime action");
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::LightDecl(light) = action {
+        for (entity, scene_entity, _, _, _, _, _, _) in &mut scene_entities.p1() {
+            if scene_entity.name == light.name {
+                commands.entity(entity).despawn();
+                break;
+            }
+        }
+        let (entity, transform) = spawn_scenemax_light_decl(
+            commands,
+            light,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
+        transforms_by_name.insert(light.name.clone(), transform);
+        runtime_declared_entities.insert(light.name.clone(), entity);
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::LightProbeAdd(probe) = action {
+        for (entity, scene_entity, _, _, _, _, _, _) in &mut scene_entities.p1() {
+            if scene_entity.name == probe.name {
+                commands.entity(entity).despawn();
+                break;
+            }
+        }
+        let (entity, transform) = apply_light_probe_add(
+            commands,
+            probe,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
+        transforms_by_name.insert(probe.name.clone(), transform);
+        runtime_declared_entities.insert(probe.name.clone(), entity);
         return ActionSequenceResult::Completed;
     }
     if let Statement::ModelDecl {

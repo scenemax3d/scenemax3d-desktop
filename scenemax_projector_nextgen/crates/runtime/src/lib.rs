@@ -45,10 +45,11 @@ use scenemax_parser::{
     AudioStatement, CameraAttachStatement, CameraModifierValue, CameraMoveStatement,
     ChannelDrawStatement, CharacterJumpStatement, CharacterModeStatement, CinematicLookAt,
     CinematicPlayStatement, Condition, EffekseerPlayStatement, EntityOptions, KeyTrigger,
-    LoggerLevel, LoggerMessage, LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement,
-    ObjectPoolStatement, PoolReleaseStatement, PositionExpr, PositionValue, Program, SceneMaxAxis,
-    SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3, SpritePlayStatement, Statement,
-    UiEaseDirection, UiTargetPath,
+    LightDeclarationStatement, LightProbeAddStatement, LightType, LoggerLevel, LoggerMessage,
+    LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement, ObjectPoolStatement,
+    PoolReleaseStatement, PositionExpr, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
+    SceneMaxCollisionShape, SceneMaxVec3, SpritePlayStatement, Statement, UiEaseDirection,
+    UiTargetPath,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
@@ -69,6 +70,7 @@ mod animation;
 mod audio;
 mod camera;
 mod effekseer;
+mod lighting;
 mod physics;
 mod shader;
 mod sprites;
@@ -80,6 +82,7 @@ use animation::*;
 use audio::*;
 use camera::*;
 use effekseer::*;
+use lighting::*;
 use physics::*;
 use shader::*;
 use sprites::*;
@@ -248,6 +251,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_attached_camera,
                 update_camera_modifiers,
                 update_sprite_animations,
+                update_effekseer_playbacks,
                 apply_gltf_visual_offsets,
                 play_pending_animations,
                 apply_animation_speed_overrides,
@@ -838,8 +842,10 @@ struct SceneMaxEntity {
 #[derive(Debug, Clone, Component)]
 #[allow(dead_code)]
 struct SceneMaxEffekseerEffect {
+    instance_id: u64,
     asset_id: String,
     effect_path: Option<PathBuf>,
+    one_shot_duration_seconds: f32,
 }
 
 #[derive(Debug, Clone, Component)]
@@ -849,6 +855,7 @@ struct SceneMaxEffekseerPlayback {
     play_generation: u64,
     playback_speed: f32,
     dynamic_inputs: [f32; 4],
+    elapsed_seconds: f32,
 }
 
 #[derive(SystemParam)]
@@ -1031,6 +1038,11 @@ fn spawn_placeholder_model(
     ));
 
     tracing::info!("spawned placeholder cube");
+}
+
+fn next_effekseer_instance_id() -> u64 {
+    static INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
+    INSTANCE_ID.fetch_add(1, Ordering::Relaxed)
 }
 
 #[cfg(test)]
@@ -1297,6 +1309,27 @@ mod tests {
         assert!(log.contains("[INFO] flow-start"));
         assert!(log.contains("[DEBUG] 7"));
         let _ = fs::remove_dir_all(log_dir);
+    }
+
+    #[test]
+    fn effekseer_one_shot_duration_uses_project_frame_range() {
+        let root = std::env::temp_dir().join(format!(
+            "scenemax_effekseer_duration_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let effect_path = root.join("effect.efkefc");
+        fs::write(&effect_path, b"").unwrap();
+        fs::write(
+            root.join("effect.efkproj"),
+            "<EffekseerProject><StartFrame>0</StartFrame><EndFrame>120</EndFrame><IsLoop>True</IsLoop></EffekseerProject>",
+        )
+        .unwrap();
+
+        assert!((effekseer_one_shot_duration_seconds(Some(&effect_path)) - 2.0).abs() < 0.001);
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

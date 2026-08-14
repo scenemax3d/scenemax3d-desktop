@@ -29,6 +29,8 @@ pub enum Statement {
         resource: String,
         options: EntityOptions,
     },
+    LightDecl(LightDeclarationStatement),
+    LightProbeAdd(LightProbeAddStatement),
     ObjectPool(ObjectPoolStatement),
     Animate(AnimationStatement),
     SpritePlay(SpritePlayStatement),
@@ -186,6 +188,40 @@ pub struct EntityOptions {
     pub segments: Option<usize>,
     pub body_kind: Option<SceneMaxBodyKind>,
     pub collision_shape: Option<SceneMaxCollisionShape>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LightDeclarationStatement {
+    pub name: String,
+    pub light_type: LightType,
+    pub color: Option<String>,
+    pub intensity: Option<AssignmentValue>,
+    pub intensity_unit: Option<String>,
+    pub position: Option<PositionValue>,
+    pub direction: Option<Vec<PositionExpr>>,
+    pub shadow_mode: Option<String>,
+    pub range: Option<AssignmentValue>,
+    pub look_at: Option<String>,
+    pub angle: Option<AssignmentValue>,
+    pub preset: Option<String>,
+    pub exposure: Option<AssignmentValue>,
+    pub ambient_color: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LightType {
+    Directional,
+    Point,
+    Spot,
+    Sky,
+    Ambient,
+    Probe,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LightProbeAddStatement {
+    pub name: String,
+    pub position: Option<PositionValue>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1863,6 +1899,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(debug_mode);
     }
 
+    if let Some(light_probe) = parse_light_probe_add(line)? {
+        return Ok(Statement::LightProbeAdd(light_probe));
+    }
+
     if let Some(shader) = parse_shader_statement(line)? {
         return Ok(shader);
     }
@@ -1947,6 +1987,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
 
     if let Some(attach) = parse_camera_attach(line)? {
         return Ok(attach);
+    }
+
+    if let Some(statement) = parse_light_decl(line)? {
+        return Ok(statement);
     }
 
     if let Some(statement) = parse_model_decl(line)? {
@@ -3431,6 +3475,193 @@ fn parse_model_decl(line: &str) -> Result<Option<Statement>, ParseError> {
     }
 
     Ok(None)
+}
+
+fn parse_light_decl(line: &str) -> Result<Option<Statement>, ParseError> {
+    if let Some((name, rest)) = line.split_once("=>") {
+        return parse_light_decl_parts(name.trim(), rest);
+    }
+
+    let lower = line.to_ascii_lowercase();
+    if let Some(index) = lower.find(" is a ") {
+        let name = line[..index].trim();
+        let rest = &line[index + " is a ".len()..];
+        return parse_light_decl_parts(name, rest);
+    }
+
+    Ok(None)
+}
+
+fn parse_light_decl_parts(name: &str, rest: &str) -> Result<Option<Statement>, ParseError> {
+    let (resource, options_text) = split_resource_and_options(rest);
+    let Some(light_type) = parse_light_resource_type(resource.trim()) else {
+        return Ok(None);
+    };
+    Ok(Some(Statement::LightDecl(LightDeclarationStatement {
+        name: name.to_owned(),
+        light_type,
+        color: parse_light_color_attr(options_text),
+        intensity: parse_light_value_attr(options_text, "intensity")?.map(|(value, _)| value),
+        intensity_unit: parse_light_value_attr(options_text, "intensity")?
+            .and_then(|(_, unit)| unit),
+        position: parse_position_value_after(options_text, "pos")?.or_else(|| {
+            parse_vec3_after(options_text, "pos")
+                .ok()
+                .map(position_value_from_vec3)
+        }),
+        direction: parse_light_direction_attr(options_text)?,
+        shadow_mode: parse_light_word_attr(options_text, "shadow"),
+        range: parse_light_value_attr(options_text, "range")?.map(|(value, _)| value),
+        look_at: parse_light_look_at_attr(options_text),
+        angle: parse_light_value_attr(options_text, "angle")?.map(|(value, _)| value),
+        preset: parse_light_string_attr(options_text, "preset"),
+        exposure: parse_light_value_attr(options_text, "exposure")?.map(|(value, _)| value),
+        ambient_color: parse_light_color_named_attr(options_text, "ambient"),
+    })))
+}
+
+fn parse_light_probe_add(line: &str) -> Result<Option<LightProbeAddStatement>, ParseError> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let Some(after_prefix_len) = lower.strip_prefix("lights.add").map(|_| "lights.add".len())
+    else {
+        return Ok(None);
+    };
+    let original_rest = trimmed[after_prefix_len..].trim_start_matches('.').trim();
+    let Some(after_probe) = strip_keyword_prefix(original_rest, "probe") else {
+        return Ok(None);
+    };
+    let name = parse_quoted_strings(after_probe)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| {
+            first_light_value_token(after_probe)
+                .unwrap_or("1")
+                .to_owned()
+        });
+    Ok(Some(LightProbeAddStatement {
+        name,
+        position: parse_position_value_after(after_probe, "pos")?.or_else(|| {
+            parse_vec3_after(after_probe, "pos")
+                .ok()
+                .map(position_value_from_vec3)
+        }),
+    }))
+}
+
+fn parse_light_resource_type(resource: &str) -> Option<LightType> {
+    let lower = resource.trim().to_ascii_lowercase();
+    let light_type = lower.strip_prefix("lights.")?.trim();
+    match light_type {
+        "directional" => Some(LightType::Directional),
+        "point" => Some(LightType::Point),
+        "spot" => Some(LightType::Spot),
+        "sky" => Some(LightType::Sky),
+        "ambient" => Some(LightType::Ambient),
+        "probe" => Some(LightType::Probe),
+        _ => None,
+    }
+}
+
+fn parse_light_color_attr(text: &str) -> Option<String> {
+    parse_light_color_named_attr(text, "color")
+}
+
+fn parse_light_color_named_attr(text: &str, name: &str) -> Option<String> {
+    let attr = light_attr_text(text, name)?;
+    parse_quoted_strings(attr)
+        .into_iter()
+        .next()
+        .or_else(|| first_light_value_token(attr).map(str::to_owned))
+}
+
+fn parse_light_string_attr(text: &str, name: &str) -> Option<String> {
+    let attr = light_attr_text(text, name)?;
+    parse_quoted_strings(attr)
+        .into_iter()
+        .next()
+        .or_else(|| first_light_value_token(attr).map(str::to_owned))
+}
+
+fn parse_light_word_attr(text: &str, name: &str) -> Option<String> {
+    let attr = light_attr_text(text, name)?;
+    let attr = strip_keyword_prefix(attr, "mode").unwrap_or(attr).trim();
+    first_light_value_token(attr).map(|value| value.to_ascii_lowercase())
+}
+
+fn parse_light_value_attr(
+    text: &str,
+    name: &str,
+) -> Result<Option<(AssignmentValue, Option<String>)>, ParseError> {
+    let Some(attr) = light_attr_text(text, name) else {
+        return Ok(None);
+    };
+    let mut value_text = attr.trim();
+    let mut unit = None;
+    let lower = value_text.to_ascii_lowercase();
+    if lower.ends_with(" lumens") {
+        value_text = value_text[..value_text.len() - " lumens".len()].trim_end();
+        unit = Some("lumens".to_owned());
+    } else if lower.ends_with(" lumen") {
+        value_text = value_text[..value_text.len() - " lumen".len()].trim_end();
+        unit = Some("lumens".to_owned());
+    }
+    let Some(value) = parse_assignment_value(value_text)? else {
+        return Ok(None);
+    };
+    Ok(Some((value, unit)))
+}
+
+fn parse_light_direction_attr(text: &str) -> Result<Option<Vec<PositionExpr>>, ParseError> {
+    let Some(attr) = light_attr_text(text, "direction") else {
+        return Ok(None);
+    };
+    let Some(values) = values_inside_first_parens(attr) else {
+        return Ok(None);
+    };
+    let parts = split_top_level_comma(values);
+    if parts.len() != 3 {
+        return Ok(None);
+    }
+    Ok(Some(
+        parts
+            .into_iter()
+            .map(parse_position_expr)
+            .collect::<Result<Vec<_>, _>>()?,
+    ))
+}
+
+fn parse_light_look_at_attr(text: &str) -> Option<String> {
+    let attr = light_attr_text(text, "look")?;
+    let attr = strip_keyword_prefix(attr, "at").unwrap_or(attr).trim();
+    first_light_value_token(attr).map(str::to_owned)
+}
+
+fn light_attr_text<'a>(text: &'a str, name: &str) -> Option<&'a str> {
+    split_top_level_options(text).into_iter().find_map(|part| {
+        let after_name = strip_keyword_prefix(part, name)?.trim();
+        let after_name = after_name.strip_prefix('=').unwrap_or(after_name).trim();
+        if after_name.is_empty() {
+            None
+        } else {
+            Some(after_name)
+        }
+    })
+}
+
+fn first_light_value_token(text: &str) -> Option<&str> {
+    text.trim()
+        .trim_matches('"')
+        .split(|value: char| value.is_whitespace() || value == ',' || value == ':')
+        .find(|part| !part.is_empty())
+}
+
+fn position_value_from_vec3(value: SceneMaxVec3) -> PositionValue {
+    PositionValue::Coordinates(vec![
+        PositionExpr::Number(value.x),
+        PositionExpr::Number(value.y),
+        PositionExpr::Number(value.z),
+    ])
 }
 
 fn parse_object_pool(name: &str, rest: &str) -> Result<Option<ObjectPoolStatement>, ParseError> {
@@ -5380,6 +5611,64 @@ mod tests {
                 ],
             }
         );
+    }
+
+    #[test]
+    fn parses_light_declarations_and_probe_actions() {
+        let program = parse_program(
+            "sun => Lights.directional : color \"#fff3d2\", intensity 3.0, direction (-0.3,-0.8,-0.4), shadow high\n\
+             lamp => Lights.point : pos (2,4,1), color warm, intensity 900 lumens, range 12, shadow medium\n\
+             stageSpot => Lights.spot : pos (0,6,-4), look at player1, angle 35, intensity 2500, shadow on\n\
+             environment => Lights.sky : preset \"Night Neon\", exposure 0.2, ambient \"#223344\"\n\
+             Lights.Add Probe \"3\" Having pos (2,1,0)",
+        )
+        .expect("program parses");
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::LightDecl(LightDeclarationStatement {
+                name,
+                light_type: LightType::Directional,
+                color: Some(color),
+                ..
+            }) if name == "sun" && color == "#fff3d2"
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::LightDecl(LightDeclarationStatement {
+                name,
+                light_type: LightType::Point,
+                intensity_unit: Some(unit),
+                shadow_mode: Some(shadow),
+                ..
+            }) if name == "lamp" && unit == "lumens" && shadow == "medium"
+        ));
+        assert!(matches!(
+            &program.statements[2],
+            Statement::LightDecl(LightDeclarationStatement {
+                name,
+                light_type: LightType::Spot,
+                look_at: Some(target),
+                ..
+            }) if name == "stageSpot" && target == "player1"
+        ));
+        assert!(matches!(
+            &program.statements[3],
+            Statement::LightDecl(LightDeclarationStatement {
+                name,
+                light_type: LightType::Sky,
+                preset: Some(preset),
+                ambient_color: Some(ambient),
+                ..
+            }) if name == "environment" && preset == "Night Neon" && ambient == "#223344"
+        ));
+        assert!(matches!(
+            &program.statements[4],
+            Statement::LightProbeAdd(LightProbeAddStatement {
+                name,
+                position: Some(PositionValue::Coordinates(_)),
+            }) if name == "3"
+        ));
     }
 
     #[test]

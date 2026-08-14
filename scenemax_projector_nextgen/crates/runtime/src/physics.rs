@@ -269,7 +269,72 @@ fn resolve_scenemax_material(
     resolve_scenemax_material_in_root(name, asset_root, "").or_else(|| {
         builtin_asset_root
             .and_then(|root| resolve_scenemax_material_in_root(name, root, "builtin://"))
+            .or_else(|| builtin_scenemax_material(name, builtin_asset_root))
     })
+}
+
+fn builtin_scenemax_material(
+    name: &str,
+    builtin_asset_root: Option<&Path>,
+) -> Option<SceneMaxResolvedMaterial> {
+    let builtin_asset_root = builtin_asset_root?;
+    let (diffuse, normal) = builtin_material_texture_paths(name)?;
+    if !builtin_asset_root.join(diffuse).is_file() {
+        return None;
+    }
+    Some(SceneMaxResolvedMaterial {
+        diffuse: Some(Color::WHITE),
+        diffuse_map: Some(format!("builtin://{diffuse}")),
+        normal_map: normal
+            .filter(|path| builtin_asset_root.join(path).is_file())
+            .map(|path| format!("builtin://{path}")),
+        glow_color: None,
+        glow_map: None,
+        double_sided: false,
+        transparent: false,
+    })
+}
+
+fn builtin_material_texture_paths(name: &str) -> Option<(&'static str, Option<&'static str>)> {
+    match name.to_ascii_lowercase().as_str() {
+        "pond" => Some((
+            "Textures/Terrain/Pond/Pond.jpg",
+            Some("Textures/Terrain/Pond/Pond_normal.png"),
+        )),
+        "rock" => Some((
+            "Textures/Terrain/Rock/rock.png",
+            Some("Textures/Terrain/Rock/rock_normal.png"),
+        )),
+        "rock2" => Some((
+            "Textures/Terrain/Rock/rock2.jpg",
+            Some("Textures/Terrain/Rock/rock_normal.png"),
+        )),
+        "brickwall" => Some((
+            "Textures/Terrain/BrickWall/brickwall.jpg",
+            Some("Textures/Terrain/BrickWall/brickwall_normal.jpg"),
+        )),
+        "dirt" => Some((
+            "Textures/Terrain/Splat/dirt.jpg",
+            Some("Textures/Terrain/Splat/dirt_normal.png"),
+        )),
+        "grass" => Some((
+            "Textures/Terrain/Splat/grass.jpg",
+            Some("Textures/Terrain/Splat/grass_normal.jpg"),
+        )),
+        "road" => Some((
+            "Textures/Terrain/Splat/road.jpg",
+            Some("Textures/Terrain/Splat/road_normal.png"),
+        )),
+        "alpha" => Some((
+            "Textures/Terrain/Splat/alpha1.png",
+            Some("Textures/Terrain/Splat/alphamap.png"),
+        )),
+        "alpha2" => Some((
+            "Textures/Terrain/Splat/alpha2.png",
+            Some("Textures/Terrain/Splat/alphamap2.png"),
+        )),
+        _ => None,
+    }
 }
 
 fn resolve_scenemax_material_in_root(
@@ -3073,6 +3138,31 @@ Material wall : Common/MatDefs/Light/Lighting.j3md {
         );
         assert!(material.diffuse.is_some());
         assert!(material.glow_color.is_some());
+    }
+
+    #[test]
+    fn resolves_builtin_primitive_material_names() {
+        let root =
+            std::env::temp_dir().join(format!("scenemax_builtin_material_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let texture_dir = root.join("Textures").join("Terrain").join("Rock");
+        fs::create_dir_all(&texture_dir).unwrap();
+        fs::write(texture_dir.join("rock2.jpg"), b"diffuse").unwrap();
+        fs::write(texture_dir.join("rock_normal.png"), b"normal").unwrap();
+
+        let material = resolve_scenemax_material("rock2", &root, Some(&root))
+            .expect("rock2 should resolve from built-in SceneMax material table");
+
+        assert_eq!(
+            material.diffuse_map.as_deref(),
+            Some("builtin://Textures/Terrain/Rock/rock2.jpg")
+        );
+        assert_eq!(
+            material.normal_map.as_deref(),
+            Some("builtin://Textures/Terrain/Rock/rock_normal.png")
+        );
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

@@ -1717,6 +1717,9 @@ pub(super) fn setup_camera_and_lights(
             ..default()
         },
         SceneMaxEnvironmentDirectionalLight,
+        SceneMaxFallbackLight::Directional {
+            illuminance: 24_000.0,
+        },
         Transform::from_xyz(-8.0, 14.0, 8.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
@@ -1728,6 +1731,9 @@ pub(super) fn setup_camera_and_lights(
             shadow_maps_enabled: true,
             ..default()
         },
+        SceneMaxFallbackLight::Point {
+            intensity: 55_000.0,
+        },
         Transform::from_xyz(-7.0, 8.0, 8.0),
     ));
 
@@ -1738,6 +1744,9 @@ pub(super) fn setup_camera_and_lights(
             range: 55.0,
             shadow_maps_enabled: false,
             ..default()
+        },
+        SceneMaxFallbackLight::Point {
+            intensity: 18_000.0,
         },
         Transform::from_xyz(9.0, 5.0, -9.0),
     ));

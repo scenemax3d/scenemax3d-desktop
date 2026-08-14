@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -506,8 +507,12 @@ scenemax_effekseer_render_vulkan(SceneMaxEffekseerRenderer* renderer,
   renderer->lastBeginRenderingOk = false;
   collectRetiredRenderPasses(renderer);
 
+  std::unordered_set<uint64_t> submittedIds;
+  submittedIds.reserve(instance_count);
+
   for (size_t i = 0; i < instance_count; ++i) {
     const auto& instance = instances[i];
+    submittedIds.insert(instance.id);
     auto handleIt = renderer->handles.find(instance.id);
     auto generationIt = renderer->playGenerations.find(instance.id);
     const bool hasHandle = handleIt != renderer->handles.end();
@@ -525,11 +530,28 @@ scenemax_effekseer_render_vulkan(SceneMaxEffekseerRenderer* renderer,
       continue;
     }
 
+    if (hasHandle && !handleAlive && !generationChanged) {
+      renderer->handles.erase(handleIt);
+      continue;
+    }
+
     if (generationChanged) {
       playInstance(renderer, instance.effect_id, &instance);
     } else if (handleAlive) {
       applyInstance(renderer, handleIt->second, instance);
     }
+  }
+
+  for (auto it = renderer->handles.begin(); it != renderer->handles.end();) {
+    if (submittedIds.find(it->first) != submittedIds.end()) {
+      ++it;
+      continue;
+    }
+    if (it->second >= 0 && renderer->manager->Exists(it->second)) {
+      renderer->manager->StopEffect(it->second);
+    }
+    renderer->playGenerations.erase(it->first);
+    it = renderer->handles.erase(it);
   }
 
   Effekseer::Manager::UpdateParameter updateParameter;

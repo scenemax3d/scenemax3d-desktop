@@ -28,7 +28,9 @@ use bevy::{
 };
 
 #[cfg(feature = "effekseer_native")]
-use crate::startup::{runtime_verbose_logging, write_runtime_diagnostic_line};
+use crate::startup::runtime_verbose_logging;
+
+use crate::startup::write_runtime_diagnostic_line;
 
 use crate::{SceneMaxEffekseerEffect, SceneMaxEffekseerPlayback};
 
@@ -63,10 +65,40 @@ pub(crate) const fn effekseer_renderer_label() -> &'static str {
     }
 }
 
+pub(crate) fn update_effekseer_playbacks(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut effects: Query<(
+        Entity,
+        &SceneMaxEffekseerEffect,
+        &mut SceneMaxEffekseerPlayback,
+    )>,
+) {
+    let delta_seconds = time.delta_secs();
+    for (entity, effect, mut playback) in &mut effects {
+        if playback.looped {
+            continue;
+        }
+        playback.elapsed_seconds += delta_seconds * playback.playback_speed.max(0.001);
+        if playback.elapsed_seconds >= effect.one_shot_duration_seconds.max(0.1) {
+            commands
+                .entity(entity)
+                .remove::<SceneMaxEffekseerPlayback>();
+            write_runtime_diagnostic_line(format!(
+                "EFFEKSEER:STOP_ONESHOT id={} asset={} elapsed={} duration={}",
+                effect.instance_id,
+                effect.asset_id,
+                scenemax_runtime_vm_core::format_scenemax_number(playback.elapsed_seconds),
+                scenemax_runtime_vm_core::format_scenemax_number(effect.one_shot_duration_seconds)
+            ));
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 struct ExtractedEffekseerInstance {
-    entity: Entity,
+    instance_id: u64,
     asset_id: String,
     effect_path: Option<PathBuf>,
     translation: Vec3,
@@ -87,6 +119,8 @@ struct ExtractedEffekseerEffects {
 struct EffekseerBridgeState {
     announced_backend: bool,
     announced_native_unbuilt: bool,
+    #[cfg(feature = "effekseer_native")]
+    native_had_playing_instances: bool,
 }
 
 fn extract_effekseer_effects(
@@ -101,10 +135,10 @@ fn extract_effekseer_effects(
     >,
 ) {
     extracted.instances.clear();
-    for (entity, effect, playback, transform) in effects.iter() {
+    for (_entity, effect, playback, transform) in effects.iter() {
         let playback = playback.cloned();
         extracted.instances.push(ExtractedEffekseerInstance {
-            entity,
+            instance_id: effect.instance_id,
             asset_id: effect.asset_id.clone(),
             effect_path: effect.effect_path.clone(),
             translation: transform
@@ -177,6 +211,7 @@ fn render_effekseer_3d_pass(
     #[cfg(feature = "effekseer_native")] mut pipeline_cache: ResMut<PipelineCache>,
     #[cfg(feature = "effekseer_native")] time: Res<Time>,
     #[cfg(feature = "effekseer_native")] mut native: ResMut<NativeEffekseerBridge>,
+    #[cfg(feature = "effekseer_native")] mut state: ResMut<EffekseerBridgeState>,
     ctx: RenderContext,
 ) {
     let (camera, extracted_view, target) = view.into_inner();
@@ -187,13 +222,17 @@ fn render_effekseer_3d_pass(
         .iter()
         .filter(|instance| instance.playing)
         .count();
-    if playing_count == 0 {
-        return;
-    }
 
     #[cfg(feature = "effekseer_native")]
     {
         let mut ctx = ctx;
+        let should_flush_stopped_native_handles =
+            playing_count == 0 && state.native_had_playing_instances && !native.renderer.is_null();
+        state.native_had_playing_instances = playing_count > 0;
+        if playing_count == 0 && !should_flush_stopped_native_handles {
+            return;
+        }
+
         let backend = adapter_info
             .as_deref()
             .map(|info| info.backend.to_string())
@@ -223,8 +262,14 @@ fn render_effekseer_3d_pass(
             ?result,
             instances = extracted.instances.len(),
             playing = playing_count,
+            flushing_stopped = should_flush_stopped_native_handles,
             "SceneMax Effekseer Bevy render pass reached native handoff"
         );
+    }
+
+    #[cfg(not(feature = "effekseer_native"))]
+    if playing_count == 0 {
+        return;
     }
 
     #[cfg(not(feature = "effekseer_native"))]
@@ -355,7 +400,7 @@ fn render_effekseer_vulkan(
         }
 
         native_instances.push(SceneMaxEffekseerInstanceDesc {
-            id: instance_id_for_entity(instance.entity),
+            id: instance.instance_id,
             effect_id,
             play_generation: instance.play_generation,
             position: SceneMaxEffekseerVector3 {
@@ -370,10 +415,6 @@ fn render_effekseer_vulkan(
         });
     }
 
-    if native_instances.is_empty() {
-        return NativeEffekseerRenderResult::Rendered;
-    }
-
     if runtime_verbose_logging() && native.render_log_counter < 5 {
         for instance in instances.iter().filter(|instance| instance.playing).take(3) {
             let (scale, rotation, _) = Mat4::from_cols_array(&instance.transform)
@@ -381,7 +422,8 @@ fn render_effekseer_vulkan(
                 .to_scale_rotation_translation();
             let (_, yaw, _) = rotation.to_euler(EulerRot::YXZ);
             write_runtime_diagnostic_line(format!(
-                "EFFEKSEER:INSTANCE asset={} pos=({:.3},{:.3},{:.3}) scale=({:.3},{:.3},{:.3}) yaw={:.3}",
+                "EFFEKSEER:INSTANCE id={} asset={} pos=({:.3},{:.3},{:.3}) scale=({:.3},{:.3},{:.3}) yaw={:.3}",
+                instance.instance_id,
                 instance.asset_id,
                 instance.translation.x,
                 instance.translation.y,
@@ -745,13 +787,6 @@ fn effect_id_for_instance(instance: &ExtractedEffekseerInstance) -> u64 {
     if let Some(path) = &instance.effect_path {
         path.hash(&mut hasher);
     }
-    hasher.finish().max(1)
-}
-
-#[cfg(feature = "effekseer_native")]
-fn instance_id_for_entity(entity: Entity) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    entity.hash(&mut hasher);
     hasher.finish().max(1)
 }
 

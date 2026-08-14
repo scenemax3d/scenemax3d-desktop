@@ -528,6 +528,7 @@ pub(super) fn has_scene_content(program: &Program) -> bool {
         matches!(
             statement,
             Statement::ModelDecl { .. }
+                | Statement::LightDecl(_)
                 | Statement::CameraPosition(_)
                 | Statement::CameraRotation(_)
         )
@@ -725,6 +726,28 @@ pub(super) fn spawn_scenemax_program(
         window_height: 0,
     };
 
+    let light_declarations = collect_light_declarations(program);
+    if light_declarations.is_empty() {
+        set_fallback_lighting_enabled(commands, true);
+        apply_default_ambient_light(commands);
+    } else {
+        set_fallback_lighting_enabled(commands, false);
+        for light in &light_declarations {
+            let (entity, transform) = spawn_scenemax_light_decl(
+                commands,
+                light,
+                vars,
+                None,
+                &guards_by_name,
+                Some(&transforms_by_name),
+                Some(collider_bounds),
+            );
+            entities_by_name.insert(light.name.clone(), entity);
+            transforms_by_name.insert(light.name.clone(), transform);
+            spawned_any = true;
+        }
+    }
+
     for ModelRuntimeDecl {
         name,
         resource,
@@ -777,8 +800,12 @@ pub(super) fn spawn_scenemax_program(
                         runtime_name: format!("{name}@1"),
                     },
                     SceneMaxEffekseerEffect {
+                        instance_id: next_effekseer_instance_id(),
                         asset_id: asset_id.clone(),
                         effect_path: effect_path.clone(),
+                        one_shot_duration_seconds: effekseer_one_shot_duration_seconds(
+                            effect_path.as_deref(),
+                        ),
                     },
                     transform,
                     initial_visibility(name, options, &visibility_by_target),
