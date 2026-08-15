@@ -35,7 +35,7 @@ public final class GltfTextureOptimizer {
         if (modelFile == null || !modelFile.isFile()) {
             throw new IOException("Model file was not found.");
         }
-        if (options == null || !options.enabled) {
+        if (options == null || !options.hasAnyOptimization()) {
             return new Result(modelFile, 0, 0, 0, "off");
         }
 
@@ -52,9 +52,13 @@ public final class GltfTextureOptimizer {
     private static Result optimizeGltf(File gltfFile, ModelJ3oClipExporter.TextureOptimizationOptions options)
             throws IOException {
         JSONObject gltf = new JSONObject(Files.readString(gltfFile.toPath(), StandardCharsets.UTF_8));
-        Stats stats = optimizeImages(gltf, gltfFile.getParentFile(), stripExtension(gltfFile.getName()), options, null);
+        Stats stats = options.enabled
+                ? optimizeImages(gltf, gltfFile.getParentFile(), stripExtension(gltfFile.getName()), options, null)
+                : new Stats();
+        GltfMeshSimplifier.Result geometry = GltfMeshSimplifier.simplify(
+                gltf, gltfFile.getParentFile(), stripExtension(gltfFile.getName()), options);
         Files.writeString(gltfFile.toPath(), gltf.toString(2), StandardCharsets.UTF_8);
-        return new Result(gltfFile, stats.textureCount, stats.bytesBefore, stats.bytesAfter, options.summary());
+        return new Result(gltfFile, stats.textureCount, stats.bytesBefore, stats.bytesAfter, options.summary(), geometry);
     }
 
     private static Result optimizeGlbToGltf(File glbFile, ModelJ3oClipExporter.TextureOptimizationOptions options)
@@ -72,9 +76,13 @@ public final class GltfTextureOptimizer {
             Files.write(outputBin.toPath(), glb.bin);
         }
 
-        Stats stats = optimizeImages(json, outputGltf.getParentFile(), stripExtension(outputGltf.getName()), options, glb.bin);
+        Stats stats = options.enabled
+                ? optimizeImages(json, outputGltf.getParentFile(), stripExtension(outputGltf.getName()), options, glb.bin)
+                : new Stats();
+        GltfMeshSimplifier.Result geometry = GltfMeshSimplifier.simplify(
+                json, outputGltf.getParentFile(), stripExtension(outputGltf.getName()), options);
         Files.writeString(outputGltf.toPath(), json.toString(2), StandardCharsets.UTF_8);
-        return new Result(outputGltf, stats.textureCount, stats.bytesBefore, stats.bytesAfter, options.summary());
+        return new Result(outputGltf, stats.textureCount, stats.bytesBefore, stats.bytesAfter, options.summary(), geometry);
     }
 
     private static Stats optimizeImages(JSONObject gltf, File modelDir, String assetBaseName,
@@ -325,13 +333,34 @@ public final class GltfTextureOptimizer {
         public final long bytesBefore;
         public final long bytesAfter;
         public final String summary;
+        public final boolean meshSimplified;
+        public final String meshSkippedReason;
+        public final long verticesBefore;
+        public final long verticesAfter;
+        public final long trianglesBefore;
+        public final long trianglesAfter;
+        public final long geometryBytesBefore;
+        public final long geometryBytesAfter;
 
         Result(File modelFile, int textureCount, long bytesBefore, long bytesAfter, String summary) {
+            this(modelFile, textureCount, bytesBefore, bytesAfter, summary, GltfMeshSimplifier.Result.skipped("off"));
+        }
+
+        Result(File modelFile, int textureCount, long bytesBefore, long bytesAfter, String summary,
+               GltfMeshSimplifier.Result geometry) {
             this.modelFile = modelFile;
             this.textureCount = textureCount;
             this.bytesBefore = bytesBefore;
             this.bytesAfter = bytesAfter;
             this.summary = summary;
+            this.meshSimplified = geometry != null && geometry.simplified;
+            this.meshSkippedReason = geometry == null ? "" : geometry.skippedReason;
+            this.verticesBefore = geometry == null ? 0 : geometry.verticesBefore;
+            this.verticesAfter = geometry == null ? 0 : geometry.verticesAfter;
+            this.trianglesBefore = geometry == null ? 0 : geometry.trianglesBefore;
+            this.trianglesAfter = geometry == null ? 0 : geometry.trianglesAfter;
+            this.geometryBytesBefore = geometry == null ? 0 : geometry.bytesBefore;
+            this.geometryBytesAfter = geometry == null ? 0 : geometry.bytesAfter;
         }
     }
 }

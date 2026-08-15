@@ -860,33 +860,78 @@ public final class ModelJ3oClipExporter {
         public final int maxDimension;
         public final float jpegQuality;
         public final boolean convertColorPngToJpeg;
+        public final boolean meshSimplificationEnabled;
+        public final int meshGridCells;
+        public final int meshUvGridCells;
 
         private TextureOptimizationOptions(boolean enabled, int maxDimension, float jpegQuality,
-                                           boolean convertColorPngToJpeg) {
+                                           boolean convertColorPngToJpeg,
+                                           boolean meshSimplificationEnabled,
+                                           int meshGridCells,
+                                           int meshUvGridCells) {
             this.enabled = enabled;
             this.maxDimension = Math.max(0, maxDimension);
             this.jpegQuality = Math.max(0.05f, Math.min(1f, jpegQuality));
             this.convertColorPngToJpeg = convertColorPngToJpeg;
+            this.meshSimplificationEnabled = meshSimplificationEnabled;
+            this.meshGridCells = Math.max(8, Math.min(1024, meshGridCells));
+            this.meshUvGridCells = Math.max(1, Math.min(1024, meshUvGridCells));
         }
 
         public static TextureOptimizationOptions disabled() {
-            return new TextureOptimizationOptions(false, 0, 0.82f, false);
+            return new TextureOptimizationOptions(false, 0, 0.82f, false, false, 96, 256);
         }
 
         public static TextureOptimizationOptions enabled(int maxDimension, int jpegQualityPercent,
                                                          boolean convertColorPngToJpeg) {
             return new TextureOptimizationOptions(true, maxDimension,
                     Math.max(1, Math.min(100, jpegQualityPercent)) / 100f,
-                    convertColorPngToJpeg);
+                    convertColorPngToJpeg,
+                    false, 96, 256);
+        }
+
+        public static TextureOptimizationOptions enabled(int maxDimension, int jpegQualityPercent,
+                                                         boolean convertColorPngToJpeg,
+                                                         boolean meshSimplificationEnabled,
+                                                         int meshGridCells,
+                                                         int meshUvGridCells) {
+            return new TextureOptimizationOptions(true, maxDimension,
+                    Math.max(1, Math.min(100, jpegQualityPercent)) / 100f,
+                    convertColorPngToJpeg,
+                    meshSimplificationEnabled, meshGridCells, meshUvGridCells);
+        }
+
+        public static TextureOptimizationOptions of(boolean optimizeTextures,
+                                                    int maxDimension,
+                                                    int jpegQualityPercent,
+                                                    boolean convertColorPngToJpeg,
+                                                    boolean meshSimplificationEnabled,
+                                                    int meshGridCells,
+                                                    int meshUvGridCells) {
+            return new TextureOptimizationOptions(optimizeTextures, maxDimension,
+                    Math.max(1, Math.min(100, jpegQualityPercent)) / 100f,
+                    convertColorPngToJpeg,
+                    meshSimplificationEnabled, meshGridCells, meshUvGridCells);
+        }
+
+        public boolean hasAnyOptimization() {
+            return enabled || meshSimplificationEnabled;
         }
 
         public String summary() {
-            if (!enabled) {
+            if (!hasAnyOptimization()) {
                 return "off";
             }
-            String size = maxDimension > 0 ? "max " + maxDimension + "px" : "original dimensions";
-            return size + ", JPEG " + Math.round(jpegQuality * 100f) + "%"
-                    + (convertColorPngToJpeg ? ", color PNG to JPEG" : "");
+            java.util.List<String> parts = new java.util.ArrayList<>();
+            if (enabled) {
+                String size = maxDimension > 0 ? "max " + maxDimension + "px" : "original dimensions";
+                parts.add(size + ", JPEG " + Math.round(jpegQuality * 100f) + "%"
+                        + (convertColorPngToJpeg ? ", color PNG to JPEG" : ""));
+            }
+            if (meshSimplificationEnabled) {
+                parts.add("mesh grid " + meshGridCells + ", UV grid " + meshUvGridCells);
+            }
+            return String.join("; ", parts);
         }
     }
 

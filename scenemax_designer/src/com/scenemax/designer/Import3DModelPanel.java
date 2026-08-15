@@ -1392,7 +1392,7 @@ public class Import3DModelPanel extends DesignerPanel {
         if (textureOptions == null) {
             return;
         }
-        if (textureOptions.enabled && !optimizeImportedRuntimeModel(textureOptions)) {
+        if (textureOptions.hasAnyOptimization() && !optimizeImportedRuntimeModel(textureOptions)) {
             return;
         }
 
@@ -1531,7 +1531,8 @@ public class Import3DModelPanel extends DesignerPanel {
             return ModelJ3oClipExporter.TextureOptimizationOptions.disabled();
         }
 
-        JCheckBox enable = new JCheckBox("Optimize textures for faster game loading", true);
+        JCheckBox enable = new JCheckBox("Optimize model for faster game loading", true);
+        JCheckBox optimizeTextures = new JCheckBox("Optimize textures", true);
         JComboBox<String> maxSize = new JComboBox<>(new String[]{
                 "Keep dimensions", "4096 px", "2048 px", "1024 px", "512 px"
         });
@@ -1543,6 +1544,11 @@ public class Import3DModelPanel extends DesignerPanel {
         quality.setPaintLabels(true);
 
         JCheckBox convertColorPng = new JCheckBox("Convert color/gloss/roughness PNG textures to JPEG", true);
+        JCheckBox simplifyMesh = new JCheckBox("Reduce vertices and triangles for static meshes", true);
+        JComboBox<String> meshQuality = new JComboBox<>(new String[]{
+                "Balanced", "Higher quality", "Smallest / fastest"
+        });
+        meshQuality.setSelectedItem("Balanced");
 
         JPanel panel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
@@ -1552,6 +1558,10 @@ public class Import3DModelPanel extends DesignerPanel {
         gbc.anchor = GridBagConstraints.WEST;
         gbc.insets = new Insets(0, 0, 8, 0);
         panel.add(enable, gbc);
+
+        gbc.gridy++;
+        gbc.insets = new Insets(0, 0, 6, 0);
+        panel.add(optimizeTextures, gbc);
 
         gbc.gridy++;
         gbc.gridwidth = 1;
@@ -1574,12 +1584,41 @@ public class Import3DModelPanel extends DesignerPanel {
         gbc.insets = new Insets(6, 0, 0, 0);
         panel.add(convertColorPng, gbc);
 
-        JLabel note = new JLabel("<html>Normal, bump, height, alpha, opacity, and mask maps stay lossless. GLB files may be saved as GLTF with external textures.</html>");
         gbc.gridy++;
+        gbc.insets = new Insets(10, 0, 6, 0);
+        panel.add(simplifyMesh, gbc);
+
+        gbc.gridy++;
+        gbc.gridwidth = 1;
+        gbc.insets = new Insets(0, 0, 6, 10);
+        panel.add(new JLabel("Mesh reduction:"), gbc);
+        gbc.gridx = 1;
+        gbc.insets = new Insets(0, 0, 6, 0);
+        panel.add(meshQuality, gbc);
+
+        JLabel note = new JLabel("<html>Normal, bump, height, alpha, opacity, and mask maps stay lossless. Mesh reduction keeps static GLTF/GLB triangle meshes with position/normal/UV data; skinned, animated, morph-target, or unsupported meshes are left unchanged.</html>");
+        gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridwidth = 2;
         gbc.insets = new Insets(8, 0, 0, 0);
         panel.add(note, gbc);
 
-        int answer = JOptionPane.showConfirmDialog(this, panel, "GLTF/GLB Texture Optimization",
+        Runnable syncEnabledState = () -> {
+            boolean allEnabled = enable.isSelected();
+            boolean texturesEnabled = allEnabled && optimizeTextures.isSelected();
+            optimizeTextures.setEnabled(allEnabled);
+            maxSize.setEnabled(texturesEnabled);
+            quality.setEnabled(texturesEnabled);
+            convertColorPng.setEnabled(texturesEnabled);
+            simplifyMesh.setEnabled(allEnabled);
+            meshQuality.setEnabled(allEnabled && simplifyMesh.isSelected());
+        };
+        enable.addActionListener(e -> syncEnabledState.run());
+        optimizeTextures.addActionListener(e -> syncEnabledState.run());
+        simplifyMesh.addActionListener(e -> syncEnabledState.run());
+        syncEnabledState.run();
+
+        int answer = JOptionPane.showConfirmDialog(this, panel, "GLTF/GLB Optimization",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (answer != JOptionPane.OK_OPTION) {
             return null;
@@ -1587,10 +1626,15 @@ public class Import3DModelPanel extends DesignerPanel {
         if (!enable.isSelected()) {
             return ModelJ3oClipExporter.TextureOptimizationOptions.disabled();
         }
-        return ModelJ3oClipExporter.TextureOptimizationOptions.enabled(
+        int[] meshPreset = selectedMeshReductionPreset(String.valueOf(meshQuality.getSelectedItem()));
+        return ModelJ3oClipExporter.TextureOptimizationOptions.of(
+                optimizeTextures.isSelected(),
                 selectedMaxTextureSize(String.valueOf(maxSize.getSelectedItem())),
                 quality.getValue(),
-                convertColorPng.isSelected());
+                convertColorPng.isSelected(),
+                simplifyMesh.isSelected(),
+                meshPreset[0],
+                meshPreset[1]);
     }
 
     private boolean isImportedGltfOrGlb() {
@@ -1608,16 +1652,39 @@ public class Import3DModelPanel extends DesignerPanel {
                 Files.deleteIfExists(originalModelFile.toPath());
             }
             JOptionPane.showMessageDialog(this,
-                    "Optimized " + result.textureCount + " texture(s).\n"
-                            + "Before: " + formatBytes(result.bytesBefore) + "\n"
-                            + "After: " + formatBytes(result.bytesAfter) + "\n"
-                            + "Settings: " + result.summary,
-                    "Texture Optimization", JOptionPane.INFORMATION_MESSAGE);
+                    optimizationResultMessage(result),
+                    "Model Optimization", JOptionPane.INFORMATION_MESSAGE);
             return true;
         } catch (IOException e) {
-            showImportError("Failed to optimize GLTF/GLB textures", e);
+            showImportError("Failed to optimize GLTF/GLB model", e);
             return false;
         }
+    }
+
+    private String optimizationResultMessage(GltfTextureOptimizer.Result result) {
+        StringBuilder message = new StringBuilder();
+        if (result.textureCount > 0) {
+            message.append("Optimized ").append(result.textureCount).append(" texture(s).\n")
+                    .append("Textures before: ").append(formatBytes(result.bytesBefore)).append("\n")
+                    .append("Textures after: ").append(formatBytes(result.bytesAfter)).append("\n");
+        }
+        if (result.meshSimplified) {
+            message.append("Reduced mesh geometry.\n")
+                    .append("Vertices: ").append(formatCount(result.verticesBefore))
+                    .append(" -> ").append(formatCount(result.verticesAfter)).append("\n")
+                    .append("Triangles: ").append(formatCount(result.trianglesBefore))
+                    .append(" -> ").append(formatCount(result.trianglesAfter)).append("\n")
+                    .append("Geometry buffer: ").append(formatBytes(result.geometryBytesBefore))
+                    .append(" -> ").append(formatBytes(result.geometryBytesAfter)).append("\n");
+        } else if (result.meshSkippedReason != null && !result.meshSkippedReason.isBlank()
+                && !"off".equalsIgnoreCase(result.meshSkippedReason)) {
+            message.append("Mesh reduction skipped: ").append(result.meshSkippedReason).append("\n");
+        }
+        if (message.length() == 0) {
+            message.append("No GLTF/GLB data needed optimization.\n");
+        }
+        message.append("Settings: ").append(result.summary);
+        return message.toString();
     }
 
     private String importedModelAssetPath(File modelFile) {
@@ -1636,6 +1703,20 @@ public class Import3DModelPanel extends DesignerPanel {
         } catch (NumberFormatException e) {
             return 0;
         }
+    }
+
+    private int[] selectedMeshReductionPreset(String value) {
+        if ("Higher quality".equals(value)) {
+            return new int[]{128, 256};
+        }
+        if ("Smallest / fastest".equals(value)) {
+            return new int[]{64, 192};
+        }
+        return new int[]{96, 256};
+    }
+
+    private String formatCount(long value) {
+        return String.format(Locale.ROOT, "%,d", value);
     }
 
     private String formatBytes(long bytes) {
