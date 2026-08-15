@@ -254,7 +254,11 @@ pub(super) fn load_scene_entry_program(script_path: &Path) -> Result<(Program, P
             path = %scene_main.display(),
             "startup script switches to scene"
         );
-        let (program, scene_script_dir) = load_script_with_adds(&scene_main, &mut HashSet::new())?;
+        let (mut program, scene_script_dir) =
+            load_script_with_adds(&scene_main, &mut HashSet::new())?;
+        if program.screen_mode == ScreenMode::Unspecified {
+            program.screen_mode = root_program.screen_mode;
+        }
         return Ok((program, scene_script_dir));
     }
 
@@ -269,9 +273,7 @@ pub(super) fn load_script_with_adds(
     if !visited.insert(script_path.clone()) {
         tracing::warn!(path = %script_path.display(), "skipping recursive Add Code include");
         return Ok((
-            Program {
-                statements: Vec::new(),
-            },
+            Program::new(Vec::new()),
             script_path
                 .parent()
                 .unwrap_or_else(|| Path::new("."))
@@ -295,6 +297,7 @@ pub(super) fn load_script_with_adds(
             .unwrap_or_else(|| "<none>".to_owned())
     ));
     let mut statements = Vec::new();
+    let mut screen_mode = parsed.screen_mode;
 
     for statement in parsed.statements {
         match statement {
@@ -311,7 +314,12 @@ pub(super) fn load_script_with_adds(
                     include_path.display()
                 ));
                 match load_script_with_adds(&include_path, visited) {
-                    Ok((program, _)) => statements.extend(program.statements),
+                    Ok((program, _)) => {
+                        if screen_mode == ScreenMode::Unspecified {
+                            screen_mode = program.screen_mode;
+                        }
+                        statements.extend(program.statements);
+                    }
                     Err(error) => {
                         write_runtime_diagnostic_line(format!(
                             "SCRIPT:ADD_FAIL path={} error={error}",
@@ -329,7 +337,13 @@ pub(super) fn load_script_with_adds(
         }
     }
 
-    Ok((Program { statements }, script_dir))
+    Ok((
+        Program {
+            statements,
+            screen_mode,
+        },
+        script_dir,
+    ))
 }
 
 fn strip_staged_source_metadata(source: &str) -> (String, Option<PathBuf>) {
@@ -425,6 +439,33 @@ mod tests {
                 if matches!(actions.first(), Some(Statement::RunFunction { name, .. }) if name == "show_game_intro_ui")
         )));
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn scene_entry_preserves_root_screen_mode_after_switch() {
+        let root = std::env::temp_dir().join(format!(
+            "scenemax_screen_mode_scene_entry_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let running_dir = root.join("running");
+        let scene_dir = running_dir.join("game_intro");
+        fs::create_dir_all(&scene_dir).unwrap();
+        fs::write(
+            running_dir.join("main"),
+            "screen.mode full\nswitch to \"game_intro\"\n",
+        )
+        .unwrap();
+        fs::write(scene_dir.join("main"), "UI.load \"game_intro_ui\"\n").unwrap();
+
+        let (program, script_root) = load_scene_entry_program(&running_dir.join("main")).unwrap();
+
+        assert_eq!(script_root, scene_dir);
+        assert_eq!(program.screen_mode, ScreenMode::Full);
         let _ = fs::remove_dir_all(root);
     }
 

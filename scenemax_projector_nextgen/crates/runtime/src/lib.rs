@@ -16,6 +16,7 @@ use avian3d::{
     },
     schedule::PhysicsSchedule,
 };
+use bevy::app::AppExit;
 #[cfg(feature = "effekseer_native")]
 use bevy::render::{
     RenderPlugin,
@@ -31,7 +32,7 @@ use bevy::{
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
     ui::IsDefaultUiCamera,
-    window::{PresentMode, WindowResolution},
+    window::{MonitorSelection, PresentMode, WindowMode, WindowResolution},
     winit::WinitSettings,
 };
 use bevy_tnua::{
@@ -48,8 +49,8 @@ use scenemax_parser::{
     LightDeclarationStatement, LightProbeAddStatement, LightType, LoggerLevel, LoggerMessage,
     LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement, ObjectPoolStatement,
     PoolReleaseStatement, PositionExpr, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
-    SceneMaxCollisionShape, SceneMaxVec3, SpritePlayStatement, Statement, UiEaseDirection,
-    UiTargetPath,
+    SceneMaxCollisionShape, SceneMaxVec3, ScreenMode, SpritePlayStatement, Statement,
+    UiEaseDirection, UiTargetPath,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
@@ -147,6 +148,10 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         write_runtime_diagnostic_line("no separate built-in resources folder was discovered");
     }
 
+    let screen_mode = startup_screen_mode(&scene_program);
+    let exit_on_escape = screen_mode_requires_escape_exit(screen_mode);
+    let primary_window = bevy_window_from_settings(&launch.window, screen_mode);
+
     let default_plugins = DefaultPlugins
         .build()
         .disable::<LogPlugin>()
@@ -158,13 +163,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             ..default()
         })
         .set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "SceneMax3D NextGen".to_owned(),
-                present_mode: PresentMode::AutoVsync,
-                resolution: WindowResolution::new(launch.window.width, launch.window.height)
-                    .with_scale_factor_override(1.0),
-                ..default()
-            }),
+            primary_window: Some(primary_window),
             ..default()
         });
 
@@ -270,8 +269,58 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             )
                 .chain(),
         )
-        .add_systems(Update, update_scenemax_perf_debug)
-        .run();
+        .add_systems(Update, update_scenemax_perf_debug);
+
+    if exit_on_escape {
+        app.add_systems(Update, exit_on_escape_in_undecorated_window);
+    }
+
+    app.run();
+}
+
+fn startup_screen_mode(scene_program: &SceneMaxStartupProgram) -> ScreenMode {
+    scene_program
+        .0
+        .as_ref()
+        .map(|program| program.screen_mode)
+        .unwrap_or(ScreenMode::Unspecified)
+}
+
+fn screen_mode_requires_escape_exit(screen_mode: ScreenMode) -> bool {
+    matches!(screen_mode, ScreenMode::Full | ScreenMode::Borderless)
+}
+
+fn bevy_window_from_settings(settings: &WindowSettings, screen_mode: ScreenMode) -> Window {
+    let mut window = Window {
+        title: "SceneMax3D NextGen".to_owned(),
+        present_mode: PresentMode::AutoVsync,
+        resolution: WindowResolution::new(settings.width, settings.height)
+            .with_scale_factor_override(1.0),
+        ..default()
+    };
+
+    match screen_mode {
+        ScreenMode::Full => {
+            window.mode = WindowMode::BorderlessFullscreen(MonitorSelection::Primary);
+            window.decorations = false;
+        }
+        ScreenMode::Borderless => {
+            window.mode = WindowMode::Windowed;
+            window.decorations = false;
+        }
+        ScreenMode::Window | ScreenMode::Unspecified => {}
+    }
+
+    window
+}
+
+fn exit_on_escape_in_undecorated_window(
+    input: Res<ButtonInput<KeyCode>>,
+    mut app_exit: MessageWriter<AppExit>,
+) {
+    if input.just_pressed(KeyCode::Escape) {
+        app_exit.write(AppExit::Success);
+    }
 }
 
 pub fn audit_assets(project: &Path) -> Result<()> {
@@ -1048,6 +1097,39 @@ fn next_effekseer_instance_id() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_screen_mode_creates_borderless_fullscreen_window() {
+        let window = bevy_window_from_settings(
+            &WindowSettings {
+                width: 1600,
+                height: 900,
+            },
+            ScreenMode::Full,
+        );
+
+        assert!(matches!(
+            window.mode,
+            WindowMode::BorderlessFullscreen(MonitorSelection::Primary)
+        ));
+        assert!(!window.decorations);
+        assert!(screen_mode_requires_escape_exit(ScreenMode::Full));
+    }
+
+    #[test]
+    fn borderless_screen_mode_disables_window_decorations() {
+        let window = bevy_window_from_settings(
+            &WindowSettings {
+                width: 1600,
+                height: 900,
+            },
+            ScreenMode::Borderless,
+        );
+
+        assert_eq!(window.mode, WindowMode::Windowed);
+        assert!(!window.decorations);
+        assert!(screen_mode_requires_escape_exit(ScreenMode::Borderless));
+    }
 
     #[test]
     fn default_camera_matches_classic_projector_start_view() {
@@ -2721,14 +2803,14 @@ mod tests {
 
     #[test]
     fn detects_ui_only_programs_as_runtime_content() {
-        assert!(has_ui_runtime_content(&Program {
-            statements: vec![Statement::UiLoad {
+        assert!(has_ui_runtime_content(&Program::new(vec![
+            Statement::UiLoad {
                 name: "game_intro_ui".to_owned(),
-            }],
-        }));
-        assert!(!has_ui_runtime_content(&Program {
-            statements: vec![Statement::Wait { seconds: 0.1 }],
-        }));
+            }
+        ])));
+        assert!(!has_ui_runtime_content(&Program::new(vec![
+            Statement::Wait { seconds: 0.1 }
+        ])));
     }
 
     #[test]

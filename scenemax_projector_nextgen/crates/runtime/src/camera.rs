@@ -653,13 +653,11 @@ mod tests {
             cinematic_rig_json("Other Rig"),
         )
         .unwrap();
-        let program = Program {
-            statements: vec![Statement::ModelDecl {
-                name: "intro_camera".to_owned(),
-                resource: "cinematic.camera.cinematic_rig_1".to_owned(),
-                options: EntityOptions::default(),
-            }],
-        };
+        let program = Program::new(vec![Statement::ModelDecl {
+            name: "intro_camera".to_owned(),
+            resource: "cinematic.camera.cinematic_rig_1".to_owned(),
+            options: EntityOptions::default(),
+        }]);
         let mut camera_system = SceneMaxCameraSystem::default();
 
         load_cinematic_rigs(

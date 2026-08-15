@@ -20,6 +20,25 @@ pub mod generated {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub statements: Vec<Statement>,
+    pub screen_mode: ScreenMode,
+}
+
+impl Program {
+    pub fn new(statements: Vec<Statement>) -> Self {
+        Self {
+            statements,
+            screen_mode: ScreenMode::Unspecified,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ScreenMode {
+    #[default]
+    Unspecified,
+    Window,
+    Full,
+    Borderless,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -774,6 +793,7 @@ pub enum ParseError {
 pub fn parse_program(source: &str) -> Result<Program, ParseError> {
     let logical_lines = logical_lines(source);
     let mut statements = Vec::new();
+    let mut screen_mode = ScreenMode::Unspecified;
     let mut index = 0;
     let mut block_depth = 0usize;
     let mut pending_guard = None;
@@ -793,6 +813,14 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
 
         if block_depth > 0 {
             block_depth = update_block_depth(block_depth, line);
+            index += 1;
+            continue;
+        }
+
+        if let Some(mode) = parse_screen_mode(line) {
+            if screen_mode == ScreenMode::Unspecified {
+                screen_mode = mode;
+            }
             index += 1;
             continue;
         }
@@ -908,7 +936,10 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
         index += 1;
     }
 
-    Ok(Program { statements })
+    Ok(Program {
+        statements,
+        screen_mode,
+    })
 }
 
 fn opens_runtime_block(line: &str) -> bool {
@@ -2283,6 +2314,27 @@ fn parse_debug_mode_statement(line: &str) -> Option<Statement> {
     match line.trim().to_ascii_lowercase().as_str() {
         "debug.on" => Some(Statement::DebugMode { enabled: true }),
         "debug.off" => Some(Statement::DebugMode { enabled: false }),
+        _ => None,
+    }
+}
+
+fn parse_screen_mode(line: &str) -> Option<ScreenMode> {
+    let mode_text = strip_keyword_prefix(line.trim(), "screen.mode")?.trim();
+    if mode_text.is_empty() {
+        return None;
+    }
+    let normalized = mode_text.to_ascii_lowercase();
+    if normalized.starts_with("no border") {
+        return Some(ScreenMode::Borderless);
+    }
+    let mode = mode_text
+        .split(|value: char| value.is_whitespace() || value == ',' || value == ':')
+        .next()
+        .unwrap_or_default();
+    match mode.to_ascii_lowercase().as_str() {
+        "window" => Some(ScreenMode::Window),
+        "full" | "fullscreen" => Some(ScreenMode::Full),
+        "borderless" | "noborder" | "noborders" => Some(ScreenMode::Borderless),
         _ => None,
     }
 }
@@ -5593,24 +5645,43 @@ mod tests {
 
         assert_eq!(
             program,
-            Program {
-                statements: vec![
-                    Statement::ModelDecl {
-                        name: "d".to_owned(),
-                        resource: "dragon".to_owned(),
-                        options: EntityOptions::default(),
-                    },
-                    Statement::Animate(AnimationStatement {
-                        target: "d".to_owned(),
-                        clip: "fly".to_owned(),
-                        speed: 1.0,
-                        speed_value: AssignmentValue::Number(1.0),
-                        looped: true,
-                        blocking: false,
-                    }),
-                ],
-            }
+            Program::new(vec![
+                Statement::ModelDecl {
+                    name: "d".to_owned(),
+                    resource: "dragon".to_owned(),
+                    options: EntityOptions::default(),
+                },
+                Statement::Animate(AnimationStatement {
+                    target: "d".to_owned(),
+                    clip: "fly".to_owned(),
+                    speed: 1.0,
+                    speed_value: AssignmentValue::Number(1.0),
+                    looped: true,
+                    blocking: false,
+                }),
+            ])
         );
+    }
+
+    #[test]
+    fn parses_screen_mode_metadata() {
+        let program = parse_program("screen.mode full\nscreen.mode window\nd=>dragon").unwrap();
+
+        assert_eq!(program.screen_mode, ScreenMode::Full);
+        assert!(matches!(
+            program.statements.first(),
+            Some(Statement::ModelDecl { name, .. }) if name == "d"
+        ));
+    }
+
+    #[test]
+    fn parses_borderless_screen_mode_metadata() {
+        let program = parse_program("Screen.mode borderless").unwrap();
+        let no_borders_program = parse_program("screen.mode no borders").unwrap();
+
+        assert_eq!(program.screen_mode, ScreenMode::Borderless);
+        assert_eq!(no_borders_program.screen_mode, ScreenMode::Borderless);
+        assert!(program.statements.is_empty());
     }
 
     #[test]
