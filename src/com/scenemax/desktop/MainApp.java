@@ -92,6 +92,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import static javax.swing.JOptionPane.YES_OPTION;
 
@@ -164,6 +165,10 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private IdePluginHostContext pluginHostContext;
     private final java.util.List<ISceneMaxPlugin> enhancedPlugins = new ArrayList<>();
     private boolean launcherRunInProgress;
+    private JDialog nextGenLaunchProgressDialog;
+    private JLabel nextGenLaunchProgressLabel;
+    private JProgressBar nextGenLaunchProgressBar;
+    private javax.swing.Timer nextGenLaunchAutoHideTimer;
     // (Designer panels are managed per-tab inside EditorTabPanel)
 
     private static final class AutomationRunSource {
@@ -4794,6 +4799,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     private boolean prepareAndRunLauncher(RunLauncherTask.RuntimeTarget runtimeTarget) {
         if (launcherRunInProgress) {
+            showLauncherAlreadyRunning(runtimeTarget);
             return false;
         }
 
@@ -4809,6 +4815,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         File rootMain = findProjectRootMainFile();
         if (rootMain == null) {
             btnRunScript.setEnabled(true);
+            btnRecordScene.setEnabled(true);
             JOptionPane.showMessageDialog(null,
                     "Could not find a 'main' file under the project's scripts folder.",
                     "Run Error", JOptionPane.ERROR_MESSAGE);
@@ -4828,6 +4835,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     private boolean runActiveEditorScriptFile(RunLauncherTask.RuntimeTarget runtimeTarget) {
         if (launcherRunInProgress) {
+            showLauncherAlreadyRunning(runtimeTarget);
             return false;
         }
 
@@ -4859,12 +4867,16 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     private boolean runScriptFile(File scriptFile, RunLauncherTask.RuntimeTarget runtimeTarget) {
         if (launcherRunInProgress) {
+            showLauncherAlreadyRunning(runtimeTarget);
             return false;
         }
 
         btnRunScript.setEnabled(false);
         btnRecordScene.setEnabled(false);
         launcherRunInProgress = true;
+        if (runtimeTarget == RunLauncherTask.RuntimeTarget.NEXTGEN) {
+            showNextGenLaunchProgress("Preparing NextGen run...");
+        }
 
         String prg;
         EditorTabPanel.TabData active = editorTabPanel != null ? editorTabPanel.getActiveTab() : null;
@@ -4879,7 +4891,9 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             } catch (IOException e) {
                 e.printStackTrace();
                 btnRunScript.setEnabled(true);
+                btnRecordScene.setEnabled(true);
                 launcherRunInProgress = false;
+                hideNextGenLaunchProgress();
                 JOptionPane.showMessageDialog(null,
                         "Error reading script file '" + scriptFile.getName() + "': " + e.getMessage(),
                         "Run Error", JOptionPane.ERROR_MESSAGE);
@@ -4887,15 +4901,110 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             }
         }
 
+        Consumer<String> launchStatusConsumer = runtimeTarget == RunLauncherTask.RuntimeTarget.NEXTGEN
+                ? this::updateNextGenLaunchProgress
+                : null;
         new RunLauncherTask(scriptFile.getAbsolutePath(), prg, new Runnable() {
             @Override
             public void run() {
                 launcherRunInProgress = false;
                 btnRunScript.setEnabled(true);
+                btnRecordScene.setEnabled(true);
+                hideNextGenLaunchProgress();
             }
-        }, runtimeTarget).execute();
+        }, runtimeTarget, launchStatusConsumer).execute();
 
         return true;
+    }
+
+    private void showLauncherAlreadyRunning(RunLauncherTask.RuntimeTarget runtimeTarget) {
+        if (runtimeTarget == RunLauncherTask.RuntimeTarget.NEXTGEN) {
+            showNextGenLaunchProgress("Bevy projector is already starting or running...");
+            Toolkit.getDefaultToolkit().beep();
+        }
+    }
+
+    private void showNextGenLaunchProgress(String message) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> showNextGenLaunchProgress(message));
+            return;
+        }
+        if (nextGenLaunchProgressDialog == null) {
+            nextGenLaunchProgressLabel = new JLabel(message);
+            nextGenLaunchProgressLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
+
+            nextGenLaunchProgressBar = new JProgressBar();
+            nextGenLaunchProgressBar.setIndeterminate(true);
+            nextGenLaunchProgressBar.setStringPainted(true);
+            nextGenLaunchProgressBar.setString("Starting...");
+
+            JLabel note = new JLabel("<html>First launch after Rust/Bevy changes can compile the projector before the window appears.</html>");
+            note.setForeground(UIManager.getColor("Label.disabledForeground"));
+
+            JPanel content = new JPanel(new BorderLayout(0, 8));
+            content.setBorder(BorderFactory.createEmptyBorder(16, 18, 16, 18));
+            content.add(nextGenLaunchProgressLabel, BorderLayout.NORTH);
+            content.add(nextGenLaunchProgressBar, BorderLayout.CENTER);
+            content.add(note, BorderLayout.SOUTH);
+
+            nextGenLaunchProgressDialog = new JDialog(this, "Starting Bevy Projector", false);
+            nextGenLaunchProgressDialog.setDefaultCloseOperation(WindowConstants.HIDE_ON_CLOSE);
+            nextGenLaunchProgressDialog.setContentPane(content);
+            nextGenLaunchProgressDialog.setSize(440, 150);
+            nextGenLaunchProgressDialog.setLocationRelativeTo(this);
+        }
+        stopNextGenLaunchAutoHideTimer();
+        updateNextGenLaunchProgress(message);
+        if (!nextGenLaunchProgressDialog.isVisible()) {
+            nextGenLaunchProgressDialog.setLocationRelativeTo(this);
+            nextGenLaunchProgressDialog.setVisible(true);
+        }
+    }
+
+    private void updateNextGenLaunchProgress(String message) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> updateNextGenLaunchProgress(message));
+            return;
+        }
+        if (message == null || message.isBlank()) {
+            return;
+        }
+        if (nextGenLaunchProgressDialog == null) {
+            showNextGenLaunchProgress(message);
+            return;
+        }
+        nextGenLaunchProgressLabel.setText(message);
+        if (nextGenLaunchProgressBar != null) {
+            nextGenLaunchProgressBar.setString("Working...");
+        }
+        if (message.startsWith("Bevy projector process started.")) {
+            scheduleNextGenLaunchProgressHide();
+        }
+    }
+
+    private void scheduleNextGenLaunchProgressHide() {
+        stopNextGenLaunchAutoHideTimer();
+        nextGenLaunchAutoHideTimer = new javax.swing.Timer(1800, e -> hideNextGenLaunchProgress());
+        nextGenLaunchAutoHideTimer.setRepeats(false);
+        nextGenLaunchAutoHideTimer.start();
+    }
+
+    private void stopNextGenLaunchAutoHideTimer() {
+        if (nextGenLaunchAutoHideTimer != null) {
+            nextGenLaunchAutoHideTimer.stop();
+            nextGenLaunchAutoHideTimer = null;
+        }
+    }
+
+    private void hideNextGenLaunchProgress() {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(this::hideNextGenLaunchProgress);
+            return;
+        }
+        stopNextGenLaunchAutoHideTimer();
+        if (nextGenLaunchProgressDialog != null) {
+            nextGenLaunchProgressDialog.setVisible(false);
+        }
     }
 
     /**
