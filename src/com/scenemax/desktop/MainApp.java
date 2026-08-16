@@ -3219,13 +3219,22 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     private void openShaderDesignerDocument(File f) {
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject != null && activeProject.isNextGenProjector()) {
+            BevyShaderDesignerLauncher.launch(this, activeProject, f);
+            lastSelectedFilePath = f.getAbsolutePath();
+            lastSelectedNodeIsFile = true;
+            btnRunScript.setEnabled(false);
+            saveSelectedTreeNodePosition(f.getParentFile().getPath(), f.getName());
+            return;
+        }
+
         if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
             editorTabPanel.openShaderDesignerFile(f.getAbsolutePath(), null);
             return;
         }
 
         String projectPath = null;
-        SceneMaxProject activeProject = Util.getActiveProject();
         if (activeProject != null) {
             projectPath = activeProject.path;
         }

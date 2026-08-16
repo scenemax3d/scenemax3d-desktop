@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use scenemax_runtime::{ProjectorLaunch, WindowSettings};
+use scenemax_runtime::{BevyShaderDesignerLaunch, ProjectorLaunch, WindowSettings};
 use tracing_subscriber::{EnvFilter, fmt};
 
 #[derive(Debug, Parser)]
@@ -50,6 +50,15 @@ enum Command {
         #[arg(long)]
         model: String,
     },
+
+    /// Open the Bevy-native shader designer for a SceneMax shader document.
+    ShaderDesigner {
+        #[arg(long)]
+        shader: PathBuf,
+
+        #[arg(long)]
+        project_root: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -88,6 +97,15 @@ fn main() -> Result<()> {
         Command::ResolveModel { project, model } => {
             let path = scenemax_runtime::resolve_model_asset_for_project(&project, &model)?;
             println!("{model} -> {path}");
+        }
+        Command::ShaderDesigner {
+            shader,
+            project_root,
+        } => {
+            scenemax_runtime::run_bevy_shader_designer(BevyShaderDesignerLaunch {
+                shader,
+                project_root,
+            });
         }
     }
 
