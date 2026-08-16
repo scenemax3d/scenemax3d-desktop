@@ -1726,6 +1726,7 @@ class ProjectInventoryPanel extends JPanel {
                 String lower = file.getName().toLowerCase(Locale.ROOT);
                 return lower.endsWith(".smdesign") || lower.endsWith(".smui")
                         || lower.endsWith(".smeffectdesign") || lower.endsWith(".smshader")
+                        || lower.endsWith(BevyShaderDocument.FILE_EXTENSION)
                         || lower.endsWith(".smenvshader") || lower.endsWith(".mat")
                         || lower.endsWith(".smweapon") || lower.endsWith(".smmotion");
             });
@@ -1738,7 +1739,9 @@ class ProjectInventoryPanel extends JPanel {
                     category = CATEGORY_UI;
                 } else if (lower.endsWith(".smeffectdesign")) {
                     category = CATEGORY_EFFECTS;
-                } else if (lower.endsWith(".smshader") || lower.endsWith(".smenvshader")) {
+                } else if (lower.endsWith(".smshader")
+                        || lower.endsWith(BevyShaderDocument.FILE_EXTENSION)
+                        || lower.endsWith(".smenvshader")) {
                     category = CATEGORY_SHADERS;
                 } else if (lower.endsWith(".smweapon")) {
                     category = CATEGORY_WEAPONS;

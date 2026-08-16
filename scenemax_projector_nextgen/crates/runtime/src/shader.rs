@@ -1,4 +1,5 @@
 use super::*;
+use bevy::{math::Affine2, pbr::ParallaxMappingMethod, render::render_resource::Face};
 
 const DEFAULT_AMBIENT_BRIGHTNESS: f32 = 220.0;
 const DEFAULT_DIRECTIONAL_ILLUMINANCE: f32 = 24_000.0;
@@ -9,6 +10,33 @@ pub(super) struct SceneMaxObjectShader {
     main_color: [f32; 4],
     glow_strength: f32,
     transparency: f32,
+    alpha_mode: String,
+    alpha_cutoff: f32,
+    roughness: f32,
+    metallic: f32,
+    reflectance: f32,
+    emissive_exposure_weight: f32,
+    diffuse_transmission: f32,
+    specular_transmission: f32,
+    thickness: f32,
+    ior: f32,
+    attenuation_distance: f32,
+    clearcoat: f32,
+    clearcoat_roughness: f32,
+    anisotropy_strength: f32,
+    anisotropy_rotation: f32,
+    cull_mode: String,
+    double_sided: bool,
+    unlit: bool,
+    fog_enabled: bool,
+    flip_normal_map_y: bool,
+    depth_bias: f32,
+    parallax_depth_scale: f32,
+    parallax_layers: f32,
+    parallax_method: String,
+    lightmap_exposure: f32,
+    uv_scale: [f32; 2],
+    uv_offset: [f32; 2],
     use_original_texture: bool,
     blocks: HashSet<String>,
 }
@@ -274,6 +302,9 @@ impl SceneMaxObjectShader {
             material.base_color_texture = None;
             material.normal_map_texture = None;
             material.emissive_texture = None;
+            material.metallic_roughness_texture = None;
+            material.occlusion_texture = None;
+            material.depth_map = None;
         }
         if self.blocks.contains("GLOW")
             || self.blocks.contains("PULSE")
@@ -287,10 +318,94 @@ impl SceneMaxObjectShader {
                 1.0,
             );
         }
-        if alpha < 0.999 || self.blocks.contains("TRANSPARENCY") {
-            material.alpha_mode = AlphaMode::Blend;
-        }
+        material.emissive_exposure_weight = self.emissive_exposure_weight;
+        material.perceptual_roughness = self.roughness;
+        material.metallic = self.metallic;
+        material.reflectance = self.reflectance;
+        material.diffuse_transmission = self.diffuse_transmission;
+        material.specular_transmission = self.specular_transmission;
+        material.thickness = self.thickness;
+        material.ior = self.ior;
+        material.attenuation_color = Color::srgba(
+            self.main_color[0],
+            self.main_color[1],
+            self.main_color[2],
+            1.0,
+        );
+        material.attenuation_distance = if self.attenuation_distance <= 0.0 {
+            f32::INFINITY
+        } else {
+            self.attenuation_distance
+        };
+        material.specular_tint = Color::srgba(
+            self.main_color[0],
+            self.main_color[1],
+            self.main_color[2],
+            1.0,
+        );
+        material.clearcoat = self.clearcoat;
+        material.clearcoat_perceptual_roughness = self.clearcoat_roughness;
+        material.anisotropy_strength = self.anisotropy_strength;
+        material.anisotropy_rotation = self.anisotropy_rotation;
+        material.double_sided = self.double_sided;
+        material.cull_mode = cull_mode_from_key(&self.cull_mode);
+        material.unlit = self.unlit;
+        material.fog_enabled = self.fog_enabled;
+        material.flip_normal_map_y = self.flip_normal_map_y;
+        material.alpha_mode =
+            alpha_mode_from_key(&self.alpha_mode, alpha, self.alpha_cutoff, &self.blocks);
+        material.depth_bias = self.depth_bias;
+        material.parallax_depth_scale = self.parallax_depth_scale;
+        material.max_parallax_layer_count = self.parallax_layers;
+        material.parallax_mapping_method = parallax_method_from_key(&self.parallax_method);
+        material.lightmap_exposure = self.lightmap_exposure;
+        material.uv_transform = Affine2::from_scale_angle_translation(
+            Vec2::new(self.uv_scale[0], self.uv_scale[1]),
+            0.0,
+            Vec2::new(self.uv_offset[0], self.uv_offset[1]),
+        );
         material
+    }
+}
+
+fn alpha_mode_from_key(
+    key: &str,
+    alpha: f32,
+    alpha_cutoff: f32,
+    blocks: &HashSet<String>,
+) -> AlphaMode {
+    match key {
+        value if value.eq_ignore_ascii_case("OPAQUE") => AlphaMode::Opaque,
+        value if value.eq_ignore_ascii_case("MASK") => AlphaMode::Mask(alpha_cutoff),
+        value if value.eq_ignore_ascii_case("BLEND") => AlphaMode::Blend,
+        value if value.eq_ignore_ascii_case("PREMULTIPLIED") => AlphaMode::Premultiplied,
+        value if value.eq_ignore_ascii_case("ALPHA_TO_COVERAGE") => AlphaMode::AlphaToCoverage,
+        value if value.eq_ignore_ascii_case("ADD") => AlphaMode::Add,
+        value if value.eq_ignore_ascii_case("MULTIPLY") => AlphaMode::Multiply,
+        _ => {
+            if alpha < 0.999 || blocks.contains("TRANSPARENCY") || blocks.contains("DISSOLVE") {
+                AlphaMode::Blend
+            } else {
+                AlphaMode::Opaque
+            }
+        }
+    }
+}
+
+fn cull_mode_from_key(key: &str) -> Option<Face> {
+    match key {
+        value if value.eq_ignore_ascii_case("FRONT") => Some(Face::Front),
+        value if value.eq_ignore_ascii_case("NONE") => None,
+        _ => Some(Face::Back),
+    }
+}
+
+fn parallax_method_from_key(key: &str) -> ParallaxMappingMethod {
+    match key {
+        value if value.eq_ignore_ascii_case("RELIEF") => {
+            ParallaxMappingMethod::Relief { max_steps: 4 }
+        }
+        _ => ParallaxMappingMethod::Occlusion,
     }
 }
 
@@ -321,7 +436,7 @@ fn resolve_object_shader(
         })
         .and_then(|document| document.into_object_shader(name))
         .or_else(|| {
-            find_source_shader_document(name, ".smshader", asset_root)
+            find_source_shader_document(name, ".bvshader", asset_root)
                 .and_then(|value| ShaderDocumentSource::Json(value).into_object_shader(name))
         })
 }
@@ -389,6 +504,33 @@ impl ShaderDocumentSource {
                 main_color: rgba_array(value.get("mainColor"), [1.0, 1.0, 1.0, 1.0]),
                 glow_strength: f32_field(&value, "glowStrength", 0.15),
                 transparency: f32_field(&value, "transparency", 0.0),
+                alpha_mode: string_field(&value, "alphaMode", "AUTO"),
+                alpha_cutoff: f32_field(&value, "alphaCutoff", 0.5),
+                roughness: f32_field(&value, "roughness", 0.52),
+                metallic: f32_field(&value, "metallic", 0.0),
+                reflectance: f32_field(&value, "reflectance", 0.5),
+                emissive_exposure_weight: f32_field(&value, "emissiveExposureWeight", 0.0),
+                diffuse_transmission: f32_field(&value, "diffuseTransmission", 0.0),
+                specular_transmission: f32_field(&value, "specularTransmission", 0.0),
+                thickness: f32_field(&value, "thickness", 0.0),
+                ior: f32_field(&value, "ior", 1.5),
+                attenuation_distance: f32_field(&value, "attenuationDistance", 20.0),
+                clearcoat: f32_field(&value, "clearcoat", 0.0),
+                clearcoat_roughness: f32_field(&value, "clearcoatRoughness", 0.5),
+                anisotropy_strength: f32_field(&value, "anisotropyStrength", 0.0),
+                anisotropy_rotation: f32_field(&value, "anisotropyRotation", 0.0),
+                cull_mode: string_field(&value, "cullMode", "BACK"),
+                double_sided: bool_field(&value, "doubleSided", false),
+                unlit: bool_field(&value, "unlit", false),
+                fog_enabled: bool_field(&value, "fogEnabled", true),
+                flip_normal_map_y: bool_field(&value, "flipNormalMapY", false),
+                depth_bias: f32_field(&value, "depthBias", 0.0),
+                parallax_depth_scale: f32_field(&value, "parallaxDepthScale", 0.1),
+                parallax_layers: f32_field(&value, "parallaxLayers", 16.0),
+                parallax_method: string_field(&value, "parallaxMethod", "OCCLUSION"),
+                lightmap_exposure: f32_field(&value, "lightmapExposure", 1.0),
+                uv_scale: vec2_array(value.get("uvScale"), [1.0, 1.0]),
+                uv_offset: vec2_array(value.get("uvOffset"), [0.0, 0.0]),
                 use_original_texture: bool_field(&value, "useOriginalTexture", true),
                 blocks: string_set(value.get("blocks")),
             }),
@@ -488,6 +630,33 @@ fn parse_j3m_object_shader(source: &str, fallback_name: &str) -> SceneMaxObjectS
         main_color: [1.0, 1.0, 1.0, 1.0],
         glow_strength: 0.15,
         transparency: 0.0,
+        alpha_mode: "AUTO".to_owned(),
+        alpha_cutoff: 0.5,
+        roughness: 0.52,
+        metallic: 0.0,
+        reflectance: 0.5,
+        emissive_exposure_weight: 0.0,
+        diffuse_transmission: 0.0,
+        specular_transmission: 0.0,
+        thickness: 0.0,
+        ior: 1.5,
+        attenuation_distance: 20.0,
+        clearcoat: 0.0,
+        clearcoat_roughness: 0.5,
+        anisotropy_strength: 0.0,
+        anisotropy_rotation: 0.0,
+        cull_mode: "BACK".to_owned(),
+        double_sided: false,
+        unlit: false,
+        fog_enabled: true,
+        flip_normal_map_y: false,
+        depth_bias: 0.0,
+        parallax_depth_scale: 0.1,
+        parallax_layers: 16.0,
+        parallax_method: "OCCLUSION".to_owned(),
+        lightmap_exposure: 1.0,
+        uv_scale: [1.0, 1.0],
+        uv_offset: [0.0, 0.0],
         use_original_texture: true,
         blocks: HashSet::from(["TINT".to_owned()]),
     };
@@ -626,6 +795,14 @@ fn bool_field(value: &serde_json::Value, key: &str, fallback: bool) -> bool {
         .unwrap_or(fallback)
 }
 
+fn string_field(value: &serde_json::Value, key: &str, fallback: &str) -> String {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(fallback)
+        .to_owned()
+}
+
 fn f32_field(value: &serde_json::Value, key: &str, fallback: f32) -> f32 {
     value
         .get(key)
@@ -676,6 +853,19 @@ fn rgba_array(value: Option<&serde_json::Value>, fallback: [f32; 4]) -> [f32; 4]
         }
     }
     rgba
+}
+
+fn vec2_array(value: Option<&serde_json::Value>, fallback: [f32; 2]) -> [f32; 2] {
+    let Some(values) = value.and_then(serde_json::Value::as_array) else {
+        return fallback;
+    };
+    let mut out = fallback;
+    for (index, value) in values.iter().take(2).enumerate() {
+        if let Some(value) = value.as_f64() {
+            out[index] = value as f32;
+        }
+    }
+    out
 }
 
 fn parse_float_array(value: &str, fallback: [f32; 4]) -> [f32; 4] {

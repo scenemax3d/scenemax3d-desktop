@@ -1,6 +1,12 @@
 use super::*;
 use bevy::{
-    gltf::GltfAssetLabel, ui::RelativeCursorPosition, world_serialization::WorldInstanceReady,
+    gltf::GltfAssetLabel,
+    input::mouse::{MouseScrollUnit, MouseWheel},
+    math::Affine2,
+    pbr::ParallaxMappingMethod,
+    render::render_resource::Face,
+    ui::RelativeCursorPosition,
+    world_serialization::WorldInstanceReady,
 };
 
 #[derive(Debug, Clone)]
@@ -179,6 +185,28 @@ enum DesignerParam {
     Blue,
     Glow,
     Transparency,
+    AlphaCutoff,
+    Roughness,
+    Metallic,
+    Reflectance,
+    EmissiveExposure,
+    DiffuseTransmission,
+    SpecularTransmission,
+    Thickness,
+    Ior,
+    AttenuationDistance,
+    Clearcoat,
+    ClearcoatRoughness,
+    AnisotropyStrength,
+    AnisotropyRotation,
+    DepthBias,
+    ParallaxDepth,
+    ParallaxLayers,
+    LightmapExposure,
+    UvScaleX,
+    UvScaleY,
+    UvOffsetX,
+    UvOffsetY,
     Scroll,
     Pulse,
     Edge,
@@ -186,15 +214,49 @@ enum DesignerParam {
 }
 
 impl DesignerParam {
-    const ALL: [DesignerParam; 9] = [
+    const COLOR: [DesignerParam; 3] = [
         DesignerParam::Red,
         DesignerParam::Green,
         DesignerParam::Blue,
+    ];
+
+    const PBR: [DesignerParam; 9] = [
+        DesignerParam::Roughness,
+        DesignerParam::Metallic,
+        DesignerParam::Reflectance,
         DesignerParam::Glow,
+        DesignerParam::EmissiveExposure,
+        DesignerParam::Clearcoat,
+        DesignerParam::ClearcoatRoughness,
+        DesignerParam::AnisotropyStrength,
+        DesignerParam::AnisotropyRotation,
+    ];
+
+    const TRANSPARENCY: [DesignerParam; 5] = [
         DesignerParam::Transparency,
+        DesignerParam::AlphaCutoff,
+        DesignerParam::DiffuseTransmission,
+        DesignerParam::SpecularTransmission,
+        DesignerParam::Thickness,
+    ];
+
+    const UV_AND_DEPTH: [DesignerParam; 8] = [
+        DesignerParam::UvScaleX,
+        DesignerParam::UvScaleY,
+        DesignerParam::UvOffsetX,
+        DesignerParam::UvOffsetY,
+        DesignerParam::DepthBias,
+        DesignerParam::ParallaxDepth,
+        DesignerParam::ParallaxLayers,
+        DesignerParam::LightmapExposure,
+    ];
+
+    const EFFECT: [DesignerParam; 6] = [
         DesignerParam::Scroll,
         DesignerParam::Pulse,
         DesignerParam::Edge,
+        DesignerParam::AttenuationDistance,
+        DesignerParam::Ior,
         DesignerParam::Scale,
     ];
 
@@ -205,6 +267,28 @@ impl DesignerParam {
             DesignerParam::Blue => "Blue",
             DesignerParam::Glow => "Glow",
             DesignerParam::Transparency => "Transparency",
+            DesignerParam::AlphaCutoff => "Alpha Cutoff",
+            DesignerParam::Roughness => "Roughness",
+            DesignerParam::Metallic => "Metallic",
+            DesignerParam::Reflectance => "Reflectance",
+            DesignerParam::EmissiveExposure => "Emissive Exposure",
+            DesignerParam::DiffuseTransmission => "Diffuse Transmission",
+            DesignerParam::SpecularTransmission => "Specular Transmission",
+            DesignerParam::Thickness => "Thickness",
+            DesignerParam::Ior => "IOR",
+            DesignerParam::AttenuationDistance => "Attenuation",
+            DesignerParam::Clearcoat => "Clearcoat",
+            DesignerParam::ClearcoatRoughness => "Clearcoat Roughness",
+            DesignerParam::AnisotropyStrength => "Anisotropy",
+            DesignerParam::AnisotropyRotation => "Aniso Rotation",
+            DesignerParam::DepthBias => "Depth Bias",
+            DesignerParam::ParallaxDepth => "Parallax Depth",
+            DesignerParam::ParallaxLayers => "Parallax Layers",
+            DesignerParam::LightmapExposure => "Lightmap Exposure",
+            DesignerParam::UvScaleX => "UV Scale X",
+            DesignerParam::UvScaleY => "UV Scale Y",
+            DesignerParam::UvOffsetX => "UV Offset X",
+            DesignerParam::UvOffsetY => "UV Offset Y",
             DesignerParam::Scroll => "UV Scroll",
             DesignerParam::Pulse => "Pulse",
             DesignerParam::Edge => "Edge",
@@ -216,11 +300,160 @@ impl DesignerParam {
         match self {
             DesignerParam::Red | DesignerParam::Green | DesignerParam::Blue => (0.0, 1.0, 0.04),
             DesignerParam::Glow => (0.0, 5.0, 0.10),
-            DesignerParam::Transparency => (0.0, 1.0, 0.04),
+            DesignerParam::Transparency | DesignerParam::AlphaCutoff => (0.0, 1.0, 0.04),
+            DesignerParam::Roughness
+            | DesignerParam::Metallic
+            | DesignerParam::Reflectance
+            | DesignerParam::DiffuseTransmission
+            | DesignerParam::SpecularTransmission
+            | DesignerParam::Clearcoat
+            | DesignerParam::ClearcoatRoughness
+            | DesignerParam::AnisotropyStrength => (0.0, 1.0, 0.04),
+            DesignerParam::EmissiveExposure => (0.0, 1.0, 0.05),
+            DesignerParam::Thickness => (0.0, 2.0, 0.05),
+            DesignerParam::Ior => (1.0, 2.5, 0.03),
+            DesignerParam::AttenuationDistance => (0.0, 20.0, 0.25),
+            DesignerParam::AnisotropyRotation => (-1.0, 1.0, 0.04),
+            DesignerParam::DepthBias => (-200.0, 200.0, 5.0),
+            DesignerParam::ParallaxDepth => (0.0, 0.3, 0.01),
+            DesignerParam::ParallaxLayers => (1.0, 64.0, 1.0),
+            DesignerParam::LightmapExposure => (0.0, 4.0, 0.10),
+            DesignerParam::UvScaleX | DesignerParam::UvScaleY => (0.1, 8.0, 0.10),
+            DesignerParam::UvOffsetX | DesignerParam::UvOffsetY => (-2.0, 2.0, 0.05),
             DesignerParam::Scroll | DesignerParam::Pulse => (0.0, 5.0, 0.10),
             DesignerParam::Edge => (0.01, 1.0, 0.04),
             DesignerParam::Scale => (0.1, 10.0, 0.10),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DesignerAlphaMode {
+    Auto,
+    Opaque,
+    Mask,
+    Blend,
+    Premultiplied,
+    AlphaToCoverage,
+    Add,
+    Multiply,
+}
+
+impl DesignerAlphaMode {
+    const ALL: [DesignerAlphaMode; 8] = [
+        DesignerAlphaMode::Auto,
+        DesignerAlphaMode::Opaque,
+        DesignerAlphaMode::Mask,
+        DesignerAlphaMode::Blend,
+        DesignerAlphaMode::Premultiplied,
+        DesignerAlphaMode::AlphaToCoverage,
+        DesignerAlphaMode::Add,
+        DesignerAlphaMode::Multiply,
+    ];
+
+    fn key(self) -> &'static str {
+        match self {
+            DesignerAlphaMode::Auto => "AUTO",
+            DesignerAlphaMode::Opaque => "OPAQUE",
+            DesignerAlphaMode::Mask => "MASK",
+            DesignerAlphaMode::Blend => "BLEND",
+            DesignerAlphaMode::Premultiplied => "PREMULTIPLIED",
+            DesignerAlphaMode::AlphaToCoverage => "ALPHA_TO_COVERAGE",
+            DesignerAlphaMode::Add => "ADD",
+            DesignerAlphaMode::Multiply => "MULTIPLY",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            DesignerAlphaMode::Auto => "Auto",
+            DesignerAlphaMode::Opaque => "Opaque",
+            DesignerAlphaMode::Mask => "Mask",
+            DesignerAlphaMode::Blend => "Blend",
+            DesignerAlphaMode::Premultiplied => "Premult",
+            DesignerAlphaMode::AlphaToCoverage => "Coverage",
+            DesignerAlphaMode::Add => "Add",
+            DesignerAlphaMode::Multiply => "Multiply",
+        }
+    }
+
+    fn from_key(value: &str) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|mode| mode.key().eq_ignore_ascii_case(value))
+            .unwrap_or(DesignerAlphaMode::Auto)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DesignerCullMode {
+    Back,
+    Front,
+    None,
+}
+
+impl DesignerCullMode {
+    const ALL: [DesignerCullMode; 3] = [
+        DesignerCullMode::Back,
+        DesignerCullMode::Front,
+        DesignerCullMode::None,
+    ];
+
+    fn key(self) -> &'static str {
+        match self {
+            DesignerCullMode::Back => "BACK",
+            DesignerCullMode::Front => "FRONT",
+            DesignerCullMode::None => "NONE",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            DesignerCullMode::Back => "Cull Back",
+            DesignerCullMode::Front => "Cull Front",
+            DesignerCullMode::None => "No Cull",
+        }
+    }
+
+    fn from_key(value: &str) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|mode| mode.key().eq_ignore_ascii_case(value))
+            .unwrap_or(DesignerCullMode::Back)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DesignerParallaxMethod {
+    Occlusion,
+    Relief,
+}
+
+impl DesignerParallaxMethod {
+    const ALL: [DesignerParallaxMethod; 2] = [
+        DesignerParallaxMethod::Occlusion,
+        DesignerParallaxMethod::Relief,
+    ];
+
+    fn key(self) -> &'static str {
+        match self {
+            DesignerParallaxMethod::Occlusion => "OCCLUSION",
+            DesignerParallaxMethod::Relief => "RELIEF",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            DesignerParallaxMethod::Occlusion => "Occlusion",
+            DesignerParallaxMethod::Relief => "Relief",
+        }
+    }
+
+    fn from_key(value: &str) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|method| method.key().eq_ignore_ascii_case(value))
+            .unwrap_or(DesignerParallaxMethod::Occlusion)
     }
 }
 
@@ -278,7 +511,14 @@ enum DesignerAction {
     ToggleBlock(DesignerBlock),
     Adjust(DesignerParam, f32),
     Palette(DesignerPalette),
+    AlphaMode(DesignerAlphaMode),
+    CullMode(DesignerCullMode),
+    ParallaxMethod(DesignerParallaxMethod),
     ToggleOriginalTexture,
+    ToggleDoubleSided,
+    ToggleUnlit,
+    ToggleFog,
+    ToggleFlipNormalMapY,
     Save,
     Reset,
     Close,
@@ -299,6 +539,33 @@ struct BevyShaderDesignerState {
     glow_strength: f32,
     pulse_speed: f32,
     transparency: f32,
+    alpha_mode: DesignerAlphaMode,
+    alpha_cutoff: f32,
+    roughness: f32,
+    metallic: f32,
+    reflectance: f32,
+    emissive_exposure_weight: f32,
+    diffuse_transmission: f32,
+    specular_transmission: f32,
+    thickness: f32,
+    ior: f32,
+    attenuation_distance: f32,
+    clearcoat: f32,
+    clearcoat_roughness: f32,
+    anisotropy_strength: f32,
+    anisotropy_rotation: f32,
+    cull_mode: DesignerCullMode,
+    double_sided: bool,
+    unlit: bool,
+    fog_enabled: bool,
+    flip_normal_map_y: bool,
+    depth_bias: f32,
+    parallax_depth_scale: f32,
+    parallax_layers: f32,
+    parallax_method: DesignerParallaxMethod,
+    lightmap_exposure: f32,
+    uv_scale: [f32; 2],
+    uv_offset: [f32; 2],
     edge_width: f32,
     scroll_speed: f32,
     preview_scale: f32,
@@ -411,6 +678,19 @@ struct ShaderPreviewModelOriginalMaterial(Handle<StandardMaterial>);
 struct ShaderDesignerUiRoot;
 
 #[derive(Debug, Component)]
+struct ShaderDesignerScrollPanel;
+
+#[derive(Debug, Component)]
+struct ShaderDesignerScrollbar {
+    panel: Entity,
+}
+
+#[derive(Debug, Component)]
+struct ShaderDesignerScrollbarThumb {
+    panel: Entity,
+}
+
+#[derive(Debug, Component)]
 struct ShaderDesignerStatusText;
 
 #[derive(Debug, Component)]
@@ -474,12 +754,15 @@ pub fn run_bevy_shader_designer(launch: BevyShaderDesignerLaunch) {
             Update,
             (
                 update_designer_keyboard,
+                handle_designer_panel_scroll,
+                handle_designer_scrollbar_drag,
                 handle_designer_buttons,
                 handle_designer_sliders,
                 animate_preview_mesh,
                 draw_designer_gizmos,
                 apply_designer_material,
                 update_designer_ui_state,
+                update_designer_scrollbars,
                 exit_designer_on_escape,
             )
                 .chain(),
@@ -540,15 +823,70 @@ impl BevyShaderDesignerState {
                 .map(|index| index / MODEL_PAGE_SIZE)
                 .unwrap_or(0),
             selected_block: 0,
-            blocks,
             main_color: rgba_array(value.get("mainColor"), [1.0, 0.85, 0.72, 1.0]),
             glow_strength: f32_json(&value, "glowStrength", 0.15),
             pulse_speed: f32_json(&value, "pulseSpeed", 0.55),
             transparency: f32_json(&value, "transparency", 0.05),
+            alpha_mode: value
+                .get("alphaMode")
+                .and_then(serde_json::Value::as_str)
+                .map(DesignerAlphaMode::from_key)
+                .unwrap_or(DesignerAlphaMode::Auto),
+            alpha_cutoff: f32_json(&value, "alphaCutoff", 0.5),
+            roughness: f32_json(
+                &value,
+                "roughness",
+                if blocks.contains(&DesignerBlock::WaterWaves) {
+                    0.18
+                } else {
+                    0.52
+                },
+            ),
+            metallic: f32_json(
+                &value,
+                "metallic",
+                if blocks.contains(&DesignerBlock::HologramLines) {
+                    0.15
+                } else {
+                    0.0
+                },
+            ),
+            reflectance: f32_json(&value, "reflectance", 0.5),
+            emissive_exposure_weight: f32_json(&value, "emissiveExposureWeight", 0.0),
+            diffuse_transmission: f32_json(&value, "diffuseTransmission", 0.0),
+            specular_transmission: f32_json(&value, "specularTransmission", 0.0),
+            thickness: f32_json(&value, "thickness", 0.0),
+            ior: f32_json(&value, "ior", 1.5),
+            attenuation_distance: f32_json(&value, "attenuationDistance", 20.0),
+            clearcoat: f32_json(&value, "clearcoat", 0.0),
+            clearcoat_roughness: f32_json(&value, "clearcoatRoughness", 0.5),
+            anisotropy_strength: f32_json(&value, "anisotropyStrength", 0.0),
+            anisotropy_rotation: f32_json(&value, "anisotropyRotation", 0.0),
+            cull_mode: value
+                .get("cullMode")
+                .and_then(serde_json::Value::as_str)
+                .map(DesignerCullMode::from_key)
+                .unwrap_or(DesignerCullMode::Back),
+            double_sided: bool_json(&value, "doubleSided", false),
+            unlit: bool_json(&value, "unlit", false),
+            fog_enabled: bool_json(&value, "fogEnabled", true),
+            flip_normal_map_y: bool_json(&value, "flipNormalMapY", false),
+            depth_bias: f32_json(&value, "depthBias", 0.0),
+            parallax_depth_scale: f32_json(&value, "parallaxDepthScale", 0.1),
+            parallax_layers: f32_json(&value, "parallaxLayers", 16.0),
+            parallax_method: value
+                .get("parallaxMethod")
+                .and_then(serde_json::Value::as_str)
+                .map(DesignerParallaxMethod::from_key)
+                .unwrap_or(DesignerParallaxMethod::Occlusion),
+            lightmap_exposure: f32_json(&value, "lightmapExposure", 1.0),
+            uv_scale: vec2_array(value.get("uvScale"), [1.0, 1.0]),
+            uv_offset: vec2_array(value.get("uvOffset"), [0.0, 0.0]),
             edge_width: f32_json(&value, "edgeWidth", 0.15),
             scroll_speed: f32_json(&value, "scrollSpeed", 0.35),
             preview_scale: f32_json(&value, "previewScale", 1.0).max(0.1),
             use_original_texture: bool_json(&value, "useOriginalTexture", true),
+            blocks,
             dirty: false,
             status: "Ready".to_owned(),
             elapsed: 0.0,
@@ -576,6 +914,84 @@ impl BevyShaderDesignerState {
             "transparency".to_owned(),
             serde_json::json!(self.transparency),
         );
+        root.insert(
+            "alphaMode".to_owned(),
+            serde_json::json!(self.alpha_mode.key()),
+        );
+        root.insert(
+            "alphaCutoff".to_owned(),
+            serde_json::json!(self.alpha_cutoff),
+        );
+        root.insert("roughness".to_owned(), serde_json::json!(self.roughness));
+        root.insert("metallic".to_owned(), serde_json::json!(self.metallic));
+        root.insert(
+            "reflectance".to_owned(),
+            serde_json::json!(self.reflectance),
+        );
+        root.insert(
+            "emissiveExposureWeight".to_owned(),
+            serde_json::json!(self.emissive_exposure_weight),
+        );
+        root.insert(
+            "diffuseTransmission".to_owned(),
+            serde_json::json!(self.diffuse_transmission),
+        );
+        root.insert(
+            "specularTransmission".to_owned(),
+            serde_json::json!(self.specular_transmission),
+        );
+        root.insert("thickness".to_owned(), serde_json::json!(self.thickness));
+        root.insert("ior".to_owned(), serde_json::json!(self.ior));
+        root.insert(
+            "attenuationDistance".to_owned(),
+            serde_json::json!(self.attenuation_distance),
+        );
+        root.insert("clearcoat".to_owned(), serde_json::json!(self.clearcoat));
+        root.insert(
+            "clearcoatRoughness".to_owned(),
+            serde_json::json!(self.clearcoat_roughness),
+        );
+        root.insert(
+            "anisotropyStrength".to_owned(),
+            serde_json::json!(self.anisotropy_strength),
+        );
+        root.insert(
+            "anisotropyRotation".to_owned(),
+            serde_json::json!(self.anisotropy_rotation),
+        );
+        root.insert(
+            "cullMode".to_owned(),
+            serde_json::json!(self.cull_mode.key()),
+        );
+        root.insert(
+            "doubleSided".to_owned(),
+            serde_json::json!(self.double_sided),
+        );
+        root.insert("unlit".to_owned(), serde_json::json!(self.unlit));
+        root.insert("fogEnabled".to_owned(), serde_json::json!(self.fog_enabled));
+        root.insert(
+            "flipNormalMapY".to_owned(),
+            serde_json::json!(self.flip_normal_map_y),
+        );
+        root.insert("depthBias".to_owned(), serde_json::json!(self.depth_bias));
+        root.insert(
+            "parallaxDepthScale".to_owned(),
+            serde_json::json!(self.parallax_depth_scale),
+        );
+        root.insert(
+            "parallaxLayers".to_owned(),
+            serde_json::json!(self.parallax_layers),
+        );
+        root.insert(
+            "parallaxMethod".to_owned(),
+            serde_json::json!(self.parallax_method.key()),
+        );
+        root.insert(
+            "lightmapExposure".to_owned(),
+            serde_json::json!(self.lightmap_exposure),
+        );
+        root.insert("uvScale".to_owned(), serde_json::json!(self.uv_scale));
+        root.insert("uvOffset".to_owned(), serde_json::json!(self.uv_offset));
         root.insert("edgeWidth".to_owned(), serde_json::json!(self.edge_width));
         root.insert(
             "scrollSpeed".to_owned(),
@@ -710,121 +1126,285 @@ fn spawn_shader_designer_ui(
             ShaderDesignerUiRoot,
         ))
         .with_children(|root| {
-            root.spawn(panel_node(340.0)).with_children(|panel| {
-                panel.spawn(text_bundle("Bevy Shader Designer", 24.0, TEXT_MAIN));
-                panel.spawn(text_bundle(
-                    document_caption(state),
-                    12.0,
-                    TEXT_MUTED,
-                ));
-                panel.spawn(section_label("Templates"));
-                panel.spawn(button_grid()).with_children(|grid| {
-                    for template in DesignerTemplate::ALL {
-                        grid.spawn(action_button(
-                            template.label(),
-                            DesignerAction::Template(template),
-                            state.template == template,
-                            144.0,
-                        ));
-                    }
-                });
-                panel.spawn(section_label("Preview Target"));
-                panel.spawn(button_grid()).with_children(|grid| {
-                    for target in DesignerTarget::ALL {
-                        grid.spawn(action_button(
-                            target.label(),
-                            DesignerAction::Target(target),
-                            state.target == target,
-                            144.0,
-                        ));
-                    }
-                });
-                panel.spawn(section_label("GLTF Preview"));
-                panel.spawn(toolbar_row()).with_children(|row| {
-                    row.spawn(action_button("Clear", DesignerAction::ClearModel, false, 72.0));
-                    row.spawn(action_button("<", DesignerAction::ModelPage(-1), false, 36.0));
-                    row.spawn((
-                        Text::new(model_page_text(state, catalog)),
-                        TextFont::from_font_size(12.0),
-                        TextColor(TEXT_MUTED),
-                        Node {
-                            width: px(108.0),
-                            height: px(34.0),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            ..default()
-                        },
-                        ShaderDesignerModelPageText,
-                    ));
-                    row.spawn(action_button(">", DesignerAction::ModelPage(1), false, 36.0));
-                });
-                panel.spawn(button_grid()).with_children(|grid| {
-                    for slot in 0..MODEL_PAGE_SIZE {
-                        let label = model_slot_label(state, catalog, slot);
-                        grid.spawn(model_slot_button(label, slot));
-                    }
-                });
-                panel.spawn(section_label("Shader Blocks"));
-                panel.spawn(button_grid()).with_children(|grid| {
-                    for block in DesignerBlock::ALL {
-                        grid.spawn(action_button(
-                            block.label(),
-                            DesignerAction::ToggleBlock(block),
-                            state.blocks.contains(&block),
-                            144.0,
-                        ));
-                    }
-                });
+            root.spawn(panel_frame_node(360.0)).with_children(|frame| {
+                let scroll_panel = frame
+                    .spawn(panel_scroll_body())
+                    .with_children(|panel| {
+                        panel.spawn(text_bundle("Bevy Shader Designer", 24.0, TEXT_MAIN));
+                        panel.spawn(text_bundle(document_caption(state), 12.0, TEXT_MUTED));
+                        panel.spawn(section_label("Templates"));
+                        panel.spawn(button_grid()).with_children(|grid| {
+                            for template in DesignerTemplate::ALL {
+                                grid.spawn(action_button(
+                                    template.label(),
+                                    DesignerAction::Template(template),
+                                    state.template == template,
+                                    144.0,
+                                ));
+                            }
+                        });
+                        panel.spawn(section_label("Preview Target"));
+                        panel.spawn(button_grid()).with_children(|grid| {
+                            for target in DesignerTarget::ALL {
+                                grid.spawn(action_button(
+                                    target.label(),
+                                    DesignerAction::Target(target),
+                                    state.target == target,
+                                    144.0,
+                                ));
+                            }
+                        });
+                        panel.spawn(section_label("GLTF Preview"));
+                        panel.spawn(toolbar_row()).with_children(|row| {
+                            row.spawn(action_button(
+                                "Clear",
+                                DesignerAction::ClearModel,
+                                false,
+                                72.0,
+                            ));
+                            row.spawn(action_button(
+                                "<",
+                                DesignerAction::ModelPage(-1),
+                                false,
+                                36.0,
+                            ));
+                            row.spawn((
+                                Text::new(model_page_text(state, catalog)),
+                                TextFont::from_font_size(12.0),
+                                TextColor(TEXT_MUTED),
+                                Node {
+                                    width: px(108.0),
+                                    height: px(34.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    ..default()
+                                },
+                                ShaderDesignerModelPageText,
+                            ));
+                            row.spawn(action_button(
+                                ">",
+                                DesignerAction::ModelPage(1),
+                                false,
+                                36.0,
+                            ));
+                        });
+                        panel.spawn(button_grid()).with_children(|grid| {
+                            for slot in 0..MODEL_PAGE_SIZE {
+                                let label = model_slot_label(state, catalog, slot);
+                                grid.spawn(model_slot_button(label, slot));
+                            }
+                        });
+                        panel.spawn(section_label("Shader Blocks"));
+                        panel.spawn(button_grid()).with_children(|grid| {
+                            for block in DesignerBlock::ALL {
+                                grid.spawn(action_button(
+                                    block.label(),
+                                    DesignerAction::ToggleBlock(block),
+                                    state.blocks.contains(&block),
+                                    144.0,
+                                ));
+                            }
+                        });
+                    })
+                    .id();
+                frame.spawn(scrollbar(scroll_panel));
             });
-            root.spawn(panel_node(390.0)).with_children(|panel| {
-                panel.spawn(section_label("Color Palette"));
-                panel.spawn(button_grid()).with_children(|grid| {
-                    for palette in DesignerPalette::ALL {
-                        grid.spawn(color_button(
-                            palette.label(),
-                            DesignerAction::Palette(palette),
-                            palette.bevy_color(),
-                            state.main_color == palette.color(),
+            root.spawn(panel_frame_node(430.0)).with_children(|frame| {
+                let scroll_panel = frame
+                    .spawn(panel_scroll_body())
+                    .with_children(|panel| {
+                        panel.spawn(section_label("Color Palette"));
+                        panel.spawn(button_grid()).with_children(|grid| {
+                            for palette in DesignerPalette::ALL {
+                                grid.spawn(color_button(
+                                    palette.label(),
+                                    DesignerAction::Palette(palette),
+                                    palette.bevy_color(),
+                                    state.main_color == palette.color(),
+                                ));
+                            }
+                        });
+                        panel.spawn(section_label("Color"));
+                        for param in DesignerParam::COLOR {
+                            panel.spawn(param_control(param, state));
+                        }
+                        panel.spawn(section_label("PBR Surface"));
+                        for param in DesignerParam::PBR {
+                            panel.spawn(param_control(param, state));
+                        }
+                        panel.spawn(section_label("Alpha Mode"));
+                        panel.spawn(button_grid()).with_children(|grid| {
+                            for mode in DesignerAlphaMode::ALL {
+                                grid.spawn(action_button(
+                                    mode.label(),
+                                    DesignerAction::AlphaMode(mode),
+                                    state.alpha_mode == mode,
+                                    108.0,
+                                ));
+                            }
+                        });
+                        panel.spawn(section_label("Transmission"));
+                        for param in DesignerParam::TRANSPARENCY {
+                            panel.spawn(param_control(param, state));
+                        }
+                        panel.spawn(section_label("UV / Depth"));
+                        for param in DesignerParam::UV_AND_DEPTH {
+                            panel.spawn(param_control(param, state));
+                        }
+                        panel.spawn(section_label("Effect / Preview"));
+                        for param in DesignerParam::EFFECT {
+                            panel.spawn(param_control(param, state));
+                        }
+                        panel.spawn(section_label("Culling"));
+                        panel.spawn(button_grid()).with_children(|grid| {
+                            for mode in DesignerCullMode::ALL {
+                                grid.spawn(action_button(
+                                    mode.label(),
+                                    DesignerAction::CullMode(mode),
+                                    state.cull_mode == mode,
+                                    108.0,
+                                ));
+                            }
+                        });
+                        panel.spawn(section_label("Render Options"));
+                        panel.spawn(action_button(
+                            "Original Texture",
+                            DesignerAction::ToggleOriginalTexture,
+                            state.use_original_texture,
+                            174.0,
                         ));
-                    }
+                        panel.spawn(button_grid()).with_children(|grid| {
+                            grid.spawn(action_button(
+                                "Double Sided",
+                                DesignerAction::ToggleDoubleSided,
+                                state.double_sided,
+                                122.0,
+                            ));
+                            grid.spawn(action_button(
+                                "Unlit",
+                                DesignerAction::ToggleUnlit,
+                                state.unlit,
+                                82.0,
+                            ));
+                            grid.spawn(action_button(
+                                "Fog",
+                                DesignerAction::ToggleFog,
+                                state.fog_enabled,
+                                82.0,
+                            ));
+                            grid.spawn(action_button(
+                                "Flip Normal Y",
+                                DesignerAction::ToggleFlipNormalMapY,
+                                state.flip_normal_map_y,
+                                132.0,
+                            ));
+                        });
+                        panel.spawn(section_label("Parallax"));
+                        panel.spawn(button_grid()).with_children(|grid| {
+                            for method in DesignerParallaxMethod::ALL {
+                                grid.spawn(action_button(
+                                    method.label(),
+                                    DesignerAction::ParallaxMethod(method),
+                                    state.parallax_method == method,
+                                    120.0,
+                                ));
+                            }
+                        });
+                    })
+                    .id();
+                frame.spawn(action_footer()).with_children(|footer| {
+                    footer.spawn(toolbar_row()).with_children(|row| {
+                        row.spawn(action_button("Save", DesignerAction::Save, false, 102.0));
+                        row.spawn(action_button("Reset", DesignerAction::Reset, false, 102.0));
+                        row.spawn(danger_button("Close", DesignerAction::Close, 102.0));
+                    });
+                    footer.spawn((
+                        Text::new(status_text(state)),
+                        TextFont::from_font_size(12.0),
+                        TextColor(Color::srgb(0.72, 0.90, 0.68)),
+                        ShaderDesignerStatusText,
+                    ));
                 });
-                panel.spawn(section_label("Parameters"));
-                for param in DesignerParam::ALL {
-                    panel.spawn(param_control(param, state));
-                }
-                panel.spawn(section_label("Options"));
-                panel.spawn(action_button(
-                    "Original Texture",
-                    DesignerAction::ToggleOriginalTexture,
-                    state.use_original_texture,
-                    174.0,
-                ));
-                panel.spawn(toolbar_row()).with_children(|row| {
-                    row.spawn(action_button("Save", DesignerAction::Save, false, 102.0));
-                    row.spawn(action_button("Reset", DesignerAction::Reset, false, 102.0));
-                    row.spawn(danger_button("Close", DesignerAction::Close, 102.0));
-                });
-                panel.spawn((
-                    Text::new(status_text(state)),
-                    TextFont::from_font_size(12.0),
-                    TextColor(Color::srgb(0.72, 0.90, 0.68)),
-                    ShaderDesignerStatusText,
-                ));
+                frame.spawn(scrollbar(scroll_panel));
             });
         });
 }
 
-fn panel_node(width: f32) -> impl Bundle {
+fn panel_frame_node(width: f32) -> impl Bundle {
     (
         Node {
             width: px(width),
+            height: Val::Percent(100.0),
             flex_direction: FlexDirection::Column,
-            row_gap: px(11.0),
-            padding: UiRect::all(px(16.0)),
+            row_gap: px(10.0),
+            padding: UiRect::all(px(12.0)),
             align_self: AlignSelf::Stretch,
+            position_type: PositionType::Relative,
+            overflow: Overflow::clip(),
             ..default()
         },
         BackgroundColor(PANEL_BG),
+    )
+}
+
+fn panel_scroll_body() -> impl Bundle {
+    (
+        Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            min_height: px(0.0),
+            flex_grow: 1.0,
+            flex_shrink: 1.0,
+            flex_direction: FlexDirection::Column,
+            row_gap: px(11.0),
+            padding: UiRect::new(px(4.0), px(16.0), px(4.0), px(4.0)),
+            overflow: Overflow::scroll_y(),
+            scrollbar_width: 16.0,
+            ..default()
+        },
+        ScrollPosition(Vec2::ZERO),
+        RelativeCursorPosition::default(),
+        ShaderDesignerScrollPanel,
+    )
+}
+
+fn action_footer() -> impl Bundle {
+    Node {
+        width: Val::Percent(100.0),
+        flex_direction: FlexDirection::Column,
+        row_gap: px(6.0),
+        padding: UiRect::new(px(4.0), px(4.0), px(8.0), px(2.0)),
+        flex_shrink: 0.0,
+        ..default()
+    }
+}
+
+fn scrollbar(panel: Entity) -> impl Bundle {
+    (
+        Node {
+            position_type: PositionType::Absolute,
+            right: px(4.0),
+            top: px(14.0),
+            bottom: px(14.0),
+            width: px(10.0),
+            ..default()
+        },
+        Button,
+        RelativeCursorPosition::default(),
+        ShaderDesignerScrollbar { panel },
+        BackgroundColor(Color::srgba(0.18, 0.23, 0.28, 0.78)),
+        children![(
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(2.0),
+                top: px(0.0),
+                width: px(6.0),
+                height: Val::Percent(28.0),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.54, 0.90, 0.95, 0.95)),
+            ShaderDesignerScrollbarThumb { panel },
+        )],
     )
 }
 
@@ -1151,7 +1731,13 @@ fn update_designer_keyboard(
     } else {
         0.015
     };
-    adjust_if_pressed(&input, KeyCode::Digit1, &mut state, DesignerParam::Red, color_step);
+    adjust_if_pressed(
+        &input,
+        KeyCode::Digit1,
+        &mut state,
+        DesignerParam::Red,
+        color_step,
+    );
     adjust_if_pressed(
         &input,
         KeyCode::Digit2,
@@ -1159,8 +1745,20 @@ fn update_designer_keyboard(
         DesignerParam::Green,
         color_step,
     );
-    adjust_if_pressed(&input, KeyCode::Digit3, &mut state, DesignerParam::Blue, color_step);
-    adjust_if_pressed(&input, KeyCode::Digit4, &mut state, DesignerParam::Glow, 0.04);
+    adjust_if_pressed(
+        &input,
+        KeyCode::Digit3,
+        &mut state,
+        DesignerParam::Blue,
+        color_step,
+    );
+    adjust_if_pressed(
+        &input,
+        KeyCode::Digit4,
+        &mut state,
+        DesignerParam::Glow,
+        0.04,
+    );
     adjust_if_pressed(
         &input,
         KeyCode::Digit5,
@@ -1168,11 +1766,41 @@ fn update_designer_keyboard(
         DesignerParam::Transparency,
         0.015,
     );
-    adjust_if_pressed(&input, KeyCode::Digit6, &mut state, DesignerParam::Scroll, 0.035);
-    adjust_if_pressed(&input, KeyCode::Digit7, &mut state, DesignerParam::Pulse, 0.035);
-    adjust_if_pressed(&input, KeyCode::Digit8, &mut state, DesignerParam::Edge, 0.015);
-    adjust_if_pressed(&input, KeyCode::Minus, &mut state, DesignerParam::Scale, -0.03);
-    adjust_if_pressed(&input, KeyCode::Equal, &mut state, DesignerParam::Scale, 0.03);
+    adjust_if_pressed(
+        &input,
+        KeyCode::Digit6,
+        &mut state,
+        DesignerParam::Scroll,
+        0.035,
+    );
+    adjust_if_pressed(
+        &input,
+        KeyCode::Digit7,
+        &mut state,
+        DesignerParam::Pulse,
+        0.035,
+    );
+    adjust_if_pressed(
+        &input,
+        KeyCode::Digit8,
+        &mut state,
+        DesignerParam::Edge,
+        0.015,
+    );
+    adjust_if_pressed(
+        &input,
+        KeyCode::Minus,
+        &mut state,
+        DesignerParam::Scale,
+        -0.03,
+    );
+    adjust_if_pressed(
+        &input,
+        KeyCode::Equal,
+        &mut state,
+        DesignerParam::Scale,
+        0.03,
+    );
 }
 
 fn adjust_if_pressed(
@@ -1185,6 +1813,109 @@ fn adjust_if_pressed(
     if input.just_pressed(key) || input.pressed(key) {
         state.adjust_param(param, delta);
     }
+}
+
+fn handle_designer_panel_scroll(
+    mut mouse_wheel_reader: MessageReader<MouseWheel>,
+    mut panels: Query<
+        (&mut ScrollPosition, &RelativeCursorPosition, &ComputedNode),
+        With<ShaderDesignerScrollPanel>,
+    >,
+) {
+    for mouse_wheel in mouse_wheel_reader.read() {
+        let unit_scale = if mouse_wheel.unit == MouseScrollUnit::Line {
+            28.0
+        } else {
+            1.0
+        };
+        let delta = -mouse_wheel.y * unit_scale;
+        if delta.abs() <= f32::EPSILON {
+            continue;
+        }
+        for (mut scroll_position, cursor, computed_node) in &mut panels {
+            let Some(position) = cursor.normalized else {
+                continue;
+            };
+            if position.x < -0.5 || position.x > 0.5 || position.y < -0.5 || position.y > 0.5 {
+                continue;
+            }
+            let max_scroll = max_scroll_y(computed_node);
+            scroll_position.0.y = (scroll_position.0.y + delta).clamp(0.0, max_scroll);
+            break;
+        }
+    }
+}
+
+fn handle_designer_scrollbar_drag(
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    scrollbars: Query<(
+        &ShaderDesignerScrollbar,
+        &Interaction,
+        &RelativeCursorPosition,
+    )>,
+    mut panels: Query<(&mut ScrollPosition, &ComputedNode), With<ShaderDesignerScrollPanel>>,
+) {
+    if !mouse_buttons.pressed(MouseButton::Left) {
+        return;
+    }
+    for (scrollbar, interaction, cursor) in &scrollbars {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let Some(position) = cursor.normalized else {
+            continue;
+        };
+        let Ok((mut scroll_position, computed_node)) = panels.get_mut(scrollbar.panel) else {
+            continue;
+        };
+        let max_scroll = max_scroll_y(computed_node);
+        if max_scroll <= f32::EPSILON {
+            scroll_position.0.y = 0.0;
+            continue;
+        }
+        let ratio = (position.y + 0.5).clamp(0.0, 1.0);
+        scroll_position.0.y = max_scroll * ratio;
+    }
+}
+
+fn update_designer_scrollbars(
+    panels: Query<(&ScrollPosition, &ComputedNode), With<ShaderDesignerScrollPanel>>,
+    mut thumbs: Query<(
+        &ShaderDesignerScrollbarThumb,
+        &mut Node,
+        &mut BackgroundColor,
+    )>,
+) {
+    for (thumb, mut node, mut background) in &mut thumbs {
+        let Ok((scroll_position, computed_node)) = panels.get(thumb.panel) else {
+            continue;
+        };
+        let visible_height = computed_node.size.y.max(1.0);
+        let content_height = computed_node.content_size.y.max(visible_height);
+        let max_scroll = max_scroll_y(computed_node);
+        let height_pct = if max_scroll <= f32::EPSILON {
+            100.0
+        } else {
+            ((visible_height / content_height) * 100.0).clamp(14.0, 96.0)
+        };
+        let top_pct = if max_scroll <= f32::EPSILON {
+            0.0
+        } else {
+            (scroll_position.0.y / max_scroll).clamp(0.0, 1.0) * (100.0 - height_pct)
+        };
+        node.top = Val::Percent(top_pct);
+        node.height = Val::Percent(height_pct);
+        *background = BackgroundColor(if max_scroll <= f32::EPSILON {
+            Color::srgba(0.34, 0.42, 0.48, 0.52)
+        } else {
+            Color::srgba(0.54, 0.90, 0.95, 0.95)
+        });
+    }
+}
+
+fn max_scroll_y(computed_node: &ComputedNode) -> f32 {
+    (computed_node.content_size.y - computed_node.size.y + computed_node.scrollbar_size.y).max(0.0)
+        * computed_node.inverse_scale_factor
 }
 
 fn handle_designer_buttons(
@@ -1262,8 +1993,36 @@ fn handle_designer_buttons(
                 state.main_color = palette.color();
                 state.mark_dirty();
             }
+            DesignerAction::AlphaMode(mode) => {
+                state.alpha_mode = mode;
+                state.mark_dirty();
+            }
+            DesignerAction::CullMode(mode) => {
+                state.cull_mode = mode;
+                state.mark_dirty();
+            }
+            DesignerAction::ParallaxMethod(method) => {
+                state.parallax_method = method;
+                state.mark_dirty();
+            }
             DesignerAction::ToggleOriginalTexture => {
                 state.use_original_texture = !state.use_original_texture;
+                state.mark_dirty();
+            }
+            DesignerAction::ToggleDoubleSided => {
+                state.double_sided = !state.double_sided;
+                state.mark_dirty();
+            }
+            DesignerAction::ToggleUnlit => {
+                state.unlit = !state.unlit;
+                state.mark_dirty();
+            }
+            DesignerAction::ToggleFog => {
+                state.fog_enabled = !state.fog_enabled;
+                state.mark_dirty();
+            }
+            DesignerAction::ToggleFlipNormalMapY => {
+                state.flip_normal_map_y = !state.flip_normal_map_y;
                 state.mark_dirty();
             }
             DesignerAction::Save => state.save(),
@@ -1612,13 +2371,22 @@ fn action_is_active(
 ) -> bool {
     match action {
         DesignerAction::Template(template) => state.template == template,
-        DesignerAction::Target(target) => state.target == target && state.preview_model_index.is_none(),
+        DesignerAction::Target(target) => {
+            state.target == target && state.preview_model_index.is_none()
+        }
         DesignerAction::ModelSlot(slot) => catalog
             .model_index_for_slot(state.model_page, slot)
             .is_some_and(|index| state.preview_model_index == Some(index)),
         DesignerAction::ToggleBlock(block) => state.blocks.contains(&block),
         DesignerAction::Palette(palette) => state.main_color == palette.color(),
+        DesignerAction::AlphaMode(mode) => state.alpha_mode == mode,
+        DesignerAction::CullMode(mode) => state.cull_mode == mode,
+        DesignerAction::ParallaxMethod(method) => state.parallax_method == method,
         DesignerAction::ToggleOriginalTexture => state.use_original_texture,
+        DesignerAction::ToggleDoubleSided => state.double_sided,
+        DesignerAction::ToggleUnlit => state.unlit,
+        DesignerAction::ToggleFog => state.fog_enabled,
+        DesignerAction::ToggleFlipNormalMapY => state.flip_normal_map_y,
         DesignerAction::ModelPage(_)
         | DesignerAction::ClearModel
         | DesignerAction::Adjust(_, _)
@@ -1653,6 +2421,28 @@ impl BevyShaderDesignerState {
             DesignerParam::Blue => self.main_color[2],
             DesignerParam::Glow => self.glow_strength,
             DesignerParam::Transparency => self.transparency,
+            DesignerParam::AlphaCutoff => self.alpha_cutoff,
+            DesignerParam::Roughness => self.roughness,
+            DesignerParam::Metallic => self.metallic,
+            DesignerParam::Reflectance => self.reflectance,
+            DesignerParam::EmissiveExposure => self.emissive_exposure_weight,
+            DesignerParam::DiffuseTransmission => self.diffuse_transmission,
+            DesignerParam::SpecularTransmission => self.specular_transmission,
+            DesignerParam::Thickness => self.thickness,
+            DesignerParam::Ior => self.ior,
+            DesignerParam::AttenuationDistance => self.attenuation_distance,
+            DesignerParam::Clearcoat => self.clearcoat,
+            DesignerParam::ClearcoatRoughness => self.clearcoat_roughness,
+            DesignerParam::AnisotropyStrength => self.anisotropy_strength,
+            DesignerParam::AnisotropyRotation => self.anisotropy_rotation,
+            DesignerParam::DepthBias => self.depth_bias,
+            DesignerParam::ParallaxDepth => self.parallax_depth_scale,
+            DesignerParam::ParallaxLayers => self.parallax_layers,
+            DesignerParam::LightmapExposure => self.lightmap_exposure,
+            DesignerParam::UvScaleX => self.uv_scale[0],
+            DesignerParam::UvScaleY => self.uv_scale[1],
+            DesignerParam::UvOffsetX => self.uv_offset[0],
+            DesignerParam::UvOffsetY => self.uv_offset[1],
             DesignerParam::Scroll => self.scroll_speed,
             DesignerParam::Pulse => self.pulse_speed,
             DesignerParam::Edge => self.edge_width,
@@ -1669,6 +2459,28 @@ impl BevyShaderDesignerState {
             DesignerParam::Blue => &mut self.main_color[2],
             DesignerParam::Glow => &mut self.glow_strength,
             DesignerParam::Transparency => &mut self.transparency,
+            DesignerParam::AlphaCutoff => &mut self.alpha_cutoff,
+            DesignerParam::Roughness => &mut self.roughness,
+            DesignerParam::Metallic => &mut self.metallic,
+            DesignerParam::Reflectance => &mut self.reflectance,
+            DesignerParam::EmissiveExposure => &mut self.emissive_exposure_weight,
+            DesignerParam::DiffuseTransmission => &mut self.diffuse_transmission,
+            DesignerParam::SpecularTransmission => &mut self.specular_transmission,
+            DesignerParam::Thickness => &mut self.thickness,
+            DesignerParam::Ior => &mut self.ior,
+            DesignerParam::AttenuationDistance => &mut self.attenuation_distance,
+            DesignerParam::Clearcoat => &mut self.clearcoat,
+            DesignerParam::ClearcoatRoughness => &mut self.clearcoat_roughness,
+            DesignerParam::AnisotropyStrength => &mut self.anisotropy_strength,
+            DesignerParam::AnisotropyRotation => &mut self.anisotropy_rotation,
+            DesignerParam::DepthBias => &mut self.depth_bias,
+            DesignerParam::ParallaxDepth => &mut self.parallax_depth_scale,
+            DesignerParam::ParallaxLayers => &mut self.parallax_layers,
+            DesignerParam::LightmapExposure => &mut self.lightmap_exposure,
+            DesignerParam::UvScaleX => &mut self.uv_scale[0],
+            DesignerParam::UvScaleY => &mut self.uv_scale[1],
+            DesignerParam::UvOffsetX => &mut self.uv_offset[0],
+            DesignerParam::UvOffsetY => &mut self.uv_offset[1],
             DesignerParam::Scroll => &mut self.scroll_speed,
             DesignerParam::Pulse => &mut self.pulse_speed,
             DesignerParam::Edge => &mut self.edge_width,
@@ -1705,14 +2517,45 @@ impl BevyShaderDesignerState {
         self.selected_block = 0;
         self.blocks = HashSet::from([DesignerBlock::Tint]);
         self.main_color = [1.0, 0.85, 0.72, 1.0];
+        self.reset_material_controls_to_defaults();
+        self.use_original_texture = true;
+        self.mark_dirty();
+    }
+
+    fn reset_material_controls_to_defaults(&mut self) {
         self.glow_strength = 0.15;
         self.pulse_speed = 0.55;
         self.transparency = 0.05;
+        self.alpha_mode = DesignerAlphaMode::Auto;
+        self.alpha_cutoff = 0.5;
+        self.roughness = 0.52;
+        self.metallic = 0.0;
+        self.reflectance = 0.5;
+        self.emissive_exposure_weight = 0.0;
+        self.diffuse_transmission = 0.0;
+        self.specular_transmission = 0.0;
+        self.thickness = 0.0;
+        self.ior = 1.5;
+        self.attenuation_distance = 20.0;
+        self.clearcoat = 0.0;
+        self.clearcoat_roughness = 0.5;
+        self.anisotropy_strength = 0.0;
+        self.anisotropy_rotation = 0.0;
+        self.cull_mode = DesignerCullMode::Back;
+        self.double_sided = false;
+        self.unlit = false;
+        self.fog_enabled = true;
+        self.flip_normal_map_y = false;
+        self.depth_bias = 0.0;
+        self.parallax_depth_scale = 0.1;
+        self.parallax_layers = 16.0;
+        self.parallax_method = DesignerParallaxMethod::Occlusion;
+        self.lightmap_exposure = 1.0;
+        self.uv_scale = [1.0, 1.0];
+        self.uv_offset = [0.0, 0.0];
         self.edge_width = 0.15;
         self.scroll_speed = 0.35;
         self.preview_scale = 1.0;
-        self.use_original_texture = true;
-        self.mark_dirty();
     }
 
     fn standard_material(&self, source: Option<&StandardMaterial>) -> StandardMaterial {
@@ -1753,33 +2596,93 @@ impl BevyShaderDesignerState {
             self.main_color[2] * glow,
             1.0,
         );
-        material.perceptual_roughness = if self.blocks.contains(&DesignerBlock::WaterWaves) {
-            0.18
+        material.emissive_exposure_weight = self.emissive_exposure_weight;
+        material.perceptual_roughness = self.roughness;
+        material.metallic = self.metallic;
+        material.reflectance = self.reflectance;
+        material.diffuse_transmission = self.diffuse_transmission;
+        material.specular_transmission = self.specular_transmission;
+        material.thickness = self.thickness;
+        material.ior = self.ior;
+        material.attenuation_color = Color::srgba(
+            self.main_color[0],
+            self.main_color[1],
+            self.main_color[2],
+            1.0,
+        );
+        material.attenuation_distance = if self.attenuation_distance <= 0.0 {
+            f32::INFINITY
         } else {
-            0.52
+            self.attenuation_distance
         };
-        material.metallic = if self.blocks.contains(&DesignerBlock::HologramLines) {
-            0.15
-        } else {
-            0.0
+        material.specular_tint = Color::srgba(
+            self.main_color[0],
+            self.main_color[1],
+            self.main_color[2],
+            1.0,
+        );
+        material.clearcoat = self.clearcoat;
+        material.clearcoat_perceptual_roughness = self.clearcoat_roughness;
+        material.anisotropy_strength = self.anisotropy_strength;
+        material.anisotropy_rotation = self.anisotropy_rotation;
+        material.double_sided = self.double_sided;
+        material.cull_mode = match self.cull_mode {
+            DesignerCullMode::Back => Some(Face::Back),
+            DesignerCullMode::Front => Some(Face::Front),
+            DesignerCullMode::None => None,
         };
-        material.alpha_mode = if alpha < 0.999 || self.blocks.contains(&DesignerBlock::Dissolve) {
-            AlphaMode::Blend
-        } else {
-            AlphaMode::Opaque
+        material.unlit = self.unlit;
+        material.fog_enabled = self.fog_enabled;
+        material.flip_normal_map_y = self.flip_normal_map_y;
+        material.alpha_mode = self.material_alpha_mode(alpha);
+        material.depth_bias = self.depth_bias;
+        material.parallax_depth_scale = self.parallax_depth_scale;
+        material.max_parallax_layer_count = self.parallax_layers;
+        material.parallax_mapping_method = match self.parallax_method {
+            DesignerParallaxMethod::Occlusion => ParallaxMappingMethod::Occlusion,
+            DesignerParallaxMethod::Relief => ParallaxMappingMethod::Relief { max_steps: 4 },
         };
+        material.lightmap_exposure = self.lightmap_exposure;
+        material.uv_transform = Affine2::from_scale_angle_translation(
+            Vec2::new(self.uv_scale[0], self.uv_scale[1]),
+            0.0,
+            Vec2::new(self.uv_offset[0], self.uv_offset[1]),
+        );
         if !self.use_original_texture {
             material.base_color_texture = None;
             material.normal_map_texture = None;
             material.emissive_texture = None;
+            material.metallic_roughness_texture = None;
+            material.occlusion_texture = None;
+            material.depth_map = None;
         }
         material
+    }
+
+    fn material_alpha_mode(&self, alpha: f32) -> AlphaMode {
+        match self.alpha_mode {
+            DesignerAlphaMode::Auto => {
+                if alpha < 0.999 || self.blocks.contains(&DesignerBlock::Dissolve) {
+                    AlphaMode::Blend
+                } else {
+                    AlphaMode::Opaque
+                }
+            }
+            DesignerAlphaMode::Opaque => AlphaMode::Opaque,
+            DesignerAlphaMode::Mask => AlphaMode::Mask(self.alpha_cutoff),
+            DesignerAlphaMode::Blend => AlphaMode::Blend,
+            DesignerAlphaMode::Premultiplied => AlphaMode::Premultiplied,
+            DesignerAlphaMode::AlphaToCoverage => AlphaMode::AlphaToCoverage,
+            DesignerAlphaMode::Add => AlphaMode::Add,
+            DesignerAlphaMode::Multiply => AlphaMode::Multiply,
+        }
     }
 }
 
 fn apply_template(state: &mut BevyShaderDesignerState, template: DesignerTemplate) {
     state.template = template;
     state.blocks.clear();
+    state.reset_material_controls_to_defaults();
     match template {
         DesignerTemplate::TextureTint => {
             state.blocks.insert(DesignerBlock::Tint);
@@ -1792,6 +2695,7 @@ fn apply_template(state: &mut BevyShaderDesignerState, template: DesignerTemplat
                 .extend([DesignerBlock::Tint, DesignerBlock::Glow]);
             state.main_color = [0.92, 0.97, 1.0, 1.0];
             state.glow_strength = 0.55;
+            state.alpha_mode = DesignerAlphaMode::Premultiplied;
             state.target = DesignerTarget::Sprite;
         }
         DesignerTemplate::UiNeonScan => {
@@ -1804,6 +2708,8 @@ fn apply_template(state: &mut BevyShaderDesignerState, template: DesignerTemplat
             ]);
             state.main_color = [0.20, 1.0, 0.86, 1.0];
             state.glow_strength = 1.15;
+            state.alpha_mode = DesignerAlphaMode::Add;
+            state.unlit = true;
             state.target = DesignerTarget::Sprite;
         }
         DesignerTemplate::GlowPulse => {
@@ -1815,6 +2721,8 @@ fn apply_template(state: &mut BevyShaderDesignerState, template: DesignerTemplat
             ]);
             state.main_color = [0.36, 0.92, 1.0, 1.0];
             state.glow_strength = 1.25;
+            state.clearcoat = 0.35;
+            state.clearcoat_roughness = 0.18;
             state.target = DesignerTarget::Sphere;
         }
         DesignerTemplate::Dissolve => {
@@ -1825,6 +2733,8 @@ fn apply_template(state: &mut BevyShaderDesignerState, template: DesignerTemplat
             ]);
             state.main_color = [1.0, 0.54, 0.20, 1.0];
             state.transparency = 0.35;
+            state.alpha_mode = DesignerAlphaMode::Blend;
+            state.alpha_cutoff = 0.35;
             state.target = DesignerTarget::Box;
         }
         DesignerTemplate::HologramLite => {
@@ -1839,6 +2749,11 @@ fn apply_template(state: &mut BevyShaderDesignerState, template: DesignerTemplat
             state.main_color = [0.32, 0.92, 1.0, 0.95];
             state.glow_strength = 1.4;
             state.transparency = 0.22;
+            state.alpha_mode = DesignerAlphaMode::Add;
+            state.metallic = 0.15;
+            state.unlit = true;
+            state.double_sided = true;
+            state.cull_mode = DesignerCullMode::None;
             state.target = DesignerTarget::Sphere;
         }
         DesignerTemplate::WaterLite => {
@@ -1851,6 +2766,10 @@ fn apply_template(state: &mut BevyShaderDesignerState, template: DesignerTemplat
             state.main_color = [0.22, 0.62, 1.0, 0.92];
             state.glow_strength = 0.45;
             state.transparency = 0.18;
+            state.alpha_mode = DesignerAlphaMode::Blend;
+            state.roughness = 0.18;
+            state.reflectance = 0.8;
+            state.uv_scale = [2.0, 2.0];
             state.target = DesignerTarget::Sprite;
         }
     }
@@ -1872,6 +2791,33 @@ fn default_shader_json() -> serde_json::Value {
         "glowStrength": 0.15,
         "pulseSpeed": 0.55,
         "transparency": 0.05,
+        "alphaMode": "AUTO",
+        "alphaCutoff": 0.5,
+        "roughness": 0.52,
+        "metallic": 0.0,
+        "reflectance": 0.5,
+        "emissiveExposureWeight": 0.0,
+        "diffuseTransmission": 0.0,
+        "specularTransmission": 0.0,
+        "thickness": 0.0,
+        "ior": 1.5,
+        "attenuationDistance": 20.0,
+        "clearcoat": 0.0,
+        "clearcoatRoughness": 0.5,
+        "anisotropyStrength": 0.0,
+        "anisotropyRotation": 0.0,
+        "cullMode": "BACK",
+        "doubleSided": false,
+        "unlit": false,
+        "fogEnabled": true,
+        "flipNormalMapY": false,
+        "depthBias": 0.0,
+        "parallaxDepthScale": 0.1,
+        "parallaxLayers": 16.0,
+        "parallaxMethod": "OCCLUSION",
+        "lightmapExposure": 1.0,
+        "uvScale": [1.0, 1.0],
+        "uvOffset": [0.0, 0.0],
         "edgeWidth": 0.15,
         "scrollSpeed": 0.35,
         "previewScale": 1.0,
@@ -1886,6 +2832,19 @@ fn rgba_array(value: Option<&serde_json::Value>, fallback: [f32; 4]) -> [f32; 4]
     };
     let mut out = fallback;
     for (index, value) in values.iter().take(4).enumerate() {
+        if let Some(value) = value.as_f64() {
+            out[index] = value as f32;
+        }
+    }
+    out
+}
+
+fn vec2_array(value: Option<&serde_json::Value>, fallback: [f32; 2]) -> [f32; 2] {
+    let Some(values) = value.and_then(serde_json::Value::as_array) else {
+        return fallback;
+    };
+    let mut out = fallback;
+    for (index, value) in values.iter().take(2).enumerate() {
         if let Some(value) = value.as_f64() {
             out[index] = value as f32;
         }
