@@ -1121,7 +1121,11 @@ pub(super) fn apply_startup_runs_when_ready(
     mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
     mut delayed_actions: ResMut<DelayedActionQueue>,
     mut ui_queue: ResMut<SceneMaxUiActionQueue>,
-    scene_entities: Query<(Entity, &SceneMaxEntity, &Transform, Option<&SceneMaxGltf>)>,
+    mut scene_entities: ParamSet<(
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(Entity, &SceneMaxEntity, &Transform, Option<&SceneMaxGltf>)>,
+    )>,
+    bone_queries: SceneMaxBoneQueries,
 ) {
     if startup_action_state.applied {
         return;
@@ -1159,12 +1163,12 @@ pub(super) fn apply_startup_runs_when_ready(
         return;
     }
 
+    let mut transforms_by_name =
+        build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
     let mut entities_by_name = HashMap::new();
-    let mut transforms_by_name = HashMap::new();
     let mut gltfs_by_name = HashMap::new();
-    for (entity, scene_entity, transform, gltf) in &scene_entities {
+    for (entity, scene_entity, _transform, gltf) in &scene_entities.p1() {
         entities_by_name.insert(scene_entity.name.clone(), entity);
-        transforms_by_name.insert(scene_entity.name.clone(), *transform);
         if let Some(gltf) = gltf {
             gltfs_by_name.insert(scene_entity.name.clone(), gltf.gltf.clone());
         }

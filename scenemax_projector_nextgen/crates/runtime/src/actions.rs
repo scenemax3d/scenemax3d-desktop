@@ -2848,6 +2848,18 @@ pub(super) fn resolved_blocking_timed_action_seconds(
             );
             Some(jump_duration_seconds(speed))
         }
+        Statement::SpritePlay(sprite_play) if !sprite_play.looped => {
+            let seconds = resolve_duration_value(
+                &sprite_play.duration_value,
+                sprite_play.duration_seconds,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            );
+            (seconds > f32::EPSILON).then_some(seconds.max(0.001))
+        }
         Statement::CinematicPlay(play) if !play.async_run => Some(play.duration_seconds.max(0.1)),
         _ => None,
     }

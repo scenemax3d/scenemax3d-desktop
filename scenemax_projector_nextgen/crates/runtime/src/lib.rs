@@ -2559,6 +2559,33 @@ mod tests {
     }
 
     #[test]
+    fn sprite_play_blocks_until_non_looping_animation_finishes() {
+        let blocking = Statement::SpritePlay(SpritePlayStatement {
+            target: "hit".to_owned(),
+            from_frame: 0,
+            from_frame_value: AssignmentValue::Number(0.0),
+            to_frame: 15,
+            to_frame_value: AssignmentValue::Number(15.0),
+            duration_seconds: 1.0,
+            duration_value: AssignmentValue::Number(1.0),
+            looped: false,
+        });
+        let looped = Statement::SpritePlay(SpritePlayStatement {
+            target: "hit".to_owned(),
+            from_frame: 0,
+            from_frame_value: AssignmentValue::Number(0.0),
+            to_frame: 15,
+            to_frame_value: AssignmentValue::Number(15.0),
+            duration_seconds: 1.0,
+            duration_value: AssignmentValue::Number(1.0),
+            looped: true,
+        });
+
+        assert_eq!(blocking_timed_action_seconds(&blocking), Some(1.0));
+        assert_eq!(blocking_timed_action_seconds(&looped), None);
+    }
+
+    #[test]
     fn resolved_duration_expression_drives_sync_blocking() {
         let action = Statement::CameraMove(CameraMoveStatement {
             axis: SceneMaxAxis::Z,

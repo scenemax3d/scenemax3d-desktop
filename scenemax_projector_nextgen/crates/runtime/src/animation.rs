@@ -30,6 +30,11 @@ pub(super) fn blocking_timed_action_seconds(action: &Statement) -> Option<f32> {
         Statement::CharacterJump(jump) if !jump.async_run => {
             Some(jump_duration_seconds(jump.speed))
         }
+        Statement::SpritePlay(sprite_play)
+            if !sprite_play.looped && sprite_play.duration_seconds > f32::EPSILON =>
+        {
+            Some(sprite_play.duration_seconds.max(0.001))
+        }
         Statement::CinematicPlay(play) if !play.async_run => Some(play.duration_seconds.max(0.1)),
         _ => None,
     }

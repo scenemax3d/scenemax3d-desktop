@@ -3862,6 +3862,8 @@ fn parse_position(line: &str) -> Result<Option<PositionStatement>, ParseError> {
                 .map(parse_position_expr)
                 .collect::<Result<Vec<_>, _>>()?,
         )
+    } else if let Some(entity) = parse_quoted_entity_reference(raw_values.trim()) {
+        PositionValue::Entity(entity)
     } else {
         let entity = normalize_entity_reference(raw_values.trim());
         if !is_variable_path(&entity) {
@@ -4026,6 +4028,20 @@ fn normalize_entity_reference(text: &str) -> String {
         .trim()
         .trim_matches('"')
         .to_owned()
+}
+
+fn parse_quoted_entity_reference(text: &str) -> Option<String> {
+    let text = text.trim();
+    let quote_start = text.find('"')?;
+    let owner = text[..quote_start].trim().trim_end_matches('.').trim();
+    let after_quote = &text[quote_start + 1..];
+    let quote_end = after_quote.find('"')?;
+    let bone = after_quote[..quote_end].trim();
+    let trailing = after_quote[quote_end + 1..].trim();
+    if !trailing.is_empty() || !is_variable_path(owner) || bone.is_empty() {
+        return None;
+    }
+    Some(format!("{owner}.\"{bone}\""))
 }
 
 fn parse_turn(line: &str) -> Result<Option<TurnStatement>, ParseError> {
@@ -4291,12 +4307,15 @@ fn parse_move_to_destination(text: &str) -> Result<MoveToDestination, ParseError
         }
     }
 
-    let entity = normalize_entity_reference(text);
-    if is_variable_path(&entity) {
-        Ok(MoveToDestination::Position(PositionValue::Entity(entity)))
-    } else {
-        Err(ParseError::InvalidNumber(text.to_owned()))
+    if let Some(entity) = parse_quoted_entity_reference(text) {
+        return Ok(MoveToDestination::Position(PositionValue::Entity(entity)));
     }
+
+    let entity = normalize_entity_reference(text);
+    if !is_variable_path(&entity) {
+        return Err(ParseError::InvalidNumber(text.to_owned()));
+    }
+    Ok(MoveToDestination::Position(PositionValue::Entity(entity)))
 }
 
 fn parse_character_mode(line: &str) -> Result<Option<CharacterModeStatement>, ParseError> {
@@ -4567,7 +4586,7 @@ fn parse_sprite_play(line: &str) -> Result<Option<SpritePlayStatement>, ParseErr
         .unwrap_or(0.0)
         .max(0.0) as usize;
     let (duration_value, duration_seconds) =
-        parse_directional_move_duration_value(rest)?.unwrap_or((AssignmentValue::Number(0.0), 0.0));
+        parse_directional_move_duration_value(rest)?.unwrap_or((AssignmentValue::Number(1.0), 1.0));
     let duration_seconds = duration_seconds.max(0.001);
     Ok(Some(SpritePlayStatement {
         target: target.to_owned(),
@@ -5773,6 +5792,24 @@ mod tests {
     }
 
     #[test]
+    fn parses_sprite_play_default_duration_as_one_second() {
+        let program = parse_program("b=>bird sprite\nb.play (frame 0 to 15)").unwrap();
+
+        assert!(matches!(
+            &program.statements[1],
+            Statement::SpritePlay(SpritePlayStatement {
+                target,
+                from_frame: 0,
+                to_frame: 15,
+                duration_seconds,
+                duration_value: AssignmentValue::Number(1.0),
+                looped: false,
+                ..
+            }) if target == "b" && (*duration_seconds - 1.0).abs() < f32::EPSILON
+        ));
+    }
+
+    #[test]
     fn parses_cinematic_camera_play_options() {
         let program = parse_program(
             "cam=>cinematic.camera.cinematic1\ncam.play : target axe, duration 1.5, reverse",
@@ -6901,10 +6938,24 @@ run tick(score+10) every tick_time+0.25 seconds
                 }),
                 Statement::Position(PositionStatement {
                     target: "player2_hit".to_owned(),
-                    position: PositionValue::Entity("player2".to_owned()),
+                    position: PositionValue::Entity("player2.\"mixamorig:Head\"".to_owned()),
                 }),
             ]
         );
+    }
+
+    #[test]
+    fn parses_move_to_quoted_bone_subject() {
+        let program = parse_program("spark.move to (player1.\"mixamorig:Head\")").unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::MoveTo(MoveToStatement {
+                target,
+                destination: MoveToDestination::Position(PositionValue::Entity(subject)),
+                ..
+            }) if target == "spark" && subject == "player1.\"mixamorig:Head\""
+        ));
     }
 
     #[test]
