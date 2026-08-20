@@ -423,12 +423,20 @@ pub(super) fn preferred_animation_match<'a>(
 pub(super) fn update_current_animation_vars(
     time: Res<Time>,
     mut vars: ResMut<SceneMaxVars>,
-    mut animations: Query<(&SceneMaxEntity, &mut CurrentAnimation)>,
+    mut animations: Query<(
+        &SceneMaxEntity,
+        &mut CurrentAnimation,
+        Option<&AnimationSpeedOverride>,
+    )>,
 ) {
     let delta = time.delta_secs();
-    for (entity, mut animation) in &mut animations {
+    for (entity, mut animation, speed_override) in &mut animations {
         let duration = animation.duration_seconds.max(0.001);
-        animation.elapsed_seconds += delta * animation.speed.max(0.001);
+        let effective_speed = speed_override
+            .map(|override_speed| override_speed.speed)
+            .unwrap_or(animation.speed)
+            .max(0.001);
+        animation.elapsed_seconds += delta * effective_speed;
         let elapsed = if animation.looped {
             animation.elapsed_seconds % duration
         } else {
@@ -473,18 +481,41 @@ pub(super) fn apply_animation_speed_overrides(
     time: Res<Time>,
     mut commands: Commands,
     children: Query<&Children>,
-    mut roots: Query<(Entity, &mut AnimationSpeedOverride), With<SceneMaxEntity>>,
+    mut roots: Query<
+        (
+            Entity,
+            &SceneMaxEntity,
+            &mut AnimationSpeedOverride,
+            Option<&CurrentAnimation>,
+        ),
+        With<SceneMaxEntity>,
+    >,
     mut players: Query<&mut AnimationPlayer>,
 ) {
-    for (root, mut speed_override) in &mut roots {
+    for (root, scene_entity, mut speed_override, current_animation) in &mut roots {
         let player_entities = children.iter_descendants(root).collect::<Vec<_>>();
-        if !speed_override.applied {
-            for player_entity in &player_entities {
-                if let Ok(mut player) = players.get_mut(*player_entity) {
+        let mut active_animation_count = 0;
+        for player_entity in &player_entities {
+            if let Ok(mut player) = players.get_mut(*player_entity) {
+                active_animation_count +=
                     set_active_animation_speeds(&mut player, speed_override.speed);
-                }
             }
+        }
+        if active_animation_count > 0 && !speed_override.applied {
             speed_override.applied = true;
+            write_runtime_log_line(
+                LoggerLevel::Info,
+                &format!(
+                    "ANIM:SPEED target={} speed={} duration={} active={}",
+                    scene_entity.name,
+                    format_scenemax_number(speed_override.speed),
+                    speed_override
+                        .remaining_seconds
+                        .map(format_scenemax_number)
+                        .unwrap_or_else(|| "none".to_owned()),
+                    active_animation_count
+                ),
+            );
         }
 
         let Some(remaining_seconds) = speed_override.remaining_seconds.as_mut() else {
@@ -493,18 +524,38 @@ pub(super) fn apply_animation_speed_overrides(
         };
         *remaining_seconds -= time.delta_secs();
         if *remaining_seconds <= 0.0 {
+            let restore_speed = current_animation
+                .map(|animation| animation.speed)
+                .unwrap_or(1.0)
+                .max(0.001);
+            let mut restored_animation_count = 0;
             for player_entity in &player_entities {
                 if let Ok(mut player) = players.get_mut(*player_entity) {
-                    set_active_animation_speeds(&mut player, 1.0);
+                    restored_animation_count +=
+                        set_active_animation_speeds(&mut player, restore_speed);
                 }
+            }
+            if restored_animation_count > 0 {
+                write_runtime_log_line(
+                    LoggerLevel::Info,
+                    &format!(
+                        "ANIM:SPEED:RESTORE target={} speed={} active={}",
+                        scene_entity.name,
+                        format_scenemax_number(restore_speed),
+                        restored_animation_count
+                    ),
+                );
             }
             commands.entity(root).remove::<AnimationSpeedOverride>();
         }
     }
 }
 
-pub(super) fn set_active_animation_speeds(player: &mut AnimationPlayer, speed: f32) {
+pub(super) fn set_active_animation_speeds(player: &mut AnimationPlayer, speed: f32) -> usize {
+    let mut active_animation_count = 0;
     for (_, active_animation) in player.playing_animations_mut() {
         active_animation.set_speed(speed);
+        active_animation_count += 1;
     }
+    active_animation_count
 }

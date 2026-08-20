@@ -41,6 +41,81 @@ shake_the_world2 = {
 	
 }
 
+level1_hitstop_p2_receives (tm) = {
+  var level1_hitstop_was_slow_motion = slow_motion
+  slow_motion=1
+  player1.animation speed 0.001 for tm seconds
+  player2.animation speed 0.06 for tm seconds
+  wait tm second
+  if(level1_hitstop_was_slow_motion==0) {
+    slow_motion=0
+  }
+}
+
+level1_hitstop_p1_receives (tm) = {
+  var level1_hitstop_was_slow_motion = slow_motion
+  slow_motion=1
+  player2.animation speed 0.001 for tm seconds
+  player1.animation speed 0.06 for tm seconds
+  wait tm second
+  if(level1_hitstop_was_slow_motion==0) {
+    slow_motion=0
+  }
+}
+
+level1_hit_recoil_p2 = {
+  player2.character.jump at speed of 16 async
+  player2.move backward 1.15 for 0.32 seconds
+}
+
+level1_hit_recoil_p1 = {
+  player1.character.jump at speed of 16 async
+  player1.move backward 1.15 for 0.32 seconds
+}
+
+level1_camera_resume_modifiers_after_hit = {
+  wait 0.38 seconds
+  level1_camera_modifiers_paused=0
+}
+
+level1_camera_punch_right = {
+  fight_cam.apply bump_fx : duration 0.11, amplitude 2.4, x 0.75, y 0.34, z -0.55, rz 4.0, fov 2.4
+  wait 0.025 seconds
+  fight_cam.apply hit_fx : duration 0.22, amplitude 1.8
+  wait 0.06 seconds
+  fight_cam.apply bump_fx : duration 0.16, amplitude 0.9, x -0.22, y -0.08, z 0.08, rz -1.2, fov 0.45
+}
+
+level1_camera_punch_left = {
+  fight_cam.apply bump_fx : duration 0.11, amplitude 2.4, x -0.75, y 0.34, z -0.55, rz -4.0, fov 2.4
+  wait 0.025 seconds
+  fight_cam.apply hit_fx : duration 0.22, amplitude 1.8
+  wait 0.06 seconds
+  fight_cam.apply bump_fx : duration 0.16, amplitude 0.9, x 0.22, y -0.08, z 0.08, rz 1.2, fov 0.45
+}
+
+[camera_mode==CAMERA_MODE_DEFAULT && level1_camera_modifiers_paused==0]
+level1_camera_impact_p1_to_p2 = {
+  level1_camera_modifiers_paused=1
+  run level1_camera_resume_modifiers_after_hit async
+  if(player2.x > player1.x) {
+    run level1_camera_punch_right
+  } else {
+    run level1_camera_punch_left
+  }
+}
+
+[camera_mode==CAMERA_MODE_DEFAULT && level1_camera_modifiers_paused==0]
+level1_camera_impact_p2_to_p1 = {
+  level1_camera_modifiers_paused=1
+  run level1_camera_resume_modifiers_after_hit async
+  if(player1.x > player2.x) {
+    run level1_camera_punch_right
+  } else {
+    run level1_camera_punch_left
+  }
+}
+
 [camera_mode==CAMERA_MODE_DEFAULT && game_status==GAME_STATE_START && level1_dragon_rock_count>0 && level1_camera_modifiers_paused==0]
 level1_earthquake_camera = {
   fight_cam.apply bump_fx : duration 0.28, amplitude 0.95, x 0.18, y 0.16, z 0.05, ry 0.75, rz 1.35

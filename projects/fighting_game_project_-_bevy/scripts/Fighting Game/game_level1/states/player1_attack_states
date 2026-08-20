@@ -23,9 +23,12 @@ player2_head_hit = {
 		audio.play "hurt1"
 	}
 	audio.play "punch1"
-	player2."Hit" async
-	run shake_the_world async
-	player2.move backward 0.4 for 0.2 seconds
+	player2."Hit" at speed of 3 async
+	run level1_camera_impact_p1_to_p2 async
+	run level1_hitstop_p2_receives (0.12)
+	laser_effect => effects.effekseer.Simple_Sprite_BillBoard
+  laser_effect.play pos (player1)
+	run level1_hit_recoil_p2
 }
 
 when @hit_by_legs && action == PLAYER_ACTION_S && player1.anim_percent < 25 do
