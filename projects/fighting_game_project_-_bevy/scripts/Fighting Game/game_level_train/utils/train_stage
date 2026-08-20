@@ -1,0 +1,1022 @@
+train_upper_parts_center = {
+  train_roof.pos (40,-88.2,22.75)
+  train_body.pos (40,-90.2,22.75)
+  front_guard.pos (40,-89.8,9.4)
+  train_left_side.pos (36.5,-89.4,22.75)
+  train_right_side.pos (43.5,-89.4,22.75)
+  rail_left.pos (38.2,-91.8,22.75)
+  rail_right.pos (41.8,-91.8,22.75)
+  train_cabin.pos (40,-86.7,13.5)
+  train_cabin_roof.pos (40,-85.35,13.5)
+  train_crate_stack.pos (40,-87,31)
+  train_crate_top.pos (40,-85.95,31)
+}
+
+train_upper_parts_roll_left = {
+  do async
+    train_roof.move to (40,-87.8,22.75) in 0.18 seconds
+  end do
+  do async
+    train_body.move to (40,-89.75,22.75) in 0.18 seconds
+  end do
+  do async
+    front_guard.move to (40,-89.35,9.4) in 0.18 seconds
+  end do
+  do async
+    train_left_side.move to (36.5,-88.95,22.75) in 0.18 seconds
+  end do
+  do async
+    train_right_side.move to (43.5,-88.95,22.75) in 0.18 seconds
+  end do
+  do async
+    rail_left.move to (38.2,-91.35,22.75) in 0.18 seconds
+  end do
+  do async
+    rail_right.move to (41.8,-91.35,22.75) in 0.18 seconds
+  end do
+  do async
+    train_cabin.move to (40,-86.15,13.5) in 0.18 seconds
+  end do
+  do async
+    train_cabin_roof.move to (40,-84.7,13.5) in 0.18 seconds
+  end do
+  do async
+    train_crate_stack.move to (40,-86.4,31) in 0.18 seconds
+  end do
+  do async
+    train_crate_top.move to (40,-85.35,31) in 0.18 seconds
+  end do
+  wait 0.18 seconds
+
+  do async
+    train_roof.move to (40,-87.45,22.75) in 0.22 seconds
+  end do
+  do async
+    train_body.move to (40,-89.35,22.75) in 0.22 seconds
+  end do
+  do async
+    front_guard.move to (40,-88.95,9.4) in 0.22 seconds
+  end do
+  do async
+    train_left_side.move to (36.5,-88.55,22.75) in 0.22 seconds
+  end do
+  do async
+    train_right_side.move to (43.5,-88.55,22.75) in 0.22 seconds
+  end do
+  do async
+    rail_left.move to (38.2,-90.95,22.75) in 0.22 seconds
+  end do
+  do async
+    rail_right.move to (41.8,-90.95,22.75) in 0.22 seconds
+  end do
+  do async
+    train_cabin.move to (40,-85.8,13.5) in 0.22 seconds
+  end do
+  do async
+    train_cabin_roof.move to (40,-84.35,13.5) in 0.22 seconds
+  end do
+  do async
+    train_crate_stack.move to (40,-86.05,31) in 0.22 seconds
+  end do
+  do async
+    train_crate_top.move to (40,-85.0,31) in 0.22 seconds
+  end do
+  wait 0.22 seconds
+}
+
+train_upper_parts_roll_right = {
+  do async
+    train_roof.move to (40,-88.45,22.75) in 0.2 seconds
+  end do
+  do async
+    train_body.move to (40,-90.45,22.75) in 0.2 seconds
+  end do
+  do async
+    front_guard.move to (40,-89.95,9.4) in 0.2 seconds
+  end do
+  do async
+    train_left_side.move to (36.5,-89.7,22.75) in 0.2 seconds
+  end do
+  do async
+    train_right_side.move to (43.5,-89.7,22.75) in 0.2 seconds
+  end do
+  do async
+    rail_left.move to (38.2,-92.1,22.75) in 0.2 seconds
+  end do
+  do async
+    rail_right.move to (41.8,-92.1,22.75) in 0.2 seconds
+  end do
+  do async
+    train_cabin.move to (40,-86.95,13.5) in 0.2 seconds
+  end do
+  do async
+    train_cabin_roof.move to (40,-85.7,13.5) in 0.2 seconds
+  end do
+  do async
+    train_crate_stack.move to (40,-87.3,31) in 0.2 seconds
+  end do
+  do async
+    train_crate_top.move to (40,-86.3,31) in 0.2 seconds
+  end do
+  wait 0.2 seconds
+
+  do async
+    train_roof.move to (40,-88.75,22.75) in 0.32 seconds
+  end do
+  do async
+    train_body.move to (40,-90.7,22.75) in 0.32 seconds
+  end do
+  do async
+    front_guard.move to (40,-90.2,9.4) in 0.32 seconds
+  end do
+  do async
+    train_left_side.move to (36.5,-89.95,22.75) in 0.32 seconds
+  end do
+  do async
+    train_right_side.move to (43.5,-89.95,22.75) in 0.32 seconds
+  end do
+  do async
+    rail_left.move to (38.2,-92.35,22.75) in 0.32 seconds
+  end do
+  do async
+    rail_right.move to (41.8,-92.35,22.75) in 0.32 seconds
+  end do
+  do async
+    train_cabin.move to (40,-87.2,13.5) in 0.32 seconds
+  end do
+  do async
+    train_cabin_roof.move to (40,-85.95,13.5) in 0.32 seconds
+  end do
+  do async
+    train_crate_stack.move to (40,-87.55,31) in 0.32 seconds
+  end do
+  do async
+    train_crate_top.move to (40,-86.55,31) in 0.32 seconds
+  end do
+  wait 0.32 seconds
+}
+
+train_upper_parts_center_from_right = {
+  do async
+    train_roof.move to (40,-88.35,22.75) in 0.16 seconds
+  end do
+  do async
+    train_body.move to (40,-90.35,22.75) in 0.16 seconds
+  end do
+  do async
+    front_guard.move to (40,-89.95,9.4) in 0.16 seconds
+  end do
+  do async
+    train_left_side.move to (36.5,-89.55,22.75) in 0.16 seconds
+  end do
+  do async
+    train_right_side.move to (43.5,-89.55,22.75) in 0.16 seconds
+  end do
+  do async
+    rail_left.move to (38.2,-91.95,22.75) in 0.16 seconds
+  end do
+  do async
+    rail_right.move to (41.8,-91.95,22.75) in 0.16 seconds
+  end do
+  do async
+    train_cabin.move to (40,-86.85,13.5) in 0.16 seconds
+  end do
+  do async
+    train_cabin_roof.move to (40,-85.5,13.5) in 0.16 seconds
+  end do
+  do async
+    train_crate_stack.move to (40,-87.15,31) in 0.16 seconds
+  end do
+  do async
+    train_crate_top.move to (40,-86.1,31) in 0.16 seconds
+  end do
+  wait 0.16 seconds
+
+  do async
+    train_roof.move to (40,-88.2,22.75) in 0.18 seconds
+  end do
+  do async
+    train_body.move to (40,-90.2,22.75) in 0.18 seconds
+  end do
+  do async
+    front_guard.move to (40,-89.8,9.4) in 0.18 seconds
+  end do
+  do async
+    train_left_side.move to (36.5,-89.4,22.75) in 0.18 seconds
+  end do
+  do async
+    train_right_side.move to (43.5,-89.4,22.75) in 0.18 seconds
+  end do
+  do async
+    rail_left.move to (38.2,-91.8,22.75) in 0.18 seconds
+  end do
+  do async
+    rail_right.move to (41.8,-91.8,22.75) in 0.18 seconds
+  end do
+  do async
+    train_cabin.move to (40,-86.7,13.5) in 0.18 seconds
+  end do
+  do async
+    train_cabin_roof.move to (40,-85.35,13.5) in 0.18 seconds
+  end do
+  do async
+    train_crate_stack.move to (40,-87,31) in 0.18 seconds
+  end do
+  do async
+    train_crate_top.move to (40,-85.95,31) in 0.18 seconds
+  end do
+  wait 0.18 seconds
+  run train_upper_parts_center
+}
+
+train_upper_parts_big_hit_pop = {
+  do async
+    train_roof.move to (40,-87.1,22.75) in 0.16 seconds
+  end do
+  do async
+    train_body.move to (40,-88.95,22.75) in 0.16 seconds
+  end do
+  do async
+    front_guard.move to (40,-88.55,9.4) in 0.16 seconds
+  end do
+  do async
+    train_left_side.move to (36.5,-88.15,22.75) in 0.16 seconds
+  end do
+  do async
+    train_right_side.move to (43.5,-88.15,22.75) in 0.16 seconds
+  end do
+  do async
+    rail_left.move to (38.2,-90.55,22.75) in 0.16 seconds
+  end do
+  do async
+    rail_right.move to (41.8,-90.55,22.75) in 0.16 seconds
+  end do
+  do async
+    train_cabin.move to (40,-85.25,13.5) in 0.16 seconds
+  end do
+  do async
+    train_cabin_roof.move to (40,-83.9,13.5) in 0.16 seconds
+  end do
+  do async
+    train_crate_stack.move to (40,-85.55,31) in 0.16 seconds
+  end do
+  do async
+    train_crate_top.move to (40,-84.5,31) in 0.16 seconds
+  end do
+  wait 0.16 seconds
+}
+
+train_upper_parts_big_hit_slam = {
+  do async
+    train_roof.move to (40,-88.95,22.75) in 0.12 seconds
+  end do
+  do async
+    train_body.move to (40,-90.9,22.75) in 0.12 seconds
+  end do
+  do async
+    front_guard.move to (40,-90.45,9.4) in 0.12 seconds
+  end do
+  do async
+    train_left_side.move to (36.5,-90.2,22.75) in 0.12 seconds
+  end do
+  do async
+    train_right_side.move to (43.5,-90.2,22.75) in 0.12 seconds
+  end do
+  do async
+    rail_left.move to (38.2,-92.45,22.75) in 0.12 seconds
+  end do
+  do async
+    rail_right.move to (41.8,-92.45,22.75) in 0.12 seconds
+  end do
+  do async
+    train_cabin.move to (40,-87.55,13.5) in 0.12 seconds
+  end do
+  do async
+    train_cabin_roof.move to (40,-86.15,13.5) in 0.12 seconds
+  end do
+  do async
+    train_crate_stack.move to (40,-87.8,31) in 0.12 seconds
+  end do
+  do async
+    train_crate_top.move to (40,-86.7,31) in 0.12 seconds
+  end do
+  wait 0.12 seconds
+}
+
+train_upper_parts_big_hit = {
+  run train_upper_parts_big_hit_pop
+  if(camera_mode==CAMERA_MODE_DEFAULT && train_camera_cycle_guard==0) {
+    run shake_the_world
+  }
+  audio.play "crash1"
+  wait 0.04 seconds
+
+  run train_upper_parts_big_hit_slam
+  if(camera_mode==CAMERA_MODE_DEFAULT && train_camera_cycle_guard==0) {
+    run shake_the_world2
+  }
+  wait 0.06 seconds
+
+  run train_upper_parts_center
+}
+
+train_move_left_post_1 = {
+  if(train_stage_started==0) {
+    return
+  }
+
+  left_post_1.pos (31.5,-87.4,42)
+  left_post_1.move to (31.5,-87.4,-12) in 4.2 seconds async
+}
+
+train_move_left_post_2 = {
+  if(train_stage_started==0) {
+    return
+  }
+
+  left_post_2.pos (31.5,-87.4,42)
+  left_post_2.move to (31.5,-87.4,-12) in 4.2 seconds async
+}
+
+train_move_left_post_3 = {
+  if(train_stage_started==0) {
+    return
+  }
+
+  left_post_3.pos (31.5,-87.4,42)
+  left_post_3.move to (31.5,-87.4,-12) in 4.2 seconds async
+}
+
+train_move_right_post_1 = {
+  if(train_stage_started==0) {
+    return
+  }
+
+  right_post_1.pos (48.5,-87.4,42)
+  right_post_1.move to (48.5,-87.4,-12) in 4.2 seconds async
+}
+
+train_move_right_post_2 = {
+  if(train_stage_started==0) {
+    return
+  }
+
+  right_post_2.pos (48.5,-87.4,42)
+  right_post_2.move to (48.5,-87.4,-12) in 4.2 seconds async
+}
+
+train_move_right_post_3 = {
+  if(train_stage_started==0) {
+    return
+  }
+
+  right_post_3.pos (48.5,-87.4,42)
+  right_post_3.move to (48.5,-87.4,-12) in 4.2 seconds async
+}
+
+train_move_left_far_wall = {
+  if(train_stage_started==0) {
+    return
+  }
+
+  canyon_left_wall_far.pos (-62,-104,134)
+  canyon_left_wall_far.move to (-62,-104,52) in 10.8 seconds async
+}
+
+train_move_right_far_wall = {
+  if(train_stage_started==0) {
+    return
+  }
+
+  canyon_right_wall_far.pos (142,-104,134)
+  canyon_right_wall_far.move to (142,-104,52) in 10.8 seconds async
+}
+
+train_move_left_peak = {
+  if(train_stage_started==0) {
+    return
+  }
+
+  canyon_left_peak.pos (-78,-92,104)
+  canyon_left_peak.move to (-78,-92,28) in 12.2 seconds async
+}
+
+train_move_right_peak = {
+  if(train_stage_started==0) {
+    return
+  }
+
+  canyon_right_peak.pos (158,-92,68)
+  canyon_right_peak.move to (158,-92,-8) in 12.2 seconds async
+}
+
+train_move_bridge = {
+  if(train_stage_started==0) {
+    return
+  }
+
+  rear_bridge_span.pos (40,-78,118)
+  rear_bridge_tower_left.pos (23,-89,118)
+  rear_bridge_tower_right.pos (57,-89,118)
+  rear_bridge_rail_left.pos (40,-76.8,114.4)
+  rear_bridge_rail_right.pos (40,-76.8,121.6)
+
+  rear_bridge_span.move to (40,-78,54) in 8.8 seconds async
+  rear_bridge_tower_left.move to (23,-89,54) in 8.8 seconds async
+  rear_bridge_tower_right.move to (57,-89,54) in 8.8 seconds async
+  rear_bridge_rail_left.move to (40,-76.8,50.4) in 8.8 seconds async
+  rear_bridge_rail_right.move to (40,-76.8,57.6) in 8.8 seconds async
+}
+
+train_move_left_monolith = {
+  if(train_stage_started==0) {
+    return
+  }
+
+  distant_monolith_left.pos (20,-93,54)
+  distant_monolith_left.move to (20,-93,-24) in 7.6 seconds async
+}
+
+train_move_right_monolith = {
+  if(train_stage_started==0) {
+    return
+  }
+
+  distant_monolith_right.pos (60,-93,40)
+  distant_monolith_right.move to (60,-93,-38) in 7.6 seconds async
+}
+
+train_helicopter_patrol = {
+  attack_helicopter.show
+  attack_helicopter.pos (40,-72,22.75)
+
+  do
+    attack_helicopter.move to (78,-70,48) in 4.4 seconds
+    wait 4.4 seconds
+    attack_helicopter.move to (-4,-73,36) in 5.2 seconds
+    wait 5.2 seconds
+    attack_helicopter.move to (36,-69,-14) in 4.8 seconds
+    wait 4.8 seconds
+    attack_helicopter.move to (70,-72,10) in 4.0 seconds
+    wait 4.0 seconds
+  while train_stage_started==1
+
+  attack_helicopter.hide
+}
+
+train_helicopter_sound_loop = {
+  train_helicopter_sound_playing=0
+
+  do
+    wait 0.35 seconds
+    if(game_status==GAME_STATE_START && train_ringout==0 && train_respawn_lock==0 && (distance(player1, attack_helicopter) < 42 || distance(player2, attack_helicopter) < 42)) {
+      if(train_helicopter_sound_playing==0) {
+        audio.play "helicopter_near1" loop
+        train_helicopter_sound_playing=1
+      }
+    } else {
+      if(train_helicopter_sound_playing==1) {
+        audio.stop "helicopter_near1"
+        train_helicopter_sound_playing=0
+      }
+    }
+  while train_stage_started==1
+
+  if(train_helicopter_sound_playing==1) {
+    audio.stop "helicopter_near1"
+    train_helicopter_sound_playing=0
+  }
+}
+
+train_helicopter_mark_player1 = {
+  middleSphere.pos(player1)
+}
+
+train_helicopter_mark_player2 = {
+  middleSphere.pos(player2)
+}
+
+train_helicopter_fire_laser = {
+  if(game_status!=GAME_STATE_START || train_ringout==1 || train_respawn_lock==1) {
+    return
+  }
+
+  if(rnd(2)==0) {
+    run train_helicopter_mark_player1
+  } else {
+    run train_helicopter_mark_player2
+  }
+
+  sight_fx => effects.effekseer.Simple_Ring_Shape1
+  sight_fx.play pos (middleSphere) Async
+  wait 1.15 seconds
+
+  laser_fx => effects.effekseer.Laser01
+  laser_fx.play pos (middleSphere) Async
+  audio.play "laser1"
+
+  if(distance(player1, middleSphere) < 2.4 && player1_ko==0 && game_status==GAME_STATE_START && train_ringout==0) {
+    run player1_head_hit
+  }
+
+  if(distance(player2, middleSphere) < 2.4 && enemy_ko==0 && game_status==GAME_STATE_START && train_ringout==0) {
+    run player2_head_hit
+  }
+
+  wait 0.6 seconds
+  sight_fx.delete
+  laser_fx.delete
+}
+
+train_helicopter_laser_loop = {
+  do
+    wait 4.5 seconds
+    if(game_status==GAME_STATE_START && train_ringout==0 && train_respawn_lock==0) {
+      run train_helicopter_fire_laser
+    }
+    wait 2.0 seconds
+  while train_stage_started==1
+}
+
+train_stage_init = {
+  if(train_stage_started==1) {
+    return
+  }
+
+  train_stage_started=1
+  run train_upper_parts_center
+  run train_helicopter_patrol Async
+  run train_helicopter_sound_loop Async
+  run train_helicopter_laser_loop Async
+
+  left_post_1.pos (31.5,-87.4,36)
+  left_post_2.pos (31.5,-87.4,18)
+  left_post_3.pos (31.5,-87.4,0)
+  right_post_1.pos (48.5,-87.4,36)
+  right_post_2.pos (48.5,-87.4,18)
+  right_post_3.pos (48.5,-87.4,0)
+
+  left_post_1.move to (31.5,-87.4,-12) in 3.733 seconds async
+  left_post_2.move to (31.5,-87.4,-12) in 2.333 seconds async
+  left_post_3.move to (31.5,-87.4,-12) in 0.933 seconds async
+  right_post_1.move to (48.5,-87.4,-12) in 3.733 seconds async
+  right_post_2.move to (48.5,-87.4,-12) in 2.333 seconds async
+  right_post_3.move to (48.5,-87.4,-12) in 0.933 seconds async
+
+  canyon_left_wall_far.pos (-62,-104,112)
+  canyon_right_wall_far.pos (142,-104,86)
+  canyon_left_peak.pos (-78,-92,82)
+  canyon_right_peak.pos (158,-92,46)
+  rear_bridge_span.pos (40,-78,96)
+  rear_bridge_tower_left.pos (23,-89,96)
+  rear_bridge_tower_right.pos (57,-89,96)
+  rear_bridge_rail_left.pos (40,-76.8,92.4)
+  rear_bridge_rail_right.pos (40,-76.8,99.6)
+  distant_monolith_left.pos (20,-93,28)
+  distant_monolith_right.pos (60,-93,10)
+
+  canyon_left_wall_far.move to (-62,-104,52) in 7.907 seconds async
+  canyon_right_wall_far.move to (142,-104,52) in 4.482 seconds async
+  canyon_left_peak.move to (-78,-92,28) in 8.707 seconds async
+  canyon_right_peak.move to (158,-92,-8) in 5.576 seconds async
+  rear_bridge_span.move to (40,-78,54) in 5.775 seconds async
+  rear_bridge_tower_left.move to (23,-89,54) in 5.775 seconds async
+  rear_bridge_tower_right.move to (57,-89,54) in 5.775 seconds async
+  rear_bridge_rail_left.move to (40,-76.8,50.4) in 5.775 seconds async
+  rear_bridge_rail_right.move to (40,-76.8,57.6) in 5.775 seconds async
+  distant_monolith_left.move to (20,-93,-24) in 5.068 seconds async
+  distant_monolith_right.move to (60,-93,-38) in 4.68 seconds async
+
+  if(train_post_loops_bootstrapped==0) {
+    train_post_loops_bootstrapped=1
+
+    do async
+      wait 3.733 seconds
+      run train_move_left_post_1
+      run train_move_left_post_1 every 4.2 seconds
+    end do
+
+    do async
+      wait 2.333 seconds
+      run train_move_left_post_2
+      run train_move_left_post_2 every 4.2 seconds
+    end do
+
+    do async
+      wait 0.933 seconds
+      run train_move_left_post_3
+      run train_move_left_post_3 every 4.2 seconds
+    end do
+
+    do async
+      wait 3.733 seconds
+      run train_move_right_post_1
+      run train_move_right_post_1 every 4.2 seconds
+    end do
+
+    do async
+      wait 2.333 seconds
+      run train_move_right_post_2
+      run train_move_right_post_2 every 4.2 seconds
+    end do
+
+    do async
+      wait 0.933 seconds
+      run train_move_right_post_3
+      run train_move_right_post_3 every 4.2 seconds
+    end do
+  }
+
+  if(train_scenery_loops_bootstrapped==0) {
+    train_scenery_loops_bootstrapped=1
+
+    do async
+      wait 7.907 seconds
+      run train_move_left_far_wall
+      run train_move_left_far_wall every 10.8 seconds
+    end do
+
+    do async
+      wait 4.482 seconds
+      run train_move_right_far_wall
+      run train_move_right_far_wall every 10.8 seconds
+    end do
+
+    do async
+      wait 8.707 seconds
+      run train_move_left_peak
+      run train_move_left_peak every 12.2 seconds
+    end do
+
+    do async
+      wait 5.576 seconds
+      run train_move_right_peak
+      run train_move_right_peak every 12.2 seconds
+    end do
+
+    do async
+      wait 5.775 seconds
+      run train_move_bridge
+      run train_move_bridge every 8.8 seconds
+    end do
+
+    do async
+      wait 5.068 seconds
+      run train_move_left_monolith
+      run train_move_left_monolith every 7.6 seconds
+    end do
+
+    do async
+      wait 4.68 seconds
+      run train_move_right_monolith
+      run train_move_right_monolith every 7.6 seconds
+    end do
+  }
+
+  do async
+    wait 0.75 seconds
+    if(game_status==GAME_STATE_START && train_ringout==0 && train_respawn_lock==0 && train_camera_cycle_guard==0 && player1_ko==0 && enemy_ko==0 && player1.data.celebrating==0) {
+      run train_upper_parts_roll_left
+      if(camera_mode==CAMERA_MODE_DEFAULT && train_respawn_lock==0 && train_camera_cycle_guard==0 && player1_ko==0 && enemy_ko==0 && player1.data.celebrating==0 && rnd(4) == 0) {
+        run shake_the_world2
+      }
+      if(game_status==GAME_STATE_START && train_ringout==0 && train_respawn_lock==0 && train_camera_cycle_guard==0 && player1_ko==0 && enemy_ko==0 && player1.data.celebrating==0) {
+        run train_upper_parts_roll_right
+        if(camera_mode==CAMERA_MODE_DEFAULT && train_respawn_lock==0 && train_camera_cycle_guard==0 && player1_ko==0 && enemy_ko==0 && player1.data.celebrating==0 && rnd(4) == 0) {
+          run shake_the_world2
+        }
+        run train_upper_parts_center_from_right
+        wait 0.35 seconds
+      } else {
+        run train_upper_parts_center
+        wait 0.45 seconds
+      }
+    } else {
+      run train_upper_parts_center
+      wait 0.45 seconds
+    }
+  while train_stage_started==1
+
+  do async
+    wait 0.7 seconds
+    if(game_status==GAME_STATE_START && train_ringout==0 && train_respawn_lock==0 && train_camera_cycle_guard==0 && player1_ko==0 && enemy_ko==0 && player1.data.celebrating==0) {
+      if(camera_mode==CAMERA_MODE_DEFAULT && train_camera_cycle_guard==0) {
+        run shake_the_world2
+        if(rnd(6) == 0) {
+          run shake_the_world
+        }
+      }
+    }
+  while train_stage_started==1
+
+  do async
+    wait 3.2 seconds
+    if(game_status==GAME_STATE_START && train_ringout==0 && train_respawn_lock==0 && train_camera_cycle_guard==0 && player1_ko==0 && enemy_ko==0 && player1.data.celebrating==0 && rnd(3) == 0) {
+      run train_upper_parts_big_hit
+    }
+  while train_stage_started==1
+}
+
+train_stage_stop = {
+  train_stage_started=0
+  audio.stop "helicopter_near1"
+  train_helicopter_sound_playing=0
+  run train_upper_parts_center
+  attack_helicopter.hide
+}
+
+train_damage_player1_for_fall = {
+  if(life1 > 3) {
+    life1 = life1 - 3
+  } else {
+    life1 = 1
+  }
+}
+
+train_damage_player2_for_fall = {
+  if(life2 > 3) {
+    life2 = life2 - 3
+  } else {
+    life2 = 1
+  }
+}
+
+train_reset_fighters_to_center = {
+  player1.clear character mode
+  player2.clear character mode
+  player1.pos (40,-87.4,25.8)
+  player2.pos (40,-86.9,19.8)
+  player1.switch to character mode : gravity 60
+  player2.switch to character mode : gravity 40
+  player1.look at (player2)
+  player2.look at (player1)
+  player1.idle2 loop
+  player2.Idle loop
+}
+
+train_start_fighters_from_above = {
+  train_respawn_lock=1
+
+  player1.clear character mode
+  player2.clear character mode
+  player1.data.is_jumping=1
+  player2.data.is_jumping=1
+
+  player1.pos (40,-77.4,25.8)
+  player2.pos (40,-76.9,19.8)
+  player1.show
+  player2.show
+  player1.look at (player2)
+  player2.look at (player1)
+  player1.idle2 loop
+  player2.Idle loop
+
+  wait 0.06 seconds
+  player1.switch to character mode : gravity 90
+  player2.switch to character mode : gravity 90
+
+  wait 0.85 seconds
+
+  player1.clear character mode
+  player2.clear character mode
+  player1.pos (40,-87.4,25.8)
+  player2.pos (40,-86.9,19.8)
+  wait 0.04 seconds
+  player1.switch to character mode : gravity 60
+  player2.switch to character mode : gravity 40
+  player1.look at (player2)
+  player2.look at (player1)
+  player1.data.is_jumping=0
+  player2.data.is_jumping=0
+  player1.idle2 loop
+  player2.Idle loop
+  audio.play "crash1"
+
+  wait 0.2 seconds
+  train_respawn_lock=0
+}
+
+train_respawn_entry_fx_player1 = {
+  burst_fx => effects.effekseer.Simple_Distortion_2
+  spark_fx => effects.effekseer.Simple_Sprite_BillBoard
+  burst_fx.play pos (player1) Async
+  spark_fx.play pos (player1) Async
+  do async
+    wait 0.35 seconds
+    burst_fx.delete
+    spark_fx.delete
+  end do
+}
+
+train_respawn_entry_fx_player2 = {
+  burst_fx => effects.effekseer.Simple_Distortion_2
+  spark_fx => effects.effekseer.Simple_Sprite_BillBoard
+  burst_fx.play pos (player2) Async
+  spark_fx.play pos (player2) Async
+  do async
+    wait 0.35 seconds
+    burst_fx.delete
+    spark_fx.delete
+  end do
+}
+
+train_respawn_landing_fx_player1 = {
+  ring_fx => effects.effekseer.Simple_Ring_Shape1
+  burst_fx => effects.effekseer.Simple_Distortion_2
+  spark_fx => effects.effekseer.Simple_Sprite_BillBoard
+  ring_fx.play pos (player1) Async
+  burst_fx.play pos (player1) Async
+  spark_fx.play pos (player1."mixamorig:Head") Async
+  do async
+    wait 0.55 seconds
+    ring_fx.delete
+    burst_fx.delete
+    spark_fx.delete
+  end do
+}
+
+train_respawn_landing_fx_player2 = {
+  ring_fx => effects.effekseer.Simple_Ring_Shape1
+  burst_fx => effects.effekseer.Simple_Distortion_2
+  spark_fx => effects.effekseer.Simple_Sprite_BillBoard
+  ring_fx.play pos (player2) Async
+  burst_fx.play pos (player2) Async
+  spark_fx.play pos (player2."mixamorig:Head") Async
+  do async
+    wait 0.55 seconds
+    ring_fx.delete
+    burst_fx.delete
+    spark_fx.delete
+  end do
+}
+
+train_resume_after_fall = {
+  camera_mode=CAMERA_MODE_DEFAULT
+  train_camera_cycle_guard=0
+  run set_camera_on_player
+  train_respawn_lock=1
+
+  player1.clear character mode
+  player2.clear character mode
+
+  if(train_player1_fall_pending==1) {
+    player1.pos (40,-54,25.8)
+    player2.pos (40,-86.9,19.8)
+    player2.switch to character mode : gravity 40
+    player2.look at (player1)
+    player2.Idle loop
+
+    run train_respawn_entry_fx_player1 Async
+    wait 0.06 seconds
+    player1.switch to character mode : gravity 180
+    player1.look at (player2)
+
+    game_status=GAME_STATE_START
+    train_ringout=0
+
+    do
+      wait 0.04 seconds
+    while player1.y > -87.05
+
+    player1.clear character mode
+    player1.pos (40,-87.4,25.8)
+    wait 0.04 seconds
+    player1.switch to character mode : gravity 60
+    player1.look at (player2)
+    audio.play "crash1"
+    run train_respawn_landing_fx_player1 Async
+    run train_respawn_camera_hit
+    player1.idle2 loop
+  } else if(train_player2_fall_pending==1) {
+    player1.pos (40,-87.4,25.8)
+    player2.pos (40,-54,19.8)
+    player1.switch to character mode : gravity 60
+    player1.look at (player2)
+    player1.idle2 loop
+
+    run train_respawn_entry_fx_player2 Async
+    wait 0.06 seconds
+    player2.switch to character mode : gravity 180
+    player2.look at (player1)
+
+    game_status=GAME_STATE_START
+    train_ringout=0
+
+    do
+      wait 0.04 seconds
+    while player2.y > -86.55
+
+    player2.clear character mode
+    player2.pos (40,-86.9,19.8)
+    wait 0.04 seconds
+    player2.switch to character mode : gravity 40
+    player2.look at (player1)
+    audio.play "crash1"
+    run train_respawn_landing_fx_player2 Async
+    run train_respawn_camera_hit
+    player2.Idle loop
+  } else {
+    run train_reset_fighters_to_center
+    game_status=GAME_STATE_START
+    train_ringout=0
+  }
+
+  wait 0.45 seconds
+  train_player1_fall_pending=0
+  train_player2_fall_pending=0
+  train_respawn_lock=0
+}
+
+train_ringout_fx_player1 = {
+  ring_fx => effects.effekseer.Simple_Ring_Shape1
+  burst_fx => effects.effekseer.Simple_Distortion_2
+  spark_fx => effects.effekseer.Simple_Sprite_BillBoard
+  ring_fx.play pos (player1) Async
+  burst_fx.play pos (player1) Async
+  spark_fx.play pos (player1."mixamorig:Head") Async
+  do async
+    wait 0.5 seconds
+    ring_fx.delete
+    burst_fx.delete
+    spark_fx.delete
+  end do
+}
+
+train_ringout_fx_player2 = {
+  ring_fx => effects.effekseer.Simple_Ring_Shape1 
+  burst_fx => effects.effekseer.Simple_Distortion_2 
+  spark_fx => effects.effekseer.Simple_Sprite_BillBoard 
+  ring_fx.play pos (player2) Async
+  burst_fx.play pos (player2) Async
+  spark_fx.play pos (player2."mixamorig:Head") Async
+  do async
+    wait 0.5 seconds
+    ring_fx.delete
+    burst_fx.delete
+    spark_fx.delete
+  end do
+}
+
+[train_ringout!=1 && game_status!=GAME_STATE_OVER]
+train_player_fell = {
+  
+  train_player1_fall_pending=1
+  train_ringout=1
+  game_status=GAME_STATE_OVER
+
+  audio.play "fall1"
+  audio.play "crash1"
+  run train_ringout_fx_player1 Async
+
+  do async
+    player2.look at (player1)
+    player2.BackFlip
+    player2.Idle loop
+  end do
+
+  run train_damage_player1_for_fall
+  run train_resume_after_fall
+  
+}
+
+[train_ringout!=1 && game_status!=GAME_STATE_OVER]
+train_enemy_fell = {
+
+  train_player2_fall_pending=1
+  train_ringout=1
+  game_status=GAME_STATE_OVER
+
+  audio.play "fall1"
+  audio.play "crash1"
+  run train_ringout_fx_player2 Async
+
+  do async
+    player1.look at (player2)
+    player1.BackFlip
+    player1.idle2 loop
+  end do
+
+  run train_damage_player2_for_fall
+  run train_resume_after_fall
+  
+}
+
+when player1.y < train_ringout_y && game_status==GAME_STATE_START && train_ringout==0 && train_respawn_lock==0 do
+  run train_player_fell Async
+end do
+
+when player2.y < train_ringout_y && game_status==GAME_STATE_START && train_ringout==0 && train_respawn_lock==0 do
+  run train_enemy_fell Async
+end do
+
+when player1_body_collider, player1_left_foot_collider, player1_right_foot_collider collides with train_under_visual_collider do
+  if(game_status==GAME_STATE_START && train_ringout==0 && train_respawn_lock==0) {
+    run train_player_fell Async
+  }
+end do
+
+when player2_body_collider, player2_left_foot_collider, player2_right_foot_collider collides with train_under_visual_collider do
+  if(game_status==GAME_STATE_START && train_ringout==0 && train_respawn_lock==0) {
+    run train_enemy_fell Async
+  }
+end do

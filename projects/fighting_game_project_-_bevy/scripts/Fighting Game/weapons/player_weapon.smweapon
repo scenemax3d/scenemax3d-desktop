@@ -1,0 +1,57 @@
+{
+  "modelAssetId": "meshy_axe_native",
+  "schemaVersion": "1.0",
+  "colliders": [{
+    "transform": {
+      "offsetX": 0,
+      "scaleX": 0.8,
+      "scaleY": 0.8,
+      "offsetZ": -0.5,
+      "rotationX": 0,
+      "offsetY": 0.43,
+      "rotationY": 0,
+      "rotationZ": 0,
+      "scaleZ": 0.8
+    },
+    "shape": "sphere",
+    "name": "weapon_sphere_collider_1"
+  }],
+  "postures": [
+    {
+      "attachmentPoint": "mixamorig:RightHand",
+      "transform": {
+        "offsetX": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "offsetZ": 0,
+        "rotationX": 0,
+        "offsetY": 0,
+        "rotationY": 0,
+        "rotationZ": 0,
+        "scaleZ": 1
+      },
+      "name": "Default",
+      "id": "fight"
+    },
+    {
+      "attachmentPoint": "mixamorig:Spine2",
+      "transform": {
+        "offsetX": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "offsetZ": 0,
+        "rotationX": 0,
+        "offsetY": 0,
+        "rotationY": 0,
+        "rotationZ": 0,
+        "scaleZ": 1
+      },
+      "name": "Posture 2",
+      "id": "ready"
+    }
+  ],
+  "id": "weapon_player_weapon",
+  "type": "SceneMaxWeaponDefinition",
+  "defaultPostureId": "fight",
+  "designerMetadata": {"previewPlayerModelAssetId": "fighter1"}
+}

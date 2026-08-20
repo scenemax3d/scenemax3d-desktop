@@ -1,0 +1,27 @@
+{
+  "preview": {
+    "playbackSpeed": 1,
+    "showGround": true,
+    "backgroundMode": "dark",
+    "motion": {
+      "orbitStrength": 0,
+      "forceScale": 1,
+      "damping": 0
+    },
+    "loop": true,
+    "camera": {
+      "pitchDeg": -15,
+      "distance": 8,
+      "yawDeg": -180
+    }
+  },
+  "assetId": "A_Salamander1",
+  "name": "A_Salamander1",
+  "source": {
+    "importedAt": "2026-05-15T20:32:51.935378800Z",
+    "originalImportPath": "C:\\Users\\adikt\\Downloads\\MAGICALxSPIRAL\\A_Salamander1.efkproj",
+    "originalFormat": "efkproj",
+    "importedEffectFile": "effects/A_Salamander1/A_Salamander1.efkproj"
+  },
+  "version": 1
+}

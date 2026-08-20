@@ -1,0 +1,22 @@
+audio.play "coin1"
+var index=1
+create_rock = {
+  rock1 => bone : pos (0,-2+index,0-rnd(10))
+  index=index+1
+  
+  //sys.print index  
+  //camera.chase rock1
+  return rock1
+}
+rocks => Object.Pool(create_rock, size 3)
+
+when key space is pressed once do 
+  do Async 
+    var rock = rocks.acquire
+    rock.pos(0,-2+index*0.5,0-rnd(10))
+    //rock.move left 5 in 2 seconds 
+    wait 2 seconds  
+    rocks.release rock 
+  end do 
+   
+end do 

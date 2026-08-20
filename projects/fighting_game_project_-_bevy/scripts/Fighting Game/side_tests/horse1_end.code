@@ -1,0 +1,7 @@
+// Write your finalization code here.
+// This code will be included at the end of the generated .code file.
+lights.add probe "4"
+camera.chase horse
+man.idle2 Loop
+horse.Gallop Loop
+

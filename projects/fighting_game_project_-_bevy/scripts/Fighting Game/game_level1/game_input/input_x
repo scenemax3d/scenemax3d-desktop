@@ -1,0 +1,74 @@
+
+[player1_ko==0 && (game_status!=GAME_STATE_OVER || action == PLAYER_ACTION_X_2) && player1.data.is_jumping==0 ]
+when key X is pressed once do
+  action = PLAYER_ACTION_X_1 
+  player1.look at (player2)
+  player1.move forward 0.3 for 0.2 seconds
+  audio.play "kick1"
+  effects.TimeOrbit.show : pos (player1), duration = 1 async
+	player1.pull_start at speed of 4
+
+	throw_text.pos (player1.x,player1.y+3,player1.z)
+
+	do 3 times async
+		throw_text.show
+		wait 0.2 seconds
+		throw_text.hide
+		wait 0.2 seconds	
+	end do
+					  	
+	wait 0.2 second
+	if (player2.data.trapped == 1) {
+		player2.data.trapped = 2 // throw started
+		do async
+		  wait 1.2 seconds
+		  audio.play "crash1"
+		  effects.flash.show : pos (player1."mixamorig:LeftFoot"),end size = 8,  duration=0.5 async
+		  run shake_the_world2 
+		end do
+		if(rnd(3)==0) {
+			player1.turn left 360 in 0.5 seconds async
+		}
+		//
+    do async				
+			
+			player2.attach to player1."mixamorig:RightHand": pos (2.5,4,0)
+			player2.getting_thrown at speed of 2 async
+			player2.animation speed 3 for 0.2 seconds when frames > 10
+			
+			wait 0.1 seconds
+			player2.detach from parent
+			do async
+			  player2_hit2.pos (player2."mixamorig:Head")
+			  player2_hit2.show
+			  player2_hit2.play(frame 0 to 15)
+				player2_hit2.hide
+	    end do
+			player1.move forward 0.2 for 0.3 seconds async
+			player2.switch to character mode : gravity 40
+			player2.look at (player1 forward -180)
+			player2.character.jump at speed of 15 async
+			wait 0.1 seconds
+			player2.move forward 0.2 for 0.3 seconds async
+			wait 3 seconds
+			player2.BackFlip 
+	    player2.Idle loop
+	    player2.data.trapped = 0
+		end do
+		
+    action = PLAYER_ACTION_X_2
+		audio.play "scream1"
+		player1.grab_and_slam at speed of 2
+		
+		wait 0.5 seconds
+		player1.kip_up 
+		action = PLAYER_ACTION_IDLE
+		player1.look at (player2)
+		player1.idle2 loop
+	} else {
+		action = PLAYER_ACTION_IDLE
+		player1.idle2 loop
+	}
+	
+end do
+

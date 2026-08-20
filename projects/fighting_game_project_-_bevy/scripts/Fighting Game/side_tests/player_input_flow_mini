@@ -1,0 +1,126 @@
+// NextGen player-input flow mini test.
+// Purpose: keep the fighting-game action guards and waits, but remove AI, collisions, hit reactions,
+// scoring, timers, camera switching, and game-over logic.
+
+loading.print "Input flow mini: guarded A/S/D/Z/X/C, no AI/collisions" : pos (80,10,0), font "arial_64", color=white, size 1
+lights.add probe "4"
+
+camera.system = default
+camera.pos(33,-82,44)
+camera.rotate(22,180,0)
+
+floor => static box : size (40,1,40), pos (40,-89.6,25), material "wall", shadow mode cast
+
+player1 => dynamic fighter1 : pos (40,-89.25,30), scale 3.0, rotate(0,180,0), shadow mode cast, collision shape none
+player2 => dynamic old_fighter2 : pos (40,-88.04,18), scale 3.0, rotate(0,0,0), shadow mode on, collision shape none
+
+player1.look at (player2)
+player2.look at (player1)
+player1.idle2 loop
+player2.Idle loop
+
+var PLAYER_ACTION_IDLE = 0,
+      PLAYER_ACTION_D = 1,
+      PLAYER_ACTION_SPACE = 2,
+      PLAYER_ACTION_A = 3,
+      PLAYER_ACTION_S = 4,
+      PLAYER_ACTION_Z = 5,
+      PLAYER_ACTION_X_1 = 6,
+      PLAYER_ACTION_C = 7
+
+var action = PLAYER_ACTION_IDLE,
+    player_hit = 0,
+    player1_ko = 0,
+    slow_motion = 0,
+    move_forward = 0
+
+player1.data.is_jumping = 0
+player1.data.celebrating = 0
+
+var @mini_input_allowed = player1.data.is_jumping == 0
+                       && slow_motion == 0
+                       && player_hit == 0
+                       && player1_ko == 0
+                       && action == PLAYER_ACTION_IDLE
+
+log_flow (label) = {
+  Logger.info "FLOW_MINI"
+  Logger.info label
+  Logger.info "FLOW_MINI action"
+  Logger.info action
+  Logger.info "FLOW_MINI allowed"
+  Logger.info @mini_input_allowed
+}
+
+finish_action = {
+  action = PLAYER_ACTION_IDLE
+  player1.idle2 loop
+  run log_flow ("finish_action")
+}
+
+[@mini_input_allowed]
+when key A is pressed once do async
+  action = PLAYER_ACTION_A
+  run log_flow ("A start")
+  player1.look at (player2)
+  player1.mma_kick1 at speed of 2.5 async
+  wait 0.5 seconds
+  player1.move forward 0.3 for 0.2 seconds async
+  player1.flying_kick at speed of 2
+  run finish_action
+end do
+
+[@mini_input_allowed]
+when key S is pressed once do async
+  action = PLAYER_ACTION_S
+  run log_flow ("S start")
+  player1.look at (player2)
+  player1.move forward 0.5 for 0.2 seconds async
+  player1.hurricane_kick at speed of 2
+  run finish_action
+end do
+
+[@mini_input_allowed]
+when key D is pressed once do async
+  action = PLAYER_ACTION_D
+  run log_flow ("D start")
+  player1.look at (player2)
+  player1.move forward 0.3 for 0.2 seconds async
+  player1.quad_punch1 at speed of 2.5 async
+  wait 0.5 seconds
+  player1.flying_kick at speed of 2
+  run finish_action
+end do
+
+[@mini_input_allowed]
+when key Z is pressed once do async
+  action = PLAYER_ACTION_Z
+  run log_flow ("Z start")
+  player1.back_death1 at speed of 1.2
+  run finish_action
+end do
+
+[@mini_input_allowed]
+when key X is pressed once do async
+  action = PLAYER_ACTION_X_1
+  run log_flow ("X start")
+  player1.kip_up at speed of 1.2
+  run finish_action
+end do
+
+[@mini_input_allowed]
+when key C is pressed once do async
+  action = PLAYER_ACTION_C
+  run log_flow ("C start")
+  player1.leg_takedown_attacker at speed of 2.5
+  run finish_action
+end do
+
+when key space is pressed once do
+  action = PLAYER_ACTION_IDLE
+  player_hit = 0
+  player1_ko = 0
+  player1.data.is_jumping = 0
+  player1.idle2 loop
+  run log_flow ("SPACE reset")
+end do

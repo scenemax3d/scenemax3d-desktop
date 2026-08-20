@@ -1,0 +1,27 @@
+{
+  "preview": {
+    "playbackSpeed": 1,
+    "showGround": true,
+    "backgroundMode": "dark",
+    "motion": {
+      "orbitStrength": 0,
+      "forceScale": 1,
+      "damping": 0
+    },
+    "loop": true,
+    "camera": {
+      "pitchDeg": -15,
+      "distance": 12,
+      "yawDeg": 35
+    }
+  },
+  "assetId": "Simple_Model_UV",
+  "name": "Simple_Model_UV",
+  "source": {
+    "importedAt": "2026-04-06T06:34:17.707554800Z",
+    "originalImportPath": "C:\\Users\\adikt\\Downloads\\Effekseer01\\Effekseer01\\Simple_Model_UV.efkproj",
+    "originalFormat": "efkproj",
+    "importedEffectFile": "effects/Simple_Model_UV/Simple_Model_UV.efkproj"
+  },
+  "version": 1
+}

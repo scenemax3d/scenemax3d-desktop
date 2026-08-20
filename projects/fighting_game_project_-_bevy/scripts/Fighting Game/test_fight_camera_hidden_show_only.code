@@ -1,0 +1,34 @@
+// Minimal hidden/show fight camera test.
+// Same as the clean test, except fighters start hidden and are shown immediately before camera.system.
+
+loading.print "Hidden/show fight camera test" : pos (80,10,0) , font "arial_64" , color=white, size 1
+lights.add probe "4"
+
+camera.system = default
+camera.pos(40.0,-78.0,56.0)
+camera.rotate(18.0,180.0,0.0)
+
+arena_floor => static box : size (60.0,1.0,60.0), pos (40.0,-89.6,22.0), material "wall", shadow mode on
+
+player1 => dynamic fighter1 : hidden, pos (34.0,-84.8,30.0), scale 3.0, rotate(0.0,173.26024,0.0), shadow mode cast, collision shape none
+, joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot")
+
+player2 => dynamic old_fighter2 : hidden, pos (46.0,-83.8,14.0), scale 3.0, rotate(0.0,0.0,0.0), shadow mode cast, collision shape none
+, joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot")
+
+player1.switch to character mode : gravity 60
+player2.switch to character mode : gravity 40
+player1.character.ignore player2.joints
+player2.character.ignore player1.joints
+player1.look at (player2)
+player2.look at (player1)
+
+player1.show
+player2.show
+
+fight_cam = camera.system.fighting(player1, player2, depth 18, height 3, side 1.5, min distance 10, max distance 28, damping 8)
+camera.attach stop
+camera.system = fight_cam
+
+loading.print "Fighters should be framed after hidden->show" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+wait 30 seconds

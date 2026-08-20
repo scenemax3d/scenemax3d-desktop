@@ -1,0 +1,27 @@
+{
+  "preview": {
+    "playbackSpeed": 0.5,
+    "showGround": true,
+    "backgroundMode": "dark",
+    "motion": {
+      "orbitStrength": 0,
+      "forceScale": 1.1500000000000001,
+      "damping": 1
+    },
+    "loop": true,
+    "camera": {
+      "pitchDeg": 8,
+      "distance": 26,
+      "yawDeg": 54
+    }
+  },
+  "assetId": "Homing_Laser01_3",
+  "name": "Homing_Laser01",
+  "source": {
+    "importedAt": "2026-04-04T18:57:57.141646700Z",
+    "originalImportPath": "C:\\Users\\adikt\\Downloads\\Effekseer01\\Effekseer01\\Homing_Laser01.efkproj",
+    "originalFormat": "efkproj",
+    "importedEffectFile": "effects/Homing_Laser01_3/Homing_Laser01.efkproj"
+  },
+  "version": 1
+}

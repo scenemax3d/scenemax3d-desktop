@@ -1,0 +1,2810 @@
+{
+  "sceneEnvironmentShader": "",
+  "entities": [
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 4.2,
+      "sceneMaxCode": "train_roof => static box : size (8.4,0.3,25.8), pos (40.0,-88.2,22.75), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "train_roof",
+      "staticEntity": true,
+      "id": "train-roof-001",
+      "position": [
+        40,
+        -88.2,
+        22.75
+      ],
+      "multiplayer": false,
+      "sizeY": 0.15,
+      "sizeZ": 12.9
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 4.1,
+      "sceneMaxCode": "train_body => static box : size (8.2,3.0,25.6), pos (40.0,-90.2,22.75), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "train_body",
+      "staticEntity": true,
+      "id": "train-body-001",
+      "position": [
+        40,
+        -90.2,
+        22.75
+      ],
+      "multiplayer": false,
+      "sizeY": 1.5,
+      "sizeZ": 12.8
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 2.2,
+      "sceneMaxCode": "front_guard => static box : size (4.4,1.6,2.8), pos (40.0,-89.8,9.4), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "front_guard",
+      "staticEntity": true,
+      "id": "train-front-001",
+      "position": [
+        40,
+        -89.8,
+        9.4
+      ],
+      "multiplayer": false,
+      "sizeY": 0.8,
+      "sizeZ": 1.4
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 2.6,
+      "sceneMaxCode": "train_cabin => static box : size (5.2,2.2,5.0), pos (40.0,-86.7,13.5), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "train_cabin",
+      "staticEntity": true,
+      "id": "train-cabin-001",
+      "position": [
+        40,
+        -86.7,
+        13.5
+      ],
+      "multiplayer": false,
+      "sizeY": 1.1,
+      "sizeZ": 2.5
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 2.9,
+      "sceneMaxCode": "train_cabin_roof => static box : size (5.8,0.24,5.8), pos (40.0,-85.35,13.5), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "train_cabin_roof",
+      "staticEntity": true,
+      "id": "train-cabin-roof-001",
+      "position": [
+        40,
+        -85.35,
+        13.5
+      ],
+      "multiplayer": false,
+      "sizeY": 0.12,
+      "sizeZ": 2.9
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 1.1,
+      "sceneMaxCode": "train_crate_stack => static box : size (2.2,1.4,2.8), pos (40.0,-87.0,31.0), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "train_crate_stack",
+      "staticEntity": true,
+      "id": "train-crate-001",
+      "position": [
+        40,
+        -87,
+        31
+      ],
+      "multiplayer": false,
+      "sizeY": 0.7,
+      "sizeZ": 1.4
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 0.7,
+      "sceneMaxCode": "train_crate_top => static box : size (1.4,0.76,1.8), pos (40.0,-85.95,31.0), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "train_crate_top",
+      "staticEntity": true,
+      "id": "train-crate-002",
+      "position": [
+        40,
+        -85.95,
+        31
+      ],
+      "multiplayer": false,
+      "sizeY": 0.38,
+      "sizeZ": 0.9
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 0.18,
+      "sceneMaxCode": "train_left_side => static box : size (0.36,1.1,25.2), pos (36.5,-89.4,22.75), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "train_left_side",
+      "staticEntity": true,
+      "id": "train-side-left-001",
+      "position": [
+        36.5,
+        -89.4,
+        22.75
+      ],
+      "multiplayer": false,
+      "sizeY": 0.55,
+      "sizeZ": 12.6
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 0.18,
+      "sceneMaxCode": "train_right_side => static box : size (0.36,1.1,25.2), pos (43.5,-89.4,22.75), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "train_right_side",
+      "staticEntity": true,
+      "id": "train-side-right-001",
+      "position": [
+        43.5,
+        -89.4,
+        22.75
+      ],
+      "multiplayer": false,
+      "sizeY": 0.55,
+      "sizeZ": 12.6
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 0.08,
+      "sceneMaxCode": "rail_left => static box : size (0.16,0.16,36.0), pos (38.2,-91.8,22.75), material \"wall\"",
+      "material": "wall",
+      "name": "rail_left",
+      "staticEntity": true,
+      "id": "rail-left-001",
+      "position": [
+        38.2,
+        -91.8,
+        22.75
+      ],
+      "multiplayer": false,
+      "sizeY": 0.08,
+      "sizeZ": 18
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 0.08,
+      "sceneMaxCode": "rail_right => static box : size (0.16,0.16,36.0), pos (41.8,-91.8,22.75), material \"wall\"",
+      "material": "wall",
+      "name": "rail_right",
+      "staticEntity": true,
+      "id": "rail-right-001",
+      "position": [
+        41.8,
+        -91.8,
+        22.75
+      ],
+      "multiplayer": false,
+      "sizeY": 0.08,
+      "sizeZ": 18
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 0.15,
+      "sceneMaxCode": "left_post_1 => static box : size (0.3,4.8,0.3), pos (31.5,-87.4,36.0), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "left_post_1",
+      "staticEntity": true,
+      "id": "left-post-001",
+      "position": [
+        31.5,
+        -87.4,
+        36
+      ],
+      "multiplayer": false,
+      "sizeY": 2.4,
+      "sizeZ": 0.15
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 0.15,
+      "sceneMaxCode": "left_post_2 => static box : size (0.3,4.8,0.3), pos (31.5,-87.4,18.0), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "left_post_2",
+      "staticEntity": true,
+      "id": "left-post-002",
+      "position": [
+        31.5,
+        -87.4,
+        18
+      ],
+      "multiplayer": false,
+      "sizeY": 2.4,
+      "sizeZ": 0.15
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 0.15,
+      "sceneMaxCode": "left_post_3 => static box : size (0.3,4.8,0.3), pos (31.5,-87.4,0.0), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "left_post_3",
+      "staticEntity": true,
+      "id": "left-post-003",
+      "position": [
+        31.5,
+        -87.4,
+        0
+      ],
+      "multiplayer": false,
+      "sizeY": 2.4,
+      "sizeZ": 0.15
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 0.15,
+      "sceneMaxCode": "right_post_1 => static box : size (0.3,4.8,0.3), pos (48.5,-87.4,36.0), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "right_post_1",
+      "staticEntity": true,
+      "id": "right-post-001",
+      "position": [
+        48.5,
+        -87.4,
+        36
+      ],
+      "multiplayer": false,
+      "sizeY": 2.4,
+      "sizeZ": 0.15
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 0.15,
+      "sceneMaxCode": "right_post_2 => static box : size (0.3,4.8,0.3), pos (48.5,-87.4,18.0), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "right_post_2",
+      "staticEntity": true,
+      "id": "right-post-002",
+      "position": [
+        48.5,
+        -87.4,
+        18
+      ],
+      "multiplayer": false,
+      "sizeY": 2.4,
+      "sizeZ": 0.15
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 0.15,
+      "sceneMaxCode": "right_post_3 => static box : size (0.3,4.8,0.3), pos (48.5,-87.4,0.0), material \"wall\", shadow mode on",
+      "material": "wall",
+      "name": "right_post_3",
+      "staticEntity": true,
+      "id": "right-post-003",
+      "position": [
+        48.5,
+        -87.4,
+        0
+      ],
+      "multiplayer": false,
+      "sizeY": 2.4,
+      "sizeZ": 0.15
+    },
+    {
+      "children": [
+        {
+          "shader": "",
+          "dynamicModel": true,
+          "hidden": true,
+          "shadowMode": "cast",
+          "rotation": [
+            0,
+            -0.99827087,
+            0,
+            -0.05878162
+          ],
+          "resourcePath": "fighter1_native",
+          "jointMapping": "mixamorig:Head,mixamorig:LeftShoulder,mixamorig:LeftArm,mixamorig:LeftForeArm,mixamorig:LeftHand,mixamorig:RightShoulder,mixamorig:RightArm,mixamorig:RightForeArm,mixamorig:RightHand,mixamorig:LeftUpLeg,mixamorig:LeftLeg,mixamorig:LeftFoot,mixamorig:RightUpLeg,mixamorig:RightLeg,mixamorig:RightFoot",
+          "scale": [
+            3,
+            3,
+            3
+          ],
+          "modelCollisionShape": "none",
+          "type": "MODEL",
+          "sceneMaxCode": "player1 => dynamic fighter1_native: hidden, pos (39.98954,-84.78974,30.700623), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast, collision shape none async",
+          "staticModel": false,
+          "name": "player1",
+          "vehicleModel": false,
+          "id": "f0af5cf2-e250-48cb-b3b1-68726126925a",
+          "position": [
+            39.98954,
+            -84.78974,
+            30.700623
+          ],
+          "multiplayer": false
+        },
+        {
+          "shader": "",
+          "hidden": false,
+          "shadowMode": "none",
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "colliderEntity": true,
+          "type": "BOX",
+          "sizeX": 0.5,
+          "sceneMaxCode": "player1_body_collider => box : size (1.0,1.0,1.0), pos (0.0,0.5,2.7905798)",
+          "material": "",
+          "name": "player1_body_collider",
+          "staticEntity": false,
+          "id": "57aa39ba-238f-48b0-90f6-24d73b98f7bf",
+          "position": [
+            0,
+            0.5,
+            2.7905798
+          ],
+          "multiplayer": false,
+          "sizeY": 0.5,
+          "sizeZ": 0.5
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "player1_body_collider_attach",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "codeText": "// player1_body_collider_attach\nplayer1_body_collider.attach to player1: pos (0,1,0)",
+          "id": "22e0fb96-80cd-4566-ba30-c3200bccdd57",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "type": "CODE"
+        },
+        {
+          "shader": "",
+          "hidden": false,
+          "shadowMode": "none",
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "colliderEntity": true,
+          "type": "SPHERE",
+          "sceneMaxCode": "player1_head_collider => sphere : pos (2.5929513,0.5,0.0), radius 0.5",
+          "material": "",
+          "name": "player1_head_collider",
+          "staticEntity": false,
+          "id": "13d9e714-5772-4249-8f25-1bbc118e9ac1",
+          "position": [
+            2.5929513,
+            0.5,
+            0
+          ],
+          "radius": 0.5,
+          "multiplayer": false
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "player1_head_collider_attach",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "codeText": "// player1_head_collider_attach\nplayer1_head_collider.attach to player1.\"mixamorig:Head\": pos (0,0.5,0)",
+          "id": "584c8e97-284d-442c-a154-b4acb8f439bf",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "type": "CODE"
+        },
+        {
+          "shader": "",
+          "hidden": false,
+          "shadowMode": "none",
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "colliderEntity": true,
+          "type": "SPHERE",
+          "sceneMaxCode": "player1_left_foot_collider => sphere : pos (4.0232105,0.5,0.0), radius 0.5",
+          "material": "",
+          "name": "player1_left_foot_collider",
+          "staticEntity": false,
+          "id": "c424fd56-5c8e-4eea-90e6-3d86a322ff97",
+          "position": [
+            4.0232105,
+            0.5,
+            0
+          ],
+          "radius": 0.5,
+          "multiplayer": false
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "player1_left_foot_collider_attach",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "codeText": "// player1_left_foot_collider_attach\nplayer1_left_foot_collider.attach to player1.\"mixamorig:LeftFoot\": pos (0,0,0)",
+          "id": "9c6a6b80-fe19-4479-8688-cedb928e0209",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "type": "CODE"
+        },
+        {
+          "shader": "",
+          "hidden": false,
+          "shadowMode": "none",
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "colliderEntity": true,
+          "type": "SPHERE",
+          "sceneMaxCode": "player1_right_foot_collider => sphere : pos (5.2495646,0.5,0.0), radius 0.5",
+          "material": "",
+          "name": "player1_right_foot_collider",
+          "staticEntity": false,
+          "id": "57b60bd0-8967-47f4-9edb-ca28c988bdcc",
+          "position": [
+            5.2495646,
+            0.5,
+            0
+          ],
+          "radius": 0.5,
+          "multiplayer": false
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "player1_right_foot_collider_attach",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "codeText": "// player1_right_foot_collider_attach\nplayer1_right_foot_collider.attach to player1.\"mixamorig:RightFoot\": pos (0,0,0)",
+          "id": "97f92b00-c28d-4991-b4fd-54b688fe743e",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "type": "CODE"
+        },
+        {
+          "shader": "",
+          "hidden": false,
+          "shadowMode": "none",
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "colliderEntity": true,
+          "type": "SPHERE",
+          "sceneMaxCode": "player1_left_hand_collider => sphere : pos (6.8733816,0.5,0.0), radius 0.5",
+          "material": "",
+          "name": "player1_left_hand_collider",
+          "staticEntity": false,
+          "id": "261f330f-1297-45d5-b515-68da648cfb5e",
+          "position": [
+            6.8733816,
+            0.5,
+            0
+          ],
+          "radius": 0.5,
+          "multiplayer": false
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "player1_left_hand_collider_attach",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "codeText": "// player1_left_hand_collider_attach\nplayer1_left_hand_collider.attach to player1.\"mixamorig:LeftHand\": pos (0,0,0)",
+          "id": "eb40963e-b6c7-4935-8d17-f85ff94cd77b",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "type": "CODE"
+        },
+        {
+          "shader": "",
+          "hidden": false,
+          "shadowMode": "none",
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "colliderEntity": true,
+          "type": "SPHERE",
+          "sceneMaxCode": "player1_right_hand_collider => sphere : pos (8.34038,0.5,0.0), radius 0.5",
+          "material": "",
+          "name": "player1_right_hand_collider",
+          "staticEntity": false,
+          "id": "03483af7-3f29-4ae9-8e1c-26fbe94098ca",
+          "position": [
+            8.34038,
+            0.5,
+            0
+          ],
+          "radius": 0.5,
+          "multiplayer": false
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "player1_right_hand_collider_attach",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "codeText": "// player1_right_hand_collider_attach\nplayer1_right_hand_collider.attach to player1.\"mixamorig:RightHand\": pos (0,0,0)",
+          "id": "9682f7f8-6d3d-4fd5-8866-83220c851f70",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "type": "CODE"
+        }
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "name": "Main Player",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "id": "2bb48cbe-4499-44b6-9563-a86066a34265",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "type": "SECTION"
+    },
+    {
+      "children": [
+        {
+          "shader": "",
+          "dynamicModel": true,
+          "hidden": true,
+          "shadowMode": "both",
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "resourcePath": "old_fighter2_native",
+          "jointMapping": "mixamorig:Head,mixamorig:LeftShoulder,mixamorig:LeftArm,mixamorig:LeftForeArm,mixamorig:LeftHand,mixamorig:RightShoulder,mixamorig:RightArm,mixamorig:RightForeArm,mixamorig:RightHand,mixamorig:LeftUpLeg,mixamorig:LeftLeg,mixamorig:LeftFoot,mixamorig:RightUpLeg,mixamorig:RightLeg,mixamorig:RightFoot",
+          "scale": [
+            3,
+            3,
+            3
+          ],
+          "modelCollisionShape": "none",
+          "type": "MODEL",
+          "sceneMaxCode": "player2 => dynamic old_fighter2_native: hidden, pos (40.0,-83.8349,11.373871), scale 3.0, shadow mode on, collision shape none async",
+          "staticModel": false,
+          "name": "player2",
+          "vehicleModel": false,
+          "id": "e25c8bd0-3d06-4966-b548-0a76207cd38d",
+          "position": [
+            40,
+            -83.8349,
+            11.373871
+          ],
+          "multiplayer": false
+        },
+        {
+          "shader": "",
+          "hidden": false,
+          "shadowMode": "none",
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "colliderEntity": true,
+          "type": "BOX",
+          "sizeX": 0.5,
+          "sceneMaxCode": "player2_body_collider => box : size (1.0,1.0,1.0), pos (0.14360523,0.5,0.0)",
+          "material": "",
+          "name": "player2_body_collider",
+          "staticEntity": false,
+          "id": "68dccc9c-910e-462b-9ae8-1854a3122dcb",
+          "position": [
+            0.14360523,
+            0.5,
+            0
+          ],
+          "multiplayer": false,
+          "sizeY": 0.5,
+          "sizeZ": 0.5
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "player2_body_collider_attach",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "codeText": "// player2_body_collider_attach\nplayer2_body_collider.attach to player2: pos (0,1,0)",
+          "id": "9106fc03-dc56-4ffe-8a70-1ab35f473a6b",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "type": "CODE"
+        },
+        {
+          "shader": "",
+          "hidden": false,
+          "shadowMode": "none",
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "colliderEntity": true,
+          "type": "SPHERE",
+          "sceneMaxCode": "player2_head_collider => sphere : pos (-3.021677,0.5,0.0), radius 0.5",
+          "material": "",
+          "name": "player2_head_collider",
+          "staticEntity": false,
+          "id": "23f7efa0-7b71-4f07-8820-932e7d3044c8",
+          "position": [
+            -3.021677,
+            0.5,
+            0
+          ],
+          "radius": 0.5,
+          "multiplayer": false
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "player2_head_collider_attach",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "codeText": "// player2_head_collider_attach\nplayer2_head_collider.attach to player2.\"mixamorig:Head\": pos (0,0.5,0)",
+          "id": "54121de9-3af2-448c-a71d-330b89c8f28b",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "type": "CODE"
+        },
+        {
+          "shader": "",
+          "hidden": false,
+          "shadowMode": "none",
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "colliderEntity": true,
+          "type": "SPHERE",
+          "sceneMaxCode": "player2_right_foot_collider => sphere : pos (-6.405216,0.5,0.0), radius 0.5",
+          "material": "",
+          "name": "player2_right_foot_collider",
+          "staticEntity": false,
+          "id": "a717b76e-3396-4015-8fa2-a1627cb7a8ac",
+          "position": [
+            -6.405216,
+            0.5,
+            0
+          ],
+          "radius": 0.5,
+          "multiplayer": false
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "player2_right_foot_collider_attach",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "codeText": "// player2_right_foot_collider_attach\nplayer2_right_foot_collider.attach to player2.\"mixamorig:RightFoot\": pos (0,0,0)",
+          "id": "0816e206-b376-4a61-a5ac-81fcc953f688",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "type": "CODE"
+        },
+        {
+          "shader": "",
+          "hidden": false,
+          "shadowMode": "none",
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "colliderEntity": true,
+          "type": "SPHERE",
+          "sceneMaxCode": "player2_left_foot_collider => sphere : pos (-4.7635937,0.5,0.0), radius 0.5",
+          "material": "",
+          "name": "player2_left_foot_collider",
+          "staticEntity": false,
+          "id": "80e44e9d-289f-4a5c-9154-3651d663d3d9",
+          "position": [
+            -4.7635937,
+            0.5,
+            0
+          ],
+          "radius": 0.5,
+          "multiplayer": false
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "player2_left_foot_collider_attach",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "codeText": "// player2_left_foot_collider_attach\nplayer2_left_foot_collider.attach to player2.\"mixamorig:LeftFoot\": pos (0,0,0)",
+          "id": "9e8bc341-6c5c-4420-a533-9100d810ed45",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "type": "CODE"
+        },
+        {
+          "shader": "",
+          "hidden": false,
+          "shadowMode": "none",
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "colliderEntity": true,
+          "type": "SPHERE",
+          "sceneMaxCode": "player2_right_hand_collider => sphere : pos (-10.128401,0.5,0.0), radius 0.5",
+          "material": "",
+          "name": "player2_right_hand_collider",
+          "staticEntity": false,
+          "id": "eb94a332-c95c-488f-a5cd-9fce4f4217f3",
+          "position": [
+            -10.128401,
+            0.5,
+            0
+          ],
+          "radius": 0.5,
+          "multiplayer": false
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "player2_right_hand_collider_attach",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "codeText": "// player2_right_hand_collider_attach\nplayer2_right_hand_collider.attach to player2.\"mixamorig:RightHand\": pos (0,0,0)",
+          "id": "3c30150c-9aaf-4db1-97e7-64b24b5df89b",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "type": "CODE"
+        },
+        {
+          "shader": "",
+          "hidden": false,
+          "shadowMode": "none",
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "colliderEntity": true,
+          "type": "SPHERE",
+          "sceneMaxCode": "player2_left_hand_collider => sphere : pos (-8.123157,0.5,0.0), radius 0.5",
+          "material": "",
+          "name": "player2_left_hand_collider",
+          "staticEntity": false,
+          "id": "9806803c-b4bc-4643-8d72-af540f6cceae",
+          "position": [
+            -8.123157,
+            0.5,
+            0
+          ],
+          "radius": 0.5,
+          "multiplayer": false
+        },
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "player2_left_hand_collider_attach",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "codeText": "// player2_left_hand_collider_attach\nplayer2_left_hand_collider.attach to player2.\"mixamorig:LeftHand\": pos (0,0,0)",
+          "id": "140099c2-5f53-444b-befb-2e7a7187b214",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "type": "CODE"
+        }
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "name": "Opponent Player",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "id": "4b616203-41f6-4d34-9f33-96355ddcdcc7",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "type": "SECTION"
+    },
+    {
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "name": "Cache Sprites",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "codeText": "// Cache Sprites\nthrow_text => throw_text sprite : size(2,1), billboard true, collision shape none, hidden\nplayer2_hit1 => hit4 sprite: scale 4, billboard true, collision shape none, hidden\nplayer2_hit2 => hit3 sprite : scale 4, billboard true, collision shape none, hidden\nplayer1_hit1 => hit4 sprite: scale 4, billboard true, collision shape none, hidden\nplayer1_hit2 => hit3 sprite : scale 4, billboard true, collision shape none, hidden",
+      "id": "cache-sprites-001",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "type": "CODE"
+    },
+    {
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "name": "Players Initial Posture",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "codeText": "// Players Initial Posture\nloading.print \"\"\nplayer1.data.celebrating=0\nplayer1.switch to character mode : gravity 60\nplayer2.switch to character mode : gravity 40\nplayer1.character.ignore player2.joints\nplayer2.character.ignore player1.joints",
+      "id": "fight-setup-001",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "type": "CODE"
+    },
+    {
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "name": "Players Ready To Fight",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "codeText": "// Players Ready To Fight\nmiddleSphere is a sphere : hidden and radius 0.1 and material=\"alpha\"\nplayer1.show\nplayer2.show\nplayer2.look at (player1)\nplayer1.look at (player2)",
+      "id": "fight-setup-002",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "type": "CODE"
+    },
+    {
+      "cinematicTargetEntityId": "f0af5cf2-e250-48cb-b3b1-68726126925a",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "cinematicTargetOffset": [
+        0,
+        0.55,
+        0
+      ],
+      "cinematicEaseIn": "linear",
+      "type": "CINEMATIC_RIG",
+      "cinematicTargetEntityName": "player1",
+      "children": [
+        {
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "name": "cinematic_track_1",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "id": "894569d4-88c5-435c-bcab-aad5f7f86bf0",
+          "position": [
+            0,
+            1.3,
+            0
+          ],
+          "type": "CINEMATIC_TRACK",
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 30,
+            "selectedStartAnchor": -1,
+            "radiusZ": 1.35,
+            "radiusX": 1.75,
+            "selectedEndAnchor": -1
+          }
+        },
+        {
+          "rotation": [
+            0,
+            -0.08715574,
+            0,
+            0.9961947
+          ],
+          "name": "cinematic_track_2",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "id": "074576c1-1f7a-402b-9b5f-c62b1bf7f2ca",
+          "position": [
+            0,
+            0.65,
+            0.3
+          ],
+          "type": "CINEMATIC_TRACK",
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 30,
+            "selectedStartAnchor": -1,
+            "radiusZ": 0.7,
+            "radiusX": 0.95,
+            "selectedEndAnchor": -1
+          }
+        }
+      ],
+      "cinematicEaseOut": "linear",
+      "name": "Cinematic Rig",
+      "cinematicSegments": [
+        {
+          "startAnchor": 180,
+          "trackId": "894569d4-88c5-435c-bcab-aad5f7f86bf0",
+          "endAnchor": 320,
+          "trackName": "cinematic_track_1",
+          "speed": 28
+        },
+        {
+          "startAnchor": 185,
+          "trackId": "074576c1-1f7a-402b-9b5f-c62b1bf7f2ca",
+          "endAnchor": 285,
+          "trackName": "cinematic_track_2",
+          "speed": 22
+        }
+      ],
+      "cinematicPreviewDuration": 10,
+      "id": "5044a7f5-2e32-410d-9ea3-54f96d07c4a4",
+      "position": [
+        39.98954,
+        -84.23974,
+        30.700623
+      ],
+      "cinematicRuntimeId": "cinematic_rig_1"
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 130,
+      "sceneMaxCode": "canyon_floor => static box : size (260.0,12.0,440.0), pos (40.0,-111.0,22.0), material \"dirt\"",
+      "material": "dirt",
+      "name": "canyon_floor",
+      "staticEntity": true,
+      "id": "canyon-floor-001",
+      "position": [
+        40,
+        -111,
+        22
+      ],
+      "multiplayer": false,
+      "sizeY": 6,
+      "sizeZ": 220
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 14,
+      "sceneMaxCode": "canyon_left_wall_far => static box : size (28.0,36.0,140.0), pos (-62.0,-104.0,96.0), material \"rock2\", shadow mode on",
+      "material": "rock2",
+      "name": "canyon_left_wall_far",
+      "staticEntity": true,
+      "id": "canyon-left-wall-002",
+      "position": [
+        -62,
+        -104,
+        96
+      ],
+      "multiplayer": false,
+      "sizeY": 18,
+      "sizeZ": 70
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "CONE",
+      "radiusTop": 0,
+      "radiusBottom": 10,
+      "sceneMaxCode": "canyon_left_peak => static cone : radius (0.0,10.0), height 18.0, pos (-78.0,-92.0,52.0), material \"rock2\", shadow mode on",
+      "material": "rock2",
+      "name": "canyon_left_peak",
+      "staticEntity": true,
+      "id": "canyon-left-peak-001",
+      "position": [
+        -78,
+        -92,
+        52
+      ],
+      "multiplayer": false,
+      "height": 18
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 14,
+      "sceneMaxCode": "canyon_right_wall_far => static box : size (28.0,36.0,140.0), pos (142.0,-104.0,96.0), material \"rock\", shadow mode on",
+      "material": "rock",
+      "name": "canyon_right_wall_far",
+      "staticEntity": true,
+      "id": "canyon-right-wall-002",
+      "position": [
+        142,
+        -104,
+        96
+      ],
+      "multiplayer": false,
+      "sizeY": 18,
+      "sizeZ": 70
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "CONE",
+      "radiusTop": 0,
+      "radiusBottom": 10,
+      "sceneMaxCode": "canyon_right_peak => static cone : radius (0.0,10.0), height 18.0, pos (158.0,-92.0,10.0), material \"rock\", shadow mode on",
+      "material": "rock",
+      "name": "canyon_right_peak",
+      "staticEntity": true,
+      "id": "canyon-right-peak-001",
+      "position": [
+        158,
+        -92,
+        10
+      ],
+      "multiplayer": false,
+      "height": 18
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 44,
+      "sceneMaxCode": "rear_bridge_span => static box : size (88.0,4.0,16.0), pos (40.0,-78.0,66.0), material \"road\", shadow mode on",
+      "material": "road",
+      "name": "rear_bridge_span",
+      "staticEntity": true,
+      "id": "rear-bridge-span-001",
+      "position": [
+        40,
+        -78,
+        66
+      ],
+      "multiplayer": false,
+      "sizeY": 2,
+      "sizeZ": 8
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 4,
+      "sceneMaxCode": "rear_bridge_tower_left => static box : size (8.0,60.0,16.0), pos (23.0,-89.0,66.0), material \"brickwall\", shadow mode on",
+      "material": "brickwall",
+      "name": "rear_bridge_tower_left",
+      "staticEntity": true,
+      "id": "rear-bridge-tower-left-001",
+      "position": [
+        23,
+        -89,
+        66
+      ],
+      "multiplayer": false,
+      "sizeY": 30,
+      "sizeZ": 8
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 4,
+      "sceneMaxCode": "rear_bridge_tower_right => static box : size (8.0,60.0,16.0), pos (57.0,-89.0,66.0), material \"brickwall\", shadow mode on",
+      "material": "brickwall",
+      "name": "rear_bridge_tower_right",
+      "staticEntity": true,
+      "id": "rear-bridge-tower-right-001",
+      "position": [
+        57,
+        -89,
+        66
+      ],
+      "multiplayer": false,
+      "sizeY": 30,
+      "sizeZ": 8
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 44,
+      "sceneMaxCode": "rear_bridge_rail_left => static box : size (88.0,2.0,2.0), pos (40.0,-76.8,62.4), material \"brickwall\", shadow mode on",
+      "material": "brickwall",
+      "name": "rear_bridge_rail_left",
+      "staticEntity": true,
+      "id": "rear-bridge-rail-left-001",
+      "position": [
+        40,
+        -76.8,
+        62.4
+      ],
+      "multiplayer": false,
+      "sizeY": 1,
+      "sizeZ": 1
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 44,
+      "sceneMaxCode": "rear_bridge_rail_right => static box : size (88.0,2.0,2.0), pos (40.0,-76.8,69.6), material \"brickwall\", shadow mode on",
+      "material": "brickwall",
+      "name": "rear_bridge_rail_right",
+      "staticEntity": true,
+      "id": "rear-bridge-rail-right-001",
+      "position": [
+        40,
+        -76.8,
+        69.6
+      ],
+      "multiplayer": false,
+      "sizeY": 1,
+      "sizeZ": 1
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 6,
+      "sceneMaxCode": "distant_monolith_left => static box : size (12.0,36.0,16.0), pos (20.0,-93.0,-18.0), material \"rock2\", shadow mode on",
+      "material": "rock2",
+      "name": "distant_monolith_left",
+      "staticEntity": true,
+      "id": "distant-monolith-left-001",
+      "position": [
+        20,
+        -93,
+        -18
+      ],
+      "multiplayer": false,
+      "sizeY": 18,
+      "sizeZ": 8
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 6,
+      "sceneMaxCode": "distant_monolith_right => static box : size (12.0,36.0,16.0), pos (60.0,-93.0,-12.0), material \"rock\", shadow mode on",
+      "material": "rock",
+      "name": "distant_monolith_right",
+      "staticEntity": true,
+      "id": "distant-monolith-right-001",
+      "position": [
+        60,
+        -93,
+        -12
+      ],
+      "multiplayer": false,
+      "sizeY": 18,
+      "sizeZ": 8
+    },
+    {
+      "shader": "dramatic_hit_red",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        -0.70710677,
+        0,
+        0.70710677
+      ],
+      "resourcePath": "mountain_low_poly_native",
+      "jointMapping": "",
+      "scale": [
+        0.31,
+        0.31,
+        0.31
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "ambient_mountains_front => static mountain_low_poly_native: pos (40.0,-94.0,-315.8551), scale 0.31, rotate(0.0,-90.0,0.0), collision shape none async",
+      "staticModel": true,
+      "name": "ambient_mountains_front",
+      "vehicleModel": false,
+      "id": "ambient-mountains-front-001",
+      "position": [
+        40,
+        -94,
+        -315.8551
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        -0.4226183,
+        0,
+        0.90630776
+      ],
+      "resourcePath": "mountain_low_poly_native",
+      "jointMapping": "",
+      "scale": [
+        0.01,
+        0.01,
+        0.01
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "ambient_mountains_left => static mountain_low_poly_native: pos (-28.0,-95.0,-20.0), scale 0.01, rotate(0.0,-50.000008,0.0), collision shape none async",
+      "staticModel": true,
+      "name": "ambient_mountains_left",
+      "vehicleModel": false,
+      "id": "ambient-mountains-left-001",
+      "position": [
+        -28,
+        -95,
+        -20
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "dramatic_hit_red",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0.9999629,
+        0,
+        0.008613198
+      ],
+      "resourcePath": "mountain_low_poly_native",
+      "jointMapping": "",
+      "scale": [
+        0.31,
+        0.31,
+        0.31
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "ambient_mountains_right => static mountain_low_poly_native: pos (300.0,-94.0,-59.041), scale 0.31, rotate(0.0,179.01299,0.0), collision shape none async",
+      "staticModel": true,
+      "name": "ambient_mountains_right",
+      "vehicleModel": false,
+      "id": "ambient-mountains-right-001",
+      "position": [
+        300,
+        -94,
+        -59.041
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0.70710677,
+        0,
+        0.70710677
+      ],
+      "resourcePath": "mountain_low_poly_native",
+      "jointMapping": "",
+      "scale": [
+        0.01,
+        0.01,
+        0.01
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "ambient_mountains_rear => static mountain_low_poly_native: pos (40.0,-96.0,116.0), scale 0.01, rotate(0.0,90.0,0.0), collision shape none async",
+      "staticModel": true,
+      "name": "ambient_mountains_rear",
+      "vehicleModel": false,
+      "id": "ambient-mountains-rear-001",
+      "position": [
+        40,
+        -96,
+        116
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "resourcePath": "train_alt_line",
+      "jointMapping": "",
+      "scale": [
+        2,
+        2,
+        2
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "train_alt_visual => static train_alt_line: pos (40.1,-98.0,22.75), scale 2.0, shadow mode on, collision shape none async",
+      "staticModel": true,
+      "name": "train_alt_visual",
+      "vehicleModel": false,
+      "id": "train-alt-visual-001",
+      "position": [
+        40.1,
+        -98,
+        22.75
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": true,
+      "type": "BOX",
+      "sizeX": 7,
+      "sceneMaxCode": "train_under_visual_collider => box : size (14.0,6.0,42.0), pos (40.0,-96.0,22.75)",
+      "material": "",
+      "name": "train_under_visual_collider",
+      "staticEntity": false,
+      "id": "train-under-visual-collider-001",
+      "position": [
+        40,
+        -96,
+        22.75
+      ],
+      "multiplayer": false,
+      "sizeY": 3,
+      "sizeZ": 21
+    },
+    {
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "name": "Train Alt Visual Setup",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "codeText": "// Train Alt Visual Setup",
+      "id": "train-alt-setup-001",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "type": "CODE"
+    },
+    {
+      "lightLookAtTarget": "player2",
+      "lightDirection": [
+        -0.3,
+        -0.8,
+        -0.4
+      ],
+      "lightAmbientColor": "#223344",
+      "rotation": [
+        0.31529963,
+        0.64402413,
+        0.30648035,
+        0.6260101
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "lightColor": "cyan",
+      "type": "LIGHT",
+      "lightType": "ambient",
+      "lightIntensity": 260,
+      "lightExposure": 0.2,
+      "lightAngle": 47,
+      "lightIntensityUnit": "lumens",
+      "lightRange": 24,
+      "name": "light_1",
+      "id": "d07a32ea-9b1a-4ddd-9ac3-245914f6392a",
+      "position": [
+        38.35623,
+        -72.667725,
+        22.915318
+      ],
+      "lightShadowMode": "medium",
+      "lightPreset": "Night Neon"
+    },
+    {
+      "lightLookAtTarget": "",
+      "lightDirection": [
+        0.92,
+        -0.39,
+        0
+      ],
+      "lightAmbientColor": "",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "lightColor": "white",
+      "type": "LIGHT",
+      "lightType": "spot",
+      "lightIntensity": 950,
+      "lightExposure": 0.35,
+      "lightAngle": 42,
+      "lightIntensityUnit": "lumens",
+      "lightRange": 16,
+      "name": "train_left_wall_spot_front",
+      "id": "train-left-wall-spot-front-001",
+      "position": [
+        36.4,
+        -85.8,
+        16.5
+      ],
+      "lightShadowMode": "medium",
+      "lightPreset": "Night Neon"
+    },
+    {
+      "lightLookAtTarget": "",
+      "lightDirection": [
+        0.92,
+        -0.39,
+        0
+      ],
+      "lightAmbientColor": "",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "lightColor": "white",
+      "type": "LIGHT",
+      "lightType": "spot",
+      "lightIntensity": 950,
+      "lightExposure": 0.35,
+      "lightAngle": 42,
+      "lightIntensityUnit": "lumens",
+      "lightRange": 16,
+      "name": "train_left_wall_spot_rear",
+      "id": "train-left-wall-spot-rear-001",
+      "position": [
+        36.4,
+        -85.8,
+        29
+      ],
+      "lightShadowMode": "medium",
+      "lightPreset": "Night Neon"
+    },
+    {
+      "lightLookAtTarget": "",
+      "lightDirection": [
+        -0.92,
+        -0.39,
+        0
+      ],
+      "lightAmbientColor": "",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "lightColor": "white",
+      "type": "LIGHT",
+      "lightType": "spot",
+      "lightIntensity": 950,
+      "lightExposure": 0.35,
+      "lightAngle": 42,
+      "lightIntensityUnit": "lumens",
+      "lightRange": 16,
+      "name": "train_right_wall_spot_front",
+      "id": "train-right-wall-spot-front-001",
+      "position": [
+        43.6,
+        -85.8,
+        16.5
+      ],
+      "lightShadowMode": "medium",
+      "lightPreset": "Night Neon"
+    },
+    {
+      "lightLookAtTarget": "",
+      "lightDirection": [
+        -0.92,
+        -0.39,
+        0
+      ],
+      "lightAmbientColor": "",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "lightColor": "white",
+      "type": "LIGHT",
+      "lightType": "directional",
+      "lightIntensity": 950,
+      "lightExposure": 0.35,
+      "lightAngle": 42,
+      "lightIntensityUnit": "lumens",
+      "lightRange": 16,
+      "name": "train_right_wall_spot_rear",
+      "id": "train-right-wall-spot-rear-001",
+      "position": [
+        43.6,
+        -85.8,
+        29
+      ],
+      "lightShadowMode": "medium",
+      "lightPreset": "Night Neon"
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "resourcePath": "low_poly_rocks_pack",
+      "jointMapping": "",
+      "scale": [
+        1.8,
+        1.8,
+        1.8
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "stage_rock_01 => static low_poly_rocks_pack: pos (30.0,-97.92707,8.0), scale 1.8, shadow mode on, collision shape none async",
+      "staticModel": true,
+      "name": "stage_rock_01",
+      "vehicleModel": false,
+      "id": "stage-rock-001",
+      "position": [
+        30,
+        -97.92707,
+        8
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0.34202015,
+        0,
+        0.9396926
+      ],
+      "resourcePath": "low_poly_rocks_pack",
+      "jointMapping": "",
+      "scale": [
+        1.25,
+        1.25,
+        1.25
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "stage_rock_02 => static low_poly_rocks_pack: pos (52.0,-102.9,9.5), scale 1.25, rotate(0.0,40.000004,0.0), shadow mode on, collision shape none async",
+      "staticModel": true,
+      "name": "stage_rock_02",
+      "vehicleModel": false,
+      "id": "stage-rock-002",
+      "position": [
+        52,
+        -102.9,
+        9.5
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        -0.25881904,
+        0,
+        0.9659258
+      ],
+      "resourcePath": "low_poly_rocks_pack",
+      "jointMapping": "",
+      "scale": [
+        1.45,
+        1.45,
+        1.45
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "stage_rock_03 => static low_poly_rocks_pack: pos (28.0,-99.09984,18.0), scale 1.45, rotate(0.0,-30.0,0.0), shadow mode on, collision shape none async",
+      "staticModel": true,
+      "name": "stage_rock_03",
+      "vehicleModel": false,
+      "id": "stage-rock-003",
+      "position": [
+        28,
+        -99.09984,
+        18
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0.6087614,
+        0,
+        0.7933533
+      ],
+      "resourcePath": "low_poly_rocks_pack",
+      "jointMapping": "",
+      "scale": [
+        1.65,
+        1.65,
+        1.65
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "stage_rock_04 => static low_poly_rocks_pack: pos (55.0,-98.13805,-68.915245), scale 1.65, rotate(0.0,75.0,0.0), shadow mode on, collision shape none async",
+      "staticModel": true,
+      "name": "stage_rock_04",
+      "vehicleModel": false,
+      "id": "stage-rock-004",
+      "position": [
+        55,
+        -98.13805,
+        -68.915245
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        -0.57357645,
+        0,
+        0.81915206
+      ],
+      "resourcePath": "low_poly_rocks_pack",
+      "jointMapping": "",
+      "scale": [
+        1.2,
+        1.2,
+        1.2
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "stage_rock_05 => static low_poly_rocks_pack: pos (31.5,-103.0,31.0), scale 1.2, rotate(0.0,-70.0,0.0), shadow mode on, collision shape none async",
+      "staticModel": true,
+      "name": "stage_rock_05",
+      "vehicleModel": false,
+      "id": "stage-rock-005",
+      "position": [
+        31.5,
+        -103,
+        31
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0.8660254,
+        0,
+        0.5
+      ],
+      "resourcePath": "low_poly_rocks_pack",
+      "jointMapping": "",
+      "scale": [
+        1.95,
+        1.95,
+        1.95
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "stage_rock_06 => static low_poly_rocks_pack: pos (3.8228073,-98.07468,35.5), scale 1.95, rotate(0.0,120.0,0.0), shadow mode on, collision shape none async",
+      "staticModel": true,
+      "name": "stage_rock_06",
+      "vehicleModel": false,
+      "id": "stage-rock-006",
+      "position": [
+        3.8228073,
+        -98.07468,
+        35.5
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0.13052619,
+        0,
+        0.9914449
+      ],
+      "resourcePath": "low_poly_rocks_pack",
+      "jointMapping": "",
+      "scale": [
+        1.35,
+        1.35,
+        1.35
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "stage_rock_07 => static low_poly_rocks_pack: pos (36.0,-102.6,2.0), scale 1.35, rotate(0.0,14.999999,0.0), shadow mode on, collision shape none async",
+      "staticModel": true,
+      "name": "stage_rock_07",
+      "vehicleModel": false,
+      "id": "stage-rock-007",
+      "position": [
+        36,
+        -102.6,
+        2
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        -0.9238795,
+        0,
+        0.38268343
+      ],
+      "resourcePath": "low_poly_rocks_pack",
+      "jointMapping": "",
+      "scale": [
+        1.55,
+        1.55,
+        1.55
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "stage_rock_08 => static low_poly_rocks_pack: pos (45.0,-97.96775,3.0), scale 1.55, rotate(0.0,-135.0,0.0), shadow mode on, collision shape none async",
+      "staticModel": true,
+      "name": "stage_rock_08",
+      "vehicleModel": false,
+      "id": "stage-rock-008",
+      "position": [
+        45,
+        -97.96775,
+        3
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0.9659258,
+        0,
+        0.25881904
+      ],
+      "resourcePath": "low_poly_rocks_pack",
+      "jointMapping": "",
+      "scale": [
+        1.75,
+        1.75,
+        1.75
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "stage_rock_09 => static low_poly_rocks_pack: pos (34.0,-98.21084,45.0), scale 1.75, rotate(0.0,150.0,0.0), shadow mode on, collision shape none async",
+      "staticModel": true,
+      "name": "stage_rock_09",
+      "vehicleModel": false,
+      "id": "stage-rock-009",
+      "position": [
+        34,
+        -98.21084,
+        45
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        -0.38268343,
+        0,
+        0.9238795
+      ],
+      "resourcePath": "low_poly_rocks_pack",
+      "jointMapping": "",
+      "scale": [
+        1.4,
+        1.4,
+        1.4
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "stage_rock_10 => static low_poly_rocks_pack: pos (48.5,-99.35373,47.0), scale 1.4, rotate(0.0,-45.0,0.0), shadow mode on, collision shape none async",
+      "staticModel": true,
+      "name": "stage_rock_10",
+      "vehicleModel": false,
+      "id": "stage-rock-010",
+      "position": [
+        48.5,
+        -99.35373,
+        47
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0.5,
+        0,
+        0.8660254
+      ],
+      "resourcePath": "low_poly_rocks_pack",
+      "jointMapping": "",
+      "scale": [
+        1.1,
+        1.1,
+        1.1
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "stage_rock_11 => static low_poly_rocks_pack: pos (23.0,-103.1,24.0), scale 1.1, rotate(0.0,60.0,0.0), shadow mode on, collision shape none async",
+      "staticModel": true,
+      "name": "stage_rock_11",
+      "vehicleModel": false,
+      "id": "stage-rock-011",
+      "position": [
+        23,
+        -103.1,
+        24
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        -0.7933533,
+        0,
+        0.6087614
+      ],
+      "resourcePath": "low_poly_rocks_pack",
+      "jointMapping": "",
+      "scale": [
+        1.7,
+        1.7,
+        1.7
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "stage_rock_12 => static low_poly_rocks_pack: pos (75.4412,-98.01564,27.0), scale 1.7, rotate(0.0,-105.0,0.0), shadow mode on, collision shape none async",
+      "staticModel": true,
+      "name": "stage_rock_12",
+      "vehicleModel": false,
+      "id": "stage-rock-012",
+      "position": [
+        75.4412,
+        -98.01564,
+        27
+      ],
+      "multiplayer": false
+    },
+    {
+      "lightLookAtTarget": "",
+      "lightDirection": [
+        -0.35,
+        -0.82,
+        -0.45
+      ],
+      "lightAmbientColor": "",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "lightColor": "black",
+      "type": "LIGHT",
+      "lightType": "directional",
+      "lightIntensity": 3.2,
+      "lightExposure": 0.2,
+      "lightAngle": 45,
+      "lightIntensityUnit": "",
+      "lightRange": 80,
+      "name": "rock_key_light",
+      "id": "rock-key-light-001",
+      "position": [
+        18,
+        -62,
+        4
+      ],
+      "lightShadowMode": "medium",
+      "lightPreset": "Night Neon"
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "resourcePath": "helicopter",
+      "jointMapping": "",
+      "scale": [
+        0.01,
+        0.01,
+        0.01
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "attack_helicopter => helicopter: pos (0.0,-8.385735,10.961966), scale 0.01, collision shape none async",
+      "staticModel": false,
+      "name": "attack_helicopter",
+      "vehicleModel": false,
+      "id": "08b1db0c-a57b-4ccb-bdd9-dcd58458d7f1",
+      "position": [
+        0,
+        -8.385735,
+        10.961966
+      ],
+      "multiplayer": false
+    },
+    {
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "name": "attack_helicopter.\"Main\" loop",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "codeText": "attack_helicopter.\"Main\" loop\n",
+      "id": "0d212dc6-a8e3-41a7-b9e6-10f5f2f1d44e",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "type": "CODE"
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "resourcePath": "meshy_blue_train_journey",
+      "jointMapping": "",
+      "scale": [
+        34.1,
+        34.1,
+        34.1
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "model_20 => static meshy_blue_train_journey: pos (40.464985,-92.20159,-57.988), scale 34.1, collision shape none async",
+      "staticModel": true,
+      "name": "model_20",
+      "vehicleModel": false,
+      "id": "96dc7f52-60b9-4bba-8948-b8df93dbb6b9",
+      "position": [
+        40.464985,
+        -92.20159,
+        -57.988
+      ],
+      "multiplayer": false
+    },
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "resourcePath": "dragon_gate1",
+      "jointMapping": "",
+      "scale": [
+        43.4,
+        43.4,
+        43.4
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "model_21 => static dragon_gate1: pos (40.464985,-64.232185,-103.70199), collision shape none async",
+      "staticModel": true,
+      "name": "model_21",
+      "vehicleModel": false,
+      "id": "9d62eca3-725b-4585-9025-1bea65b85385",
+      "position": [
+        40.464985,
+        -64.232185,
+        -103.70199
+      ],
+      "multiplayer": false
+    }
+  ],
+  "gameCamera": {
+    "rotation": [
+      0.09438024,
+      0.87408334,
+      -0.18849707,
+      0.4376524
+    ],
+    "position": [
+      8.015769,
+      -8.97224,
+      51.23
+    ]
+  },
+  "camera": {
+    "rotation": [
+      -0.02704136,
+      0.9622321,
+      -0.25010976,
+      -0.10403458
+    ],
+    "position": [
+      35.656685,
+      93.00817,
+      162.96957
+    ]
+  },
+  "version": 1
+}

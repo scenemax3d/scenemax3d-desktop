@@ -1,0 +1,29 @@
+{
+  "template": "BLACK_METAL_PANEL",
+  "glowTexture": "Textures/StarterMaterials/MetalPaintedBlack/glow.png",
+  "previewShape": "BOX",
+  "glowColor": [
+    0,
+    0,
+    0,
+    1
+  ],
+  "normalTexture": "Textures/StarterMaterials/MetalPaintedBlack/normal.png",
+  "version": 1,
+  "specularStrength": 1.04,
+  "transparent": false,
+  "shininess": 114,
+  "glowStrength": 0,
+  "previewScale": 1,
+  "alphaDiscardThreshold": 0,
+  "doubleSided": false,
+  "diffuseTexture": "Textures/StarterMaterials/MetalPaintedBlack/diffuse.png",
+  "ambientStrength": 0.37,
+  "baseColor": [
+    0.78,
+    0.8,
+    0.84,
+    1
+  ],
+  "opacity": 1
+}

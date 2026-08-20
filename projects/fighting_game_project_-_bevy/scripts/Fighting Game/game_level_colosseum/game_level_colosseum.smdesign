@@ -1,0 +1,249 @@
+{
+  "sceneEnvironmentShader": "",
+  "entities": [
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "resourcePath": "colosseum",
+      "jointMapping": "",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "type": "MODEL",
+      "sceneMaxCode": "colosseum_visual => static colosseum: pos (40.0,-100.0,22.0), shadow mode on async",
+      "staticModel": true,
+      "name": "colosseum_visual",
+      "vehicleModel": false,
+      "id": "colosseum-visual-001",
+      "position": [
+        40,
+        -100,
+        22
+      ]
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": false,
+      "type": "BOX",
+      "sizeX": 38,
+      "sceneMaxCode": "colosseum_sand_collider => static box : size (76.0,1.4,52.0), pos (40.0,-99.55,22.0), material \"alpha\"",
+      "material": "alpha",
+      "name": "colosseum_sand_collider",
+      "staticEntity": true,
+      "id": "colosseum-sand-collider-001",
+      "position": [
+        40,
+        -99.55,
+        22
+      ],
+      "sizeY": 0.7,
+      "sizeZ": 26
+    },
+    {
+      "shader": "",
+      "dynamicModel": true,
+      "hidden": false,
+      "shadowMode": "cast",
+      "rotation": [
+        0,
+        0.70710677,
+        0,
+        0.70710677
+      ],
+      "resourcePath": "fighter1",
+      "jointMapping": "",
+      "scale": [
+        3,
+        3,
+        3
+      ],
+      "type": "MODEL",
+      "sceneMaxCode": "player1 => fighter1: pos (35.0,-95.2,22.0), scale 3.0, rotate(0.0,90.0,0.0), shadow mode cast async",
+      "staticModel": false,
+      "name": "player1",
+      "vehicleModel": false,
+      "id": "colosseum-player1-001",
+      "position": [
+        35,
+        -95.2,
+        22
+      ]
+    },
+    {
+      "shader": "",
+      "dynamicModel": true,
+      "hidden": false,
+      "shadowMode": "both",
+      "rotation": [
+        0,
+        -0.70710677,
+        0,
+        0.70710677
+      ],
+      "resourcePath": "old_fighter2",
+      "jointMapping": "",
+      "scale": [
+        3,
+        3,
+        3
+      ],
+      "type": "MODEL",
+      "sceneMaxCode": "player2 => old_fighter2: pos (45.0,-94.9,22.0), scale 3.0, rotate(0.0,-90.0,0.0), shadow mode on async",
+      "staticModel": false,
+      "name": "player2",
+      "vehicleModel": false,
+      "id": "colosseum-player2-001",
+      "position": [
+        45,
+        -94.9,
+        22
+      ]
+    },
+    {
+      "lightLookAtTarget": "",
+      "lightDirection": [
+        0,
+        -1,
+        0
+      ],
+      "lightAmbientColor": "#ffffff",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "lightColor": "white",
+      "type": "LIGHT",
+      "lightType": "ambient",
+      "lightIntensity": 240,
+      "lightExposure": 0.2,
+      "lightAngle": 45,
+      "lightIntensityUnit": "lumens",
+      "lightRange": 80,
+      "name": "colosseum_ambient",
+      "id": "colosseum-ambient-001",
+      "position": [
+        40,
+        -75,
+        22
+      ],
+      "lightShadowMode": "none",
+      "lightPreset": "Daylight"
+    },
+    {
+      "lightLookAtTarget": "",
+      "lightDirection": [
+        -0.3,
+        -0.86,
+        0.4
+      ],
+      "lightAmbientColor": "",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "lightColor": "white",
+      "type": "LIGHT",
+      "lightType": "directional",
+      "lightIntensity": 5.2,
+      "lightExposure": 0.2,
+      "lightAngle": 45,
+      "lightIntensityUnit": "",
+      "lightRange": 100,
+      "name": "colosseum_sun",
+      "id": "colosseum-sun-001",
+      "position": [
+        22,
+        -60,
+        0
+      ],
+      "lightShadowMode": "medium",
+      "lightPreset": "Daylight"
+    },
+    {
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "name": "Colosseum Startup",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "codeText": "// Colosseum Startup\nloading.print \"\"\nplayer1.switch to character mode : gravity 60\nplayer2.switch to character mode : gravity 40\nplayer1.look at (player2)\nplayer2.look at (player1)\nplayer1.idle2 loop\nplayer2.Idle loop",
+      "id": "colosseum-startup-code-001",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "type": "CODE"
+    }
+  ],
+  "gameCamera": {
+    "rotation": [
+      0.034899,
+      0,
+      0,
+      0.999391
+    ],
+    "position": [
+      40,
+      -92,
+      -12
+    ]
+  },
+  "camera": {
+    "rotation": [
+      0.060895532,
+      0.87826097,
+      -0.11631505,
+      0.45980445
+    ],
+    "position": [
+      -67.95829,
+      -56.583538,
+      132.84401
+    ]
+  },
+  "version": 1
+}

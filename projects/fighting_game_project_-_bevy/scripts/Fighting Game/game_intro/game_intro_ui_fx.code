@@ -1,0 +1,108 @@
+show_game_intro_ui = {
+  UI.load "game_intro_ui"
+
+  do async
+    UI.layer1.titlePanel.ease("EaseInBack", Down, 0.6)
+  end do
+  wait 0.12 seconds
+  do async
+    UI.layer1.titlePanel.titleText.message("MASTER THE FIGHT", TextEffect.fade_in | TextEffect.zoom_in, 1.1)
+  end do
+  wait 0.18 seconds
+  do async
+    UI.layer1.titlePanel.subtitleText.message("These are the exact movement and hit keys waiting for you in round one.", TextEffect.word_reveal | TextEffect.fade_in, 1.4)
+  end do
+
+  wait 0.18 seconds
+  do async
+    UI.layer1.movePanel.ease("EaseInCubic", Left, 0.55)
+  end do
+  wait 0.08 seconds
+  do async
+    UI.layer1.hitPanel.ease("EaseInCubic", Right, 0.55)
+  end do
+
+  wait 0.18 seconds
+  do async
+    UI.layer1.movePanel.moveTitle.message("MOVEMENT", TextEffect.fade_in | TextEffect.zoom_in, 0.7)
+  end do
+  do async
+    UI.layer1.hitPanel.hitTitle.message("HITS", TextEffect.fade_in | TextEffect.zoom_in, 0.7)
+  end do
+
+  wait 0.14 seconds
+  do async
+    UI.layer1.movePanel.moveLine1.message("W      -> BIG JUMP", TextEffect.typewriter, 0.6)
+  end do
+  do async
+    UI.layer1.hitPanel.hitLine1.message("A      -> MMA KICK INTO FLYING KICK", TextEffect.typewriter, 0.9)
+  end do
+
+  wait 0.14 seconds
+  do async
+    UI.layer1.movePanel.moveLine2.message("LEFT   -> TURN LEFT", TextEffect.typewriter, 0.55)
+  end do
+  do async
+    UI.layer1.hitPanel.hitLine2.message("S      -> HURRICANE KICK", TextEffect.typewriter, 0.7)
+  end do
+
+  wait 0.14 seconds
+  do async
+    UI.layer1.movePanel.moveLine3.message("RIGHT  -> TURN RIGHT", TextEffect.typewriter, 0.55)
+  end do
+  do async
+    UI.layer1.hitPanel.hitLine3.message("D      -> QUAD PUNCH INTO FLYING KICK", TextEffect.typewriter, 0.95)
+  end do
+
+  wait 0.14 seconds
+  do async
+    UI.layer1.movePanel.moveLine4.message("UP     -> MOVE FORWARD", TextEffect.typewriter, 0.65)
+  end do
+  do async
+    UI.layer1.hitPanel.hitLine4.message("Z      -> LOW DUCK FEINT", TextEffect.typewriter, 0.7)
+  end do
+
+  wait 0.14 seconds
+  do async
+    UI.layer1.movePanel.moveLine5.message("DOWN   -> STEP BACK", TextEffect.typewriter, 0.6)
+  end do
+  do async
+    UI.layer1.hitPanel.hitLine5.message("X      -> GRAB AND SLAM", TextEffect.typewriter, 0.7)
+  end do
+
+  wait 0.14 seconds
+  do async
+    UI.layer1.movePanel.moveLine6.message("SPACE  -> JUMP ATTACK", TextEffect.typewriter, 0.6)
+  end do
+  do async
+    UI.layer1.hitPanel.hitLine6.message("C      -> LEG ATTACK / GROUND FINISH", TextEffect.typewriter, 0.9)
+  end do
+
+  wait 0.3 seconds
+  do async
+    UI.layer1.footerPanel.ease("EaseInBounce", Up, 0.8)
+  end do
+  do async
+    UI.layer1.footerPanel.footerText.message("PRESS SPACE TO ENTER THE ARENA", TextEffect.fade_in | TextEffect.zoom_in, 1.0)
+  end do
+  wait 0.16 seconds
+  do async
+    UI.layer1.footerPanel.footerSub.message("Memorize the keys, then launch straight into the fight.", TextEffect.word_reveal | TextEffect.fade_in, 1.2)
+  end do
+}
+
+hide_game_intro_ui = {
+  do async
+    UI.layer1.footerPanel.ease("EaseOutQuad", Down, 0.25)
+  end do
+  do async
+    UI.layer1.movePanel.ease("EaseOutQuad", Left, 0.3)
+  end do
+  do async
+    UI.layer1.hitPanel.ease("EaseOutQuad", Right, 0.3)
+  end do
+  do async
+    UI.layer1.titlePanel.ease("EaseOutQuad", Up, 0.25)
+  end do
+  wait 0.35 seconds
+}

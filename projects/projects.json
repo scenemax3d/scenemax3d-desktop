@@ -6,16 +6,16 @@
             "multiplayerDeployOs": "Windows",
             "itchMacChannel": "macos",
             "itchLinuxChannel": "linux",
-            "lastActiveAt": 1786595399423,
+            "lastActiveAt": 1786856283948,
             "path": "projects/fighting_game_project",
             "multiplayerPassword": "",
             "multiplayerServerIp": "127.0.0.1",
-            "projectorType": "classic",
-            "selectedNode": "main",
+            "projectorType": "nextgen",
+            "selectedNode": "bevy_shader1.smshader",
             "projectGuid": "b616bee4-eeca-4b8f-939b-37510d338fa3",
             "name": "fighting game project",
             "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game\\game_intro",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game\\shaders",
             "multiplayerServerPort": 9001
         },
         {
@@ -190,7 +190,25 @@
             "name": "Bevy Tests",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\Bevy_Tests\\scripts\\Bevy Tests",
             "multiplayerServerPort": 9001
+        },
+        {
+            "itchWindowsChannel": "windows",
+            "itchGamePage": "https://adi-barda.itch.io/fighting-game-concept",
+            "multiplayerDeployOs": "Windows",
+            "itchMacChannel": "macos",
+            "itchLinuxChannel": "linux",
+            "lastActiveAt": 1786862215351,
+            "path": "projects/fighting_game_project_-_bevy",
+            "multiplayerPassword": "",
+            "multiplayerServerIp": "127.0.0.1",
+            "projectorType": "nextgen",
+            "selectedNode": "bevy_shader1.smshader",
+            "projectGuid": "f158c844-599c-443b-8dce-ad31e02ecadb",
+            "name": "fighting game project - bevy",
+            "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
+            "selectedParent": "C:/dev/scenemax_desktop/projects/fighting_game_project_-_bevy/scripts/Fighting Game/shaders",
+            "multiplayerServerPort": 9001
         }
     ],
-    "selectedProject": "fighting game project"
+    "selectedProject": "fighting game project - bevy"
 }

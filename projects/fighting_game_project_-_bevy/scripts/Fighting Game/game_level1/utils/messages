@@ -1,0 +1,12 @@
+var popup_msg_guard = 0
+
+[popup_msg_guard == 0]
+popup_msg (msg) = {
+	popup_msg_guard = 1
+	audio.play "coin2"
+	ui.layer1.panelRightBottom.text1.text = msg 
+	ui.layer1.panelRightBottom.Ease("EaseInBounce", Up, 0.2)
+	wait 2 Seconds
+	ui.layer1.panelRightBottom.Ease("EaseOutQuad", Down, 0.5)
+	popup_msg_guard = 0
+}

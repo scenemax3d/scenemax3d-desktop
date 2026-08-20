@@ -1,0 +1,25 @@
+{
+  "blocks": [
+    "PULSE",
+    "TINT",
+    "WATER_WAVES"
+  ],
+  "edgeWidth": 0.47544774413108826,
+  "glowStrength": 5.0,
+  "mainColor": [
+    1.0,
+    0.0,
+    0.0,
+    1.0
+  ],
+  "previewModelName": "Models/fighter1/fighter1.glb",
+  "previewScale": 1.100000023841858,
+  "previewTarget": "SPRITE",
+  "pulseSpeed": 3.0037312507629395,
+  "scrollSpeed": 2.0500001907348633,
+  "template": "UI_NEON_SCAN",
+  "texture": "",
+  "transparency": 0.0,
+  "useOriginalTexture": false,
+  "version": 1
+}

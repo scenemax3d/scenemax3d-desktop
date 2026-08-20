@@ -1,0 +1,187 @@
+
+create_rock = {
+	var rock_scale = 1.38 + rnd(323) * 0.01
+  rock1 => meshy_rock1_native : pos (22.532026,-51.0,148.68306), scale rock_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 3.0
+  return rock1
+}
+rocks => Object.Pool(create_rock, size 5)
+
+
+var level1_dragon_rocks_started=0,
+level1_dragon_rock_count=0,
+level1_dragon_rock_player1_hit_guard=0,
+level1_dragon_rock_player2_hit_guard=0
+
+tiger_roar(tm) = {
+  audio.play "monster_roar"
+  tg.show
+  tg.Howl async
+  camera.attach to tg : pos (0,1,-12)
+  wait tm seconds
+  run set_camera_on_player
+  tg.hide
+}
+
+level1_dragon_rock_push_player2 = {
+  do async
+    player2_hit1.pos(player2."mixamorig:Head")
+    player2_hit1.show
+    player2_hit1.play (frame 0 to 15)
+    player2_hit1.hide
+  end do
+
+  audio.play "hurt1"
+  player2."Hit" async
+  player2.move backward 4.0 for 0.25 seconds
+}
+
+level1_dragon_rock_hit_player2(r) = {
+  if(enemy_ko==0 && game_status==GAME_STATE_START && level1_dragon_rock_player2_hit_guard==0) {
+    level1_dragon_rock_player2_hit_guard=1
+    run level1_dragon_rock_push_player2 Async
+    run shake_the_world2 async
+    do async
+      wait 0.85 seconds
+      level1_dragon_rock_player2_hit_guard=0
+    end do
+  }
+}
+
+level1_dragon_rock_hit_player1(r) = {
+  if(player1_ko==0 && game_status==GAME_STATE_START && level1_dragon_rock_player1_hit_guard==0) {
+    r.physics impulse up 100
+    level1_dragon_rock_player1_hit_guard=1
+    player1.move backward 0.8 for 0.3 seconds
+    run player1_head_hit Async
+    run shake_the_world2 async
+    do async
+      wait 0.85 seconds
+      level1_dragon_rock_player1_hit_guard=0
+    end do
+  }
+}
+
+
+level1_dragon_rock_explode(r) = {
+  var rock_fx_x = r.x
+  var rock_fx_y = r.y
+  var rock_fx_z = r.z
+
+  run level1_dragon_rock_hit_players(r)
+  wait 0.12 seconds
+  rocks.release r  // return rock to the pool
+
+  burst_fx => effects.effekseer.Simple_Distortion_2
+  spark_fx => effects.effekseer.Simple_Sprite_BillBoard
+  ring_fx => effects.effekseer.Simple_Ring_Shape1
+
+  burst_fx.play pos (rock_fx_x,rock_fx_y,rock_fx_z) Async
+  spark_fx.play pos (rock_fx_x,rock_fx_y,rock_fx_z) Async
+  ring_fx.play pos (rock_fx_x,rock_fx_y,rock_fx_z) Async
+  audio.play "crash1"
+
+  if(camera_mode==CAMERA_MODE_DEFAULT) {
+    run shake_the_world async
+  }
+
+  wait 0.6 seconds
+  burst_fx.delete
+  spark_fx.delete
+  ring_fx.delete
+  //Logger.info "DRAGON_ROCK effect delete done x=" + rock_fx_x + " y=" + rock_fx_y + " z=" + rock_fx_z
+}
+
+level1_fly_dragon_gate_rock_to_ground(r) = {
+  var rock_age = 0
+
+  r.physics stop
+  var dist = distance(player1,dragons_gate)
+  r.throw at player1 power dist*30/147 // apply power to the rocks according to distance
+
+  do
+    if(game_status!=GAME_STATE_START || level1_dragon_rocks_started==0 || r.y < -125.0) {
+      r.hide
+      r.delete
+      level1_dragon_rock_count=level1_dragon_rock_count-1
+      return
+    }
+
+    if(player1_body_collider collides with r) {
+      run level1_dragon_rock_hit_player1(r)
+      do async
+        wait 1 second 
+        run level1_dragon_rock_explode(r)
+        level1_dragon_rock_count=level1_dragon_rock_count-1
+      end do
+      return
+    }
+
+    if(player2_body_collider collides with r) {
+      run level1_dragon_rock_hit_player2(r)
+      
+      run level1_dragon_rock_explode(r)
+      level1_dragon_rock_count=level1_dragon_rock_count-1
+      return
+    }
+
+    wait 0.04 seconds
+    rock_age=rock_age+0.04
+
+  while rock_age < 2
+  r.physics impulse up 100 
+
+  if(game_status!=GAME_STATE_START || level1_dragon_rocks_started==0) {
+    r.hide
+    r.delete
+    
+    level1_dragon_rock_count=level1_dragon_rock_count-1
+    return
+  }
+
+  
+  run level1_dragon_rock_explode(r)
+  level1_dragon_rock_count=level1_dragon_rock_count-1
+}
+
+level1_launch_dragon_gate_rock = {
+  
+  level1_dragon_rock_count=level1_dragon_rock_count+1
+  
+  //rock => meshy_rock1 : pos (22.532026,-51.0,148.68306), scale level1_dragon_rock_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 3.0
+  var rock = rocks.acquire // get from rocks pool
+  rock.pos (22.532026,-51.0,148.68306)
+  rock.data.hit_player1=0
+  rock.data.hit_player2=0
+  run level1_fly_dragon_gate_rock_to_ground(rock)
+}
+
+level1_spawn_dragon_gate_rock = {
+  if(level1_dragon_rocks_started==0 || game_status!=GAME_STATE_START || level1_dragon_rock_count>=5) {
+    return
+  }
+
+  run level1_launch_dragon_gate_rock Async
+
+}
+
+level1_dragon_rocks_start = {
+  if(level1_dragon_rocks_started==1 || game_status!=GAME_STATE_START) {
+    return
+  }
+
+  level1_dragon_rocks_started=1
+  run level1_spawn_dragon_gate_rock
+  do async
+    wait 1.15 seconds
+    do
+      run level1_spawn_dragon_gate_rock
+      wait 1.15 seconds
+    while level1_dragon_rocks_started==1
+  end do
+}
+
+level1_dragon_rocks_stop = {
+  level1_dragon_rocks_started=0
+  level1_dragon_rock_player1_hit_guard=0
+  level1_dragon_rock_player2_hit_guard=0
+}
