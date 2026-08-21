@@ -261,14 +261,13 @@ bool beginBevyRenderTarget(SceneMaxEffekseerRenderer* ctx,
   vkCmdBeginRenderPass(commandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
   const float viewportX = static_cast<float>(target->viewport_x);
-  const float viewportY = static_cast<float>(target->viewport_y);
   const float viewportWidth = static_cast<float>(target->viewport_width);
   const float viewportHeight = static_cast<float>(target->viewport_height);
   VkViewport viewport = {};
   viewport.x = viewportX;
-  viewport.y = viewportY + viewportHeight;
+  viewport.y = static_cast<float>(target->viewport_y);
   viewport.width = viewportWidth;
-  viewport.height = -viewportHeight;
+  viewport.height = viewportHeight;
   viewport.minDepth = 0.0f;
   viewport.maxDepth = 1.0f;
   vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
