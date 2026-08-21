@@ -1,5 +1,5 @@
 {
-  "modelAssetId": "meshy_axe_native",
+  "modelAssetId": "battleaxe1",
   "schemaVersion": "1.0",
   "colliders": [{
     "transform": {
@@ -26,7 +26,7 @@
         "offsetZ": 0,
         "rotationX": 0,
         "offsetY": 0,
-        "rotationY": 0,
+        "rotationY": 61,
         "rotationZ": 0,
         "scaleZ": 1
       },

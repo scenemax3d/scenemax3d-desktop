@@ -50,7 +50,7 @@ use scenemax_parser::{
     LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement, ObjectPoolStatement,
     PoolReleaseStatement, PositionExpr, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
     SceneMaxCollisionShape, SceneMaxVec3, ScreenMode, SpritePlayStatement, Statement,
-    UiEaseDirection, UiTargetPath,
+    UiEaseDirection, UiTargetPath, WeaponAction, WeaponStatement,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
@@ -235,6 +235,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_scenemax_debug_gizmos,
                 update_current_animation_vars,
                 apply_when_events,
+                apply_pending_weapon_actions,
             )
                 .chain(),
         )
@@ -508,6 +509,7 @@ struct SceneMaxRuntimeAssets {
     placeholder_material: Option<Handle<StandardMaterial>>,
     audio_by_name: HashMap<String, SceneMaxAudioAsset>,
     looping_audio_by_name: HashMap<String, Entity>,
+    pending_weapon_actions: Vec<WeaponStatement>,
 }
 
 #[derive(Debug, Clone)]
@@ -933,6 +935,11 @@ struct AnimationSpeedOverride {
 #[derive(Debug, Component)]
 struct SceneMaxGltf {
     gltf: Handle<Gltf>,
+}
+
+#[derive(Debug, Component)]
+struct SceneMaxEquippedWeapon {
+    owner: String,
 }
 
 #[derive(Debug, Component)]

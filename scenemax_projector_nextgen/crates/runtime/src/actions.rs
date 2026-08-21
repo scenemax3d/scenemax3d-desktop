@@ -1,4 +1,5 @@
 use super::*;
+use serde::Deserialize;
 
 pub(super) fn apply_startup_runs(
     program: &Program,
@@ -544,6 +545,10 @@ pub(super) fn apply_startup_action(
                     shader.target
                 ));
             }
+            ActionSequenceResult::Completed
+        }
+        Statement::Weapon(weapon) => {
+            enqueue_weapon_action(weapon, runtime_assets);
             ActionSequenceResult::Completed
         }
         Statement::Assignment(assignment)
@@ -2766,6 +2771,7 @@ pub(super) fn describe_statement(action: &Statement) -> String {
         Statement::EffekseerPlay(play) => {
             format!("EffekseerPlay({} loop={})", play.target, play.looped as u8)
         }
+        Statement::Weapon(_) => "Weapon".to_owned(),
         Statement::Unsupported { text } => format!("Unsupported({text})"),
         other => format!("{other:?}"),
     }
@@ -3878,6 +3884,316 @@ fn runtime_model_resource(
     .ok()
 }
 
+fn enqueue_weapon_action(statement: &WeaponStatement, runtime_assets: &mut SceneMaxRuntimeAssets) {
+    runtime_assets
+        .pending_weapon_actions
+        .push(statement.clone());
+}
+
+pub(super) fn apply_pending_weapon_actions(
+    mut commands: Commands,
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
+    scene_entities: Query<(Entity, &SceneMaxEntity)>,
+    equipped_weapons: Query<(Entity, &SceneMaxEquippedWeapon)>,
+    children: Query<&Children>,
+    named_nodes: Query<(Entity, &Name)>,
+    global_transforms: Query<&GlobalTransform>,
+) {
+    if runtime_assets.pending_weapon_actions.is_empty() {
+        return;
+    }
+
+    let Some(asset_server) = runtime_assets.asset_server.clone() else {
+        return;
+    };
+    let Some(asset_root) = runtime_assets.asset_root.clone() else {
+        runtime_assets.pending_weapon_actions.clear();
+        return;
+    };
+    let builtin_asset_root = runtime_assets.builtin_asset_root.clone();
+    let pending_actions = std::mem::take(&mut runtime_assets.pending_weapon_actions);
+    let owner_entities = scene_entities
+        .iter()
+        .map(|(entity, scene_entity)| (scene_entity.name.clone(), entity))
+        .collect::<HashMap<_, _>>();
+
+    for pending in pending_actions {
+        match pending.action.clone() {
+            WeaponAction::Unequip => {
+                despawn_equipped_weapon(&pending.owner, &mut commands, &equipped_weapons);
+            }
+            WeaponAction::Equip { weapon } => {
+                let Some(owner_entity) = owner_entities.get(&pending.owner).copied() else {
+                    continue;
+                };
+                let Some(definition) = load_weapon_definition(&asset_root, &weapon) else {
+                    continue;
+                };
+                let Some(model_asset_id) = definition.model_asset_id.as_deref() else {
+                    continue;
+                };
+                let posture = definition.default_posture();
+                let parent_entity = if let Some(attachment_point) =
+                    posture.and_then(|posture| posture.attachment_point.as_deref())
+                {
+                    if let Some(bone_entity) = find_descendant_entity_by_name(
+                        owner_entity,
+                        attachment_point,
+                        &children,
+                        &named_nodes,
+                    ) {
+                        bone_entity
+                    } else {
+                        owner_entity
+                    }
+                } else {
+                    owner_entity
+                };
+                let Some(model) = scenemax_assets::resolve_model_resource_with_builtin_fallback(
+                    &asset_root,
+                    builtin_asset_root.as_deref(),
+                    model_asset_id,
+                )
+                .ok() else {
+                    continue;
+                };
+
+                despawn_equipped_weapon(&pending.owner, &mut commands, &equipped_weapons);
+
+                let compensation_scale = global_transforms
+                    .get(parent_entity)
+                    .map(|global| {
+                        let (scale, _, _) = global.to_scale_rotation_translation();
+                        Vec3::new(
+                            inverse_scale_component(scale.x),
+                            inverse_scale_component(scale.y),
+                            inverse_scale_component(scale.z),
+                        )
+                    })
+                    .unwrap_or(Vec3::ONE);
+                let mut transform = posture
+                    .and_then(|posture| posture.transform.as_ref())
+                    .map(weapon_transform)
+                    .unwrap_or_default();
+                if let Some(scale) = model.scale {
+                    transform.scale *= Vec3::new(scale[0], scale[1], scale[2]);
+                }
+                let asset_path = model.asset_path;
+                let gltf: Handle<Gltf> = asset_server.load(asset_path.clone());
+                let scene = WorldAssetRoot(
+                    asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())),
+                );
+                let runtime_name = format!("{}.weapon", pending.owner);
+                let root_entity = commands
+                    .spawn((
+                        SceneMaxEntity {
+                            name: runtime_name.clone(),
+                            runtime_name: format!("{runtime_name}@weapon"),
+                        },
+                        SceneMaxEquippedWeapon {
+                            owner: pending.owner.clone(),
+                        },
+                        Transform::from_scale(compensation_scale),
+                        Visibility::Inherited,
+                        Name::new(runtime_name.clone()),
+                    ))
+                    .id();
+                let visual_entity = commands
+                    .spawn((
+                        SceneMaxGltf { gltf },
+                        scene,
+                        transform,
+                        Visibility::Inherited,
+                        Name::new(format!("{runtime_name}.visual")),
+                    ))
+                    .id();
+                commands.entity(root_entity).add_child(visual_entity);
+                commands.entity(parent_entity).add_child(root_entity);
+            }
+        }
+    }
+}
+
+fn despawn_equipped_weapon(
+    owner: &str,
+    commands: &mut Commands,
+    equipped_weapons: &Query<(Entity, &SceneMaxEquippedWeapon)>,
+) {
+    for (entity, equipped) in equipped_weapons {
+        if equipped.owner == owner {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+fn inverse_scale_component(scale: f32) -> f32 {
+    if scale.is_finite() && scale.abs() > 0.000001 {
+        1.0 / scale
+    } else {
+        1.0
+    }
+}
+
+fn find_descendant_entity_by_name(
+    root: Entity,
+    wanted_name: &str,
+    children: &Query<&Children>,
+    named_nodes: &Query<(Entity, &Name)>,
+) -> Option<Entity> {
+    for child in children.get(root).ok()?.iter() {
+        if let Ok((entity, name)) = named_nodes.get(child)
+            && names_match(name.as_str(), wanted_name)
+        {
+            return Some(entity);
+        }
+        if let Some(entity) =
+            find_descendant_entity_by_name(child, wanted_name, children, named_nodes)
+        {
+            return Some(entity);
+        }
+    }
+    None
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeWeaponDefinition {
+    id: Option<String>,
+    #[serde(default)]
+    model_asset_id: Option<String>,
+    #[serde(default)]
+    default_posture_id: Option<String>,
+    #[serde(default)]
+    postures: Vec<RuntimeWeaponPosture>,
+}
+
+impl RuntimeWeaponDefinition {
+    fn default_posture(&self) -> Option<&RuntimeWeaponPosture> {
+        self.default_posture_id
+            .as_deref()
+            .and_then(|default_id| {
+                self.postures.iter().find(|posture| {
+                    posture
+                        .id
+                        .as_deref()
+                        .is_some_and(|id| id.eq_ignore_ascii_case(default_id))
+                        || posture
+                            .name
+                            .as_deref()
+                            .is_some_and(|name| name.eq_ignore_ascii_case(default_id))
+                })
+            })
+            .or_else(|| self.postures.first())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeWeaponPosture {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    attachment_point: Option<String>,
+    #[serde(default)]
+    transform: Option<RuntimeWeaponTransform>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeWeaponTransform {
+    #[serde(default)]
+    offset_x: f32,
+    #[serde(default)]
+    offset_y: f32,
+    #[serde(default)]
+    offset_z: f32,
+    #[serde(default)]
+    rotation_x: f32,
+    #[serde(default)]
+    rotation_y: f32,
+    #[serde(default)]
+    rotation_z: f32,
+    #[serde(default = "one_f32")]
+    scale_x: f32,
+    #[serde(default = "one_f32")]
+    scale_y: f32,
+    #[serde(default = "one_f32")]
+    scale_z: f32,
+}
+
+fn one_f32() -> f32 {
+    1.0
+}
+
+fn weapon_transform(transform: &RuntimeWeaponTransform) -> Transform {
+    Transform {
+        translation: Vec3::new(transform.offset_x, transform.offset_y, transform.offset_z),
+        rotation: Quat::from_euler(
+            EulerRot::XYZ,
+            transform.rotation_x.to_radians(),
+            transform.rotation_y.to_radians(),
+            transform.rotation_z.to_radians(),
+        ),
+        scale: Vec3::new(transform.scale_x, transform.scale_y, transform.scale_z),
+    }
+}
+
+fn load_weapon_definition(asset_root: &Path, weapon: &str) -> Option<RuntimeWeaponDefinition> {
+    for path in direct_weapon_definition_paths(asset_root, weapon) {
+        if let Some(definition) = read_weapon_definition(&path) {
+            return Some(definition);
+        }
+    }
+    for dir in weapon_definition_dirs(asset_root) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("smweapon"))
+            {
+                continue;
+            }
+            let Some(definition) = read_weapon_definition(&path) else {
+                continue;
+            };
+            let stem_matches = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .is_some_and(|stem| stem.eq_ignore_ascii_case(weapon));
+            let id_matches = definition
+                .id
+                .as_deref()
+                .is_some_and(|id| id.eq_ignore_ascii_case(weapon));
+            if stem_matches || id_matches {
+                return Some(definition);
+            }
+        }
+    }
+    None
+}
+
+fn direct_weapon_definition_paths(asset_root: &Path, weapon: &str) -> Vec<PathBuf> {
+    weapon_definition_dirs(asset_root)
+        .into_iter()
+        .map(|dir| dir.join(format!("{weapon}.smweapon")))
+        .collect()
+}
+
+fn weapon_definition_dirs(asset_root: &Path) -> Vec<PathBuf> {
+    vec![asset_root.join("weapons"), asset_root.join("Weapons")]
+}
+
+fn read_weapon_definition(path: &Path) -> Option<RuntimeWeaponDefinition> {
+    let text = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
 pub(super) fn apply_key_action(
     action: &Statement,
     transforms_by_name: &mut HashMap<String, Transform>,
@@ -4037,6 +4353,10 @@ pub(super) fn apply_key_action(
                 shader.target
             ));
         }
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::Weapon(weapon) = action {
+        enqueue_weapon_action(weapon, runtime_assets);
         return ActionSequenceResult::Completed;
     }
     if let Statement::Assignment(assignment)

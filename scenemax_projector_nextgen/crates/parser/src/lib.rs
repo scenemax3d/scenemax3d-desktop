@@ -177,6 +177,7 @@ pub enum Statement {
     UiMessage(UiMessageStatement),
     UiEase(UiEaseStatement),
     UiSetProperty(UiSetPropertyStatement),
+    Weapon(WeaponStatement),
     NoOp {
         text: String,
     },
@@ -772,6 +773,18 @@ pub struct UiSetPropertyStatement {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct WeaponStatement {
+    pub owner: String,
+    pub action: WeaponAction,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum WeaponAction {
+    Equip { weapon: String },
+    Unequip,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum UiPropertyValue {
     Literal(String),
     Expression(AssignmentValue),
@@ -917,6 +930,12 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
 
         if let Some(ui_statement) = parse_ui_statement(line)? {
             statements.push(ui_statement);
+            index += 1;
+            continue;
+        }
+
+        if let Some(weapon) = parse_weapon_statement(line) {
+            statements.push(Statement::Weapon(weapon));
             index += 1;
             continue;
         }
@@ -1705,6 +1724,9 @@ fn parse_action_statements(line: &str) -> Result<Vec<Statement>, ParseError> {
     if let Some(statement) = parse_shader_statement(line)? {
         return Ok(vec![statement]);
     }
+    if let Some(weapon) = parse_weapon_statement(line) {
+        return Ok(vec![Statement::Weapon(weapon)]);
+    }
     if is_shared_var_line(line) {
         if let Some(assignments) = parse_assignment_list(line)? {
             return Ok(assignments
@@ -1928,6 +1950,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
 
     if let Some(debug_mode) = parse_debug_mode_statement(line) {
         return Ok(debug_mode);
+    }
+
+    if let Some(weapon) = parse_weapon_statement(line) {
+        return Ok(Statement::Weapon(weapon));
     }
 
     if let Some(light_probe) = parse_light_probe_add(line)? {
@@ -2800,6 +2826,36 @@ fn parse_assignment_list(line: &str) -> Result<Option<Vec<AssignmentStatement>>,
     }
 
     Ok((!assignments.is_empty()).then_some(assignments))
+}
+
+fn parse_weapon_statement(line: &str) -> Option<WeaponStatement> {
+    let line = line.trim().trim_end_matches(';').trim();
+    let lower = line.to_ascii_lowercase();
+    let index = lower.find(".weapon")?;
+    let owner = line[..index].trim();
+    if !is_variable_path(owner) {
+        return None;
+    }
+    let rest = line[index + ".weapon".len()..].trim();
+    if let Some(raw_value) = rest.strip_prefix('=') {
+        let raw_value = clean_assignment_value(raw_value);
+        if raw_value.eq_ignore_ascii_case("empty") {
+            return Some(WeaponStatement {
+                owner: owner.to_owned(),
+                action: WeaponAction::Unequip,
+            });
+        }
+        let weapon = if is_quoted(raw_value) {
+            unquote_ui_text(raw_value)
+        } else {
+            clean_call_arg(raw_value).to_owned()
+        };
+        return (!weapon.is_empty()).then(|| WeaponStatement {
+            owner: owner.to_owned(),
+            action: WeaponAction::Equip { weapon },
+        });
+    }
+    None
 }
 
 fn split_assignment_segments(text: &str) -> Vec<&str> {
@@ -8367,6 +8423,45 @@ run tick(score+10) every tick_time+0.25 seconds
                 Statement::DebugMode { enabled: true },
                 Statement::DebugMode { enabled: false },
             ]
+        );
+    }
+
+    #[test]
+    fn parses_weapon_runtime_commands() {
+        let program = parse_program(
+            "actor.weapon = \"weapon_training_tool\"\n\
+             actor.weapon = empty",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::Weapon(WeaponStatement {
+                    owner: "actor".to_owned(),
+                    action: WeaponAction::Equip {
+                        weapon: "weapon_training_tool".to_owned(),
+                    },
+                }),
+                Statement::Weapon(WeaponStatement {
+                    owner: "actor".to_owned(),
+                    action: WeaponAction::Unequip,
+                }),
+            ]
+        );
+
+        let program = parse_program("equip = {\n  actor.weapon = weapon_training_tool\n}").unwrap();
+        let Statement::FunctionDef(function) = &program.statements[0] else {
+            panic!("expected function definition");
+        };
+        assert_eq!(
+            function.actions,
+            vec![Statement::Weapon(WeaponStatement {
+                owner: "actor".to_owned(),
+                action: WeaponAction::Equip {
+                    weapon: "weapon_training_tool".to_owned(),
+                },
+            })]
         );
     }
 
