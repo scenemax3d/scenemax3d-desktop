@@ -1,0 +1,141 @@
+var level1_camera_modifiers_paused=0
+var level1_handheld_camera_step=0
+
+hit_fx = camera.system.modifiers.hit_modifier
+bump_fx = camera.system.modifiers.bump_modifier
+
+fight_cam = camera.system.fighting(player1, player2, depth 18, height 3, side 1.5, min distance 10, max distance 28, damping 8)
+crystal_hunt_cam = camera.system.third_person(player1, distance 12, height 3.4, side 4.5, look ahead 4, damping 7, fov 62, max fov 72)
+
+set_camera_on_player = {
+  if(camera_mode==CAMERA_MODE_DEFAULT) {
+  	camera.attach stop
+    if(enemy_ko==1) {
+      camera.system = crystal_hunt_cam
+    } else {
+      camera.system = fight_cam
+    }
+    
+  } else if(camera_mode==CAMERA_MODE_ATTACH_PLAYER1) {
+  	//camera.attach to player1 : pos(0,1.5,-7) // and rotate(-15,0,0)
+  }
+
+}
+
+level1_switch_to_crystal_hunt_camera = {
+  camera.chase stop
+  camera_mode=CAMERA_MODE_DEFAULT
+  run set_camera_on_player
+}
+
+
+[camera_mode==CAMERA_MODE_DEFAULT && level1_camera_modifiers_paused==0]
+shake_the_world = {
+  fight_cam.apply hit_fx : duration 0.35, amplitude 1.4
+}
+
+[camera_mode==CAMERA_MODE_DEFAULT && level1_camera_modifiers_paused==0]
+shake_the_world2 = {
+	fight_cam.apply hit_fx
+  fight_cam.apply bump_fx : duration 0.2, y 0.3
+	
+}
+
+level1_hitstop_p2_receives (tm) = {
+  var level1_hitstop_was_slow_motion = slow_motion
+  slow_motion=1
+  player1.animation speed 0.001 for tm seconds
+  player2.animation speed 0.06 for tm seconds
+  wait tm second
+  if(level1_hitstop_was_slow_motion==0) {
+    slow_motion=0
+  }
+}
+
+level1_hitstop_p1_receives (tm) = {
+  var level1_hitstop_was_slow_motion = slow_motion
+  slow_motion=1
+  player2.animation speed 0.001 for tm seconds
+  player1.animation speed 0.06 for tm seconds
+  wait tm second
+  if(level1_hitstop_was_slow_motion==0) {
+    slow_motion=0
+  }
+}
+
+level1_hit_recoil_p2 = {
+  player2.character.jump at speed of 16 async
+  player2.move backward 1.15 for 0.32 seconds
+}
+
+level1_hit_recoil_p1 = {
+  player1.character.jump at speed of 16 async
+  player1.move backward 1.15 for 0.32 seconds
+}
+
+level1_camera_resume_modifiers_after_hit = {
+  wait 0.38 seconds
+  level1_camera_modifiers_paused=0
+}
+
+level1_camera_punch_right = {
+  fight_cam.apply bump_fx : duration 0.11, amplitude 2.4, x 0.75, y 0.34, z -0.55, rz 4.0, fov 2.4
+  wait 0.025 seconds
+  fight_cam.apply hit_fx : duration 0.22, amplitude 1.8
+  wait 0.06 seconds
+  fight_cam.apply bump_fx : duration 0.16, amplitude 0.9, x -0.22, y -0.08, z 0.08, rz -1.2, fov 0.45
+}
+
+level1_camera_punch_left = {
+  fight_cam.apply bump_fx : duration 0.11, amplitude 2.4, x -0.75, y 0.34, z -0.55, rz -4.0, fov 2.4
+  wait 0.025 seconds
+  fight_cam.apply hit_fx : duration 0.22, amplitude 1.8
+  wait 0.06 seconds
+  fight_cam.apply bump_fx : duration 0.16, amplitude 0.9, x 0.22, y -0.08, z 0.08, rz 1.2, fov 0.45
+}
+
+[camera_mode==CAMERA_MODE_DEFAULT && level1_camera_modifiers_paused==0]
+level1_camera_impact_p1_to_p2 = {
+  level1_camera_modifiers_paused=1
+  run level1_camera_resume_modifiers_after_hit async
+  if(player2.x > player1.x) {
+    run level1_camera_punch_right
+  } else {
+    run level1_camera_punch_left
+  }
+}
+
+[camera_mode==CAMERA_MODE_DEFAULT && level1_camera_modifiers_paused==0]
+level1_camera_impact_p2_to_p1 = {
+  level1_camera_modifiers_paused=1
+  run level1_camera_resume_modifiers_after_hit async
+  if(player1.x > player2.x) {
+    run level1_camera_punch_right
+  } else {
+    run level1_camera_punch_left
+  }
+}
+
+[camera_mode==CAMERA_MODE_DEFAULT && game_status==GAME_STATE_START && level1_dragon_rock_count>0 && level1_camera_modifiers_paused==0]
+level1_earthquake_camera = {
+  fight_cam.apply bump_fx : duration 0.28, amplitude 0.95, x 0.18, y 0.16, z 0.05, ry 0.75, rz 1.35
+}
+
+run level1_earthquake_camera every 0.22 seconds
+
+[camera_mode==CAMERA_MODE_DEFAULT && game_status==GAME_STATE_START && enemy_ko==0 && player1_ko==0 && level1_camera_modifiers_paused==0]
+level1_handheld_phone_camera = {
+  level1_handheld_camera_step = level1_handheld_camera_step + 1
+  if(level1_handheld_camera_step % 4 == 0) {
+    fight_cam.apply bump_fx : duration 0.38, amplitude 0.72, x 0.07, y 0.12, z 0.03, ry -0.18, rz -1.15, fov 0.12
+  } else if(level1_handheld_camera_step % 4 == 1) {
+    fight_cam.apply bump_fx : duration 0.32, amplitude 0.48, x -0.035, y 0.08, z 0.02, ry 0.1, rz -0.42, fov 0.06
+  } else if(level1_handheld_camera_step % 4 == 2) {
+    fight_cam.apply bump_fx : duration 0.38, amplitude 0.72, x -0.07, y 0.12, z 0.03, ry 0.18, rz 1.15, fov 0.12
+  } else {
+    fight_cam.apply bump_fx : duration 0.32, amplitude 0.48, x 0.035, y 0.08, z 0.02, ry -0.1, rz 0.42, fov 0.06
+  }
+}
+
+run level1_handheld_phone_camera every 0.34 seconds
+

@@ -1,0 +1,28 @@
+//debug.On
+
+add "../game_level1/variables/constants",
+    "variables/global_variables",
+    "../game_level1/utils/messages" code
+add "game_init.code",
+    "game_input/input",
+    "game_input/input_x",
+    "game_input/input_c",
+    "utils/camera_strategy",
+    "utils/train_stage" code
+add "game_states/game_start",
+    "game_states/game_over",
+    "game_states/game_time_out",
+    "utils/printing" code
+add "enemy_ai",
+    "../game_level1/collision_new",
+    "states/player1_attack_states",
+    "states/player2_attack_states",
+    "../game_level1/states/player1_general_states",
+    "../game_level1/states/player2_general_states",
+    "enemy_knockout" code
+
+player1.idle2 loop
+player2.Idle loop
+
+UI.load "test_ui"
+run game_start

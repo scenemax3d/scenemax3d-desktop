@@ -5255,6 +5255,7 @@ name = "scenemax_runtime"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ash",
  "avian3d",
  "bevy",
  "bevy-tnua",
@@ -5269,6 +5270,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
+ "wgpu",
 ]
 
 [[package]]
@@ -6315,6 +6317,7 @@ dependencies = [
  "smallvec",
  "static_assertions",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
  "wgpu-core",
  "wgpu-hal",

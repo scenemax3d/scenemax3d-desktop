@@ -553,11 +553,94 @@ public class Util {
         return getActiveProject();
     }
 
+    public static synchronized SceneMaxProject duplicateProject(String sourceName, String newName) throws IOException {
+        String normalizedNewName = normalizeProjectName(newName);
+        JSONObject conf = getProjectsConfig();
+        if (conf == null) {
+            throw new IOException("Projects configuration was not found.");
+        }
+
+        JSONArray projects = conf.getJSONArray("projects");
+        JSONObject sourceProject = null;
+        for (int i = 0; i < projects.length(); ++i) {
+            JSONObject candidate = projects.getJSONObject(i);
+            String candidateName = candidate.getString("name");
+            if (candidateName.equals(normalizedNewName)) {
+                throw new IOException("A project named \"" + normalizedNewName + "\" already exists.");
+            }
+            if (candidateName.equals(sourceName)) {
+                sourceProject = candidate;
+            }
+        }
+
+        if (sourceProject == null) {
+            throw new IOException("Project \"" + sourceName + "\" was not found.");
+        }
+
+        File sourceFolder = new File(sourceProject.getString("path"));
+        if (!sourceFolder.exists() || !sourceFolder.isDirectory()) {
+            throw new IOException("Project folder was not found: " + sourceFolder.getPath());
+        }
+
+        File projectsFolder = new File("projects").getCanonicalFile();
+        File targetFolder = uniqueProjectFolder(projectsFolder, normalizedNewName);
+        try {
+            FileUtils.copyDirectory(sourceFolder, targetFolder);
+        } catch (IOException ex) {
+            if (targetFolder.exists()) {
+                FileUtils.deleteDirectory(targetFolder);
+            }
+            throw ex;
+        }
+
+        String oldPath = sourceProject.getString("path");
+        String newPath = toProjectConfigPath(targetFolder);
+        JSONObject duplicated = new JSONObject(sourceProject.toString());
+        duplicated.put("name", normalizedNewName);
+        duplicated.put("path", newPath);
+        duplicated.put("projectGuid", UUID.randomUUID().toString());
+        duplicated.put("lastActiveAt", System.currentTimeMillis());
+        duplicated.put(
+                "selectedParent",
+                rewriteProjectPath(sourceProject.optString("selectedParent", ""), oldPath, newPath));
+        duplicated.put(
+                "selectedNode",
+                sourceProject.optString("selectedNode", "main"));
+        projects.put(duplicated);
+        conf.put("projects", projects);
+        writeProjectsConfig(conf);
+        return findProjectByName(normalizedNewName);
+    }
+
     private static String normalizeProjectName(String name) throws IOException {
         if (name == null || name.trim().isEmpty()) {
             throw new IOException("Project name cannot be empty.");
         }
         return name.trim();
+    }
+
+    private static File uniqueProjectFolder(File projectsFolder, String projectName) throws IOException {
+        String baseName = projectName.replace(" ", "_");
+        File folder = new File(projectsFolder, baseName);
+        if (!folder.exists()) {
+            return folder;
+        }
+        for (int i = 2; i < 1000; ++i) {
+            folder = new File(projectsFolder, baseName + "_" + i);
+            if (!folder.exists()) {
+                return folder;
+            }
+        }
+        throw new IOException("Could not find an available project folder for \"" + projectName + "\".");
+    }
+
+    private static SceneMaxProject findProjectByName(String name) {
+        for (SceneMaxProject project : getProjects_New()) {
+            if (project.name.equals(name)) {
+                return project;
+            }
+        }
+        return null;
     }
 
     private static File getRenamedProjectFolder(File oldFolder, String newProjectName) throws IOException {

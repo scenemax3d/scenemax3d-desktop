@@ -1,0 +1,27 @@
+{
+  "preview": {
+    "playbackSpeed": 1,
+    "showGround": true,
+    "backgroundMode": "dark",
+    "motion": {
+      "orbitStrength": 0,
+      "forceScale": 1,
+      "damping": 0
+    },
+    "loop": true,
+    "camera": {
+      "pitchDeg": -19,
+      "distance": 38,
+      "yawDeg": 54
+    }
+  },
+  "assetId": "Laser01",
+  "name": "Laser01",
+  "source": {
+    "importedAt": "2026-04-06T16:30:25.508556400Z",
+    "originalImportPath": "C:\\Users\\adikt\\Downloads\\Effekseer01\\Effekseer01\\Laser01.efkproj",
+    "originalFormat": "efkproj",
+    "importedEffectFile": "effects/Laser01/Laser01.efkproj"
+  },
+  "version": 1
+}

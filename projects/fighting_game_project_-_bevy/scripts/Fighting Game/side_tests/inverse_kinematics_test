@@ -1,0 +1,51 @@
+
+m1=>fighter1: pos (-5,-3,0)
+m2=>fighter1: pos(0,-3,0)// , scale 3
+m2.weapon = "weapon_player_weapon"
+m2.weapon.posture = "fight"
+anim = animation m2.zombie_punch1 at speed of 1
+m1.look at (m2)
+m2.look at (m1)
+camera.chase m2 
+m1.idle2 loop
+col=>collider sphere : radius 0.5
+col.attach to m1."mixamorig:LeftHand"
+var ik=0
+
+[ik==1]
+when col collides with m2.weapon.colliders["weapon_sphere_collider_1"] do
+	anim.rewind 0.5 in 0.1 seconds ease out "sine"
+end do
+
+anim.event("zombie_punch1", 34) = {
+
+//  m1.sword_shield_block async
+//	m1.ik = "ik_test_ik"
+//	m1.ik.layer2.play : target m2.weapon.colliders["weapon_sphere_collider_1"], blend 0.2, weight 1
+
+}
+
+anim.event("zombie_punch1", 36) = {
+	//m1.ik = empty
+}
+
+when key space is pressed once do
+	anim.run
+	m1.idle2 loop
+end do
+
+when key Q is pressed once do
+	ik=1
+	m1.duck_right1 async 
+	m1.ik = "ik_test_ik"
+	m1.ik.layer2.play : target m2.weapon.colliders["weapon_sphere_collider_1"], blend 0.2, weight 1
+	wait 0.5 Seconds
+	m1.ik = empty
+	ik=0
+end do
+
+b=>static box:pos (0,-10,0),size(100,1,100),material="pond"
+dragon_gate_rock_5 => meshy_rock1 : pos (0,0,0), rotate(0.0,0.0,0.0), collision shape box, mass 8.0
+dragon_gate_rock_5.throw at m1 power 100
+
+

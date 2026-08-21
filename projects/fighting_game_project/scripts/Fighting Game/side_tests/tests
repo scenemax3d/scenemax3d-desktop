@@ -2,13 +2,19 @@
 skybox.show "lagoon"
 lights.add probe "1"
 
-player1 => dynamic fighter1_native : pos (0,-3,0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast
-, joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot") async
+player1 => dynamic fighter1_native : pos (0,-3,0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast async
 player1_head_collider => collider sphere : pos (2.5929513,0.5,0.0), radius 0.5
 
-hr => horse1 : scale 3,pos (0,-3,0)
+do 10 times
+  wait 0.5 seconds  
+  player1.shader = "dramatic_hit"
+  wait 0.5 Seconds
+  player1.shader = ""
+end do
+
+//hr => horse1 : scale 3,pos (0,-3,0)
 
 
-player1.ik = "ik_sit_on_horse"
-player1.ik.horse_sit_left_foot.play : target left_sit_collider, blend 0.2, weight 1
-player1.ik.horse_sit_right_foot.play : target right_sit_collider, blend 0.2, weight 1
+//player1.ik = "ik_sit_on_horse"
+//player1.ik.horse_sit_left_foot.play : target left_sit_collider, blend 0.2, weight 1
+//player1.ik.horse_sit_right_foot.play : target right_sit_collider, blend 0.2, weight 1

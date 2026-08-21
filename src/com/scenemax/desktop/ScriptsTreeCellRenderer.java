@@ -18,6 +18,7 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
     private static final ImageIcon ICON_UI_DESIGNER = createUIDesignerIcon();
     private static final ImageIcon ICON_EFFEKSEER_DESIGNER = createEffekseerDesignerIcon();
     private static final ImageIcon ICON_SHADER_DESIGNER = createShaderDesignerIcon();
+    private static final ImageIcon ICON_BEVY_SHADER_DESIGNER = createBevyShaderDesignerIcon();
     private static final ImageIcon ICON_ENVIRONMENT_SHADER_DESIGNER = createEnvironmentShaderDesignerIcon();
     private static final ImageIcon ICON_MATERIAL_DESIGNER = createMaterialDesignerIcon();
     private static final ImageIcon ICON_WEAPON_DESIGNER = createWeaponDesignerIcon();
@@ -51,6 +52,8 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
             label.setIcon(ICON_EFFEKSEER_DESIGNER);
         } else if (name.endsWith(".smui")) {
             label.setIcon(ICON_UI_DESIGNER);
+        } else if (name.endsWith(BevyShaderDocument.FILE_EXTENSION)) {
+            label.setIcon(ICON_BEVY_SHADER_DESIGNER);
         } else if (name.endsWith(".smshader")) {
             label.setIcon(ICON_SHADER_DESIGNER);
         } else if (name.endsWith(".smenvshader")) {
@@ -254,6 +257,34 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
         spark.lineTo(10.5, 9.5);
         spark.closePath();
         g.draw(spark);
+
+        g.dispose();
+        return new ImageIcon(img);
+    }
+
+    private static ImageIcon createBevyShaderDesignerIcon() {
+        BufferedImage img = new BufferedImage(24, 24, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        GradientPaint paint = new GradientPaint(3, 3, new Color(88, 116, 255), 21, 21, new Color(0, 220, 185));
+        g.setPaint(paint);
+        g.fillRoundRect(3, 3, 18, 18, 5, 5);
+
+        g.setColor(new Color(12, 18, 32, 185));
+        g.fillRoundRect(5, 5, 14, 14, 4, 4);
+
+        g.setColor(new Color(235, 250, 255));
+        g.setStroke(new BasicStroke(1.7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.drawLine(8, 8, 16, 8);
+        g.drawLine(8, 12, 16, 12);
+        g.drawLine(8, 16, 16, 16);
+        g.setColor(new Color(0, 220, 185));
+        g.fillOval(6, 6, 4, 4);
+        g.setColor(new Color(255, 205, 90));
+        g.fillOval(14, 10, 4, 4);
+        g.setColor(new Color(255, 96, 150));
+        g.fillOval(6, 14, 4, 4);
 
         g.dispose();
         return new ImageIcon(img);

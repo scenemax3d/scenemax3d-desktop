@@ -168,17 +168,12 @@ pub(super) fn apply_camera_systems(program: &Program, camera_system: &mut SceneM
             },
         );
     }
-    camera_system.selected = camera_system
-        .fighting
-        .as_ref()
-        .map(|camera| camera.name.clone());
-
     if let Some(camera) = &camera_system.fighting {
         tracing::info!(
             name = %camera.name,
             target_a = %camera.target_a,
             target_b = %camera.target_b,
-            "activated SceneMax fighting camera"
+            "registered SceneMax fighting camera"
         );
     }
     for camera in camera_system.third_person.values() {
@@ -609,6 +604,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn camera_system_declaration_does_not_select_until_command_runs() {
+        let program = scenemax_parser::parse_program(
+            "fight_cam = camera.system.fighting(player_a, player_b, depth 18, height 3, side 1.5, min distance 10, max distance 28, damping 8)\nwait 10 seconds\ncamera.system = fight_cam",
+        )
+        .unwrap();
+        let mut camera_system = SceneMaxCameraSystem::default();
+
+        apply_camera_systems(&program, &mut camera_system);
+
+        assert_eq!(
+            camera_system
+                .fighting
+                .as_ref()
+                .map(|camera| camera.name.as_str()),
+            Some("fight_cam")
+        );
+        assert_eq!(camera_system.selected, None);
+
+        select_camera_system("fight_cam", &mut camera_system);
+
+        assert_eq!(camera_system.selected.as_deref(), Some("fight_cam"));
+    }
+
+    #[test]
     fn scene_local_cinematic_rig_is_not_overwritten_by_project_scan() {
         let root = std::env::temp_dir().join(format!(
             "scenemax_cinematic_rig_precedence_{}_{}",
@@ -634,13 +653,11 @@ mod tests {
             cinematic_rig_json("Other Rig"),
         )
         .unwrap();
-        let program = Program {
-            statements: vec![Statement::ModelDecl {
-                name: "intro_camera".to_owned(),
-                resource: "cinematic.camera.cinematic_rig_1".to_owned(),
-                options: EntityOptions::default(),
-            }],
-        };
+        let program = Program::new(vec![Statement::ModelDecl {
+            name: "intro_camera".to_owned(),
+            resource: "cinematic.camera.cinematic_rig_1".to_owned(),
+            options: EntityOptions::default(),
+        }]);
         let mut camera_system = SceneMaxCameraSystem::default();
 
         load_cinematic_rigs(
@@ -1262,10 +1279,7 @@ pub(super) fn update_fighting_camera(
     let Some(camera_settings) = camera_system.fighting.as_mut() else {
         return;
     };
-    if selected
-        .as_ref()
-        .is_some_and(|selected| selected != &camera_settings.name)
-    {
+    if selected.as_deref() != Some(camera_settings.name.as_str()) {
         return;
     }
 
@@ -1671,6 +1685,9 @@ pub(super) fn setup_camera_and_lights(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    runtime_assets.asset_server = Some(asset_server.clone());
+    runtime_assets.asset_root = context.asset_root.clone();
+    runtime_assets.builtin_asset_root = context.builtin_asset_root.clone();
     runtime_assets.placeholder_mesh = Some(meshes.add(Cuboid::new(1.0, 1.0, 1.0)));
     runtime_assets.placeholder_material = Some(materials.add(Color::srgb_u8(185, 150, 65)));
     runtime_assets.audio_by_name = load_audio_index(
@@ -1697,6 +1714,10 @@ pub(super) fn setup_camera_and_lights(
             shadow_normal_bias: 1.8,
             ..default()
         },
+        SceneMaxEnvironmentDirectionalLight,
+        SceneMaxFallbackLight::Directional {
+            illuminance: 24_000.0,
+        },
         Transform::from_xyz(-8.0, 14.0, 8.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
@@ -1708,6 +1729,9 @@ pub(super) fn setup_camera_and_lights(
             shadow_maps_enabled: true,
             ..default()
         },
+        SceneMaxFallbackLight::Point {
+            intensity: 55_000.0,
+        },
         Transform::from_xyz(-7.0, 8.0, 8.0),
     ));
 
@@ -1718,6 +1742,9 @@ pub(super) fn setup_camera_and_lights(
             range: 55.0,
             shadow_maps_enabled: false,
             ..default()
+        },
+        SceneMaxFallbackLight::Point {
+            intensity: 18_000.0,
         },
         Transform::from_xyz(9.0, 5.0, -9.0),
     ));

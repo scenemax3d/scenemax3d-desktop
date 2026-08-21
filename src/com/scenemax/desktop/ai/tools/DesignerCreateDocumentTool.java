@@ -7,6 +7,7 @@ import com.scenemax.designer.shader.EnvironmentShaderDocument;
 import com.scenemax.designer.shader.EnvironmentShaderTemplatePreset;
 import com.scenemax.designer.shader.ShaderDocument;
 import com.scenemax.designer.shader.ShaderTemplatePreset;
+import com.scenemax.desktop.BevyShaderDocument;
 import com.scenemax.desktop.MainApp;
 import com.scenemax.desktop.ai.SceneMaxToolContext;
 import com.scenemax.desktop.ai.SceneMaxToolResult;
@@ -28,7 +29,7 @@ public class DesignerCreateDocumentTool extends AbstractSceneMaxTool {
 
     @Override
     public String getDescription() {
-        return "Creates a new scene, UI, weapon, material, shader, or environment-shader document.";
+        return "Creates a new scene, UI, weapon, material, classic shader, Bevy shader, or environment-shader document.";
     }
 
     @Override
@@ -39,7 +40,7 @@ public class DesignerCreateDocumentTool extends AbstractSceneMaxTool {
         properties.put("directoryPath", new JSONObject().put("type", "string"));
         properties.put("base", new JSONObject().put("type", "string"));
         properties.put("kind", new JSONObject().put("type", "string")
-                .put("description", "scene, ui, weapon, shader, environment_shader, or material"));
+                .put("description", "scene, ui, weapon, shader, bevy_shader, environment_shader, or material"));
         properties.put("fileName", new JSONObject().put("type", "string"));
         properties.put("preset", new JSONObject().put("type", "string").put("description", "Optional starter preset name."));
         properties.put("openInEditor", new JSONObject().put("type", "boolean"));
@@ -91,6 +92,11 @@ public class DesignerCreateDocumentTool extends AbstractSceneMaxTool {
                 Path shaderFile = directory.resolve(ensureExtension(fileName, ".smshader"));
                 ShaderDocument.writeEmptyFile(shaderFile.toFile(), ShaderTemplatePreset.fromName(preset));
                 return shaderFile;
+            case "bevy_shader":
+                Path bevyShaderFile = directory.resolve(ensureExtension(fileName, BevyShaderDocument.FILE_EXTENSION));
+                BevyShaderDocument.Preset bevyPreset = parseBevyShaderPreset(preset);
+                BevyShaderDocument.writeEmptyFile(bevyShaderFile.toFile(), bevyPreset);
+                return bevyShaderFile;
             case "environment_shader":
                 Path envShaderFile = directory.resolve(ensureExtension(fileName, ".smenvshader"));
                 EnvironmentShaderDocument.writeEmptyFile(envShaderFile.toFile(), EnvironmentShaderTemplatePreset.fromName(preset));
@@ -107,6 +113,19 @@ public class DesignerCreateDocumentTool extends AbstractSceneMaxTool {
             default:
                 throw new IllegalArgumentException("Unsupported document kind: " + kind);
         }
+    }
+
+    private BevyShaderDocument.Preset parseBevyShaderPreset(String preset) {
+        if (preset == null || preset.isBlank()) {
+            return BevyShaderDocument.Preset.TEXTURE_TINT;
+        }
+        for (BevyShaderDocument.Preset candidate : BevyShaderDocument.Preset.values()) {
+            if (candidate.name().equalsIgnoreCase(preset)
+                    || candidate.toString().equalsIgnoreCase(preset)) {
+                return candidate;
+            }
+        }
+        return BevyShaderDocument.Preset.TEXTURE_TINT;
     }
 
     private Path resolveWeaponDirectory(Path directory) {

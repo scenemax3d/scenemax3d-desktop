@@ -125,6 +125,13 @@ fn play_audio_statement(
         write_runtime_diagnostic_line(format!("AUDIO:MISS action=play name={sound}"));
         return;
     };
+    if should_ignore_looped_audio_play(audio.looped, key, runtime_assets) {
+        write_runtime_diagnostic_line(format!(
+            "AUDIO:PLAY name={} path={} loop=1 ignored=1",
+            asset.name, asset.path
+        ));
+        return;
+    }
     let volume = resolved_audio_volume(
         audio.volume.as_ref(),
         vars,
@@ -133,11 +140,6 @@ fn play_audio_statement(
         transforms_by_name,
         collider_bounds,
     );
-    if audio.looped {
-        if let Some(existing) = runtime_assets.looping_audio_by_name.remove(key) {
-            commands.entity(existing).despawn();
-        }
-    }
     let settings = if audio.looped {
         PlaybackSettings {
             mode: PlaybackMode::Loop,
@@ -162,6 +164,14 @@ fn play_audio_statement(
         audio.looped as u8,
         audio_volume_for_log(volume)
     ));
+}
+
+fn should_ignore_looped_audio_play(
+    looped: bool,
+    key: &str,
+    runtime_assets: &SceneMaxRuntimeAssets,
+) -> bool {
+    looped && runtime_assets.looping_audio_by_name.contains_key(key)
 }
 
 fn stop_audio_statement(
@@ -258,5 +268,29 @@ mod audio_tests {
             resolve_audio_sound_name(&audio, &vars, None, &guards, None, None).as_deref(),
             Some("kick1")
         );
+    }
+
+    #[test]
+    fn ignores_looped_play_when_same_audio_is_already_looping() {
+        let mut runtime_assets = SceneMaxRuntimeAssets::default();
+        runtime_assets
+            .looping_audio_by_name
+            .insert(audio_key("Neon_Dojo1"), Entity::PLACEHOLDER);
+
+        assert!(should_ignore_looped_audio_play(
+            true,
+            &audio_key("neon_dojo1"),
+            &runtime_assets
+        ));
+        assert!(!should_ignore_looped_audio_play(
+            false,
+            &audio_key("neon_dojo1"),
+            &runtime_assets
+        ));
+        assert!(!should_ignore_looped_audio_play(
+            true,
+            &audio_key("other_track"),
+            &runtime_assets
+        ));
     }
 }

@@ -1,0 +1,215 @@
+// Standalone dragon gate rock behavior test using the game_level1 environment positions.
+// Run this script directly to isolate falling, aiming, rolling, stopping, and deleting.
+Logger.info "hello world"
+Logger.info "ROCK_TEST build deferred-cleanup-v5"
+loading.print "Dragon gate rock test: loading" : pos (80,10,0) , font "arial_64" , color=white, size 1
+lights.add probe "4"
+
+var rock_test_watch_running=0,
+    rock_test_hit_triggered=0,
+    rock_test_running=1
+
+//camera.system = default
+//camera.pos(40.0,-34.0,132.0)
+//camera.rotate(58.0,180.0,0.0)
+
+//Scene.environment.shader = "ambient1"
+//skybox.show solar system
+
+floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material "wall", shadow mode cast
+level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on async
+level2.shader = "shader_test1"
+dragon_gate => static meshy_ai_dragon_gate_0504202330_texture: pos (22.532026,-66.486755,100.0), scale 30.0, collision shape none async
+camera.chase dragon_gate
+target1 => dynamic fighter1 : pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,0.0), shadow mode cast, collision shape none
+, joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot")
+
+target2 => dynamic old_fighter2 : pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on, collision shape none
+, joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot")
+
+target1.idle2 loop
+target2.Idle loop
+target1.look at (target2)
+target2.look at (target1)
+
+trace_floor => static box : size (70.0,0.3,105.0), pos (40.0,-90.0,50.0), material "alpha", collision shape none
+gate_marker => static box : size (6.0,0.6,6.0), pos (22.5,-86.9,100.0), material "grass", collision shape none
+landing_marker => static box : size (6.0,0.6,6.0), pos (29.0,-86.9,72.0), material "rock", collision shape none
+fighter_lane_marker => static box : size (18.0,0.6,22.0), pos (40.0,-86.9,23.0), material "road", collision shape none
+aim_marker is a sphere : pos (40.0,-86.6,23.0), radius 0.8, material="alpha", collision shape none
+
+rock_test_explode_at(fx_x, fx_y, fx_z, label) = {
+  Logger.info "ROCK_TEST effect start " + label + " x=" + fx_x + " y=" + fx_y + " z=" + fx_z
+  spark_fx => effects.effekseer.Simple_Sprite_BillBoard
+  ring_fx => effects.effekseer.Simple_Ring_Shape1
+  spark_fx.play pos (fx_x,fx_y,fx_z) Async
+  ring_fx.play pos (fx_x,fx_y,fx_z) Async
+  wait 0.45 seconds
+  Logger.info "ROCK_TEST effect delete start " + label
+  spark_fx.delete
+  ring_fx.delete
+  Logger.info "ROCK_TEST effect delete done " + label
+}
+
+rock_test_cleanup(r, label) = {
+  var cleanup_x = r.x
+  var cleanup_y = r.y
+  var cleanup_z = r.z
+  Logger.info "ROCK_TEST cleanup start " + label + " x=" + cleanup_x + " y=" + cleanup_y + " z=" + cleanup_z
+  rock_test_watch_running=0
+  r.hide
+  r.delete
+  Logger.info "ROCK_TEST rock delete done " + label
+  run rock_test_explode_at(cleanup_x, cleanup_y, cleanup_z, label)
+  Logger.info "ROCK_TEST cleanup done " + label
+}
+
+rock_test_hit_watch(r, label) = {
+  rock_test_watch_running=1
+  do
+    if(rock_test_hit_triggered==0 && (distance(target1, r) < 8.0 || distance(target2, r) < 8.0)) {
+      rock_test_hit_triggered=1
+      Logger.info "ROCK_TEST hit " + label + " x=" + r.x + " y=" + r.y + " z=" + r.z
+      loading.print label : pos (80,10,0) , font "arial_64" , color=red, size 1
+      rock_test_watch_running=0
+    }
+    wait 0.12 seconds
+  while rock_test_watch_running==1
+}
+
+rock_test_fixed_roll = {
+  Logger.info "ROCK_TEST fixed spawn expected=(17.0,-57.0,96.0)"
+  loading.print "FIXED TEST: volcanic launch upward" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  rock_test_hit_triggered=0
+  var fixed_rock_scale = 1.56 + rnd(365) * 0.01
+  fixed_rock => meshy_rock1 : pos (17.0,-57.0,96.0), scale fixed_rock_scale, rotate(0.0,18.0,0.0), shadow mode on, collision shape none
+  //camera.chase fixed_rock
+  Logger.info "ROCK_TEST fixed actual spawn x=" + fixed_rock.x + " y=" + fixed_rock.y + " z=" + fixed_rock.z + " scale=" + fixed_rock_scale
+
+  fixed_rock.move to (18.5,-48.0,99.0) in 0.36 seconds
+  Logger.info "ROCK_TEST fixed after upward throw x=" + fixed_rock.x + " y=" + fixed_rock.y + " z=" + fixed_rock.z + " expected=(18.5,-48.0,99.0)"
+  fixed_rock.move to (20.5,-44.0,96.0) in 0.26 seconds
+  Logger.info "ROCK_TEST fixed after apex x=" + fixed_rock.x + " y=" + fixed_rock.y + " z=" + fixed_rock.z + " expected=(20.5,-44.0,96.0)"
+
+  loading.print "FIXED TEST: gravity accelerating fall" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  fixed_rock.move to (22.5,-60.0,88.0) in 0.34 seconds
+  Logger.info "ROCK_TEST fixed after fall step1 x=" + fixed_rock.x + " y=" + fixed_rock.y + " z=" + fixed_rock.z + " expected=(22.5,-60.0,88.0)"
+  fixed_rock.move to (24.0,-76.0,80.0) in 0.24 seconds
+  Logger.info "ROCK_TEST fixed after fall step2 x=" + fixed_rock.x + " y=" + fixed_rock.y + " z=" + fixed_rock.z + " expected=(24.0,-76.0,80.0)"
+  fixed_rock.move to (25.0,-86.4,72.0) in 0.16 seconds
+  Logger.info "ROCK_TEST fixed landed x=" + fixed_rock.x + " y=" + fixed_rock.y + " z=" + fixed_rock.z + " expected=(25.0,-86.4,72.0)"
+
+  loading.print "FIXED TEST: landed, rolling 50m toward player1" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  audio.play "crash1"
+  wait 0.18 seconds
+  run rock_test_hit_watch(fixed_rock, "FIXED TEST: rock is dangerous") Async
+
+  loading.print "FIXED TEST: fast roll segment 1" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  Logger.info "ROCK_TEST fixed roll1 start x=" + fixed_rock.x + " y=" + fixed_rock.y + " z=" + fixed_rock.z
+  fixed_rock.roll right 1260 in 1.5 seconds async
+  fixed_rock.move to (34.75,-86.4,44.68) in 1.5 seconds
+  if(rock_test_hit_triggered==1) {
+    run rock_test_cleanup(fixed_rock, "fixed hit")
+    return
+  }
+  Logger.info "ROCK_TEST fixed roll1 end x=" + fixed_rock.x + " y=" + fixed_rock.y + " z=" + fixed_rock.z + " expected=(34.75,-86.4,44.68)"
+
+  loading.print "FIXED TEST: slowing roll segment 2" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  Logger.info "ROCK_TEST fixed roll2 start x=" + fixed_rock.x + " y=" + fixed_rock.y + " z=" + fixed_rock.z
+  fixed_rock.roll right 700 in 1.3 seconds async
+  fixed_rock.move to (39.45,-86.4,31.49) in 1.3 seconds
+  if(rock_test_hit_triggered==1) {
+    run rock_test_cleanup(fixed_rock, "fixed hit")
+    return
+  }
+  Logger.info "ROCK_TEST fixed roll2 end x=" + fixed_rock.x + " y=" + fixed_rock.y + " z=" + fixed_rock.z + " expected=(39.45,-86.4,31.49)"
+
+  loading.print "FIXED TEST: final easing roll segment 3" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  Logger.info "ROCK_TEST fixed roll3 start x=" + fixed_rock.x + " y=" + fixed_rock.y + " z=" + fixed_rock.z
+  fixed_rock.roll right 260 in 1.1 seconds async
+  fixed_rock.move to (41.8,-86.4,24.9) in 1.1 seconds ease out
+  if(rock_test_hit_triggered==1) {
+    run rock_test_cleanup(fixed_rock, "fixed hit")
+    return
+  }
+  Logger.info "ROCK_TEST fixed roll3 end x=" + fixed_rock.x + " y=" + fixed_rock.y + " z=" + fixed_rock.z + " expected=(41.8,-86.4,24.9)"
+
+  rock_test_watch_running=0
+  Logger.info "ROCK_TEST fixed path complete x=" + fixed_rock.x + " y=" + fixed_rock.y + " z=" + fixed_rock.z
+  loading.print "FIXED TEST: stopped, exploding/deleting" : pos (80,10,0) , font "arial_64" , color=green, size 1
+  run rock_test_cleanup(fixed_rock, "fixed path complete")
+}
+
+rock_test_random_roll = {
+  Logger.info "ROCK_TEST second spawn expected=(33.0,-58.0,94.0)"
+  loading.print "SECOND TEST: volcanic launch upward" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  rock_test_hit_triggered=0
+  var random_rock_scale = 1.5 + rnd(351) * 0.01
+  random_rock => meshy_rock1 : pos (33.0,-58.0,94.0), scale random_rock_scale, rotate(0.0,-66.0,0.0), shadow mode on, collision shape none
+  //camera.chase random_rock
+  Logger.info "ROCK_TEST second actual spawn x=" + random_rock.x + " y=" + random_rock.y + " z=" + random_rock.z + " scale=" + random_rock_scale
+
+  random_rock.move to (35.0,-47.0,99.0) in 0.38 seconds
+  Logger.info "ROCK_TEST second after upward throw x=" + random_rock.x + " y=" + random_rock.y + " z=" + random_rock.z + " expected=(35.0,-47.0,99.0)"
+  random_rock.move to (37.0,-43.0,95.0) in 0.26 seconds
+  Logger.info "ROCK_TEST second after apex x=" + random_rock.x + " y=" + random_rock.y + " z=" + random_rock.z + " expected=(37.0,-43.0,95.0)"
+
+  loading.print "SECOND TEST: gravity accelerating fall" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  random_rock.move to (38.0,-61.0,86.0) in 0.36 seconds
+  Logger.info "ROCK_TEST second after fall step1 x=" + random_rock.x + " y=" + random_rock.y + " z=" + random_rock.z + " expected=(38.0,-61.0,86.0)"
+  random_rock.move to (39.0,-78.0,76.0) in 0.24 seconds
+  Logger.info "ROCK_TEST second after fall step2 x=" + random_rock.x + " y=" + random_rock.y + " z=" + random_rock.z + " expected=(39.0,-78.0,76.0)"
+  random_rock.move to (39.0,-86.3,68.0) in 0.16 seconds
+  Logger.info "ROCK_TEST second landed x=" + random_rock.x + " y=" + random_rock.y + " z=" + random_rock.z + " expected=(39.0,-86.3,68.0)"
+
+  loading.print "SECOND TEST: landed, rolling 50m toward player2" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  audio.play "crash1"
+  wait 0.18 seconds
+  run rock_test_hit_watch(random_rock, "SECOND TEST: rock is dangerous") Async
+
+  loading.print "SECOND TEST: fast roll segment 1" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  Logger.info "ROCK_TEST second roll1 start x=" + random_rock.x + " y=" + random_rock.y + " z=" + random_rock.z
+  random_rock.roll left 1260 in 1.5 seconds async
+  random_rock.move to (39.56,-86.3,39.0) in 1.5 seconds
+  if(rock_test_hit_triggered==1) {
+    run rock_test_cleanup(random_rock, "second hit")
+    return
+  }
+  Logger.info "ROCK_TEST second roll1 end x=" + random_rock.x + " y=" + random_rock.y + " z=" + random_rock.z + " expected=(39.56,-86.3,39.0)"
+
+  loading.print "SECOND TEST: slowing roll segment 2" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  Logger.info "ROCK_TEST second roll2 start x=" + random_rock.x + " y=" + random_rock.y + " z=" + random_rock.z
+  random_rock.roll left 700 in 1.3 seconds async
+  random_rock.move to (39.83,-86.3,25.0) in 1.3 seconds
+  if(rock_test_hit_triggered==1) {
+    run rock_test_cleanup(random_rock, "second hit")
+    return
+  }
+  Logger.info "ROCK_TEST second roll2 end x=" + random_rock.x + " y=" + random_rock.y + " z=" + random_rock.z + " expected=(39.83,-86.3,25.0)"
+
+  loading.print "SECOND TEST: final easing roll segment 3" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  Logger.info "ROCK_TEST second roll3 start x=" + random_rock.x + " y=" + random_rock.y + " z=" + random_rock.z
+  random_rock.roll left 260 in 1.1 seconds async
+  random_rock.move to (39.97,-86.3,18.0) in 1.1 seconds ease out
+  if(rock_test_hit_triggered==1) {
+    run rock_test_cleanup(random_rock, "second hit")
+    return
+  }
+  Logger.info "ROCK_TEST second roll3 end x=" + random_rock.x + " y=" + random_rock.y + " z=" + random_rock.z + " expected=(39.97,-86.3,18.0)"
+
+  rock_test_watch_running=0
+  Logger.info "ROCK_TEST second path complete x=" + random_rock.x + " y=" + random_rock.y + " z=" + random_rock.z
+  loading.print "SECOND TEST: stopped, exploding/deleting" : pos (80,10,0) , font "arial_64" , color=green, size 1
+  run rock_test_cleanup(random_rock, "second path complete")
+}
+
+do async
+  wait 1 seconds
+  run rock_test_fixed_roll
+  wait 1.5 seconds
+  run rock_test_random_roll
+  rock_test_running=0
+  loading.print "Dragon gate rock test complete" : pos (80,10,0) , font "arial_64" , color=green, size 1
+end do
+
+wait 300 seconds

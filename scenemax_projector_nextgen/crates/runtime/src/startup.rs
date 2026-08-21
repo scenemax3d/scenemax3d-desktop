@@ -254,7 +254,11 @@ pub(super) fn load_scene_entry_program(script_path: &Path) -> Result<(Program, P
             path = %scene_main.display(),
             "startup script switches to scene"
         );
-        let (program, scene_script_dir) = load_script_with_adds(&scene_main, &mut HashSet::new())?;
+        let (mut program, scene_script_dir) =
+            load_script_with_adds(&scene_main, &mut HashSet::new())?;
+        if program.screen_mode == ScreenMode::Unspecified {
+            program.screen_mode = root_program.screen_mode;
+        }
         return Ok((program, scene_script_dir));
     }
 
@@ -269,9 +273,7 @@ pub(super) fn load_script_with_adds(
     if !visited.insert(script_path.clone()) {
         tracing::warn!(path = %script_path.display(), "skipping recursive Add Code include");
         return Ok((
-            Program {
-                statements: Vec::new(),
-            },
+            Program::new(Vec::new()),
             script_path
                 .parent()
                 .unwrap_or_else(|| Path::new("."))
@@ -295,6 +297,7 @@ pub(super) fn load_script_with_adds(
             .unwrap_or_else(|| "<none>".to_owned())
     ));
     let mut statements = Vec::new();
+    let mut screen_mode = parsed.screen_mode;
 
     for statement in parsed.statements {
         match statement {
@@ -311,7 +314,12 @@ pub(super) fn load_script_with_adds(
                     include_path.display()
                 ));
                 match load_script_with_adds(&include_path, visited) {
-                    Ok((program, _)) => statements.extend(program.statements),
+                    Ok((program, _)) => {
+                        if screen_mode == ScreenMode::Unspecified {
+                            screen_mode = program.screen_mode;
+                        }
+                        statements.extend(program.statements);
+                    }
                     Err(error) => {
                         write_runtime_diagnostic_line(format!(
                             "SCRIPT:ADD_FAIL path={} error={error}",
@@ -329,7 +337,13 @@ pub(super) fn load_script_with_adds(
         }
     }
 
-    Ok((Program { statements }, script_dir))
+    Ok((
+        Program {
+            statements,
+            screen_mode,
+        },
+        script_dir,
+    ))
 }
 
 fn strip_staged_source_metadata(source: &str) -> (String, Option<PathBuf>) {
@@ -427,6 +441,74 @@ mod tests {
 
         let _ = fs::remove_dir_all(root);
     }
+
+    #[test]
+    fn scene_entry_preserves_root_screen_mode_after_switch() {
+        let root = std::env::temp_dir().join(format!(
+            "scenemax_screen_mode_scene_entry_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let running_dir = root.join("running");
+        let scene_dir = running_dir.join("game_intro");
+        fs::create_dir_all(&scene_dir).unwrap();
+        fs::write(
+            running_dir.join("main"),
+            "screen.mode full\nswitch to \"game_intro\"\n",
+        )
+        .unwrap();
+        fs::write(scene_dir.join("main"), "UI.load \"game_intro_ui\"\n").unwrap();
+
+        let (program, script_root) = load_scene_entry_program(&running_dir.join("main")).unwrap();
+
+        assert_eq!(script_root, scene_dir);
+        assert_eq!(program.screen_mode, ScreenMode::Full);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn include_expansion_preserves_functions_after_nested_do_while_else() {
+        let root = std::env::temp_dir().join(format!(
+            "scenemax_train_include_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let scene_dir = root.join("scene");
+        let utils_dir = scene_dir.join("utils");
+        let states_dir = scene_dir.join("game_states");
+        fs::create_dir_all(&utils_dir).unwrap();
+        fs::create_dir_all(&states_dir).unwrap();
+        fs::write(
+            scene_dir.join("main"),
+            "add \"utils/train_stage\" code\nadd \"game_states/game_start\" code\nrun game_start\n",
+        )
+        .unwrap();
+        fs::write(
+            utils_dir.join("train_stage"),
+            "train_helicopter_sound_loop = {\n  do\n    wait 0.35 seconds\n    if(game_status==GAME_STATE_START) {\n      if(train_helicopter_sound_playing==0) {\n        train_helicopter_sound_playing=1\n      }\n    } else {\n      if(train_helicopter_sound_playing==1) {\n        train_helicopter_sound_playing=0\n      }\n    }\n  while train_stage_started==1\n\n  if(train_helicopter_sound_playing==1) {\n    train_helicopter_sound_playing=0\n  }\n}\n\ntrain_stage_init = {\n  train_stage_started=1\n}\n\ntrain_start_fighters_from_above = {\n  player1.switch to character mode : gravity 60\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            states_dir.join("game_start"),
+            "game_start = {\n  run train_stage_init\n  run train_start_fighters_from_above Async\n}\n",
+        )
+        .unwrap();
+
+        let (program, _) = load_scene_entry_program(&scene_dir.join("main")).unwrap();
+        let functions = collect_functions_by_name(&program);
+
+        assert!(functions.contains_key("train_helicopter_sound_loop"));
+        assert!(functions.contains_key("train_stage_init"));
+        assert!(functions.contains_key("train_start_fighters_from_above"));
+
+        let _ = fs::remove_dir_all(root);
+    }
 }
 
 pub(super) fn log_unsupported_summary(script_path: &Path, program: &Program) {
@@ -487,6 +569,7 @@ pub(super) fn has_scene_content(program: &Program) -> bool {
         matches!(
             statement,
             Statement::ModelDecl { .. }
+                | Statement::LightDecl(_)
                 | Statement::CameraPosition(_)
                 | Statement::CameraRotation(_)
         )
@@ -684,6 +767,28 @@ pub(super) fn spawn_scenemax_program(
         window_height: 0,
     };
 
+    let light_declarations = collect_light_declarations(program);
+    if light_declarations.is_empty() {
+        set_fallback_lighting_enabled(commands, true);
+        apply_default_ambient_light(commands);
+    } else {
+        set_fallback_lighting_enabled(commands, false);
+        for light in &light_declarations {
+            let (entity, transform) = spawn_scenemax_light_decl(
+                commands,
+                light,
+                vars,
+                None,
+                &guards_by_name,
+                Some(&transforms_by_name),
+                Some(collider_bounds),
+            );
+            entities_by_name.insert(light.name.clone(), entity);
+            transforms_by_name.insert(light.name.clone(), transform);
+            spawned_any = true;
+        }
+    }
+
     for ModelRuntimeDecl {
         name,
         resource,
@@ -709,10 +814,63 @@ pub(super) fn spawn_scenemax_program(
                 attaches_by_target.get(name),
             );
             register_collider_bounds(collider_bounds, name, options, transform);
+            if let Some(attach) = attaches_by_target.get(name) {
+                register_collider_owner(collider_bounds, name, &attach_owner(&attach.subject));
+            }
             entities_by_name.insert(name.clone(), entity);
             transforms_by_name.insert(name.clone(), transform);
             spawned_any = true;
             tracing::info!(name, resource, "spawned SceneMax collider");
+            continue;
+        }
+
+        if let Some(asset_id) = effekseer_asset_id(resource) {
+            let transform = transform_from_options_resolved(
+                options,
+                None,
+                vars,
+                &guards_by_name,
+                Some(&transforms_by_name),
+                Some(collider_bounds),
+            );
+            let effect_path = resolve_effekseer_effect_path(asset_root, &asset_id);
+            let entity_id = commands
+                .spawn((
+                    SceneMaxEntity {
+                        name: name.clone(),
+                        runtime_name: format!("{name}@1"),
+                    },
+                    SceneMaxEffekseerEffect {
+                        instance_id: next_effekseer_instance_id(),
+                        asset_id: asset_id.clone(),
+                        effect_path: effect_path.clone(),
+                        one_shot_duration_seconds: effekseer_one_shot_duration_seconds(
+                            effect_path.as_deref(),
+                        ),
+                    },
+                    transform,
+                    initial_visibility(name, options, &visibility_by_target),
+                ))
+                .id();
+            entities_by_name.insert(name.clone(), entity_id);
+            transforms_by_name.insert(name.clone(), transform);
+            spawned_any = true;
+            write_runtime_diagnostic_line(format!(
+                "EFFEKSEER:DECL target={} asset={} path={} renderer={}",
+                name,
+                asset_id,
+                effect_path
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| "<missing>".to_owned()),
+                effekseer_renderer_label()
+            ));
+            tracing::warn!(
+                name,
+                asset = asset_id,
+                renderer = effekseer_renderer_label(),
+                "registered Effekseer effect for the Bevy bridge"
+            );
             continue;
         }
 
@@ -789,6 +947,10 @@ pub(super) fn spawn_scenemax_program(
             Ok(model) => {
                 let runtime_name = format!("{name}@1");
                 let asset_path = model.asset_path;
+                let bevy_visual_offset_y = model
+                    .character_physics
+                    .as_ref()
+                    .and_then(|character| character.bevy_visual_offset_y);
                 let gltf: Handle<Gltf> = asset_server.load(asset_path.clone());
                 let scene = WorldAssetRoot(
                     asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())),
@@ -813,6 +975,7 @@ pub(super) fn spawn_scenemax_program(
                         initial_visibility(name, options, &visibility_by_target),
                     ))
                     .id();
+                insert_gltf_visual_offset(commands, entity_id, bevy_visual_offset_y);
 
                 if let Some(animation) = animations_by_target.get(name) {
                     commands.entity(entity_id).insert(AnimationToPlay {
@@ -925,12 +1088,6 @@ pub(super) fn spawn_scenemax_program(
         &transforms_by_name,
         character_configs,
     );
-    spawn_default_virtual_colliders(
-        commands,
-        &mut entities_by_name,
-        &mut transforms_by_name,
-        collider_bounds,
-    );
     for (target, turn) in turn_by_target {
         if let Some(entity) = entities_by_name.get(&target) {
             commands
@@ -964,7 +1121,11 @@ pub(super) fn apply_startup_runs_when_ready(
     mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
     mut delayed_actions: ResMut<DelayedActionQueue>,
     mut ui_queue: ResMut<SceneMaxUiActionQueue>,
-    scene_entities: Query<(Entity, &SceneMaxEntity, &Transform, Option<&SceneMaxGltf>)>,
+    mut scene_entities: ParamSet<(
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(Entity, &SceneMaxEntity, &Transform, Option<&SceneMaxGltf>)>,
+    )>,
+    bone_queries: SceneMaxBoneQueries,
 ) {
     if startup_action_state.applied {
         return;
@@ -1002,12 +1163,12 @@ pub(super) fn apply_startup_runs_when_ready(
         return;
     }
 
+    let mut transforms_by_name =
+        build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
     let mut entities_by_name = HashMap::new();
-    let mut transforms_by_name = HashMap::new();
     let mut gltfs_by_name = HashMap::new();
-    for (entity, scene_entity, transform, gltf) in &scene_entities {
+    for (entity, scene_entity, _transform, gltf) in &scene_entities.p1() {
         entities_by_name.insert(scene_entity.name.clone(), entity);
-        transforms_by_name.insert(scene_entity.name.clone(), *transform);
         if let Some(gltf) = gltf {
             gltfs_by_name.insert(scene_entity.name.clone(), gltf.gltf.clone());
         }

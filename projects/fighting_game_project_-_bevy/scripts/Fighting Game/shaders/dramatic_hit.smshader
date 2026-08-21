@@ -1,0 +1,26 @@
+{
+  "template": "GLOW_PULSE",
+  "edgeWidth": 0.12,
+  "texture": "",
+  "blocks": [
+    "TINT",
+    "PULSE",
+    "RIM_LIGHT",
+    "TOON_RAMP"
+  ],
+  "scrollSpeed": 0.25,
+  "version": 1,
+  "previewTarget": "MODEL",
+  "glowStrength": 3.85,
+  "previewModelName": "clair",
+  "previewScale": 1,
+  "useOriginalTexture": true,
+  "mainColor": [
+    1,
+    1,
+    0,
+    1
+  ],
+  "transparency": 0.08,
+  "pulseSpeed": 1.3
+}

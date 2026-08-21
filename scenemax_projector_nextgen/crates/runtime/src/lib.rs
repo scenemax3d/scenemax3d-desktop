@@ -16,6 +16,12 @@ use avian3d::{
     },
     schedule::PhysicsSchedule,
 };
+use bevy::app::AppExit;
+#[cfg(feature = "effekseer_native")]
+use bevy::render::{
+    RenderPlugin,
+    settings::{Backends, WgpuSettings},
+};
 use bevy::{
     animation::AnimationTargetId,
     asset::{AssetApp, AssetPlugin, RenderAssetUsages, io::AssetSourceBuilder},
@@ -26,7 +32,7 @@ use bevy::{
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
     ui::IsDefaultUiCamera,
-    window::{PresentMode, WindowResolution},
+    window::{MonitorSelection, PresentMode, WindowMode, WindowResolution},
     winit::WinitSettings,
 };
 use bevy_tnua::{
@@ -39,19 +45,20 @@ use scenemax_parser::{
     AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement, AudioAction,
     AudioStatement, CameraAttachStatement, CameraModifierValue, CameraMoveStatement,
     ChannelDrawStatement, CharacterJumpStatement, CharacterModeStatement, CinematicLookAt,
-    CinematicPlayStatement, Condition, EntityOptions, KeyTrigger, LoggerLevel, LoggerMessage,
+    CinematicPlayStatement, Condition, EffekseerPlayStatement, EntityOptions, KeyTrigger,
+    LightDeclarationStatement, LightProbeAddStatement, LightType, LoggerLevel, LoggerMessage,
     LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement, ObjectPoolStatement,
     PoolReleaseStatement, PositionExpr, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
-    SceneMaxCollisionShape, SceneMaxVec3, SpritePlayStatement, Statement, UiEaseDirection,
-    UiTargetPath,
+    SceneMaxCollisionShape, SceneMaxVec3, ScreenMode, SpritePlayStatement, Statement,
+    UiEaseDirection, UiTargetPath,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
     animation_name_matches, collect_animations_by_target, collect_attaches_by_target,
     collect_functions_by_name, collect_guards_by_name, collect_shared_assignment_names,
-    collect_turn_by_target, collect_visibility_by_target, instantiate_function_actions,
-    normalized_animation_name, repeat_actions, requested_animation_names_match,
-    substitute_function_condition,
+    collect_turn_by_target, collect_visibility_by_target, initial_state_scan_boundary,
+    instantiate_function_actions, normalized_animation_name, repeat_actions,
+    requested_animation_names_match, substitute_function_condition,
 };
 use scenemax_runtime_ui_core::{
     SceneMaxSpriteAsset, SceneMaxUiDocument, SceneMaxUiWidgetDef, UiLayoutRect, document_scale,
@@ -63,7 +70,11 @@ mod actions;
 mod animation;
 mod audio;
 mod camera;
+mod effekseer;
+mod lighting;
 mod physics;
+mod shader;
+mod shader_designer;
 mod sprites;
 mod startup;
 mod ui;
@@ -72,7 +83,11 @@ use actions::*;
 use animation::*;
 use audio::*;
 use camera::*;
+use effekseer::*;
+use lighting::*;
 use physics::*;
+use shader::*;
+pub use shader_designer::{BevyShaderDesignerLaunch, run_bevy_shader_designer};
 use sprites::*;
 use startup::*;
 use ui::*;
@@ -135,6 +150,35 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         write_runtime_diagnostic_line("no separate built-in resources folder was discovered");
     }
 
+    let screen_mode = startup_screen_mode(&scene_program);
+    let exit_on_escape = screen_mode_requires_escape_exit(screen_mode);
+    let primary_window = bevy_window_from_settings(&launch.window, screen_mode);
+
+    let default_plugins = DefaultPlugins
+        .build()
+        .disable::<LogPlugin>()
+        .set(AssetPlugin {
+            file_path: asset_root
+                .as_ref()
+                .map(|path| path.to_string_lossy().to_string())
+                .unwrap_or_else(|| "assets".to_owned()),
+            ..default()
+        })
+        .set(WindowPlugin {
+            primary_window: Some(primary_window),
+            ..default()
+        });
+
+    #[cfg(feature = "effekseer_native")]
+    let default_plugins = default_plugins.set(RenderPlugin {
+        render_creation: WgpuSettings {
+            backends: Some(Backends::VULKAN),
+            ..default()
+        }
+        .into(),
+        ..default()
+    });
+
     app.insert_resource(WinitSettings::continuous())
         .insert_resource(SceneMaxLaunchContext {
             script_root: effective_script_root,
@@ -160,35 +204,12 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<SceneMaxUiRuntime>()
         .init_resource::<SceneMaxUiActionQueue>()
         .init_resource::<SceneMaxPerfDebug>()
-        .add_plugins(
-            DefaultPlugins
-                .build()
-                .disable::<LogPlugin>()
-                .set(AssetPlugin {
-                    file_path: asset_root
-                        .as_ref()
-                        .map(|path| path.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "assets".to_owned()),
-                    ..default()
-                })
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "SceneMax3D NextGen".to_owned(),
-                        present_mode: PresentMode::AutoVsync,
-                        resolution: WindowResolution::new(
-                            launch.window.width,
-                            launch.window.height,
-                        )
-                        .with_scale_factor_override(1.0),
-                        ..default()
-                    }),
-                    ..default()
-                }),
-        )
+        .add_plugins(default_plugins)
         .add_plugins((
             PhysicsPlugins::default(),
             TnuaControllerPlugin::<SceneMaxControlScheme>::new(PhysicsSchedule),
             TnuaAvian3dPlugin::new(PhysicsSchedule),
+            SceneMaxEffekseerBridgePlugin,
         ))
         .add_systems(
             Startup,
@@ -208,6 +229,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 apply_pending_character_modes,
                 cleanup_character_supports,
                 update_avian_collision_contacts,
+                activate_pending_pool_members,
                 apply_key_events,
                 update_virtual_colliders,
                 update_scenemax_debug_gizmos,
@@ -219,7 +241,6 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .add_systems(
             Update,
             (
-                apply_builtin_navigation_controls,
                 update_timed_turns,
                 update_timed_moves,
                 update_timed_jumps,
@@ -231,7 +252,8 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_attached_camera,
                 update_camera_modifiers,
                 update_sprite_animations,
-                restore_default_idle_animations,
+                update_effekseer_playbacks,
+                apply_gltf_visual_offsets,
                 play_pending_animations,
                 apply_animation_speed_overrides,
             )
@@ -249,8 +271,58 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             )
                 .chain(),
         )
-        .add_systems(Update, update_scenemax_perf_debug)
-        .run();
+        .add_systems(Update, update_scenemax_perf_debug);
+
+    if exit_on_escape {
+        app.add_systems(Update, exit_on_escape_in_undecorated_window);
+    }
+
+    app.run();
+}
+
+fn startup_screen_mode(scene_program: &SceneMaxStartupProgram) -> ScreenMode {
+    scene_program
+        .0
+        .as_ref()
+        .map(|program| program.screen_mode)
+        .unwrap_or(ScreenMode::Unspecified)
+}
+
+fn screen_mode_requires_escape_exit(screen_mode: ScreenMode) -> bool {
+    matches!(screen_mode, ScreenMode::Full | ScreenMode::Borderless)
+}
+
+fn bevy_window_from_settings(settings: &WindowSettings, screen_mode: ScreenMode) -> Window {
+    let mut window = Window {
+        title: "SceneMax3D NextGen".to_owned(),
+        present_mode: PresentMode::AutoVsync,
+        resolution: WindowResolution::new(settings.width, settings.height)
+            .with_scale_factor_override(1.0),
+        ..default()
+    };
+
+    match screen_mode {
+        ScreenMode::Full => {
+            window.mode = WindowMode::BorderlessFullscreen(MonitorSelection::Primary);
+            window.decorations = false;
+        }
+        ScreenMode::Borderless => {
+            window.mode = WindowMode::Windowed;
+            window.decorations = false;
+        }
+        ScreenMode::Window | ScreenMode::Unspecified => {}
+    }
+
+    window
+}
+
+fn exit_on_escape_in_undecorated_window(
+    input: Res<ButtonInput<KeyCode>>,
+    mut app_exit: MessageWriter<AppExit>,
+) {
+    if input.just_pressed(KeyCode::Escape) {
+        app_exit.write(AppExit::Success);
+    }
 }
 
 pub fn audit_assets(project: &Path) -> Result<()> {
@@ -335,7 +407,11 @@ struct SceneMaxObjectPools {
 
 #[derive(Debug, Default)]
 struct ObjectPoolRuntime {
+    factory: String,
+    prototype: Option<ModelRuntimeDecl>,
+    created_count: usize,
     available: Vec<String>,
+    pending_available: HashSet<String>,
     in_use: HashSet<String>,
     members: HashSet<String>,
 }
@@ -364,6 +440,7 @@ enum SceneMaxControllerKey {
     Key(usize),
     When(usize),
     Recurring(usize),
+    AsyncFunction(String),
 }
 
 #[derive(Debug, Resource, Default)]
@@ -391,6 +468,7 @@ struct SceneMaxPhysicsContacts {
 struct SceneMaxColliderBounds {
     radius_by_name: HashMap<String, f32>,
     shape_by_name: HashMap<String, ColliderBoundShape>,
+    owner_by_name: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -417,11 +495,15 @@ impl SceneMaxColliderBounds {
     fn clear(&mut self) {
         self.radius_by_name.clear();
         self.shape_by_name.clear();
+        self.owner_by_name.clear();
     }
 }
 
-#[derive(Debug, Resource, Default)]
+#[derive(Resource, Default)]
 struct SceneMaxRuntimeAssets {
+    asset_server: Option<AssetServer>,
+    asset_root: Option<PathBuf>,
+    builtin_asset_root: Option<PathBuf>,
     placeholder_mesh: Option<Handle<Mesh>>,
     placeholder_material: Option<Handle<StandardMaterial>>,
     audio_by_name: HashMap<String, SceneMaxAudioAsset>,
@@ -808,6 +890,25 @@ struct SceneMaxEntity {
     runtime_name: String,
 }
 
+#[derive(Debug, Clone, Component)]
+#[allow(dead_code)]
+struct SceneMaxEffekseerEffect {
+    instance_id: u64,
+    asset_id: String,
+    effect_path: Option<PathBuf>,
+    one_shot_duration_seconds: f32,
+}
+
+#[derive(Debug, Clone, Component)]
+#[allow(dead_code)]
+struct SceneMaxEffekseerPlayback {
+    looped: bool,
+    play_generation: u64,
+    playback_speed: f32,
+    dynamic_inputs: [f32; 4],
+    elapsed_seconds: f32,
+}
+
 #[derive(SystemParam)]
 struct SceneMaxBoneQueries<'w, 's> {
     children: Query<'w, 's, &'static Children>,
@@ -832,6 +933,12 @@ struct AnimationSpeedOverride {
 #[derive(Debug, Component)]
 struct SceneMaxGltf {
     gltf: Handle<Gltf>,
+}
+
+#[derive(Debug, Component)]
+struct SceneMaxGltfVisualOffset {
+    offset: Vec3,
+    applied: bool,
 }
 
 #[derive(Debug, Component)]
@@ -940,27 +1047,22 @@ struct ModelRuntimeDecl {
     options: EntityOptions,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum VirtualColliderShape {
-    Box { half_extents: Vec3 },
-    Sphere { radius: f32 },
-}
-
-const BUILTIN_PLAYER_MOVE_SPEED: f32 = 4.0;
-const BUILTIN_PLAYER_TURN_SPEED_RADIANS: f32 = std::f32::consts::FRAC_PI_2;
 const DEFAULT_CHARACTER_GRAVITY: f32 = 60.0;
 const DEFAULT_CHARACTER_MOVE_SPEED: f32 = 7.0;
 const DEFAULT_CHARACTER_CAPSULE_RADIUS: f32 = 0.35;
 const DEFAULT_CHARACTER_CAPSULE_HEIGHT: f32 = 1.1;
-const DEFAULT_CHARACTER_FLOAT_HEIGHT: f32 = 0.95;
+const DEFAULT_CHARACTER_FLOAT_HEIGHT: f32 = 0.015;
 const DEFAULT_CHARACTER_SENSOR_HEIGHT: f32 = 0.08;
-const DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET: f32 = 0.08;
+const DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET: f32 = 0.005;
 const DEFAULT_CHARACTER_VISUAL_DROP: f32 = 1.25;
 const DEFAULT_STAGE_SUPPORT_HALF_SIZE: f32 = 160.0;
+const DEFAULT_STAGE_SUPPORT_HALF_HEIGHT: f32 = 0.02;
+const STAGE_SUPPORT_HEIGHT_GROUP_TOLERANCE: f32 = 2.0;
+const CHARACTER_EXPLICIT_SUPPORT_MAX_DROP_FACTOR: f32 = 1.35;
 const CHARACTER_INPUT_TTL_SECONDS: f32 = 0.12;
 const CHARACTER_JUMP_FEED_SECONDS: f32 = 0.2;
 const DEFAULT_ANIMATION_CLIP_SECONDS: f32 = 1.5;
-const MAX_PLAYER_HITBOX_OWNER_DISTANCE: f32 = 3.75;
+const MAX_ATTACHED_COLLIDER_OWNER_DISTANCE: f32 = 3.75;
 const LOOP_CONTINUE_DELAY_SECONDS: f32 = 0.001;
 const PHYSICS_LAYER_WORLD: u32 = 1 << 0;
 const PHYSICS_LAYER_CHARACTER: u32 = 1 << 1;
@@ -989,9 +1091,47 @@ fn spawn_placeholder_model(
     tracing::info!("spawned placeholder cube");
 }
 
+fn next_effekseer_instance_id() -> u64 {
+    static INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
+    INSTANCE_ID.fetch_add(1, Ordering::Relaxed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_screen_mode_creates_borderless_fullscreen_window() {
+        let window = bevy_window_from_settings(
+            &WindowSettings {
+                width: 1600,
+                height: 900,
+            },
+            ScreenMode::Full,
+        );
+
+        assert!(matches!(
+            window.mode,
+            WindowMode::BorderlessFullscreen(MonitorSelection::Primary)
+        ));
+        assert!(!window.decorations);
+        assert!(screen_mode_requires_escape_exit(ScreenMode::Full));
+    }
+
+    #[test]
+    fn borderless_screen_mode_disables_window_decorations() {
+        let window = bevy_window_from_settings(
+            &WindowSettings {
+                width: 1600,
+                height: 900,
+            },
+            ScreenMode::Borderless,
+        );
+
+        assert_eq!(window.mode, WindowMode::Windowed);
+        assert!(!window.decorations);
+        assert!(screen_mode_requires_escape_exit(ScreenMode::Borderless));
+    }
 
     #[test]
     fn default_camera_matches_classic_projector_start_view() {
@@ -1021,6 +1161,18 @@ mod tests {
                 .as_vec3()
                 .abs_diff_eq(Vec3::new(0.0, 0.0, -1.0), 0.0001)
         );
+    }
+
+    #[test]
+    fn scenemax_rotation_uses_classic_jme_from_angles_order() {
+        let rotation = rotation_from_degrees(SceneMaxVec3 {
+            x: -20.65568,
+            y: 115.06725,
+            z: 0.8177289,
+        });
+        let classic = Quat::from_xyzw(0.09031287, -0.8293289, -0.1550246, -0.52917314);
+
+        assert!(rotation.dot(classic).abs() > 0.99999);
     }
 
     #[test]
@@ -1244,6 +1396,27 @@ mod tests {
     }
 
     #[test]
+    fn effekseer_one_shot_duration_uses_project_frame_range() {
+        let root = std::env::temp_dir().join(format!(
+            "scenemax_effekseer_duration_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let effect_path = root.join("effect.efkefc");
+        fs::write(&effect_path, b"").unwrap();
+        fs::write(
+            root.join("effect.efkproj"),
+            "<EffekseerProject><StartFrame>0</StartFrame><EndFrame>120</EndFrame><IsLoop>True</IsLoop></EffekseerProject>",
+        )
+        .unwrap();
+
+        assert!((effekseer_one_shot_duration_seconds(Some(&effect_path)) - 2.0).abs() < 0.001);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn ui_text_property_resolves_variable_expressions() {
         let vars = SceneMaxVars(HashMap::from([("timer".to_owned(), 59.0)]));
         let guards = HashMap::new();
@@ -1396,6 +1569,56 @@ mod tests {
     }
 
     #[test]
+    fn object_pool_acquire_runs_factory_assignment_side_effects() {
+        let mut vars = SceneMaxVars(HashMap::from([("index".to_owned(), 1.0)]));
+        let mut object_pools = SceneMaxObjectPools::default();
+        object_pools.pools.insert(
+            "rocks".to_owned(),
+            ObjectPoolRuntime {
+                factory: "create_rock".to_owned(),
+                ..Default::default()
+            },
+        );
+        let functions = HashMap::from([(
+            "create_rock".to_owned(),
+            FunctionRuntime {
+                params: Vec::new(),
+                guard: None,
+                actions: vec![
+                    Statement::ModelDecl {
+                        name: "rock1".to_owned(),
+                        resource: "bone".to_owned(),
+                        options: EntityOptions::default(),
+                    },
+                    Statement::Assignment(scenemax_parser::AssignmentStatement {
+                        name: "index".to_owned(),
+                        value: AssignmentValue::Binary {
+                            left: Box::new(AssignmentValue::Symbol("index".to_owned())),
+                            operator: scenemax_parser::ArithmeticOperator::Add,
+                            right: Box::new(AssignmentValue::Number(1.0)),
+                        },
+                    }),
+                    Statement::ReturnValue {
+                        value: AssignmentValue::Symbol("rock1".to_owned()),
+                    },
+                ],
+            },
+        )]);
+
+        apply_pool_factory_acquire_side_effects(
+            "rocks",
+            &mut vars,
+            &object_pools,
+            &functions,
+            &HashMap::new(),
+            &HashMap::new(),
+            &SceneMaxColliderBounds::default(),
+        );
+
+        assert_eq!(vars.0.get("index"), Some(&2.0));
+    }
+
+    #[test]
     fn sprite_play_statement_builds_runtime_animation() {
         let animation = sprite_animation_from_statement(&SpritePlayStatement {
             target: "b".to_owned(),
@@ -1449,8 +1672,60 @@ mod tests {
         let transform = Transform::from_scale(Vec3::ONE);
         let dimensions = character_dimensions_for_transform(&transform);
         assert_eq!(
-            character_stage_support_y(-88.03695, dimensions),
+            character_stage_support_top_y(-88.03695, dimensions),
             -88.03695 - DEFAULT_CHARACTER_FLOAT_HEIGHT - DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET
+        );
+    }
+
+    #[test]
+    fn character_stage_supports_split_distinct_height_bands() {
+        let program = scenemax_parser::parse_program(
+            "upper.switch to character mode\nwait 1 seconds\nlower_a.switch to character mode\nlower_b.switch to character mode",
+        )
+        .unwrap();
+        let transforms = HashMap::from([
+            (
+                "upper".to_owned(),
+                Transform::from_translation(Vec3::new(9.0, 0.0, 35.0)),
+            ),
+            (
+                "lower_a".to_owned(),
+                Transform::from_translation(Vec3::new(40.0, -89.249504, 30.0)),
+            ),
+            (
+                "lower_b".to_owned(),
+                Transform::from_translation(Vec3::new(40.0, -88.03695, 16.5)),
+            ),
+        ]);
+
+        let samples = character_mode_support_samples(&program, &transforms);
+        let supports = stage_support_specs_for_character_samples(&samples);
+
+        assert_eq!(samples.len(), 3);
+        assert_eq!(supports.len(), 2);
+        assert!(supports.iter().any(|support| support.sample_count == 1));
+        assert!(supports.iter().any(|support| support.sample_count == 2));
+    }
+
+    #[test]
+    fn character_stage_support_band_uses_lowest_contact_height() {
+        let high = Transform::from_translation(Vec3::new(40.0, -88.03695, 16.5))
+            .with_scale(Vec3::splat(3.0));
+        let low = Transform::from_translation(Vec3::new(40.0, -89.249504, 30.0))
+            .with_scale(Vec3::splat(3.0));
+        let high_dimensions = character_dimensions_for_transform(&high);
+        let low_dimensions = character_dimensions_for_transform(&low);
+        let samples = vec![
+            ("high".to_owned(), high, high_dimensions),
+            ("low".to_owned(), low, low_dimensions),
+        ];
+        let supports = stage_support_specs_for_character_samples(&samples);
+        let support = supports.first().unwrap();
+
+        assert_eq!(supports.len(), 1);
+        assert_eq!(
+            support.top_y,
+            character_stage_support_top_y(low.translation.y, low_dimensions)
         );
     }
 
@@ -1460,10 +1735,8 @@ mod tests {
         let dimensions = character_dimensions_for_transform(&transform);
 
         assert_eq!(
-            character_stage_support_y(-88.03695, dimensions),
-            -88.03695
-                - (DEFAULT_CHARACTER_FLOAT_HEIGHT * 3.0)
-                - (DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET * 3.0)
+            character_stage_support_top_y(-88.03695, dimensions),
+            -88.03695 - DEFAULT_CHARACTER_FLOAT_HEIGHT - DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET
         );
     }
 
@@ -1482,7 +1755,151 @@ mod tests {
     }
 
     #[test]
-    fn evaluates_fighter_collision_by_owner_distance() {
+    fn character_float_height_is_ground_clearance_not_body_height() {
+        let transform = Transform::from_scale(Vec3::splat(3.0));
+        let dimensions = character_dimensions_for_transform(&transform);
+
+        assert_eq!(dimensions.float_height, DEFAULT_CHARACTER_FLOAT_HEIGHT);
+        assert_eq!(
+            dimensions.foot_contact_offset,
+            DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET
+        );
+        assert!(dimensions.float_height < dimensions.capsule_radius);
+        assert!(dimensions.foot_contact_offset < dimensions.float_height);
+    }
+
+    #[test]
+    fn character_stage_support_center_places_top_at_contact_height() {
+        let transform = Transform::from_translation(Vec3::new(40.0, -88.03695, 16.5))
+            .with_scale(Vec3::splat(3.0));
+        let dimensions = character_dimensions_for_transform(&transform);
+        let samples = vec![("lower".to_owned(), transform, dimensions)];
+        let supports = stage_support_specs_for_character_samples(&samples);
+        let support = supports.first().unwrap();
+
+        assert_eq!(
+            support.top_y,
+            character_stage_support_top_y(transform.translation.y, dimensions)
+        );
+        assert_eq!(
+            support.center_y,
+            support.top_y - DEFAULT_STAGE_SUPPORT_HALF_HEIGHT
+        );
+    }
+
+    #[test]
+    fn fallback_character_support_skips_nearby_static_box_below_character() {
+        let program = scenemax_parser::parse_program(
+            "platform => static box : size (8.4,0.3,25.8), pos (40.0,-88.2,22.75)\navatar.switch to character mode : gravity 60",
+        )
+        .unwrap();
+        let transforms = HashMap::from([
+            (
+                "platform".to_owned(),
+                Transform::from_translation(Vec3::new(40.0, -88.2, 22.75)),
+            ),
+            (
+                "avatar".to_owned(),
+                Transform::from_translation(Vec3::new(40.0, -84.79, 30.7))
+                    .with_scale(Vec3::splat(3.0)),
+            ),
+        ]);
+
+        let samples = character_mode_support_samples(&program, &transforms);
+        let fallback_samples = fallback_character_mode_support_samples(&program, &transforms);
+
+        assert_eq!(samples.len(), 1);
+        assert!(fallback_samples.is_empty());
+    }
+
+    #[test]
+    fn fallback_character_support_remains_when_static_box_is_not_under_character() {
+        let program = scenemax_parser::parse_program(
+            "lower_platform => static box : size (80.0,1.0,80.0), pos (200.0,-111.0,22.0)\navatar.switch to character mode : gravity 60",
+        )
+        .unwrap();
+        let transforms = HashMap::from([
+            (
+                "lower_platform".to_owned(),
+                Transform::from_translation(Vec3::new(200.0, -111.0, 22.0)),
+            ),
+            (
+                "avatar".to_owned(),
+                Transform::from_translation(Vec3::new(40.0, -84.79, 30.7))
+                    .with_scale(Vec3::splat(3.0)),
+            ),
+        ]);
+
+        let fallback_samples = fallback_character_mode_support_samples(&program, &transforms);
+
+        assert_eq!(fallback_samples.len(), 1);
+    }
+
+    #[test]
+    fn fallback_character_support_skips_distant_static_box_below_character_column() {
+        let program = scenemax_parser::parse_program(
+            "lower_platform => static box : size (80.0,1.0,80.0), pos (40.0,-111.0,22.0)\navatar.switch to character mode : gravity 60",
+        )
+        .unwrap();
+        let transforms = HashMap::from([
+            (
+                "lower_platform".to_owned(),
+                Transform::from_translation(Vec3::new(40.0, -111.0, 22.0)),
+            ),
+            (
+                "avatar".to_owned(),
+                Transform::from_translation(Vec3::new(40.0, -84.79, 30.7))
+                    .with_scale(Vec3::splat(3.0)),
+            ),
+        ]);
+
+        let fallback_samples = fallback_character_mode_support_samples(&program, &transforms);
+
+        assert!(fallback_samples.is_empty());
+    }
+
+    #[test]
+    fn character_floor_snap_moves_spawned_character_to_nearby_static_box() {
+        let transform =
+            Transform::from_translation(Vec3::new(40.0, -84.79, 30.7)).with_scale(Vec3::splat(3.0));
+        let mut character_transform = transform;
+        let dimensions = character_dimensions_for_transform(&character_transform);
+        let surfaces = vec![explicit_support_surface_from_box(
+            Transform::from_translation(Vec3::new(40.0, -88.2, 22.75)),
+            Vec3::new(8.4, 0.3, 25.8),
+        )];
+
+        assert!(snap_character_transform_to_floor(
+            &mut character_transform,
+            &surfaces
+        ));
+        assert!(
+            (character_transform.translation.y
+                - (-88.05 + dimensions.float_height + dimensions.foot_contact_offset))
+                .abs()
+                < 0.0001
+        );
+    }
+
+    #[test]
+    fn character_floor_snap_ignores_distant_floor() {
+        let mut character_transform =
+            Transform::from_translation(Vec3::new(40.0, -84.79, 30.7)).with_scale(Vec3::splat(3.0));
+        let original_y = character_transform.translation.y;
+        let surfaces = vec![explicit_support_surface_from_box(
+            Transform::from_translation(Vec3::new(40.0, -111.0, 22.0)),
+            Vec3::new(80.0, 1.0, 80.0),
+        )];
+
+        assert!(!snap_character_transform_to_floor(
+            &mut character_transform,
+            &surfaces
+        ));
+        assert_eq!(character_transform.translation.y, original_y);
+    }
+
+    #[test]
+    fn evaluates_attached_collider_collision_by_declared_owner_distance() {
         let transforms = HashMap::from([
             (
                 "player1".to_owned(),
@@ -1490,15 +1907,25 @@ mod tests {
             ),
             (
                 "player2".to_owned(),
-                Transform::from_translation(Vec3::new(0.0, 0.0, 3.5)),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 2.0)),
             ),
         ]);
+        let collider_bounds = SceneMaxColliderBounds {
+            owner_by_name: HashMap::from([
+                ("player1_head_collider".to_owned(), "player1".to_owned()),
+                (
+                    "player2_left_hand_collider".to_owned(),
+                    "player2".to_owned(),
+                ),
+            ]),
+            ..Default::default()
+        };
 
         assert!(collision_condition_matches(
             &["player2_left_hand_collider".to_owned()],
             "player1_head_collider",
             Some(&transforms),
-            None,
+            Some(&collider_bounds),
         ));
     }
 
@@ -1549,6 +1976,7 @@ mod tests {
                 ("small_sphere".to_owned(), 0.5),
             ]),
             shape_by_name: HashMap::new(),
+            owner_by_name: HashMap::new(),
         };
 
         assert!(collision_condition_matches(
@@ -1634,7 +2062,7 @@ mod tests {
     }
 
     #[test]
-    fn player_hitbox_collision_is_gated_by_owner_distance() {
+    fn attached_collider_collision_is_gated_by_owner_distance() {
         let transforms = HashMap::from([
             (
                 "player1".to_owned(),
@@ -1653,12 +2081,22 @@ mod tests {
                 Transform::from_translation(Vec3::new(0.0, 1.5, 0.4)),
             ),
         ]);
+        let collider_bounds = SceneMaxColliderBounds {
+            owner_by_name: HashMap::from([
+                ("player1_head_collider".to_owned(), "player1".to_owned()),
+                (
+                    "player2_left_hand_collider".to_owned(),
+                    "player2".to_owned(),
+                ),
+            ]),
+            ..Default::default()
+        };
 
         assert!(!collision_condition_matches(
             &["player2_left_hand_collider".to_owned()],
             "player1_head_collider",
             Some(&transforms),
-            None,
+            Some(&collider_bounds),
         ));
     }
 
@@ -1694,6 +2132,7 @@ mod tests {
                     ColliderBoundShape::Sphere { radius: 0.24 },
                 ),
             ]),
+            owner_by_name: HashMap::new(),
         };
 
         assert!(!collision_condition_matches(
@@ -1736,6 +2175,7 @@ mod tests {
                     ColliderBoundShape::Sphere { radius: 0.24 },
                 ),
             ]),
+            owner_by_name: HashMap::new(),
         };
 
         assert!(collision_condition_matches(
@@ -1789,16 +2229,32 @@ mod tests {
             &contacts,
             &object_pools,
         ));
-        assert!(physics_contact_matches(
+        assert!(!physics_contact_matches(
             &["player2".to_owned()],
             "player1_head_collider",
             &contacts,
             &object_pools,
         ));
+        let collider_bounds = SceneMaxColliderBounds {
+            owner_by_name: HashMap::from([
+                ("player1_head_collider".to_owned(), "player1".to_owned()),
+                (
+                    "player2_left_hand_collider".to_owned(),
+                    "player2".to_owned(),
+                ),
+            ]),
+            ..Default::default()
+        };
+        assert!(active_physics_contact_matches(
+            "player2",
+            "player1_head_collider",
+            &contacts,
+            Some(&collider_bounds),
+        ));
     }
 
     #[test]
-    fn exact_avian_player_hitbox_contact_is_gated_by_owner_distance() {
+    fn exact_avian_attached_collider_contact_is_gated_by_owner_distance() {
         let contacts = SceneMaxPhysicsContacts {
             active_pairs: HashSet::from([normalized_collision_pair(
                 "player2_left_hand_collider",
@@ -1816,6 +2272,16 @@ mod tests {
                 Transform::from_translation(Vec3::new(0.0, 0.0, 4.5)),
             ),
         ]);
+        let collider_bounds = SceneMaxColliderBounds {
+            owner_by_name: HashMap::from([
+                ("player1_head_collider".to_owned(), "player1".to_owned()),
+                (
+                    "player2_left_hand_collider".to_owned(),
+                    "player2".to_owned(),
+                ),
+            ]),
+            ..Default::default()
+        };
 
         assert!(!physics_contact_condition_matches(
             &["player2_left_hand_collider".to_owned()],
@@ -1823,6 +2289,7 @@ mod tests {
             &contacts,
             &object_pools,
             Some(&transforms),
+            Some(&collider_bounds),
         ));
     }
 
@@ -1845,6 +2312,38 @@ mod tests {
             &contacts,
             &object_pools,
         ));
+    }
+
+    #[test]
+    fn collision_pulse_collection_ignores_arithmetic_state_updates() {
+        let actions = vec![
+            Statement::Assignment(scenemax_parser::AssignmentStatement {
+                name: "enemy_hit".to_owned(),
+                value: AssignmentValue::Number(1.0),
+            }),
+            Statement::Assignment(scenemax_parser::AssignmentStatement {
+                name: "score".to_owned(),
+                value: AssignmentValue::Binary {
+                    left: Box::new(AssignmentValue::Symbol("score".to_owned())),
+                    operator: scenemax_parser::ArithmeticOperator::Add,
+                    right: Box::new(AssignmentValue::Number(10.0)),
+                },
+            }),
+        ];
+        let mut pulses = HashSet::new();
+        collect_transient_collision_assignments(&actions, &mut pulses);
+
+        assert!(pulses.contains("enemy_hit"));
+        assert!(!pulses.contains("score"));
+
+        let mut vars = SceneMaxVars(HashMap::from([
+            ("enemy_hit".to_owned(), 1.0),
+            ("score".to_owned(), 10.0),
+        ]));
+        clear_transient_collision_vars(&mut vars, &pulses);
+
+        assert_eq!(vars.0.get("enemy_hit").copied(), Some(0.0));
+        assert_eq!(vars.0.get("score").copied(), Some(10.0));
     }
 
     #[test]
@@ -2060,6 +2559,33 @@ mod tests {
     }
 
     #[test]
+    fn sprite_play_blocks_until_non_looping_animation_finishes() {
+        let blocking = Statement::SpritePlay(SpritePlayStatement {
+            target: "hit".to_owned(),
+            from_frame: 0,
+            from_frame_value: AssignmentValue::Number(0.0),
+            to_frame: 15,
+            to_frame_value: AssignmentValue::Number(15.0),
+            duration_seconds: 1.0,
+            duration_value: AssignmentValue::Number(1.0),
+            looped: false,
+        });
+        let looped = Statement::SpritePlay(SpritePlayStatement {
+            target: "hit".to_owned(),
+            from_frame: 0,
+            from_frame_value: AssignmentValue::Number(0.0),
+            to_frame: 15,
+            to_frame_value: AssignmentValue::Number(15.0),
+            duration_seconds: 1.0,
+            duration_value: AssignmentValue::Number(1.0),
+            looped: true,
+        });
+
+        assert_eq!(blocking_timed_action_seconds(&blocking), Some(1.0));
+        assert_eq!(blocking_timed_action_seconds(&looped), None);
+    }
+
+    #[test]
     fn resolved_duration_expression_drives_sync_blocking() {
         let action = Statement::CameraMove(CameraMoveStatement {
             axis: SceneMaxAxis::Z,
@@ -2175,7 +2701,7 @@ mod tests {
     }
 
     #[test]
-    fn chooses_kinematic_capsule_for_dynamic_fighter_physics() {
+    fn kinematic_physics_uses_generic_default_shape_unless_explicit() {
         let options = EntityOptions {
             body_kind: Some(SceneMaxBodyKind::Kinematic),
             collision_shape: None,
@@ -2191,6 +2717,21 @@ mod tests {
                 "player2",
                 "old_fighter2_native",
                 &options,
+                SceneMaxBodyKind::Kinematic
+            ),
+            Some(SceneMaxCollisionShape::Box)
+        );
+
+        let explicit_capsule = EntityOptions {
+            body_kind: Some(SceneMaxBodyKind::Kinematic),
+            collision_shape: Some(SceneMaxCollisionShape::Capsule),
+            ..Default::default()
+        };
+        assert_eq!(
+            physics_collision_shape(
+                "player2",
+                "old_fighter2_native",
+                &explicit_capsule,
                 SceneMaxBodyKind::Kinematic
             ),
             Some(SceneMaxCollisionShape::Capsule)
@@ -2291,14 +2832,14 @@ mod tests {
 
     #[test]
     fn detects_ui_only_programs_as_runtime_content() {
-        assert!(has_ui_runtime_content(&Program {
-            statements: vec![Statement::UiLoad {
+        assert!(has_ui_runtime_content(&Program::new(vec![
+            Statement::UiLoad {
                 name: "game_intro_ui".to_owned(),
-            }],
-        }));
-        assert!(!has_ui_runtime_content(&Program {
-            statements: vec![Statement::Wait { seconds: 0.1 }],
-        }));
+            }
+        ])));
+        assert!(!has_ui_runtime_content(&Program::new(vec![
+            Statement::Wait { seconds: 0.1 }
+        ])));
     }
 
     #[test]

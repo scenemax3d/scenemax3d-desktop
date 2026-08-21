@@ -54,6 +54,7 @@ pub(super) fn is_startup_action(statement: &Statement) -> bool {
     !matches!(
         statement,
         Statement::ModelDecl { .. }
+            | Statement::LightDecl(_)
             | Statement::ObjectPool(_)
             | Statement::KeyEvent(_)
             | Statement::WhenEvent(_)
@@ -488,6 +489,63 @@ pub(super) fn apply_startup_action(
     depth: usize,
 ) -> ActionSequenceResult {
     match action {
+        Statement::LightDecl(light) => {
+            let (_entity, transform) = spawn_scenemax_light_decl(
+                commands,
+                light,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            transforms_by_name.insert(light.name.clone(), transform);
+            ActionSequenceResult::Completed
+        }
+        Statement::LightProbeAdd(probe) => {
+            let (_entity, transform) = apply_light_probe_add(
+                commands,
+                probe,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            transforms_by_name.insert(probe.name.clone(), transform);
+            ActionSequenceResult::Completed
+        }
+        Statement::SetEnvironmentShader { shader } => {
+            let shader_name = resolve_shader_name(
+                shader,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            apply_environment_shader(commands, shader_name, runtime_assets);
+            ActionSequenceResult::Completed
+        }
+        Statement::SetShader(shader) => {
+            let shader_name = resolve_shader_name(
+                &shader.shader,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            if let Some(entity) = entities_by_name.get(&shader.target) {
+                apply_entity_shader(commands, *entity, shader_name, runtime_assets);
+            } else {
+                write_runtime_diagnostic_line(format!(
+                    "SHADER:TARGET_MISS phase=startup target={}",
+                    shader.target
+                ));
+            }
+            ActionSequenceResult::Completed
+        }
         Statement::Assignment(assignment)
         | Statement::SharedAssignment(assignment)
         | Statement::LocalAssignment(assignment) => {
@@ -880,6 +938,42 @@ pub(super) fn apply_startup_action(
             }
             ActionSequenceResult::Completed
         }
+        Statement::EffekseerPlay(play) => {
+            if let Some(entity) = entities_by_name.get(&play.target) {
+                if let Some(translation) = resolved_effekseer_play_translation(
+                    play,
+                    vars,
+                    None,
+                    guards_by_name,
+                    transforms_by_name,
+                    None,
+                ) {
+                    let mut transform = transforms_by_name
+                        .get(&play.target)
+                        .copied()
+                        .unwrap_or_default();
+                    transform.translation = translation;
+                    commands.entity(*entity).insert(transform);
+                    transforms_by_name.insert(play.target.clone(), transform);
+                }
+                commands.entity(*entity).insert(resolved_effekseer_playback(
+                    play,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                ));
+                write_effekseer_bridge_play(&play.target, play);
+            } else {
+                write_runtime_diagnostic_line(format!(
+                    "EFFEKSEER:PLAY_MISS target={} renderer={}",
+                    play.target,
+                    effekseer_renderer_label()
+                ));
+            }
+            ActionSequenceResult::Completed
+        }
         Statement::CinematicPlay(play) => {
             start_cinematic_camera(play, transforms_by_name, object_pools, None, camera_system);
             ActionSequenceResult::Completed
@@ -901,22 +995,46 @@ pub(super) fn apply_startup_action(
         }
         Statement::CharacterMode(character_mode) => {
             if let Some(entity) = entities_by_name.get(&character_mode.target) {
+                let resolved = resolved_character_mode(
+                    character_mode,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                );
+                write_runtime_diagnostic_line(format!(
+                    "CHARACTER:PENDING_REQUEST phase=startup target={} gravity={} entity={:?}",
+                    resolved.target,
+                    resolved
+                        .gravity
+                        .map(format_scenemax_number)
+                        .unwrap_or_else(|| "default".to_owned()),
+                    entity
+                ));
                 commands
                     .entity(*entity)
-                    .insert(PendingCharacterMode(resolved_character_mode(
-                        character_mode,
-                        vars,
-                        None,
-                        guards_by_name,
-                        Some(transforms_by_name),
-                        None,
-                    )));
+                    .insert(PendingCharacterMode(resolved));
+            } else {
+                write_runtime_diagnostic_line(format!(
+                    "CHARACTER:PENDING_MISS phase=startup target={}",
+                    character_mode.target
+                ));
             }
             ActionSequenceResult::Completed
         }
         Statement::ClearCharacterMode { target } => {
             if let Some(entity) = entities_by_name.get(target) {
-                clear_character_mode(commands, *entity);
+                clear_character_mode(
+                    commands,
+                    *entity,
+                    Some(target),
+                    transforms_by_name.get(target),
+                );
+            } else {
+                write_runtime_diagnostic_line(format!(
+                    "CHARACTER:CLEAR_MISS phase=startup target={target}"
+                ));
             }
             ActionSequenceResult::Completed
         }
@@ -1171,6 +1289,7 @@ pub(super) fn switch_scene_on_key(
             object_pools.pools.clear();
             delayed_actions.actions.clear();
             recurring_timers.remaining_by_statement.clear();
+            clear_environment_shader(&mut commands);
             commands.insert_resource(ActiveActionControllers::default());
             physics_contacts.active_pairs.clear();
             collider_bounds.clear();
@@ -1492,11 +1611,42 @@ pub(super) fn delayed_actions_has_owner(
         .any(|delayed| delayed.owner.as_ref() == Some(owner))
 }
 
+pub(super) fn cancel_delayed_actions_for_owner(
+    delayed_actions: &mut DelayedActionQueue,
+    owner: &SceneMaxControllerKey,
+) {
+    let delayed_before = describe_delayed_queue(delayed_actions);
+    delayed_actions
+        .actions
+        .retain(|delayed| delayed.owner.as_ref() != Some(owner));
+    let delayed_after = describe_delayed_queue(delayed_actions);
+    if delayed_before != delayed_after {
+        write_runtime_diagnostic_line(format!(
+            "CTRL:CANCEL_OWNER owner={} delayed_before={} delayed_after={}",
+            describe_controller_key(owner),
+            delayed_before,
+            delayed_after
+        ));
+    }
+}
+
+pub(super) fn async_function_controller_key(
+    actions: &[Statement],
+) -> Option<SceneMaxControllerKey> {
+    match actions {
+        [Statement::RunFunction { name, .. }] => {
+            Some(SceneMaxControllerKey::AsyncFunction(name.clone()))
+        }
+        _ => None,
+    }
+}
+
 pub(super) fn describe_controller_key(owner: &SceneMaxControllerKey) -> String {
     match owner {
         SceneMaxControllerKey::Key(index) => format!("K{index}"),
         SceneMaxControllerKey::When(index) => format!("W{index}"),
         SceneMaxControllerKey::Recurring(index) => format!("R{index}"),
+        SceneMaxControllerKey::AsyncFunction(name) => format!("A:{name}"),
     }
 }
 
@@ -1669,6 +1819,73 @@ mod key_event_controller_tests {
                 .any(|delayed| delayed.owner.is_none())
         );
     }
+
+    #[test]
+    fn async_run_function_actions_are_owned_by_function_name() {
+        let owner = async_function_controller_key(&[Statement::RunFunction {
+            name: "spawn_round".to_owned(),
+            args: Vec::new(),
+        }]);
+
+        assert_eq!(
+            owner,
+            Some(SceneMaxControllerKey::AsyncFunction(
+                "spawn_round".to_owned()
+            ))
+        );
+        assert_eq!(
+            async_function_controller_key(&[Statement::NoOp {
+                text: "detached block".to_owned()
+            }]),
+            None
+        );
+    }
+
+    #[test]
+    fn cancel_delayed_actions_for_owner_keeps_unrelated_continuations() {
+        let restart_owner = SceneMaxControllerKey::AsyncFunction("restart".to_owned());
+        let effect_owner = SceneMaxControllerKey::AsyncFunction("effect".to_owned());
+        let mut delayed_actions = DelayedActionQueue {
+            actions: vec![
+                DelayedActions {
+                    remaining_seconds: 0.5,
+                    actions: vec![Statement::NoOp {
+                        text: "old restart".to_owned(),
+                    }],
+                    owner: Some(restart_owner.clone()),
+                    scope: None,
+                },
+                DelayedActions {
+                    remaining_seconds: 0.2,
+                    actions: vec![Statement::NoOp {
+                        text: "effect".to_owned(),
+                    }],
+                    owner: Some(effect_owner.clone()),
+                    scope: None,
+                },
+                DelayedActions {
+                    remaining_seconds: 0.1,
+                    actions: vec![Statement::NoOp {
+                        text: "legacy detached".to_owned(),
+                    }],
+                    owner: None,
+                    scope: None,
+                },
+            ],
+        };
+
+        cancel_delayed_actions_for_owner(&mut delayed_actions, &restart_owner);
+
+        assert_eq!(delayed_actions.actions.len(), 2);
+        assert!(!delayed_actions_has_owner(&delayed_actions, &restart_owner));
+        assert!(delayed_actions_has_owner(&delayed_actions, &effect_owner));
+        assert!(
+            delayed_actions
+                .actions
+                .iter()
+                .any(|delayed| delayed.owner.is_none())
+        );
+    }
 }
 
 pub(super) fn apply_when_events(
@@ -1709,6 +1926,7 @@ pub(super) fn apply_when_events(
 
     let mut transforms_by_name =
         build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
+    let mut transient_collision_vars = HashSet::new();
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
 
@@ -1813,6 +2031,7 @@ pub(super) fn apply_when_events(
                 &physics_contacts,
                 &object_pools,
             );
+            collect_transient_collision_assignments(&event.actions, &mut transient_collision_vars);
         }
         let owner = SceneMaxControllerKey::When(statement_index);
         if active_controllers.running.contains(&owner) {
@@ -1885,11 +2104,50 @@ pub(super) fn apply_when_events(
             active_controllers.running.remove(&owner);
         }
     }
-    clear_transient_hit_flags(&mut vars);
+    clear_transient_collision_vars(&mut vars, &transient_collision_vars);
 }
 
-pub(super) fn clear_transient_hit_flags(vars: &mut SceneMaxVars) {
-    scenemax_runtime_vm_core::clear_transient_hit_flags(vars);
+pub(super) fn clear_transient_collision_vars(vars: &mut SceneMaxVars, names: &HashSet<String>) {
+    for name in names {
+        vars.0.insert(name.clone(), 0.0);
+    }
+}
+
+pub(super) fn collect_transient_collision_assignments(
+    actions: &[Statement],
+    names: &mut HashSet<String>,
+) {
+    for action in actions {
+        match action {
+            Statement::Assignment(assignment)
+            | Statement::SharedAssignment(assignment)
+            | Statement::LocalAssignment(assignment)
+                if is_transient_collision_assignment_value(&assignment.value) =>
+            {
+                names.insert(assignment.name.clone());
+            }
+            Statement::Guarded { actions, .. }
+            | Statement::Repeat { actions, .. }
+            | Statement::DoWhile { actions, .. }
+            | Statement::LoopContinue { actions, .. }
+            | Statement::Async { actions } => {
+                collect_transient_collision_assignments(actions, names);
+            }
+            Statement::If(statement) => {
+                collect_transient_collision_assignments(&statement.actions, names);
+                collect_transient_collision_assignments(&statement.else_actions, names);
+            }
+            _ => {}
+        }
+    }
+}
+
+pub(super) fn is_transient_collision_assignment_value(value: &AssignmentValue) -> bool {
+    match value {
+        AssignmentValue::Number(value) => (*value - 1.0).abs() <= f32::EPSILON,
+        AssignmentValue::Condition(_) => true,
+        _ => false,
+    }
 }
 
 pub(super) fn write_collision_event_probe(
@@ -1988,8 +2246,12 @@ pub(super) fn collision_pair_report(
         let source_candidates = collision_reference_candidates_with_alias(source, object_pools);
         for source_name in &source_candidates {
             for target_name in &target_candidates {
-                let avian_contact =
-                    active_physics_contact_matches(source_name, target_name, physics_contacts);
+                let avian_contact = active_physics_contact_matches(
+                    source_name,
+                    target_name,
+                    physics_contacts,
+                    Some(collider_bounds),
+                );
                 let (distance, threshold, fallback_match, owner_distance) =
                     collision_pair_distance_report(
                         source_name,
@@ -2029,14 +2291,15 @@ pub(super) fn collision_pair_distance_report(
 ) -> (f32, f32, bool, f32) {
     let source_exact = transforms_by_name.get(source).copied();
     let target_exact = transforms_by_name.get(target).copied();
-    let owner_distance = collision_owner_distance(source, target, transforms_by_name);
-    let Some(source_transform) =
-        source_exact.or_else(|| collision_owner_transform(source, transforms_by_name))
+    let owner_distance =
+        collision_owner_distance(source, target, transforms_by_name, Some(collider_bounds));
+    let Some(source_transform) = source_exact
+        .or_else(|| collision_owner_transform(source, transforms_by_name, Some(collider_bounds)))
     else {
         return (f32::INFINITY, 0.0, false, owner_distance);
     };
-    let Some(target_transform) =
-        target_exact.or_else(|| collision_owner_transform(target, transforms_by_name))
+    let Some(target_transform) = target_exact
+        .or_else(|| collision_owner_transform(target, transforms_by_name, Some(collider_bounds)))
     else {
         return (f32::INFINITY, 0.0, false, owner_distance);
     };
@@ -2050,7 +2313,12 @@ pub(super) fn collision_pair_distance_report(
         .distance(target_transform.translation);
     let matches =
         if let (Some(source_transform), Some(target_transform)) = (source_exact, target_exact) {
-            if !player_hitbox_owner_distance_allows(source, target, transforms_by_name) {
+            if !attached_collider_owner_distance_allows(
+                source,
+                target,
+                transforms_by_name,
+                Some(collider_bounds),
+            ) {
                 false
             } else {
                 exact_collider_shapes_overlap(
@@ -2495,6 +2763,9 @@ pub(super) fn describe_statement(action: &Statement) -> String {
         Statement::WaitForKey { key } => format!("WaitForKey({key})"),
         Statement::ChannelDraw(draw) if draw.clear => format!("ChannelDrawClear({})", draw.channel),
         Statement::ChannelDraw(draw) => format!("ChannelDraw({})", draw.channel),
+        Statement::EffekseerPlay(play) => {
+            format!("EffekseerPlay({} loop={})", play.target, play.looped as u8)
+        }
         Statement::Unsupported { text } => format!("Unsupported({text})"),
         other => format!("{other:?}"),
     }
@@ -2577,6 +2848,18 @@ pub(super) fn resolved_blocking_timed_action_seconds(
             );
             Some(jump_duration_seconds(speed))
         }
+        Statement::SpritePlay(sprite_play) if !sprite_play.looped => {
+            let seconds = resolve_duration_value(
+                &sprite_play.duration_value,
+                sprite_play.duration_seconds,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            );
+            (seconds > f32::EPSILON).then_some(seconds.max(0.001))
+        }
         Statement::CinematicPlay(play) if !play.async_run => Some(play.duration_seconds.max(0.1)),
         _ => None,
     }
@@ -2615,6 +2898,7 @@ pub(super) fn apply_action_sequence(
     )>,
 ) -> ActionSequenceResult {
     apply_scoped_transform_aliases(transforms_by_name, scope.as_deref());
+    let mut runtime_declared_entities = HashMap::<String, Entity>::new();
 
     for (index, action) in actions.iter().enumerate() {
         match action {
@@ -2789,7 +3073,13 @@ pub(super) fn apply_action_sequence(
                 return ActionSequenceResult::Completed;
             }
             Statement::Async { actions } => {
-                let mut async_scope = scope.as_deref().cloned();
+                let async_owner = async_function_controller_key(actions);
+                if let Some(async_owner) = async_owner.as_ref()
+                    && let Some(delayed_actions) = delayed_actions.as_deref_mut()
+                {
+                    cancel_delayed_actions_for_owner(delayed_actions, async_owner);
+                }
+                let mut async_scope = scope.as_deref().cloned().unwrap_or_default();
                 let _ = apply_action_sequence(
                     actions,
                     transforms_by_name,
@@ -2804,8 +3094,8 @@ pub(super) fn apply_action_sequence(
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     ui_queue.as_deref_mut(),
-                    None,
-                    async_scope.as_mut(),
+                    async_owner,
+                    Some(&mut async_scope),
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
@@ -3027,6 +3317,7 @@ pub(super) fn apply_action_sequence(
                         continuous_delta_seconds,
                         commands,
                         scene_entities,
+                        &mut runtime_declared_entities,
                     );
                     continue;
                 }
@@ -3064,6 +3355,7 @@ pub(super) fn apply_action_sequence(
                     None,
                     commands,
                     scene_entities,
+                    &mut runtime_declared_entities,
                 );
                 let remaining = actions[index + 1..].to_vec();
                 if enqueue_delayed_actions(
@@ -3097,6 +3389,7 @@ pub(super) fn apply_action_sequence(
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
+                    &mut runtime_declared_entities,
                 );
                 if animation.blocking {
                     let remaining = actions[index + 1..].to_vec();
@@ -3132,6 +3425,7 @@ pub(super) fn apply_action_sequence(
                     continuous_delta_seconds,
                     commands,
                     scene_entities,
+                    &mut runtime_declared_entities,
                 );
                 if result.should_stop_parent() {
                     return result;
@@ -3172,7 +3466,7 @@ pub(super) fn apply_runtime_model_decl(
             Option<&mut SceneMaxCharacterMotor>,
         )>,
     )>,
-) {
+) -> Option<Entity> {
     let transform = primitive_transform_from_options_resolved(
         options,
         vars,
@@ -3180,6 +3474,94 @@ pub(super) fn apply_runtime_model_decl(
         Some(transforms_by_name),
         Some(collider_bounds),
     );
+    let visibility = if options.hidden {
+        Visibility::Hidden
+    } else {
+        Visibility::Inherited
+    };
+    if let Some(asset_id) = effekseer_asset_id(resource) {
+        let effect_path = runtime_assets
+            .asset_root
+            .as_deref()
+            .and_then(|asset_root| resolve_effekseer_effect_path(asset_root, &asset_id));
+        for (entity, scene_entity, mut existing_transform, _, _, existing_visibility, _, _) in
+            &mut scene_entities.p1()
+        {
+            if scene_entity.name != name {
+                continue;
+            }
+            *existing_transform = transform;
+            if let Some(mut existing_visibility) = existing_visibility {
+                *existing_visibility = visibility;
+            } else {
+                commands.entity(entity).insert(visibility);
+            }
+            commands.entity(entity).insert(SceneMaxEffekseerEffect {
+                instance_id: next_effekseer_instance_id(),
+                asset_id: asset_id.clone(),
+                effect_path: effect_path.clone(),
+                one_shot_duration_seconds: effekseer_one_shot_duration_seconds(
+                    effect_path.as_deref(),
+                ),
+            });
+            transforms_by_name.insert(name.to_owned(), transform);
+            write_runtime_diagnostic_line(format!(
+                "EFFEKSEER:DECL target={} asset={} path={} renderer={} mode=update",
+                name,
+                asset_id,
+                effect_path
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| "<missing>".to_owned()),
+                effekseer_renderer_label()
+            ));
+            tracing::warn!(
+                name,
+                asset = asset_id,
+                renderer = effekseer_renderer_label(),
+                "updated runtime Effekseer effect for the Bevy bridge"
+            );
+            return Some(entity);
+        }
+
+        let entity_id = commands
+            .spawn((
+                SceneMaxEntity {
+                    name: name.to_owned(),
+                    runtime_name: format!("{name}@runtime"),
+                },
+                SceneMaxEffekseerEffect {
+                    instance_id: next_effekseer_instance_id(),
+                    asset_id: asset_id.clone(),
+                    effect_path: effect_path.clone(),
+                    one_shot_duration_seconds: effekseer_one_shot_duration_seconds(
+                        effect_path.as_deref(),
+                    ),
+                },
+                transform,
+                visibility,
+            ))
+            .id();
+        insert_physics_components(commands, entity_id, name, resource, options, &transform);
+        transforms_by_name.insert(name.to_owned(), transform);
+        write_runtime_diagnostic_line(format!(
+            "EFFEKSEER:DECL target={} asset={} path={} renderer={} mode=spawn",
+            name,
+            asset_id,
+            effect_path
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "<missing>".to_owned()),
+            effekseer_renderer_label()
+        ));
+        tracing::warn!(
+            name,
+            asset = asset_id,
+            renderer = effekseer_renderer_label(),
+            "registered runtime Effekseer effect for the Bevy bridge"
+        );
+        return Some(entity_id);
+    }
     for (entity, scene_entity, mut existing_transform, _, _, visibility, _, _) in
         &mut scene_entities.p1()
     {
@@ -3209,21 +3591,30 @@ pub(super) fn apply_runtime_model_decl(
             resource,
             "updated runtime SceneMax placeholder entity"
         );
-        return;
+        return Some(entity);
     }
 
-    let visibility = if options.hidden {
-        Visibility::Hidden
-    } else {
-        Visibility::Inherited
-    };
     if options.collider {
         spawn_scenemax_collider_decl(commands, name, resource, options, transform, None);
         register_collider_bounds(collider_bounds, name, options, transform);
         transforms_by_name.insert(name.to_owned(), transform);
         tracing::info!(name, resource, "spawned runtime SceneMax collider");
-        return;
+        return None;
     }
+
+    if let Some(model_transform) = spawn_runtime_gltf_model_decl(
+        name,
+        resource,
+        options,
+        transform,
+        runtime_assets,
+        collider_bounds,
+        commands,
+    ) {
+        transforms_by_name.insert(name.to_owned(), model_transform);
+        return None;
+    }
+
     let mut entity = commands.spawn((
         SceneMaxEntity {
             name: name.to_owned(),
@@ -3246,6 +3637,245 @@ pub(super) fn apply_runtime_model_decl(
         resource,
         "spawned runtime SceneMax placeholder entity"
     );
+    Some(entity_id)
+}
+
+pub(super) fn effekseer_asset_id(resource: &str) -> Option<String> {
+    let prefix = "effects.effekseer.";
+    let lower = resource.to_ascii_lowercase();
+    lower
+        .starts_with(prefix)
+        .then(|| resource[prefix.len()..].trim())
+        .filter(|asset_id| !asset_id.is_empty())
+        .map(str::to_owned)
+}
+
+pub(super) fn resolve_effekseer_effect_path(asset_root: &Path, asset_id: &str) -> Option<PathBuf> {
+    let folder = asset_root.join("effects").join(asset_id);
+    let entries = fs::read_dir(folder).ok()?;
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| {
+                    extension.eq_ignore_ascii_case("efkefc")
+                        || extension.eq_ignore_ascii_case("efk")
+                })
+        })
+}
+
+pub(super) fn effekseer_one_shot_duration_seconds(effect_path: Option<&Path>) -> f32 {
+    const FALLBACK_SECONDS: f32 = 2.0;
+    let Some(effect_path) = effect_path else {
+        return FALLBACK_SECONDS;
+    };
+    let Some(parent) = effect_path.parent() else {
+        return FALLBACK_SECONDS;
+    };
+    let Ok(entries) = fs::read_dir(parent) else {
+        return FALLBACK_SECONDS;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("efkproj"))
+        {
+            continue;
+        }
+        let Ok(source) = fs::read_to_string(path) else {
+            continue;
+        };
+        let start = xml_numeric_tag(&source, "StartFrame").unwrap_or(0.0);
+        if let Some(end) = xml_numeric_tag(&source, "EndFrame") {
+            return ((end - start).max(1.0) / 60.0).max(0.1);
+        }
+    }
+    FALLBACK_SECONDS
+}
+
+fn xml_numeric_tag(source: &str, tag: &str) -> Option<f32> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = source.find(&open)? + open.len();
+    let end = source[start..].find(&close)? + start;
+    source[start..end].trim().parse::<f32>().ok()
+}
+
+fn resolved_effekseer_play_translation(
+    play: &EffekseerPlayStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<Vec3> {
+    evaluate_position_value_runtime(
+        play.position.as_ref()?,
+        vars,
+        scope,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
+}
+
+fn resolved_effekseer_playback(
+    play: &EffekseerPlayStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> SceneMaxEffekseerPlayback {
+    let mut looped = play.looped;
+    let mut playback_speed = 1.0;
+    let mut dynamic_inputs = [0.0; 4];
+    for (key, value) in &play.attrs {
+        let literal_truthy = assignment_value_is_truthy(value);
+        let resolved = resolve_assignment_value_scoped_with_guards(
+            value,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        );
+        match key.as_str() {
+            "loop" => {
+                looped = literal_truthy || resolved.is_some_and(|value| value != 0.0);
+            }
+            "play_back_speed" | "playback_speed" => {
+                playback_speed = resolved.unwrap_or(playback_speed).max(0.001);
+            }
+            "input0" => dynamic_inputs[0] = resolved.unwrap_or(dynamic_inputs[0]),
+            "input1" => dynamic_inputs[1] = resolved.unwrap_or(dynamic_inputs[1]),
+            "input2" => dynamic_inputs[2] = resolved.unwrap_or(dynamic_inputs[2]),
+            "input3" => dynamic_inputs[3] = resolved.unwrap_or(dynamic_inputs[3]),
+            _ => {}
+        }
+    }
+    SceneMaxEffekseerPlayback {
+        looped,
+        play_generation: next_effekseer_play_generation(),
+        playback_speed,
+        dynamic_inputs,
+        elapsed_seconds: 0.0,
+    }
+}
+
+fn next_effekseer_play_generation() -> u64 {
+    static GENERATION: AtomicU64 = AtomicU64::new(1);
+    GENERATION.fetch_add(1, Ordering::Relaxed)
+}
+
+fn assignment_value_is_truthy(value: &AssignmentValue) -> bool {
+    match value {
+        AssignmentValue::Number(value) => *value != 0.0,
+        AssignmentValue::Symbol(value) => value.eq_ignore_ascii_case("true"),
+        _ => false,
+    }
+}
+
+fn write_effekseer_bridge_play(target: &str, play: &EffekseerPlayStatement) {
+    let playback = play
+        .attrs
+        .iter()
+        .find_map(|(key, value)| {
+            matches!(key.as_str(), "play_back_speed" | "playback_speed")
+                .then(|| format!("{value:?}"))
+        })
+        .unwrap_or_else(|| "1".to_owned());
+    write_runtime_diagnostic_line(format!(
+        "EFFEKSEER:PLAY target={} loop={} speed={} attrs={} renderer={}",
+        target,
+        play.looped as u8,
+        playback,
+        play.attrs.len(),
+        effekseer_renderer_label()
+    ));
+}
+
+fn spawn_runtime_gltf_model_decl(
+    name: &str,
+    resource: &str,
+    options: &EntityOptions,
+    transform: Transform,
+    runtime_assets: &SceneMaxRuntimeAssets,
+    collider_bounds: &mut SceneMaxColliderBounds,
+    commands: &mut Commands,
+) -> Option<Transform> {
+    let model = runtime_model_resource(resource, runtime_assets)?;
+    let asset_server = runtime_assets.asset_server.as_ref()?;
+
+    let mut model_transform = transform;
+    if options.scale.is_none()
+        && let Some(scale) = model.scale
+    {
+        model_transform.scale *= Vec3::new(scale[0], scale[1], scale[2]);
+    }
+    let bevy_visual_offset_y = model
+        .character_physics
+        .as_ref()
+        .and_then(|character| character.bevy_visual_offset_y);
+    let asset_path = model.asset_path;
+    let gltf: Handle<Gltf> = asset_server.load(asset_path.clone());
+    let scene =
+        WorldAssetRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())));
+    let entity_id = commands
+        .spawn((
+            SceneMaxEntity {
+                name: name.to_owned(),
+                runtime_name: format!("{name}@runtime"),
+            },
+            SceneMaxGltf { gltf },
+            scene,
+            model_transform,
+            if options.hidden {
+                Visibility::Hidden
+            } else {
+                Visibility::Inherited
+            },
+        ))
+        .id();
+    insert_gltf_visual_offset(commands, entity_id, bevy_visual_offset_y);
+    insert_physics_components(
+        commands,
+        entity_id,
+        name,
+        resource,
+        options,
+        &model_transform,
+    );
+    if options.collider {
+        register_collider_bounds(collider_bounds, name, options, model_transform);
+    }
+    tracing::info!(
+        name,
+        resource,
+        path = %asset_path,
+        "spawned runtime SceneMax GLTF model"
+    );
+    write_runtime_diagnostic_line(format!(
+        "resolved runtime GLTF model {name}=>{resource} at {asset_path}"
+    ));
+    Some(model_transform)
+}
+
+fn runtime_model_resource(
+    resource: &str,
+    runtime_assets: &SceneMaxRuntimeAssets,
+) -> Option<scenemax_assets::ModelResource> {
+    let asset_root = runtime_assets.asset_root.as_deref()?;
+    scenemax_assets::resolve_model_resource_with_builtin_fallback(
+        asset_root,
+        runtime_assets.builtin_asset_root.as_deref(),
+        resource,
+    )
+    .ok()
 }
 
 pub(super) fn apply_key_action(
@@ -3279,12 +3909,53 @@ pub(super) fn apply_key_action(
             Option<&mut SceneMaxCharacterMotor>,
         )>,
     )>,
+    runtime_declared_entities: &mut HashMap<String, Entity>,
 ) -> ActionSequenceResult {
     if matches!(action, Statement::NoOp { .. }) {
         return ActionSequenceResult::Completed;
     }
     if let Statement::Unsupported { text } = action {
         tracing::debug!(text, "skipping unsupported SceneMax runtime action");
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::LightDecl(light) = action {
+        for (entity, scene_entity, _, _, _, _, _, _) in &mut scene_entities.p1() {
+            if scene_entity.name == light.name {
+                commands.entity(entity).despawn();
+                break;
+            }
+        }
+        let (entity, transform) = spawn_scenemax_light_decl(
+            commands,
+            light,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
+        transforms_by_name.insert(light.name.clone(), transform);
+        runtime_declared_entities.insert(light.name.clone(), entity);
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::LightProbeAdd(probe) = action {
+        for (entity, scene_entity, _, _, _, _, _, _) in &mut scene_entities.p1() {
+            if scene_entity.name == probe.name {
+                commands.entity(entity).despawn();
+                break;
+            }
+        }
+        let (entity, transform) = apply_light_probe_add(
+            commands,
+            probe,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
+        transforms_by_name.insert(probe.name.clone(), transform);
+        runtime_declared_entities.insert(probe.name.clone(), entity);
         return ActionSequenceResult::Completed;
     }
     if let Statement::ModelDecl {
@@ -3296,7 +3967,7 @@ pub(super) fn apply_key_action(
         if cinematic_resource_id(resource).is_some() {
             return ActionSequenceResult::Completed;
         }
-        apply_runtime_model_decl(
+        if let Some(entity) = apply_runtime_model_decl(
             name,
             resource,
             options,
@@ -3307,7 +3978,9 @@ pub(super) fn apply_key_action(
             collider_bounds,
             commands,
             scene_entities,
-        );
+        ) {
+            runtime_declared_entities.insert(name.clone(), entity);
+        }
         return ActionSequenceResult::Completed;
     }
     if let Statement::CinematicPlay(play) = action {
@@ -3322,12 +3995,67 @@ pub(super) fn apply_key_action(
         }
         return ActionSequenceResult::Completed;
     }
+    if let Statement::SetEnvironmentShader { shader } = action {
+        let shader_name = resolve_shader_name(
+            shader,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
+        apply_environment_shader(commands, shader_name, runtime_assets);
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::SetShader(shader) = action {
+        let shader_name = resolve_shader_name(
+            &shader.shader,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
+        let target_entity =
+            scene_entities
+                .p1()
+                .iter()
+                .find_map(|(entity, scene_entity, _, _, _, _, _, _)| {
+                    target_matches_alias(
+                        &shader.target,
+                        &scene_entity.name,
+                        object_pools,
+                        scope.as_deref(),
+                    )
+                    .then_some(entity)
+                });
+        if let Some(entity) = target_entity {
+            apply_entity_shader(commands, entity, shader_name, runtime_assets);
+        } else {
+            write_runtime_diagnostic_line(format!(
+                "SHADER:TARGET_MISS phase=runtime target={}",
+                shader.target
+            ));
+        }
+        return ActionSequenceResult::Completed;
+    }
     if let Statement::Assignment(assignment)
     | Statement::SharedAssignment(assignment)
     | Statement::LocalAssignment(assignment) = action
     {
         if let AssignmentValue::PoolAcquire { pool } = &assignment.value {
-            let Some(member) = acquire_pool_member(pool, object_pools) else {
+            let Some(member) = acquire_pool_member(
+                pool,
+                transforms_by_name,
+                vars,
+                object_pools,
+                functions_by_name,
+                guards_by_name,
+                runtime_assets,
+                collider_bounds,
+                commands,
+                scene_entities,
+            ) else {
                 tracing::debug!(pool, "SceneMax object pool has no available members");
                 return ActionSequenceResult::Completed;
             };
@@ -3370,7 +4098,7 @@ pub(super) fn apply_key_action(
             }
             return ActionSequenceResult::Completed;
         }
-        let assigned_value = apply_assignment_scoped(
+        apply_assignment_scoped(
             assignment,
             vars,
             scope.as_deref_mut(),
@@ -3379,38 +4107,6 @@ pub(super) fn apply_key_action(
             Some(collider_bounds),
             matches!(action, Statement::LocalAssignment(_)),
         );
-        if assignment.name == "action"
-            && assigned_value.is_some_and(|value| value.abs() <= f32::EPSILON)
-        {
-            for (entity, scene_entity, _, gltf, current_animation, _, _, _) in
-                &mut scene_entities.p1()
-            {
-                if scene_entity.name != "player1" {
-                    continue;
-                }
-                let already_queued =
-                    queued_animations
-                        .get(&entity)
-                        .is_some_and(|(clip, looped)| {
-                            *looped && requested_animation_names_match(clip, "idle2")
-                        });
-                let already_current = queued_animations.get(&entity).is_none()
-                    && current_animation
-                        .is_some_and(|current| current_animation_matches(current, "idle2", true));
-                if already_queued || already_current {
-                    continue;
-                }
-                if let Some(gltf) = gltf {
-                    commands.entity(entity).insert(AnimationToPlay {
-                        clip: "idle2".to_owned(),
-                        looped: true,
-                        speed: 1.0,
-                        gltf: gltf.gltf.clone(),
-                    });
-                    queued_animations.insert(entity, ("idle2".to_owned(), true));
-                }
-            }
-        }
         return ActionSequenceResult::Completed;
     }
     if let Statement::CameraSystemSelect { name } = action {
@@ -3588,6 +4284,16 @@ pub(super) fn apply_key_action(
         return ActionSequenceResult::Completed;
     }
     if let Statement::Delete { target } = action {
+        let resolved_target = resolve_object_alias(target, object_pools, scope.as_deref());
+        if let Some(entity) = runtime_declared_entities.remove(&resolved_target) {
+            commands.entity(entity).despawn();
+            transforms_by_name.remove(&resolved_target);
+            write_runtime_diagnostic_line(format!(
+                "RUNTIME:DELETE_IMMEDIATE target={} entity={:?}",
+                resolved_target, entity
+            ));
+            return ActionSequenceResult::Completed;
+        }
         delete_scene_object(
             target,
             object_pools,
@@ -3630,12 +4336,49 @@ pub(super) fn apply_key_action(
                 continuous_delta_seconds,
                 commands,
                 scene_entities,
+                runtime_declared_entities,
             );
             if result.should_stop_parent() {
                 return result;
             }
         }
         return ActionSequenceResult::Completed;
+    }
+
+    if let Statement::EffekseerPlay(play) = action {
+        let resolved_target = resolve_object_alias(&play.target, object_pools, scope.as_deref());
+        if let Some(entity) = runtime_declared_entities.get(&resolved_target).copied() {
+            let mut transform = transforms_by_name
+                .get(&resolved_target)
+                .copied()
+                .unwrap_or_default();
+            if let Some(translation) = resolved_effekseer_play_translation(
+                play,
+                vars,
+                scope.as_deref(),
+                guards_by_name,
+                transforms_by_name,
+                Some(collider_bounds),
+            ) {
+                transform.translation = translation;
+                transforms_by_name.insert(resolved_target.clone(), transform);
+                commands.entity(entity).insert(transform);
+            }
+            commands.entity(entity).insert(resolved_effekseer_playback(
+                play,
+                vars,
+                scope.as_deref(),
+                guards_by_name,
+                Some(transforms_by_name),
+                Some(collider_bounds),
+            ));
+            write_runtime_diagnostic_line(format!(
+                "EFFEKSEER:PLAY_IMMEDIATE target={} entity={:?}",
+                resolved_target, entity
+            ));
+            write_effekseer_bridge_play(&resolved_target, play);
+            return ActionSequenceResult::Completed;
+        }
     }
 
     for (
@@ -3716,6 +4459,41 @@ pub(super) fn apply_key_action(
                     sprite_play.duration_seconds,
                     sprite_play.looped
                 ));
+            }
+            Statement::EffekseerPlay(play)
+                if target_matches_alias(
+                    &play.target,
+                    &scene_entity.name,
+                    object_pools,
+                    scope.as_deref(),
+                ) =>
+            {
+                if let Some(translation) = resolved_effekseer_play_translation(
+                    play,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    transforms_by_name,
+                    Some(collider_bounds),
+                ) {
+                    transform.translation = translation;
+                    sync_live_transform(
+                        transforms_by_name,
+                        object_pools,
+                        scope.as_deref(),
+                        &scene_entity.name,
+                        *transform,
+                    );
+                }
+                commands.entity(entity).insert(resolved_effekseer_playback(
+                    play,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                ));
+                write_effekseer_bridge_play(&scene_entity.name, play);
             }
             Statement::AnimationSpeed(animation_speed)
                 if target_matches_alias(
@@ -3969,16 +4747,33 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
+                let resolved = resolved_character_mode(
+                    character_mode,
+                    vars,
+                    scope.as_deref(),
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    Some(collider_bounds),
+                );
+                write_runtime_diagnostic_line(format!(
+                    "CHARACTER:PENDING_REQUEST phase=runtime target={} matched_entity={} gravity={} owner={} pos=({},{},{})",
+                    resolved.target,
+                    scene_entity.name,
+                    resolved
+                        .gravity
+                        .map(format_scenemax_number)
+                        .unwrap_or_else(|| "default".to_owned()),
+                    owner
+                        .as_ref()
+                        .map(describe_controller_key)
+                        .unwrap_or_else(|| "-".to_owned()),
+                    format_scenemax_number(transform.translation.x),
+                    format_scenemax_number(transform.translation.y),
+                    format_scenemax_number(transform.translation.z)
+                ));
                 commands
                     .entity(entity)
-                    .insert(PendingCharacterMode(resolved_character_mode(
-                        character_mode,
-                        vars,
-                        scope.as_deref(),
-                        guards_by_name,
-                        Some(transforms_by_name),
-                        Some(collider_bounds),
-                    )));
+                    .insert(PendingCharacterMode(resolved));
             }
             Statement::ClearCharacterMode { target }
                 if target_matches_alias(
@@ -3988,7 +4783,19 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
-                clear_character_mode(commands, entity);
+                write_runtime_diagnostic_line(format!(
+                    "CHARACTER:CLEAR_REQUEST phase=runtime target={} matched_entity={} owner={} pos=({},{},{})",
+                    target,
+                    scene_entity.name,
+                    owner
+                        .as_ref()
+                        .map(describe_controller_key)
+                        .unwrap_or_else(|| "-".to_owned()),
+                    format_scenemax_number(transform.translation.x),
+                    format_scenemax_number(transform.translation.y),
+                    format_scenemax_number(transform.translation.z)
+                ));
+                clear_character_mode(commands, entity, Some(&scene_entity.name), Some(&transform));
             }
             Statement::CharacterIgnore(ignore)
                 if target_matches_alias(
@@ -4327,6 +5134,11 @@ fn collect_bone_alias_targets_from_statements(
             Statement::Position(position) => {
                 collect_bone_alias_target_from_position_value(&position.position, seen, targets);
             }
+            Statement::EffekseerPlay(play) => {
+                if let Some(position) = &play.position {
+                    collect_bone_alias_target_from_position_value(position, seen, targets);
+                }
+            }
             Statement::MoveTo(move_to) => {
                 if let MoveToDestination::Position(position) = &move_to.destination {
                     collect_bone_alias_target_from_position_value(position, seen, targets);
@@ -4484,14 +5296,327 @@ pub(super) fn sync_live_transform(
     }
 }
 
+const OBJECT_POOL_MAX_MEMBERS: usize = 256;
+const OBJECT_POOL_RESERVE_LOW_WATERMARK: usize = 4;
+const OBJECT_POOL_GROW_BATCH: usize = 8;
+
+pub(super) fn activate_pending_pool_members(
+    mut object_pools: ResMut<SceneMaxObjectPools>,
+    scene_entities: Query<&SceneMaxEntity>,
+) {
+    if object_pools
+        .pools
+        .values()
+        .all(|runtime| runtime.pending_available.is_empty())
+    {
+        return;
+    }
+    let live_names = scene_entities
+        .iter()
+        .map(|entity| entity.name.clone())
+        .collect::<HashSet<_>>();
+    for (pool, runtime) in &mut object_pools.pools {
+        let ready = runtime
+            .pending_available
+            .iter()
+            .filter(|member| live_names.contains(*member))
+            .cloned()
+            .collect::<Vec<_>>();
+        if ready.is_empty() {
+            continue;
+        }
+        for member in ready {
+            runtime.pending_available.remove(&member);
+            if !runtime.in_use.contains(&member)
+                && !runtime
+                    .available
+                    .iter()
+                    .any(|available| available == &member)
+            {
+                runtime.available.push(member.clone());
+            }
+            write_runtime_diagnostic_line(format!(
+                "object pool {pool} reserve ready {member}; available={} pending={}",
+                runtime.available.len(),
+                runtime.pending_available.len()
+            ));
+        }
+    }
+}
+
 pub(super) fn acquire_pool_member(
     pool: &str,
+    transforms_by_name: &mut HashMap<String, Transform>,
+    vars: &mut SceneMaxVars,
     object_pools: &mut SceneMaxObjectPools,
+    functions_by_name: &HashMap<String, FunctionRuntime>,
+    guards_by_name: &HashMap<String, Condition>,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+    collider_bounds: &mut SceneMaxColliderBounds,
+    commands: &mut Commands,
+    scene_entities: &mut ParamSet<(
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
+            Option<&mut Visibility>,
+            Option<&SceneMaxCharacterController>,
+            Option<&mut SceneMaxCharacterMotor>,
+        )>,
+    )>,
 ) -> Option<String> {
+    apply_pool_factory_acquire_side_effects(
+        pool,
+        vars,
+        object_pools,
+        functions_by_name,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    );
+    let member = if let Some(member) = object_pools
+        .pools
+        .get_mut(pool)
+        .and_then(|runtime| runtime.available.pop())
+    {
+        member
+    } else {
+        grow_pool_member(
+            pool,
+            transforms_by_name,
+            vars,
+            object_pools,
+            functions_by_name,
+            guards_by_name,
+            runtime_assets,
+            collider_bounds,
+            commands,
+            scene_entities,
+            false,
+        )?
+    };
     let runtime = object_pools.pools.get_mut(pool)?;
-    let member = runtime.available.pop()?;
     runtime.in_use.insert(member.clone());
+    write_runtime_diagnostic_line(format!(
+        "object pool {pool} acquire {member}; available={} in_use={}",
+        runtime.available.len(),
+        runtime.in_use.len()
+    ));
+    grow_pool_reserve(
+        pool,
+        transforms_by_name,
+        vars,
+        object_pools,
+        functions_by_name,
+        guards_by_name,
+        runtime_assets,
+        collider_bounds,
+        commands,
+        scene_entities,
+    );
     Some(member)
+}
+
+fn grow_pool_reserve(
+    pool: &str,
+    transforms_by_name: &mut HashMap<String, Transform>,
+    vars: &SceneMaxVars,
+    object_pools: &mut SceneMaxObjectPools,
+    functions_by_name: &HashMap<String, FunctionRuntime>,
+    guards_by_name: &HashMap<String, Condition>,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+    collider_bounds: &mut SceneMaxColliderBounds,
+    commands: &mut Commands,
+    scene_entities: &mut ParamSet<(
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
+            Option<&mut Visibility>,
+            Option<&SceneMaxCharacterController>,
+            Option<&mut SceneMaxCharacterMotor>,
+        )>,
+    )>,
+) {
+    let should_grow = object_pools.pools.get(pool).is_some_and(|runtime| {
+        runtime.available.len() <= OBJECT_POOL_RESERVE_LOW_WATERMARK
+            && runtime.members.len() < OBJECT_POOL_MAX_MEMBERS
+    });
+    if !should_grow {
+        return;
+    }
+
+    for _ in 0..OBJECT_POOL_GROW_BATCH {
+        let can_grow = object_pools
+            .pools
+            .get(pool)
+            .is_some_and(|runtime| runtime.members.len() < OBJECT_POOL_MAX_MEMBERS);
+        if !can_grow {
+            break;
+        }
+        let Some(member) = grow_pool_member(
+            pool,
+            transforms_by_name,
+            vars,
+            object_pools,
+            functions_by_name,
+            guards_by_name,
+            runtime_assets,
+            collider_bounds,
+            commands,
+            scene_entities,
+            true,
+        ) else {
+            break;
+        };
+        if let Some(runtime) = object_pools.pools.get_mut(pool) {
+            runtime.pending_available.insert(member.clone());
+            write_runtime_diagnostic_line(format!(
+                "object pool {pool} reserve spawning {member}; available={} pending={} in_use={}",
+                runtime.available.len(),
+                runtime.pending_available.len(),
+                runtime.in_use.len()
+            ));
+        }
+    }
+}
+
+fn grow_pool_member(
+    pool: &str,
+    transforms_by_name: &mut HashMap<String, Transform>,
+    vars: &SceneMaxVars,
+    object_pools: &mut SceneMaxObjectPools,
+    _functions_by_name: &HashMap<String, FunctionRuntime>,
+    guards_by_name: &HashMap<String, Condition>,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+    collider_bounds: &mut SceneMaxColliderBounds,
+    commands: &mut Commands,
+    scene_entities: &mut ParamSet<(
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
+            Option<&mut Visibility>,
+            Option<&SceneMaxCharacterController>,
+            Option<&mut SceneMaxCharacterMotor>,
+        )>,
+    )>,
+    hidden: bool,
+) -> Option<String> {
+    let (member, resource, mut options, factory) = {
+        let runtime = object_pools.pools.get_mut(pool)?;
+        let prototype = runtime.prototype.clone()?;
+        if runtime.members.len() >= OBJECT_POOL_MAX_MEMBERS {
+            write_runtime_diagnostic_line(format!(
+                "object pool {pool} exhausted; max members reached ({OBJECT_POOL_MAX_MEMBERS})"
+            ));
+            tracing::debug!(
+                pool,
+                max_members = OBJECT_POOL_MAX_MEMBERS,
+                "SceneMax object pool reached the runtime member cap"
+            );
+            return None;
+        }
+        if !is_primitive_resource(&prototype.resource)
+            && runtime_model_resource(&prototype.resource, runtime_assets).is_none()
+        {
+            write_runtime_diagnostic_line(format!(
+                "object pool {pool} exhausted; no preloaded members available for model resource {}",
+                prototype.resource
+            ));
+            tracing::debug!(
+                pool,
+                resource = %prototype.resource,
+                "SceneMax object pool exhausted; skipping runtime placeholder growth for model resource"
+            );
+            return None;
+        }
+        let member = format!("__pool_{}_{}", pool, runtime.created_count);
+        runtime.created_count += 1;
+        runtime.members.insert(member.clone());
+        (
+            member,
+            prototype.resource,
+            prototype.options,
+            runtime.factory.clone(),
+        )
+    };
+    if hidden {
+        options.hidden = true;
+    }
+    apply_runtime_model_decl(
+        &member,
+        &resource,
+        &options,
+        transforms_by_name,
+        vars,
+        guards_by_name,
+        runtime_assets,
+        collider_bounds,
+        commands,
+        scene_entities,
+    );
+    tracing::info!(pool, factory, member, "grew SceneMax object pool member");
+    Some(member)
+}
+
+pub(super) fn apply_pool_factory_acquire_side_effects(
+    pool: &str,
+    vars: &mut SceneMaxVars,
+    object_pools: &SceneMaxObjectPools,
+    functions_by_name: &HashMap<String, FunctionRuntime>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: &SceneMaxColliderBounds,
+) {
+    let Some(factory) = object_pools
+        .pools
+        .get(pool)
+        .map(|runtime| runtime.factory.as_str())
+    else {
+        return;
+    };
+    let Some(function) = functions_by_name.get(factory) else {
+        return;
+    };
+    let mut factory_scope = SceneMaxScopeFrame::default();
+    for action in &function.actions {
+        match action {
+            Statement::Assignment(assignment) | Statement::SharedAssignment(assignment) => {
+                apply_assignment_scoped(
+                    assignment,
+                    vars,
+                    Some(&mut factory_scope),
+                    Some(transforms_by_name),
+                    guards_by_name,
+                    Some(collider_bounds),
+                    false,
+                );
+            }
+            Statement::LocalAssignment(assignment) => {
+                apply_assignment_scoped(
+                    assignment,
+                    vars,
+                    Some(&mut factory_scope),
+                    Some(transforms_by_name),
+                    guards_by_name,
+                    Some(collider_bounds),
+                    true,
+                );
+            }
+            Statement::Return | Statement::ReturnValue { .. } => break,
+            _ => {}
+        }
+    }
 }
 
 pub(super) fn release_pool_action(
@@ -4579,6 +5704,11 @@ pub(super) fn release_pool_member(
         runtime.available.push(target.to_owned());
     }
     object_pools.aliases.retain(|_, value| value != target);
+    write_runtime_diagnostic_line(format!(
+        "object pool {pool} release {target}; available={} in_use={}",
+        runtime.available.len(),
+        runtime.in_use.len()
+    ));
     true
 }
 
@@ -4624,116 +5754,16 @@ pub(super) fn hide_and_stop_scene_entity(
         }
         commands
             .entity(entity)
-            .insert((LinearVelocity::ZERO, AngularVelocity::ZERO));
+            .insert((LinearVelocity::ZERO, AngularVelocity::ZERO))
+            .remove::<TimedMoves>()
+            .remove::<TimedTurn>()
+            .remove::<TimedJump>();
         break;
     }
 }
 
 pub(super) fn parent_action_tail(actions: &[Statement], index: usize) -> &[Statement] {
     actions.get(index + 1..).unwrap_or_default()
-}
-
-pub(super) fn apply_builtin_navigation_controls(
-    time: Res<Time>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    startup_program: Res<SceneMaxStartupProgram>,
-    mut commands: Commands,
-    mut players: Query<(
-        Entity,
-        &SceneMaxEntity,
-        &mut Transform,
-        Option<&SceneMaxGltf>,
-        Option<&CurrentAnimation>,
-        Option<&SceneMaxCharacterController>,
-        Option<&mut SceneMaxCharacterMotor>,
-    )>,
-) {
-    if startup_program.0.as_ref().is_some_and(|program| {
-        program
-            .statements
-            .iter()
-            .any(|statement| matches!(statement, Statement::KeyEvent(_)))
-    }) {
-        return;
-    }
-
-    let delta_seconds = time.delta_secs();
-    let turn_delta = if keyboard.pressed(KeyCode::ArrowLeft) {
-        BUILTIN_PLAYER_TURN_SPEED_RADIANS * delta_seconds
-    } else if keyboard.pressed(KeyCode::ArrowRight) {
-        -BUILTIN_PLAYER_TURN_SPEED_RADIANS * delta_seconds
-    } else {
-        0.0
-    };
-
-    let move_direction = if keyboard.pressed(KeyCode::ArrowUp) {
-        1.0
-    } else if keyboard.pressed(KeyCode::ArrowDown) {
-        -1.0
-    } else {
-        0.0
-    };
-
-    let should_restore_idle = keyboard.just_released(KeyCode::ArrowUp);
-    if turn_delta == 0.0 && move_direction == 0.0 && !should_restore_idle {
-        return;
-    }
-
-    for (
-        entity,
-        scene_entity,
-        mut transform,
-        gltf,
-        current_animation,
-        character_controller,
-        character_motor,
-    ) in &mut players
-    {
-        if scene_entity.name != "player1" {
-            continue;
-        }
-
-        if turn_delta != 0.0 {
-            transform.rotate_y(turn_delta);
-        }
-
-        if let (Some(character_controller), Some(mut character_motor)) =
-            (character_controller, character_motor)
-        {
-            if move_direction != 0.0 {
-                let direction = horizontal_forward(&transform) * move_direction;
-                set_character_motion(
-                    &mut character_motor,
-                    direction,
-                    BUILTIN_PLAYER_MOVE_SPEED / character_controller.move_speed.max(0.001),
-                    CHARACTER_INPUT_TTL_SECONDS,
-                );
-            }
-        } else if move_direction != 0.0 {
-            let direction = horizontal_forward(&transform) * move_direction;
-            transform.translation += direction * BUILTIN_PLAYER_MOVE_SPEED * delta_seconds;
-        }
-
-        if move_direction > 0.0 {
-            queue_builtin_player_animation(
-                &mut commands,
-                entity,
-                gltf,
-                current_animation,
-                "run_sword",
-                true,
-            );
-        } else if should_restore_idle {
-            queue_builtin_player_animation(
-                &mut commands,
-                entity,
-                gltf,
-                current_animation,
-                "idle2",
-                true,
-            );
-        }
-    }
 }
 
 pub(super) fn key_code_from_scenemax(key: &str) -> Option<KeyCode> {
@@ -5354,6 +6384,30 @@ pub(super) fn assignment_value_fallback_text(value: &AssignmentValue) -> String 
     }
 }
 
+pub(super) fn resolve_shader_name(
+    value: &AssignmentValue,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> String {
+    match value {
+        AssignmentValue::Symbol(name) => name.clone(),
+        AssignmentValue::Number(value) => format_scenemax_number(*value),
+        _ => resolve_assignment_value_scoped_with_guards(
+            value,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        )
+        .map(format_scenemax_number)
+        .unwrap_or_else(|| assignment_value_fallback_text(value)),
+    }
+}
+
 pub(super) fn apply_assignment(
     assignment: &scenemax_parser::AssignmentStatement,
     vars: &mut SceneMaxVars,
@@ -5504,6 +6558,7 @@ pub(super) fn when_condition_matches(
                 physics_contacts,
                 object_pools,
                 transforms_by_name,
+                collider_bounds,
             ) || collision_condition_matches(sources, target, transforms_by_name, collider_bounds)
         }
         Condition::Boolean(value) => *value,
@@ -5571,7 +6626,7 @@ pub(super) fn physics_contact_matches(
         let source_candidates = collision_reference_candidates_with_alias(source, object_pools);
         source_candidates.iter().any(|source_name| {
             target_candidates.iter().any(|target_name| {
-                active_physics_contact_matches(source_name, target_name, physics_contacts)
+                active_physics_contact_matches(source_name, target_name, physics_contacts, None)
             })
         })
     })
@@ -5583,20 +6638,26 @@ pub(super) fn physics_contact_condition_matches(
     physics_contacts: &SceneMaxPhysicsContacts,
     object_pools: &SceneMaxObjectPools,
     transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> bool {
     let target_candidates = collision_reference_candidates_with_alias(target, object_pools);
     sources.iter().any(|source| {
         let source_candidates = collision_reference_candidates_with_alias(source, object_pools);
         source_candidates.iter().any(|source_name| {
             target_candidates.iter().any(|target_name| {
-                active_physics_contact_matches(source_name, target_name, physics_contacts)
-                    && transforms_by_name.is_none_or(|transforms_by_name| {
-                        player_hitbox_owner_distance_allows(
-                            source_name,
-                            target_name,
-                            transforms_by_name,
-                        )
-                    })
+                active_physics_contact_matches(
+                    source_name,
+                    target_name,
+                    physics_contacts,
+                    collider_bounds,
+                ) && transforms_by_name.is_none_or(|transforms_by_name| {
+                    attached_collider_owner_distance_allows(
+                        source_name,
+                        target_name,
+                        transforms_by_name,
+                        collider_bounds,
+                    )
+                })
             })
         })
     })
@@ -5620,6 +6681,7 @@ pub(super) fn active_physics_contact_matches(
     source: &str,
     target: &str,
     physics_contacts: &SceneMaxPhysicsContacts,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> bool {
     if physics_contacts
         .active_pairs
@@ -5628,21 +6690,30 @@ pub(super) fn active_physics_contact_matches(
         return true;
     }
 
-    if !is_owner_level_collision_reference(source) && !is_owner_level_collision_reference(target) {
+    if !is_owner_level_collision_reference(source, collider_bounds)
+        && !is_owner_level_collision_reference(target, collider_bounds)
+    {
         return false;
     }
 
-    let expected_owner_pair =
-        normalized_collision_pair(&collision_owner(source), &collision_owner(target));
+    let expected_owner_pair = normalized_collision_pair(
+        &collision_owner_with_bounds(source, collider_bounds),
+        &collision_owner_with_bounds(target, collider_bounds),
+    );
     physics_contacts.active_pairs.iter().any(|(left, right)| {
-        normalized_collision_pair(&collision_owner(left), &collision_owner(right))
-            == expected_owner_pair
+        normalized_collision_pair(
+            &collision_owner_with_bounds(left, collider_bounds),
+            &collision_owner_with_bounds(right, collider_bounds),
+        ) == expected_owner_pair
     })
 }
 
-pub(super) fn is_owner_level_collision_reference(reference: &str) -> bool {
+pub(super) fn is_owner_level_collision_reference(
+    reference: &str,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> bool {
     let normalized = reference.trim().trim_matches('"');
-    collision_owner(normalized) == normalized
+    collision_owner_with_bounds(normalized, collider_bounds) == normalized
 }
 
 pub(super) fn normalized_collision_pair(left: &str, right: &str) -> (String, String) {

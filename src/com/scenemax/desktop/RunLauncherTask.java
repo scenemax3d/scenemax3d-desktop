@@ -36,6 +36,7 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
     private File runningFolder = null;
     private String prg;
     private Runnable finish;
+    private Consumer<String> launchStatusConsumer;
     private boolean waitForLauncherCreation = false;
     private int exitCode;
 
@@ -44,10 +45,16 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
     }
 
     public RunLauncherTask(String scriptFilePath, String prg, Runnable finish, RuntimeTarget runtimeTarget)  {
+        this(scriptFilePath, prg, finish, runtimeTarget, null);
+    }
+
+    public RunLauncherTask(String scriptFilePath, String prg, Runnable finish, RuntimeTarget runtimeTarget,
+                           Consumer<String> launchStatusConsumer)  {
 
         String ver = Util.getAppVersion();
         this.launcherName = "launcher"+ver+".jar";
         this.runtimeTarget = runtimeTarget == null ? RuntimeTarget.CLASSIC : runtimeTarget;
+        this.launchStatusConsumer = launchStatusConsumer;
 
         this.macroFilter = new MacroFilter();
         this.macroFilter.loadMacroRulesFromMacroFolder(new File("macro"));
@@ -183,11 +190,13 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
         if (sourceScriptFile != null) {
             sourceScriptRelativePath = getScriptRelativePath(sourceScriptFile);
         }
+        publishLaunchStatus("Preparing SceneMax program...");
         saveScript();
 
         if(scriptFolder!=null) {
 
             try {
+                publishLaunchStatus("Checking scripts and staging project files...");
                 String parserPath = sourceScriptFile != null ? sourceScriptFile.getAbsolutePath() : scriptFolder.getAbsolutePath();
                 SceneMaxLanguageParser parser = new SceneMaxLanguageParser(null, parserPath);
                 SceneMaxLanguageParser.setMacroFilter(this.macroFilter);
@@ -215,6 +224,7 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             }
 
             try {
+                publishLaunchStatus("Checking Java extensions...");
                 JavaExtensionBuildTool.BuildResult extensions = JavaExtensionBuildTool.buildExtensions(
                         scriptFolder,
                         new File(this.runningFolder, JavaExtensionBuildTool.EXTENSIONS_FOLDER_NAME),
@@ -238,6 +248,7 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
         }
 
         if (runtimeTarget == RuntimeTarget.NEXTGEN) {
+            publishLaunchStatus("Preparing Rust/Bevy projector...");
             runNextGenProjector();
             return exitCode;
         }
@@ -412,40 +423,41 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
     private void runNextGenProjector() {
 
         try {
+            publishLaunchStatus("Resolving NextGen projector...");
             File nextGenRoot = resolveNextGenProjectorRoot();
             File debugExe = new File(nextGenRoot, "target/debug/scenemax_projector_nextgen.exe");
             File releaseExe = new File(nextGenRoot, "target/release/scenemax_projector_nextgen.exe");
+            File builtExe = newestExistingFile(debugExe, releaseExe);
             File stagedMain = new File(this.runningFolder, "main");
             File projectRoot = resolveProjectRoot();
 
             List<String> command = new ArrayList<>();
             File processDirectory;
             File cargoExe = resolveCargoExecutable();
-            boolean useCargo = cargoExe.isFile() && isNextGenExecutableStale(nextGenRoot, debugExe, releaseExe);
-            if (useCargo) {
+            boolean builtExeIsCurrent = builtExe != null && !isNextGenExecutableStale(nextGenRoot, debugExe, releaseExe);
+            boolean useCargo = !builtExeIsCurrent && cargoExe.isFile();
+            if (builtExeIsCurrent) {
+                command.add(builtExe.getAbsolutePath());
+                processDirectory = nextGenRoot;
+                publishLaunchStatus("Starting Bevy projector...");
+            } else if (useCargo) {
                 command.add(cargoExe.getAbsolutePath());
                 command.add("run");
                 command.add("-p");
                 command.add("scenemax_projector_nextgen");
+                addNextGenNativeFeatureArgs(command);
                 command.add("--");
                 processDirectory = nextGenRoot;
-            } else if (debugExe.isFile()) {
-                command.add(debugExe.getAbsolutePath());
+                publishLaunchStatus(builtExe == null
+                        ? "Building Rust/Bevy projector, then opening the game..."
+                        : "Rust/Bevy projector changed. Rebuilding, then opening the game...");
+            } else if (builtExe != null) {
+                command.add(builtExe.getAbsolutePath());
                 processDirectory = nextGenRoot;
-            } else if (releaseExe.isFile()) {
-                command.add(releaseExe.getAbsolutePath());
-                processDirectory = nextGenRoot;
+                publishLaunchStatus("Cargo was not found, starting the existing Bevy projector...");
             } else {
-                if (!cargoExe.isFile()) {
-                    throw new IOException("SceneMax NextGen projector is not built and Cargo was not found at: "
-                            + cargoExe.getAbsolutePath());
-                }
-                command.add(cargoExe.getAbsolutePath());
-                command.add("run");
-                command.add("-p");
-                command.add("scenemax_projector_nextgen");
-                command.add("--");
-                processDirectory = nextGenRoot;
+                throw new IOException("SceneMax NextGen projector is not built and Cargo was not found at: "
+                        + cargoExe.getAbsolutePath());
             }
 
             command.add("run");
@@ -463,15 +475,27 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             ProcessBuilder processBuilder = new ProcessBuilder();
             processBuilder.command(command);
             processBuilder.directory(processDirectory);
+            if (useCargo) {
+                processBuilder.environment().put("SCENEMAX_EFFEKSEER_NATIVE_BUILD", "1");
+            }
             File log = new File("log");
             if(log.exists()) {
                 log.delete();
             }
             processBuilder.redirectErrorStream(true);
-            processBuilder.redirectOutput(ProcessBuilder.Redirect.appendTo(log));
             Process process = processBuilder.start();
 
-            StreamGobbler sg = new StreamGobbler(process.getInputStream(),System.out::println);
+            final boolean[] runtimeStarted = { !useCargo };
+            if (!useCargo) {
+                publishLaunchStatus("Bevy projector process started. Opening game window...");
+            }
+            StreamGobbler sg = new StreamGobbler(process.getInputStream(), line -> {
+                System.out.println(line);
+                appendLogLine(log, line);
+                if (useCargo) {
+                    updateNextGenCargoStatus(line, runtimeStarted);
+                }
+            });
             Executors.newSingleThreadExecutor().submit(sg);
             exitCode = process.waitFor();
             System.out.printf("NextGen projector ended with exitCode %d", exitCode);
@@ -485,6 +509,43 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             }
         }
 
+    }
+
+    private void updateNextGenCargoStatus(String line, boolean[] runtimeStarted) {
+        if (line == null) {
+            return;
+        }
+        String trimmed = line.trim();
+        String lower = trimmed.toLowerCase();
+        if (!runtimeStarted[0] && lower.contains("running") && lower.contains("scenemax_projector_nextgen")) {
+            runtimeStarted[0] = true;
+            publishLaunchStatus("Bevy projector process started. Opening game window...");
+            return;
+        }
+        if (trimmed.startsWith("Compiling ")) {
+            publishLaunchStatus("Compiling " + trimmed.substring("Compiling ".length()).trim() + "...");
+        } else if (trimmed.startsWith("Checking ")) {
+            publishLaunchStatus("Checking " + trimmed.substring("Checking ".length()).trim() + "...");
+        } else if (trimmed.startsWith("Finished ")) {
+            publishLaunchStatus("Rust/Bevy build finished. Opening Bevy window...");
+        } else if (trimmed.startsWith("Blocking waiting for file lock")) {
+            publishLaunchStatus("Waiting for Cargo build lock...");
+        }
+    }
+
+    private void appendLogLine(File log, String line) {
+        try {
+            FileUtils.writeStringToFile(log, line + System.lineSeparator(), StandardCharsets.UTF_8, true);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void publishLaunchStatus(String message) {
+        if (launchStatusConsumer == null || message == null || message.isBlank()) {
+            return;
+        }
+        SwingUtilities.invokeLater(() -> launchStatusConsumer.accept(message));
     }
 
     private File resolveNextGenProjectorRoot() {
@@ -508,6 +569,11 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             return configured;
         }
         return new File(Util.getWorkingDir(), "scenemax_projector_nextgen");
+    }
+
+    private void addNextGenNativeFeatureArgs(List<String> command) {
+        command.add("--features");
+        command.add("effekseer_native");
     }
 
     private boolean isNextGenExecutableStale(File nextGenRoot, File debugExe, File releaseExe) {

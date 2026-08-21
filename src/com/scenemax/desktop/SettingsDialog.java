@@ -1345,10 +1345,11 @@ public class SettingsDialog extends JDialog {
         }
         runRustBevyCommandAsync(
                 "Building NextGen Bevy projector",
-                List.of(cargo.getAbsolutePath(), "build", "-p", "scenemax_projector_nextgen", "--release"),
+                List.of(cargo.getAbsolutePath(), "build", "-p", "scenemax_projector_nextgen", "--release", "--features", "effekseer_native"),
                 nextGen,
                 this::refreshRustBevyPanelState,
-                null);
+                null,
+                nextGenNativeBuildEnvironment());
     }
 
     private File resolveCargoExecutableFromUi() {
@@ -1372,6 +1373,10 @@ public class SettingsDialog extends JDialog {
     }
 
     private void runRustBevyCommandAsync(String title, List<String> command, File directory, Runnable success, Runnable failure) {
+        runRustBevyCommandAsync(title, command, directory, success, failure, java.util.Collections.emptyMap());
+    }
+
+    private void runRustBevyCommandAsync(String title, List<String> command, File directory, Runnable success, Runnable failure, java.util.Map<String, String> environment) {
         JDialog progressDialog = new JDialog(this, title, false);
         JTextArea txtOutput = new JTextArea(18, 82);
         txtOutput.setEditable(false);
@@ -1388,6 +1393,9 @@ public class SettingsDialog extends JDialog {
                 ProcessBuilder pb = new ProcessBuilder(command);
                 if (directory != null) {
                     pb.directory(directory);
+                }
+                if (environment != null && !environment.isEmpty()) {
+                    pb.environment().putAll(environment);
                 }
                 pb.redirectErrorStream(true);
                 Process process = pb.start();
@@ -1623,6 +1631,12 @@ public class SettingsDialog extends JDialog {
             }
         };
         worker.execute();
+    }
+
+    private java.util.Map<String, String> nextGenNativeBuildEnvironment() {
+        java.util.Map<String, String> environment = new java.util.HashMap<>();
+        environment.put("SCENEMAX_EFFEKSEER_NATIVE_BUILD", "1");
+        return environment;
     }
 
     private void testLocalGemmaBridge() {

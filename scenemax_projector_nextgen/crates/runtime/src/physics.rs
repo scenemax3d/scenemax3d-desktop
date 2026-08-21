@@ -269,7 +269,72 @@ fn resolve_scenemax_material(
     resolve_scenemax_material_in_root(name, asset_root, "").or_else(|| {
         builtin_asset_root
             .and_then(|root| resolve_scenemax_material_in_root(name, root, "builtin://"))
+            .or_else(|| builtin_scenemax_material(name, builtin_asset_root))
     })
+}
+
+fn builtin_scenemax_material(
+    name: &str,
+    builtin_asset_root: Option<&Path>,
+) -> Option<SceneMaxResolvedMaterial> {
+    let builtin_asset_root = builtin_asset_root?;
+    let (diffuse, normal) = builtin_material_texture_paths(name)?;
+    if !builtin_asset_root.join(diffuse).is_file() {
+        return None;
+    }
+    Some(SceneMaxResolvedMaterial {
+        diffuse: Some(Color::WHITE),
+        diffuse_map: Some(format!("builtin://{diffuse}")),
+        normal_map: normal
+            .filter(|path| builtin_asset_root.join(path).is_file())
+            .map(|path| format!("builtin://{path}")),
+        glow_color: None,
+        glow_map: None,
+        double_sided: false,
+        transparent: false,
+    })
+}
+
+fn builtin_material_texture_paths(name: &str) -> Option<(&'static str, Option<&'static str>)> {
+    match name.to_ascii_lowercase().as_str() {
+        "pond" => Some((
+            "Textures/Terrain/Pond/Pond.jpg",
+            Some("Textures/Terrain/Pond/Pond_normal.png"),
+        )),
+        "rock" => Some((
+            "Textures/Terrain/Rock/rock.png",
+            Some("Textures/Terrain/Rock/rock_normal.png"),
+        )),
+        "rock2" => Some((
+            "Textures/Terrain/Rock/rock2.jpg",
+            Some("Textures/Terrain/Rock/rock_normal.png"),
+        )),
+        "brickwall" => Some((
+            "Textures/Terrain/BrickWall/brickwall.jpg",
+            Some("Textures/Terrain/BrickWall/brickwall_normal.jpg"),
+        )),
+        "dirt" => Some((
+            "Textures/Terrain/Splat/dirt.jpg",
+            Some("Textures/Terrain/Splat/dirt_normal.png"),
+        )),
+        "grass" => Some((
+            "Textures/Terrain/Splat/grass.jpg",
+            Some("Textures/Terrain/Splat/grass_normal.jpg"),
+        )),
+        "road" => Some((
+            "Textures/Terrain/Splat/road.jpg",
+            Some("Textures/Terrain/Splat/road_normal.png"),
+        )),
+        "alpha" => Some((
+            "Textures/Terrain/Splat/alpha1.png",
+            Some("Textures/Terrain/Splat/alphamap.png"),
+        )),
+        "alpha2" => Some((
+            "Textures/Terrain/Splat/alpha2.png",
+            Some("Textures/Terrain/Splat/alphamap2.png"),
+        )),
+        _ => None,
+    }
 }
 
 fn resolve_scenemax_material_in_root(
@@ -373,6 +438,10 @@ fn primitive_kind(resource: &str) -> Option<SceneMaxPrimitiveKind> {
         "arch" => Some(SceneMaxPrimitiveKind::Arch),
         _ => return None,
     }
+}
+
+pub(super) fn is_primitive_resource(resource: &str) -> bool {
+    primitive_kind(resource).is_some()
 }
 
 fn quad_mesh(width: f32, height: f32) -> Mesh {
@@ -764,7 +833,11 @@ pub(super) fn instantiate_object_pool_declarations(
             continue;
         };
 
-        let mut runtime = ObjectPoolRuntime::default();
+        let mut runtime = ObjectPoolRuntime {
+            factory: pool.factory.clone(),
+            prototype: Some(prototype.clone()),
+            ..Default::default()
+        };
         for index in 0..pool.size.min(256) {
             let member_name = format!("__pool_{}_{}", pool.name, index);
             runtime.available.push(member_name.clone());
@@ -776,6 +849,7 @@ pub(super) fn instantiate_object_pool_declarations(
                 resource: prototype.resource.clone(),
                 options,
             });
+            runtime.created_count += 1;
         }
         runtime.available.reverse();
         object_pools.pools.insert(pool.name.clone(), runtime);
@@ -968,16 +1042,11 @@ pub(super) fn physics_collision_shape(
 }
 
 pub(super) fn default_collision_shape(
-    name: &str,
+    _name: &str,
     resource: &str,
-    body_kind: SceneMaxBodyKind,
+    _body_kind: SceneMaxBodyKind,
 ) -> SceneMaxCollisionShape {
-    let lower = format!("{} {}", name, resource).to_ascii_lowercase();
-    if body_kind == SceneMaxBodyKind::Kinematic
-        && (lower.contains("player") || lower.contains("fighter") || lower.contains("boss"))
-    {
-        SceneMaxCollisionShape::Capsule
-    } else if resource.eq_ignore_ascii_case("sphere") {
+    if resource.eq_ignore_ascii_case("sphere") {
         SceneMaxCollisionShape::Sphere
     } else {
         SceneMaxCollisionShape::Box
@@ -1056,122 +1125,14 @@ pub(super) fn register_collider_bounds(
     collider_bounds.shape_by_name.insert(name.to_owned(), shape);
 }
 
-pub(super) fn spawn_default_virtual_colliders(
-    commands: &mut Commands,
-    entities_by_name: &mut HashMap<String, Entity>,
-    transforms_by_name: &mut HashMap<String, Transform>,
+pub(super) fn register_collider_owner(
     collider_bounds: &mut SceneMaxColliderBounds,
+    name: &str,
+    owner: &str,
 ) {
-    let owners = ["player1", "player2"];
-    for owner in owners {
-        let Some(owner_transform) = transforms_by_name.get(owner).copied() else {
-            continue;
-        };
-        for spec in default_fighter_virtual_colliders(owner) {
-            if entities_by_name.contains_key(&spec.name) {
-                continue;
-            }
-            let transform = virtual_collider_transform(owner_transform, spec.local_offset);
-            let shape = virtual_collider_bound_shape(spec.shape);
-            let radius = shape.bounding_radius();
-            let entity = commands
-                .spawn((
-                    SceneMaxEntity {
-                        name: spec.name.clone(),
-                        runtime_name: format!("{}@virtual", spec.name),
-                    },
-                    SceneMaxVirtualCollider {
-                        owner: owner.to_owned(),
-                        bone: spec.bone.map(str::to_owned),
-                        local_offset: Vec3::ZERO,
-                        fallback_offset: spec.local_offset,
-                    },
-                    transform,
-                    Visibility::Hidden,
-                    AvianRigidBody::Kinematic,
-                    virtual_collider_shape(spec.shape),
-                    hitbox_collision_layers(),
-                    Sensor,
-                    CollisionEventsEnabled,
-                ))
-                .id();
-            entities_by_name.insert(spec.name.clone(), entity);
-            transforms_by_name.insert(spec.name.clone(), transform);
-            collider_bounds
-                .radius_by_name
-                .insert(spec.name.clone(), radius);
-            collider_bounds
-                .shape_by_name
-                .insert(spec.name.clone(), shape);
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(super) struct VirtualColliderSpec {
-    name: String,
-    bone: Option<&'static str>,
-    local_offset: Vec3,
-    shape: VirtualColliderShape,
-}
-
-pub(super) fn default_fighter_virtual_colliders(owner: &str) -> Vec<VirtualColliderSpec> {
-    vec![
-        VirtualColliderSpec {
-            name: format!("{owner}_body_collider"),
-            bone: None,
-            local_offset: Vec3::new(0.0, 1.0, 0.0),
-            shape: VirtualColliderShape::Box {
-                half_extents: Vec3::new(0.55, 0.9, 0.35),
-            },
-        },
-        VirtualColliderSpec {
-            name: format!("{owner}_head_collider"),
-            bone: Some("mixamorig:Head"),
-            local_offset: Vec3::new(0.0, 1.65, 0.0),
-            shape: VirtualColliderShape::Sphere { radius: 0.28 },
-        },
-        VirtualColliderSpec {
-            name: format!("{owner}_left_hand_collider"),
-            bone: Some("mixamorig:LeftHand"),
-            local_offset: Vec3::new(-0.45, 1.15, 0.2),
-            shape: VirtualColliderShape::Sphere { radius: 0.24 },
-        },
-        VirtualColliderSpec {
-            name: format!("{owner}_right_hand_collider"),
-            bone: Some("mixamorig:RightHand"),
-            local_offset: Vec3::new(0.45, 1.15, 0.2),
-            shape: VirtualColliderShape::Sphere { radius: 0.24 },
-        },
-        VirtualColliderSpec {
-            name: format!("{owner}_left_foot_collider"),
-            bone: Some("mixamorig:LeftFoot"),
-            local_offset: Vec3::new(-0.22, 0.18, 0.18),
-            shape: VirtualColliderShape::Sphere { radius: 0.26 },
-        },
-        VirtualColliderSpec {
-            name: format!("{owner}_right_foot_collider"),
-            bone: Some("mixamorig:RightFoot"),
-            local_offset: Vec3::new(0.22, 0.18, 0.18),
-            shape: VirtualColliderShape::Sphere { radius: 0.26 },
-        },
-    ]
-}
-
-pub(super) fn virtual_collider_shape(shape: VirtualColliderShape) -> AvianCollider {
-    match shape {
-        VirtualColliderShape::Box { half_extents } => {
-            AvianCollider::cuboid(half_extents.x, half_extents.y, half_extents.z)
-        }
-        VirtualColliderShape::Sphere { radius } => AvianCollider::sphere(radius),
-    }
-}
-
-pub(super) fn virtual_collider_bound_shape(shape: VirtualColliderShape) -> ColliderBoundShape {
-    match shape {
-        VirtualColliderShape::Box { half_extents } => ColliderBoundShape::Box { half_extents },
-        VirtualColliderShape::Sphere { radius } => ColliderBoundShape::Sphere { radius },
-    }
+    collider_bounds
+        .owner_by_name
+        .insert(name.to_owned(), owner.to_owned());
 }
 
 pub(super) fn solid_collision_layers(body_kind: SceneMaxBodyKind) -> CollisionLayers {
@@ -1348,8 +1309,19 @@ pub(super) fn apply_character_modes(
     transforms_by_name: &HashMap<String, Transform>,
     character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
 ) {
-    let mut support_samples = Vec::new();
+    let support_samples = fallback_character_mode_support_samples(program, transforms_by_name);
+    spawn_character_stage_support(commands, &support_samples);
+    let explicit_surfaces = explicit_static_support_surfaces(program, transforms_by_name);
+    write_runtime_diagnostic_line(format!(
+        "CHARACTER:STARTUP_SUPPORTS fallback_count={} explicit_surface_count={}",
+        support_samples.len(),
+        explicit_surfaces.len()
+    ));
+
     for statement in &program.statements {
+        if initial_state_scan_boundary(statement) {
+            break;
+        }
         let Statement::CharacterMode(character_mode) = statement else {
             continue;
         };
@@ -1358,14 +1330,45 @@ pub(super) fn apply_character_modes(
                 target = character_mode.target,
                 "SceneMax character mode target was not spawned"
             );
+            write_runtime_diagnostic_line(format!(
+                "CHARACTER:STARTUP_SWITCH_MISS target={}",
+                character_mode.target
+            ));
             continue;
         };
-        let transform = transforms_by_name
+        let mut transform = transforms_by_name
             .get(&character_mode.target)
             .copied()
             .unwrap_or_default();
-        let dimensions = character_dimensions_for_transform(&transform);
-        support_samples.push((character_mode.target.clone(), transform, dimensions));
+        let before_y = transform.translation.y;
+        if snap_character_transform_to_floor(&mut transform, &explicit_surfaces) {
+            commands.entity(entity).insert(transform);
+            write_runtime_diagnostic_line(format!(
+                "CHARACTER:STARTUP_SNAP target={} y_before={} y_after={} explicit_surface_count={}",
+                character_mode.target,
+                format_scenemax_number(before_y),
+                format_scenemax_number(transform.translation.y),
+                explicit_surfaces.len()
+            ));
+        } else {
+            write_runtime_diagnostic_line(format!(
+                "CHARACTER:STARTUP_NO_SNAP target={} y={} explicit_surface_count={}",
+                character_mode.target,
+                format_scenemax_number(transform.translation.y),
+                explicit_surfaces.len()
+            ));
+        }
+        write_runtime_diagnostic_line(format!(
+            "CHARACTER:STARTUP_SWITCH target={} gravity={} pos=({},{},{})",
+            character_mode.target,
+            character_mode
+                .gravity
+                .map(format_scenemax_number)
+                .unwrap_or_else(|| "default".to_owned()),
+            format_scenemax_number(transform.translation.x),
+            format_scenemax_number(transform.translation.y),
+            format_scenemax_number(transform.translation.z)
+        ));
         insert_tnua_character_controller(
             commands,
             entity,
@@ -1374,7 +1377,195 @@ pub(super) fn apply_character_modes(
             character_configs,
         );
     }
-    spawn_character_stage_support(commands, &support_samples);
+}
+
+pub(super) fn character_mode_support_samples(
+    program: &Program,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Vec<(String, Transform, SceneMaxCharacterDimensions)> {
+    program
+        .statements
+        .iter()
+        .filter_map(|statement| {
+            let Statement::CharacterMode(character_mode) = statement else {
+                return None;
+            };
+            let transform = transforms_by_name
+                .get(&character_mode.target)
+                .copied()
+                .unwrap_or_default();
+            let dimensions = character_dimensions_for_transform(&transform);
+            Some((character_mode.target.clone(), transform, dimensions))
+        })
+        .collect()
+}
+
+pub(super) fn fallback_character_mode_support_samples(
+    program: &Program,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Vec<(String, Transform, SceneMaxCharacterDimensions)> {
+    let surfaces = explicit_static_support_surfaces(program, transforms_by_name);
+    character_mode_support_samples(program, transforms_by_name)
+        .into_iter()
+        .filter(|(_, transform, dimensions)| {
+            let has_explicit_support =
+                has_explicit_static_support_below(transform, *dimensions, &surfaces);
+            if has_explicit_support {
+                write_runtime_diagnostic_line(format!(
+                    "CHARACTER:SUPPORT_FALLBACK_SKIP pos=({},{},{}) explicit_surface_count={}",
+                    format_scenemax_number(transform.translation.x),
+                    format_scenemax_number(transform.translation.y),
+                    format_scenemax_number(transform.translation.z),
+                    surfaces.len()
+                ));
+            }
+            !has_explicit_support
+        })
+        .collect()
+}
+
+pub(super) fn snap_character_transform_to_floor(
+    transform: &mut Transform,
+    surfaces: &[SceneMaxExplicitSupportSurface],
+) -> bool {
+    let dimensions = character_dimensions_for_transform(transform);
+    let Some(support_y) = nearest_explicit_static_support_y(transform, dimensions, surfaces) else {
+        return false;
+    };
+    let snapped_y = support_y + dimensions.float_height + dimensions.foot_contact_offset;
+    if snapped_y >= transform.translation.y {
+        return false;
+    }
+    transform.translation.y = snapped_y;
+    true
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SceneMaxExplicitSupportSurface {
+    pub(super) min_x: f32,
+    pub(super) max_x: f32,
+    pub(super) min_z: f32,
+    pub(super) max_z: f32,
+    pub(super) top_y: f32,
+}
+
+pub(super) fn explicit_static_support_surfaces(
+    program: &Program,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Vec<SceneMaxExplicitSupportSurface> {
+    program
+        .statements
+        .iter()
+        .filter_map(|statement| {
+            let Statement::ModelDecl {
+                name,
+                resource,
+                options,
+            } = statement
+            else {
+                return None;
+            };
+            if options.collider {
+                return None;
+            }
+            let body_kind = physics_body_kind(options)?;
+            if body_kind != SceneMaxBodyKind::Static {
+                return None;
+            }
+            let shape = physics_collision_shape(name, resource, options, body_kind)?;
+            if shape != SceneMaxCollisionShape::Box {
+                return None;
+            }
+            let transform = transforms_by_name.get(name).copied().unwrap_or_default();
+            Some(explicit_support_surface_from_box(
+                transform,
+                explicit_support_box_dimensions(options, &transform),
+            ))
+        })
+        .collect()
+}
+
+fn explicit_support_box_dimensions(options: &EntityOptions, transform: &Transform) -> Vec3 {
+    let dimensions = collider_dimensions(options, transform);
+    if options.size.is_some() {
+        dimensions * transform.scale.abs()
+    } else {
+        dimensions
+    }
+}
+
+pub(super) fn explicit_support_surface_from_box(
+    transform: Transform,
+    dimensions: Vec3,
+) -> SceneMaxExplicitSupportSurface {
+    let half = dimensions * 0.5;
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut min_z = f32::INFINITY;
+    let mut max_z = f32::NEG_INFINITY;
+    let mut top_y = f32::NEG_INFINITY;
+
+    for x in [-half.x, half.x] {
+        for y in [-half.y, half.y] {
+            for z in [-half.z, half.z] {
+                let world = transform.translation + transform.rotation * Vec3::new(x, y, z);
+                min_x = min_x.min(world.x);
+                max_x = max_x.max(world.x);
+                min_z = min_z.min(world.z);
+                max_z = max_z.max(world.z);
+                top_y = top_y.max(world.y);
+            }
+        }
+    }
+
+    SceneMaxExplicitSupportSurface {
+        min_x,
+        max_x,
+        min_z,
+        max_z,
+        top_y,
+    }
+}
+
+pub(super) fn has_explicit_static_support_below(
+    transform: &Transform,
+    dimensions: SceneMaxCharacterDimensions,
+    surfaces: &[SceneMaxExplicitSupportSurface],
+) -> bool {
+    let sample_support_y = character_stage_support_top_y(transform.translation.y, dimensions);
+    surfaces.iter().any(|surface| {
+        let horizontal_margin = dimensions.capsule_radius.max(0.05);
+        let within_x = transform.translation.x >= surface.min_x - horizontal_margin
+            && transform.translation.x <= surface.max_x + horizontal_margin;
+        let within_z = transform.translation.z >= surface.min_z - horizontal_margin
+            && transform.translation.z <= surface.max_z + horizontal_margin;
+        let below_or_touching = surface.top_y <= sample_support_y + dimensions.foot_contact_offset;
+        within_x && within_z && below_or_touching
+    })
+}
+
+pub(super) fn nearest_explicit_static_support_y(
+    transform: &Transform,
+    dimensions: SceneMaxCharacterDimensions,
+    surfaces: &[SceneMaxExplicitSupportSurface],
+) -> Option<f32> {
+    let sample_support_y = character_stage_support_top_y(transform.translation.y, dimensions);
+    let max_drop = (dimensions.visual_drop * CHARACTER_EXPLICIT_SUPPORT_MAX_DROP_FACTOR)
+        .max(dimensions.capsule_radius);
+    surfaces
+        .iter()
+        .filter_map(|surface| {
+            let horizontal_margin = dimensions.capsule_radius.max(0.05);
+            let within_x = transform.translation.x >= surface.min_x - horizontal_margin
+                && transform.translation.x <= surface.max_x + horizontal_margin;
+            let within_z = transform.translation.z >= surface.min_z - horizontal_margin
+                && transform.translation.z <= surface.max_z + horizontal_margin;
+            let below_or_touching =
+                surface.top_y <= sample_support_y + dimensions.foot_contact_offset;
+            let close_enough = sample_support_y - surface.top_y <= max_drop;
+            (within_x && within_z && below_or_touching && close_enough).then_some(surface.top_y)
+        })
+        .max_by(|a, b| a.total_cmp(b))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1399,8 +1590,8 @@ pub(super) fn character_dimensions_for_transform(
         capsule_radius,
         capsule_height,
         capsule_center_y: capsule_half_height,
-        float_height: DEFAULT_CHARACTER_FLOAT_HEIGHT * character_scale,
-        foot_contact_offset: DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET * character_scale,
+        float_height: DEFAULT_CHARACTER_FLOAT_HEIGHT,
+        foot_contact_offset: DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET,
         visual_drop,
     }
 }
@@ -1443,7 +1634,10 @@ pub(super) fn insert_tnua_character_controller(
         },
     });
 
-    commands.entity(entity).insert((
+    let mut entity_commands = commands.entity(entity);
+    entity_commands.remove::<TimedMoves>();
+    entity_commands.remove::<TimedJump>();
+    entity_commands.insert((
         SceneMaxCharacterController {
             move_speed: DEFAULT_CHARACTER_MOVE_SPEED,
             gravity,
@@ -1479,8 +1673,12 @@ pub(super) fn insert_tnua_character_controller(
         "enabled Tnua SceneMax character mode"
     );
     write_runtime_diagnostic_line(format!(
-        "CHARACTER target={} scale=({:.3},{:.3},{:.3}) capsule_radius={:.3} capsule_height={:.3} capsule_center_y={:.3} float_height={:.3} foot_contact_offset={:.3} visual_drop={:.3}",
+        "CHARACTER:ENABLE target={} gravity={} pos=({},{},{}) scale=({:.3},{:.3},{:.3}) capsule_radius={:.3} capsule_height={:.3} capsule_center_y={:.3} float_height={:.3} foot_contact_offset={:.3} visual_drop={:.3}",
         character_mode.target,
+        format_scenemax_number(gravity),
+        format_scenemax_number(transform.translation.x),
+        format_scenemax_number(transform.translation.y),
+        format_scenemax_number(transform.translation.z),
         transform.scale.x,
         transform.scale.y,
         transform.scale.z,
@@ -1496,34 +1694,76 @@ pub(super) fn insert_tnua_character_controller(
 pub(super) fn apply_pending_character_modes(
     mut commands: Commands,
     mut character_configs: ResMut<Assets<SceneMaxControlSchemeConfig>>,
-    pending: Query<(Entity, &Transform, &PendingCharacterMode)>,
+    startup_program: Res<SceneMaxStartupProgram>,
+    mut scene_queries: ParamSet<(
+        Query<(&SceneMaxEntity, &Transform)>,
+        Query<(Entity, &mut Transform, &PendingCharacterMode)>,
+    )>,
     supports: Query<Entity, With<SceneMaxStageSupport>>,
 ) {
-    let pending_modes = pending.iter().collect::<Vec<_>>();
-    if pending_modes.is_empty() {
+    let transforms_by_name = scene_queries
+        .p0()
+        .iter()
+        .map(|(scene_entity, transform)| (scene_entity.name.clone(), *transform))
+        .collect::<HashMap<_, _>>();
+    let explicit_surfaces = startup_program
+        .0
+        .as_ref()
+        .map(|program| explicit_static_support_surfaces(program, &transforms_by_name))
+        .unwrap_or_default();
+    let mut support_samples = Vec::new();
+    for (_, transform, pending_mode) in scene_queries.p1().iter_mut() {
+        support_samples.push((
+            pending_mode.0.target.clone(),
+            *transform,
+            character_dimensions_for_transform(&transform),
+        ));
+    }
+    if support_samples.is_empty() {
         return;
     }
 
+    write_runtime_diagnostic_line(format!(
+        "CHARACTER:PENDING_BATCH count={} supports_existing={} explicit_surface_count={}",
+        support_samples.len(),
+        !supports.is_empty(),
+        explicit_surfaces.len()
+    ));
+
     if supports.is_empty() {
-        let support_samples = pending_modes
+        let fallback_samples = support_samples
             .iter()
-            .map(|(_, transform, pending_mode)| {
-                (
-                    pending_mode.0.target.clone(),
-                    **transform,
-                    character_dimensions_for_transform(transform),
-                )
+            .cloned()
+            .filter(|(_, transform, dimensions)| {
+                !has_explicit_static_support_below(transform, *dimensions, &explicit_surfaces)
             })
             .collect::<Vec<_>>();
-        spawn_character_stage_support(&mut commands, &support_samples);
+        spawn_character_stage_support(&mut commands, &fallback_samples);
     }
 
-    for (entity, _transform, pending_mode) in pending_modes {
+    for (entity, mut transform, pending_mode) in scene_queries.p1().iter_mut() {
+        let before_y = transform.translation.y;
+        let snapped = snap_character_transform_to_floor(&mut transform, &explicit_surfaces);
+        write_runtime_diagnostic_line(format!(
+            "CHARACTER:PENDING_APPLY target={} gravity={} snapped={} y_before={} y_after={} pos=({},{},{})",
+            pending_mode.0.target,
+            pending_mode
+                .0
+                .gravity
+                .map(format_scenemax_number)
+                .unwrap_or_else(|| "default".to_owned()),
+            snapped as u8,
+            format_scenemax_number(before_y),
+            format_scenemax_number(transform.translation.y),
+            format_scenemax_number(transform.translation.x),
+            format_scenemax_number(transform.translation.y),
+            format_scenemax_number(transform.translation.z)
+        ));
         insert_tnua_character_controller(
             &mut commands,
             entity,
             &pending_mode.0,
-            *_transform,
+            *transform,
             &mut character_configs,
         );
         commands.entity(entity).remove::<PendingCharacterMode>();
@@ -1542,13 +1782,24 @@ pub(super) fn cleanup_character_supports(
     >,
 ) {
     if character_owners.is_empty() {
+        if !supports.is_empty() {
+            write_runtime_diagnostic_line(format!(
+                "CHARACTER:SUPPORT_CLEANUP count={} reason=no_character_owners",
+                supports.iter().count()
+            ));
+        }
         for support_entity in &supports {
             commands.entity(support_entity).despawn();
         }
     }
 }
 
-pub(super) fn clear_character_mode(commands: &mut Commands, entity: Entity) {
+pub(super) fn clear_character_mode(
+    commands: &mut Commands,
+    entity: Entity,
+    target: Option<&str>,
+    transform: Option<&Transform>,
+) {
     let mut entity_commands = commands.entity(entity);
     entity_commands.remove::<SceneMaxCharacterController>();
     entity_commands.remove::<SceneMaxCharacterMotor>();
@@ -1557,11 +1808,29 @@ pub(super) fn clear_character_mode(commands: &mut Commands, entity: Entity) {
     entity_commands.remove::<TnuaConfig<SceneMaxControlScheme>>();
     entity_commands.remove::<TnuaAvian3dSensorShape>();
     entity_commands.remove::<LockedAxes>();
+    entity_commands.remove::<TimedMoves>();
+    entity_commands.remove::<TimedJump>();
     entity_commands.insert((
         AvianRigidBody::Kinematic,
         character_collision_layers(),
         LinearVelocity::ZERO,
         AngularVelocity::ZERO,
+    ));
+    let position = transform
+        .map(|transform| {
+            format!(
+                "pos=({},{},{})",
+                format_scenemax_number(transform.translation.x),
+                format_scenemax_number(transform.translation.y),
+                format_scenemax_number(transform.translation.z)
+            )
+        })
+        .unwrap_or_else(|| "pos=<unknown>".to_owned());
+    write_runtime_diagnostic_line(format!(
+        "CHARACTER:CLEAR target={} entity={:?} {}",
+        target.unwrap_or("<unknown>"),
+        entity,
+        position
     ));
 }
 
@@ -1569,61 +1838,132 @@ pub(super) fn spawn_character_stage_support(
     commands: &mut Commands,
     samples: &[(String, Transform, SceneMaxCharacterDimensions)],
 ) {
-    let support_samples = preferred_stage_support_samples(samples);
-    if support_samples.is_empty() {
-        return;
-    }
-
-    let sample_count = support_samples.len() as f32;
-    let center = support_samples
-        .iter()
-        .map(|(_, transform, _)| transform.translation)
-        .fold(Vec3::ZERO, |sum, translation| sum + translation)
-        / sample_count;
-    let support_y = support_samples
-        .iter()
-        .map(|(_, transform, dimensions)| {
-            character_stage_support_y(transform.translation.y, *dimensions)
-        })
-        .sum::<f32>()
-        / sample_count;
-    let spread = support_samples
-        .iter()
-        .map(|(_, transform, _)| {
-            Vec2::new(
-                transform.translation.x - center.x,
-                transform.translation.z - center.z,
-            )
-            .length()
-        })
-        .fold(DEFAULT_STAGE_SUPPORT_HALF_SIZE, f32::max);
-    let half_size = (spread + 80.0).max(DEFAULT_STAGE_SUPPORT_HALF_SIZE);
-
-    commands.spawn((
-        SceneMaxEntity {
-            name: "__tnua_stage_support".to_owned(),
-            runtime_name: "__tnua_stage_support@physics".to_owned(),
-        },
-        SceneMaxStageSupport { half_size },
-        Transform::from_translation(Vec3::new(center.x, support_y, center.z)),
-        Visibility::Hidden,
-        AvianRigidBody::Static,
-        AvianCollider::cuboid(half_size, 0.2, half_size),
-        world_collision_layers(),
+    let supports = stage_support_specs_for_character_samples(samples);
+    write_runtime_diagnostic_line(format!(
+        "CHARACTER:SUPPORT_SPAWN_REQUEST samples={} supports={}",
+        samples.len(),
+        supports.len()
     ));
-    tracing::info!(
-        support_y,
-        half_size,
-        samples = support_samples.len(),
-        "spawned coarse SceneMax character stage support"
-    );
+    for (index, support) in supports.iter().enumerate() {
+        let support_name = if supports.len() == 1 {
+            "__tnua_stage_support".to_owned()
+        } else {
+            format!("__tnua_stage_support_{index}")
+        };
+        commands.spawn((
+            SceneMaxEntity {
+                runtime_name: format!("{support_name}@physics"),
+                name: support_name.clone(),
+            },
+            SceneMaxStageSupport {
+                half_size: support.half_size,
+            },
+            Transform::from_translation(Vec3::new(
+                support.center.x,
+                support.center_y,
+                support.center.z,
+            )),
+            Visibility::Hidden,
+            AvianRigidBody::Static,
+            AvianCollider::cuboid(
+                support.half_size,
+                DEFAULT_STAGE_SUPPORT_HALF_HEIGHT,
+                support.half_size,
+            ),
+            world_collision_layers(),
+        ));
+        tracing::info!(
+            support_top_y = support.top_y,
+            support_center_y = support.center_y,
+            half_size = support.half_size,
+            samples = support.sample_count,
+            "spawned coarse SceneMax character stage support"
+        );
+        write_runtime_diagnostic_line(format!(
+            "CHARACTER:SUPPORT_SPAWN name={} top_y={} center=({},{},{}) half_size={} samples={}",
+            support_name,
+            format_scenemax_number(support.top_y),
+            format_scenemax_number(support.center.x),
+            format_scenemax_number(support.center_y),
+            format_scenemax_number(support.center.z),
+            format_scenemax_number(support.half_size),
+            support.sample_count
+        ));
+    }
 }
 
-pub(super) fn character_stage_support_y(
+pub(super) fn character_stage_support_top_y(
     center_y: f32,
     dimensions: SceneMaxCharacterDimensions,
 ) -> f32 {
     center_y - dimensions.float_height - dimensions.foot_contact_offset
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SceneMaxStageSupportSpec {
+    pub(super) center: Vec3,
+    pub(super) top_y: f32,
+    pub(super) center_y: f32,
+    pub(super) half_size: f32,
+    pub(super) sample_count: usize,
+}
+
+pub(super) fn stage_support_specs_for_character_samples(
+    samples: &[(String, Transform, SceneMaxCharacterDimensions)],
+) -> Vec<SceneMaxStageSupportSpec> {
+    let mut groups: Vec<Vec<(Transform, SceneMaxCharacterDimensions)>> = Vec::new();
+    for (_, transform, dimensions) in samples {
+        let sample_support_y = character_stage_support_top_y(transform.translation.y, *dimensions);
+        if let Some(group) = groups.iter_mut().find(|group| {
+            let group_support_y = grouped_stage_support_top_y(group);
+            (group_support_y - sample_support_y).abs() <= STAGE_SUPPORT_HEIGHT_GROUP_TOLERANCE
+        }) {
+            group.push((*transform, *dimensions));
+        } else {
+            groups.push(vec![(*transform, *dimensions)]);
+        }
+    }
+
+    groups
+        .into_iter()
+        .map(|group| {
+            let sample_count = group.len();
+            let sample_count_f32 = sample_count as f32;
+            let center = group
+                .iter()
+                .map(|(transform, _)| transform.translation)
+                .fold(Vec3::ZERO, |sum, translation| sum + translation)
+                / sample_count_f32;
+            let top_y = grouped_stage_support_top_y(&group);
+            let spread = group
+                .iter()
+                .map(|(transform, _)| {
+                    Vec2::new(
+                        transform.translation.x - center.x,
+                        transform.translation.z - center.z,
+                    )
+                    .length()
+                })
+                .fold(DEFAULT_STAGE_SUPPORT_HALF_SIZE, f32::max);
+            let half_size = (spread + 80.0).max(DEFAULT_STAGE_SUPPORT_HALF_SIZE);
+            SceneMaxStageSupportSpec {
+                center,
+                top_y,
+                center_y: top_y - DEFAULT_STAGE_SUPPORT_HALF_HEIGHT,
+                half_size,
+                sample_count,
+            }
+        })
+        .collect()
+}
+
+fn grouped_stage_support_top_y(group: &[(Transform, SceneMaxCharacterDimensions)]) -> f32 {
+    group
+        .iter()
+        .map(|(transform, dimensions)| {
+            character_stage_support_top_y(transform.translation.y, *dimensions)
+        })
+        .fold(f32::INFINITY, f32::min)
 }
 
 pub(super) fn update_scenemax_debug_gizmos(
@@ -1678,7 +2018,11 @@ pub(super) fn update_scenemax_debug_gizmos(
 
     for (support, transform) in &stage_supports {
         let mut support_transform = *transform;
-        support_transform.scale = Vec3::new(support.half_size * 2.0, 0.4, support.half_size * 2.0);
+        support_transform.scale = Vec3::new(
+            support.half_size * 2.0,
+            DEFAULT_STAGE_SUPPORT_HALF_HEIGHT * 2.0,
+            support.half_size * 2.0,
+        );
         gizmos.cube(support_transform, support_color);
     }
 
@@ -1705,6 +2049,46 @@ pub(super) fn update_scenemax_debug_gizmos(
         );
         gizmos.cube(sensor_transform, float_color);
     }
+}
+
+pub(super) fn apply_gltf_visual_offsets(
+    mut roots: Query<(Entity, &Children, &mut SceneMaxGltfVisualOffset), With<SceneMaxGltf>>,
+    mut transforms: Query<&mut Transform>,
+) {
+    for (root, children, mut visual_offset) in &mut roots {
+        if visual_offset.applied || visual_offset.offset.length_squared() <= f32::EPSILON {
+            visual_offset.applied = true;
+            continue;
+        }
+
+        let mut applied = false;
+        for child in children.iter() {
+            if child == root {
+                continue;
+            }
+            if let Ok(mut transform) = transforms.get_mut(child) {
+                transform.translation += visual_offset.offset;
+                applied = true;
+            }
+        }
+        if applied {
+            visual_offset.applied = true;
+        }
+    }
+}
+
+pub(super) fn insert_gltf_visual_offset(
+    commands: &mut Commands,
+    entity: Entity,
+    offset_y: Option<f32>,
+) {
+    let Some(offset_y) = offset_y.filter(|offset| offset.abs() > f32::EPSILON) else {
+        return;
+    };
+    commands.entity(entity).insert(SceneMaxGltfVisualOffset {
+        offset: Vec3::Y * offset_y,
+        applied: false,
+    });
 }
 
 fn draw_debug_collider_shape(
@@ -1763,21 +2147,6 @@ fn draw_debug_capsule(
     for direction in [Vec3::X, -Vec3::X, Vec3::Z, -Vec3::Z] {
         let radial = rotation * direction * radius;
         gizmos.line(top + radial, bottom + radial, color);
-    }
-}
-
-pub(super) fn preferred_stage_support_samples(
-    samples: &[(String, Transform, SceneMaxCharacterDimensions)],
-) -> Vec<(String, Transform, SceneMaxCharacterDimensions)> {
-    let player_samples = samples
-        .iter()
-        .filter(|(name, _, _)| name.to_ascii_lowercase().starts_with("player"))
-        .cloned()
-        .collect::<Vec<_>>();
-    if player_samples.is_empty() {
-        samples.to_vec()
-    } else {
-        player_samples
     }
 }
 
@@ -1844,15 +2213,20 @@ pub(super) fn collision_condition_matches(
         return false;
     };
     let target_exact = transforms_by_name.get(target).copied();
-    let Some(target_transform) =
-        target_exact.or_else(|| collision_owner_transform(target, transforms_by_name))
+    let Some(target_transform) = target_exact
+        .or_else(|| collision_owner_transform(target, transforms_by_name, collider_bounds))
     else {
         return false;
     };
     sources.iter().any(|source| {
         let source_exact = transforms_by_name.get(source).copied();
         if let (Some(source_transform), Some(target_transform)) = (source_exact, target_exact) {
-            if !player_hitbox_owner_distance_allows(source, target, transforms_by_name) {
+            if !attached_collider_owner_distance_allows(
+                source,
+                target,
+                transforms_by_name,
+                collider_bounds,
+            ) {
                 return false;
             }
             if let Some(matches) = exact_collider_shapes_overlap(
@@ -1869,20 +2243,23 @@ pub(super) fn collision_condition_matches(
                 .distance(target_transform.translation)
                 <= exact_collision_threshold(source, target, collider_bounds);
         }
-        collision_owner_transform(source, transforms_by_name).is_some_and(|source_transform| {
-            source_transform
-                .translation
-                .distance(target_transform.translation)
-                <= collision_threshold(source, target)
-        })
+        collision_owner_transform(source, transforms_by_name, collider_bounds).is_some_and(
+            |source_transform| {
+                source_transform
+                    .translation
+                    .distance(target_transform.translation)
+                    <= collision_threshold(source, target)
+            },
+        )
     })
 }
 
 pub(super) fn collision_owner_transform(
     reference: &str,
     transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> Option<Transform> {
-    let owner = collision_owner(reference);
+    let owner = collision_owner_with_bounds(reference, collider_bounds);
     transforms_by_name
         .get(reference)
         .copied()
@@ -1893,9 +2270,10 @@ pub(super) fn collision_owner_distance(
     source: &str,
     target: &str,
     transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> f32 {
-    let source_owner = collision_owner(source);
-    let target_owner = collision_owner(target);
+    let source_owner = collision_owner_with_bounds(source, collider_bounds);
+    let target_owner = collision_owner_with_bounds(target, collider_bounds);
     let (Some(source_transform), Some(target_transform)) = (
         transforms_by_name.get(&source_owner),
         transforms_by_name.get(&target_owner),
@@ -1907,24 +2285,27 @@ pub(super) fn collision_owner_distance(
         .distance(target_transform.translation)
 }
 
-pub(super) fn player_hitbox_owner_distance_allows(
+pub(super) fn attached_collider_owner_distance_allows(
     source: &str,
     target: &str,
     transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> bool {
-    let source_owner = collision_owner(source);
-    let target_owner = collision_owner(target);
+    let Some(collider_bounds) = collider_bounds else {
+        return true;
+    };
+    let Some(source_owner) = collider_bounds.owner_by_name.get(source) else {
+        return true;
+    };
+    let Some(target_owner) = collider_bounds.owner_by_name.get(target) else {
+        return true;
+    };
     if source_owner == target_owner {
         return true;
     }
-    if !source_owner.starts_with("player") || !target_owner.starts_with("player") {
-        return true;
-    }
-    if !source.contains("_collider") || !target.contains("_collider") {
-        return true;
-    }
-    let owner_distance = collision_owner_distance(source, target, transforms_by_name);
-    !owner_distance.is_finite() || owner_distance <= MAX_PLAYER_HITBOX_OWNER_DISTANCE
+    let owner_distance =
+        collision_owner_distance(source, target, transforms_by_name, Some(collider_bounds));
+    !owner_distance.is_finite() || owner_distance <= MAX_ATTACHED_COLLIDER_OWNER_DISTANCE
 }
 
 pub(super) fn collision_reference_candidates(reference: &str) -> Vec<String> {
@@ -1933,15 +2314,6 @@ pub(super) fn collision_reference_candidates(reference: &str) -> Vec<String> {
 
 pub(super) fn collision_owner(reference: &str) -> String {
     let normalized = reference.trim().trim_matches('"');
-    for owner in ["player1", "player2"] {
-        if normalized == owner
-            || normalized
-                .strip_prefix(owner)
-                .is_some_and(|rest| rest.starts_with('_') || rest.starts_with('.'))
-        {
-            return owner.to_owned();
-        }
-    }
     normalized
         .split(['.', '[', '"'])
         .next()
@@ -1949,14 +2321,20 @@ pub(super) fn collision_owner(reference: &str) -> String {
         .to_owned()
 }
 
+pub(super) fn collision_owner_with_bounds(
+    reference: &str,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> String {
+    let normalized = reference.trim().trim_matches('"');
+    collider_bounds
+        .and_then(|bounds| bounds.owner_by_name.get(normalized))
+        .cloned()
+        .unwrap_or_else(|| collision_owner(reference))
+}
+
 pub(super) fn collision_threshold(source: &str, target: &str) -> f32 {
-    let source_owner = collision_owner(source);
-    let target_owner = collision_owner(target);
-    if source_owner.starts_with("player") && target_owner.starts_with("player") {
-        4.25
-    } else {
-        2.5
-    }
+    let _ = (source, target);
+    2.5
 }
 
 pub(super) fn exact_collider_shapes_overlap(
@@ -2088,11 +2466,10 @@ pub(super) fn transform_from_options(
         .position
         .map(vec3_from_scenemax)
         .unwrap_or(Vec3::ZERO);
-    let scale = options
-        .scale
-        .map(vec3_from_scenemax)
-        .or_else(|| asset_scale.map(|scale| Vec3::new(scale[0], scale[1], scale[2])))
+    let asset_scale = asset_scale
+        .map(|scale| Vec3::new(scale[0], scale[1], scale[2]))
         .unwrap_or(Vec3::ONE);
+    let scale = options.scale.map(vec3_from_scenemax).unwrap_or(asset_scale);
     let rotation = options
         .rotation_degrees
         .map(rotation_from_degrees)
@@ -2715,11 +3092,14 @@ pub(super) fn vec3_from_scenemax(value: SceneMaxVec3) -> Vec3 {
 }
 
 pub(super) fn rotation_from_degrees(value: SceneMaxVec3) -> Quat {
-    Quat::from_euler(
-        EulerRot::XYZ,
-        value.x.to_radians(),
-        value.y.to_radians(),
-        value.z.to_radians(),
+    let (sx, cx) = (value.x.to_radians() * 0.5).sin_cos();
+    let (sy, cy) = (value.y.to_radians() * 0.5).sin_cos();
+    let (sz, cz) = (value.z.to_radians() * 0.5).sin_cos();
+    Quat::from_xyzw(
+        cy * cz * sx + sy * sz * cx,
+        sy * cz * cx + cy * sz * sx,
+        cy * sz * cx - sy * cz * sx,
+        cy * cz * cx - sy * sz * sx,
     )
 }
 
@@ -2761,6 +3141,31 @@ Material wall : Common/MatDefs/Light/Lighting.j3md {
     }
 
     #[test]
+    fn resolves_builtin_primitive_material_names() {
+        let root =
+            std::env::temp_dir().join(format!("scenemax_builtin_material_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let texture_dir = root.join("Textures").join("Terrain").join("Rock");
+        fs::create_dir_all(&texture_dir).unwrap();
+        fs::write(texture_dir.join("rock2.jpg"), b"diffuse").unwrap();
+        fs::write(texture_dir.join("rock_normal.png"), b"normal").unwrap();
+
+        let material = resolve_scenemax_material("rock2", &root, Some(&root))
+            .expect("rock2 should resolve from built-in SceneMax material table");
+
+        assert_eq!(
+            material.diffuse_map.as_deref(),
+            Some("builtin://Textures/Terrain/Rock/rock2.jpg")
+        );
+        assert_eq!(
+            material.normal_map.as_deref(),
+            Some("builtin://Textures/Terrain/Rock/rock_normal.png")
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn quad_mesh_origin_matches_jme_quad() {
         let mesh = quad_mesh(2.0, 3.0);
         let positions = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap();
@@ -2778,5 +3183,42 @@ Material wall : Common/MatDefs/Light/Lighting.j3md {
                 [0.0, 3.0, 0.0],
             ]
         );
+    }
+
+    #[test]
+    fn model_script_scale_overrides_asset_scale() {
+        let transform = transform_from_options(
+            &EntityOptions {
+                scale: Some(SceneMaxVec3 {
+                    x: 2.0,
+                    y: 2.0,
+                    z: 2.0,
+                }),
+                ..Default::default()
+            },
+            Some([0.02, 0.02, 0.02]),
+        );
+
+        assert_eq!(transform.scale, Vec3::splat(2.0));
+    }
+
+    #[test]
+    fn model_asset_scale_applies_when_script_scale_is_absent() {
+        let transform = transform_from_options(
+            &EntityOptions {
+                scale: None,
+                ..Default::default()
+            },
+            Some([0.02, 0.02, 0.02]),
+        );
+
+        assert_eq!(transform.scale, Vec3::splat(0.02));
+    }
+
+    #[test]
+    fn primitive_resource_detection_stays_generic() {
+        assert!(is_primitive_resource("box"));
+        assert!(is_primitive_resource("sphere"));
+        assert!(!is_primitive_resource("bone"));
     }
 }

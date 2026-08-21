@@ -30,6 +30,11 @@ pub(super) fn blocking_timed_action_seconds(action: &Statement) -> Option<f32> {
         Statement::CharacterJump(jump) if !jump.async_run => {
             Some(jump_duration_seconds(jump.speed))
         }
+        Statement::SpritePlay(sprite_play)
+            if !sprite_play.looped && sprite_play.duration_seconds > f32::EPSILON =>
+        {
+            Some(sprite_play.duration_seconds.max(0.001))
+        }
         Statement::CinematicPlay(play) if !play.async_run => Some(play.duration_seconds.max(0.1)),
         _ => None,
     }
@@ -66,28 +71,6 @@ pub(super) fn animation_clip_duration_seconds(
         .map(AnimationClip::duration)
         .filter(|duration| *duration > 0.0)
         .unwrap_or(DEFAULT_ANIMATION_CLIP_SECONDS)
-}
-
-pub(super) fn queue_builtin_player_animation(
-    commands: &mut Commands,
-    entity: Entity,
-    gltf: Option<&SceneMaxGltf>,
-    current_animation: Option<&CurrentAnimation>,
-    clip: &str,
-    looped: bool,
-) {
-    if current_animation.is_some_and(|current| current_animation_matches(current, clip, looped)) {
-        return;
-    }
-    let Some(gltf) = gltf else {
-        return;
-    };
-    commands.entity(entity).insert(AnimationToPlay {
-        clip: clip.to_owned(),
-        looped,
-        speed: 1.0,
-        gltf: gltf.gltf.clone(),
-    });
 }
 
 pub(super) fn current_animation_matches(
@@ -136,54 +119,6 @@ pub(super) fn key_event_matches(
         KeyTrigger::PressedOnce => keyboard.just_pressed(key_code),
         KeyTrigger::Released => keyboard.just_released(key_code),
     }
-}
-
-pub(super) fn restore_default_idle_animations(
-    mut commands: Commands,
-    vars: Res<SceneMaxVars>,
-    characters: Query<(
-        Entity,
-        &SceneMaxEntity,
-        Option<&SceneMaxGltf>,
-        Option<&CurrentAnimation>,
-        Option<&AnimationToPlay>,
-    )>,
-) {
-    if !scene_is_ready_for_player_idle(&vars) {
-        return;
-    }
-    for (entity, scene_entity, gltf, current_animation, pending_animation) in &characters {
-        if scene_entity.name != "player1" || pending_animation.is_some() {
-            continue;
-        }
-        if current_animation.is_some_and(|current| {
-            current_animation_matches(current, "idle2", true)
-                || (!current.looped && current.elapsed_seconds < current.duration_seconds)
-        }) {
-            continue;
-        }
-        let Some(gltf) = gltf else {
-            continue;
-        };
-        commands.entity(entity).insert(AnimationToPlay {
-            clip: "idle2".to_owned(),
-            looped: true,
-            speed: 1.0,
-            gltf: gltf.gltf.clone(),
-        });
-    }
-}
-
-pub(super) fn scene_is_ready_for_player_idle(vars: &SceneMaxVars) -> bool {
-    variable_is_zero(vars, "action")
-        && variable_is_zero(vars, "move_forward")
-        && variable_is_zero(vars, "player_hit")
-        && variable_is_zero(vars, "player1_ko")
-        && variable_is_zero(vars, "player1.data.is_jumping")
-}
-
-pub(super) fn variable_is_zero(vars: &SceneMaxVars, name: &str) -> bool {
-    scenemax_runtime_vm_core::variable_is_zero(vars, name)
 }
 
 pub(super) fn play_pending_animations(
@@ -488,12 +423,20 @@ pub(super) fn preferred_animation_match<'a>(
 pub(super) fn update_current_animation_vars(
     time: Res<Time>,
     mut vars: ResMut<SceneMaxVars>,
-    mut animations: Query<(&SceneMaxEntity, &mut CurrentAnimation)>,
+    mut animations: Query<(
+        &SceneMaxEntity,
+        &mut CurrentAnimation,
+        Option<&AnimationSpeedOverride>,
+    )>,
 ) {
     let delta = time.delta_secs();
-    for (entity, mut animation) in &mut animations {
+    for (entity, mut animation, speed_override) in &mut animations {
         let duration = animation.duration_seconds.max(0.001);
-        animation.elapsed_seconds += delta * animation.speed.max(0.001);
+        let effective_speed = speed_override
+            .map(|override_speed| override_speed.speed)
+            .unwrap_or(animation.speed)
+            .max(0.001);
+        animation.elapsed_seconds += delta * effective_speed;
         let elapsed = if animation.looped {
             animation.elapsed_seconds % duration
         } else {
@@ -538,18 +481,41 @@ pub(super) fn apply_animation_speed_overrides(
     time: Res<Time>,
     mut commands: Commands,
     children: Query<&Children>,
-    mut roots: Query<(Entity, &mut AnimationSpeedOverride), With<SceneMaxEntity>>,
+    mut roots: Query<
+        (
+            Entity,
+            &SceneMaxEntity,
+            &mut AnimationSpeedOverride,
+            Option<&CurrentAnimation>,
+        ),
+        With<SceneMaxEntity>,
+    >,
     mut players: Query<&mut AnimationPlayer>,
 ) {
-    for (root, mut speed_override) in &mut roots {
+    for (root, scene_entity, mut speed_override, current_animation) in &mut roots {
         let player_entities = children.iter_descendants(root).collect::<Vec<_>>();
-        if !speed_override.applied {
-            for player_entity in &player_entities {
-                if let Ok(mut player) = players.get_mut(*player_entity) {
+        let mut active_animation_count = 0;
+        for player_entity in &player_entities {
+            if let Ok(mut player) = players.get_mut(*player_entity) {
+                active_animation_count +=
                     set_active_animation_speeds(&mut player, speed_override.speed);
-                }
             }
+        }
+        if active_animation_count > 0 && !speed_override.applied {
             speed_override.applied = true;
+            write_runtime_log_line(
+                LoggerLevel::Info,
+                &format!(
+                    "ANIM:SPEED target={} speed={} duration={} active={}",
+                    scene_entity.name,
+                    format_scenemax_number(speed_override.speed),
+                    speed_override
+                        .remaining_seconds
+                        .map(format_scenemax_number)
+                        .unwrap_or_else(|| "none".to_owned()),
+                    active_animation_count
+                ),
+            );
         }
 
         let Some(remaining_seconds) = speed_override.remaining_seconds.as_mut() else {
@@ -558,18 +524,38 @@ pub(super) fn apply_animation_speed_overrides(
         };
         *remaining_seconds -= time.delta_secs();
         if *remaining_seconds <= 0.0 {
+            let restore_speed = current_animation
+                .map(|animation| animation.speed)
+                .unwrap_or(1.0)
+                .max(0.001);
+            let mut restored_animation_count = 0;
             for player_entity in &player_entities {
                 if let Ok(mut player) = players.get_mut(*player_entity) {
-                    set_active_animation_speeds(&mut player, 1.0);
+                    restored_animation_count +=
+                        set_active_animation_speeds(&mut player, restore_speed);
                 }
+            }
+            if restored_animation_count > 0 {
+                write_runtime_log_line(
+                    LoggerLevel::Info,
+                    &format!(
+                        "ANIM:SPEED:RESTORE target={} speed={} active={}",
+                        scene_entity.name,
+                        format_scenemax_number(restore_speed),
+                        restored_animation_count
+                    ),
+                );
             }
             commands.entity(root).remove::<AnimationSpeedOverride>();
         }
     }
 }
 
-pub(super) fn set_active_animation_speeds(player: &mut AnimationPlayer, speed: f32) {
+pub(super) fn set_active_animation_speeds(player: &mut AnimationPlayer, speed: f32) -> usize {
+    let mut active_animation_count = 0;
     for (_, active_animation) in player.playing_animations_mut() {
         active_animation.set_speed(speed);
+        active_animation_count += 1;
     }
+    active_animation_count
 }

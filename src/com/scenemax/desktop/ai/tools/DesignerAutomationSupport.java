@@ -71,6 +71,7 @@ final class DesignerAutomationSupport {
                 || lower.endsWith(".smui")
                 || lower.endsWith(".mat")
                 || lower.endsWith(".smshader")
+                || lower.endsWith(".bvshader")
                 || lower.endsWith(".smenvshader")
                 || lower.endsWith(".smeffectdesign");
     }
@@ -92,6 +93,9 @@ final class DesignerAutomationSupport {
         }
         if (lower.endsWith(".smshader")) {
             return "shader_designer";
+        }
+        if (lower.endsWith(".bvshader")) {
+            return "bevy_shader_designer";
         }
         if (lower.endsWith(".smenvshader")) {
             return "environment_shader_designer";
@@ -527,6 +531,8 @@ final class DesignerAutomationSupport {
             MaterialDocument.load(path.toFile());
         } else if ("shader_designer".equals(kind)) {
             ShaderDocument.load(path.toFile());
+        } else if ("bevy_shader_designer".equals(kind)) {
+            new JSONObject(Files.readString(path, StandardCharsets.UTF_8));
         } else if ("environment_shader_designer".equals(kind)) {
             EnvironmentShaderDocument.load(path.toFile());
         } else if ("effect_designer".equals(kind)) {

@@ -1,0 +1,26 @@
+{
+  "template": "TEXTURE_TINT",
+  "edgeWidth": 0.15,
+  "texture": "",
+  "blocks": [
+    "TINT",
+    "PULSE",
+    "RIM_LIGHT",
+    "TOON_RAMP"
+  ],
+  "scrollSpeed": 0.35,
+  "version": 1,
+  "previewTarget": "MODEL",
+  "glowStrength": 2.4,
+  "previewModelName": "clair",
+  "previewScale": 1.4,
+  "useOriginalTexture": true,
+  "mainColor": [
+    1,
+    0,
+    0,
+    1
+  ],
+  "transparency": 0.05,
+  "pulseSpeed": 0.55
+}

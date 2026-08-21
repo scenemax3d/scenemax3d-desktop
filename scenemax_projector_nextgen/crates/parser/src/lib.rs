@@ -20,6 +20,25 @@ pub mod generated {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub statements: Vec<Statement>,
+    pub screen_mode: ScreenMode,
+}
+
+impl Program {
+    pub fn new(statements: Vec<Statement>) -> Self {
+        Self {
+            statements,
+            screen_mode: ScreenMode::Unspecified,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ScreenMode {
+    #[default]
+    Unspecified,
+    Window,
+    Full,
+    Borderless,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,9 +48,12 @@ pub enum Statement {
         resource: String,
         options: EntityOptions,
     },
+    LightDecl(LightDeclarationStatement),
+    LightProbeAdd(LightProbeAddStatement),
     ObjectPool(ObjectPoolStatement),
     Animate(AnimationStatement),
     SpritePlay(SpritePlayStatement),
+    EffekseerPlay(EffekseerPlayStatement),
     CinematicPlay(CinematicPlayStatement),
     AnimationSpeed(AnimationSpeedStatement),
     Visibility {
@@ -134,6 +156,10 @@ pub enum Statement {
     CameraRotation(SceneMaxVec3),
     CameraMove(CameraMoveStatement),
     Audio(AudioStatement),
+    SetShader(SetShaderStatement),
+    SetEnvironmentShader {
+        shader: AssignmentValue,
+    },
     WaitForKey {
         key: String,
     },
@@ -183,6 +209,40 @@ pub struct EntityOptions {
     pub collision_shape: Option<SceneMaxCollisionShape>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct LightDeclarationStatement {
+    pub name: String,
+    pub light_type: LightType,
+    pub color: Option<String>,
+    pub intensity: Option<AssignmentValue>,
+    pub intensity_unit: Option<String>,
+    pub position: Option<PositionValue>,
+    pub direction: Option<Vec<PositionExpr>>,
+    pub shadow_mode: Option<String>,
+    pub range: Option<AssignmentValue>,
+    pub look_at: Option<String>,
+    pub angle: Option<AssignmentValue>,
+    pub preset: Option<String>,
+    pub exposure: Option<AssignmentValue>,
+    pub ambient_color: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LightType {
+    Directional,
+    Point,
+    Spot,
+    Sky,
+    Ambient,
+    Probe,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LightProbeAddStatement {
+    pub name: String,
+    pub position: Option<PositionValue>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SceneMaxBodyKind {
     Static,
@@ -225,6 +285,15 @@ pub struct SpritePlayStatement {
     pub duration_seconds: f32,
     pub duration_value: AssignmentValue,
     pub looped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EffekseerPlayStatement {
+    pub target: String,
+    pub position: Option<PositionValue>,
+    pub looped: bool,
+    pub attrs: Vec<(String, AssignmentValue)>,
+    pub async_run: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -367,6 +436,12 @@ pub struct AudioStatement {
     pub sound_value: Option<AssignmentValue>,
     pub looped: bool,
     pub volume: Option<AssignmentValue>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetShaderStatement {
+    pub target: String,
+    pub shader: AssignmentValue,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -718,6 +793,7 @@ pub enum ParseError {
 pub fn parse_program(source: &str) -> Result<Program, ParseError> {
     let logical_lines = logical_lines(source);
     let mut statements = Vec::new();
+    let mut screen_mode = ScreenMode::Unspecified;
     let mut index = 0;
     let mut block_depth = 0usize;
     let mut pending_guard = None;
@@ -737,6 +813,14 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
 
         if block_depth > 0 {
             block_depth = update_block_depth(block_depth, line);
+            index += 1;
+            continue;
+        }
+
+        if let Some(mode) = parse_screen_mode(line) {
+            if screen_mode == ScreenMode::Unspecified {
+                screen_mode = mode;
+            }
             index += 1;
             continue;
         }
@@ -764,7 +848,8 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
 
         let lower = line.to_ascii_lowercase();
         if let Some(times) = parse_repeat_header(line) {
-            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1)?;
+            let (nested_actions, next_index) =
+                parse_action_block(&logical_lines, index + 1, false)?;
             let repeated = Statement::Repeat {
                 times,
                 actions: nested_actions,
@@ -782,7 +867,7 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
         }
 
         if lower == "do async" {
-            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1)?;
+            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1, true)?;
             statements.push(Statement::Async {
                 actions: nested_actions,
             });
@@ -792,7 +877,7 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
         }
 
         if lower == "do" {
-            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1)?;
+            let (nested_actions, next_index) = parse_action_block(&logical_lines, index + 1, true)?;
             statements.extend(nested_actions);
             pending_guard = None;
             index = next_index;
@@ -851,7 +936,10 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
         index += 1;
     }
 
-    Ok(Program { statements })
+    Ok(Program {
+        statements,
+        screen_mode,
+    })
 }
 
 fn opens_runtime_block(line: &str) -> bool {
@@ -930,7 +1018,8 @@ fn parse_key_event_block(
         }
 
         if let Some(times) = parse_repeat_header(line) {
-            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+            let (nested_actions, next_index) =
+                parse_action_block(logical_lines, cursor + 1, false)?;
             let repeated = Statement::Repeat {
                 times,
                 actions: nested_actions,
@@ -947,7 +1036,7 @@ fn parse_key_event_block(
         }
 
         if lower == "do async" {
-            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1, true)?;
             actions.push(Statement::Async {
                 actions: nested_actions,
             });
@@ -956,7 +1045,7 @@ fn parse_key_event_block(
         }
 
         if lower == "do" {
-            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1, true)?;
             actions.extend(nested_actions);
             cursor = next_index;
             continue;
@@ -1000,7 +1089,7 @@ fn parse_when_event_block(
         return Ok(None);
     };
 
-    let (actions, next_index) = parse_action_block(logical_lines, index + 1)?;
+    let (actions, next_index) = parse_action_block(logical_lines, index + 1, false)?;
     Ok(Some((
         WhenEventStatement {
             condition,
@@ -1019,7 +1108,7 @@ fn parse_function_def_block(
     let Some((name, params)) = parse_function_def_header(logical_lines[index].trim()) else {
         return Ok(None);
     };
-    let (actions, next_index) = parse_action_block(logical_lines, index + 1)?;
+    let (actions, next_index) = parse_action_block(logical_lines, index + 1, false)?;
     Ok(Some((
         FunctionDefStatement {
             name,
@@ -1379,8 +1468,27 @@ fn normalize_collision_reference(text: &str) -> String {
 
 fn parse_action_block(
     logical_lines: &[String],
-    mut cursor: usize,
+    cursor: usize,
+    allow_while_terminator: bool,
 ) -> Result<(Vec<Statement>, usize), ParseError> {
+    let (actions, cursor, _) =
+        parse_action_block_with_stop(logical_lines, cursor, allow_while_terminator)?;
+    Ok((actions, cursor))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActionBlockStop {
+    Closed,
+    Else,
+    While,
+    Eof,
+}
+
+fn parse_action_block_with_stop(
+    logical_lines: &[String],
+    mut cursor: usize,
+    allow_while_terminator: bool,
+) -> Result<(Vec<Statement>, usize, ActionBlockStop), ParseError> {
     let mut depth = 1usize;
     let mut actions = Vec::new();
     while cursor < logical_lines.len() {
@@ -1391,21 +1499,25 @@ fn parse_action_block(
             depth = depth.saturating_sub(1);
             cursor += 1;
             if depth == 0 {
-                break;
+                return Ok((actions, cursor, ActionBlockStop::Closed));
             }
             continue;
         }
 
-        if depth == 1 && is_while_terminator(line) {
+        if allow_while_terminator && depth == 1 && is_while_terminator(line) {
             cursor += 1;
             if let Some(condition) = parse_while_terminator(line)? {
-                return Ok((vec![Statement::DoWhile { condition, actions }], cursor));
+                return Ok((
+                    vec![Statement::DoWhile { condition, actions }],
+                    cursor,
+                    ActionBlockStop::While,
+                ));
             }
-            break;
+            return Ok((actions, cursor, ActionBlockStop::While));
         }
 
         if depth == 1 && is_close_else_open(line) {
-            break;
+            return Ok((actions, cursor, ActionBlockStop::Else));
         }
 
         if let Some(condition) = parse_condition_guard(line)? {
@@ -1423,7 +1535,7 @@ fn parse_action_block(
             depth = depth.saturating_sub(1);
             cursor += 1;
             if depth == 0 {
-                break;
+                return Ok((actions, cursor, ActionBlockStop::Closed));
             }
             if lower.ends_with('{') {
                 depth += 1;
@@ -1442,7 +1554,8 @@ fn parse_action_block(
         }
 
         if let Some(times) = parse_repeat_header(line) {
-            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+            let (nested_actions, next_index) =
+                parse_action_block(logical_lines, cursor + 1, false)?;
             let repeated = Statement::Repeat {
                 times,
                 actions: nested_actions,
@@ -1459,7 +1572,7 @@ fn parse_action_block(
         }
 
         if lower == "do async" {
-            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1, true)?;
             actions.push(Statement::Async {
                 actions: nested_actions,
             });
@@ -1468,7 +1581,7 @@ fn parse_action_block(
         }
 
         if lower == "do" {
-            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+            let (nested_actions, next_index) = parse_action_block(logical_lines, cursor + 1, true)?;
             actions.extend(nested_actions);
             cursor = next_index;
             continue;
@@ -1489,7 +1602,7 @@ fn parse_action_block(
         cursor += 1;
     }
 
-    Ok((actions, cursor))
+    Ok((actions, cursor, ActionBlockStop::Eof))
 }
 
 fn parse_if_block(
@@ -1500,9 +1613,13 @@ fn parse_if_block(
         return Ok(None);
     };
 
-    let (actions, mut next_index) = parse_action_block(logical_lines, index + 1)?;
+    let (actions, mut next_index, stop) =
+        parse_action_block_with_stop(logical_lines, index + 1, false)?;
     let mut else_actions = Vec::new();
-    if next_index < logical_lines.len() && is_close_else_open(logical_lines[next_index].trim()) {
+    if stop == ActionBlockStop::Else
+        && next_index < logical_lines.len()
+        && is_close_else_open(logical_lines[next_index].trim())
+    {
         let (parsed_else_actions, after_else) = parse_else_branch(logical_lines, next_index)?;
         else_actions = parsed_else_actions;
         next_index = after_else;
@@ -1524,9 +1641,12 @@ fn parse_else_branch(
 ) -> Result<(Vec<Statement>, usize), ParseError> {
     let line = logical_lines[index].trim();
     if let Some(condition) = parse_else_if_header(line)? {
-        let (actions, mut next_index) = parse_action_block(logical_lines, index + 1)?;
+        let (actions, mut next_index, stop) =
+            parse_action_block_with_stop(logical_lines, index + 1, false)?;
         let mut else_actions = Vec::new();
-        if next_index < logical_lines.len() && is_close_else_open(logical_lines[next_index].trim())
+        if stop == ActionBlockStop::Else
+            && next_index < logical_lines.len()
+            && is_close_else_open(logical_lines[next_index].trim())
         {
             let (parsed_else_actions, after_else) = parse_else_branch(logical_lines, next_index)?;
             else_actions = parsed_else_actions;
@@ -1541,7 +1661,7 @@ fn parse_else_branch(
             next_index,
         ));
     }
-    parse_action_block(logical_lines, index + 1)
+    parse_action_block(logical_lines, index + 1, false)
 }
 
 fn parse_guarded_actions_after(
@@ -1553,14 +1673,14 @@ fn parse_guarded_actions_after(
     };
     let lower = line.to_ascii_lowercase();
     if lower == "do" {
-        return parse_action_block(logical_lines, cursor + 1);
+        return parse_action_block(logical_lines, cursor + 1, false);
     }
     if lower == "do async" {
-        let (actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+        let (actions, next_index) = parse_action_block(logical_lines, cursor + 1, true)?;
         return Ok((vec![Statement::Async { actions }], next_index));
     }
     if let Some(times) = parse_repeat_header(line) {
-        let (actions, next_index) = parse_action_block(logical_lines, cursor + 1)?;
+        let (actions, next_index) = parse_action_block(logical_lines, cursor + 1, false)?;
         let repeated = Statement::Repeat { times, actions };
         if lower.ends_with(" async") {
             return Ok((
@@ -1580,6 +1700,9 @@ fn parse_guarded_actions_after(
 
 fn parse_action_statements(line: &str) -> Result<Vec<Statement>, ParseError> {
     if let Some(statement) = parse_ui_statement(line)? {
+        return Ok(vec![statement]);
+    }
+    if let Some(statement) = parse_shader_statement(line)? {
         return Ok(vec![statement]);
     }
     if is_shared_var_line(line) {
@@ -1807,6 +1930,14 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(debug_mode);
     }
 
+    if let Some(light_probe) = parse_light_probe_add(line)? {
+        return Ok(Statement::LightProbeAdd(light_probe));
+    }
+
+    if let Some(shader) = parse_shader_statement(line)? {
+        return Ok(shader);
+    }
+
     if let Some(run_function) = parse_run_function_statement(line) {
         return Ok(run_function);
     }
@@ -1889,6 +2020,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(attach);
     }
 
+    if let Some(statement) = parse_light_decl(line)? {
+        return Ok(statement);
+    }
+
     if let Some(statement) = parse_model_decl(line)? {
         return Ok(statement);
     }
@@ -1947,6 +2082,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
 
     if let Some(sprite_play) = parse_sprite_play(line)? {
         return Ok(Statement::SpritePlay(sprite_play));
+    }
+
+    if let Some(effekseer_play) = parse_effekseer_play(line)? {
+        return Ok(Statement::EffekseerPlay(effekseer_play));
     }
 
     if let Some(draw) = parse_channel_draw(line)? {
@@ -2175,6 +2314,27 @@ fn parse_debug_mode_statement(line: &str) -> Option<Statement> {
     match line.trim().to_ascii_lowercase().as_str() {
         "debug.on" => Some(Statement::DebugMode { enabled: true }),
         "debug.off" => Some(Statement::DebugMode { enabled: false }),
+        _ => None,
+    }
+}
+
+fn parse_screen_mode(line: &str) -> Option<ScreenMode> {
+    let mode_text = strip_keyword_prefix(line.trim(), "screen.mode")?.trim();
+    if mode_text.is_empty() {
+        return None;
+    }
+    let normalized = mode_text.to_ascii_lowercase();
+    if normalized.starts_with("no border") {
+        return Some(ScreenMode::Borderless);
+    }
+    let mode = mode_text
+        .split(|value: char| value.is_whitespace() || value == ',' || value == ':')
+        .next()
+        .unwrap_or_default();
+    match mode.to_ascii_lowercase().as_str() {
+        "window" => Some(ScreenMode::Window),
+        "full" | "fullscreen" => Some(ScreenMode::Full),
+        "borderless" | "noborder" | "noborders" => Some(ScreenMode::Borderless),
         _ => None,
     }
 }
@@ -3300,6 +3460,39 @@ fn find_keyword_index(text: &str, keyword: &str) -> Option<usize> {
     None
 }
 
+fn parse_shader_statement(line: &str) -> Result<Option<Statement>, ParseError> {
+    let Some((left, right)) = line.trim().split_once('=') else {
+        return Ok(None);
+    };
+    let target = left.trim();
+    let lower_target = target.to_ascii_lowercase();
+    if lower_target == "scene.environment.shader" || lower_target == "environment.shader" {
+        return Ok(Some(Statement::SetEnvironmentShader {
+            shader: parse_shader_value(right)?,
+        }));
+    }
+    if !lower_target.ends_with(".shader") {
+        return Ok(None);
+    }
+    let target_name = target[..target.len() - ".shader".len()].trim();
+    if target_name.is_empty() || !is_variable_path(target_name) {
+        return Ok(None);
+    }
+    Ok(Some(Statement::SetShader(SetShaderStatement {
+        target: target_name.to_owned(),
+        shader: parse_shader_value(right)?,
+    })))
+}
+
+fn parse_shader_value(raw_value: &str) -> Result<AssignmentValue, ParseError> {
+    let raw_value = clean_assignment_value(raw_value);
+    if is_quoted(raw_value) {
+        return Ok(AssignmentValue::Symbol(unquote_ui_text(raw_value)));
+    }
+    Ok(parse_assignment_value(raw_value)?
+        .unwrap_or_else(|| AssignmentValue::Symbol(clean_call_arg(raw_value).to_owned())))
+}
+
 fn parse_model_decl(line: &str) -> Result<Option<Statement>, ParseError> {
     if let Some((name, rest)) = line.split_once("=>") {
         if let Some(pool) = parse_object_pool(name.trim(), rest)? {
@@ -3334,6 +3527,193 @@ fn parse_model_decl(line: &str) -> Result<Option<Statement>, ParseError> {
     }
 
     Ok(None)
+}
+
+fn parse_light_decl(line: &str) -> Result<Option<Statement>, ParseError> {
+    if let Some((name, rest)) = line.split_once("=>") {
+        return parse_light_decl_parts(name.trim(), rest);
+    }
+
+    let lower = line.to_ascii_lowercase();
+    if let Some(index) = lower.find(" is a ") {
+        let name = line[..index].trim();
+        let rest = &line[index + " is a ".len()..];
+        return parse_light_decl_parts(name, rest);
+    }
+
+    Ok(None)
+}
+
+fn parse_light_decl_parts(name: &str, rest: &str) -> Result<Option<Statement>, ParseError> {
+    let (resource, options_text) = split_resource_and_options(rest);
+    let Some(light_type) = parse_light_resource_type(resource.trim()) else {
+        return Ok(None);
+    };
+    Ok(Some(Statement::LightDecl(LightDeclarationStatement {
+        name: name.to_owned(),
+        light_type,
+        color: parse_light_color_attr(options_text),
+        intensity: parse_light_value_attr(options_text, "intensity")?.map(|(value, _)| value),
+        intensity_unit: parse_light_value_attr(options_text, "intensity")?
+            .and_then(|(_, unit)| unit),
+        position: parse_position_value_after(options_text, "pos")?.or_else(|| {
+            parse_vec3_after(options_text, "pos")
+                .ok()
+                .map(position_value_from_vec3)
+        }),
+        direction: parse_light_direction_attr(options_text)?,
+        shadow_mode: parse_light_word_attr(options_text, "shadow"),
+        range: parse_light_value_attr(options_text, "range")?.map(|(value, _)| value),
+        look_at: parse_light_look_at_attr(options_text),
+        angle: parse_light_value_attr(options_text, "angle")?.map(|(value, _)| value),
+        preset: parse_light_string_attr(options_text, "preset"),
+        exposure: parse_light_value_attr(options_text, "exposure")?.map(|(value, _)| value),
+        ambient_color: parse_light_color_named_attr(options_text, "ambient"),
+    })))
+}
+
+fn parse_light_probe_add(line: &str) -> Result<Option<LightProbeAddStatement>, ParseError> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let Some(after_prefix_len) = lower.strip_prefix("lights.add").map(|_| "lights.add".len())
+    else {
+        return Ok(None);
+    };
+    let original_rest = trimmed[after_prefix_len..].trim_start_matches('.').trim();
+    let Some(after_probe) = strip_keyword_prefix(original_rest, "probe") else {
+        return Ok(None);
+    };
+    let name = parse_quoted_strings(after_probe)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| {
+            first_light_value_token(after_probe)
+                .unwrap_or("1")
+                .to_owned()
+        });
+    Ok(Some(LightProbeAddStatement {
+        name,
+        position: parse_position_value_after(after_probe, "pos")?.or_else(|| {
+            parse_vec3_after(after_probe, "pos")
+                .ok()
+                .map(position_value_from_vec3)
+        }),
+    }))
+}
+
+fn parse_light_resource_type(resource: &str) -> Option<LightType> {
+    let lower = resource.trim().to_ascii_lowercase();
+    let light_type = lower.strip_prefix("lights.")?.trim();
+    match light_type {
+        "directional" => Some(LightType::Directional),
+        "point" => Some(LightType::Point),
+        "spot" => Some(LightType::Spot),
+        "sky" => Some(LightType::Sky),
+        "ambient" => Some(LightType::Ambient),
+        "probe" => Some(LightType::Probe),
+        _ => None,
+    }
+}
+
+fn parse_light_color_attr(text: &str) -> Option<String> {
+    parse_light_color_named_attr(text, "color")
+}
+
+fn parse_light_color_named_attr(text: &str, name: &str) -> Option<String> {
+    let attr = light_attr_text(text, name)?;
+    parse_quoted_strings(attr)
+        .into_iter()
+        .next()
+        .or_else(|| first_light_value_token(attr).map(str::to_owned))
+}
+
+fn parse_light_string_attr(text: &str, name: &str) -> Option<String> {
+    let attr = light_attr_text(text, name)?;
+    parse_quoted_strings(attr)
+        .into_iter()
+        .next()
+        .or_else(|| first_light_value_token(attr).map(str::to_owned))
+}
+
+fn parse_light_word_attr(text: &str, name: &str) -> Option<String> {
+    let attr = light_attr_text(text, name)?;
+    let attr = strip_keyword_prefix(attr, "mode").unwrap_or(attr).trim();
+    first_light_value_token(attr).map(|value| value.to_ascii_lowercase())
+}
+
+fn parse_light_value_attr(
+    text: &str,
+    name: &str,
+) -> Result<Option<(AssignmentValue, Option<String>)>, ParseError> {
+    let Some(attr) = light_attr_text(text, name) else {
+        return Ok(None);
+    };
+    let mut value_text = attr.trim();
+    let mut unit = None;
+    let lower = value_text.to_ascii_lowercase();
+    if lower.ends_with(" lumens") {
+        value_text = value_text[..value_text.len() - " lumens".len()].trim_end();
+        unit = Some("lumens".to_owned());
+    } else if lower.ends_with(" lumen") {
+        value_text = value_text[..value_text.len() - " lumen".len()].trim_end();
+        unit = Some("lumens".to_owned());
+    }
+    let Some(value) = parse_assignment_value(value_text)? else {
+        return Ok(None);
+    };
+    Ok(Some((value, unit)))
+}
+
+fn parse_light_direction_attr(text: &str) -> Result<Option<Vec<PositionExpr>>, ParseError> {
+    let Some(attr) = light_attr_text(text, "direction") else {
+        return Ok(None);
+    };
+    let Some(values) = values_inside_first_parens(attr) else {
+        return Ok(None);
+    };
+    let parts = split_top_level_comma(values);
+    if parts.len() != 3 {
+        return Ok(None);
+    }
+    Ok(Some(
+        parts
+            .into_iter()
+            .map(parse_position_expr)
+            .collect::<Result<Vec<_>, _>>()?,
+    ))
+}
+
+fn parse_light_look_at_attr(text: &str) -> Option<String> {
+    let attr = light_attr_text(text, "look")?;
+    let attr = strip_keyword_prefix(attr, "at").unwrap_or(attr).trim();
+    first_light_value_token(attr).map(str::to_owned)
+}
+
+fn light_attr_text<'a>(text: &'a str, name: &str) -> Option<&'a str> {
+    split_top_level_options(text).into_iter().find_map(|part| {
+        let after_name = strip_keyword_prefix(part, name)?.trim();
+        let after_name = after_name.strip_prefix('=').unwrap_or(after_name).trim();
+        if after_name.is_empty() {
+            None
+        } else {
+            Some(after_name)
+        }
+    })
+}
+
+fn first_light_value_token(text: &str) -> Option<&str> {
+    text.trim()
+        .trim_matches('"')
+        .split(|value: char| value.is_whitespace() || value == ',' || value == ':')
+        .find(|part| !part.is_empty())
+}
+
+fn position_value_from_vec3(value: SceneMaxVec3) -> PositionValue {
+    PositionValue::Coordinates(vec![
+        PositionExpr::Number(value.x),
+        PositionExpr::Number(value.y),
+        PositionExpr::Number(value.z),
+    ])
 }
 
 fn parse_object_pool(name: &str, rest: &str) -> Result<Option<ObjectPoolStatement>, ParseError> {
@@ -3371,7 +3751,14 @@ fn parse_object_pool(name: &str, rest: &str) -> Result<Option<ObjectPoolStatemen
 fn parse_pool_release(line: &str) -> Option<PoolReleaseStatement> {
     let (pool, rest) = split_dot_command_rest(line)?;
     let rest = rest.trim();
-    let target = rest.strip_prefix("release")?.trim();
+    let rest_lower = rest.to_ascii_lowercase();
+    let target = if rest_lower.starts_with("release") {
+        rest.get("release".len()..)?.trim()
+    } else if rest_lower.starts_with("free") {
+        rest.get("free".len()..)?.trim()
+    } else {
+        return None;
+    };
     if pool.is_empty() || !is_variable_path(&pool) || target.is_empty() || !is_variable_path(target)
     {
         return None;
@@ -3475,6 +3862,8 @@ fn parse_position(line: &str) -> Result<Option<PositionStatement>, ParseError> {
                 .map(parse_position_expr)
                 .collect::<Result<Vec<_>, _>>()?,
         )
+    } else if let Some(entity) = parse_quoted_entity_reference(raw_values.trim()) {
+        PositionValue::Entity(entity)
     } else {
         let entity = normalize_entity_reference(raw_values.trim());
         if !is_variable_path(&entity) {
@@ -3488,7 +3877,7 @@ fn parse_position(line: &str) -> Result<Option<PositionStatement>, ParseError> {
 fn values_inside_first_parens(text: &str) -> Option<&str> {
     let open_index = text.find('(')?;
     let after_open = &text[open_index + 1..];
-    let close_index = after_open.find(')')?;
+    let close_index = matching_close_paren_index(after_open)?;
     Some(after_open[..close_index].trim())
 }
 
@@ -3509,6 +3898,71 @@ fn split_top_level_comma(text: &str) -> Vec<&str> {
     }
     parts.push(text[start..].trim());
     parts.into_iter().filter(|part| !part.is_empty()).collect()
+}
+
+fn split_top_level_options(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut paren_depth = 0usize;
+    let mut bracket_depth = 0usize;
+    let mut quote = false;
+    let mut escaped = false;
+    let mut start = 0usize;
+
+    for (index, value) in text.char_indices() {
+        if quote {
+            if escaped {
+                escaped = false;
+            } else if value == '\\' {
+                escaped = true;
+            } else if value == '"' {
+                quote = false;
+            }
+            continue;
+        }
+
+        match value {
+            '"' => quote = true,
+            '(' => paren_depth += 1,
+            ')' => paren_depth = paren_depth.saturating_sub(1),
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            ',' if paren_depth == 0 && bracket_depth == 0 => {
+                parts.push(text[start..index].trim());
+                start = index + value.len_utf8();
+            }
+            _ => {}
+        }
+    }
+
+    parts.push(text[start..].trim());
+    parts.into_iter().filter(|part| !part.is_empty()).collect()
+}
+
+fn matching_close_bracket_index(text: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut quote = false;
+    let mut escaped = false;
+    for (index, value) in text.char_indices() {
+        if quote {
+            if escaped {
+                escaped = false;
+            } else if value == '\\' {
+                escaped = true;
+            } else if value == '"' {
+                quote = false;
+            }
+            continue;
+        }
+
+        match value {
+            '"' => quote = true,
+            '[' => depth += 1,
+            ']' if depth == 0 => return Some(index),
+            ']' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn parse_position_expr(text: &str) -> Result<PositionExpr, ParseError> {
@@ -3574,6 +4028,20 @@ fn normalize_entity_reference(text: &str) -> String {
         .trim()
         .trim_matches('"')
         .to_owned()
+}
+
+fn parse_quoted_entity_reference(text: &str) -> Option<String> {
+    let text = text.trim();
+    let quote_start = text.find('"')?;
+    let owner = text[..quote_start].trim().trim_end_matches('.').trim();
+    let after_quote = &text[quote_start + 1..];
+    let quote_end = after_quote.find('"')?;
+    let bone = after_quote[..quote_end].trim();
+    let trailing = after_quote[quote_end + 1..].trim();
+    if !trailing.is_empty() || !is_variable_path(owner) || bone.is_empty() {
+        return None;
+    }
+    Some(format!("{owner}.\"{bone}\""))
 }
 
 fn parse_turn(line: &str) -> Result<Option<TurnStatement>, ParseError> {
@@ -3839,12 +4307,15 @@ fn parse_move_to_destination(text: &str) -> Result<MoveToDestination, ParseError
         }
     }
 
-    let entity = normalize_entity_reference(text);
-    if is_variable_path(&entity) {
-        Ok(MoveToDestination::Position(PositionValue::Entity(entity)))
-    } else {
-        Err(ParseError::InvalidNumber(text.to_owned()))
+    if let Some(entity) = parse_quoted_entity_reference(text) {
+        return Ok(MoveToDestination::Position(PositionValue::Entity(entity)));
     }
+
+    let entity = normalize_entity_reference(text);
+    if !is_variable_path(&entity) {
+        return Err(ParseError::InvalidNumber(text.to_owned()));
+    }
+    Ok(MoveToDestination::Position(PositionValue::Entity(entity)))
 }
 
 fn parse_character_mode(line: &str) -> Result<Option<CharacterModeStatement>, ParseError> {
@@ -4115,7 +4586,7 @@ fn parse_sprite_play(line: &str) -> Result<Option<SpritePlayStatement>, ParseErr
         .unwrap_or(0.0)
         .max(0.0) as usize;
     let (duration_value, duration_seconds) =
-        parse_directional_move_duration_value(rest)?.unwrap_or((AssignmentValue::Number(0.0), 0.0));
+        parse_directional_move_duration_value(rest)?.unwrap_or((AssignmentValue::Number(1.0), 1.0));
     let duration_seconds = duration_seconds.max(0.001);
     Ok(Some(SpritePlayStatement {
         target: target.to_owned(),
@@ -4127,6 +4598,125 @@ fn parse_sprite_play(line: &str) -> Result<Option<SpritePlayStatement>, ParseErr
         duration_value,
         looped: contains_keyword(rest, "loop"),
     }))
+}
+
+fn parse_effekseer_play(line: &str) -> Result<Option<EffekseerPlayStatement>, ParseError> {
+    let Some((target, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
+    let rest = rest.trim();
+    if !starts_with_keyword(rest, "play") {
+        return Ok(None);
+    }
+    let options_text = rest["play".len()..].trim();
+    let option_parts = split_top_level_options(options_text);
+    let mut position = None;
+    let mut looped = false;
+    let mut attrs = Vec::new();
+    let async_run = contains_keyword(options_text, "async");
+    let mut recognized_effekseer_option = false;
+
+    for option in option_parts {
+        let option = option.trim();
+        if option.is_empty() {
+            continue;
+        }
+        if starts_with_keyword(option, "pos") {
+            position = parse_effekseer_position_option(option)?;
+            recognized_effekseer_option = true;
+        } else if option.eq_ignore_ascii_case("loop") {
+            looped = true;
+            recognized_effekseer_option = true;
+        } else if option.to_ascii_lowercase().starts_with("attr") {
+            attrs.extend(parse_effekseer_attr_list(option)?);
+            recognized_effekseer_option = true;
+        }
+    }
+    if !recognized_effekseer_option {
+        return Ok(None);
+    }
+
+    if let Some((_, value)) = attrs
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("loop"))
+        && assignment_value_is_truthy_literal(value)
+    {
+        looped = true;
+    }
+
+    Ok(Some(EffekseerPlayStatement {
+        target,
+        position,
+        looped,
+        attrs,
+        async_run,
+    }))
+}
+
+fn parse_effekseer_position_option(option: &str) -> Result<Option<PositionValue>, ParseError> {
+    let Some(raw_values) = values_inside_first_parens(option) else {
+        return Ok(None);
+    };
+    let parts = split_top_level_comma(raw_values);
+    if parts.len() == 3 {
+        return Ok(Some(PositionValue::Coordinates(
+            parts
+                .into_iter()
+                .map(parse_position_expr)
+                .collect::<Result<Vec<_>, _>>()?,
+        )));
+    }
+    let subject = raw_values.trim();
+    Ok((!subject.is_empty()).then(|| PositionValue::Entity(subject.to_owned())))
+}
+
+fn parse_effekseer_attr_list(option: &str) -> Result<Vec<(String, AssignmentValue)>, ParseError> {
+    let Some(open_index) = option.find('[') else {
+        return Ok(Vec::new());
+    };
+    let after_open = &option[open_index + 1..];
+    let Some(close_index) = matching_close_bracket_index(after_open) else {
+        return Ok(Vec::new());
+    };
+    split_top_level_options(&after_open[..close_index])
+        .into_iter()
+        .filter(|part| !part.trim().is_empty())
+        .map(parse_effekseer_attr)
+        .collect()
+}
+
+fn parse_effekseer_attr(part: &str) -> Result<(String, AssignmentValue), ParseError> {
+    let part = part.trim();
+    let (key, value_text) = if let Some(after_open) = part.strip_prefix('"') {
+        let Some(close_index) = after_open.find('"') else {
+            return Err(ParseError::InvalidNumber(part.to_owned()));
+        };
+        (
+            after_open[..close_index].to_owned(),
+            after_open[close_index + 1..].trim(),
+        )
+    } else {
+        let mut pieces = part.splitn(2, char::is_whitespace);
+        (
+            pieces.next().unwrap_or_default().trim().to_owned(),
+            pieces.next().unwrap_or_default().trim(),
+        )
+    };
+    if key.is_empty() || value_text.is_empty() {
+        return Err(ParseError::InvalidNumber(part.to_owned()));
+    }
+    let Some(value) = parse_assignment_value(value_text.trim_start_matches('=').trim())? else {
+        return Err(ParseError::InvalidNumber(value_text.to_owned()));
+    };
+    Ok((key.to_ascii_lowercase(), value))
+}
+
+fn assignment_value_is_truthy_literal(value: &AssignmentValue) -> bool {
+    match value {
+        AssignmentValue::Number(value) => *value != 0.0,
+        AssignmentValue::Symbol(value) => value.eq_ignore_ascii_case("true"),
+        _ => false,
+    }
 }
 
 fn parse_channel_draw(line: &str) -> Result<Option<ChannelDrawStatement>, ParseError> {
@@ -5044,29 +5634,131 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parses_model_shader_assignment() {
+        let program = parse_program("hero => avatar\nhero.shader = \"damage_flash\"").unwrap();
+
+        assert_eq!(
+            program.statements[1],
+            Statement::SetShader(SetShaderStatement {
+                target: "hero".to_owned(),
+                shader: AssignmentValue::Symbol("damage_flash".to_owned()),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_environment_shader_assignment() {
+        let program = parse_program("Scene.environment.shader = \"rainy_evening\"").unwrap();
+
+        assert_eq!(
+            program.statements[0],
+            Statement::SetEnvironmentShader {
+                shader: AssignmentValue::Symbol("rainy_evening".to_owned()),
+            }
+        );
+    }
+
+    #[test]
     fn parses_model_and_looping_animation() {
         let program = parse_program("d=>dragon\nd.fly loop").unwrap();
 
         assert_eq!(
             program,
-            Program {
-                statements: vec![
-                    Statement::ModelDecl {
-                        name: "d".to_owned(),
-                        resource: "dragon".to_owned(),
-                        options: EntityOptions::default(),
-                    },
-                    Statement::Animate(AnimationStatement {
-                        target: "d".to_owned(),
-                        clip: "fly".to_owned(),
-                        speed: 1.0,
-                        speed_value: AssignmentValue::Number(1.0),
-                        looped: true,
-                        blocking: false,
-                    }),
-                ],
-            }
+            Program::new(vec![
+                Statement::ModelDecl {
+                    name: "d".to_owned(),
+                    resource: "dragon".to_owned(),
+                    options: EntityOptions::default(),
+                },
+                Statement::Animate(AnimationStatement {
+                    target: "d".to_owned(),
+                    clip: "fly".to_owned(),
+                    speed: 1.0,
+                    speed_value: AssignmentValue::Number(1.0),
+                    looped: true,
+                    blocking: false,
+                }),
+            ])
         );
+    }
+
+    #[test]
+    fn parses_screen_mode_metadata() {
+        let program = parse_program("screen.mode full\nscreen.mode window\nd=>dragon").unwrap();
+
+        assert_eq!(program.screen_mode, ScreenMode::Full);
+        assert!(matches!(
+            program.statements.first(),
+            Some(Statement::ModelDecl { name, .. }) if name == "d"
+        ));
+    }
+
+    #[test]
+    fn parses_borderless_screen_mode_metadata() {
+        let program = parse_program("Screen.mode borderless").unwrap();
+        let no_borders_program = parse_program("screen.mode no borders").unwrap();
+
+        assert_eq!(program.screen_mode, ScreenMode::Borderless);
+        assert_eq!(no_borders_program.screen_mode, ScreenMode::Borderless);
+        assert!(program.statements.is_empty());
+    }
+
+    #[test]
+    fn parses_light_declarations_and_probe_actions() {
+        let program = parse_program(
+            "sun => Lights.directional : color \"#fff3d2\", intensity 3.0, direction (-0.3,-0.8,-0.4), shadow high\n\
+             lamp => Lights.point : pos (2,4,1), color warm, intensity 900 lumens, range 12, shadow medium\n\
+             stageSpot => Lights.spot : pos (0,6,-4), look at player1, angle 35, intensity 2500, shadow on\n\
+             environment => Lights.sky : preset \"Night Neon\", exposure 0.2, ambient \"#223344\"\n\
+             Lights.Add Probe \"3\" Having pos (2,1,0)",
+        )
+        .expect("program parses");
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::LightDecl(LightDeclarationStatement {
+                name,
+                light_type: LightType::Directional,
+                color: Some(color),
+                ..
+            }) if name == "sun" && color == "#fff3d2"
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::LightDecl(LightDeclarationStatement {
+                name,
+                light_type: LightType::Point,
+                intensity_unit: Some(unit),
+                shadow_mode: Some(shadow),
+                ..
+            }) if name == "lamp" && unit == "lumens" && shadow == "medium"
+        ));
+        assert!(matches!(
+            &program.statements[2],
+            Statement::LightDecl(LightDeclarationStatement {
+                name,
+                light_type: LightType::Spot,
+                look_at: Some(target),
+                ..
+            }) if name == "stageSpot" && target == "player1"
+        ));
+        assert!(matches!(
+            &program.statements[3],
+            Statement::LightDecl(LightDeclarationStatement {
+                name,
+                light_type: LightType::Sky,
+                preset: Some(preset),
+                ambient_color: Some(ambient),
+                ..
+            }) if name == "environment" && preset == "Night Neon" && ambient == "#223344"
+        ));
+        assert!(matches!(
+            &program.statements[4],
+            Statement::LightProbeAdd(LightProbeAddStatement {
+                name,
+                position: Some(PositionValue::Coordinates(_)),
+            }) if name == "3"
+        ));
     }
 
     #[test]
@@ -5097,6 +5789,24 @@ mod tests {
                 }),
             ]
         );
+    }
+
+    #[test]
+    fn parses_sprite_play_default_duration_as_one_second() {
+        let program = parse_program("b=>bird sprite\nb.play (frame 0 to 15)").unwrap();
+
+        assert!(matches!(
+            &program.statements[1],
+            Statement::SpritePlay(SpritePlayStatement {
+                target,
+                from_frame: 0,
+                to_frame: 15,
+                duration_seconds,
+                duration_value: AssignmentValue::Number(1.0),
+                looped: false,
+                ..
+            }) if target == "b" && (*duration_seconds - 1.0).abs() < f32::EPSILON
+        ));
     }
 
     #[test]
@@ -6160,6 +6870,14 @@ run tick(score+10) every tick_time+0.25 seconds
                 },
             ]
         );
+
+        let free_program =
+            parse_program("rocks => Object.Pool(create_rock, 2)\nrocks.free rock").unwrap();
+        assert!(matches!(
+            &free_program.statements[1],
+            Statement::PoolRelease(PoolReleaseStatement { pool, target })
+                if pool == "rocks" && target == "rock"
+        ));
     }
 
     #[test]
@@ -6220,9 +6938,54 @@ run tick(score+10) every tick_time+0.25 seconds
                 }),
                 Statement::Position(PositionStatement {
                     target: "player2_hit".to_owned(),
-                    position: PositionValue::Entity("player2".to_owned()),
+                    position: PositionValue::Entity("player2.\"mixamorig:Head\"".to_owned()),
                 }),
             ]
+        );
+    }
+
+    #[test]
+    fn parses_move_to_quoted_bone_subject() {
+        let program = parse_program("spark.move to (player1.\"mixamorig:Head\")").unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::MoveTo(MoveToStatement {
+                target,
+                destination: MoveToDestination::Position(PositionValue::Entity(subject)),
+                ..
+            }) if target == "spark" && subject == "player1.\"mixamorig:Head\""
+        ));
+    }
+
+    #[test]
+    fn parses_position_with_nested_runtime_expressions() {
+        let program = parse_program("rock.pos(0,-2+index*0.5,0-rnd(10))").unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::Position(PositionStatement {
+                target: "rock".to_owned(),
+                position: PositionValue::Coordinates(vec![
+                    PositionExpr::Number(0.0),
+                    PositionExpr::Value(AssignmentValue::Binary {
+                        left: Box::new(AssignmentValue::Number(-2.0)),
+                        operator: ArithmeticOperator::Add,
+                        right: Box::new(AssignmentValue::Binary {
+                            left: Box::new(AssignmentValue::Symbol("index".to_owned())),
+                            operator: ArithmeticOperator::Multiply,
+                            right: Box::new(AssignmentValue::Number(0.5)),
+                        }),
+                    }),
+                    PositionExpr::Value(AssignmentValue::Binary {
+                        left: Box::new(AssignmentValue::Number(0.0)),
+                        operator: ArithmeticOperator::Subtract,
+                        right: Box::new(AssignmentValue::RandomInt {
+                            max: Box::new(AssignmentValue::Number(10.0)),
+                        }),
+                    }),
+                ]),
+            })]
         );
     }
 
@@ -6768,6 +7531,25 @@ run tick(score+10) every tick_time+0.25 seconds
                 ],
             })]
         );
+    }
+
+    #[test]
+    fn parses_do_while_with_nested_else_without_swallowing_following_function() {
+        let program = parse_program(
+            "looping_fx = {\n  active=0\n\n  do\n    wait 0.35 seconds\n    if(game_status==GAME_STATE_START) {\n      if(active==0) {\n        active=1\n      }\n    } else {\n      if(active==1) {\n        active=0\n      }\n    }\n  while train_stage_started==1\n\n  if(active==1) {\n    active=0\n  }\n}\n\nnext_function = {\n  marker=1\n}\n",
+        )
+        .unwrap();
+
+        let function_names = program
+            .statements
+            .iter()
+            .filter_map(|statement| match statement {
+                Statement::FunctionDef(function) => Some(function.name.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(function_names, vec!["looping_fx", "next_function"]);
     }
 
     #[test]
@@ -7844,9 +8626,13 @@ run tick(score+10) every tick_time+0.25 seconds
                         looped: false,
                         volume: None,
                     }),
-                    Statement::NoOp {
-                        text: "laser_effect.play pos (player1)".to_owned(),
-                    },
+                    Statement::EffekseerPlay(EffekseerPlayStatement {
+                        target: "laser_effect".to_owned(),
+                        position: Some(PositionValue::Entity("player1".to_owned())),
+                        looped: false,
+                        attrs: Vec::new(),
+                        async_run: false,
+                    }),
                     Statement::CameraModifierApply(CameraModifierApplyStatement {
                         target: "fight_cam".to_owned(),
                         modifier: "hit_fx".to_owned(),
@@ -8023,5 +8809,47 @@ run tick(score+10) every tick_time+0.25 seconds
                 async_run: false,
             })]
         );
+    }
+
+    #[test]
+    fn parses_effekseer_declaration_and_play_with_entity_position() {
+        let program = parse_program(
+            "laser_effect => effects.effekseer.Homing_Laser01_3\n\
+             laser_effect.play pos (player1), loop",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::ModelDecl { name, resource, .. }
+                if name == "laser_effect" && resource == "effects.effekseer.Homing_Laser01_3"
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::EffekseerPlay(play)
+                if play.target == "laser_effect"
+                    && play.position == Some(PositionValue::Entity("player1".to_owned()))
+                    && play.looped
+        ));
+    }
+
+    #[test]
+    fn parses_effekseer_play_with_bone_position_and_attrs() {
+        let program = parse_program(
+            "effect => effects.effekseer.A_Salamander1\n\
+             effect.play pos (player1.\"mixamorig:RightHand\"), attr = [\"play_back_speed\" 1.2, \"input0\" 0.9] Async",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &program.statements[1],
+            Statement::EffekseerPlay(play)
+                if play.position == Some(PositionValue::Entity("player1.\"mixamorig:RightHand\"".to_owned()))
+                    && play.attrs == vec![
+                        ("play_back_speed".to_owned(), AssignmentValue::Number(1.2)),
+                        ("input0".to_owned(), AssignmentValue::Number(0.9)),
+                    ]
+                    && play.async_run
+        ));
     }
 }

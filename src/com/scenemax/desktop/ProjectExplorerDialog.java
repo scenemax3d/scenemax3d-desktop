@@ -40,6 +40,7 @@ class ProjectExplorerPanel extends JPanel {
     private final JLabel statusLabel = new JLabel();
     private final JButton openButton = new JButton("Open");
     private final JButton renameButton = new JButton("Rename");
+    private final JButton duplicateButton = new JButton("Duplicate");
     private final JButton deleteButton = new JButton("Delete");
     private final JButton openFolderButton = new JButton("Open Folder");
 
@@ -107,6 +108,7 @@ class ProjectExplorerPanel extends JPanel {
 
         openButton.addActionListener(e -> openSelectedProject());
         renameButton.addActionListener(e -> renameSelectedProject());
+        duplicateButton.addActionListener(e -> duplicateSelectedProject());
         deleteButton.addActionListener(e -> deleteSelectedProject());
         openFolderButton.addActionListener(e -> openSelectedProjectFolder());
 
@@ -114,6 +116,7 @@ class ProjectExplorerPanel extends JPanel {
         buttons.add(openFolderButton);
         buttons.add(openButton);
         buttons.add(renameButton);
+        buttons.add(duplicateButton);
         buttons.add(deleteButton);
 
         JPanel bottom = new JPanel(new BorderLayout(10, 0));
@@ -128,6 +131,7 @@ class ProjectExplorerPanel extends JPanel {
         boolean hasSelection = row != null;
         openButton.setEnabled(hasSelection && !row.active);
         renameButton.setEnabled(hasSelection);
+        duplicateButton.setEnabled(hasSelection);
         deleteButton.setEnabled(hasSelection && tableModel.getRowCount() > 1);
         openFolderButton.setEnabled(hasSelection && new File(row.project.path).exists());
     }
@@ -165,6 +169,50 @@ class ProjectExplorerPanel extends JPanel {
             selectProject(newName);
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(this, ex.getMessage(), "Rename Project", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void duplicateSelectedProject() {
+        ProjectRow row = getSelectedRow();
+        if (row == null) {
+            return;
+        }
+
+        String defaultName = nextDuplicateProjectName(row.project.name);
+        String newName = JOptionPane.showInputDialog(
+                this,
+                "New project name",
+                defaultName);
+        if (newName == null) {
+            return;
+        }
+        newName = newName.trim();
+        if (newName.isEmpty()) {
+            return;
+        }
+
+        try {
+            app.prepareProjectCatalogMutation(false);
+            if (row.active) {
+                row.project.selectedParent = AppDB.getInstance().getParam("selected_tree_node_parent");
+                row.project.selectedNode = AppDB.getInstance().getParam("selected_tree_node");
+                Util.saveProjectSettings(row.project);
+            }
+            SceneMaxProject duplicated = Util.duplicateProject(row.project.name, newName);
+            app.refreshProjectCatalogViews();
+            refreshProjects();
+            if (duplicated != null) {
+                selectProject(duplicated.name);
+            } else {
+                selectProject(newName);
+            }
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Project duplicated to:\n" + new File(duplicated != null ? duplicated.path : "").getAbsolutePath(),
+                    "Duplicate Project",
+                    JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this, ex.getMessage(), "Duplicate Project", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -217,6 +265,25 @@ class ProjectExplorerPanel extends JPanel {
     private String getSelectedProjectName() {
         ProjectRow row = getSelectedRow();
         return row == null ? null : row.project.name;
+    }
+
+    private String nextDuplicateProjectName(String projectName) {
+        List<SceneMaxProject> projects = Util.getProjects_New();
+        String baseName = projectName + " Copy";
+        String candidate = baseName;
+        for (int suffix = 2; containsProjectName(projects, candidate); ++suffix) {
+            candidate = baseName + " " + suffix;
+        }
+        return candidate;
+    }
+
+    private boolean containsProjectName(List<SceneMaxProject> projects, String projectName) {
+        for (SceneMaxProject project : projects) {
+            if (project.name.equals(projectName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void restoreSelection(String projectName) {

@@ -1,0 +1,27 @@
+{
+  "preview": {
+    "playbackSpeed": 1,
+    "showGround": true,
+    "backgroundMode": "dark",
+    "motion": {
+      "orbitStrength": 0,
+      "forceScale": 1,
+      "damping": 0
+    },
+    "loop": false,
+    "camera": {
+      "pitchDeg": -15,
+      "distance": 12,
+      "yawDeg": 35
+    }
+  },
+  "assetId": "Rock1",
+  "name": "Rock1",
+  "source": {
+    "importedAt": "2026-05-15T20:38:39.584907400Z",
+    "originalImportPath": "C:\\Users\\adikt\\Downloads\\MAGICALxSPIRAL\\Rock1.efkproj",
+    "originalFormat": "efkproj",
+    "importedEffectFile": "effects/Rock1/Rock1.efkproj"
+  },
+  "version": 1
+}

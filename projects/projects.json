@@ -6,14 +6,16 @@
             "multiplayerDeployOs": "Windows",
             "itchMacChannel": "macos",
             "itchLinuxChannel": "linux",
+            "lastActiveAt": 1786856283948,
             "path": "projects/fighting_game_project",
             "multiplayerPassword": "",
             "multiplayerServerIp": "127.0.0.1",
-            "selectedNode": "player1_attack_states",
+            "projectorType": "nextgen",
+            "selectedNode": "bevy_shader1.smshader",
             "projectGuid": "b616bee4-eeca-4b8f-939b-37510d338fa3",
             "name": "fighting game project",
             "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game\\game_level1\\states",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game\\shaders",
             "multiplayerServerPort": 9001
         },
         {
@@ -30,88 +32,6 @@
             "name": "default project",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\default_project\\scripts\\Jam-Crime-With_pause",
             "multiplayerServerPort": 9001
-        },
-        {
-            "path": "projects/test1",
-            "itchWindowsChannel": "",
-            "selectedNode": "main",
-            "itchGamePage": "",
-            "projectGuid": "f6b84b1c-465e-4e7c-82c9-0a264005f6f6",
-            "name": "test1",
-            "itchButlerPath": "",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test1\\scripts\\4play",
-            "itchMacChannel": "",
-            "itchLinuxChannel": ""
-        },
-        {
-            "path": "projects/test2",
-            "selectedNode": "main",
-            "projectGuid": "fa7d02f5-78c5-4e37-a83c-40bda6c1a4cb",
-            "name": "test2",
-            "selectedParent": "4play-lesson-3"
-        },
-        {
-            "path": "projects/test3",
-            "selectedNode": "main",
-            "projectGuid": "8cb436a2-7ae2-4640-bcbe-eb71ac695e46",
-            "name": "test3",
-            "selectedParent": "4play"
-        },
-        {
-            "path": "projects/test4",
-            "selectedNode": "main",
-            "projectGuid": "4fd7ed47-f17f-4bb0-af59-21eddf60788a",
-            "name": "test4",
-            "selectedParent": "test4"
-        },
-        {
-            "path": "projects/test5",
-            "selectedNode": "main",
-            "projectGuid": "1297c758-5b03-4ea0-9244-69ba6236eda2",
-            "name": "test5",
-            "selectedParent": "test5"
-        },
-        {
-            "path": "projects/test6",
-            "selectedNode": "main",
-            "projectGuid": "c770af2a-e445-46cc-9360-5535217191ff",
-            "name": "test6",
-            "selectedParent": "test6"
-        },
-        {
-            "path": "projects/test7",
-            "selectedNode": "main",
-            "projectGuid": "29140548-fd8b-48f5-9710-2ca46031d9ec",
-            "name": "test7",
-            "selectedParent": "Rally-Desert-Cheese"
-        },
-        {
-            "path": "projects/test8",
-            "selectedNode": "main",
-            "projectGuid": "25d9020a-636b-4937-aed2-088bcef0fbbe",
-            "name": "test8",
-            "selectedParent": "4play-lesson-3"
-        },
-        {
-            "path": "projects/test9",
-            "selectedNode": "main",
-            "projectGuid": "7e18ca7b-fd8f-4aff-97ed-be17fb0ad51d",
-            "name": "test9",
-            "selectedParent": "hello world"
-        },
-        {
-            "path": "projects/test10",
-            "selectedNode": "main",
-            "projectGuid": "b9fcd95b-03fb-4a5f-9581-75fadf2a1679",
-            "name": "test10",
-            "selectedParent": "hello world"
-        },
-        {
-            "path": "projects/test12",
-            "selectedNode": "main",
-            "projectGuid": "e65c829b-7ada-473e-8d5c-c300cd2c534b",
-            "name": "test12",
-            "selectedParent": "car race demo"
         },
         {
             "path": "projects/test-add-code",
@@ -243,15 +163,52 @@
             "multiplayerDeployOs": "Linux",
             "itchMacChannel": "macos",
             "itchLinuxChannel": "linux",
+            "lastActiveAt": 1786279560783,
             "path": "projects/GMTK_2026",
             "multiplayerPassword": "",
             "multiplayerServerIp": "178.128.144.17",
+            "projectorType": "classic",
             "selectedNode": "network_events.code",
             "projectGuid": "a0b355af-0b53-4886-86f3-b8c329a4f575",
             "name": "GMTK 2026",
             "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\GMTK_2026\\scripts\\GMTK 2026\\level1",
             "multiplayerServerPort": 9001
+        },
+        {
+            "itchWindowsChannel": "",
+            "itchGamePage": "",
+            "multiplayerDeployOs": "Windows",
+            "itchMacChannel": "",
+            "itchLinuxChannel": "",
+            "lastActiveAt": 1786394513887,
+            "path": "projects/Bevy_Tests",
+            "multiplayerPassword": "",
+            "multiplayerServerIp": "127.0.0.1",
+            "projectorType": "nextgen",
+            "selectedNode": "main",
+            "projectGuid": "9847c57b-f144-42be-aad6-f7d6e51d4697",
+            "name": "Bevy Tests",
+            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\Bevy_Tests\\scripts\\Bevy Tests",
+            "multiplayerServerPort": 9001
+        },
+        {
+            "itchWindowsChannel": "windows",
+            "itchGamePage": "https://adi-barda.itch.io/fighting-game-concept",
+            "multiplayerDeployOs": "Windows",
+            "itchMacChannel": "macos",
+            "itchLinuxChannel": "linux",
+            "lastActiveAt": 1786862215351,
+            "path": "projects/fighting_game_project_-_bevy",
+            "multiplayerPassword": "",
+            "multiplayerServerIp": "127.0.0.1",
+            "projectorType": "nextgen",
+            "selectedNode": "bevy_shader1.smshader",
+            "projectGuid": "f158c844-599c-443b-8dce-ad31e02ecadb",
+            "name": "fighting game project - bevy",
+            "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
+            "selectedParent": "C:/dev/scenemax_desktop/projects/fighting_game_project_-_bevy/scripts/Fighting Game/shaders",
+            "multiplayerServerPort": 9001
         }
     ],
-    "selectedProject": "GMTK 2026"
+    "selectedProject": "fighting game project - bevy"
 }

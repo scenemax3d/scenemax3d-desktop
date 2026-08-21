@@ -27,7 +27,7 @@ do async
   audio.play "drums_music1" loop
 end do
 tg => tiger3: pos (10.163753,-5.6443043,49.335724), scale 0.04, rotate(0.0,110.49832,0.0), shadow mode on async
-boss => dynamic boss : hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast async
+boss => dynamic boss: hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast async
 // boss character mode
 boss.switch to character mode
 // focus camera on tiger
@@ -37,7 +37,7 @@ tg."Idle_Lie Prone" loop
 //effects.flame.show : pos (13,-20,50), radius = 17, duration 4 async
 skybox.show solar system
 wait 1 seconds
-player1 => dynamic fighter1_native : hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast
+player1 => dynamic fighter1_native: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast
 , joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot") async
 player1_body_collider => collider box : size (1.0,1.0,1.0), pos (0.0,0.5,2.88586)
 // player1_body_collider_attach
@@ -57,7 +57,7 @@ player1_left_hand_collider.attach to player1."mixamorig:LeftHand": pos (0,0,0)
 player1_right_hand_collider => collider sphere : pos (8.34038,0.5,0.0), radius 0.5
 // player1_right_hand_collider_attach
 player1_right_hand_collider.attach to player1."mixamorig:RightHand": pos (0,0,0)
-player2 => dynamic old_fighter2_native : hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on
+player2 => dynamic old_fighter2_native: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on
 , joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot") async
 player2_body_collider => collider box : size (1.0,1.0,1.0), pos (0.14360523,0.5,0.0)
 // player2_body_collider_attach
@@ -102,14 +102,14 @@ player2.show
 
 player2.look at (player1)
 player1.look at (player2)
-dragons_gate => static meshy_ai_dragon_gate_0504202330_texture_native: pos (22.532026,-66.486755,148.68306), scale 30.0, collision shape none async
-crystal => static meshy_crystal1_native : hidden, pos (23.844534,-88.28118,161.98776), collision shape box async
+dragons_gate => static dragon_gate1: pos (22.532026,-66.486755,148.68306), scale 30.0, collision shape none async
+crystal => static meshy_crystal1_native: hidden, pos (23.844534,-88.28118,161.98776), collision shape box async
 // player_got_crystal
 when player1 collides with crystal do
 	switch to "game_level_train"
 end do
 crystal_box => static meshy_wooden_box: pos (23.732,-88.0,161.9128), scale 1.4, collision shape box async
-axe => meshy_axe_native : hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async
+axe => meshy_axe_native: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async
 quad_1 => quad : size (1.0,1.0), pos (-33.073235,-88.97634,115.0642), scale 34.2, rotate(0.0,-44.446686,0.0)
 
 // Write your finalization code here.

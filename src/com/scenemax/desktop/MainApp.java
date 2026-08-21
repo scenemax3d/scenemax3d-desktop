@@ -92,6 +92,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import static javax.swing.JOptionPane.YES_OPTION;
 
@@ -164,6 +165,11 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     private IdePluginHostContext pluginHostContext;
     private final java.util.List<ISceneMaxPlugin> enhancedPlugins = new ArrayList<>();
     private boolean launcherRunInProgress;
+    private JDialog nextGenLaunchProgressDialog;
+    private JLabel nextGenLaunchProgressLabel;
+    private JLabel nextGenLaunchProgressNote;
+    private JProgressBar nextGenLaunchProgressBar;
+    private javax.swing.Timer nextGenLaunchAutoHideTimer;
     // (Designer panels are managed per-tab inside EditorTabPanel)
 
     private static final class AutomationRunSource {
@@ -1334,6 +1340,14 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             }
         });
 
+        inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_F12, KeyEvent.CTRL_DOWN_MASK), "run_active_script_file_nextgen");
+        actionMap.put("run_active_script_file_nextgen", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                runActiveEditorScriptFileNextGen();
+            }
+        });
+
         inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_F8, 0), "run_active_script_file");
         actionMap.put("run_active_script_file", new AbstractAction() {
             @Override
@@ -1352,6 +1366,13 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 if (editorTabPanel != null) {
                     editorTabPanel.switchToPreviousTab();
                 }
+                return true;
+            }
+            if (e.getKeyCode() == KeyEvent.VK_F12
+                    && (e.getModifiersEx() & KeyEvent.CTRL_DOWN_MASK) != 0
+                    && (e.getModifiersEx() & KeyEvent.ALT_DOWN_MASK) == 0
+                    && (e.getModifiersEx() & KeyEvent.SHIFT_DOWN_MASK) == 0) {
+                runActiveEditorScriptFileNextGen();
                 return true;
             }
             if (e.getModifiersEx() != 0) {
@@ -1698,13 +1719,14 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         boolean isUIDesigner = f.getName().toLowerCase().endsWith(".smui");
                         boolean isEffekseerDesigner = f.getName().toLowerCase().endsWith(".smeffectdesign");
                         boolean isShaderDesigner = f.getName().toLowerCase().endsWith(".smshader");
+                        boolean isBevyShaderDesigner = f.getName().toLowerCase().endsWith(BevyShaderDocument.FILE_EXTENSION);
                         boolean isEnvironmentShaderDesigner = f.getName().toLowerCase().endsWith(".smenvshader");
                         boolean isMaterialDesigner = f.getName().toLowerCase().endsWith(".mat");
                         boolean isWeaponDesigner = f.getName().toLowerCase().endsWith(WeaponDefinition.FILE_EXTENSION);
                         boolean isThrowMotionDesigner = f.getName().toLowerCase().endsWith(ThrowMotionDefinition.FILE_EXTENSION);
                         boolean isIKDesigner = isIKDesignerFile(f.getName());
                         editorTabPanel.closeTabByPath(filePath,
-                                isDesigner || isUIDesigner || isEffekseerDesigner || isShaderDesigner
+                                isDesigner || isUIDesigner || isEffekseerDesigner || isShaderDesigner || isBevyShaderDesigner
                                         || isEnvironmentShaderDesigner || isMaterialDesigner || isWeaponDesigner
                                         || isThrowMotionDesigner || isIKDesigner);
 
@@ -1926,7 +1948,11 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         addScriptsTreePopupMenuItem("Create Weapon", "new_weapon_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Throw Motion", "new_throw_motion_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create IK Asset", "new_ik_document", popup, popupActionListener, true, false, file);
-        addScriptsTreePopupMenuItem("Create Shader Document", "new_shader_document", popup, popupActionListener, true, false, file);
+        SceneMaxProject activeProject = Util.getActiveProject();
+        String shaderDocumentLabel = activeProject != null && activeProject.isNextGenProjector()
+                ? "Create Bevy Shader Document"
+                : "Create Shader Document";
+        addScriptsTreePopupMenuItem(shaderDocumentLabel, "new_shader_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Environment Shader Document", "new_environment_shader_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create Sub Folder...", "create_sub_folder", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Delete Folder...", "delete_folder", popup, popupActionListener, true, false, file);
@@ -2424,6 +2450,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 || lowerPath.endsWith(".smui")
                 || lowerPath.endsWith(".smeffectdesign")
                 || lowerPath.endsWith(".smshader")
+                || lowerPath.endsWith(BevyShaderDocument.FILE_EXTENSION)
                 || lowerPath.endsWith(".smenvshader")
                 || lowerPath.endsWith(".mat")
                 || lowerPath.endsWith(WeaponDefinition.FILE_EXTENSION)
@@ -2830,6 +2857,12 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     private void createNewShaderDocument(String path) {
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject != null && activeProject.isNextGenProjector()) {
+            createNewBevyShaderDocument(path);
+            return;
+        }
+
         String docName = (String) JOptionPane.showInputDialog(
                 null,
                 "Type new shader document name",
@@ -2864,6 +2897,52 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         File f = new File(path + "/" + docName);
         try {
             ShaderDocument.writeEmptyFile(f, preset);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return;
+        }
+
+        File parentDir = new File(path);
+        saveSelectedTreeNodePosition(parentDir.getPath(), docName);
+        loadScriptsFolder();
+        openLastTreeNode();
+    }
+
+    private void createNewBevyShaderDocument(String path) {
+        String docName = (String) JOptionPane.showInputDialog(
+                null,
+                "Type new Bevy shader document name",
+                "Bevy Shader Document Name",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                null,
+                "");
+
+        if (docName == null || docName.trim().length() == 0) {
+            return;
+        }
+
+        BevyShaderDocument.Preset preset = (BevyShaderDocument.Preset) JOptionPane.showInputDialog(
+                null,
+                "Choose a Bevy starter template",
+                "Bevy Starter Template",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                BevyShaderDocument.Preset.values(),
+                BevyShaderDocument.Preset.TEXTURE_TINT
+        );
+        if (preset == null) {
+            preset = BevyShaderDocument.Preset.TEXTURE_TINT;
+        }
+
+        docName = docName.trim();
+        if (!docName.toLowerCase(Locale.ROOT).endsWith(BevyShaderDocument.FILE_EXTENSION)) {
+            docName = docName + BevyShaderDocument.FILE_EXTENSION;
+        }
+
+        File f = new File(path + "/" + docName);
+        try {
+            BevyShaderDocument.writeEmptyFile(f, preset);
         } catch (IOException e) {
             e.printStackTrace();
             return;
@@ -3204,6 +3283,14 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     private void openShaderDesignerDocument(File f) {
+        if (isBevyShaderDocumentPayload(f)) {
+            JOptionPane.showMessageDialog(this,
+                    "This is a Bevy shader document. Bevy shaders must use the .bvshader extension and can only be opened in Rust/Bevy projects.",
+                    "Classic Shader Designer",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
         if (editorTabPanel.isFileOpen(f.getAbsolutePath())) {
             editorTabPanel.openShaderDesignerFile(f.getAbsolutePath(), null);
             return;
@@ -3224,6 +3311,42 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         lastSelectedNodeIsFile = true;
         btnRunScript.setEnabled(false);
 
+        saveSelectedTreeNodePosition(f.getParentFile().getPath(), f.getName());
+    }
+
+    private boolean isBevyShaderDocumentPayload(File f) {
+        try {
+            if (f == null || !f.isFile()) {
+                return false;
+            }
+            String text = Files.readString(f.toPath(), StandardCharsets.UTF_8).trim();
+            if (!text.startsWith("{")) {
+                return false;
+            }
+            JSONObject document = new JSONObject(text);
+            return "bevy_shader".equalsIgnoreCase(document.optString("documentType", ""));
+        } catch (IOException | JSONException ex) {
+            return false;
+        }
+    }
+
+    private void openBevyShaderDesignerDocument(File f) {
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject == null || !activeProject.isNextGenProjector()) {
+            JOptionPane.showMessageDialog(this,
+                    "Bevy shader documents can only be opened in Rust/Bevy projects.",
+                    "Bevy Shader Designer",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        showNextGenLaunchProgress(
+                "Starting Bevy Shader Designer",
+                "First launch after Rust/Bevy changes can compile the shader designer before the window appears.",
+                "Preparing Bevy shader designer...");
+        BevyShaderDesignerLauncher.launch(this, activeProject, f, this::updateNextGenLaunchProgress);
+        lastSelectedFilePath = f.getAbsolutePath();
+        lastSelectedNodeIsFile = true;
+        btnRunScript.setEnabled(false);
         saveSelectedTreeNodePosition(f.getParentFile().getPath(), f.getName());
     }
 
@@ -3842,6 +3965,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                             openEffekseerDesignerDocument(f);
                         } else if (f.getName().endsWith(".smui")) {
                             openUIDesignerDocument(f);
+                        } else if (f.getName().endsWith(BevyShaderDocument.FILE_EXTENSION)) {
+                            openBevyShaderDesignerDocument(f);
                         } else if (f.getName().endsWith(".smshader")) {
                             openShaderDesignerDocument(f);
                         } else if (f.getName().endsWith(".smenvshader")) {
@@ -4044,6 +4169,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             openEffekseerDesignerDocument(f);
         } else if (f.getName().endsWith(".smui")) {
             openUIDesignerDocument(f);
+        } else if (f.getName().endsWith(BevyShaderDocument.FILE_EXTENSION)) {
+            openBevyShaderDesignerDocument(f);
         } else if (f.getName().endsWith(".smshader")) {
             openShaderDesignerDocument(f);
         } else if (f.getName().endsWith(".smenvshader")) {
@@ -4184,6 +4311,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     openEffekseerDesignerDocument(f);
                 } else if (f.getName().endsWith(".smui")) {
                     openUIDesignerDocument(f);
+                } else if (f.getName().endsWith(BevyShaderDocument.FILE_EXTENSION)) {
+                    openBevyShaderDesignerDocument(f);
                 } else if (f.getName().endsWith(".smshader")) {
                     openShaderDesignerDocument(f);
                 } else if (f.getName().endsWith(".smenvshader")) {
@@ -4770,6 +4899,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     private boolean prepareAndRunLauncher(RunLauncherTask.RuntimeTarget runtimeTarget) {
         if (launcherRunInProgress) {
+            showLauncherAlreadyRunning(runtimeTarget);
             return false;
         }
 
@@ -4785,6 +4915,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         File rootMain = findProjectRootMainFile();
         if (rootMain == null) {
             btnRunScript.setEnabled(true);
+            btnRecordScene.setEnabled(true);
             JOptionPane.showMessageDialog(null,
                     "Could not find a 'main' file under the project's scripts folder.",
                     "Run Error", JOptionPane.ERROR_MESSAGE);
@@ -4795,7 +4926,16 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
     }
 
     private boolean runActiveEditorScriptFile() {
+        return runActiveEditorScriptFile(RunLauncherTask.RuntimeTarget.CLASSIC);
+    }
+
+    private boolean runActiveEditorScriptFileNextGen() {
+        return runActiveEditorScriptFile(RunLauncherTask.RuntimeTarget.NEXTGEN);
+    }
+
+    private boolean runActiveEditorScriptFile(RunLauncherTask.RuntimeTarget runtimeTarget) {
         if (launcherRunInProgress) {
+            showLauncherAlreadyRunning(runtimeTarget);
             return false;
         }
 
@@ -4818,7 +4958,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         if (active.dirty) {
             editorTabPanel.saveActiveTab();
         }
-        return runScriptFile(target);
+        return runScriptFile(target, runtimeTarget);
     }
 
     private boolean runScriptFile(File scriptFile) {
@@ -4827,12 +4967,16 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
 
     private boolean runScriptFile(File scriptFile, RunLauncherTask.RuntimeTarget runtimeTarget) {
         if (launcherRunInProgress) {
+            showLauncherAlreadyRunning(runtimeTarget);
             return false;
         }
 
         btnRunScript.setEnabled(false);
         btnRecordScene.setEnabled(false);
         launcherRunInProgress = true;
+        if (runtimeTarget == RunLauncherTask.RuntimeTarget.NEXTGEN) {
+            showNextGenLaunchProgress("Preparing NextGen run...");
+        }
 
         String prg;
         EditorTabPanel.TabData active = editorTabPanel != null ? editorTabPanel.getActiveTab() : null;
@@ -4847,7 +4991,9 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             } catch (IOException e) {
                 e.printStackTrace();
                 btnRunScript.setEnabled(true);
+                btnRecordScene.setEnabled(true);
                 launcherRunInProgress = false;
+                hideNextGenLaunchProgress();
                 JOptionPane.showMessageDialog(null,
                         "Error reading script file '" + scriptFile.getName() + "': " + e.getMessage(),
                         "Run Error", JOptionPane.ERROR_MESSAGE);
@@ -4855,15 +5001,122 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             }
         }
 
+        Consumer<String> launchStatusConsumer = runtimeTarget == RunLauncherTask.RuntimeTarget.NEXTGEN
+                ? this::updateNextGenLaunchProgress
+                : null;
         new RunLauncherTask(scriptFile.getAbsolutePath(), prg, new Runnable() {
             @Override
             public void run() {
                 launcherRunInProgress = false;
                 btnRunScript.setEnabled(true);
+                btnRecordScene.setEnabled(true);
+                hideNextGenLaunchProgress();
             }
-        }, runtimeTarget).execute();
+        }, runtimeTarget, launchStatusConsumer).execute();
 
         return true;
+    }
+
+    private void showLauncherAlreadyRunning(RunLauncherTask.RuntimeTarget runtimeTarget) {
+        if (runtimeTarget == RunLauncherTask.RuntimeTarget.NEXTGEN) {
+            showNextGenLaunchProgress("Bevy projector is already starting or running...");
+            Toolkit.getDefaultToolkit().beep();
+        }
+    }
+
+    private void showNextGenLaunchProgress(String message) {
+        showNextGenLaunchProgress(
+                "Starting Bevy Projector",
+                "First launch after Rust/Bevy changes can compile the projector before the window appears.",
+                message);
+    }
+
+    private void showNextGenLaunchProgress(String title, String noteText, String message) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> showNextGenLaunchProgress(title, noteText, message));
+            return;
+        }
+        if (nextGenLaunchProgressDialog == null) {
+            nextGenLaunchProgressLabel = new JLabel(message);
+            nextGenLaunchProgressLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
+
+            nextGenLaunchProgressBar = new JProgressBar();
+            nextGenLaunchProgressBar.setIndeterminate(true);
+            nextGenLaunchProgressBar.setStringPainted(true);
+            nextGenLaunchProgressBar.setString("Starting...");
+
+            nextGenLaunchProgressNote = new JLabel();
+            nextGenLaunchProgressNote.setForeground(UIManager.getColor("Label.disabledForeground"));
+
+            JPanel content = new JPanel(new BorderLayout(0, 8));
+            content.setBorder(BorderFactory.createEmptyBorder(16, 18, 16, 18));
+            content.add(nextGenLaunchProgressLabel, BorderLayout.NORTH);
+            content.add(nextGenLaunchProgressBar, BorderLayout.CENTER);
+            content.add(nextGenLaunchProgressNote, BorderLayout.SOUTH);
+
+            nextGenLaunchProgressDialog = new JDialog(this, title, false);
+            nextGenLaunchProgressDialog.setDefaultCloseOperation(WindowConstants.HIDE_ON_CLOSE);
+            nextGenLaunchProgressDialog.setContentPane(content);
+            nextGenLaunchProgressDialog.setSize(440, 150);
+            nextGenLaunchProgressDialog.setLocationRelativeTo(this);
+        }
+        nextGenLaunchProgressDialog.setTitle(title);
+        if (nextGenLaunchProgressNote != null) {
+            nextGenLaunchProgressNote.setText("<html>" + noteText + "</html>");
+        }
+        stopNextGenLaunchAutoHideTimer();
+        updateNextGenLaunchProgress(message);
+        if (!nextGenLaunchProgressDialog.isVisible()) {
+            nextGenLaunchProgressDialog.setLocationRelativeTo(this);
+            nextGenLaunchProgressDialog.setVisible(true);
+        }
+    }
+
+    private void updateNextGenLaunchProgress(String message) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> updateNextGenLaunchProgress(message));
+            return;
+        }
+        if (message == null || message.isBlank()) {
+            return;
+        }
+        if (nextGenLaunchProgressDialog == null) {
+            showNextGenLaunchProgress(message);
+            return;
+        }
+        nextGenLaunchProgressLabel.setText(message);
+        if (nextGenLaunchProgressBar != null) {
+            nextGenLaunchProgressBar.setString("Working...");
+        }
+        if (message.startsWith("Bevy projector process started.")
+                || message.startsWith("Bevy shader designer process started.")) {
+            scheduleNextGenLaunchProgressHide();
+        }
+    }
+
+    private void scheduleNextGenLaunchProgressHide() {
+        stopNextGenLaunchAutoHideTimer();
+        nextGenLaunchAutoHideTimer = new javax.swing.Timer(1800, e -> hideNextGenLaunchProgress());
+        nextGenLaunchAutoHideTimer.setRepeats(false);
+        nextGenLaunchAutoHideTimer.start();
+    }
+
+    private void stopNextGenLaunchAutoHideTimer() {
+        if (nextGenLaunchAutoHideTimer != null) {
+            nextGenLaunchAutoHideTimer.stop();
+            nextGenLaunchAutoHideTimer = null;
+        }
+    }
+
+    private void hideNextGenLaunchProgress() {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(this::hideNextGenLaunchProgress);
+            return;
+        }
+        stopNextGenLaunchAutoHideTimer();
+        if (nextGenLaunchProgressDialog != null) {
+            nextGenLaunchProgressDialog.setVisible(false);
+        }
     }
 
     /**
@@ -4914,6 +5167,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 || name.endsWith(".smui")
                 || name.endsWith(".smeffectdesign")
                 || name.endsWith(".smshader")
+                || name.endsWith(BevyShaderDocument.FILE_EXTENSION)
                 || name.endsWith(".smenvshader")
                 || name.endsWith(".mat")
                 || name.endsWith(WeaponDefinition.FILE_EXTENSION)

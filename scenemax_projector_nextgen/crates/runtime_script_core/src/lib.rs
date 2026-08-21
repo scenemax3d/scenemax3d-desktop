@@ -15,38 +15,86 @@ pub struct FunctionRuntime {
 }
 
 pub fn collect_animations_by_target(program: &Program) -> HashMap<String, AnimationStatement> {
-    program
-        .statements
-        .iter()
-        .filter_map(|statement| match statement {
-            Statement::Animate(animation) => Some((animation.target.clone(), animation.clone())),
-            _ => None,
-        })
-        .collect()
+    let mut animations = HashMap::new();
+    for statement in &program.statements {
+        if initial_state_scan_boundary(statement) {
+            break;
+        }
+        if let Statement::Animate(animation) = statement {
+            animations.insert(animation.target.clone(), animation.clone());
+        }
+    }
+    animations
 }
 
 pub fn collect_visibility_by_target(program: &Program) -> HashMap<String, bool> {
-    program
-        .statements
-        .iter()
-        .filter_map(|statement| match statement {
-            Statement::Visibility { target, visible } => Some((target.clone(), *visible)),
-            _ => None,
-        })
-        .collect()
+    let mut visibility = HashMap::new();
+    for statement in &program.statements {
+        if initial_state_scan_boundary(statement) {
+            break;
+        }
+        if let Statement::Visibility { target, visible } = statement {
+            visibility.insert(target.clone(), *visible);
+        }
+    }
+    visibility
+}
+
+pub fn initial_state_scan_boundary(statement: &Statement) -> bool {
+    matches!(
+        statement,
+        Statement::Wait { .. }
+            | Statement::WaitValue { .. }
+            | Statement::WaitUntil { .. }
+            | Statement::WaitForKey { .. }
+            | Statement::SwitchTo { .. }
+            | Statement::Animate(AnimationStatement {
+                blocking: true,
+                looped: false,
+                ..
+            })
+            | Statement::Turn(scenemax_parser::TurnStatement {
+                async_run: false,
+                loop_condition: None,
+                ..
+            })
+            | Statement::Move(scenemax_parser::MoveStatement {
+                async_run: false,
+                loop_condition: None,
+                ..
+            })
+            | Statement::MoveTo(scenemax_parser::MoveToStatement {
+                async_run: false,
+                ..
+            })
+            | Statement::CameraMove(scenemax_parser::CameraMoveStatement {
+                async_run: false,
+                ..
+            })
+            | Statement::CharacterJump(scenemax_parser::CharacterJumpStatement {
+                async_run: false,
+                ..
+            })
+            | Statement::CinematicPlay(scenemax_parser::CinematicPlayStatement {
+                async_run: false,
+                ..
+            })
+    )
 }
 
 pub fn collect_turn_by_target(
     program: &Program,
 ) -> HashMap<String, scenemax_parser::TurnStatement> {
-    program
-        .statements
-        .iter()
-        .filter_map(|statement| match statement {
-            Statement::Turn(turn) => Some((turn.target.clone(), turn.clone())),
-            _ => None,
-        })
-        .collect()
+    let mut turns = HashMap::new();
+    for statement in &program.statements {
+        if initial_state_scan_boundary(statement) {
+            break;
+        }
+        if let Statement::Turn(turn) = statement {
+            turns.insert(turn.target.clone(), turn.clone());
+        }
+    }
+    turns
 }
 
 pub fn collect_attaches_by_target(program: &Program) -> HashMap<String, AttachStatement> {
@@ -402,6 +450,13 @@ pub fn substitute_statement(
                 Statement::Assignment(assignment)
             }
         }
+        Statement::SetShader(shader) => Statement::SetShader(scenemax_parser::SetShaderStatement {
+            target: substitute_path(&shader.target, bindings),
+            shader: substitute_assignment_value(&shader.shader, bindings),
+        }),
+        Statement::SetEnvironmentShader { shader } => Statement::SetEnvironmentShader {
+            shader: substitute_assignment_value(shader, bindings),
+        },
         Statement::RunFunction { name, args } => Statement::RunFunction {
             name: name.clone(),
             args: args
@@ -796,6 +851,30 @@ mod tests {
                 blocking: false,
             })
         );
+    }
+
+    #[test]
+    fn startup_state_collection_stops_at_first_blocking_boundary() {
+        let program = parse_program(
+            "intro => dragon\nboss => boss: hidden\nboss.show\nboss.Idle loop\nring.turn left 360 in 50 seconds async\nwait 1 seconds\nintro.hide\nboss.hide\nintro.Run loop\nintro.turn right 45 in 0.1 seconds",
+        )
+        .unwrap();
+
+        let visibility = collect_visibility_by_target(&program);
+        let animations = collect_animations_by_target(&program);
+        let turns = collect_turn_by_target(&program);
+
+        assert_eq!(visibility.get("boss").copied(), Some(true));
+        assert_eq!(visibility.get("intro").copied(), None);
+        assert_eq!(
+            animations
+                .get("boss")
+                .map(|animation| animation.clip.as_str()),
+            Some("Idle")
+        );
+        assert_eq!(animations.get("intro"), None);
+        assert!(turns.contains_key("ring"));
+        assert!(!turns.contains_key("intro"));
     }
 
     #[test]

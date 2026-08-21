@@ -1,0 +1,158 @@
+// NextGen input/animation isolation test.
+// Purpose: verify that repeated A/S/D/Z/X/C key events keep firing and play the requested player1 animations
+// without fighting-game AI, hit collision logic, or game-state controllers interfering.
+
+loading.print "Input animation isolation: A/S/D/Z/X/C play direct player1 animations" : pos (80,10,0), font "arial_64", color=white, size 1
+lights.add probe "4"
+
+fight_cam = camera.system.fighting(player1, player2, depth 14, height 4.2, side 0, min distance 10, max distance 22, damping 12)
+camera.system = fight_cam
+
+floor => static box : size (18,1,18), pos (0,-0.65,0), material "wall", shadow mode cast
+left_marker => static box : size (0.45,2.5,0.45), pos (-4,0.75,0), material "wall", shadow mode cast
+right_marker => static box : size (0.45,2.5,0.45), pos (4,0.75,0), material "wall", shadow mode cast
+a_marker => static box : hidden, size (0.6,3,0.6), pos (-3,1.0,-3), material "wall", shadow mode cast
+s_marker => static box : hidden, size (0.6,3,0.6), pos (0,1.0,-3), material "wall", shadow mode cast
+d_marker => static box : hidden, size (0.6,3,0.6), pos (3,1.0,-3), material "wall", shadow mode cast
+z_marker => static box : hidden, size (0.6,3,0.6), pos (-3,1.0,3), material "wall", shadow mode cast
+x_marker => static box : hidden, size (0.6,3,0.6), pos (0,1.0,3), material "wall", shadow mode cast
+c_marker => static box : hidden, size (0.6,3,0.6), pos (3,1.0,3), material "wall", shadow mode cast
+
+player1 => dynamic fighter1_native : pos (-2,0,0), scale 3.0, rotate(0,90,0), shadow mode cast, collision shape none
+player2 => dynamic old_fighter2_native : pos (2,0,0), scale 3.0, rotate(0,-90,0), shadow mode on, collision shape none
+
+player1.look at (player2)
+player2.look at (player1)
+player1.idle2 loop
+player2.Idle loop
+
+var PLAYER_ACTION_IDLE = 0,
+    PLAYER_ACTION_D = 1,
+    PLAYER_ACTION_A = 3,
+    PLAYER_ACTION_S = 4,
+    PLAYER_ACTION_Z = 5,
+    PLAYER_ACTION_X_1 = 7,
+    PLAYER_ACTION_C = 9
+
+var key_count = 0,
+    action = PLAYER_ACTION_IDLE,
+    move_forward = 0,
+    player_hit = 0,
+    player1_ko = 0,
+    slow_motion = 0
+
+player1.data.is_jumping = 0
+
+var @input_iso_ready = action == PLAYER_ACTION_IDLE
+
+log_key (name, clip) = {
+  key_count = key_count + 1
+  Logger.info "INPUT_ISO key"
+  Logger.info name
+  Logger.info "INPUT_ISO clip"
+  Logger.info clip
+  Logger.info "INPUT_ISO count"
+  Logger.info key_count
+}
+
+hide_key_markers = {
+  a_marker.hide
+  s_marker.hide
+  d_marker.hide
+  z_marker.hide
+  x_marker.hide
+  c_marker.hide
+}
+
+finish_key_action = {
+  action = PLAYER_ACTION_IDLE
+  player1.idle2 loop
+}
+
+[@input_iso_ready]
+when key A is pressed once do async
+  action = PLAYER_ACTION_A
+  run hide_key_markers
+  a_marker.show
+  a_marker.turn 360 in 0.35 seconds async
+  run log_key ("A", "mma_kick1")
+  player1.mma_kick1 at speed of 1
+  run finish_key_action
+end do
+
+[@input_iso_ready]
+when key S is pressed once do async
+  action = PLAYER_ACTION_S
+  run hide_key_markers
+  s_marker.show
+  s_marker.turn 360 in 0.35 seconds async
+  run log_key ("S", "hurricane_kick")
+  player1.hurricane_kick at speed of 1
+  run finish_key_action
+end do
+
+[@input_iso_ready]
+when key D is pressed once do async
+  action = PLAYER_ACTION_D
+  run hide_key_markers
+  d_marker.show
+  d_marker.turn 360 in 0.35 seconds async
+  run log_key ("D", "quad_punch1")
+  player1.quad_punch1 at speed of 1
+  run finish_key_action
+end do
+
+[@input_iso_ready]
+when key Z is pressed once do async
+  action = PLAYER_ACTION_Z
+  run hide_key_markers
+  z_marker.show
+  z_marker.turn 360 in 0.35 seconds async
+  run log_key ("Z", "back_death1")
+  player1.back_death1 at speed of 1.2 async
+  run finish_key_action
+end do
+
+[@input_iso_ready]
+when key X is pressed once do async
+  action = PLAYER_ACTION_X_1
+  run hide_key_markers
+  x_marker.show
+  x_marker.turn 360 in 0.35 seconds async
+  run log_key ("X", "kip_up")
+  player1.kip_up at speed of 1.2 async
+  run finish_key_action
+end do
+
+[@input_iso_ready]
+when key C is pressed once do async
+  action = PLAYER_ACTION_C
+  run hide_key_markers
+  c_marker.show
+  c_marker.turn 360 in 0.35 seconds async
+  run log_key ("C", "leg_takedown_attacker")
+  player1.leg_takedown_attacker at speed of 2.5 async
+  run finish_key_action
+end do
+
+when key space is pressed once do
+  action = PLAYER_ACTION_IDLE
+  run hide_key_markers
+  run log_key ("SPACE", "idle2")
+  player1.idle2 loop
+end do
+
+when key up is pressed once do
+  run log_key ("UP", "move_forward")
+  player1.move forward 1.0 for 0.25 seconds async
+end do
+
+when key left is pressed once do
+  run log_key ("LEFT", "turn_left")
+  player1.turn -35 in 0.2 seconds async
+end do
+
+when key right is pressed once do
+  run log_key ("RIGHT", "turn_right")
+  player1.turn 35 in 0.2 seconds async
+end do

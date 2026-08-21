@@ -1,0 +1,76 @@
+// Standalone fight camera smoke test.
+// Run this script directly to observe camera.system.fighting without the full game_level1 setup.
+
+loading.print "Fight camera test: loading" : pos (80,10,0) , font "arial_64" , color=white, size 1
+lights.add probe "4"
+
+camera.system = default
+camera.pos(40.0,-78.0,56.0)
+camera.rotate(18.0,180.0,0.0)
+
+arena_floor => static box : size (60.0,1.0,60.0), pos (40.0,-89.6,22.0), material "wall", shadow mode on
+left_marker => static box : size (1.0,1.0,1.0), pos (25.0,-88.6,22.0), material "grass", collision shape none
+right_marker => static box : size (1.0,1.0,1.0), pos (55.0,-88.6,22.0), material "rock", collision shape none
+center_marker is a sphere : pos (40.0,-88.4,22.0), radius 0.5, material="alpha", collision shape none
+
+player1 => dynamic fighter1 : pos (34.0,-84.8,30.0), scale 3.0, rotate(0.0,173.26024,0.0), shadow mode cast, collision shape none
+, joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot")
+
+player2 => dynamic old_fighter2 : pos (46.0,-83.8,14.0), scale 3.0, rotate(0.0,0.0,0.0), shadow mode cast, collision shape none
+, joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot")
+
+player1.switch to character mode : gravity 60
+player2.switch to character mode : gravity 40
+player1.character.ignore player2.joints
+player2.character.ignore player1.joints
+player1.look at (player2)
+player2.look at (player1)
+
+hit_fx = camera.system.modifiers.hit_modifier
+bump_fx = camera.system.modifiers.bump_modifier
+fight_cam = camera.system.fighting(player1, player2, depth 18, height 3, side 1.5, min distance 10, max distance 28, damping 8)
+camera.attach stop
+camera.system = fight_cam
+
+loading.print "Fight camera test: two fighters should stay framed" : pos (80,10,0) , font "arial_64" , color=white, size 1
+
+do async
+  wait 3 seconds
+  loading.print "Phase 1: fighters spread apart" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  player1.pos (28.0,-84.8,31.0)
+  player2.pos (52.0,-83.8,13.0)
+  player1.look at (player2)
+  player2.look at (player1)
+
+  wait 4 seconds
+  loading.print "Phase 2: fighters close together" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  player1.pos (38.0,-84.8,25.0)
+  player2.pos (42.0,-83.8,20.0)
+  player1.look at (player2)
+  player2.look at (player1)
+
+  wait 4 seconds
+  loading.print "Phase 3: swap sides" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  player1.pos (50.0,-84.8,31.0)
+  player2.pos (30.0,-83.8,13.0)
+  player1.look at (player2)
+  player2.look at (player1)
+
+  wait 4 seconds
+  loading.print "Phase 4: camera modifiers" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  fight_cam.apply hit_fx : duration 0.35, amplitude 1.4
+  fight_cam.apply bump_fx : duration 0.25, y 0.3
+
+  wait 4 seconds
+  loading.print "Phase 5: attach camera to player1 briefly" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  camera.attach to player1 : pos (0,1.5,-7)
+
+  wait 3 seconds
+  loading.print "Phase 6: back to fighting camera" : pos (80,10,0) , font "arial_64" , color=yellow, size 1
+  camera.system = fight_cam
+
+  wait 6 seconds
+  loading.print "Fight camera test complete" : pos (80,10,0) , font "arial_64" , color=green, size 1
+end do
+
+wait 40 seconds

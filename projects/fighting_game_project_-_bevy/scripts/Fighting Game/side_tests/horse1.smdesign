@@ -1,0 +1,249 @@
+{
+  "sceneEnvironmentShader": "",
+  "entities": [
+    {
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "resourcePath": "horse1_native",
+      "jointMapping": "",
+      "scale": [
+        3.7,
+        3.7,
+        3.7
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "sceneMaxCode": "horse => horse1_native: pos (0.48224258,0.0,1.1645527), scale 3.7, collision shape none async",
+      "staticModel": false,
+      "name": "horse",
+      "vehicleModel": false,
+      "id": "879a4040-2836-4548-8de0-405cb77a7532",
+      "position": [
+        0.48224258,
+        0,
+        1.1645527
+      ]
+    },
+    {
+      "ikAsset": "ik_sit_on_horse",
+      "shader": "",
+      "dynamicModel": false,
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        -0.4450155,
+        9.2577655E-4,
+        0.0018629731,
+        0.8955205
+      ],
+      "resourcePath": "fighter1_native",
+      "jointMapping": "",
+      "scale": [
+        3,
+        3,
+        3
+      ],
+      "modelCollisionShape": "none",
+      "type": "MODEL",
+      "ikLayers": [
+        {
+          "layerId": "horse_sit_right_foot",
+          "blend": 0.2,
+          "weight": 1,
+          "layerName": "horse_sit_right_foot",
+          "enabled": true,
+          "target": "right_sit_collider"
+        },
+        {
+          "layerId": "horse_sit_left_foot",
+          "blend": 0.2,
+          "weight": 1,
+          "layerName": "horse_sit_left_foot",
+          "enabled": true,
+          "target": "left_sit_collider"
+        },
+        {
+          "layerId": "horse_sit_left_hand",
+          "blend": 0.2,
+          "weight": 1,
+          "layerName": "horse_sit_left_hand",
+          "enabled": true,
+          "target": "head_sit_collider"
+        }
+      ],
+      "sceneMaxCode": "man => fighter1_native: pos (-0.123437166,-1.2330694,1.0373306), scale 3.0, rotate(-52.84902,0.19000563,0.14396675), collision shape none async",
+      "staticModel": false,
+      "name": "man",
+      "vehicleModel": false,
+      "id": "3ff674e3-dd45-4df2-95a6-adedf48f036f",
+      "position": [
+        -0.123437166,
+        -1.2330694,
+        1.0373306
+      ],
+      "attachTo": "horse.\"Bip01 Spine1_04\""
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        0.3,
+        0.3,
+        0.3
+      ],
+      "colliderEntity": true,
+      "type": "SPHERE",
+      "sceneMaxCode": "right_sit_collider => sphere : pos (-5.174184,1.9648852,4.311819), radius 0.5",
+      "material": "",
+      "name": "right_sit_collider",
+      "staticEntity": false,
+      "id": "58b474e9-2451-48fc-9029-5a77d31c00e9",
+      "position": [
+        -5.174184,
+        1.9648852,
+        4.311819
+      ],
+      "attachTo": "horse.\"Bip01 Spine_03\"",
+      "radius": 0.5
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        0.3,
+        0.3,
+        0.3
+      ],
+      "colliderEntity": true,
+      "type": "SPHERE",
+      "sceneMaxCode": "left_sit_collider => sphere : pos (2.1651378,3.7110822,1.3880615), radius 0.5",
+      "material": "",
+      "name": "left_sit_collider",
+      "staticEntity": false,
+      "id": "189a8661-a320-4636-a247-d6ebcce0faec",
+      "position": [
+        2.1651378,
+        3.7110822,
+        1.3880615
+      ],
+      "attachTo": "horse.\"Bip01 Spine_03\"",
+      "radius": 0.5
+    },
+    {
+      "lightLookAtTarget": "",
+      "lightDirection": [
+        -0.3,
+        -0.8,
+        -0.4
+      ],
+      "lightAmbientColor": "#223344",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "lightColor": "warm",
+      "type": "LIGHT",
+      "lightType": "directional",
+      "lightIntensity": 900,
+      "lightExposure": 0.2,
+      "lightAngle": 35,
+      "lightIntensityUnit": "lumens",
+      "lightRange": 12,
+      "name": "light_1",
+      "id": "c033a38f-9616-4a2e-879d-2c23fd711969",
+      "position": [
+        -9.925036,
+        3.957149,
+        6.256651
+      ],
+      "lightShadowMode": "medium",
+      "lightPreset": ""
+    },
+    {
+      "shader": "",
+      "hidden": false,
+      "shadowMode": "none",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "colliderEntity": true,
+      "type": "SPHERE",
+      "sceneMaxCode": "head_sit_collider => sphere : pos (0.0,0.5,0.0), radius 0.5",
+      "material": "",
+      "name": "head_sit_collider",
+      "staticEntity": false,
+      "id": "f010ed21-0f26-4a42-adc2-7115d9af1bfe",
+      "position": [
+        0,
+        0.5,
+        0
+      ],
+      "attachTo": "horse.\"Bip01 Head_06\"",
+      "radius": 0.5
+    }
+  ],
+  "gameCamera": {
+    "rotation": [
+      0,
+      -0.9111231,
+      0,
+      -0.4121343
+    ],
+    "position": [
+      -6.276621,
+      5.344497,
+      9.698259
+    ]
+  },
+  "camera": {
+    "rotation": [
+      0.08891352,
+      0.9076438,
+      -0.245636,
+      0.32854232
+    ],
+    "position": [
+      -12.436156,
+      11.347282,
+      14.927531
+    ]
+  },
+  "version": 1
+}

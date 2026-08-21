@@ -1,0 +1,14 @@
+{
+  "canvasWidth": 1920,
+  "name": "horse1",
+  "layers": [{
+    "renderMode": "SCREEN_SPACE",
+    "visible": true,
+    "name": "layer1",
+    "zOrder": 0,
+    "id": "3e36e188-1eeb-4857-b8f7-91fce4cf0d85",
+    "widgets": []
+  }],
+  "version": 1,
+  "canvasHeight": 1080
+}
