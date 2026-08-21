@@ -16,7 +16,7 @@ camera.rotate(-20.65568,115.06725,0.8177289)
 
 floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material "wall", shadow mode cast
 level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on async
-//level2.shader = "shader_test1"
+level2.shader = "shader_test1"
 ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0 async
 // rotate ring
 ring.turn left 360 in 50 seconds async
@@ -103,13 +103,13 @@ player2.show
 player2.look at (player1)
 player1.look at (player2)
 dragons_gate => static dragon_gate1: pos (22.532026,-66.486755,148.68306), scale 30.0, collision shape none async
-crystal => static meshy_crystal1_native: hidden, pos (23.844534,-88.28118,161.98776), collision shape box async
+crystal => static meshy_crystal1: hidden, pos (23.844534,-88.28118,161.98776), collision shape box async
 // player_got_crystal
 when player1 collides with crystal do
 	switch to "game_level_train"
 end do
 crystal_box => static meshy_wooden_box: pos (23.732,-88.0,161.9128), scale 1.4, collision shape box async
-axe => meshy_axe_native: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async
+axe => battleaxe1: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async
 quad_1 => quad : size (1.0,1.0), pos (-33.073235,-88.97634,115.0642), scale 34.2, rotate(0.0,-44.446686,0.0)
 
 // Write your finalization code here.
