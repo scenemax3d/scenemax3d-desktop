@@ -12,6 +12,7 @@ use std::time::Duration;
 
 const DEFAULT_ANIMATION_TRANSITION: Duration = Duration::from_millis(250);
 const MAX_PRESERVED_TRANSITION_NODES: usize = 32;
+const VISUAL_COMPENSATION_CACHE_EPSILON: f32 = 0.0001;
 
 #[cfg(test)]
 pub(super) fn blocking_timed_action_seconds(action: &Statement) -> Option<f32> {
@@ -154,7 +155,10 @@ pub(super) fn play_pending_animations(
         Query<&Mesh3d>,
     )>,
     meshes: Res<Assets<Mesh>>,
-    mut visual_transforms: Query<&mut SceneMaxAnimationVisualTransform>,
+    mut visual_queries: ParamSet<(
+        Query<&mut SceneMaxAnimationVisualTransform>,
+        Query<&SceneMaxAnimationVisualCompensationCache>,
+    )>,
     mut players: Query<(
         &mut AnimationPlayer,
         Option<&mut AnimationGraphHandle>,
@@ -205,7 +209,7 @@ pub(super) fn play_pending_animations(
             &children,
             &mut transform_queries,
             &meshes,
-            &mut visual_transforms,
+            &mut visual_queries,
             &mut commands,
         );
         if visual_transform_preroll_needed(
@@ -650,7 +654,10 @@ fn apply_animation_visual_transform(
         Query<&Mesh3d>,
     )>,
     meshes: &Assets<Mesh>,
-    visual_transforms: &mut Query<&mut SceneMaxAnimationVisualTransform>,
+    visual_queries: &mut ParamSet<(
+        Query<&mut SceneMaxAnimationVisualTransform>,
+        Query<&SceneMaxAnimationVisualCompensationCache>,
+    )>,
     commands: &mut Commands,
 ) {
     if translation.length_squared() <= f32::EPSILON
@@ -662,7 +669,7 @@ fn apply_animation_visual_transform(
             root,
             children,
             &mut transform_queries.p0(),
-            visual_transforms,
+            &mut visual_queries.p0(),
             commands,
         );
         return;
@@ -677,8 +684,14 @@ fn apply_animation_visual_transform(
     let Ok(child_list) = children.get(root) else {
         return;
     };
+    let mut pending_compensation_cache = visual_queries
+        .p1()
+        .get(root)
+        .ok()
+        .cloned()
+        .unwrap_or_default();
 
-    if let Ok(mut visual_transform) = visual_transforms.get_mut(root) {
+    if let Ok(mut visual_transform) = visual_queries.p0().get_mut(root) {
         visual_transform.translation = translation;
         visual_transform.rotation_degrees = rotation_degrees;
         for child in child_list.iter() {
@@ -689,11 +702,19 @@ fn apply_animation_visual_transform(
                 .base_by_child
                 .entry(child)
                 .or_insert(current_transform);
-            let next_transform = compensated_visual_transform(
+            let cached_compensation = cached_visual_compensation(
+                &pending_compensation_cache,
+                child,
+                &base_transform,
+                translation,
+                rotation_degrees,
+            );
+            let (next_transform, compensation) = compensated_visual_transform(
                 child,
                 &base_transform,
                 translation,
                 rotation,
+                cached_compensation,
                 children,
                 transform_queries,
                 meshes,
@@ -711,8 +732,22 @@ fn apply_animation_visual_transform(
             );
             if let Ok(mut transform) = transform_queries.p0().get_mut(child) {
                 *transform = next_transform;
+                pending_compensation_cache.by_child.insert(
+                    child,
+                    SceneMaxAnimationVisualCompensation {
+                        translation,
+                        rotation_degrees,
+                        base_transform,
+                        compensation,
+                    },
+                );
             }
         }
+        upsert_visual_compensation_cache(
+            root,
+            pending_compensation_cache,
+            commands,
+        );
         return;
     }
 
@@ -726,11 +761,19 @@ fn apply_animation_visual_transform(
         let Some(base_transform) = transform_queries.p2().get(child).ok().copied() else {
             continue;
         };
-        let next_transform = compensated_visual_transform(
+        let cached_compensation = cached_visual_compensation(
+            &pending_compensation_cache,
+            child,
+            &base_transform,
+            translation,
+            rotation_degrees,
+        );
+        let (next_transform, compensation) = compensated_visual_transform(
             child,
             &base_transform,
             translation,
             rotation,
+            cached_compensation,
             children,
             transform_queries,
             meshes,
@@ -749,11 +792,25 @@ fn apply_animation_visual_transform(
         if let Ok(mut transform) = transform_queries.p0().get_mut(child) {
             visual_transform.base_by_child.insert(child, base_transform);
             *transform = next_transform;
+            pending_compensation_cache.by_child.insert(
+                child,
+                SceneMaxAnimationVisualCompensation {
+                    translation,
+                    rotation_degrees,
+                    base_transform,
+                    compensation,
+                },
+            );
             applied = true;
         }
     }
     if applied {
         commands.entity(root).insert(visual_transform);
+        upsert_visual_compensation_cache(
+            root,
+            pending_compensation_cache,
+            commands,
+        );
     }
 }
 
@@ -815,6 +872,7 @@ fn compensated_visual_transform(
     base_transform: &Transform,
     translation: Vec3,
     rotation: Quat,
+    cached_compensation: Option<Vec3>,
     children: &Query<&Children>,
     transform_queries: &mut ParamSet<(
         Query<&mut Transform>,
@@ -823,25 +881,80 @@ fn compensated_visual_transform(
         Query<&Mesh3d>,
     )>,
     meshes: &Assets<Mesh>,
-) -> Transform {
+) -> (Transform, Vec3) {
     let mut transform = Transform {
         translation: base_transform.translation + translation,
         rotation: base_transform.rotation * rotation,
         scale: base_transform.scale,
     };
-    transform.translation.y += visual_rotation_ground_compensation_y(
-        root,
-        base_transform,
-        translation,
-        rotation,
-        children,
-        transform_queries,
-        meshes,
-    );
-    transform
+    let compensation = cached_compensation.unwrap_or_else(|| {
+        visual_rotation_bounds_compensation(
+            root,
+            base_transform,
+            translation,
+            rotation,
+            children,
+            transform_queries,
+            meshes,
+        )
+    });
+    transform.translation += compensation;
+    (transform, compensation)
 }
 
-fn visual_rotation_ground_compensation_y(
+fn cached_visual_compensation(
+    cache: &SceneMaxAnimationVisualCompensationCache,
+    child: Entity,
+    base_transform: &Transform,
+    translation: Vec3,
+    rotation_degrees: [f32; 3],
+) -> Option<Vec3> {
+    cache
+        .by_child
+        .get(&child)
+        .filter(|entry| {
+            visual_compensation_matches(entry, base_transform, translation, rotation_degrees)
+        })
+        .map(|entry| entry.compensation)
+}
+
+fn visual_compensation_matches(
+    entry: &SceneMaxAnimationVisualCompensation,
+    base_transform: &Transform,
+    translation: Vec3,
+    rotation_degrees: [f32; 3],
+) -> bool {
+    entry
+        .translation
+        .abs_diff_eq(translation, VISUAL_COMPENSATION_CACHE_EPSILON)
+        && entry
+            .base_transform
+            .translation
+            .abs_diff_eq(base_transform.translation, VISUAL_COMPENSATION_CACHE_EPSILON)
+        && entry
+            .base_transform
+            .rotation
+            .abs_diff_eq(base_transform.rotation, VISUAL_COMPENSATION_CACHE_EPSILON)
+        && entry
+            .base_transform
+            .scale
+            .abs_diff_eq(base_transform.scale, VISUAL_COMPENSATION_CACHE_EPSILON)
+        && entry
+            .rotation_degrees
+            .iter()
+            .zip(rotation_degrees)
+            .all(|(before, after)| (*before - after).abs() <= VISUAL_COMPENSATION_CACHE_EPSILON)
+}
+
+fn upsert_visual_compensation_cache(
+    root: Entity,
+    cache: SceneMaxAnimationVisualCompensationCache,
+    commands: &mut Commands,
+) {
+    commands.entity(root).insert(cache);
+}
+
+fn visual_rotation_bounds_compensation(
     root: Entity,
     base_transform: &Transform,
     translation: Vec3,
@@ -854,30 +967,36 @@ fn visual_rotation_ground_compensation_y(
         Query<&Mesh3d>,
     )>,
     meshes: &Assets<Mesh>,
-) -> f32 {
+) -> Vec3 {
     if rotation.abs_diff_eq(Quat::IDENTITY, f32::EPSILON) {
-        return 0.0;
+        return Vec3::ZERO;
     }
-    let Some(base_min_y) =
-        transformed_subtree_min_y(root, base_transform, children, transform_queries, meshes)
+    let Some(base_bounds) =
+        transformed_subtree_bounds(root, base_transform, children, transform_queries, meshes)
     else {
-        return 0.0;
+        return Vec3::ZERO;
     };
     let rotated_transform = Transform {
         translation: base_transform.translation + translation,
         rotation: base_transform.rotation * rotation,
         scale: base_transform.scale,
     };
-    let Some(rotated_min_y) = transformed_subtree_min_y(
+    let Some(rotated_bounds) = transformed_subtree_bounds(
         root,
         &rotated_transform,
         children,
         transform_queries,
         meshes,
     ) else {
-        return 0.0;
+        return Vec3::ZERO;
     };
-    base_min_y + translation.y - rotated_min_y
+    let base_center = base_bounds.center();
+    let rotated_center = rotated_bounds.center();
+    Vec3::new(
+        base_center.x + translation.x - rotated_center.x,
+        base_bounds.min.y + translation.y - rotated_bounds.min.y,
+        base_center.z + translation.z - rotated_center.z,
+    )
 }
 
 fn transformed_subtree_min_y(
@@ -892,8 +1011,24 @@ fn transformed_subtree_min_y(
     )>,
     meshes: &Assets<Mesh>,
 ) -> Option<f32> {
+    transformed_subtree_bounds(root, root_transform, children, transform_queries, meshes)
+        .map(|bounds| bounds.min.y)
+}
+
+fn transformed_subtree_bounds(
+    root: Entity,
+    root_transform: &Transform,
+    children: &Query<&Children>,
+    transform_queries: &mut ParamSet<(
+        Query<&mut Transform>,
+        Query<&Transform, With<AnimationTargetId>>,
+        Query<&Transform>,
+        Query<&Mesh3d>,
+    )>,
+    meshes: &Assets<Mesh>,
+) -> Option<VisualBounds> {
     let root_matrix = root_transform.to_matrix();
-    transformed_subtree_min_y_recursive(
+    transformed_subtree_bounds_recursive(
         root,
         Mat4::IDENTITY,
         root_matrix,
@@ -903,7 +1038,7 @@ fn transformed_subtree_min_y(
     )
 }
 
-fn transformed_subtree_min_y_recursive(
+fn transformed_subtree_bounds_recursive(
     entity: Entity,
     local_from_root: Mat4,
     world_from_root: Mat4,
@@ -915,9 +1050,9 @@ fn transformed_subtree_min_y_recursive(
         Query<&Mesh3d>,
     )>,
     meshes: &Assets<Mesh>,
-) -> Option<f32> {
+) -> Option<VisualBounds> {
     let entity_matrix = world_from_root * local_from_root;
-    let mut min_y = transformed_mesh_min_y(entity, entity_matrix, transform_queries, meshes);
+    let mut bounds = transformed_mesh_bounds(entity, entity_matrix, transform_queries, meshes);
     if let Ok(child_list) = children.get(entity) {
         for child in child_list {
             let child_transform = transform_queries
@@ -926,7 +1061,7 @@ fn transformed_subtree_min_y_recursive(
                 .ok()
                 .map(Transform::to_matrix)
                 .unwrap_or(Mat4::IDENTITY);
-            let child_min_y = transformed_subtree_min_y_recursive(
+            let child_bounds = transformed_subtree_bounds_recursive(
                 *child,
                 local_from_root * child_transform,
                 world_from_root,
@@ -934,13 +1069,13 @@ fn transformed_subtree_min_y_recursive(
                 transform_queries,
                 meshes,
             );
-            min_y = min_optional_f32(min_y, child_min_y);
+            bounds = union_optional_bounds(bounds, child_bounds);
         }
     }
-    min_y
+    bounds
 }
 
-fn transformed_mesh_min_y(
+fn transformed_mesh_bounds(
     entity: Entity,
     transform: Mat4,
     transform_queries: &mut ParamSet<(
@@ -950,15 +1085,16 @@ fn transformed_mesh_min_y(
         Query<&Mesh3d>,
     )>,
     meshes: &Assets<Mesh>,
-) -> Option<f32> {
+) -> Option<VisualBounds> {
     let mesh_handle = transform_queries.p3().get(entity).ok()?.clone();
     let aabb = meshes
         .get(&mesh_handle.0)
         .and_then(MeshAabb::compute_aabb)?;
-    aabb_corners(aabb)
-        .into_iter()
-        .map(|corner| transform.transform_point3(corner).y)
-        .reduce(f32::min)
+    VisualBounds::from_points(
+        aabb_corners(aabb)
+            .into_iter()
+            .map(|corner| transform.transform_point3(corner)),
+    )
 }
 
 fn aabb_corners(aabb: Aabb) -> [Vec3; 8] {
@@ -976,9 +1112,45 @@ fn aabb_corners(aabb: Aabb) -> [Vec3; 8] {
     ]
 }
 
-fn min_optional_f32(a: Option<f32>, b: Option<f32>) -> Option<f32> {
+#[derive(Clone, Copy)]
+struct VisualBounds {
+    min: Vec3,
+    max: Vec3,
+}
+
+impl VisualBounds {
+    fn from_points(points: impl IntoIterator<Item = Vec3>) -> Option<Self> {
+        let mut points = points.into_iter();
+        let first = points.next()?;
+        let mut bounds = Self {
+            min: first,
+            max: first,
+        };
+        for point in points {
+            bounds.include(point);
+        }
+        Some(bounds)
+    }
+
+    fn center(self) -> Vec3 {
+        (self.min + self.max) * 0.5
+    }
+
+    fn include(&mut self, point: Vec3) {
+        self.min = self.min.min(point);
+        self.max = self.max.max(point);
+    }
+
+    fn union(mut self, other: Self) -> Self {
+        self.include(other.min);
+        self.include(other.max);
+        self
+    }
+}
+
+fn union_optional_bounds(a: Option<VisualBounds>, b: Option<VisualBounds>) -> Option<VisualBounds> {
     match (a, b) {
-        (Some(a), Some(b)) => Some(a.min(b)),
+        (Some(a), Some(b)) => Some(a.union(b)),
         (Some(a), None) => Some(a),
         (None, Some(b)) => Some(b),
         (None, None) => None,

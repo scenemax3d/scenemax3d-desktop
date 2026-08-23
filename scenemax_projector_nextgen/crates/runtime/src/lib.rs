@@ -1205,6 +1205,19 @@ struct SceneMaxAnimationVisualTransform {
     rotation_degrees: [f32; 3],
 }
 
+#[derive(Debug, Clone, Component, Default)]
+struct SceneMaxAnimationVisualCompensationCache {
+    by_child: HashMap<Entity, SceneMaxAnimationVisualCompensation>,
+}
+
+#[derive(Debug, Clone)]
+struct SceneMaxAnimationVisualCompensation {
+    translation: Vec3,
+    rotation_degrees: [f32; 3],
+    base_transform: Transform,
+    compensation: Vec3,
+}
+
 #[derive(Debug, Component)]
 struct SceneMaxSprite {
     rows: usize,
