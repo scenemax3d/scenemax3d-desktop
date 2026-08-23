@@ -27,7 +27,7 @@ use bevy::{
     asset::{AssetApp, AssetPlugin, RenderAssetUsages, io::AssetSourceBuilder},
     audio::{PlaybackMode, PlaybackSettings, Volume},
     ecs::system::SystemParam,
-    gltf::Gltf,
+    gltf::{Gltf, GltfNode},
     log::LogPlugin,
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
@@ -42,15 +42,18 @@ use bevy_tnua::{
 };
 use bevy_tnua_avian3d::prelude::{TnuaAvian3dPlugin, TnuaAvian3dSensorShape};
 use scenemax_parser::{
-    AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement, AudioAction,
-    AudioStatement, CameraAttachStatement, CameraModifierValue, CameraMoveStatement,
-    ChannelDrawStatement, CharacterJumpStatement, CharacterModeStatement, CinematicLookAt,
-    CinematicPlayStatement, Condition, EffekseerPlayStatement, EntityOptions, KeyTrigger,
-    LightDeclarationStatement, LightProbeAddStatement, LightType, LoggerLevel, LoggerMessage,
-    LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement, ObjectPoolStatement,
-    PoolReleaseStatement, PositionExpr, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
-    SceneMaxCollisionShape, SceneMaxVec3, ScreenMode, SpritePlayStatement, Statement,
-    UiEaseDirection, UiTargetPath, WeaponAction, WeaponStatement,
+    AnimationControllerAction, AnimationControllerActionStatement,
+    AnimationControllerEventStatement, AnimationControllerValue, AnimationSpeedStatement,
+    AnimationStatement, AssignmentValue, AttachStatement, AudioAction, AudioStatement,
+    CameraAttachStatement, CameraModifierValue, CameraMoveStatement, ChannelDrawStatement,
+    CharacterJumpStatement, CharacterModeStatement, CinematicLookAt, CinematicPlayStatement,
+    Condition, EffekseerPlayStatement, EntityOptions, KeyTrigger, LightDeclarationStatement,
+    LightProbeAddStatement, LightType, LoggerLevel, LoggerMessage, LoggerStatement, MoveDirection,
+    MoveToDestination, MoveToStatement, ObjectPoolStatement, PoolReleaseStatement, PositionExpr,
+    PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3,
+    ScreenMode, SpritePlayStatement, Statement, ThrowMotionApplyStatement, ThrowMotionAsset,
+    ThrowMotionEventStatement, ThrowMotionTarget, ThrowMotionValue, UiEaseDirection, UiTargetPath,
+    WeaponAction, WeaponStatement,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
@@ -65,6 +68,7 @@ use scenemax_runtime_ui_core::{
     list_view_text, percent, scaled_font_size, solve_widget_layout, sorted_widgets, target_key,
 };
 use scenemax_runtime_vm_core::{SceneMaxScopeFrame, SceneMaxVars, SceneMaxVmSpatial};
+use serde::Deserialize;
 
 mod actions;
 mod animation;
@@ -73,6 +77,7 @@ mod camera;
 mod effekseer;
 mod lighting;
 mod physics;
+mod retarget_designer;
 mod shader;
 mod shader_designer;
 mod sprites;
@@ -86,6 +91,7 @@ use camera::*;
 use effekseer::*;
 use lighting::*;
 use physics::*;
+pub use retarget_designer::{BevyRetargetDesignerLaunch, run_bevy_retarget_designer};
 use shader::*;
 pub use shader_designer::{BevyShaderDesignerLaunch, run_bevy_shader_designer};
 use sprites::*;
@@ -234,8 +240,12 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_virtual_colliders,
                 update_scenemax_debug_gizmos,
                 update_current_animation_vars,
+                restore_inactive_animation_visual_rotations,
+                update_animation_runtime_controllers,
                 apply_when_events,
                 apply_pending_weapon_actions,
+                apply_pending_throw_motion_applications,
+                update_throw_motions,
             )
                 .chain(),
         )
@@ -255,6 +265,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_sprite_animations,
                 update_effekseer_playbacks,
                 apply_gltf_visual_offsets,
+                apply_pending_animation_controller_stops,
                 play_pending_animations,
                 apply_animation_speed_overrides,
             )
@@ -510,6 +521,31 @@ struct SceneMaxRuntimeAssets {
     audio_by_name: HashMap<String, SceneMaxAudioAsset>,
     looping_audio_by_name: HashMap<String, Entity>,
     pending_weapon_actions: Vec<WeaponStatement>,
+    gltf_handles_by_name: HashMap<String, Handle<Gltf>>,
+    model_resources_by_name: HashMap<String, String>,
+    external_animations_by_name: HashMap<String, RuntimeExternalAnimation>,
+    external_animation_misses: HashSet<String>,
+    animation_controllers_by_name: HashMap<String, RuntimeAnimationController>,
+    pending_animation_controller_stops: Vec<String>,
+    throw_motions_by_name: HashMap<String, RuntimeThrowMotionValue>,
+    throw_motion_definitions_by_id: HashMap<String, RuntimeThrowMotionDefinition>,
+    pending_throw_motion_applications: Vec<ThrowMotionApplyStatement>,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeExternalAnimation {
+    gltf: Handle<Gltf>,
+    clip: String,
+    asset_path: String,
+    retarget: scenemax_assets::AnimationRetargetOptions,
+    baked_retargets: Vec<RuntimeBakedRetarget>,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeBakedRetarget {
+    model: String,
+    path: String,
+    clip: String,
 }
 
 #[derive(Debug, Clone)]
@@ -894,6 +930,12 @@ struct SceneMaxEntity {
 
 #[derive(Debug, Clone, Component)]
 #[allow(dead_code)]
+struct SceneMaxModelResource {
+    resource: String,
+}
+
+#[derive(Debug, Clone, Component)]
+#[allow(dead_code)]
 struct SceneMaxEffekseerEffect {
     instance_id: u64,
     asset_id: String,
@@ -920,9 +962,25 @@ struct SceneMaxBoneQueries<'w, 's> {
 #[derive(Debug, Component)]
 struct AnimationToPlay {
     clip: String,
+    runtime_clip: String,
     looped: bool,
     speed: f32,
     gltf: Handle<Gltf>,
+    target_model_resource: Option<String>,
+    baked_external: Option<RuntimeBakedRetarget>,
+    bake_request: Option<RuntimeAnimationBakeRequest>,
+    external_retarget: scenemax_assets::AnimationRetargetOptions,
+    external_source: bool,
+    tried_external_source: bool,
+    visual_transform_preapplied: bool,
+    retarget_wait_logged: bool,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeAnimationBakeRequest {
+    output_path: PathBuf,
+    model: String,
+    clip: String,
 }
 
 #[derive(Debug, Component)]
@@ -942,10 +1000,209 @@ struct SceneMaxEquippedWeapon {
     owner: String,
 }
 
+#[derive(Debug, Clone)]
+struct RuntimeAnimationController {
+    target: String,
+    clip: String,
+    events: Vec<RuntimeAnimationControllerEvent>,
+    running: bool,
+    previous_percent: f32,
+    current_run_started: bool,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeAnimationControllerEvent {
+    animation: String,
+    percent: f32,
+    actions: Vec<Statement>,
+    fired: bool,
+}
+
+#[derive(Debug, Component)]
+struct SceneMaxThrowMotion {
+    samples: Vec<ThrowMotionSample>,
+    start_world: Vec3,
+    previous_world: Vec3,
+    right_axis: Vec3,
+    up_axis: Vec3,
+    forward_axis: Vec3,
+    elapsed_seconds: f32,
+    previous_index_percent: f32,
+    events: Vec<ActiveThrowMotionEvent>,
+    end_event_fired: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ActiveThrowMotionEvent {
+    event: String,
+    index_percent: Option<f32>,
+    actions: Vec<Statement>,
+    fired: bool,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeThrowMotionValue {
+    motion_asset_id: String,
+    target: Option<RuntimeThrowMotionTarget>,
+    events: Vec<ThrowMotionEventStatement>,
+}
+
+#[derive(Debug, Clone)]
+enum RuntimeThrowMotionTarget {
+    Object(String),
+    Position(Vec3),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ThrowMotionSample {
+    time: f32,
+    position: Vec3,
+    velocity: Vec3,
+    spin_degrees: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeThrowMotionDefinition {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    motion_type: String,
+    #[serde(default)]
+    parameters: RuntimeThrowMotionParameters,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeThrowMotionParameters {
+    #[serde(default = "default_motion_speed")]
+    speed: f32,
+    #[serde(default = "default_initial_speed")]
+    initial_speed: f32,
+    #[serde(default = "default_launch_angle")]
+    launch_angle: f32,
+    #[serde(default = "one_f32")]
+    gravity_scale: f32,
+    #[serde(default = "default_max_lifetime")]
+    max_lifetime: f32,
+    #[serde(default = "default_motion_duration")]
+    duration: f32,
+    #[serde(default)]
+    arc_height: f32,
+    #[serde(default)]
+    acceleration: f32,
+    #[serde(default = "default_max_distance")]
+    max_distance: f32,
+    #[serde(default = "default_turn_rate")]
+    turn_rate: f32,
+    #[serde(default)]
+    homing_delay: f32,
+    #[serde(default = "one_f32")]
+    homing_strength: f32,
+    #[serde(default = "default_collision_radius")]
+    collision_radius: f32,
+    #[serde(default = "default_outbound_duration")]
+    outbound_duration: f32,
+    #[serde(default = "default_outbound_distance")]
+    outbound_distance: f32,
+    #[serde(default)]
+    outbound_arc_height: f32,
+    #[serde(default)]
+    return_delay: f32,
+    #[serde(default = "default_return_speed")]
+    return_speed: f32,
+    #[serde(default)]
+    spin_speed: f32,
+    #[serde(default)]
+    easing_function: String,
+}
+
+impl Default for RuntimeThrowMotionParameters {
+    fn default() -> Self {
+        Self {
+            speed: default_motion_speed(),
+            initial_speed: default_initial_speed(),
+            launch_angle: default_launch_angle(),
+            gravity_scale: 1.0,
+            max_lifetime: default_max_lifetime(),
+            duration: default_motion_duration(),
+            arc_height: 0.0,
+            acceleration: 0.0,
+            max_distance: default_max_distance(),
+            turn_rate: default_turn_rate(),
+            homing_delay: 0.0,
+            homing_strength: 1.0,
+            collision_radius: default_collision_radius(),
+            outbound_duration: default_outbound_duration(),
+            outbound_distance: default_outbound_distance(),
+            outbound_arc_height: 0.0,
+            return_delay: 0.0,
+            return_speed: default_return_speed(),
+            spin_speed: 0.0,
+            easing_function: String::new(),
+        }
+    }
+}
+
+fn default_motion_speed() -> f32 {
+    18.0
+}
+
+fn one_f32() -> f32 {
+    1.0
+}
+
+fn default_initial_speed() -> f32 {
+    16.0
+}
+
+fn default_launch_angle() -> f32 {
+    35.0
+}
+
+fn default_max_lifetime() -> f32 {
+    4.0
+}
+
+fn default_motion_duration() -> f32 {
+    0.55
+}
+
+fn default_max_distance() -> f32 {
+    30.0
+}
+
+fn default_turn_rate() -> f32 {
+    180.0
+}
+
+fn default_collision_radius() -> f32 {
+    0.25
+}
+
+fn default_outbound_duration() -> f32 {
+    0.75
+}
+
+fn default_outbound_distance() -> f32 {
+    12.0
+}
+
+fn default_return_speed() -> f32 {
+    18.0
+}
+
 #[derive(Debug, Component)]
 struct SceneMaxGltfVisualOffset {
     offset: Vec3,
     applied: bool,
+}
+
+#[derive(Debug, Clone, Component, Default)]
+struct SceneMaxAnimationVisualTransform {
+    base_by_child: HashMap<Entity, Transform>,
+    translation: Vec3,
+    rotation_degrees: [f32; 3],
 }
 
 #[derive(Debug, Component)]

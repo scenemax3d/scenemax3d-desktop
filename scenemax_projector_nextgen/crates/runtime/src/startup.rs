@@ -65,6 +65,26 @@ pub(super) fn initialize_runtime_logger(project_root: Option<&Path>, script_root
         *log_file = Some(path);
     }
     write_runtime_diagnostic_line("initialized SceneMax NextGen runtime log");
+    write_nextgen_launch_diagnostics();
+}
+
+fn write_nextgen_launch_diagnostics() {
+    for key in [
+        "SCENEMAX_NEXTGEN_LAUNCH_ROOT",
+        "SCENEMAX_NEXTGEN_LAUNCH_DEBUG_EXE",
+        "SCENEMAX_NEXTGEN_LAUNCH_RELEASE_EXE",
+        "SCENEMAX_NEXTGEN_LAUNCH_BUILT_EXE",
+        "SCENEMAX_NEXTGEN_LAUNCH_CARGO_EXE",
+        "SCENEMAX_NEXTGEN_LAUNCH_SELECTED",
+        "SCENEMAX_NEXTGEN_LAUNCH_USE_CARGO",
+        "SCENEMAX_NEXTGEN_LAUNCH_BUILT_CURRENT",
+    ] {
+        if let Ok(value) = env::var(key)
+            && !value.trim().is_empty()
+        {
+            write_runtime_diagnostic_line(format!("LAUNCH:{key}={value}"));
+        }
+    }
 }
 
 pub(super) fn write_runtime_diagnostic_line(message: impl AsRef<str>) {
@@ -969,6 +989,9 @@ pub(super) fn spawn_scenemax_program(
                             name: name.clone(),
                             runtime_name,
                         },
+                        SceneMaxModelResource {
+                            resource: resource.clone(),
+                        },
                         SceneMaxGltf { gltf: gltf.clone() },
                         scene,
                         transform,
@@ -980,9 +1003,18 @@ pub(super) fn spawn_scenemax_program(
                 if let Some(animation) = animations_by_target.get(name) {
                     commands.entity(entity_id).insert(AnimationToPlay {
                         clip: animation.clip.clone(),
+                        runtime_clip: animation.clip.clone(),
                         looped: animation.looped,
                         speed: animation.speed,
                         gltf: gltf.clone(),
+                        target_model_resource: Some(resource.clone()),
+                        baked_external: None,
+                        bake_request: None,
+                        external_retarget: Default::default(),
+                        external_source: false,
+                        tried_external_source: false,
+                        visual_transform_preapplied: false,
+                        retarget_wait_logged: false,
                     });
                 }
                 insert_physics_components(commands, entity_id, name, resource, options, &transform);
@@ -1072,6 +1104,39 @@ pub(super) fn spawn_scenemax_program(
                         .unwrap_or_else(|| "<none>".to_owned())
                 ));
             }
+            Err(error) => {
+                let transform = transform_from_options_resolved(
+                    options,
+                    None,
+                    vars,
+                    &guards_by_name,
+                    Some(&transforms_by_name),
+                    Some(collider_bounds),
+                );
+                let entity_id = spawn_unsupported_model_placeholder(
+                    commands,
+                    meshes,
+                    materials,
+                    name,
+                    resource,
+                    options,
+                    transform,
+                    &visibility_by_target,
+                );
+                insert_physics_components(commands, entity_id, name, resource, options, &transform);
+                entities_by_name.insert(name.clone(), entity_id);
+                transforms_by_name.insert(name.clone(), transform);
+                spawned_any = true;
+                tracing::warn!(
+                    name,
+                    resource,
+                    %error,
+                    "spawned placeholder after unexpected SceneMax model lookup error"
+                );
+                write_runtime_diagnostic_line(format!(
+                    "placeholder for unresolved model {name}=>{resource}; reason={error}"
+                ));
+            }
         }
     }
 
@@ -1123,7 +1188,13 @@ pub(super) fn apply_startup_runs_when_ready(
     mut ui_queue: ResMut<SceneMaxUiActionQueue>,
     mut scene_entities: ParamSet<(
         Query<(Entity, &SceneMaxEntity, &Transform)>,
-        Query<(Entity, &SceneMaxEntity, &Transform, Option<&SceneMaxGltf>)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&SceneMaxGltf>,
+            Option<&SceneMaxModelResource>,
+        )>,
     )>,
     bone_queries: SceneMaxBoneQueries,
 ) {
@@ -1167,12 +1238,19 @@ pub(super) fn apply_startup_runs_when_ready(
         build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
     let mut entities_by_name = HashMap::new();
     let mut gltfs_by_name = HashMap::new();
-    for (entity, scene_entity, _transform, gltf) in &scene_entities.p1() {
+    let mut model_resources_by_name = HashMap::new();
+    for (entity, scene_entity, _transform, gltf, model_resource) in &scene_entities.p1() {
         entities_by_name.insert(scene_entity.name.clone(), entity);
         if let Some(gltf) = gltf {
             gltfs_by_name.insert(scene_entity.name.clone(), gltf.gltf.clone());
         }
+        if let Some(model_resource) = model_resource {
+            model_resources_by_name
+                .insert(scene_entity.name.clone(), model_resource.resource.clone());
+        }
     }
+    runtime_assets.gltf_handles_by_name = gltfs_by_name.clone();
+    runtime_assets.model_resources_by_name = model_resources_by_name;
 
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);

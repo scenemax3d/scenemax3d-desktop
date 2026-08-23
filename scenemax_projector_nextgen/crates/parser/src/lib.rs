@@ -178,6 +178,10 @@ pub enum Statement {
     UiEase(UiEaseStatement),
     UiSetProperty(UiSetPropertyStatement),
     Weapon(WeaponStatement),
+    AnimationControllerAction(AnimationControllerActionStatement),
+    AnimationControllerEvent(AnimationControllerEventStatement),
+    ThrowMotionApply(ThrowMotionApplyStatement),
+    ThrowMotionEvent(ThrowMotionEventStatement),
     NoOp {
         text: String,
     },
@@ -605,6 +609,8 @@ pub struct AssignmentStatement {
 pub enum AssignmentValue {
     Number(f32),
     Symbol(String),
+    AnimationController(AnimationControllerValue),
+    ThrowMotion(Box<ThrowMotionValue>),
     CameraModifier(CameraModifierValue),
     Condition(Box<Condition>),
     RandomInt {
@@ -625,6 +631,50 @@ pub enum AssignmentValue {
         operator: ArithmeticOperator,
         right: Box<AssignmentValue>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnimationControllerValue {
+    pub target: String,
+    pub clip: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnimationControllerActionStatement {
+    pub controller: String,
+    pub action: AnimationControllerAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnimationControllerAction {
+    Run,
+    Stop,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnimationControllerEventStatement {
+    pub controller: String,
+    pub animation: String,
+    pub percent: AssignmentValue,
+    pub actions: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThrowMotionValue {
+    pub asset: ThrowMotionAsset,
+    pub target: Option<ThrowMotionTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ThrowMotionAsset {
+    Literal(String),
+    Expression(Box<AssignmentValue>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ThrowMotionTarget {
+    Object(String),
+    Position([AssignmentValue; 3]),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -782,6 +832,23 @@ pub struct WeaponStatement {
 pub enum WeaponAction {
     Equip { weapon: String },
     Unequip,
+    Detach,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThrowMotionApplyStatement {
+    pub motion: String,
+    pub target: String,
+    pub target_is_equipped_weapon: bool,
+    pub async_run: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThrowMotionEventStatement {
+    pub motion: String,
+    pub event: String,
+    pub index_percent: Option<AssignmentValue>,
+    pub actions: Vec<Statement>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -810,6 +877,8 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
     let mut index = 0;
     let mut block_depth = 0usize;
     let mut pending_guard = None;
+    let mut animation_controller_names = Vec::new();
+    let mut throw_motion_names = Vec::new();
 
     while index < logical_lines.len() {
         let line = logical_lines[index].trim();
@@ -855,6 +924,18 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
         if let Some((mut function, next_index)) = parse_function_def_block(&logical_lines, index)? {
             function.guard = pending_guard.take();
             statements.push(Statement::FunctionDef(function));
+            index = next_index;
+            continue;
+        }
+
+        if let Some((event, next_index)) = parse_runtime_object_event_block(
+            &logical_lines,
+            index,
+            &animation_controller_names,
+            &throw_motion_names,
+        )? {
+            statements.push(event);
+            pending_guard = None;
             index = next_index;
             continue;
         }
@@ -940,7 +1021,24 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
             continue;
         }
 
+        if let Some(action) = parse_animation_controller_action(line) {
+            statements.push(Statement::AnimationControllerAction(action));
+            index += 1;
+            continue;
+        }
+
+        if let Some(apply) = parse_throw_motion_apply(line) {
+            statements.push(Statement::ThrowMotionApply(apply));
+            index += 1;
+            continue;
+        }
+
         if let Some(assignments) = parse_assignment_list(line)? {
+            record_runtime_object_assignments(
+                &assignments,
+                &mut animation_controller_names,
+                &mut throw_motion_names,
+            );
             if is_shared_var_line(line) {
                 statements.extend(assignments.into_iter().map(Statement::SharedAssignment));
             } else {
@@ -981,6 +1079,8 @@ fn parse_key_event_block(
     let mut depth = 1usize;
     let mut actions = Vec::new();
     let mut cursor = index + 1;
+    let mut animation_controller_names = Vec::new();
+    let mut throw_motion_names = Vec::new();
     while cursor < logical_lines.len() {
         let line = logical_lines[cursor].trim();
         let lower = line.to_ascii_lowercase();
@@ -1075,8 +1175,25 @@ fn parse_key_event_block(
             continue;
         }
 
+        if let Some((event, next_index)) = parse_runtime_object_event_block(
+            logical_lines,
+            cursor,
+            &animation_controller_names,
+            &throw_motion_names,
+        )? {
+            actions.push(event);
+            cursor = next_index;
+            continue;
+        }
+
         if should_parse_key_action_line(line) {
-            actions.extend(parse_action_statements(line)?);
+            let parsed_actions = parse_action_statements(line)?;
+            record_runtime_object_statements(
+                &parsed_actions,
+                &mut animation_controller_names,
+                &mut throw_motion_names,
+            );
+            actions.extend(parsed_actions);
         }
 
         if opens_runtime_block(line) {
@@ -1250,6 +1367,8 @@ fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
             AssignmentValue::Binary { .. } => return Ok(None),
             AssignmentValue::CameraModifier(_)
             | AssignmentValue::Condition(_)
+            | AssignmentValue::AnimationController(_)
+            | AssignmentValue::ThrowMotion(_)
             | AssignmentValue::RandomInt { .. }
             | AssignmentValue::Round { .. }
             | AssignmentValue::Distance { .. }
@@ -1269,6 +1388,8 @@ fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
             AssignmentValue::Binary { .. } => return Ok(None),
             AssignmentValue::CameraModifier(_)
             | AssignmentValue::Condition(_)
+            | AssignmentValue::AnimationController(_)
+            | AssignmentValue::ThrowMotion(_)
             | AssignmentValue::RandomInt { .. }
             | AssignmentValue::Round { .. }
             | AssignmentValue::Distance { .. }
@@ -1510,6 +1631,8 @@ fn parse_action_block_with_stop(
 ) -> Result<(Vec<Statement>, usize, ActionBlockStop), ParseError> {
     let mut depth = 1usize;
     let mut actions = Vec::new();
+    let mut animation_controller_names = Vec::new();
+    let mut throw_motion_names = Vec::new();
     while cursor < logical_lines.len() {
         let line = logical_lines[cursor].trim();
         let lower = line.to_ascii_lowercase();
@@ -1611,8 +1734,25 @@ fn parse_action_block_with_stop(
             continue;
         }
 
+        if let Some((event, next_index)) = parse_runtime_object_event_block(
+            logical_lines,
+            cursor,
+            &animation_controller_names,
+            &throw_motion_names,
+        )? {
+            actions.push(event);
+            cursor = next_index;
+            continue;
+        }
+
         if should_parse_key_action_line(line) {
-            actions.extend(parse_action_statements(line)?);
+            let parsed_actions = parse_action_statements(line)?;
+            record_runtime_object_statements(
+                &parsed_actions,
+                &mut animation_controller_names,
+                &mut throw_motion_names,
+            );
+            actions.extend(parsed_actions);
         }
 
         if opens_runtime_block(line) {
@@ -1726,6 +1866,12 @@ fn parse_action_statements(line: &str) -> Result<Vec<Statement>, ParseError> {
     }
     if let Some(weapon) = parse_weapon_statement(line) {
         return Ok(vec![Statement::Weapon(weapon)]);
+    }
+    if let Some(action) = parse_animation_controller_action(line) {
+        return Ok(vec![Statement::AnimationControllerAction(action)]);
+    }
+    if let Some(apply) = parse_throw_motion_apply(line) {
+        return Ok(vec![Statement::ThrowMotionApply(apply)]);
     }
     if is_shared_var_line(line) {
         if let Some(assignments) = parse_assignment_list(line)? {
@@ -2855,7 +3001,249 @@ fn parse_weapon_statement(line: &str) -> Option<WeaponStatement> {
             action: WeaponAction::Equip { weapon },
         });
     }
+    if rest.eq_ignore_ascii_case(".detach") || rest.eq_ignore_ascii_case(".detach()") {
+        return Some(WeaponStatement {
+            owner: owner.to_owned(),
+            action: WeaponAction::Detach,
+        });
+    }
     None
+}
+
+fn parse_runtime_object_event_block(
+    logical_lines: &[String],
+    index: usize,
+    animation_controller_names: &[String],
+    throw_motion_names: &[String],
+) -> Result<Option<(Statement, usize)>, ParseError> {
+    let line = logical_lines[index].trim();
+    let Some(name) = parse_runtime_event_object_name(line) else {
+        return Ok(None);
+    };
+    if contains_runtime_object_name(animation_controller_names, &name) {
+        return Ok(
+            parse_animation_controller_event_block(logical_lines, index)?.map(
+                |(event, next_index)| (Statement::AnimationControllerEvent(event), next_index),
+            ),
+        );
+    }
+    if contains_runtime_object_name(throw_motion_names, &name) {
+        return Ok(parse_throw_motion_event_block(logical_lines, index)?
+            .map(|(event, next_index)| (Statement::ThrowMotionEvent(event), next_index)));
+    }
+    Ok(parse_throw_motion_event_block(logical_lines, index)?
+        .map(|(event, next_index)| (Statement::ThrowMotionEvent(event), next_index)))
+}
+
+fn parse_runtime_event_object_name(line: &str) -> Option<String> {
+    let (name, rest) = split_dot_command_rest(line)?;
+    let rest = rest.trim_start();
+    rest.to_ascii_lowercase()
+        .starts_with("event(")
+        .then(|| name)
+}
+
+fn contains_runtime_object_name(names: &[String], name: &str) -> bool {
+    names.iter().any(|existing| existing == name)
+}
+
+fn record_runtime_object_statements(
+    statements: &[Statement],
+    animation_controller_names: &mut Vec<String>,
+    throw_motion_names: &mut Vec<String>,
+) {
+    for statement in statements {
+        match statement {
+            Statement::Assignment(assignment)
+            | Statement::SharedAssignment(assignment)
+            | Statement::LocalAssignment(assignment) => record_runtime_object_assignment(
+                assignment,
+                animation_controller_names,
+                throw_motion_names,
+            ),
+            _ => {}
+        }
+    }
+}
+
+fn record_runtime_object_assignments(
+    assignments: &[AssignmentStatement],
+    animation_controller_names: &mut Vec<String>,
+    throw_motion_names: &mut Vec<String>,
+) {
+    for assignment in assignments {
+        record_runtime_object_assignment(
+            assignment,
+            animation_controller_names,
+            throw_motion_names,
+        );
+    }
+}
+
+fn record_runtime_object_assignment(
+    assignment: &AssignmentStatement,
+    animation_controller_names: &mut Vec<String>,
+    throw_motion_names: &mut Vec<String>,
+) {
+    match assignment.value {
+        AssignmentValue::AnimationController(_) => {
+            remember_runtime_object_name(animation_controller_names, &assignment.name);
+        }
+        AssignmentValue::ThrowMotion(_) => {
+            remember_runtime_object_name(throw_motion_names, &assignment.name);
+        }
+        _ => {}
+    }
+}
+
+fn remember_runtime_object_name(names: &mut Vec<String>, name: &str) {
+    if !contains_runtime_object_name(names, name) {
+        names.push(name.to_owned());
+    }
+}
+
+fn parse_animation_controller_action(line: &str) -> Option<AnimationControllerActionStatement> {
+    let line = line.trim().trim_end_matches(';').trim();
+    let Some((controller, rest)) = split_dot_command_rest(line) else {
+        return None;
+    };
+    if !is_variable_path(&controller) {
+        return None;
+    }
+    let action = match rest.trim().to_ascii_lowercase().as_str() {
+        "run" | "run()" => AnimationControllerAction::Run,
+        "stop" | "stop()" => AnimationControllerAction::Stop,
+        _ => return None,
+    };
+    Some(AnimationControllerActionStatement { controller, action })
+}
+
+fn parse_animation_controller_event_block(
+    logical_lines: &[String],
+    index: usize,
+) -> Result<Option<(AnimationControllerEventStatement, usize)>, ParseError> {
+    let line = logical_lines[index].trim();
+    let Some(mut event) = parse_animation_controller_event_header(line, Vec::new())? else {
+        return Ok(None);
+    };
+    if line.contains("{ }") || line.contains("{}") || !line.ends_with('{') {
+        return Ok(Some((event, index + 1)));
+    }
+    let (actions, next_index) = parse_action_block(logical_lines, index + 1, false)?;
+    event.actions = actions;
+    Ok(Some((event, next_index)))
+}
+
+fn parse_animation_controller_event_header(
+    line: &str,
+    actions: Vec<Statement>,
+) -> Result<Option<AnimationControllerEventStatement>, ParseError> {
+    let line = line.trim().trim_end_matches(';').trim();
+    let Some((controller, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
+    if !is_variable_path(&controller)
+        || !rest.trim_start().to_ascii_lowercase().starts_with("event(")
+    {
+        return Ok(None);
+    }
+    let args = parse_call_args(rest);
+    let (Some(animation), Some(percent)) = (args.first(), args.get(1)) else {
+        return Ok(None);
+    };
+    let Some(percent) = parse_assignment_value(percent)? else {
+        return Err(ParseError::InvalidNumber(percent.to_owned()));
+    };
+    Ok(Some(AnimationControllerEventStatement {
+        controller,
+        animation: animation.to_owned(),
+        percent,
+        actions,
+    }))
+}
+
+fn parse_throw_motion_apply(line: &str) -> Option<ThrowMotionApplyStatement> {
+    let line = line.trim().trim_end_matches(';').trim();
+    let Some((motion, rest)) = split_dot_command_rest(line) else {
+        return None;
+    };
+    if !is_variable_path(&motion) {
+        return None;
+    }
+    let rest = rest.trim();
+    if !starts_with_keyword(rest, "apply") {
+        return None;
+    }
+    let mut target = rest["apply".len()..].trim();
+    let async_run = target
+        .split_whitespace()
+        .last()
+        .is_some_and(|word| word.eq_ignore_ascii_case("async"));
+    if async_run {
+        target = target[..target.rfind(char::is_whitespace).unwrap_or(target.len())].trim();
+    }
+    let target = target.trim_end_matches(';').trim();
+    let lower_target = target.to_ascii_lowercase();
+    if lower_target.ends_with(".weapon") {
+        let owner = target[..target.len() - ".weapon".len()].trim();
+        return is_variable_path(owner).then(|| ThrowMotionApplyStatement {
+            motion,
+            target: owner.to_owned(),
+            target_is_equipped_weapon: true,
+            async_run,
+        });
+    }
+    is_variable_path(target).then(|| ThrowMotionApplyStatement {
+        motion,
+        target: target.to_owned(),
+        target_is_equipped_weapon: false,
+        async_run,
+    })
+}
+
+fn parse_throw_motion_event_block(
+    logical_lines: &[String],
+    index: usize,
+) -> Result<Option<(ThrowMotionEventStatement, usize)>, ParseError> {
+    let line = logical_lines[index].trim();
+    let Some(mut event) = parse_throw_motion_event_header(line, Vec::new())? else {
+        return Ok(None);
+    };
+    if line.contains("{ }") || line.contains("{}") || !line.ends_with('{') {
+        return Ok(Some((event, index + 1)));
+    }
+    let (actions, next_index) = parse_action_block(logical_lines, index + 1, false)?;
+    event.actions = actions;
+    Ok(Some((event, next_index)))
+}
+
+fn parse_throw_motion_event_header(
+    line: &str,
+    actions: Vec<Statement>,
+) -> Result<Option<ThrowMotionEventStatement>, ParseError> {
+    let line = line.trim().trim_end_matches(';').trim();
+    let Some((motion, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
+    if !is_variable_path(&motion) || !rest.trim_start().to_ascii_lowercase().starts_with("event(") {
+        return Ok(None);
+    }
+    let args = parse_call_args(rest);
+    let Some(event) = args.first().filter(|event| !event.is_empty()) else {
+        return Ok(None);
+    };
+    let index_percent = args
+        .get(1)
+        .map(|raw| {
+            parse_assignment_value(raw)?.ok_or_else(|| ParseError::InvalidNumber(raw.to_owned()))
+        })
+        .transpose()?;
+    Ok(Some(ThrowMotionEventStatement {
+        motion,
+        event: event.to_owned(),
+        index_percent,
+        actions,
+    }))
 }
 
 fn split_assignment_segments(text: &str) -> Vec<&str> {
@@ -2927,6 +3315,12 @@ fn parse_assignment_value(raw_value: &str) -> Result<Option<AssignmentValue>, Pa
             }));
         }
     }
+    if let Some(value) = parse_animation_controller_value(raw_value) {
+        return Ok(Some(AssignmentValue::AnimationController(value)));
+    }
+    if let Some(value) = parse_throw_motion_value(raw_value)? {
+        return Ok(Some(AssignmentValue::ThrowMotion(Box::new(value))));
+    }
     if let Some(pool) = raw_value.strip_suffix(".acquire") {
         let pool = pool.trim();
         if is_variable_path(pool) {
@@ -2968,6 +3362,88 @@ fn parse_assignment_value(raw_value: &str) -> Result<Option<AssignmentValue>, Pa
         return Ok(Some(AssignmentValue::Condition(Box::new(condition))));
     }
     Ok(None)
+}
+
+fn parse_animation_controller_value(raw_value: &str) -> Option<AnimationControllerValue> {
+    let after_animation = strip_keyword_prefix(raw_value, "animation")?.trim();
+    let (target, clip) = split_animation_controller_reference(after_animation)?;
+    Some(AnimationControllerValue { target, clip })
+}
+
+fn split_animation_controller_reference(text: &str) -> Option<(String, String)> {
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    if let Some(quote_start) = text.find('"') {
+        let target = text[..quote_start].trim().trim_end_matches('.').trim();
+        let after_quote = &text[quote_start + 1..];
+        let quote_end = after_quote.find('"')?;
+        let clip = after_quote[..quote_end].trim();
+        return (!target.is_empty() && !clip.is_empty() && is_variable_path(target))
+            .then(|| (target.to_owned(), clip.to_owned()));
+    }
+    let (target, clip) = text.rsplit_once('.')?;
+    let target = target.trim();
+    let clip = clip.trim();
+    (!target.is_empty() && !clip.is_empty() && is_variable_path(target) && is_variable_name(clip))
+        .then(|| (target.to_owned(), clip.to_owned()))
+}
+
+fn parse_throw_motion_value(raw_value: &str) -> Result<Option<ThrowMotionValue>, ParseError> {
+    let Some(args) = parse_function_assignment_args(raw_value, "system.motion") else {
+        return Ok(None);
+    };
+    let Some(asset_arg) = args
+        .first()
+        .map(|arg| arg.trim())
+        .filter(|arg| !arg.is_empty())
+    else {
+        return Ok(None);
+    };
+    let asset = if is_quoted(asset_arg) {
+        ThrowMotionAsset::Literal(unquote_ui_text(asset_arg))
+    } else {
+        let Some(value) = parse_assignment_value(asset_arg)? else {
+            return Ok(None);
+        };
+        ThrowMotionAsset::Expression(Box::new(value))
+    };
+    let target = args
+        .iter()
+        .skip(1)
+        .find_map(|arg| parse_throw_motion_target_arg(arg).transpose())
+        .transpose()?;
+    Ok(Some(ThrowMotionValue { asset, target }))
+}
+
+fn parse_throw_motion_target_arg(raw_arg: &str) -> Result<Option<ThrowMotionTarget>, ParseError> {
+    let arg = raw_arg.trim();
+    let lower = arg.to_ascii_lowercase();
+    if !lower.starts_with("target") {
+        return Ok(None);
+    }
+    let value = arg["target".len()..]
+        .trim_start()
+        .strip_prefix('=')
+        .unwrap_or(arg["target".len()..].trim_start())
+        .trim();
+    if value.starts_with('(') && value.ends_with(')') {
+        let parts = split_top_level_comma(&value[1..value.len() - 1]);
+        if parts.len() != 3 {
+            return Ok(None);
+        }
+        let x = parse_throw_motion_target_value(parts[0])?;
+        let y = parse_throw_motion_target_value(parts[1])?;
+        let z = parse_throw_motion_target_value(parts[2])?;
+        return Ok(Some(ThrowMotionTarget::Position([x, y, z])));
+    }
+    Ok(is_variable_path(value).then(|| ThrowMotionTarget::Object(value.to_owned())))
+}
+
+fn parse_throw_motion_target_value(raw_value: &str) -> Result<AssignmentValue, ParseError> {
+    parse_assignment_value(raw_value.trim())?
+        .ok_or_else(|| ParseError::InvalidNumber(raw_value.trim().to_owned()))
 }
 
 fn parse_camera_modifier_value(raw_value: &str) -> Option<CameraModifierValue> {
@@ -5070,11 +5546,7 @@ fn is_runtime_noop_command(line: &str) -> bool {
     if lower.starts_with("camera.chase ") || lower == "camera.chase stop" {
         return true;
     }
-    if lower == "anim.stop"
-        || lower.starts_with("motion.apply ")
-        || lower.starts_with("anim.event(")
-        || lower.starts_with("motion.event(")
-    {
+    if lower.starts_with("anim.event(") {
         return true;
     }
 
@@ -8462,6 +8934,258 @@ run tick(score+10) every tick_time+0.25 seconds
                     weapon: "weapon_training_tool".to_owned(),
                 },
             })]
+        );
+    }
+
+    #[test]
+    fn parses_throw_motion_runtime_commands() {
+        let program = parse_program(
+            "tool => model_tool\n\
+             target => model_target\n\
+             motion = system.motion(\"motion_training_throw\", target target)\n\
+             motion.apply tool async",
+        )
+        .unwrap();
+
+        let Statement::Assignment(AssignmentStatement {
+            name,
+            value: AssignmentValue::ThrowMotion(value),
+        }) = &program.statements[2]
+        else {
+            panic!("expected throw motion assignment");
+        };
+        assert_eq!(name, "motion");
+        assert!(matches!(
+            value.as_ref(),
+            ThrowMotionValue {
+                asset: ThrowMotionAsset::Literal(asset),
+                target: Some(ThrowMotionTarget::Object(target)),
+            } if asset == "motion_training_throw" && target == "target"
+        ));
+        assert_eq!(
+            program.statements[3],
+            Statement::ThrowMotionApply(ThrowMotionApplyStatement {
+                motion: "motion".to_owned(),
+                target: "tool".to_owned(),
+                target_is_equipped_weapon: false,
+                async_run: true,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_throw_motion_equipped_weapon_and_events() {
+        let program = parse_program(
+            "actor => model_actor\n\
+             actor.weapon.detach\n\
+             motion = system.motion(\"motion_training_throw\", target (1, height, 3))\n\
+             motion.event(\"on_index\", 50) = {\n\
+               marker = 1\n\
+             }\n\
+             motion.apply actor.weapon",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements[1],
+            Statement::Weapon(WeaponStatement {
+                owner: "actor".to_owned(),
+                action: WeaponAction::Detach,
+            })
+        );
+        let Statement::Assignment(AssignmentStatement {
+            value: AssignmentValue::ThrowMotion(value),
+            ..
+        }) = &program.statements[2]
+        else {
+            panic!("expected throw motion assignment");
+        };
+        assert!(matches!(
+            value.as_ref(),
+            ThrowMotionValue {
+                target: Some(ThrowMotionTarget::Position(values)),
+                ..
+            } if values[1] == AssignmentValue::Symbol("height".to_owned())
+        ));
+        assert!(matches!(
+            &program.statements[3],
+            Statement::ThrowMotionEvent(ThrowMotionEventStatement {
+                motion,
+                event,
+                index_percent: Some(AssignmentValue::Number(50.0)),
+                actions,
+            }) if motion == "motion"
+                && event == "on_index"
+                && actions == &vec![Statement::Assignment(AssignmentStatement {
+                    name: "marker".to_owned(),
+                    value: AssignmentValue::Number(1.0),
+                })]
+        ));
+        assert_eq!(
+            program.statements[4],
+            Statement::ThrowMotionApply(ThrowMotionApplyStatement {
+                motion: "motion".to_owned(),
+                target: "actor".to_owned(),
+                target_is_equipped_weapon: true,
+                async_run: false,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_animation_controller_runtime_commands() {
+        let program = parse_program(
+            "actor => model_actor\n\
+             anim = animation actor.attack\n\
+             anim.event(\"attack\", 30) = {\n\
+               marker = 1\n\
+             }\n\
+             anim.run\n\
+             anim.stop",
+        )
+        .unwrap();
+
+        let Statement::Assignment(AssignmentStatement {
+            name,
+            value: AssignmentValue::AnimationController(value),
+        }) = &program.statements[1]
+        else {
+            panic!("expected animation controller assignment");
+        };
+        assert_eq!(name, "anim");
+        assert_eq!(
+            value,
+            &AnimationControllerValue {
+                target: "actor".to_owned(),
+                clip: "attack".to_owned(),
+            }
+        );
+        assert!(matches!(
+            &program.statements[2],
+            Statement::AnimationControllerEvent(AnimationControllerEventStatement {
+                controller,
+                animation,
+                percent: AssignmentValue::Number(30.0),
+                actions,
+            }) if controller == "anim"
+                && animation == "attack"
+                && actions == &vec![Statement::Assignment(AssignmentStatement {
+                    name: "marker".to_owned(),
+                    value: AssignmentValue::Number(1.0),
+                })]
+        ));
+        assert_eq!(
+            program.statements[3],
+            Statement::AnimationControllerAction(AnimationControllerActionStatement {
+                controller: "anim".to_owned(),
+                action: AnimationControllerAction::Run,
+            })
+        );
+        assert_eq!(
+            program.statements[4],
+            Statement::AnimationControllerAction(AnimationControllerActionStatement {
+                controller: "anim".to_owned(),
+                action: AnimationControllerAction::Stop,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_animation_controller_inside_key_event() {
+        let program = parse_program(
+            "actor => model_actor\n\
+             when key Q is pressed once do\n\
+               anim = animation actor.attack\n\
+               anim.event(\"attack\", 30) = {\n\
+                 marker = 1\n\
+               }\n\
+               anim.run\n\
+             end do",
+        )
+        .unwrap();
+
+        let Statement::KeyEvent(event) = &program.statements[1] else {
+            panic!("expected key event");
+        };
+        assert!(matches!(
+            &event.actions[0],
+            Statement::Assignment(AssignmentStatement {
+                name,
+                value: AssignmentValue::AnimationController(AnimationControllerValue {
+                    target,
+                    clip,
+                }),
+            }) if name == "anim" && target == "actor" && clip == "attack"
+        ));
+        assert!(matches!(
+            &event.actions[1],
+            Statement::AnimationControllerEvent(AnimationControllerEventStatement {
+                controller,
+                animation,
+                percent: AssignmentValue::Number(30.0),
+                ..
+            }) if controller == "anim" && animation == "attack"
+        ));
+        assert_eq!(
+            event.actions[2],
+            Statement::AnimationControllerAction(AnimationControllerActionStatement {
+                controller: "anim".to_owned(),
+                action: AnimationControllerAction::Run,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_animation_controller_run_after_nested_event_blocks() {
+        let program = parse_program(
+            "actor => model_actor\n\
+             when key Q is pressed once do\n\
+               anim = animation actor.attack\n\
+               anim.event(\"attack\", 30) = {\n\
+                 motion = system.motion(\"motion_training_throw\")\n\
+                 motion.event(\"on_index\", 50) = {\n\
+                   anim.stop\n\
+                 }\n\
+                 motion.apply actor\n\
+               }\n\
+               anim.run\n\
+             end do",
+        )
+        .unwrap();
+
+        let Statement::KeyEvent(event) = &program.statements[1] else {
+            panic!("expected key event");
+        };
+        assert!(matches!(
+            event.actions.last(),
+            Some(Statement::AnimationControllerAction(AnimationControllerActionStatement {
+                controller,
+                action: AnimationControllerAction::Run,
+            })) if controller == "anim"
+        ));
+        let Statement::AnimationControllerEvent(animation_event) = &event.actions[1] else {
+            panic!("expected animation controller event");
+        };
+        assert!(matches!(
+            animation_event.actions.get(1),
+            Some(Statement::ThrowMotionEvent(ThrowMotionEventStatement {
+                motion,
+                event,
+                index_percent: Some(AssignmentValue::Number(50.0)),
+                ..
+            })) if motion == "motion" && event == "on_index"
+        ));
+        let Statement::ThrowMotionEvent(motion_event) = &animation_event.actions[1] else {
+            panic!("expected throw motion event");
+        };
+        assert_eq!(
+            motion_event.actions,
+            vec![Statement::AnimationControllerAction(
+                AnimationControllerActionStatement {
+                    controller: "anim".to_owned(),
+                    action: AnimationControllerAction::Stop,
+                },
+            )]
         );
     }
 

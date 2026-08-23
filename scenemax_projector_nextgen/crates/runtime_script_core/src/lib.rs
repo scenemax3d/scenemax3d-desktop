@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use scenemax_parser::{
-    AnimationSpeedStatement, AnimationStatement, AssignmentValue, AttachStatement,
-    CameraAttachStatement, CharacterJumpStatement, CharacterModeStatement, Condition,
-    LoggerMessage, LoggerStatement, PoolReleaseStatement, PositionExpr, PositionStatement,
-    PositionValue, Program, Statement, UiTargetPath,
+    AnimationControllerEventStatement, AnimationControllerValue, AnimationSpeedStatement,
+    AnimationStatement, AssignmentValue, AttachStatement, CameraAttachStatement,
+    CharacterJumpStatement, CharacterModeStatement, Condition, LoggerMessage, LoggerStatement,
+    PoolReleaseStatement, PositionExpr, PositionStatement, PositionValue, Program, Statement,
+    ThrowMotionAsset, ThrowMotionTarget, ThrowMotionValue, UiTargetPath,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -450,6 +451,20 @@ pub fn substitute_statement(
                 Statement::Assignment(assignment)
             }
         }
+        Statement::AnimationControllerAction(action) => Statement::AnimationControllerAction(
+            scenemax_parser::AnimationControllerActionStatement {
+                controller: substitute_path(&action.controller, bindings),
+                action: action.action,
+            },
+        ),
+        Statement::AnimationControllerEvent(event) => {
+            Statement::AnimationControllerEvent(AnimationControllerEventStatement {
+                controller: substitute_path(&event.controller, bindings),
+                animation: event.animation.clone(),
+                percent: substitute_assignment_value(&event.percent, bindings),
+                actions: substitute_statements(&event.actions, bindings),
+            })
+        }
         Statement::SetShader(shader) => Statement::SetShader(scenemax_parser::SetShaderStatement {
             target: substitute_path(&shader.target, bindings),
             shader: substitute_assignment_value(&shader.shader, bindings),
@@ -674,6 +689,15 @@ pub fn substitute_assignment_value(
         AssignmentValue::Condition(condition) => {
             AssignmentValue::Condition(Box::new(substitute_condition(condition, bindings)))
         }
+        AssignmentValue::ThrowMotion(value) => {
+            AssignmentValue::ThrowMotion(Box::new(substitute_throw_motion_value(value, bindings)))
+        }
+        AssignmentValue::AnimationController(value) => {
+            AssignmentValue::AnimationController(AnimationControllerValue {
+                target: substitute_path(&value.target, bindings),
+                clip: value.clip.clone(),
+            })
+        }
         AssignmentValue::RandomInt { max } => AssignmentValue::RandomInt {
             max: Box::new(substitute_assignment_value(max, bindings)),
         },
@@ -701,6 +725,30 @@ pub fn substitute_assignment_value(
             operator: *operator,
             right: Box::new(substitute_assignment_value(right, bindings)),
         },
+    }
+}
+
+fn substitute_throw_motion_value(
+    value: &ThrowMotionValue,
+    bindings: &HashMap<String, String>,
+) -> ThrowMotionValue {
+    ThrowMotionValue {
+        asset: match &value.asset {
+            ThrowMotionAsset::Literal(asset) => ThrowMotionAsset::Literal(asset.clone()),
+            ThrowMotionAsset::Expression(asset) => {
+                ThrowMotionAsset::Expression(Box::new(substitute_assignment_value(asset, bindings)))
+            }
+        },
+        target: value.target.as_ref().map(|target| match target {
+            ThrowMotionTarget::Object(target) => {
+                ThrowMotionTarget::Object(substitute_path(target, bindings))
+            }
+            ThrowMotionTarget::Position(values) => ThrowMotionTarget::Position([
+                substitute_assignment_value(&values[0], bindings),
+                substitute_assignment_value(&values[1], bindings),
+                substitute_assignment_value(&values[2], bindings),
+            ]),
+        }),
     }
 }
 

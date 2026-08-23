@@ -174,6 +174,8 @@ pub fn resolve_assignment_value_scoped_with_guards(
         AssignmentValue::Number(value) => Some(*value),
         AssignmentValue::Symbol(name) => resolve_symbol_value_scoped(name, vars, scope, spatial),
         AssignmentValue::CameraModifier(_) => None,
+        AssignmentValue::ThrowMotion(_) => None,
+        AssignmentValue::AnimationController(_) => None,
         AssignmentValue::Condition(condition) => {
             Some(
                 condition_matches_scoped(condition, vars, scope, guards_by_name, spatial) as u8

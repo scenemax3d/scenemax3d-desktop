@@ -22,9 +22,46 @@ public class AnimationImportWorker {
             outputFile = new File(args[2]);
         } else if ("import".equals(command)) {
             if (args.length < 5) {
-                throw new IllegalArgumentException("Usage: import <source> <resources> <name> <outputJson>");
+                throw new IllegalArgumentException("Usage: import <source> <resources> <name> <outputJson> [bevyRetargetProfile] [bevySkipTopAnimatedTargets] [bevyExcludeBonesCsv] [bevyVisualTranslationX] [bevyVisualTranslationY] [bevyVisualTranslationZ] [bevyVisualRotationX] [bevyVisualRotationY] [bevyVisualRotationZ] [bevyLockTranslationX] [bevyLockTranslationY] [bevyLockTranslationZ] [bevyRootBone] [bevyScaleBaseBone] [bevyRemoveUnimportantTranslationTracks] [bevyNormalizeMotionScale] [bevyRemoveMotionTranslationTracks] [bevyRemoveMotionRotationTracks]");
             }
-            result = AnimationImporter.importAnimation(new File(args[1]), new File(args[2]), args[3]);
+            AnimationImportOptions options = new AnimationImportOptions();
+            if (args.length >= 6) {
+                options.setBevyRetargetProfile(args[5]);
+            }
+            if (args.length >= 7) {
+                options.setBevySkipTopAnimatedTargets(Integer.parseInt(args[6]));
+            }
+            if (args.length >= 8) {
+                options.setBevyExcludedBonesCsv(args[7]);
+            }
+            if (args.length >= 11) {
+                options.setBevyVisualTranslationX(Float.parseFloat(args[8]));
+                options.setBevyVisualTranslationY(Float.parseFloat(args[9]));
+                options.setBevyVisualTranslationZ(Float.parseFloat(args[10]));
+            }
+            if (args.length >= 14) {
+                options.setBevyVisualRotationXDegrees(Float.parseFloat(args[11]));
+                options.setBevyVisualRotationYDegrees(Float.parseFloat(args[12]));
+                options.setBevyVisualRotationZDegrees(Float.parseFloat(args[13]));
+            }
+            if (args.length >= 17) {
+                options.setBevyLockTranslationX(Boolean.parseBoolean(args[14]));
+                options.setBevyLockTranslationY(Boolean.parseBoolean(args[15]));
+                options.setBevyLockTranslationZ(Boolean.parseBoolean(args[16]));
+            }
+            if (args.length >= 19) {
+                options.setBevyRootBone(args[17]);
+                options.setBevyScaleBaseBone(args[18]);
+            }
+            if (args.length >= 21) {
+                options.setBevyRemoveUnimportantTranslationTracks(Boolean.parseBoolean(args[19]));
+                options.setBevyNormalizeMotionScale(Boolean.parseBoolean(args[20]));
+            }
+            if (args.length >= 23) {
+                options.setBevyRemoveMotionTranslationTracks(Boolean.parseBoolean(args[21]));
+                options.setBevyRemoveMotionRotationTracks(Boolean.parseBoolean(args[22]));
+            }
+            result = AnimationImporter.importAnimation(new File(args[1]), new File(args[2]), args[3], options);
             outputFile = new File(args[4]);
         } else if ("convert-model".equals(command)) {
             AnimationImporter.convertModelToJ3o(new File(args[1]), new File(args[2]));
