@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use scenemax_runtime::{BevyShaderDesignerLaunch, ProjectorLaunch, WindowSettings};
+use scenemax_runtime::{
+    BevyRetargetDesignerLaunch, BevyShaderDesignerLaunch, ProjectorLaunch, WindowSettings,
+};
 use tracing_subscriber::{EnvFilter, fmt};
 
 #[derive(Debug, Parser)]
@@ -59,6 +61,18 @@ enum Command {
         #[arg(long)]
         project_root: Option<PathBuf>,
     },
+
+    /// Open the Bevy-native animation retarget designer for an imported animation.
+    RetargetDesigner {
+        #[arg(long)]
+        project_root: PathBuf,
+
+        #[arg(long)]
+        animation: String,
+
+        #[arg(long)]
+        model: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -105,6 +119,17 @@ fn main() -> Result<()> {
             scenemax_runtime::run_bevy_shader_designer(BevyShaderDesignerLaunch {
                 shader,
                 project_root,
+            });
+        }
+        Command::RetargetDesigner {
+            project_root,
+            animation,
+            model,
+        } => {
+            scenemax_runtime::run_bevy_retarget_designer(BevyRetargetDesignerLaunch {
+                project_root,
+                animation,
+                model,
             });
         }
     }

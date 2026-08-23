@@ -83,15 +83,26 @@ public class AnimationImporter {
     }
 
     public static AnimationImportResult importAnimation(File sourceFile, File resourcesFolder, String requestedName) throws IOException {
-        return importAnimation(sourceFile, resourcesFolder, requestedName, null);
+        return importAnimation(sourceFile, resourcesFolder, requestedName, null, null);
     }
 
     public static AnimationImportResult importAnimation(File sourceFile, File resourcesFolder, String requestedName,
                                                        AnimationImportResult inspectedResult) throws IOException {
+        return importAnimation(sourceFile, resourcesFolder, requestedName, inspectedResult, null);
+    }
+
+    public static AnimationImportResult importAnimation(File sourceFile, File resourcesFolder, String requestedName,
+                                                       AnimationImportOptions options) throws IOException {
+        return importAnimation(sourceFile, resourcesFolder, requestedName, null, options);
+    }
+
+    public static AnimationImportResult importAnimation(File sourceFile, File resourcesFolder, String requestedName,
+                                                       AnimationImportResult inspectedResult,
+                                                       AnimationImportOptions options) throws IOException {
         validate(sourceFile, resourcesFolder, requestedName);
 
         if (".fbx".equals(extension(sourceFile.getName()))) {
-            return importFbxAnimation(sourceFile, resourcesFolder, requestedName);
+            return importFbxAnimation(sourceFile, resourcesFolder, requestedName, options);
         }
 
         String assetId = sanitizeAssetId(requestedName);
@@ -119,7 +130,7 @@ public class AnimationImporter {
         File runtimeFile = new File(assetFolder, assetId + ".j3o");
         BinaryExporter.getInstance().save(createRuntimeAnimationResource(imported, selectedClipName), runtimeFile);
         updateIndex(resourcesFolder, requestedName, resourcesFolder.toPath().relativize(runtimeFile.toPath()).toString().replace("\\", "/"),
-                selectedClipName, sourceFile);
+                selectedClipName, sourceFile, options);
 
         return new AnimationImportResult(assetFolder, runtimeFile, clipNames, collectClipSummaries(imported), selectedClipName, imported);
     }
@@ -160,7 +171,8 @@ public class AnimationImporter {
         }
     }
 
-    private static AnimationImportResult importFbxAnimation(File sourceFile, File resourcesFolder, String requestedName) throws IOException {
+    private static AnimationImportResult importFbxAnimation(File sourceFile, File resourcesFolder, String requestedName,
+                                                           AnimationImportOptions options) throws IOException {
         String assetId = sanitizeAssetId(requestedName);
         File animationsRoot = new File(resourcesFolder, "animations");
         File assetFolder = new File(animationsRoot, assetId);
@@ -194,7 +206,7 @@ public class AnimationImporter {
             File runtimeFile = new File(assetFolder, assetId + ".glb");
             Files.copy(glbFile.toPath(), runtimeFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             updateIndex(resourcesFolder, requestedName, resourcesFolder.toPath().relativize(runtimeFile.toPath()).toString().replace("\\", "/"),
-                    selectedClipName, sourceFile);
+                    selectedClipName, sourceFile, options);
 
             return new AnimationImportResult(assetFolder, runtimeFile, clipNames, clipSummaries, selectedClipName, imported);
         } finally {
@@ -939,7 +951,8 @@ public class AnimationImporter {
     }
 
     private static void updateIndex(File resourcesFolder, String name, String relativePath,
-                                    String clipName, File sourceFile) throws IOException {
+                                    String clipName, File sourceFile,
+                                    AnimationImportOptions options) throws IOException {
         File indexFile = new File(resourcesFolder, "animations/animations-ext.json");
         JSONObject root;
         if (indexFile.isFile()) {
@@ -969,6 +982,7 @@ public class AnimationImporter {
         animation.put("clipName", clipName);
         animation.put("sourcePath", sourceFile.getAbsolutePath());
         animation.put("importedAt", Instant.now().toString());
+        animation.put("bevyRetarget", bevyRetargetJson(options));
         animations.put(animation);
 
         File parent = indexFile.getParentFile();
@@ -976,6 +990,36 @@ public class AnimationImporter {
             parent.mkdirs();
         }
         FileUtils.writeStringToFile(indexFile, root.toString(2), StandardCharsets.UTF_8);
+    }
+
+    private static JSONObject bevyRetargetJson(AnimationImportOptions options) {
+        AnimationImportOptions resolvedOptions = options == null ? new AnimationImportOptions() : options;
+        JSONObject bevyRetarget = new JSONObject();
+        bevyRetarget.put("profile", resolvedOptions.getBevyRetargetProfile());
+        bevyRetarget.put("skipTopAnimatedTargets", resolvedOptions.getBevySkipTopAnimatedTargets());
+        bevyRetarget.put("excludeBones", new JSONArray(resolvedOptions.getBevyExcludedBones()));
+        bevyRetarget.put("rootBone", resolvedOptions.getBevyRootBone());
+        bevyRetarget.put("scaleBaseBone", resolvedOptions.getBevyScaleBaseBone());
+        bevyRetarget.put("removeUnimportantTranslationTracks", resolvedOptions.isBevyRemoveUnimportantTranslationTracks());
+        bevyRetarget.put("removeMotionTranslationTracks", resolvedOptions.isBevyRemoveMotionTranslationTracks());
+        bevyRetarget.put("removeMotionRotationTracks", resolvedOptions.isBevyRemoveMotionRotationTracks());
+        bevyRetarget.put("normalizeMotionScale", resolvedOptions.isBevyNormalizeMotionScale());
+        JSONObject translation = new JSONObject();
+        translation.put("x", resolvedOptions.getBevyVisualTranslationX());
+        translation.put("y", resolvedOptions.getBevyVisualTranslationY());
+        translation.put("z", resolvedOptions.getBevyVisualTranslationZ());
+        bevyRetarget.put("visualTranslation", translation);
+        JSONObject rotation = new JSONObject();
+        rotation.put("x", resolvedOptions.getBevyVisualRotationXDegrees());
+        rotation.put("y", resolvedOptions.getBevyVisualRotationYDegrees());
+        rotation.put("z", resolvedOptions.getBevyVisualRotationZDegrees());
+        bevyRetarget.put("visualRotationDegrees", rotation);
+        JSONObject lockedTranslationAxes = new JSONObject();
+        lockedTranslationAxes.put("x", resolvedOptions.isBevyLockTranslationX());
+        lockedTranslationAxes.put("y", resolvedOptions.isBevyLockTranslationY());
+        lockedTranslationAxes.put("z", resolvedOptions.isBevyLockTranslationZ());
+        bevyRetarget.put("lockedTranslationAxes", lockedTranslationAxes);
+        return bevyRetarget;
     }
 
     private static void validate(File sourceFile, File resourcesFolder, String requestedName) throws IOException {

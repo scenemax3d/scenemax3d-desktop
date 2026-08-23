@@ -1,4 +1,6 @@
 use super::*;
+use bevy::transform::commands::BuildChildrenTransformExt;
+use serde::Deserialize;
 
 pub(super) fn apply_startup_runs(
     program: &Program,
@@ -315,6 +317,64 @@ pub(super) fn apply_startup_action_sequence(
                     return ActionSequenceResult::Completed;
                 }
             }
+            Statement::AnimationControllerAction(action)
+                if action.action == AnimationControllerAction::Run =>
+            {
+                let seconds =
+                    animation_controller_duration_for_action(action, runtime_assets, None)
+                        .unwrap_or(0.001)
+                        .max(0.001);
+                apply_startup_animation_controller_action(
+                    action,
+                    commands,
+                    runtime_assets,
+                    entities_by_name,
+                    gltfs_by_name,
+                );
+                if enqueue_delayed_actions(
+                    Some(delayed_actions),
+                    seconds,
+                    actions[index + 1..].to_vec(),
+                    None,
+                    None,
+                ) {
+                    return ActionSequenceResult::Suspended;
+                }
+                return ActionSequenceResult::Completed;
+            }
+            Statement::ThrowMotionApply(apply) if !apply.async_run => {
+                let seconds = throw_motion_duration_for_apply(apply, runtime_assets)
+                    .unwrap_or(0.001)
+                    .max(0.001);
+                let result = apply_startup_action(
+                    action,
+                    commands,
+                    vars,
+                    object_pools,
+                    camera_system,
+                    runtime_assets,
+                    ui_queue,
+                    functions_by_name,
+                    entities_by_name,
+                    transforms_by_name,
+                    gltfs_by_name,
+                    guards_by_name,
+                    depth,
+                );
+                if result.should_stop_parent() {
+                    return result;
+                }
+                if enqueue_delayed_actions(
+                    Some(delayed_actions),
+                    seconds,
+                    actions[index + 1..].to_vec(),
+                    None,
+                    None,
+                ) {
+                    return ActionSequenceResult::Suspended;
+                }
+                return ActionSequenceResult::Completed;
+            }
             action
                 if resolved_blocking_timed_action_seconds(
                     action,
@@ -546,11 +606,58 @@ pub(super) fn apply_startup_action(
             }
             ActionSequenceResult::Completed
         }
+        Statement::Weapon(weapon) => {
+            enqueue_weapon_action(weapon, runtime_assets);
+            ActionSequenceResult::Completed
+        }
+        Statement::AnimationControllerAction(action) => {
+            apply_startup_animation_controller_action(
+                action,
+                commands,
+                runtime_assets,
+                entities_by_name,
+                gltfs_by_name,
+            );
+            ActionSequenceResult::Completed
+        }
+        Statement::AnimationControllerEvent(event) => {
+            register_animation_controller_event(
+                event,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+                runtime_assets,
+            );
+            ActionSequenceResult::Completed
+        }
+        Statement::ThrowMotionApply(apply) => {
+            enqueue_throw_motion_application(apply, runtime_assets);
+            ActionSequenceResult::Completed
+        }
+        Statement::ThrowMotionEvent(event) => {
+            register_throw_motion_event(event, runtime_assets);
+            ActionSequenceResult::Completed
+        }
         Statement::Assignment(assignment)
         | Statement::SharedAssignment(assignment)
         | Statement::LocalAssignment(assignment) => {
             if let AssignmentValue::CameraModifier(value) = &assignment.value {
                 register_camera_modifier(camera_system, &assignment.name, value);
+            } else if let AssignmentValue::AnimationController(value) = &assignment.value {
+                register_animation_controller_assignment(&assignment.name, value, runtime_assets);
+            } else if let AssignmentValue::ThrowMotion(value) = &assignment.value {
+                register_throw_motion_assignment(
+                    &assignment.name,
+                    value,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                    runtime_assets,
+                );
             } else {
                 apply_assignment(
                     assignment,
@@ -905,9 +1012,18 @@ pub(super) fn apply_startup_action(
                 );
                 commands.entity(*entity).insert(AnimationToPlay {
                     clip: animation.clip.clone(),
+                    runtime_clip: animation.clip.clone(),
                     looped: animation.looped,
                     speed,
                     gltf: gltf.clone(),
+                    target_model_resource: None,
+                    baked_external: None,
+                    bake_request: None,
+                    external_retarget: Default::default(),
+                    external_source: false,
+                    tried_external_source: false,
+                    visual_transform_preapplied: false,
+                    retarget_wait_logged: false,
                 });
             }
             ActionSequenceResult::Completed
@@ -1513,6 +1629,15 @@ pub(super) fn apply_key_events(
             &transforms_by_name,
             &collider_bounds,
         );
+        if event.trigger != KeyTrigger::Pressed || runtime_verbose_logging() {
+            write_runtime_diagnostic_line(format!(
+                "KEY:FIRE stmt={} key={} trigger={} actions={}",
+                statement_index,
+                event.key,
+                key_trigger_label(event.trigger),
+                describe_statement_list(&event.actions)
+            ));
+        }
         if runtime_verbose_logging() {
             write_runtime_diagnostic_line(format!(
                 "CTRL:KEY_FIRE_CONTEXT stmt={} key={} trigger={} owner={} active={} delayed={} state={}",
@@ -2766,6 +2891,19 @@ pub(super) fn describe_statement(action: &Statement) -> String {
         Statement::EffekseerPlay(play) => {
             format!("EffekseerPlay({} loop={})", play.target, play.looped as u8)
         }
+        Statement::Weapon(_) => "Weapon".to_owned(),
+        Statement::AnimationControllerAction(action) => {
+            format!(
+                "AnimationControllerAction({}.{:?})",
+                action.controller, action.action
+            )
+        }
+        Statement::AnimationControllerEvent(event) => {
+            format!(
+                "AnimationControllerEvent({}.event({}))",
+                event.controller, event.animation
+            )
+        }
         Statement::Unsupported { text } => format!("Unsupported({text})"),
         other => format!("{other:?}"),
     }
@@ -3283,6 +3421,74 @@ pub(super) fn apply_action_sequence(
                     }
                     return ActionSequenceResult::Completed;
                 }
+            }
+            Statement::AnimationControllerAction(action)
+                if action.action == AnimationControllerAction::Run =>
+            {
+                let seconds = animation_controller_duration_for_action(
+                    action,
+                    runtime_assets,
+                    Some(animation_durations),
+                )
+                .unwrap_or(0.001)
+                .max(0.001);
+                apply_runtime_animation_controller_action(
+                    action,
+                    commands,
+                    runtime_assets,
+                    object_pools,
+                    scope.as_deref(),
+                    scene_entities,
+                    queued_animations,
+                );
+                let remaining = actions[index + 1..].to_vec();
+                if enqueue_delayed_actions(
+                    delayed_actions.as_deref_mut(),
+                    seconds,
+                    remaining,
+                    owner.clone(),
+                    scope.as_deref().cloned(),
+                ) {
+                    return ActionSequenceResult::Suspended;
+                }
+                return ActionSequenceResult::Completed;
+            }
+            Statement::ThrowMotionApply(apply) if !apply.async_run => {
+                let seconds = throw_motion_duration_for_apply(apply, runtime_assets)
+                    .unwrap_or(0.001)
+                    .max(0.001);
+                apply_key_action(
+                    action,
+                    transforms_by_name,
+                    vars,
+                    object_pools,
+                    camera_system.as_deref_mut(),
+                    functions_by_name,
+                    guards_by_name,
+                    queued_animations,
+                    runtime_assets,
+                    animation_durations,
+                    collider_bounds,
+                    delayed_actions.as_deref_mut(),
+                    ui_queue.as_deref_mut(),
+                    owner.clone(),
+                    scope.as_deref_mut(),
+                    None,
+                    commands,
+                    scene_entities,
+                    &mut runtime_declared_entities,
+                );
+                let remaining = actions[index + 1..].to_vec();
+                if enqueue_delayed_actions(
+                    delayed_actions.as_deref_mut(),
+                    seconds,
+                    remaining,
+                    owner.clone(),
+                    scope.as_deref().cloned(),
+                ) {
+                    return ActionSequenceResult::Suspended;
+                }
+                return ActionSequenceResult::Completed;
             }
             action
                 if resolved_blocking_timed_action_seconds(
@@ -3878,6 +4084,1439 @@ fn runtime_model_resource(
     .ok()
 }
 
+fn register_animation_controller_assignment(
+    name: &str,
+    value: &AnimationControllerValue,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+) {
+    runtime_assets.animation_controllers_by_name.insert(
+        name.to_owned(),
+        RuntimeAnimationController {
+            target: value.target.clone(),
+            clip: value.clip.clone(),
+            events: Vec::new(),
+            running: false,
+            previous_percent: -1.0,
+            current_run_started: false,
+        },
+    );
+    write_runtime_diagnostic_line(format!(
+        "ANIMCTRL:ASSIGN controller={} target={} clip={}",
+        name, value.target, value.clip
+    ));
+}
+
+fn register_animation_controller_event(
+    event: &AnimationControllerEventStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+) {
+    let Some(percent) = resolve_assignment_value_scoped_with_guards(
+        &event.percent,
+        vars,
+        scope,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    ) else {
+        return;
+    };
+    if let Some(controller) = runtime_assets
+        .animation_controllers_by_name
+        .get_mut(&event.controller)
+    {
+        controller.events.push(RuntimeAnimationControllerEvent {
+            animation: normalized_animation_name(&event.animation),
+            percent: percent.clamp(0.0, 100.0),
+            actions: event.actions.clone(),
+            fired: false,
+        });
+        write_runtime_diagnostic_line(format!(
+            "ANIMCTRL:EVENT controller={} animation={} percent={} actions={}",
+            event.controller,
+            event.animation,
+            format_scenemax_number(percent.clamp(0.0, 100.0)),
+            event.actions.len()
+        ));
+    } else {
+        write_runtime_diagnostic_line(format!(
+            "ANIMCTRL:EVENT_MISS controller={} animation={} reason=controller_not_registered",
+            event.controller, event.animation
+        ));
+    }
+}
+
+fn animation_controller_duration_for_action(
+    action: &AnimationControllerActionStatement,
+    runtime_assets: &SceneMaxRuntimeAssets,
+    animation_durations: Option<&SceneMaxAnimationDurations>,
+) -> Option<f32> {
+    if action.action != AnimationControllerAction::Run {
+        return None;
+    }
+    let controller = runtime_assets
+        .animation_controllers_by_name
+        .get(&action.controller)?;
+    animation_durations
+        .and_then(|durations| durations.lookup(&controller.target, &controller.clip))
+        .or(Some(DEFAULT_ANIMATION_CLIP_SECONDS))
+        .map(|duration| duration.clamp(0.08, 3.5))
+}
+
+fn apply_startup_animation_controller_action(
+    action: &AnimationControllerActionStatement,
+    commands: &mut Commands,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+    entities_by_name: &HashMap<String, Entity>,
+    gltfs_by_name: &HashMap<String, Handle<Gltf>>,
+) {
+    let Some(controller) = runtime_assets
+        .animation_controllers_by_name
+        .get_mut(&action.controller)
+    else {
+        return;
+    };
+    match action.action {
+        AnimationControllerAction::Run => {
+            let target = controller.target.clone();
+            let clip = controller.clip.clone();
+            let (Some(entity), Some(gltf)) = (
+                entities_by_name.get(&controller.target).copied(),
+                gltfs_by_name.get(&controller.target).cloned(),
+            ) else {
+                write_runtime_diagnostic_line(format!(
+                    "ANIMCTRL:RUN_MISS controller={} target={} clip={} phase=startup reason=target_or_gltf_not_found",
+                    action.controller, target, clip
+                ));
+                return;
+            };
+            let target_model_resource = runtime_assets
+                .model_resources_by_name
+                .get(&target)
+                .cloned();
+            start_runtime_animation_controller(
+                controller,
+                commands,
+                entity,
+                gltf,
+                target_model_resource,
+            );
+            write_runtime_diagnostic_line(format!(
+                "ANIMCTRL:RUN controller={} target={} clip={} entity={:?} phase=startup",
+                action.controller, target, clip, entity
+            ));
+        }
+        AnimationControllerAction::Stop => {
+            let target = stop_runtime_animation_controller(controller);
+            write_runtime_diagnostic_line(format!(
+                "ANIMCTRL:STOP controller={} target={} phase=startup",
+                action.controller, target
+            ));
+            runtime_assets
+                .pending_animation_controller_stops
+                .push(target);
+        }
+    }
+}
+
+fn apply_runtime_animation_controller_action(
+    action: &AnimationControllerActionStatement,
+    commands: &mut Commands,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+    object_pools: &SceneMaxObjectPools,
+    scope: Option<&SceneMaxScopeFrame>,
+    scene_entities: &mut ParamSet<(
+        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
+            Option<&mut Visibility>,
+            Option<&SceneMaxCharacterController>,
+            Option<&mut SceneMaxCharacterMotor>,
+        )>,
+    )>,
+    queued_animations: &mut HashMap<Entity, (String, bool)>,
+) {
+    match action.action {
+        AnimationControllerAction::Run => {
+            let Some((target, clip)) = runtime_assets
+                .animation_controllers_by_name
+                .get(&action.controller)
+                .map(|controller| (controller.target.clone(), controller.clip.clone()))
+            else {
+                write_runtime_diagnostic_line(format!(
+                    "ANIMCTRL:RUN_MISS controller={} reason=controller_not_registered",
+                    action.controller
+                ));
+                return;
+            };
+            let resolved = scene_entities.p1().iter().find_map(
+                |(entity, scene_entity, _, gltf, _, _, _, _)| {
+                    if !target_matches_alias(&target, &scene_entity.name, object_pools, scope) {
+                        return None;
+                    }
+                    let gltf = gltf.map(|gltf| gltf.gltf.clone()).or_else(|| {
+                        runtime_assets
+                            .gltf_handles_by_name
+                            .get(&scene_entity.name)
+                            .cloned()
+                    });
+                    let model_resource = runtime_assets
+                        .model_resources_by_name
+                        .get(&scene_entity.name)
+                        .cloned();
+                    gltf.map(|gltf| (entity, gltf, model_resource))
+                },
+            );
+            let Some((entity, gltf, target_model_resource)) = resolved else {
+                write_runtime_diagnostic_line(format!(
+                    "ANIMCTRL:RUN_MISS controller={} target={} clip={} reason=target_or_gltf_not_found cached_gltfs={}",
+                    action.controller,
+                    target,
+                    clip,
+                    runtime_assets.gltf_handles_by_name.len()
+                ));
+                return;
+            };
+            let Some(controller) = runtime_assets
+                .animation_controllers_by_name
+                .get_mut(&action.controller)
+            else {
+                write_runtime_diagnostic_line(format!(
+                    "ANIMCTRL:RUN_MISS controller={} reason=controller_not_registered_after_resolve",
+                    action.controller
+                ));
+                return;
+            };
+            start_runtime_animation_controller(
+                controller,
+                commands,
+                entity,
+                gltf,
+                target_model_resource,
+            );
+            write_runtime_diagnostic_line(format!(
+                "ANIMCTRL:RUN controller={} target={} clip={} entity={:?}",
+                action.controller, target, clip, entity
+            ));
+            queued_animations.insert(entity, (clip, false));
+        }
+        AnimationControllerAction::Stop => {
+            let Some(controller) = runtime_assets
+                .animation_controllers_by_name
+                .get_mut(&action.controller)
+            else {
+                write_runtime_diagnostic_line(format!(
+                    "ANIMCTRL:STOP_MISS controller={} reason=controller_not_registered",
+                    action.controller
+                ));
+                return;
+            };
+            let target = stop_runtime_animation_controller(controller);
+            write_runtime_diagnostic_line(format!(
+                "ANIMCTRL:STOP controller={} target={}",
+                action.controller, target
+            ));
+            runtime_assets
+                .pending_animation_controller_stops
+                .push(target);
+        }
+    }
+}
+
+fn start_runtime_animation_controller(
+    controller: &mut RuntimeAnimationController,
+    commands: &mut Commands,
+    entity: Entity,
+    gltf: Handle<Gltf>,
+    target_model_resource: Option<String>,
+) {
+    controller.running = true;
+    controller.current_run_started = false;
+    controller.previous_percent = -1.0;
+    for event in &mut controller.events {
+        event.fired = false;
+    }
+    commands.entity(entity).insert(AnimationToPlay {
+        clip: controller.clip.clone(),
+        runtime_clip: controller.clip.clone(),
+        looped: false,
+        speed: 1.0,
+        gltf: gltf.clone(),
+        target_model_resource,
+        baked_external: None,
+        bake_request: None,
+        external_retarget: Default::default(),
+        external_source: false,
+        tried_external_source: false,
+        visual_transform_preapplied: false,
+        retarget_wait_logged: false,
+    });
+}
+
+fn stop_runtime_animation_controller(controller: &mut RuntimeAnimationController) -> String {
+    controller.running = false;
+    controller.current_run_started = false;
+    controller.previous_percent = -1.0;
+    controller.target.clone()
+}
+
+pub(super) fn update_animation_runtime_controllers(
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
+    mut delayed_actions: ResMut<DelayedActionQueue>,
+    animations: Query<(&SceneMaxEntity, &CurrentAnimation)>,
+) {
+    for controller in runtime_assets.animation_controllers_by_name.values_mut() {
+        if !controller.running {
+            continue;
+        }
+        let Some(current) = animations
+            .iter()
+            .find_map(|(entity, current)| (entity.name == controller.target).then_some(current))
+        else {
+            continue;
+        };
+        if !current_animation_matches(current, &controller.clip, false) {
+            continue;
+        }
+
+        controller.current_run_started = true;
+        let current_percent = current_animation_percent(current);
+        if controller.previous_percent > current_percent {
+            controller.previous_percent = -1.0;
+        }
+
+        let previous_percent = controller.previous_percent;
+        let mut fired_actions = Vec::new();
+        for event in &mut controller.events {
+            if event.fired || !animation_name_matches(&current.clip, &event.animation) {
+                continue;
+            }
+            if previous_percent < event.percent && current_percent >= event.percent {
+                event.fired = true;
+                fired_actions.push(event.actions.clone());
+            }
+        }
+        controller.previous_percent = current_percent;
+
+        for actions in fired_actions {
+            if !actions.is_empty() {
+                delayed_actions.actions.push(DelayedActions {
+                    remaining_seconds: 0.0,
+                    actions,
+                    owner: None,
+                    scope: None,
+                });
+            }
+        }
+
+        if controller.current_run_started && !current.looped && current_percent >= 100.0 {
+            controller.running = false;
+        }
+    }
+}
+
+pub(super) fn apply_pending_animation_controller_stops(
+    mut commands: Commands,
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
+    children: Query<&Children>,
+    roots: Query<(Entity, &SceneMaxEntity), With<SceneMaxEntity>>,
+    mut players: Query<&mut AnimationPlayer>,
+) {
+    if runtime_assets.pending_animation_controller_stops.is_empty() {
+        return;
+    }
+    let pending = std::mem::take(&mut runtime_assets.pending_animation_controller_stops);
+    for target in pending {
+        let Some((root, _)) = roots.iter().find(|(_, entity)| entity.name == target) else {
+            continue;
+        };
+        commands
+            .entity(root)
+            .remove::<AnimationToPlay>()
+            .remove::<CurrentAnimation>();
+        for child in children.iter_descendants(root) {
+            if let Ok(mut player) = players.get_mut(child) {
+                player.stop_all();
+            }
+        }
+    }
+}
+
+fn enqueue_weapon_action(statement: &WeaponStatement, runtime_assets: &mut SceneMaxRuntimeAssets) {
+    runtime_assets
+        .pending_weapon_actions
+        .push(statement.clone());
+}
+
+fn enqueue_throw_motion_application(
+    statement: &ThrowMotionApplyStatement,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+) {
+    runtime_assets
+        .pending_throw_motion_applications
+        .push(statement.clone());
+}
+
+fn register_throw_motion_assignment(
+    name: &str,
+    value: &ThrowMotionValue,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+) {
+    let Some(motion_asset_id) = resolve_throw_motion_asset_id(
+        &value.asset,
+        vars,
+        scope,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    ) else {
+        return;
+    };
+    let target = value.target.as_ref().and_then(|target| {
+        resolve_throw_motion_target(
+            target,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        )
+    });
+    runtime_assets.throw_motions_by_name.insert(
+        name.to_owned(),
+        RuntimeThrowMotionValue {
+            motion_asset_id,
+            target,
+            events: Vec::new(),
+        },
+    );
+}
+
+fn register_throw_motion_event(
+    event: &ThrowMotionEventStatement,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+) {
+    if let Some(value) = runtime_assets.throw_motions_by_name.get_mut(&event.motion) {
+        value.events.push(event.clone());
+    }
+}
+
+fn resolve_throw_motion_asset_id(
+    asset: &ThrowMotionAsset,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<String> {
+    match asset {
+        ThrowMotionAsset::Literal(value) => Some(value.clone()),
+        ThrowMotionAsset::Expression(value) => match value.as_ref() {
+            AssignmentValue::Symbol(value) => Some(value.clone()),
+            value => resolve_assignment_value_scoped_with_guards(
+                value,
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )
+            .map(format_scenemax_number),
+        },
+    }
+}
+
+fn resolve_throw_motion_target(
+    target: &ThrowMotionTarget,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Option<RuntimeThrowMotionTarget> {
+    match target {
+        ThrowMotionTarget::Object(name) => Some(RuntimeThrowMotionTarget::Object(name.clone())),
+        ThrowMotionTarget::Position(values) => Some(RuntimeThrowMotionTarget::Position(Vec3::new(
+            resolve_assignment_value_scoped_with_guards(
+                &values[0],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+            resolve_assignment_value_scoped_with_guards(
+                &values[1],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+            resolve_assignment_value_scoped_with_guards(
+                &values[2],
+                vars,
+                scope,
+                guards_by_name,
+                transforms_by_name,
+                collider_bounds,
+            )?,
+        ))),
+    }
+}
+
+pub(super) fn apply_pending_weapon_actions(
+    mut commands: Commands,
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
+    scene_entities: Query<(Entity, &SceneMaxEntity)>,
+    equipped_weapons: Query<(Entity, &SceneMaxEquippedWeapon)>,
+    children: Query<&Children>,
+    named_nodes: Query<(Entity, &Name)>,
+    global_transforms: Query<&GlobalTransform>,
+) {
+    if runtime_assets.pending_weapon_actions.is_empty() {
+        return;
+    }
+
+    let Some(asset_server) = runtime_assets.asset_server.clone() else {
+        return;
+    };
+    let Some(asset_root) = runtime_assets.asset_root.clone() else {
+        runtime_assets.pending_weapon_actions.clear();
+        return;
+    };
+    let builtin_asset_root = runtime_assets.builtin_asset_root.clone();
+    let pending_actions = std::mem::take(&mut runtime_assets.pending_weapon_actions);
+    let owner_entities = scene_entities
+        .iter()
+        .map(|(entity, scene_entity)| (scene_entity.name.clone(), entity))
+        .collect::<HashMap<_, _>>();
+
+    for pending in pending_actions {
+        match pending.action.clone() {
+            WeaponAction::Unequip => {
+                despawn_equipped_weapon(&pending.owner, &mut commands, &equipped_weapons);
+            }
+            WeaponAction::Detach => {
+                detach_equipped_weapon(&pending.owner, &mut commands, &equipped_weapons);
+            }
+            WeaponAction::Equip { weapon } => {
+                let Some(owner_entity) = owner_entities.get(&pending.owner).copied() else {
+                    continue;
+                };
+                let Some(definition) = load_weapon_definition(&asset_root, &weapon) else {
+                    continue;
+                };
+                let Some(model_asset_id) = definition.model_asset_id.as_deref() else {
+                    continue;
+                };
+                let posture = definition.default_posture();
+                let parent_entity = if let Some(attachment_point) =
+                    posture.and_then(|posture| posture.attachment_point.as_deref())
+                {
+                    if let Some(bone_entity) = find_descendant_entity_by_name(
+                        owner_entity,
+                        attachment_point,
+                        &children,
+                        &named_nodes,
+                    ) {
+                        bone_entity
+                    } else {
+                        owner_entity
+                    }
+                } else {
+                    owner_entity
+                };
+                let Some(model) = scenemax_assets::resolve_model_resource_with_builtin_fallback(
+                    &asset_root,
+                    builtin_asset_root.as_deref(),
+                    model_asset_id,
+                )
+                .ok() else {
+                    continue;
+                };
+
+                despawn_equipped_weapon(&pending.owner, &mut commands, &equipped_weapons);
+
+                let compensation_scale = global_transforms
+                    .get(parent_entity)
+                    .map(|global| {
+                        let (scale, _, _) = global.to_scale_rotation_translation();
+                        Vec3::new(
+                            inverse_scale_component(scale.x),
+                            inverse_scale_component(scale.y),
+                            inverse_scale_component(scale.z),
+                        )
+                    })
+                    .unwrap_or(Vec3::ONE);
+                let mut transform = posture
+                    .and_then(|posture| posture.transform.as_ref())
+                    .map(weapon_transform)
+                    .unwrap_or_default();
+                if let Some(scale) = model.scale {
+                    transform.scale *= Vec3::new(scale[0], scale[1], scale[2]);
+                }
+                let asset_path = model.asset_path;
+                let gltf: Handle<Gltf> = asset_server.load(asset_path.clone());
+                let scene = WorldAssetRoot(
+                    asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())),
+                );
+                let runtime_name = format!("{}.weapon", pending.owner);
+                let root_entity = commands
+                    .spawn((
+                        SceneMaxEntity {
+                            name: runtime_name.clone(),
+                            runtime_name: format!("{runtime_name}@weapon"),
+                        },
+                        SceneMaxEquippedWeapon {
+                            owner: pending.owner.clone(),
+                        },
+                        Transform::from_scale(compensation_scale),
+                        Visibility::Inherited,
+                        Name::new(runtime_name.clone()),
+                    ))
+                    .id();
+                let visual_entity = commands
+                    .spawn((
+                        SceneMaxGltf { gltf },
+                        scene,
+                        transform,
+                        Visibility::Inherited,
+                        Name::new(format!("{runtime_name}.visual")),
+                    ))
+                    .id();
+                commands.entity(root_entity).add_child(visual_entity);
+                commands.entity(parent_entity).add_child(root_entity);
+            }
+        }
+    }
+}
+
+pub(super) fn apply_pending_throw_motion_applications(
+    mut commands: Commands,
+    mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
+    scene_entities: Query<(Entity, &SceneMaxEntity, &Transform, &GlobalTransform)>,
+    equipped_weapons: Query<(
+        Entity,
+        &SceneMaxEquippedWeapon,
+        &Transform,
+        &GlobalTransform,
+    )>,
+) {
+    if runtime_assets.pending_throw_motion_applications.is_empty() {
+        return;
+    }
+
+    let pending = std::mem::take(&mut runtime_assets.pending_throw_motion_applications);
+    for apply in pending {
+        let Some(value) = runtime_assets
+            .throw_motions_by_name
+            .get(&apply.motion)
+            .cloned()
+        else {
+            continue;
+        };
+        let Some(definition) =
+            load_throw_motion_definition(&value.motion_asset_id, &mut runtime_assets)
+        else {
+            continue;
+        };
+        let Some((entity, transform, global_transform)) =
+            resolve_throw_motion_target_entity(&apply, &scene_entities, &equipped_weapons)
+        else {
+            continue;
+        };
+        let start_world = global_transform.translation();
+        let direction = resolve_throw_motion_direction(
+            start_world,
+            transform,
+            &value,
+            &scene_entities,
+            &equipped_weapons,
+        );
+        let (right_axis, up_axis, forward_axis) = throw_motion_basis(direction);
+        let target_distance = throw_motion_path_distance(&definition);
+        let samples = sample_throw_motion_definition(
+            &definition,
+            Vec3::ZERO,
+            Vec3::new(0.0, 0.0, target_distance),
+            1.0 / 60.0,
+        );
+        if samples.is_empty() {
+            continue;
+        }
+        let events = value
+            .events
+            .iter()
+            .map(|event| ActiveThrowMotionEvent {
+                event: event.event.clone(),
+                index_percent: event
+                    .index_percent
+                    .as_ref()
+                    .and_then(throw_motion_event_index),
+                actions: event.actions.clone(),
+                fired: false,
+            })
+            .collect();
+        commands.entity(entity).insert(SceneMaxThrowMotion {
+            samples,
+            start_world,
+            previous_world: start_world,
+            right_axis,
+            up_axis,
+            forward_axis,
+            elapsed_seconds: 0.0,
+            previous_index_percent: -1.0,
+            events,
+            end_event_fired: false,
+        });
+    }
+}
+
+pub(super) fn update_throw_motions(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut delayed_actions: ResMut<DelayedActionQueue>,
+    mut motions: Query<(Entity, &mut Transform, &mut SceneMaxThrowMotion)>,
+) {
+    let delta = time.delta_secs().max(0.0);
+    for (entity, mut transform, mut motion) in &mut motions {
+        motion.elapsed_seconds += delta;
+        let sample = sample_throw_motion_at(&motion.samples, motion.elapsed_seconds);
+        let next_world = throw_motion_to_world(
+            sample.position,
+            motion.start_world,
+            motion.right_axis,
+            motion.up_axis,
+            motion.forward_axis,
+        );
+        let delta_world = next_world - motion.previous_world;
+        transform.translation += delta_world;
+        motion.previous_world = next_world;
+
+        let current_index = throw_motion_index_percent(&motion);
+        let previous_index = motion.previous_index_percent;
+        let mut fired_actions = Vec::new();
+        for event in &mut motion.events {
+            if event.fired || !event.event.eq_ignore_ascii_case("on_index") {
+                continue;
+            }
+            let Some(index_percent) = event.index_percent else {
+                continue;
+            };
+            if previous_index < index_percent && current_index >= index_percent {
+                event.fired = true;
+                fired_actions.push(event.actions.clone());
+            }
+        }
+
+        let finished = motion
+            .samples
+            .last()
+            .is_some_and(|sample| motion.elapsed_seconds >= sample.time);
+        if finished && !motion.end_event_fired {
+            motion.end_event_fired = true;
+            fired_actions.extend(
+                motion
+                    .events
+                    .iter()
+                    .filter(|event| event.event.eq_ignore_ascii_case("on_end"))
+                    .map(|event| event.actions.clone()),
+            );
+        }
+        motion.previous_index_percent = current_index;
+
+        for actions in fired_actions {
+            if !actions.is_empty() {
+                delayed_actions.actions.push(DelayedActions {
+                    remaining_seconds: 0.0,
+                    actions,
+                    owner: None,
+                    scope: None,
+                });
+            }
+        }
+        if finished {
+            commands.entity(entity).remove::<SceneMaxThrowMotion>();
+        }
+    }
+}
+
+fn resolve_throw_motion_target_entity(
+    apply: &ThrowMotionApplyStatement,
+    scene_entities: &Query<(Entity, &SceneMaxEntity, &Transform, &GlobalTransform)>,
+    equipped_weapons: &Query<(
+        Entity,
+        &SceneMaxEquippedWeapon,
+        &Transform,
+        &GlobalTransform,
+    )>,
+) -> Option<(Entity, Transform, GlobalTransform)> {
+    if apply.target_is_equipped_weapon {
+        return equipped_weapons
+            .iter()
+            .find(|(_, equipped, _, _)| equipped.owner == apply.target)
+            .map(|(entity, _, transform, global_transform)| {
+                (entity, *transform, *global_transform)
+            });
+    }
+    scene_entities
+        .iter()
+        .find(|(_, scene_entity, _, _)| scene_entity.name == apply.target)
+        .map(|(entity, _, transform, global_transform)| (entity, *transform, *global_transform))
+}
+
+fn resolve_throw_motion_direction(
+    start_world: Vec3,
+    transform: Transform,
+    value: &RuntimeThrowMotionValue,
+    scene_entities: &Query<(Entity, &SceneMaxEntity, &Transform, &GlobalTransform)>,
+    equipped_weapons: &Query<(
+        Entity,
+        &SceneMaxEquippedWeapon,
+        &Transform,
+        &GlobalTransform,
+    )>,
+) -> Vec3 {
+    let target = match &value.target {
+        Some(RuntimeThrowMotionTarget::Object(target)) => scene_entities
+            .iter()
+            .find(|(_, scene_entity, _, _)| scene_entity.name == *target)
+            .map(|(_, _, _, global_transform)| global_transform.translation())
+            .or_else(|| {
+                let lower = target.to_ascii_lowercase();
+                if !lower.ends_with(".weapon") {
+                    return None;
+                }
+                let owner = target[..target.len() - ".weapon".len()].trim();
+                equipped_weapons
+                    .iter()
+                    .find(|(_, equipped, _, _)| equipped.owner == owner)
+                    .map(|(_, _, _, global_transform)| global_transform.translation())
+            }),
+        Some(RuntimeThrowMotionTarget::Position(position)) => Some(*position),
+        None => None,
+    };
+    let mut direction = target
+        .map(|target| target - start_world)
+        .unwrap_or(Vec3::ZERO);
+    if direction.length_squared() < 0.0001 {
+        direction = transform.rotation * Vec3::Z;
+    }
+    if direction.length_squared() < 0.0001 {
+        direction = Vec3::Z;
+    }
+    direction.normalize()
+}
+
+fn throw_motion_basis(forward: Vec3) -> (Vec3, Vec3, Vec3) {
+    let forward_axis = if forward.length_squared() > 0.0001 {
+        forward.normalize()
+    } else {
+        Vec3::Z
+    };
+    let world_up = if forward_axis.dot(Vec3::Y).abs() > 0.96 {
+        Vec3::X
+    } else {
+        Vec3::Y
+    };
+    let right_axis = world_up.cross(forward_axis).normalize_or_zero();
+    let up_axis = forward_axis.cross(right_axis).normalize_or_zero();
+    (right_axis, up_axis, forward_axis)
+}
+
+fn throw_motion_to_world(
+    local: Vec3,
+    start_world: Vec3,
+    right_axis: Vec3,
+    up_axis: Vec3,
+    forward_axis: Vec3,
+) -> Vec3 {
+    start_world + right_axis * local.x + up_axis * local.y + forward_axis * local.z
+}
+
+fn throw_motion_index_percent(motion: &SceneMaxThrowMotion) -> f32 {
+    let total = motion
+        .samples
+        .last()
+        .map(|sample| sample.time)
+        .unwrap_or(0.0);
+    if total <= f32::EPSILON {
+        return 100.0;
+    }
+    (motion.elapsed_seconds / total).clamp(0.0, 1.0) * 100.0
+}
+
+fn throw_motion_event_index(value: &AssignmentValue) -> Option<f32> {
+    match value {
+        AssignmentValue::Number(value) => Some(value.clamp(0.0, 100.0)),
+        _ => None,
+    }
+}
+
+fn throw_motion_duration_for_apply(
+    apply: &ThrowMotionApplyStatement,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+) -> Option<f32> {
+    let motion_asset_id = runtime_assets
+        .throw_motions_by_name
+        .get(&apply.motion)?
+        .motion_asset_id
+        .clone();
+    let definition = load_throw_motion_definition(&motion_asset_id, runtime_assets)?;
+    sample_throw_motion_definition(
+        &definition,
+        Vec3::ZERO,
+        Vec3::new(0.0, 0.0, throw_motion_path_distance(&definition)),
+        1.0 / 60.0,
+    )
+    .last()
+    .map(|sample| sample.time.max(0.001))
+}
+
+fn load_throw_motion_definition(
+    motion_asset_id: &str,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
+) -> Option<RuntimeThrowMotionDefinition> {
+    if let Some(definition) = runtime_assets
+        .throw_motion_definitions_by_id
+        .get(motion_asset_id)
+        .cloned()
+    {
+        return Some(definition);
+    }
+    let asset_root = runtime_assets.asset_root.clone()?;
+    let definition = read_throw_motion_definition(&asset_root, motion_asset_id)?;
+    runtime_assets
+        .throw_motion_definitions_by_id
+        .insert(motion_asset_id.to_owned(), definition.clone());
+    Some(definition)
+}
+
+fn read_throw_motion_definition(
+    asset_root: &Path,
+    motion_asset_id: &str,
+) -> Option<RuntimeThrowMotionDefinition> {
+    for path in direct_throw_motion_definition_paths(asset_root, motion_asset_id) {
+        if let Some(definition) = read_throw_motion_definition_file(&path) {
+            return Some(definition);
+        }
+    }
+    for dir in throw_motion_definition_dirs(asset_root) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("smmotion"))
+            {
+                continue;
+            }
+            let Some(definition) = read_throw_motion_definition_file(&path) else {
+                continue;
+            };
+            let stem_matches = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .is_some_and(|stem| stem.eq_ignore_ascii_case(motion_asset_id));
+            let id_matches = definition
+                .id
+                .as_deref()
+                .is_some_and(|id| id.eq_ignore_ascii_case(motion_asset_id));
+            if stem_matches || id_matches {
+                return Some(definition);
+            }
+        }
+    }
+    None
+}
+
+fn direct_throw_motion_definition_paths(asset_root: &Path, motion_asset_id: &str) -> Vec<PathBuf> {
+    throw_motion_definition_dirs(asset_root)
+        .into_iter()
+        .map(|dir| dir.join(format!("{motion_asset_id}.smmotion")))
+        .collect()
+}
+
+fn throw_motion_definition_dirs(asset_root: &Path) -> Vec<PathBuf> {
+    vec![
+        asset_root.join("throw_motions"),
+        asset_root.join("Throw_Motions"),
+        asset_root.join("motions"),
+        asset_root.join("Motions"),
+    ]
+}
+
+fn read_throw_motion_definition_file(path: &Path) -> Option<RuntimeThrowMotionDefinition> {
+    let text = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+fn sample_throw_motion_at(samples: &[ThrowMotionSample], time: f32) -> ThrowMotionSample {
+    let Some(first) = samples.first().copied() else {
+        return ThrowMotionSample {
+            time,
+            position: Vec3::ZERO,
+            velocity: Vec3::ZERO,
+            spin_degrees: 0.0,
+        };
+    };
+    let last = samples.last().copied().unwrap_or(first);
+    if time <= 0.0 {
+        return first;
+    }
+    if time >= last.time {
+        return last;
+    }
+    for pair in samples.windows(2) {
+        let previous = pair[0];
+        let current = pair[1];
+        if current.time >= time {
+            let span = (current.time - previous.time).max(0.0001);
+            let u = ((time - previous.time) / span).clamp(0.0, 1.0);
+            return ThrowMotionSample {
+                time,
+                position: previous.position.lerp(current.position, u),
+                velocity: previous.velocity.lerp(current.velocity, u),
+                spin_degrees: previous.spin_degrees
+                    + (current.spin_degrees - previous.spin_degrees) * u,
+            };
+        }
+    }
+    last
+}
+
+fn sample_throw_motion_definition(
+    definition: &RuntimeThrowMotionDefinition,
+    start: Vec3,
+    target: Vec3,
+    fixed_delta: f32,
+) -> Vec<ThrowMotionSample> {
+    let dt = fixed_delta.max(0.01);
+    match normalized_throw_motion_type(&definition.motion_type).as_str() {
+        "target_arc" => sample_throw_motion_target_arc(&definition.parameters, start, target, dt),
+        "straight" => sample_throw_motion_straight(&definition.parameters, start, target, dt),
+        "homing" => sample_throw_motion_homing(&definition.parameters, start, target, dt),
+        "returning" => sample_throw_motion_returning(&definition.parameters, start, dt),
+        _ => sample_throw_motion_ballistic(&definition.parameters, start, dt),
+    }
+}
+
+fn sample_throw_motion_ballistic(
+    parameters: &RuntimeThrowMotionParameters,
+    start: Vec3,
+    dt: f32,
+) -> Vec<ThrowMotionSample> {
+    let speed = parameters.initial_speed.max(0.1);
+    let angle = parameters.launch_angle.to_radians();
+    let mut position = start;
+    let mut velocity = Vec3::new(0.0, angle.sin() * speed, angle.cos() * speed);
+    let gravity = 9.81 * parameters.gravity_scale;
+    let max_time = parameters.max_lifetime.max(0.2);
+    let mut samples = Vec::new();
+    let mut time = 0.0;
+    while time <= max_time {
+        samples.push(throw_motion_sample(parameters, time, position, velocity));
+        velocity.y -= gravity * dt;
+        position += velocity * dt;
+        time += dt;
+    }
+    samples
+}
+
+fn sample_throw_motion_target_arc(
+    parameters: &RuntimeThrowMotionParameters,
+    start: Vec3,
+    target: Vec3,
+    dt: f32,
+) -> Vec<ThrowMotionSample> {
+    let duration = parameters.duration.max(0.1);
+    let mut previous = start;
+    let mut samples = Vec::new();
+    let mut time = 0.0;
+    while time <= duration + 0.0001 {
+        let raw = (time / duration).clamp(0.0, 1.0);
+        let u = throw_motion_ease(raw, &parameters.easing_function);
+        let mut position = start.lerp(target, u);
+        position.y += parameters.arc_height * 4.0 * raw * (1.0 - raw);
+        let velocity = if time <= 0.0 {
+            (target - start).normalize_or_zero()
+        } else {
+            (position - previous) / dt
+        };
+        samples.push(throw_motion_sample(parameters, time, position, velocity));
+        previous = position;
+        time += dt;
+    }
+    samples
+}
+
+fn sample_throw_motion_straight(
+    parameters: &RuntimeThrowMotionParameters,
+    start: Vec3,
+    target: Vec3,
+    dt: f32,
+) -> Vec<ThrowMotionSample> {
+    let mut speed = parameters.speed.max(0.1);
+    let acceleration = parameters.acceleration;
+    let max_distance = parameters.max_distance.max(0.1);
+    let max_time = parameters.max_lifetime.max(0.2);
+    let direction = throw_motion_direction_to_target(start, target);
+    let mut position = start;
+    let mut distance = 0.0;
+    let mut samples = Vec::new();
+    let mut time = 0.0;
+    while time <= max_time && distance <= max_distance {
+        let velocity = direction * speed;
+        samples.push(throw_motion_sample(parameters, time, position, velocity));
+        let step = (speed * dt).max(0.0);
+        position += direction * step;
+        distance += step;
+        speed += acceleration * dt;
+        time += dt;
+    }
+    samples
+}
+
+fn sample_throw_motion_homing(
+    parameters: &RuntimeThrowMotionParameters,
+    start: Vec3,
+    target: Vec3,
+    dt: f32,
+) -> Vec<ThrowMotionSample> {
+    let speed = parameters.speed.max(0.1);
+    let max_time = parameters.max_lifetime.max(0.2);
+    let turn_rate = parameters.turn_rate.max(1.0).to_radians();
+    let mut position = start;
+    let mut direction = Vec3::new(0.0, 0.08, 1.0).normalize();
+    let mut samples = Vec::new();
+    let mut time = 0.0;
+    while time <= max_time {
+        let desired = target - position;
+        if desired.length_squared() > 0.0001 && time >= parameters.homing_delay {
+            let blend = (turn_rate * dt * parameters.homing_strength.max(0.0)).clamp(0.0, 1.0);
+            direction = direction
+                .lerp(desired.normalize(), blend)
+                .normalize_or_zero();
+        }
+        let velocity = direction * speed;
+        samples.push(throw_motion_sample(parameters, time, position, velocity));
+        position += velocity * dt;
+        if position.distance(target) <= parameters.collision_radius.max(0.2) {
+            samples.push(throw_motion_sample(parameters, time + dt, target, velocity));
+            break;
+        }
+        time += dt;
+    }
+    samples
+}
+
+fn sample_throw_motion_returning(
+    parameters: &RuntimeThrowMotionParameters,
+    start: Vec3,
+    dt: f32,
+) -> Vec<ThrowMotionSample> {
+    let outbound_duration = parameters.outbound_duration.max(0.1);
+    let outbound_target = start + Vec3::new(0.0, 0.0, parameters.outbound_distance);
+    let mut previous = start;
+    let mut samples = Vec::new();
+    let mut time = 0.0;
+    while time <= outbound_duration + 0.0001 {
+        let u = (time / outbound_duration).clamp(0.0, 1.0);
+        let eased = throw_motion_ease(u, &parameters.easing_function);
+        let mut position = start.lerp(outbound_target, eased);
+        position.y += parameters.outbound_arc_height * 4.0 * u * (1.0 - u);
+        let velocity = if time <= 0.0 {
+            (outbound_target - start).normalize_or_zero()
+        } else {
+            (position - previous) / dt
+        };
+        samples.push(throw_motion_sample(parameters, time, position, velocity));
+        previous = position;
+        time += dt;
+    }
+    let delay = parameters.return_delay.max(0.0);
+    if delay > 0.0 {
+        samples.push(throw_motion_sample(
+            parameters,
+            outbound_duration + delay,
+            previous,
+            Vec3::ZERO,
+        ));
+    }
+    let return_speed = parameters.return_speed.max(0.1);
+    let return_distance = previous.distance(start);
+    let return_duration = (return_distance / return_speed).max(0.1);
+    time = dt;
+    while time <= return_duration + 0.0001 {
+        let u = (time / return_duration).clamp(0.0, 1.0);
+        let position = previous.lerp(start, throw_motion_ease(u, &parameters.easing_function));
+        let velocity = (start - previous).normalize_or_zero() * return_speed;
+        samples.push(throw_motion_sample(
+            parameters,
+            outbound_duration + delay + time,
+            position,
+            velocity,
+        ));
+        time += dt;
+    }
+    samples
+}
+
+fn throw_motion_sample(
+    parameters: &RuntimeThrowMotionParameters,
+    time: f32,
+    position: Vec3,
+    velocity: Vec3,
+) -> ThrowMotionSample {
+    ThrowMotionSample {
+        time,
+        position,
+        velocity,
+        spin_degrees: parameters.spin_speed * time,
+    }
+}
+
+fn throw_motion_direction_to_target(start: Vec3, target: Vec3) -> Vec3 {
+    let mut direction = target - start;
+    direction.y = 0.0;
+    if direction.length_squared() < 0.0001 {
+        return Vec3::Z;
+    }
+    direction.normalize()
+}
+
+fn throw_motion_ease(time: f32, easing: &str) -> f32 {
+    match easing.trim().to_ascii_lowercase().as_str() {
+        "ease_in" => time * time,
+        "ease_out" => 1.0 - (1.0 - time) * (1.0 - time),
+        "ease_in_out" if time < 0.5 => 2.0 * time * time,
+        "ease_in_out" => 1.0 - (-2.0 * time + 2.0).powi(2) / 2.0,
+        _ => time,
+    }
+}
+
+fn throw_motion_path_distance(definition: &RuntimeThrowMotionDefinition) -> f32 {
+    match normalized_throw_motion_type(&definition.motion_type).as_str() {
+        "straight" | "homing" => definition.parameters.max_distance.max(0.1),
+        "returning" => definition.parameters.outbound_distance.max(0.1),
+        "target_arc" => 12.0,
+        _ => 12.0,
+    }
+}
+
+fn normalized_throw_motion_type(value: &str) -> String {
+    value.trim().to_ascii_lowercase().replace('-', "_")
+}
+
+fn despawn_equipped_weapon(
+    owner: &str,
+    commands: &mut Commands,
+    equipped_weapons: &Query<(Entity, &SceneMaxEquippedWeapon)>,
+) {
+    for (entity, equipped) in equipped_weapons {
+        if equipped.owner == owner {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+fn detach_equipped_weapon(
+    owner: &str,
+    commands: &mut Commands,
+    equipped_weapons: &Query<(Entity, &SceneMaxEquippedWeapon)>,
+) {
+    for (entity, equipped) in equipped_weapons {
+        if equipped.owner == owner {
+            commands.entity(entity).remove_parent_in_place();
+        }
+    }
+}
+
+fn inverse_scale_component(scale: f32) -> f32 {
+    if scale.is_finite() && scale.abs() > 0.000001 {
+        1.0 / scale
+    } else {
+        1.0
+    }
+}
+
+fn find_descendant_entity_by_name(
+    root: Entity,
+    wanted_name: &str,
+    children: &Query<&Children>,
+    named_nodes: &Query<(Entity, &Name)>,
+) -> Option<Entity> {
+    for child in children.get(root).ok()?.iter() {
+        if let Ok((entity, name)) = named_nodes.get(child)
+            && names_match(name.as_str(), wanted_name)
+        {
+            return Some(entity);
+        }
+        if let Some(entity) =
+            find_descendant_entity_by_name(child, wanted_name, children, named_nodes)
+        {
+            return Some(entity);
+        }
+    }
+    None
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeWeaponDefinition {
+    id: Option<String>,
+    #[serde(default)]
+    model_asset_id: Option<String>,
+    #[serde(default)]
+    default_posture_id: Option<String>,
+    #[serde(default)]
+    postures: Vec<RuntimeWeaponPosture>,
+}
+
+impl RuntimeWeaponDefinition {
+    fn default_posture(&self) -> Option<&RuntimeWeaponPosture> {
+        self.default_posture_id
+            .as_deref()
+            .and_then(|default_id| {
+                self.postures.iter().find(|posture| {
+                    posture
+                        .id
+                        .as_deref()
+                        .is_some_and(|id| id.eq_ignore_ascii_case(default_id))
+                        || posture
+                            .name
+                            .as_deref()
+                            .is_some_and(|name| name.eq_ignore_ascii_case(default_id))
+                })
+            })
+            .or_else(|| self.postures.first())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeWeaponPosture {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    attachment_point: Option<String>,
+    #[serde(default)]
+    transform: Option<RuntimeWeaponTransform>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeWeaponTransform {
+    #[serde(default)]
+    offset_x: f32,
+    #[serde(default)]
+    offset_y: f32,
+    #[serde(default)]
+    offset_z: f32,
+    #[serde(default)]
+    rotation_x: f32,
+    #[serde(default)]
+    rotation_y: f32,
+    #[serde(default)]
+    rotation_z: f32,
+    #[serde(default = "one_f32")]
+    scale_x: f32,
+    #[serde(default = "one_f32")]
+    scale_y: f32,
+    #[serde(default = "one_f32")]
+    scale_z: f32,
+}
+
+fn one_f32() -> f32 {
+    1.0
+}
+
+fn weapon_transform(transform: &RuntimeWeaponTransform) -> Transform {
+    Transform {
+        translation: Vec3::new(transform.offset_x, transform.offset_y, transform.offset_z),
+        rotation: Quat::from_euler(
+            EulerRot::XYZ,
+            transform.rotation_x.to_radians(),
+            transform.rotation_y.to_radians(),
+            transform.rotation_z.to_radians(),
+        ),
+        scale: Vec3::new(transform.scale_x, transform.scale_y, transform.scale_z),
+    }
+}
+
+fn load_weapon_definition(asset_root: &Path, weapon: &str) -> Option<RuntimeWeaponDefinition> {
+    for path in direct_weapon_definition_paths(asset_root, weapon) {
+        if let Some(definition) = read_weapon_definition(&path) {
+            return Some(definition);
+        }
+    }
+    for dir in weapon_definition_dirs(asset_root) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("smweapon"))
+            {
+                continue;
+            }
+            let Some(definition) = read_weapon_definition(&path) else {
+                continue;
+            };
+            let stem_matches = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .is_some_and(|stem| stem.eq_ignore_ascii_case(weapon));
+            let id_matches = definition
+                .id
+                .as_deref()
+                .is_some_and(|id| id.eq_ignore_ascii_case(weapon));
+            if stem_matches || id_matches {
+                return Some(definition);
+            }
+        }
+    }
+    None
+}
+
+fn direct_weapon_definition_paths(asset_root: &Path, weapon: &str) -> Vec<PathBuf> {
+    weapon_definition_dirs(asset_root)
+        .into_iter()
+        .map(|dir| dir.join(format!("{weapon}.smweapon")))
+        .collect()
+}
+
+fn weapon_definition_dirs(asset_root: &Path) -> Vec<PathBuf> {
+    vec![asset_root.join("weapons"), asset_root.join("Weapons")]
+}
+
+fn read_weapon_definition(path: &Path) -> Option<RuntimeWeaponDefinition> {
+    let text = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
 pub(super) fn apply_key_action(
     action: &Statement,
     transforms_by_name: &mut HashMap<String, Transform>,
@@ -4039,6 +5678,42 @@ pub(super) fn apply_key_action(
         }
         return ActionSequenceResult::Completed;
     }
+    if let Statement::Weapon(weapon) = action {
+        enqueue_weapon_action(weapon, runtime_assets);
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::AnimationControllerAction(action) = action {
+        apply_runtime_animation_controller_action(
+            action,
+            commands,
+            runtime_assets,
+            object_pools,
+            scope.as_deref(),
+            scene_entities,
+            queued_animations,
+        );
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::AnimationControllerEvent(event) = action {
+        register_animation_controller_event(
+            event,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+            runtime_assets,
+        );
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::ThrowMotionApply(apply) = action {
+        enqueue_throw_motion_application(apply, runtime_assets);
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::ThrowMotionEvent(event) = action {
+        register_throw_motion_event(event, runtime_assets);
+        return ActionSequenceResult::Completed;
+    }
     if let Statement::Assignment(assignment)
     | Statement::SharedAssignment(assignment)
     | Statement::LocalAssignment(assignment) = action
@@ -4096,6 +5771,23 @@ pub(super) fn apply_key_action(
             if let Some(camera_system) = camera_system.as_deref_mut() {
                 register_camera_modifier(camera_system, &assignment.name, value);
             }
+            return ActionSequenceResult::Completed;
+        }
+        if let AssignmentValue::AnimationController(value) = &assignment.value {
+            register_animation_controller_assignment(&assignment.name, value, runtime_assets);
+            return ActionSequenceResult::Completed;
+        }
+        if let AssignmentValue::ThrowMotion(value) = &assignment.value {
+            register_throw_motion_assignment(
+                &assignment.name,
+                value,
+                vars,
+                scope.as_deref(),
+                guards_by_name,
+                Some(transforms_by_name),
+                Some(collider_bounds),
+                runtime_assets,
+            );
             return ActionSequenceResult::Completed;
         }
         apply_assignment_scoped(
@@ -4428,9 +6120,18 @@ pub(super) fn apply_key_action(
                     );
                     commands.entity(entity).insert(AnimationToPlay {
                         clip: animation.clip.clone(),
+                        runtime_clip: animation.clip.clone(),
                         looped: animation.looped,
                         speed,
                         gltf: gltf.gltf.clone(),
+                        target_model_resource: None,
+                        baked_external: None,
+                        bake_request: None,
+                        external_retarget: Default::default(),
+                        external_source: false,
+                        tried_external_source: false,
+                        visual_transform_preapplied: false,
+                        retarget_wait_logged: false,
                     });
                     queued_animations.insert(entity, (animation.clip.clone(), animation.looped));
                 }

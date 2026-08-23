@@ -475,6 +475,8 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             ProcessBuilder processBuilder = new ProcessBuilder();
             processBuilder.command(command);
             processBuilder.directory(processDirectory);
+            populateNextGenLaunchEnvironment(processBuilder, nextGenRoot, debugExe, releaseExe, builtExe,
+                    cargoExe, command, builtExeIsCurrent, useCargo);
             if (useCargo) {
                 processBuilder.environment().put("SCENEMAX_EFFEKSEER_NATIVE_BUILD", "1");
             }
@@ -546,6 +548,30 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             return;
         }
         SwingUtilities.invokeLater(() -> launchStatusConsumer.accept(message));
+    }
+
+    private void populateNextGenLaunchEnvironment(ProcessBuilder processBuilder,
+                                                  File nextGenRoot,
+                                                  File debugExe,
+                                                  File releaseExe,
+                                                  File builtExe,
+                                                  File cargoExe,
+                                                  List<String> command,
+                                                  boolean builtExeIsCurrent,
+                                                  boolean useCargo) {
+        processBuilder.environment().put("SCENEMAX_NEXTGEN_LAUNCH_ROOT", safePath(nextGenRoot));
+        processBuilder.environment().put("SCENEMAX_NEXTGEN_LAUNCH_DEBUG_EXE", safePath(debugExe));
+        processBuilder.environment().put("SCENEMAX_NEXTGEN_LAUNCH_RELEASE_EXE", safePath(releaseExe));
+        processBuilder.environment().put("SCENEMAX_NEXTGEN_LAUNCH_BUILT_EXE", safePath(builtExe));
+        processBuilder.environment().put("SCENEMAX_NEXTGEN_LAUNCH_CARGO_EXE", safePath(cargoExe));
+        processBuilder.environment().put("SCENEMAX_NEXTGEN_LAUNCH_SELECTED",
+                command == null || command.isEmpty() ? "" : command.get(0));
+        processBuilder.environment().put("SCENEMAX_NEXTGEN_LAUNCH_USE_CARGO", Boolean.toString(useCargo));
+        processBuilder.environment().put("SCENEMAX_NEXTGEN_LAUNCH_BUILT_CURRENT", Boolean.toString(builtExeIsCurrent));
+    }
+
+    private String safePath(File file) {
+        return file == null ? "" : file.getAbsolutePath();
     }
 
     private File resolveNextGenProjectorRoot() {

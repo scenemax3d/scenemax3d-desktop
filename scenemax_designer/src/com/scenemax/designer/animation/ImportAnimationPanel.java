@@ -14,18 +14,23 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
+import javax.swing.JSpinner;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import java.awt.BorderLayout;
 import java.awt.Canvas;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.event.ComponentAdapter;
@@ -35,7 +40,11 @@ import java.awt.event.FocusEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -47,10 +56,13 @@ public class ImportAnimationPanel extends JPanel {
     private final File resourcesFolder;
     private JTextField txtFile;
     private JTextField txtName;
+    private JSpinner spnBevySkipTopAnimatedTargets;
+    private JTextField txtBevyExcludeBones;
     private JTextArea txtPreview;
     private JButton btnInspect;
     private JButton btnImport;
     private JButton btnRemove;
+    private JButton btnBevyRetarget;
     private JTable tblFiles;
     private AnimationFilesTableModel filesTableModel;
     private JPanel previewCanvasContainer;
@@ -63,6 +75,7 @@ public class ImportAnimationPanel extends JPanel {
     private AnimationImportResult inspectedResult;
     private Consumer<Boolean> onCloseCallback;
     private boolean updatingNameField;
+    private boolean updatingRetargetFields;
     private final List<String> availableModelNames = new ArrayList<>();
     private final Map<String, ResourceSetup> modelResources = new HashMap<>();
     private final List<BatchAnimationItem> animationItems = new ArrayList<>();
@@ -152,6 +165,50 @@ public class ImportAnimationPanel extends JPanel {
             }
         });
         form.add(txtName);
+
+        JPanel bevyRetargetPanel = new JPanel();
+        bevyRetargetPanel.setLayout(new javax.swing.BoxLayout(bevyRetargetPanel, javax.swing.BoxLayout.Y_AXIS));
+        bevyRetargetPanel.setBorder(BorderFactory.createTitledBorder("Bevy Retarget"));
+        bevyRetargetPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bevyRetargetPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 150));
+
+        JPanel skipRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        skipRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        skipRow.add(new JLabel("Skip top animated targets:"));
+        spnBevySkipTopAnimatedTargets = new JSpinner(new SpinnerNumberModel(1, 0, 16, 1));
+        spnBevySkipTopAnimatedTargets.setPreferredSize(new Dimension(64, 26));
+        spnBevySkipTopAnimatedTargets.addChangeListener(e -> updateSelectedItemRetargetOptions());
+        skipRow.add(spnBevySkipTopAnimatedTargets);
+        bevyRetargetPanel.add(skipRow);
+
+        bevyRetargetPanel.add(new JLabel("Exclude bones, comma-separated:"));
+        txtBevyExcludeBones = new JTextField();
+        txtBevyExcludeBones.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+        txtBevyExcludeBones.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                updateSelectedItemRetargetOptions();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                updateSelectedItemRetargetOptions();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                updateSelectedItemRetargetOptions();
+            }
+        });
+        bevyRetargetPanel.add(txtBevyExcludeBones);
+        JPanel bevyButtonRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 4));
+        bevyButtonRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        btnBevyRetarget = new JButton("Open Bevy Retarget...");
+        btnBevyRetarget.setEnabled(false);
+        btnBevyRetarget.addActionListener(e -> openBevyRetargetDesigner());
+        bevyButtonRow.add(btnBevyRetarget);
+        bevyRetargetPanel.add(bevyButtonRow);
+        form.add(bevyRetargetPanel);
 
         JPanel importButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 8));
         btnImport = new JButton("Import");
@@ -329,7 +386,7 @@ public class ImportAnimationPanel extends JPanel {
                         item.status = "Importing";
                         publish(item.sourceFile.getName());
                         AnimationImportResult result = AnimationImportProcessRunner.importAnimation(
-                                item.sourceFile, resourcesFolder, item.animationName.trim());
+                                item.sourceFile, resourcesFolder, item.animationName.trim(), item.importOptions);
                         item.inspectedResult = result;
                         item.status = "Imported";
                         reports.add(BatchImportReport.success(item, result));
@@ -377,6 +434,116 @@ public class ImportAnimationPanel extends JPanel {
         }.execute();
     }
 
+    private void openBevyRetargetDesigner() {
+        stopTableEditing();
+        persistSelectedName();
+        updateSelectedItemRetargetOptions();
+        BatchAnimationItem item = selectedItem();
+        if (item == null) {
+            JOptionPane.showMessageDialog(this, "Please select an animation file first.", "Bevy Retarget", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        String animationName = item.animationName == null ? "" : item.animationName.trim();
+        if (animationName.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please enter a runtime animation name first.", "Bevy Retarget", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        ResourceSetup previewModel = selectedPreviewModel();
+        String previewModelName = previewModel == null ? null : previewModel.name;
+
+        setBusy(true, "Preparing Bevy retarget preview for " + animationName + "...");
+        new SwingWorker<Void, String>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                AnimationImportResult result = existingImportedAnimationResult(animationName);
+                if (result == null) {
+                    item.status = "Importing";
+                    publish("Importing " + item.sourceFile.getName() + " before Bevy retarget preview...");
+                    result = AnimationImportProcessRunner.importAnimation(
+                            item.sourceFile, resourcesFolder, animationName, item.importOptions);
+                } else {
+                    item.status = "Retargeting";
+                    publish("Using existing imported animation for Bevy retarget preview.");
+                }
+                item.inspectedResult = result;
+                item.status = "Retargeting";
+                publish("Opening Bevy retarget preview. Save and close the Bevy window when the motion looks right.");
+
+                Process process = BevyRetargetDesignerLauncher.open(resourcesFolder, animationName, previewModelName);
+                StringBuilder processOutput = new StringBuilder();
+                Thread drainer = new Thread(() -> captureProcessOutput(process, processOutput), "bevy-retarget-output");
+                drainer.setDaemon(true);
+                drainer.start();
+                int exitCode = process.waitFor();
+                drainer.join(1000);
+                if (exitCode != 0) {
+                    throw new IOException("Bevy retarget designer exited with code " + exitCode + ".\n" + tail(processOutput.toString()));
+                }
+                loadSavedRetargetOptions(item);
+                item.status = "Imported";
+                return null;
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                if (!chunks.isEmpty()) {
+                    txtPreview.setText(chunks.get(chunks.size() - 1));
+                }
+                filesTableModel.fireTableDataChanged();
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    get();
+                    filesTableModel.fireTableDataChanged();
+                    updateRetargetFields(item);
+                    txtPreview.setText("Bevy retarget settings were saved for " + animationName + ".");
+                } catch (Exception ex) {
+                    item.status = "Failed";
+                    txtPreview.setText("Bevy retarget failed:\n" + rootMessage(ex));
+                    JOptionPane.showMessageDialog(ImportAnimationPanel.this,
+                            rootMessage(ex), "Bevy Retarget", JOptionPane.ERROR_MESSAGE);
+                } finally {
+                    setBusy(false, null);
+                }
+            }
+        }.execute();
+    }
+
+    private AnimationImportResult existingImportedAnimationResult(String animationName) throws IOException {
+        File indexFile = animationIndexFile();
+        if (!indexFile.isFile()) {
+            return null;
+        }
+        JSONObject root = new JSONObject(new String(Files.readAllBytes(indexFile.toPath()), StandardCharsets.UTF_8));
+        JSONArray animations = root.optJSONArray("animations");
+        if (animations == null) {
+            return null;
+        }
+        for (int i = 0; i < animations.length(); i++) {
+            JSONObject animation = animations.optJSONObject(i);
+            if (animation == null || !animationName.equalsIgnoreCase(animation.optString("name", ""))) {
+                continue;
+            }
+            String path = animation.optString("path", "").trim();
+            if (path.isEmpty()) {
+                return null;
+            }
+            File animationFile = new File(resourcesFolder, path.replace('/', File.separatorChar));
+            if (!animationFile.isFile() || !isInsideResources(animationFile)) {
+                return null;
+            }
+            String clipName = animation.optString("clipName", "").trim();
+            List<String> clips = clipName.isEmpty()
+                    ? Collections.emptyList()
+                    : Collections.singletonList(clipName);
+            return new AnimationImportResult(animationFile.getParentFile(), animationFile, clips,
+                    Collections.emptyList(), clipName.isEmpty() ? null : clipName, null);
+        }
+        return null;
+    }
+
     private String formatPreview(AnimationImportResult result, boolean imported) {
         StringBuilder sb = new StringBuilder();
         sb.append(imported ? "Imported animation clips:\n" : "Animation clips found:\n");
@@ -407,8 +574,11 @@ public class ImportAnimationPanel extends JPanel {
         btnInspect.setEnabled(!busy && selectedItem() != null);
         btnImport.setEnabled(!busy && !checkedItems().isEmpty());
         btnRemove.setEnabled(!busy && selectedItem() != null);
+        btnBevyRetarget.setEnabled(!busy && selectedItem() != null);
         tblFiles.setEnabled(!busy);
         txtName.setEnabled(!busy && selectedItem() != null);
+        spnBevySkipTopAnimatedTargets.setEnabled(!busy && selectedItem() != null);
+        txtBevyExcludeBones.setEnabled(!busy && selectedItem() != null);
         if (message != null) {
             txtPreview.setText(message);
         }
@@ -560,11 +730,13 @@ public class ImportAnimationPanel extends JPanel {
                 inspectedResult = null;
                 txtFile.setText(animationItems.isEmpty() ? "" : animationItems.size() + " file(s) selected");
                 txtName.setText("");
+                updateRetargetFields(null);
             } else {
                 selectedFile = item.sourceFile;
                 inspectedResult = item.inspectedResult;
                 txtFile.setText(item.sourceFile.getAbsolutePath());
                 txtName.setText(item.animationName);
+                updateRetargetFields(item);
                 if (item.inspectedResult != null) {
                     txtPreview.setText(formatPreview(item.inspectedResult, "Imported".equals(item.status)));
                     playAnimationPreview();
@@ -608,6 +780,115 @@ public class ImportAnimationPanel extends JPanel {
         }
     }
 
+    private void loadSavedRetargetOptions(BatchAnimationItem item) throws IOException {
+        File indexFile = animationIndexFile();
+        if (!indexFile.isFile()) {
+            return;
+        }
+        JSONObject root = new JSONObject(new String(Files.readAllBytes(indexFile.toPath()), StandardCharsets.UTF_8));
+        JSONArray animations = root.optJSONArray("animations");
+        if (animations == null) {
+            return;
+        }
+        for (int i = 0; i < animations.length(); i++) {
+            JSONObject animation = animations.optJSONObject(i);
+            if (animation == null || !item.animationName.equalsIgnoreCase(animation.optString("name", ""))) {
+                continue;
+            }
+            JSONObject bevyRetarget = animation.optJSONObject("bevyRetarget");
+            if (bevyRetarget == null) {
+                return;
+            }
+            item.importOptions.setBevyRetargetProfile(bevyRetarget.optString("profile", "auto"));
+            item.importOptions.setBevySkipTopAnimatedTargets(bevyRetarget.optInt("skipTopAnimatedTargets", 1));
+            item.importOptions.setBevyRootBone(bevyRetarget.optString("rootBone", "Root"));
+            item.importOptions.setBevyScaleBaseBone(bevyRetarget.optString("scaleBaseBone", "Hips"));
+            item.importOptions.setBevyRemoveUnimportantTranslationTracks(
+                    bevyRetarget.optBoolean("removeUnimportantTranslationTracks", true));
+            item.importOptions.setBevyRemoveMotionTranslationTracks(
+                    bevyRetarget.optBoolean("removeMotionTranslationTracks", true));
+            item.importOptions.setBevyRemoveMotionRotationTracks(
+                    bevyRetarget.optBoolean("removeMotionRotationTracks", false));
+            item.importOptions.setBevyNormalizeMotionScale(bevyRetarget.optBoolean("normalizeMotionScale", true));
+            JSONArray excludeBones = bevyRetarget.optJSONArray("excludeBones");
+            List<String> bones = new ArrayList<>();
+            if (excludeBones != null) {
+                for (int j = 0; j < excludeBones.length(); j++) {
+                    bones.add(excludeBones.optString(j, ""));
+                }
+            }
+            item.importOptions.setBevyExcludedBones(bones);
+            JSONObject translation = bevyRetarget.optJSONObject("visualTranslation");
+            if (translation != null) {
+                item.importOptions.setBevyVisualTranslationX((float) translation.optDouble("x", 0.0));
+                item.importOptions.setBevyVisualTranslationY((float) translation.optDouble("y", 0.0));
+                item.importOptions.setBevyVisualTranslationZ((float) translation.optDouble("z", 0.0));
+            }
+            JSONObject rotation = bevyRetarget.optJSONObject("visualRotationDegrees");
+            if (rotation != null) {
+                item.importOptions.setBevyVisualRotationXDegrees((float) rotation.optDouble("x", 0.0));
+                item.importOptions.setBevyVisualRotationYDegrees((float) rotation.optDouble("y", 0.0));
+                item.importOptions.setBevyVisualRotationZDegrees((float) rotation.optDouble("z", 0.0));
+            }
+            JSONObject lockedTranslationAxes = bevyRetarget.optJSONObject("lockedTranslationAxes");
+            if (lockedTranslationAxes != null) {
+                item.importOptions.setBevyLockTranslationX(lockedTranslationAxes.optBoolean("x", false));
+                item.importOptions.setBevyLockTranslationY(lockedTranslationAxes.optBoolean("y", false));
+                item.importOptions.setBevyLockTranslationZ(lockedTranslationAxes.optBoolean("z", false));
+            }
+            return;
+        }
+    }
+
+    private File animationIndexFile() {
+        File indexFile = new File(resourcesFolder, "animations/animations-ext.json");
+        if (!indexFile.isFile()) {
+            indexFile = new File(resourcesFolder, "Animations/animations-ext.json");
+        }
+        return indexFile;
+    }
+
+    private boolean isInsideResources(File file) throws IOException {
+        String root = resourcesFolder.getCanonicalPath();
+        String path = file.getCanonicalPath();
+        return path.equals(root) || path.startsWith(root + File.separator);
+    }
+
+    private void captureProcessOutput(Process process, StringBuilder output) {
+        try {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = process.getInputStream().read(buffer)) >= 0) {
+                synchronized (output) {
+                    output.append(new String(buffer, 0, read, StandardCharsets.UTF_8));
+                    if (output.length() > 12000) {
+                        output.delete(0, output.length() - 12000);
+                    }
+                }
+            }
+        } catch (IOException ignored) {
+        }
+    }
+
+    private String tail(String output) {
+        if (output == null || output.isBlank()) {
+            return "No process output was captured.";
+        }
+        return output.length() <= 4000 ? output.trim() : output.substring(output.length() - 4000).trim();
+    }
+
+    private void updateSelectedItemRetargetOptions() {
+        if (updatingRetargetFields) {
+            return;
+        }
+        BatchAnimationItem item = selectedItem();
+        if (item == null) {
+            return;
+        }
+        item.importOptions.setBevySkipTopAnimatedTargets(((Number) spnBevySkipTopAnimatedTargets.getValue()).intValue());
+        item.importOptions.setBevyExcludedBonesCsv(txtBevyExcludeBones.getText());
+    }
+
     private void persistSelectedName() {
         BatchAnimationItem item = selectedItem();
         if (item != null) {
@@ -649,9 +930,23 @@ public class ImportAnimationPanel extends JPanel {
         btnInspect.setEnabled(hasSelection);
         btnImport.setEnabled(!checkedItems().isEmpty());
         btnRemove.setEnabled(hasSelection);
+        btnBevyRetarget.setEnabled(hasSelection);
         txtName.setEnabled(hasSelection);
+        spnBevySkipTopAnimatedTargets.setEnabled(hasSelection);
+        txtBevyExcludeBones.setEnabled(hasSelection);
         if (!hasSelection && !animationItems.isEmpty()) {
             txtFile.setText(animationItems.size() + " file(s) selected");
+        }
+    }
+
+    private void updateRetargetFields(BatchAnimationItem item) {
+        updatingRetargetFields = true;
+        try {
+            AnimationImportOptions options = item == null ? new AnimationImportOptions() : item.importOptions;
+            spnBevySkipTopAnimatedTargets.setValue(options.getBevySkipTopAnimatedTargets());
+            txtBevyExcludeBones.setText(options.getBevyExcludedBonesCsv());
+        } finally {
+            updatingRetargetFields = false;
         }
     }
 
@@ -770,6 +1065,7 @@ public class ImportAnimationPanel extends JPanel {
         private String animationName;
         private String status = "Ready";
         private AnimationImportResult inspectedResult;
+        private final AnimationImportOptions importOptions = new AnimationImportOptions();
 
         private BatchAnimationItem(File sourceFile, String animationName) {
             this.sourceFile = sourceFile;

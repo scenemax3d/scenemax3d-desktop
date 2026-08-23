@@ -26,9 +26,34 @@ public class AnimationImportProcessRunner {
     }
 
     public static AnimationImportResult importAnimation(File sourceFile, File resourcesFolder, String requestedName) throws IOException {
+        return importAnimation(sourceFile, resourcesFolder, requestedName, null);
+    }
+
+    public static AnimationImportResult importAnimation(File sourceFile, File resourcesFolder, String requestedName,
+                                                       AnimationImportOptions options) throws IOException {
         File outputFile = File.createTempFile("scenemax-animation-import-", ".json");
         try {
-            runWorker("import", sourceFile.getAbsolutePath(), resourcesFolder.getAbsolutePath(), requestedName, outputFile.getAbsolutePath());
+            AnimationImportOptions resolvedOptions = options == null ? new AnimationImportOptions() : options;
+            runWorker("import", sourceFile.getAbsolutePath(), resourcesFolder.getAbsolutePath(), requestedName,
+                    outputFile.getAbsolutePath(),
+                    resolvedOptions.getBevyRetargetProfile(),
+                    Integer.toString(resolvedOptions.getBevySkipTopAnimatedTargets()),
+                    resolvedOptions.getBevyExcludedBonesCsv(),
+                    Float.toString(resolvedOptions.getBevyVisualTranslationX()),
+                    Float.toString(resolvedOptions.getBevyVisualTranslationY()),
+                    Float.toString(resolvedOptions.getBevyVisualTranslationZ()),
+                    Float.toString(resolvedOptions.getBevyVisualRotationXDegrees()),
+                    Float.toString(resolvedOptions.getBevyVisualRotationYDegrees()),
+                    Float.toString(resolvedOptions.getBevyVisualRotationZDegrees()),
+                    Boolean.toString(resolvedOptions.isBevyLockTranslationX()),
+                    Boolean.toString(resolvedOptions.isBevyLockTranslationY()),
+                    Boolean.toString(resolvedOptions.isBevyLockTranslationZ()),
+                    resolvedOptions.getBevyRootBone(),
+                    resolvedOptions.getBevyScaleBaseBone(),
+                    Boolean.toString(resolvedOptions.isBevyRemoveUnimportantTranslationTracks()),
+                    Boolean.toString(resolvedOptions.isBevyNormalizeMotionScale()),
+                    Boolean.toString(resolvedOptions.isBevyRemoveMotionTranslationTracks()),
+                    Boolean.toString(resolvedOptions.isBevyRemoveMotionRotationTracks()));
             return readResult(outputFile);
         } finally {
             FileUtils.deleteQuietly(outputFile);
