@@ -546,6 +546,7 @@ struct RuntimeBakedRetarget {
     model: String,
     path: String,
     clip: String,
+    visual_rotation_baked: bool,
 }
 
 #[derive(Debug, Clone)]

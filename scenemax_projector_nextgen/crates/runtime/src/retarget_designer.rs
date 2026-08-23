@@ -66,6 +66,7 @@ struct RetargetBakedIndexEntry {
     model: String,
     path: String,
     clip_name: String,
+    visual_rotation_baked: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -325,6 +326,7 @@ impl BevyRetargetDesignerState {
                 model_key
             ),
             clip_name: format!("{}_{}", self.animation_name, model_key),
+            visual_rotation_baked: true,
         })
     }
 }
@@ -1525,6 +1527,7 @@ fn upsert_baked_retarget_entry(entry: &mut Value, baked: &RetargetBakedIndexEntr
         "model": baked.model,
         "path": baked.path,
         "clipName": baked.clip_name,
+        "visualRotationBaked": baked.visual_rotation_baked,
     });
     if let Some(existing) = retargets.iter_mut().find(|existing| {
         existing

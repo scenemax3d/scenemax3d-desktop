@@ -192,7 +192,12 @@ pub(super) fn play_pending_animations(
             continue;
         }
 
-        let visual_rotation_degrees = if animation_to_play.external_source {
+        let baked_visual_rotation = animation_to_play
+            .baked_external
+            .as_ref()
+            .is_some_and(|baked| baked.visual_rotation_baked);
+        let visual_rotation_degrees = if animation_to_play.external_source && !baked_visual_rotation
+        {
             animation_to_play.external_retarget.visual_rotation_degrees
         } else {
             [0.0, 0.0, 0.0]
@@ -357,24 +362,15 @@ pub(super) fn play_pending_animations(
         let (clip_to_play, playback_players, _retargeted_curve_count) =
             if let Some((retargeted_clip, destination_player, curve_count)) = retargeted_clip {
                 if let Some(bake_request) = animation_to_play.bake_request.as_ref() {
-                    match write_baked_animation_clip(
+                    let _ = write_baked_animation_clip(
                         &retargeted_clip,
                         destination_player,
                         &children,
                         &animation_targets,
+                        &transform_queries.p1(),
                         bake_request,
-                    ) {
-                        Ok(()) => write_runtime_diagnostic_line(format!(
-                            "ANIM_BAKE_WRITE clip={} model={} path={}",
-                            bake_request.clip,
-                            bake_request.model,
-                            bake_request.output_path.display()
-                        )),
-                        Err(error) => write_runtime_diagnostic_line(format!(
-                            "ANIM_BAKE_FAIL clip={} model={} reason={}",
-                            bake_request.clip, bake_request.model, error
-                        )),
-                    }
+                        &animation_to_play.external_retarget,
+                    );
                 }
                 let handle = animation_clips.add(retargeted_clip);
                 (handle, vec![destination_player], curve_count)
@@ -467,7 +463,7 @@ fn play_animation_clip_on_players(
                     .set_speed(from_state.speed)
                     .set_weight(from_state.weight)
                     .set_repeat(from_state.repeat);
-                    let active = new_transitions
+                let active = new_transitions
                     .play(&mut player, index, transition_duration)
                     .set_speed(speed)
                     .set_weight(1.0);
@@ -490,9 +486,9 @@ fn play_animation_clip_on_players(
             } else {
                 let mut new_transitions = AnimationTransitions::new();
                 {
-                        let active = new_transitions
-                            .play(&mut player, index, transition_duration)
-                            .set_speed(speed)
+                    let active = new_transitions
+                        .play(&mut player, index, transition_duration)
+                        .set_speed(speed)
                         .set_weight(1.0);
                     if looped {
                         active.repeat();
@@ -523,6 +519,7 @@ fn animation_transition_duration(
 ) -> Duration {
     if animation_to_play.external_source
         && has_meaningful_visual_transform(visual_translation, visual_rotation_degrees)
+        && !animation_to_play.visual_transform_preapplied
     {
         Duration::ZERO
     } else {
@@ -538,6 +535,12 @@ fn has_meaningful_visual_transform(
         || visual_rotation_degrees
             .iter()
             .any(|degrees| degrees.abs() > 1.0)
+}
+
+fn has_meaningful_visual_rotation(visual_rotation_degrees: [f32; 3]) -> bool {
+    visual_rotation_degrees
+        .iter()
+        .any(|degrees| degrees.abs() > 1.0)
 }
 
 fn compact_transition_graph_for_player(
@@ -1253,6 +1256,7 @@ fn switch_to_external_animation_source(
                         model: baked.model,
                         path: baked.path,
                         clip: baked.clip_name,
+                        visual_rotation_baked: baked.visual_rotation_baked,
                     })
                     .collect(),
             };
@@ -1671,6 +1675,7 @@ struct BakedAnimationOutput {
     format: &'static str,
     clip: String,
     model: String,
+    visual_rotation_baked: bool,
     duration: f32,
     targets: Vec<BakedAnimationOutputTarget>,
 }
@@ -1690,18 +1695,26 @@ fn write_baked_animation_clip(
     destination_player: Entity,
     children: &Query<&Children>,
     animation_targets: &Query<(&AnimationTargetId, Option<&Name>)>,
+    target_transforms: &Query<&Transform, With<AnimationTargetId>>,
     bake_request: &RuntimeAnimationBakeRequest,
+    retarget: &scenemax_assets::AnimationRetargetOptions,
 ) -> anyhow::Result<()> {
-    let target_names = collect_animation_target_names_by_id(
+    let target_data = collect_animation_target_bake_data(
         destination_player,
         children,
         animation_targets,
+        target_transforms,
     );
     let mut targets = Vec::new();
+    let rebase_visual_rotation = has_meaningful_visual_rotation(retarget.visual_rotation_degrees);
+    let mut rebased_visual_rotation = false;
     for (target_id, curves) in clip.curves() {
-        let Some(name) = target_names.get(target_id).cloned() else {
+        let Some((name, destination_transform)) = target_data.get(target_id).cloned() else {
             continue;
         };
+        let rebase_target_rotation = rebase_visual_rotation
+            && humanoid_profile_bone(&name)
+                .is_some_and(|bone| is_profile_motion_bone(bone, retarget));
         let mut output = BakedAnimationOutputTarget {
             name,
             translations: Vec::new(),
@@ -1711,7 +1724,11 @@ fn write_baked_animation_clip(
             if is_transform_translation_curve(curve) {
                 output.translations = sample_vec3_curve_for_bake(curve);
             } else if is_transform_rotation_curve(curve) {
-                output.rotations = sample_quat_curve_for_bake(curve);
+                output.rotations = sample_quat_curve_for_bake(
+                    curve,
+                    rebase_target_rotation.then_some(destination_transform.rotation),
+                );
+                rebased_visual_rotation |= rebase_target_rotation && !output.rotations.is_empty();
             }
         }
         if !output.translations.is_empty() || !output.rotations.is_empty() {
@@ -1728,6 +1745,7 @@ fn write_baked_animation_clip(
         format: "scenemax-bevy-baked-animation-v1",
         clip: bake_request.clip.clone(),
         model: bake_request.model.clone(),
+        visual_rotation_baked: rebased_visual_rotation,
         duration: clip.duration(),
         targets,
     };
@@ -1738,19 +1756,23 @@ fn write_baked_animation_clip(
     Ok(())
 }
 
-fn collect_animation_target_names_by_id(
+fn collect_animation_target_bake_data(
     root: Entity,
     children: &Query<&Children>,
     animation_targets: &Query<(&AnimationTargetId, Option<&Name>)>,
-) -> HashMap<AnimationTargetId, String> {
-    let mut names = HashMap::new();
+    target_transforms: &Query<&Transform, With<AnimationTargetId>>,
+) -> HashMap<AnimationTargetId, (String, Transform)> {
+    let mut data = HashMap::new();
     for entity in children.iter_descendants(root) {
         let Ok((target_id, Some(name))) = animation_targets.get(entity) else {
             continue;
         };
-        names.insert(*target_id, name.as_str().to_owned());
+        let Ok(transform) = target_transforms.get(entity) else {
+            continue;
+        };
+        data.insert(*target_id, (name.as_str().to_owned(), *transform));
     }
-    names
+    data
 }
 
 fn load_baked_external_animation_clip(
@@ -1813,8 +1835,10 @@ fn baked_translation_curve(samples: &[[f32; 4]]) -> Option<VariableCurve> {
 fn baked_rotation_curve(samples: &[[f32; 5]]) -> Option<VariableCurve> {
     let keyframes = samples.iter().filter_map(|sample| {
         let [time, x, y, z, w] = *sample;
-        time.is_finite()
-            .then_some((time, Quat::from_xyzw(x, y, z, w).normalize()))
+        if !time.is_finite() {
+            return None;
+        }
+        Some((time, Quat::from_xyzw(x, y, z, w).normalize()))
     });
     let keyframe_curve = AnimatableKeyframeCurve::new(keyframes).ok()?;
     Some(VariableCurve::new(AnimatableCurve::new(
@@ -2444,14 +2468,26 @@ fn sample_vec3_curve_for_bake(curve: &VariableCurve) -> Vec<[f32; 4]> {
         .collect()
 }
 
-fn sample_quat_curve_for_bake(curve: &VariableCurve) -> Vec<[f32; 5]> {
+fn sample_quat_curve_for_bake(
+    curve: &VariableCurve,
+    destination_base_rotation: Option<Quat>,
+) -> Vec<[f32; 5]> {
     let Some((start, end)) = bounded_curve_domain(curve) else {
         return Vec::new();
     };
+    let source_base_rotation = destination_base_rotation
+        .and_then(|_| sample_curve_quat(curve, start))
+        .map(Quat::normalize)
+        .unwrap_or(Quat::IDENTITY);
+    let destination_base_rotation = destination_base_rotation.unwrap_or(Quat::IDENTITY);
     sampled_times(start, end)
         .filter_map(|time| {
-            sample_curve_quat(curve, time)
-                .map(|value| [time, value.x, value.y, value.z, value.w])
+            sample_curve_quat(curve, time).map(|value| {
+                let rotation =
+                    (destination_base_rotation * source_base_rotation.inverse() * value.normalize())
+                        .normalize();
+                [time, rotation.x, rotation.y, rotation.z, rotation.w]
+            })
         })
         .collect()
 }

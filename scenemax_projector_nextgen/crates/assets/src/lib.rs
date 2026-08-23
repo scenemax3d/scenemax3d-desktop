@@ -45,6 +45,7 @@ pub struct AnimationBakedRetarget {
     pub model: String,
     pub path: String,
     pub clip_name: String,
+    pub visual_rotation_baked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -163,6 +164,8 @@ struct AnimationBakedRetargetEntry {
     path: String,
     #[serde(rename = "clipName")]
     clip_name: Option<String>,
+    #[serde(rename = "visualRotationBaked", default)]
+    visual_rotation_baked: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -459,6 +462,7 @@ fn animation_baked_retargets(entry: &AnimationEntry) -> Vec<AnimationBakedRetarg
                     .filter(|clip_name| !clip_name.trim().is_empty())
                     .unwrap_or(entry.name.as_str())
                     .to_owned(),
+                visual_rotation_baked: baked.visual_rotation_baked,
             })
         })
         .collect()
@@ -842,6 +846,7 @@ mod tests {
                 model: "hero".to_owned(),
                 path: "animations/throw/baked/hero.json".to_owned(),
                 clip_name: "hero_throw".to_owned(),
+                visual_rotation_baked: false,
             }]
         );
 
