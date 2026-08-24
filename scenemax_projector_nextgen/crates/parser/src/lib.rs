@@ -1175,6 +1175,12 @@ fn parse_key_event_block(
             continue;
         }
 
+        if let Some((event, next_index)) = parse_key_event_block(logical_lines, cursor)? {
+            actions.push(Statement::KeyEvent(event));
+            cursor = next_index;
+            continue;
+        }
+
         if let Some((event, next_index)) = parse_runtime_object_event_block(
             logical_lines,
             cursor,
@@ -1731,6 +1737,12 @@ fn parse_action_block_with_stop(
 
         if lower.starts_with("do ") {
             cursor = skip_control_block(logical_lines, cursor);
+            continue;
+        }
+
+        if let Some((event, next_index)) = parse_key_event_block(logical_lines, cursor)? {
+            actions.push(Statement::KeyEvent(event));
+            cursor = next_index;
             continue;
         }
 
@@ -8749,6 +8761,38 @@ run tick(score+10) every tick_time+0.25 seconds
                 }),
                 Statement::RunFunction {
                     name: "game_start".to_owned(),
+                    args: Vec::new(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_key_event_inside_function_without_flattening_body() {
+        let program = parse_program(
+            "install_input = {\n  when key Q is pressed once do\n    marker = 1\n  end do\n}\nrun install_input",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::FunctionDef(FunctionDefStatement {
+                    name: "install_input".to_owned(),
+                    params: Vec::new(),
+                    guard: None,
+                    actions: vec![Statement::KeyEvent(KeyEventStatement {
+                        key: "q".to_owned(),
+                        trigger: KeyTrigger::PressedOnce,
+                        guard: None,
+                        actions: vec![Statement::Assignment(AssignmentStatement {
+                            name: "marker".to_owned(),
+                            value: AssignmentValue::Number(1.0),
+                        })],
+                    })],
+                }),
+                Statement::RunFunction {
+                    name: "install_input".to_owned(),
                     args: Vec::new(),
                 },
             ]

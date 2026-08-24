@@ -102,6 +102,9 @@ pub(super) fn apply_startup_action_sequence(
             Statement::Return | Statement::ReturnValue { .. } => {
                 return ActionSequenceResult::Returned;
             }
+            Statement::KeyEvent(event) => {
+                register_key_event(&mut delayed_actions.registered_key_events, event.clone());
+            }
             Statement::Wait { seconds } => {
                 if enqueue_delayed_actions(
                     Some(delayed_actions),
@@ -1549,10 +1552,25 @@ pub(super) fn apply_key_events(
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
 
+    let mut polled_key_events = Vec::new();
     for (statement_index, statement) in program.statements.iter().enumerate() {
-        let Statement::KeyEvent(event) = statement else {
-            continue;
-        };
+        if let Statement::KeyEvent(event) = statement {
+            polled_key_events.push((
+                statement_index.to_string(),
+                key_event_controller_key(statement_index, event.trigger),
+                event.clone(),
+            ));
+        }
+    }
+    for registered in &delayed_actions.registered_key_events.events {
+        polled_key_events.push((
+            format!("registered:{}", registered.id),
+            registered_key_event_controller_key(registered.id, registered.event.trigger),
+            registered.event.clone(),
+        ));
+    }
+
+    for (statement_index, owner, event) in polled_key_events {
         if !key_event_matches(&event.key, event.trigger, &keyboard) {
             continue;
         }
@@ -1577,7 +1595,6 @@ pub(super) fn apply_key_events(
             );
             continue;
         }
-        let owner = key_event_controller_key(statement_index, event.trigger);
         if owner
             .as_ref()
             .is_some_and(|owner| active_controllers.running.contains(owner))
@@ -1694,14 +1711,14 @@ pub(super) fn cancel_other_key_handlers(
     active_controllers: &mut ActiveActionControllers,
     delayed_actions: &mut DelayedActionQueue,
 ) {
-    let SceneMaxControllerKey::Key(_) = owner else {
+    if !is_key_controller(owner) {
         return;
-    };
+    }
     let active_before = describe_active_controllers(active_controllers);
     let delayed_before = describe_delayed_queue(delayed_actions);
     active_controllers
         .running
-        .retain(|running| !matches!(running, SceneMaxControllerKey::Key(_)) || running == owner);
+        .retain(|running| !is_key_controller(running) || running == owner);
     delayed_actions
         .actions
         .retain(|delayed| !delayed_owner_is_other_key(delayed.owner.as_ref(), owner));
@@ -1723,7 +1740,14 @@ pub(super) fn delayed_owner_is_other_key(
     delayed_owner: Option<&SceneMaxControllerKey>,
     owner: &SceneMaxControllerKey,
 ) -> bool {
-    matches!(delayed_owner, Some(SceneMaxControllerKey::Key(_))) && delayed_owner != Some(owner)
+    delayed_owner.is_some_and(is_key_controller) && delayed_owner != Some(owner)
+}
+
+fn is_key_controller(owner: &SceneMaxControllerKey) -> bool {
+    matches!(
+        owner,
+        SceneMaxControllerKey::Key(_) | SceneMaxControllerKey::RegisteredKey(_)
+    )
 }
 
 pub(super) fn delayed_actions_has_owner(
@@ -1769,6 +1793,7 @@ pub(super) fn async_function_controller_key(
 pub(super) fn describe_controller_key(owner: &SceneMaxControllerKey) -> String {
     match owner {
         SceneMaxControllerKey::Key(index) => format!("K{index}"),
+        SceneMaxControllerKey::RegisteredKey(index) => format!("RK{index}"),
         SceneMaxControllerKey::When(index) => format!("W{index}"),
         SceneMaxControllerKey::Recurring(index) => format!("R{index}"),
         SceneMaxControllerKey::AsyncFunction(name) => format!("A:{name}"),
@@ -1869,6 +1894,31 @@ pub(super) fn key_event_controller_key(
     (trigger == KeyTrigger::PressedOnce).then_some(SceneMaxControllerKey::Key(statement_index))
 }
 
+pub(super) fn registered_key_event_controller_key(
+    event_id: usize,
+    trigger: KeyTrigger,
+) -> Option<SceneMaxControllerKey> {
+    (trigger == KeyTrigger::PressedOnce).then_some(SceneMaxControllerKey::RegisteredKey(event_id))
+}
+
+pub(super) fn register_key_event(
+    registered_key_events: &mut RegisteredKeyEvents,
+    event: KeyEventStatement,
+) {
+    if registered_key_events
+        .events
+        .iter()
+        .any(|registered| registered.event == event)
+    {
+        return;
+    }
+    let id = registered_key_events.next_id;
+    registered_key_events.next_id += 1;
+    registered_key_events
+        .events
+        .push(RegisteredKeyEvent { id, event });
+}
+
 #[cfg(test)]
 mod key_event_controller_tests {
     use super::*;
@@ -1881,12 +1931,38 @@ mod key_event_controller_tests {
         );
         assert_eq!(key_event_controller_key(7, KeyTrigger::Pressed), None);
         assert_eq!(key_event_controller_key(7, KeyTrigger::Released), None);
+        assert_eq!(
+            registered_key_event_controller_key(3, KeyTrigger::PressedOnce),
+            Some(SceneMaxControllerKey::RegisteredKey(3))
+        );
+    }
+
+    #[test]
+    fn registering_same_key_event_is_idempotent() {
+        let event = KeyEventStatement {
+            key: "Q".to_owned(),
+            trigger: KeyTrigger::PressedOnce,
+            guard: None,
+            actions: vec![Statement::Assignment(
+                scenemax_parser::AssignmentStatement {
+                    name: "marker".to_owned(),
+                    value: AssignmentValue::Number(1.0),
+                },
+            )],
+        };
+        let mut registered = RegisteredKeyEvents::default();
+
+        register_key_event(&mut registered, event.clone());
+        register_key_event(&mut registered, event);
+
+        assert_eq!(registered.events.len(), 1);
+        assert_eq!(registered.events[0].id, 0);
     }
 
     #[test]
     fn changing_pressed_once_keys_cancels_previous_key_continuations() {
         let first = SceneMaxControllerKey::Key(1);
-        let second = SceneMaxControllerKey::Key(2);
+        let second = SceneMaxControllerKey::RegisteredKey(2);
         let recurring = SceneMaxControllerKey::Recurring(3);
         let mut active_controllers = ActiveActionControllers {
             running: HashSet::from([first.clone(), second.clone(), recurring.clone()]),
@@ -1926,6 +2002,7 @@ mod key_event_controller_tests {
                     scope: None,
                 },
             ],
+            ..Default::default()
         };
 
         cancel_other_key_handlers(&second, &mut active_controllers, &mut delayed_actions);
@@ -1997,6 +2074,7 @@ mod key_event_controller_tests {
                     scope: None,
                 },
             ],
+            ..Default::default()
         };
 
         cancel_delayed_actions_for_owner(&mut delayed_actions, &restart_owner);
@@ -3046,6 +3124,11 @@ pub(super) fn apply_action_sequence(
             }
             Statement::Return | Statement::ReturnValue { .. } => {
                 return ActionSequenceResult::Returned;
+            }
+            Statement::KeyEvent(event) => {
+                if let Some(delayed_actions) = delayed_actions.as_deref_mut() {
+                    register_key_event(&mut delayed_actions.registered_key_events, event.clone());
+                }
             }
             Statement::Wait { seconds } => {
                 let remaining = actions[index + 1..].to_vec();
@@ -4194,10 +4277,8 @@ fn apply_startup_animation_controller_action(
                 ));
                 return;
             };
-            let target_model_resource = runtime_assets
-                .model_resources_by_name
-                .get(&target)
-                .cloned();
+            let target_model_resource =
+                runtime_assets.model_resources_by_name.get(&target).cloned();
             start_runtime_animation_controller(
                 controller,
                 commands,
@@ -5529,7 +5610,7 @@ pub(super) fn apply_key_action(
     runtime_assets: &mut SceneMaxRuntimeAssets,
     animation_durations: &SceneMaxAnimationDurations,
     collider_bounds: &mut SceneMaxColliderBounds,
-    delayed_actions: Option<&mut DelayedActionQueue>,
+    mut delayed_actions: Option<&mut DelayedActionQueue>,
     mut ui_queue: Option<&mut SceneMaxUiActionQueue>,
     owner: Option<SceneMaxControllerKey>,
     mut scope: Option<&mut SceneMaxScopeFrame>,
@@ -5551,6 +5632,12 @@ pub(super) fn apply_key_action(
     runtime_declared_entities: &mut HashMap<String, Entity>,
 ) -> ActionSequenceResult {
     if matches!(action, Statement::NoOp { .. }) {
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::KeyEvent(event) = action {
+        if let Some(delayed_actions) = delayed_actions.as_deref_mut() {
+            register_key_event(&mut delayed_actions.registered_key_events, event.clone());
+        }
         return ActionSequenceResult::Completed;
     }
     if let Statement::Unsupported { text } = action {

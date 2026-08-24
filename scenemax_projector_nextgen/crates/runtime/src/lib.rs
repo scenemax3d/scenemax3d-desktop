@@ -47,13 +47,13 @@ use scenemax_parser::{
     AnimationStatement, AssignmentValue, AttachStatement, AudioAction, AudioStatement,
     CameraAttachStatement, CameraModifierValue, CameraMoveStatement, ChannelDrawStatement,
     CharacterJumpStatement, CharacterModeStatement, CinematicLookAt, CinematicPlayStatement,
-    Condition, EffekseerPlayStatement, EntityOptions, KeyTrigger, LightDeclarationStatement,
-    LightProbeAddStatement, LightType, LoggerLevel, LoggerMessage, LoggerStatement, MoveDirection,
-    MoveToDestination, MoveToStatement, ObjectPoolStatement, PoolReleaseStatement, PositionExpr,
-    PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3,
-    ScreenMode, SpritePlayStatement, Statement, ThrowMotionApplyStatement, ThrowMotionAsset,
-    ThrowMotionEventStatement, ThrowMotionTarget, ThrowMotionValue, UiEaseDirection, UiTargetPath,
-    WeaponAction, WeaponStatement,
+    Condition, EffekseerPlayStatement, EntityOptions, KeyEventStatement, KeyTrigger,
+    LightDeclarationStatement, LightProbeAddStatement, LightType, LoggerLevel, LoggerMessage,
+    LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement, ObjectPoolStatement,
+    PoolReleaseStatement, PositionExpr, PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind,
+    SceneMaxCollisionShape, SceneMaxVec3, ScreenMode, SpritePlayStatement, Statement,
+    ThrowMotionApplyStatement, ThrowMotionAsset, ThrowMotionEventStatement, ThrowMotionTarget,
+    ThrowMotionValue, UiEaseDirection, UiTargetPath, WeaponAction, WeaponStatement,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
@@ -445,11 +445,25 @@ struct SceneMaxCameraSystem {
 #[derive(Debug, Resource, Default)]
 struct DelayedActionQueue {
     actions: Vec<DelayedActions>,
+    registered_key_events: RegisteredKeyEvents,
+}
+
+#[derive(Debug, Clone)]
+struct RegisteredKeyEvent {
+    id: usize,
+    event: KeyEventStatement,
+}
+
+#[derive(Debug, Default)]
+struct RegisteredKeyEvents {
+    next_id: usize,
+    events: Vec<RegisteredKeyEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum SceneMaxControllerKey {
     Key(usize),
+    RegisteredKey(usize),
     When(usize),
     Recurring(usize),
     AsyncFunction(String),

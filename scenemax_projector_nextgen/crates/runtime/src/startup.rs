@@ -1260,6 +1260,8 @@ pub(super) fn apply_startup_runs_when_ready(
         gltfs_by_name.len(),
         startup_action_state.ready_frames
     ));
+    delayed_actions.registered_key_events.events.clear();
+    delayed_actions.registered_key_events.next_id = 0;
     apply_startup_runs(
         program,
         &mut commands,
