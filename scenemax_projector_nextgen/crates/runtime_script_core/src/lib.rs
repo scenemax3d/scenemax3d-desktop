@@ -388,6 +388,7 @@ pub fn substitute_statement(
                 text: substitute_reference(&message.text, bindings),
                 effects: message.effects.clone(),
                 duration_seconds: message.duration_seconds,
+                async_run: message.async_run,
             })
         }
         Statement::UiEase(ease) => Statement::UiEase(scenemax_parser::UiEaseStatement {

@@ -105,6 +105,12 @@ pub(super) fn apply_startup_action_sequence(
             Statement::KeyEvent(event) => {
                 register_key_event(&mut delayed_actions.registered_key_events, event.clone());
             }
+            Statement::WhenEvent(event) => {
+                register_when_event(&mut delayed_actions.registered_when_events, event.clone());
+            }
+            Statement::RunEvery { .. } => {
+                register_run_every(&mut delayed_actions.registered_run_every, action.clone());
+            }
             Statement::Wait { seconds } => {
                 if enqueue_delayed_actions(
                     Some(delayed_actions),
@@ -770,6 +776,17 @@ pub(super) fn apply_startup_action(
         Statement::ChannelDraw(draw) => {
             ui_queue.actions.push(scenemax_draw_action_from_statement(
                 draw,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            ));
+            ActionSequenceResult::Completed
+        }
+        Statement::Print(print) => {
+            ui_queue.actions.push(scenemax_print_action_from_statement(
+                print,
                 vars,
                 None,
                 guards_by_name,
@@ -1795,7 +1812,9 @@ pub(super) fn describe_controller_key(owner: &SceneMaxControllerKey) -> String {
         SceneMaxControllerKey::Key(index) => format!("K{index}"),
         SceneMaxControllerKey::RegisteredKey(index) => format!("RK{index}"),
         SceneMaxControllerKey::When(index) => format!("W{index}"),
+        SceneMaxControllerKey::RegisteredWhen(index) => format!("RW{index}"),
         SceneMaxControllerKey::Recurring(index) => format!("R{index}"),
+        SceneMaxControllerKey::RegisteredRecurring(index) => format!("RR{index}"),
         SceneMaxControllerKey::AsyncFunction(name) => format!("A:{name}"),
     }
 }
@@ -1919,6 +1938,42 @@ pub(super) fn register_key_event(
         .push(RegisteredKeyEvent { id, event });
 }
 
+pub(super) fn register_when_event(
+    registered_when_events: &mut RegisteredWhenEvents,
+    event: WhenEventStatement,
+) {
+    if registered_when_events
+        .events
+        .iter()
+        .any(|registered| registered.event == event)
+    {
+        return;
+    }
+    let id = registered_when_events.next_id;
+    registered_when_events.next_id += 1;
+    registered_when_events
+        .events
+        .push(RegisteredWhenEvent { id, event });
+}
+
+pub(super) fn register_run_every(
+    registered_run_every: &mut RegisteredRunEveryEvents,
+    statement: Statement,
+) {
+    if registered_run_every
+        .events
+        .iter()
+        .any(|registered| registered.statement == statement)
+    {
+        return;
+    }
+    let id = registered_run_every.next_id;
+    registered_run_every.next_id += 1;
+    registered_run_every
+        .events
+        .push(RegisteredRunEvery { id, statement });
+}
+
 #[cfg(test)]
 mod key_event_controller_tests {
     use super::*;
@@ -1954,6 +2009,23 @@ mod key_event_controller_tests {
 
         register_key_event(&mut registered, event.clone());
         register_key_event(&mut registered, event);
+
+        assert_eq!(registered.events.len(), 1);
+        assert_eq!(registered.events[0].id, 0);
+    }
+
+    #[test]
+    fn registering_same_run_every_is_idempotent() {
+        let statement = Statement::RunEvery {
+            name: "flash_debug_marker".to_owned(),
+            args: Vec::new(),
+            interval_seconds: 0.5,
+            interval_value: AssignmentValue::Number(0.5),
+        };
+        let mut registered = RegisteredRunEveryEvents::default();
+
+        register_run_every(&mut registered, statement.clone());
+        register_run_every(&mut registered, statement);
 
         assert_eq!(registered.events.len(), 1);
         assert_eq!(registered.events[0].id, 0);
@@ -2122,7 +2194,7 @@ pub(super) fn apply_when_events(
     bone_queries: SceneMaxBoneQueries,
 ) {
     let Some(program) = startup_program.0.as_ref() else {
-        active_collisions.active_by_statement.clear();
+        active_collisions.active_by_event.clear();
         active_controllers.running.clear();
         return;
     };
@@ -2133,10 +2205,27 @@ pub(super) fn apply_when_events(
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
 
+    let mut polled_when_events = Vec::new();
     for (statement_index, statement) in program.statements.iter().enumerate() {
-        let Statement::WhenEvent(event) = statement else {
-            continue;
-        };
+        if let Statement::WhenEvent(event) = statement {
+            polled_when_events.push((
+                SceneMaxWhenEventKey::TopLevel(statement_index),
+                statement_index.to_string(),
+                SceneMaxControllerKey::When(statement_index),
+                event.clone(),
+            ));
+        }
+    }
+    for registered in &delayed_actions.registered_when_events.events {
+        polled_when_events.push((
+            SceneMaxWhenEventKey::Registered(registered.id),
+            format!("registered:{}", registered.id),
+            SceneMaxControllerKey::RegisteredWhen(registered.id),
+            registered.event.clone(),
+        ));
+    }
+
+    for (event_key, event_label, owner, event) in polled_when_events {
         let guard_matches = event.guard.as_ref().is_none_or(|guard| {
             condition_matches(
                 guard,
@@ -2159,7 +2248,7 @@ pub(super) fn apply_when_events(
         if lifecycle_probe && runtime_verbose_logging() {
             write_runtime_diagnostic_line(format!(
                 "WHEN:PROBE stmt={} guard={} condition={} matches={} active={} delayed={} state={}",
-                statement_index,
+                event_label,
                 guard_matches as u8,
                 describe_condition_brief(&event.condition),
                 condition_matches_now as u8,
@@ -2180,28 +2269,24 @@ pub(super) fn apply_when_events(
             );
             if !guard_matches {
                 active_collisions
-                    .transition_armed_by_statement
-                    .remove(&statement_index);
+                    .transition_armed_by_event
+                    .remove(&event_key);
                 continue;
             }
             if after_matches {
                 active_collisions
-                    .transition_armed_by_statement
-                    .insert(statement_index);
-                active_controllers
-                    .running
-                    .remove(&SceneMaxControllerKey::When(statement_index));
+                    .transition_armed_by_event
+                    .insert(event_key);
+                active_controllers.running.remove(&owner);
                 continue;
             }
             if !condition_matches_now {
-                active_controllers
-                    .running
-                    .remove(&SceneMaxControllerKey::When(statement_index));
+                active_controllers.running.remove(&owner);
                 continue;
             }
             if !active_collisions
-                .transition_armed_by_statement
-                .remove(&statement_index)
+                .transition_armed_by_event
+                .remove(&event_key)
             {
                 continue;
             }
@@ -2209,25 +2294,17 @@ pub(super) fn apply_when_events(
         let is_collision_event = condition_contains_collision(&event.condition);
         if !guard_matches || !condition_matches_now {
             if is_collision_event {
-                active_collisions
-                    .active_by_statement
-                    .remove(&statement_index);
+                active_collisions.active_by_event.remove(&event_key);
             }
-            active_controllers
-                .running
-                .remove(&SceneMaxControllerKey::When(statement_index));
+            active_controllers.running.remove(&owner);
             continue;
         }
-        if is_collision_event
-            && !active_collisions
-                .active_by_statement
-                .insert(statement_index)
-        {
+        if is_collision_event && !active_collisions.active_by_event.insert(event_key) {
             continue;
         }
         if is_collision_event {
             write_collision_event_probe(
-                statement_index,
+                &event_label,
                 &event.condition,
                 &transforms_by_name,
                 &collider_bounds,
@@ -2236,12 +2313,11 @@ pub(super) fn apply_when_events(
             );
             collect_transient_collision_assignments(&event.actions, &mut transient_collision_vars);
         }
-        let owner = SceneMaxControllerKey::When(statement_index);
         if active_controllers.running.contains(&owner) {
             if delayed_actions_has_owner(&delayed_actions, &owner) {
                 write_runtime_diagnostic_line(format!(
                     "WHEN:SKIP_RUNNING stmt={} owner={} condition={} active={} delayed={} state={}",
-                    statement_index,
+                    event_label,
                     describe_controller_key(&owner),
                     describe_condition_brief(&event.condition),
                     describe_active_controllers(&active_controllers),
@@ -2252,7 +2328,7 @@ pub(super) fn apply_when_events(
             }
             write_runtime_diagnostic_line(format!(
                 "CTRL:WHEN_STALE_OWNER_RECOVER stmt={} owner={} condition={} active={} delayed={} state={}",
-                statement_index,
+                event_label,
                 describe_controller_key(&owner),
                 describe_condition_brief(&event.condition),
                 describe_active_controllers(&active_controllers),
@@ -2266,7 +2342,7 @@ pub(super) fn apply_when_events(
         active_controllers.running.insert(owner.clone());
         write_runtime_diagnostic_line(format!(
             "WHEN:FIRE stmt={} owner={} condition={} active={} delayed={} state={}",
-            statement_index,
+            event_label,
             describe_controller_key(&owner),
             describe_condition_brief(&event.condition),
             describe_active_controllers(&active_controllers),
@@ -2296,7 +2372,7 @@ pub(super) fn apply_when_events(
         if result.is_suspended() {
             write_runtime_diagnostic_line(format!(
                 "WHEN:PASS_SUSPEND stmt={} owner={} active={} delayed={} state={}",
-                statement_index,
+                event_label,
                 describe_controller_key(&owner),
                 describe_active_controllers(&active_controllers),
                 describe_delayed_queue(&delayed_actions),
@@ -2347,14 +2423,13 @@ pub(super) fn collect_transient_collision_assignments(
 
 pub(super) fn is_transient_collision_assignment_value(value: &AssignmentValue) -> bool {
     match value {
-        AssignmentValue::Number(value) => (*value - 1.0).abs() <= f32::EPSILON,
         AssignmentValue::Condition(_) => true,
         _ => false,
     }
 }
 
 pub(super) fn write_collision_event_probe(
-    statement_index: usize,
+    event_label: &str,
     condition: &Condition,
     transforms_by_name: &HashMap<String, Transform>,
     collider_bounds: &SceneMaxColliderBounds,
@@ -2374,7 +2449,7 @@ pub(super) fn write_collision_event_probe(
         LoggerLevel::Info,
         &format!(
             "COLL:FIRE stmt={} source={} target={} avian={} fallback={} distance={} threshold={} owner_distance={}",
-            statement_index,
+            event_label,
             report.source,
             report.target,
             report.avian_contact as u8,
@@ -2632,13 +2707,98 @@ pub(super) fn update_recurring_runs(
                         describe_runtime_state(&vars)
                     ));
                     active_controllers.running.remove(&owner);
-                    due_runs.push((index, name.clone(), args.clone()));
+                    due_runs.push((
+                        SceneMaxControllerKey::Recurring(index),
+                        index.to_string(),
+                        name.clone(),
+                        args.clone(),
+                    ));
                     while *remaining <= 0.0 {
                         *remaining += interval;
                     }
                 }
             } else {
-                due_runs.push((index, name.clone(), args.clone()));
+                due_runs.push((
+                    SceneMaxControllerKey::Recurring(index),
+                    index.to_string(),
+                    name.clone(),
+                    args.clone(),
+                ));
+                while *remaining <= 0.0 {
+                    *remaining += interval;
+                }
+            }
+        }
+    }
+    for registered in &delayed_actions.registered_run_every.events {
+        let Statement::RunEvery {
+            name,
+            args,
+            interval_seconds,
+            interval_value,
+        } = &registered.statement
+        else {
+            continue;
+        };
+        let interval = resolve_duration_value(
+            interval_value,
+            *interval_seconds,
+            &vars,
+            None,
+            &guards_by_name,
+            Some(&transforms_by_name),
+            Some(&collider_bounds),
+        )
+        .max(0.001);
+        let remaining = recurring_timers
+            .remaining_by_registered
+            .entry(registered.id)
+            .or_insert(interval);
+        *remaining -= delta;
+        if *remaining <= 0.0 {
+            let owner = SceneMaxControllerKey::RegisteredRecurring(registered.id);
+            if active_controllers.running.contains(&owner) {
+                if delayed_actions_has_owner(&delayed_actions, &owner) {
+                    if runtime_verbose_logging() {
+                        write_runtime_diagnostic_line(format!(
+                            "RECUR:SKIP_RUNNING stmt=registered:{} name={} owner={} active={} delayed={} state={}",
+                            registered.id,
+                            name,
+                            describe_controller_key(&owner),
+                            describe_active_controllers(&active_controllers),
+                            describe_delayed_queue(&delayed_actions),
+                            describe_runtime_state(&vars)
+                        ));
+                    }
+                    *remaining = 0.0;
+                } else {
+                    write_runtime_diagnostic_line(format!(
+                        "CTRL:RECUR_STALE_OWNER_RECOVER stmt=registered:{} name={} owner={} active={} delayed={} state={}",
+                        registered.id,
+                        name,
+                        describe_controller_key(&owner),
+                        describe_active_controllers(&active_controllers),
+                        describe_delayed_queue(&delayed_actions),
+                        describe_runtime_state(&vars)
+                    ));
+                    active_controllers.running.remove(&owner);
+                    due_runs.push((
+                        SceneMaxControllerKey::RegisteredRecurring(registered.id),
+                        format!("registered:{}", registered.id),
+                        name.clone(),
+                        args.clone(),
+                    ));
+                    while *remaining <= 0.0 {
+                        *remaining += interval;
+                    }
+                }
+            } else {
+                due_runs.push((
+                    SceneMaxControllerKey::RegisteredRecurring(registered.id),
+                    format!("registered:{}", registered.id),
+                    name.clone(),
+                    args.clone(),
+                ));
                 while *remaining <= 0.0 {
                     *remaining += interval;
                 }
@@ -2650,14 +2810,13 @@ pub(super) fn update_recurring_runs(
         return;
     }
 
-    for (index, name, args) in due_runs {
+    for (owner, label, name, args) in due_runs {
         let mut queued_animations = HashMap::new();
-        let owner = SceneMaxControllerKey::Recurring(index);
         active_controllers.running.insert(owner.clone());
         if runtime_verbose_logging() {
             write_runtime_diagnostic_line(format!(
                 "RECUR:FIRE stmt={} name={} owner={} active={} delayed={} state={}",
-                index,
+                label,
                 name,
                 describe_controller_key(&owner),
                 describe_active_controllers(&active_controllers),
@@ -2693,7 +2852,7 @@ pub(super) fn update_recurring_runs(
         if runtime_verbose_logging() {
             write_runtime_diagnostic_line(format!(
                 "RECUR:DONE stmt={} name={} owner={} result={:?} active={} delayed={} state={}",
-                index,
+                label,
                 name,
                 describe_controller_key(&owner),
                 result,
@@ -2966,6 +3125,7 @@ pub(super) fn describe_statement(action: &Statement) -> String {
         Statement::WaitForKey { key } => format!("WaitForKey({key})"),
         Statement::ChannelDraw(draw) if draw.clear => format!("ChannelDrawClear({})", draw.channel),
         Statement::ChannelDraw(draw) => format!("ChannelDraw({})", draw.channel),
+        Statement::Print(print) => format!("Print({})", print.channel),
         Statement::EffekseerPlay(play) => {
             format!("EffekseerPlay({} loop={})", play.target, play.looped as u8)
         }
@@ -3076,6 +3236,9 @@ pub(super) fn resolved_blocking_timed_action_seconds(
             );
             (seconds > f32::EPSILON).then_some(seconds.max(0.001))
         }
+        Statement::UiMessage(message) if !message.async_run => {
+            (message.duration_seconds > f32::EPSILON).then_some(message.duration_seconds.max(0.001))
+        }
         Statement::CinematicPlay(play) if !play.async_run => Some(play.duration_seconds.max(0.1)),
         _ => None,
     }
@@ -3128,6 +3291,16 @@ pub(super) fn apply_action_sequence(
             Statement::KeyEvent(event) => {
                 if let Some(delayed_actions) = delayed_actions.as_deref_mut() {
                     register_key_event(&mut delayed_actions.registered_key_events, event.clone());
+                }
+            }
+            Statement::WhenEvent(event) => {
+                if let Some(delayed_actions) = delayed_actions.as_deref_mut() {
+                    register_when_event(&mut delayed_actions.registered_when_events, event.clone());
+                }
+            }
+            Statement::RunEvery { .. } => {
+                if let Some(delayed_actions) = delayed_actions.as_deref_mut() {
+                    register_run_every(&mut delayed_actions.registered_run_every, action.clone());
                 }
             }
             Statement::Wait { seconds } => {
@@ -5640,6 +5813,18 @@ pub(super) fn apply_key_action(
         }
         return ActionSequenceResult::Completed;
     }
+    if let Statement::WhenEvent(event) = action {
+        if let Some(delayed_actions) = delayed_actions.as_deref_mut() {
+            register_when_event(&mut delayed_actions.registered_when_events, event.clone());
+        }
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::RunEvery { .. } = action {
+        if let Some(delayed_actions) = delayed_actions.as_deref_mut() {
+            register_run_every(&mut delayed_actions.registered_run_every, action.clone());
+        }
+        return ActionSequenceResult::Completed;
+    }
     if let Statement::Unsupported { text } = action {
         tracing::debug!(text, "skipping unsupported SceneMax runtime action");
         return ActionSequenceResult::Completed;
@@ -6008,6 +6193,19 @@ pub(super) fn apply_key_action(
         if let Some(ui_queue) = ui_queue.as_deref_mut() {
             ui_queue.actions.push(scenemax_draw_action_from_statement(
                 draw,
+                vars,
+                scope.as_deref(),
+                guards_by_name,
+                Some(transforms_by_name),
+                Some(collider_bounds),
+            ));
+        }
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::Print(print) = action {
+        if let Some(ui_queue) = ui_queue.as_deref_mut() {
+            ui_queue.actions.push(scenemax_print_action_from_statement(
+                print,
                 vars,
                 scope.as_deref(),
                 guards_by_name,
@@ -6653,6 +6851,7 @@ pub(super) fn apply_key_action(
                     scope.as_deref(),
                 ) =>
             {
+                set_collider_hidden(collider_bounds, &scene_entity.name, !*visible);
                 if let Some(mut visibility) = visibility {
                     *visibility = if *visible {
                         Visibility::Inherited
@@ -7683,6 +7882,61 @@ pub(super) fn scenemax_draw_action_from_statement(
     })
 }
 
+pub(super) fn scenemax_print_action_from_statement(
+    print: &PrintStatement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> SceneMaxUiAction {
+    let position = print
+        .position
+        .as_ref()
+        .and_then(|position| {
+            transforms_by_name.and_then(|transforms_by_name| {
+                evaluate_position_value_runtime(
+                    position,
+                    vars,
+                    scope,
+                    guards_by_name,
+                    transforms_by_name,
+                    collider_bounds,
+                )
+            })
+        })
+        .unwrap_or(Vec3::ZERO);
+    let font_size = print.font_size.as_ref().map(|value| {
+        resolve_draw_value(
+            Some(value),
+            0.0,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        )
+        .max(0.0)
+    });
+    SceneMaxUiAction::Print(SceneMaxPrintAction {
+        channel: print.channel.clone(),
+        text: resolve_ui_property_value(
+            &print.text,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        ),
+        pos_x: position.x,
+        pos_y: position.y,
+        color: print.color.clone(),
+        font_size,
+        font: print.font.clone(),
+        append: print.append,
+    })
+}
+
 fn resolve_draw_value(
     value: Option<&AssignmentValue>,
     default_value: f32,
@@ -8432,7 +8686,13 @@ pub(super) fn physics_contact_condition_matches(
     sources.iter().any(|source| {
         let source_candidates = collision_reference_candidates_with_alias(source, object_pools);
         source_candidates.iter().any(|source_name| {
+            if collision_reference_hidden(source_name, collider_bounds) {
+                return false;
+            }
             target_candidates.iter().any(|target_name| {
+                if collision_reference_hidden(target_name, collider_bounds) {
+                    return false;
+                }
                 active_physics_contact_matches(
                     source_name,
                     target_name,
@@ -8471,6 +8731,11 @@ pub(super) fn active_physics_contact_matches(
     physics_contacts: &SceneMaxPhysicsContacts,
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> bool {
+    if collision_reference_hidden(source, collider_bounds)
+        || collision_reference_hidden(target, collider_bounds)
+    {
+        return false;
+    }
     if physics_contacts
         .active_pairs
         .contains(&normalized_collision_pair(source, target))
@@ -8500,7 +8765,7 @@ pub(super) fn is_owner_level_collision_reference(
     reference: &str,
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> bool {
-    let normalized = reference.trim().trim_matches('"');
+    let normalized = normalize_collision_reference(reference);
     collision_owner_with_bounds(normalized, collider_bounds) == normalized
 }
 

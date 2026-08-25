@@ -250,8 +250,11 @@ pub(super) fn play_pending_animations(
             let Some(destination_player) = animation_players.first().copied() else {
                 continue;
             };
-            let destination_targets =
-                collect_animation_targets_by_name(destination_player, &children, &animation_targets);
+            let destination_targets = collect_animation_targets_by_name(
+                destination_player,
+                &children,
+                &animation_targets,
+            );
             match load_baked_external_animation_clip(
                 runtime_assets.asset_root.as_deref(),
                 &baked,
@@ -290,7 +293,10 @@ pub(super) fn play_pending_animations(
                             LoggerLevel::Debug,
                             &format!(
                                 "ANIM_BAKED_PLAY target={} clip={} model={} path={}",
-                                target_name, animation_to_play.runtime_clip, baked.model, baked.path,
+                                target_name,
+                                animation_to_play.runtime_clip,
+                                baked.model,
+                                baked.path,
                             ),
                         );
                     }
@@ -746,11 +752,7 @@ fn apply_animation_visual_transform(
                 );
             }
         }
-        upsert_visual_compensation_cache(
-            root,
-            pending_compensation_cache,
-            commands,
-        );
+        upsert_visual_compensation_cache(root, pending_compensation_cache, commands);
         return;
     }
 
@@ -809,11 +811,7 @@ fn apply_animation_visual_transform(
     }
     if applied {
         commands.entity(root).insert(visual_transform);
-        upsert_visual_compensation_cache(
-            root,
-            pending_compensation_cache,
-            commands,
-        );
+        upsert_visual_compensation_cache(root, pending_compensation_cache, commands);
     }
 }
 
@@ -836,20 +834,10 @@ fn log_animation_visual_transform_apply(
     if !runtime_verbose_logging() {
         return;
     }
-    let base_min_y = transformed_subtree_min_y(
-        child,
-        base_transform,
-        children,
-        transform_queries,
-        meshes,
-    );
-    let next_min_y = transformed_subtree_min_y(
-        child,
-        next_transform,
-        children,
-        transform_queries,
-        meshes,
-    );
+    let base_min_y =
+        transformed_subtree_min_y(child, base_transform, children, transform_queries, meshes);
+    let next_min_y =
+        transformed_subtree_min_y(child, next_transform, children, transform_queries, meshes);
     write_runtime_log_line(
         LoggerLevel::Debug,
         &format!(
@@ -930,10 +918,10 @@ fn visual_compensation_matches(
     entry
         .translation
         .abs_diff_eq(translation, VISUAL_COMPENSATION_CACHE_EPSILON)
-        && entry
-            .base_transform
-            .translation
-            .abs_diff_eq(base_transform.translation, VISUAL_COMPENSATION_CACHE_EPSILON)
+        && entry.base_transform.translation.abs_diff_eq(
+            base_transform.translation,
+            VISUAL_COMPENSATION_CACHE_EPSILON,
+        )
         && entry
             .base_transform
             .rotation
@@ -1301,7 +1289,11 @@ fn use_external_animation_source(
                 LoggerLevel::Debug,
                 &format!(
                     "ANIM_EXTERNAL_BAKED target={} clip={} model={} baked_clip={} path={}",
-                    target_name, animation_to_play.runtime_clip, baked.model, baked.clip, baked.path,
+                    target_name,
+                    animation_to_play.runtime_clip,
+                    baked.model,
+                    baked.clip,
+                    baked.path,
                 ),
             );
         }
@@ -1822,8 +1814,7 @@ fn load_baked_external_animation_clip(
 fn baked_translation_curve(samples: &[[f32; 4]]) -> Option<VariableCurve> {
     let keyframes = samples.iter().filter_map(|sample| {
         let [time, x, y, z] = *sample;
-        time.is_finite()
-            .then_some((time, Vec3::new(x, y, z)))
+        time.is_finite().then_some((time, Vec3::new(x, y, z)))
     });
     let keyframe_curve = AnimatableKeyframeCurve::new(keyframes).ok()?;
     Some(VariableCurve::new(AnimatableCurve::new(
@@ -2462,8 +2453,7 @@ fn sample_vec3_curve_for_bake(curve: &VariableCurve) -> Vec<[f32; 4]> {
     };
     sampled_times(start, end)
         .filter_map(|time| {
-            sample_curve_vec3(curve, time)
-                .map(|value| [time, value.x, value.y, value.z])
+            sample_curve_vec3(curve, time).map(|value| [time, value.x, value.y, value.z])
         })
         .collect()
 }
@@ -2483,9 +2473,10 @@ fn sample_quat_curve_for_bake(
     sampled_times(start, end)
         .filter_map(|time| {
             sample_curve_quat(curve, time).map(|value| {
-                let rotation =
-                    (destination_base_rotation * source_base_rotation.inverse() * value.normalize())
-                        .normalize();
+                let rotation = (destination_base_rotation
+                    * source_base_rotation.inverse()
+                    * value.normalize())
+                .normalize();
                 [time, rotation.x, rotation.y, rotation.z, rotation.w]
             })
         })

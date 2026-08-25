@@ -56,17 +56,22 @@ pub(super) fn clear_scenemax_ui_on_scene_change(
     for entity in ui_runtime.draw_channels.values() {
         commands.entity(*entity).despawn();
     }
+    let print_count = ui_runtime.print_channels.len();
+    for entity in ui_runtime.print_channels.values() {
+        commands.entity(*entity).despawn();
+    }
 
     ui_runtime.active_ui_name = None;
     ui_runtime.loaded.clear();
     ui_runtime.draw_channels.clear();
+    ui_runtime.print_channels.clear();
     ui_runtime.pending_draw_clears.clear();
     ui_queue.actions.clear();
     ui_runtime.scene_script_root = current_scene_root;
 
     tracing::info!(ui_count, "cleared SceneMax UI after scene switch");
     write_runtime_diagnostic_line(format!(
-        "cleared {ui_count} SceneMax UI document(s) and {draw_count} draw channel(s) after scene switch"
+        "cleared {ui_count} SceneMax UI document(s), {draw_count} draw channel(s), and {print_count} print channel(s) after scene switch"
     ));
 }
 
@@ -125,6 +130,21 @@ pub(super) fn apply_scenemax_ui_actions(
                 }
                 apply_scenemax_draw_action(
                     draw,
+                    &mut commands,
+                    &asset_server,
+                    &context,
+                    &mut ui_runtime,
+                );
+            }
+            SceneMaxUiAction::Print(mut print) => {
+                if print.append
+                    && let Some(entity) = ui_runtime.print_channels.get(&print.channel).copied()
+                    && let Some(existing) = existing_print_text(entity, &mut text_queries)
+                {
+                    print.text = existing + &print.text;
+                }
+                apply_scenemax_print_action(
+                    print,
                     &mut commands,
                     &asset_server,
                     &context,
@@ -463,6 +483,122 @@ pub(super) fn apply_scenemax_draw_action(
         "drew resource {} on channel {} stretch={} frame={}",
         draw.resource, draw.channel, draw.stretch, draw.frame
     ));
+}
+
+fn existing_print_text(
+    entity: Entity,
+    text_queries: &mut ParamSet<(
+        Query<(
+            &mut Text,
+            &mut TextColor,
+            &mut UiTransform,
+            Option<&SceneMaxUiTextVisualState>,
+        )>,
+        Query<(
+            &mut SceneMaxUiBitmapText,
+            &mut UiTransform,
+            Option<&SceneMaxUiTextVisualState>,
+        )>,
+    )>,
+) -> Option<String> {
+    if let Ok((text, _, _, _)) = text_queries.p0().get_mut(entity) {
+        return Some(text.0.clone());
+    }
+    if let Ok((bitmap_text, _, _)) = text_queries.p1().get_mut(entity) {
+        return Some(bitmap_text.text.clone());
+    }
+    None
+}
+
+pub(super) fn apply_scenemax_print_action(
+    print: SceneMaxPrintAction,
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    context: &SceneMaxLaunchContext,
+    ui_runtime: &mut SceneMaxUiRuntime,
+) {
+    if let Some(entity) = ui_runtime.print_channels.remove(&print.channel) {
+        commands.entity(entity).despawn();
+    }
+    if print.text.is_empty() {
+        write_runtime_diagnostic_line(format!("cleared print channel {}", print.channel));
+        return;
+    }
+
+    let font_size = print
+        .font_size
+        .map(|value| {
+            if value > 0.0 && value <= 10.0 {
+                value * PRINT_FONT_SIZE_UNIT
+            } else {
+                value
+            }
+        })
+        .unwrap_or(DEFAULT_PRINT_FONT_SIZE);
+    let node = Node {
+        position_type: PositionType::Absolute,
+        left: Val::Px(print.pos_x),
+        top: Val::Px(print.pos_y),
+        width: Val::Auto,
+        height: Val::Auto,
+        ..default()
+    };
+    let entity = spawn_scenemax_ui_text_entity(
+        commands,
+        asset_server,
+        context,
+        ui_runtime,
+        format!("print.{}", print.channel),
+        node,
+        Visibility::Inherited,
+        ZIndex(1000),
+        print.text,
+        print.font.as_deref(),
+        font_size,
+        print_color(print.color.as_deref()),
+        Justify::Left,
+        1.0,
+        context.window_width as f32,
+        context.window_height as f32,
+        None,
+    );
+    commands.entity(entity).insert(SceneMaxPrintChannel);
+    ui_runtime
+        .print_channels
+        .insert(print.channel.clone(), entity);
+    write_runtime_diagnostic_line(format!(
+        "printed text on channel {} at {},{}",
+        print.channel,
+        format_scenemax_number(print.pos_x),
+        format_scenemax_number(print.pos_y)
+    ));
+}
+
+const DEFAULT_PRINT_FONT_SIZE: f32 = 24.0;
+const PRINT_FONT_SIZE_UNIT: f32 = 16.0;
+
+fn print_color(value: Option<&str>) -> Color {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Color::WHITE;
+    };
+    if value.starts_with('#') || value.len() >= 6 && value.chars().all(|ch| ch.is_ascii_hexdigit())
+    {
+        return parse_ui_color(value);
+    }
+    match value.to_ascii_lowercase().as_str() {
+        "red" => Color::srgb(1.0, 0.0, 0.0),
+        "green" => Color::srgb(0.0, 1.0, 0.0),
+        "blue" => Color::srgb(0.0, 0.0, 1.0),
+        "white" => Color::WHITE,
+        "black" => Color::BLACK,
+        "yellow" => Color::srgb(1.0, 1.0, 0.0),
+        "orange" => Color::srgb(1.0, 0.5, 0.0),
+        "pink" => Color::srgb(1.0, 0.68, 0.68),
+        "cyan" => Color::srgb(0.0, 1.0, 1.0),
+        "magenta" => Color::srgb(1.0, 0.0, 1.0),
+        "gray" | "grey" => Color::srgb(0.5, 0.5, 0.5),
+        _ => Color::WHITE,
+    }
 }
 
 pub(super) fn resolve_draw_asset(

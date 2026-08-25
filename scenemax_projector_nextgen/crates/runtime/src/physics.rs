@@ -1123,6 +1123,7 @@ pub(super) fn register_collider_bounds(
         .radius_by_name
         .insert(name.to_owned(), radius);
     collider_bounds.shape_by_name.insert(name.to_owned(), shape);
+    set_collider_hidden(collider_bounds, name, options.hidden);
 }
 
 pub(super) fn register_collider_owner(
@@ -1133,6 +1134,19 @@ pub(super) fn register_collider_owner(
     collider_bounds
         .owner_by_name
         .insert(name.to_owned(), owner.to_owned());
+}
+
+pub(super) fn set_collider_hidden(
+    collider_bounds: &mut SceneMaxColliderBounds,
+    name: &str,
+    hidden: bool,
+) {
+    let normalized = normalize_collision_reference(name);
+    if hidden {
+        collider_bounds.hidden_by_name.insert(normalized.to_owned());
+    } else {
+        collider_bounds.hidden_by_name.remove(normalized);
+    }
 }
 
 pub(super) fn solid_collision_layers(body_kind: SceneMaxBodyKind) -> CollisionLayers {
@@ -2212,6 +2226,9 @@ pub(super) fn collision_condition_matches(
     let Some(transforms_by_name) = transforms_by_name else {
         return false;
     };
+    if collision_reference_hidden(target, collider_bounds) {
+        return false;
+    }
     let target_exact = transforms_by_name.get(target).copied();
     let Some(target_transform) = target_exact
         .or_else(|| collision_owner_transform(target, transforms_by_name, collider_bounds))
@@ -2219,6 +2236,9 @@ pub(super) fn collision_condition_matches(
         return false;
     };
     sources.iter().any(|source| {
+        if collision_reference_hidden(source, collider_bounds) {
+            return false;
+        }
         let source_exact = transforms_by_name.get(source).copied();
         if let (Some(source_transform), Some(target_transform)) = (source_exact, target_exact) {
             if !attached_collider_owner_distance_allows(
@@ -2309,11 +2329,11 @@ pub(super) fn attached_collider_owner_distance_allows(
 }
 
 pub(super) fn collision_reference_candidates(reference: &str) -> Vec<String> {
-    vec![reference.trim().trim_matches('"').to_owned()]
+    vec![normalize_collision_reference(reference).to_owned()]
 }
 
 pub(super) fn collision_owner(reference: &str) -> String {
-    let normalized = reference.trim().trim_matches('"');
+    let normalized = normalize_collision_reference(reference);
     normalized
         .split(['.', '[', '"'])
         .next()
@@ -2325,11 +2345,32 @@ pub(super) fn collision_owner_with_bounds(
     reference: &str,
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> String {
-    let normalized = reference.trim().trim_matches('"');
+    let normalized = normalize_collision_reference(reference);
     collider_bounds
         .and_then(|bounds| bounds.owner_by_name.get(normalized))
         .cloned()
         .unwrap_or_else(|| collision_owner(reference))
+}
+
+pub(super) fn collision_reference_hidden(
+    reference: &str,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> bool {
+    let Some(collider_bounds) = collider_bounds else {
+        return false;
+    };
+    let normalized = normalize_collision_reference(reference);
+    collider_bounds.hidden_by_name.contains(normalized)
+        || collider_bounds
+            .hidden_by_name
+            .contains(&collision_owner_with_bounds(
+                normalized,
+                Some(collider_bounds),
+            ))
+}
+
+pub(super) fn normalize_collision_reference(reference: &str) -> &str {
+    reference.trim().trim_matches('"')
 }
 
 pub(super) fn collision_threshold(source: &str, target: &str) -> f32 {

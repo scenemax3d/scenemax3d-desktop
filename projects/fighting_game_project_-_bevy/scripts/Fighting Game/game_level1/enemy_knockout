@@ -24,14 +24,12 @@ enemy_knockout = {
 	end do
 
 	do async
-	  run axe_lookup // player needs to collect the axe now 
 	  player2.shader = "bv_dramatic_hit_red"
 	  player2.Knockout
-	  wait 2 seconds
+	  wait 1 second
+	  run axe_lookup // player needs to collect the axe now 
+	  wait 1 seconds
 	  player2.shader = ""
-    //player2.data.knockout=0
-    //player2.Backflip 
-		//player2.Idle loop
 		op_hit=op_hit-1
   end do
   

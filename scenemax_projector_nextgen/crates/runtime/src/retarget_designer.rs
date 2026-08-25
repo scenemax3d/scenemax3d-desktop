@@ -1511,10 +1511,7 @@ fn save_retarget_options(
 }
 
 fn upsert_baked_retarget_entry(entry: &mut Value, baked: &RetargetBakedIndexEntry) {
-    if !entry
-        .get("bevyBakedRetargets")
-        .is_some_and(Value::is_array)
-    {
+    if !entry.get("bevyBakedRetargets").is_some_and(Value::is_array) {
         entry["bevyBakedRetargets"] = json!([]);
     }
     let Some(retargets) = entry

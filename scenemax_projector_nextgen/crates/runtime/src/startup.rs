@@ -606,7 +606,7 @@ pub(super) fn has_ui_runtime_content(program: &Program) -> bool {
 pub(super) fn statement_has_ui_runtime_content(statement: &Statement) -> bool {
     if matches!(
         statement,
-        Statement::UiSetProperty(_) | Statement::ChannelDraw(_)
+        Statement::UiSetProperty(_) | Statement::ChannelDraw(_) | Statement::Print(_)
     ) {
         return true;
     }
@@ -1262,6 +1262,10 @@ pub(super) fn apply_startup_runs_when_ready(
     ));
     delayed_actions.registered_key_events.events.clear();
     delayed_actions.registered_key_events.next_id = 0;
+    delayed_actions.registered_when_events.events.clear();
+    delayed_actions.registered_when_events.next_id = 0;
+    delayed_actions.registered_run_every.events.clear();
+    delayed_actions.registered_run_every.next_id = 0;
     apply_startup_runs(
         program,
         &mut commands,
