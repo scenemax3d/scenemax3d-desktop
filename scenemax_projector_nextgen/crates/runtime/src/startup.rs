@@ -966,6 +966,7 @@ pub(super) fn spawn_scenemax_program(
         ) {
             Ok(model) => {
                 let runtime_name = format!("{name}@1");
+                let resolved_model_resource = model.name.clone();
                 let asset_path = model.asset_path;
                 let bevy_visual_offset_y = model
                     .character_physics
@@ -990,7 +991,7 @@ pub(super) fn spawn_scenemax_program(
                             runtime_name,
                         },
                         SceneMaxModelResource {
-                            resource: resource.clone(),
+                            resource: resolved_model_resource.clone(),
                         },
                         SceneMaxGltf { gltf: gltf.clone() },
                         scene,
@@ -1007,7 +1008,7 @@ pub(super) fn spawn_scenemax_program(
                         looped: animation.looped,
                         speed: animation.speed,
                         gltf: gltf.clone(),
-                        target_model_resource: Some(resource.clone()),
+                        target_model_resource: Some(resolved_model_resource.clone()),
                         baked_external: None,
                         bake_request: None,
                         external_retarget: Default::default(),

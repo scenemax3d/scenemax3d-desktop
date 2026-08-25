@@ -4266,12 +4266,13 @@ fn spawn_runtime_gltf_model_decl(
     resource: &str,
     options: &EntityOptions,
     transform: Transform,
-    runtime_assets: &SceneMaxRuntimeAssets,
+    runtime_assets: &mut SceneMaxRuntimeAssets,
     collider_bounds: &mut SceneMaxColliderBounds,
     commands: &mut Commands,
 ) -> Option<Transform> {
     let model = runtime_model_resource(resource, runtime_assets)?;
     let asset_server = runtime_assets.asset_server.as_ref()?;
+    let resolved_model_resource = model.name.clone();
 
     let mut model_transform = transform;
     if options.scale.is_none()
@@ -4293,7 +4294,10 @@ fn spawn_runtime_gltf_model_decl(
                 name: name.to_owned(),
                 runtime_name: format!("{name}@runtime"),
             },
-            SceneMaxGltf { gltf },
+            SceneMaxModelResource {
+                resource: resolved_model_resource.clone(),
+            },
+            SceneMaxGltf { gltf: gltf.clone() },
             scene,
             model_transform,
             if options.hidden {
@@ -4315,6 +4319,12 @@ fn spawn_runtime_gltf_model_decl(
     if options.collider {
         register_collider_bounds(collider_bounds, name, options, model_transform);
     }
+    runtime_assets
+        .gltf_handles_by_name
+        .insert(name.to_owned(), gltf);
+    runtime_assets
+        .model_resources_by_name
+        .insert(name.to_owned(), resolved_model_resource);
     tracing::info!(
         name,
         resource,
