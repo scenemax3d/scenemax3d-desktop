@@ -1188,7 +1188,13 @@ pub(super) fn apply_startup_runs_when_ready(
     mut delayed_actions: ResMut<DelayedActionQueue>,
     mut ui_queue: ResMut<SceneMaxUiActionQueue>,
     mut scene_entities: ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,

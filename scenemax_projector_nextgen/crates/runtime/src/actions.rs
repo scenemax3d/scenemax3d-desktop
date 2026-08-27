@@ -558,6 +558,10 @@ pub(super) fn apply_startup_action(
     depth: usize,
 ) -> ActionSequenceResult {
     match action {
+        Statement::ModelDecl { name, resource, .. } => {
+            register_cinematic_camera_var(name, resource, camera_system);
+            ActionSequenceResult::Completed
+        }
         Statement::LightDecl(light) => {
             let (_entity, transform) = spawn_scenemax_light_decl(
                 commands,
@@ -1543,7 +1547,13 @@ pub(super) fn apply_key_events(
     mut active_controllers: ResMut<ActiveActionControllers>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -2179,7 +2189,13 @@ pub(super) fn apply_when_events(
     physics_contacts: Res<SceneMaxPhysicsContacts>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -2629,7 +2645,13 @@ pub(super) fn update_recurring_runs(
     mut active_controllers: ResMut<ActiveActionControllers>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -2879,7 +2901,13 @@ pub(super) fn update_delayed_actions(
     mut active_controllers: ResMut<ActiveActionControllers>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -3263,7 +3291,13 @@ pub(super) fn apply_action_sequence(
     continuous_delta_seconds: Option<f32>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -3473,6 +3507,26 @@ pub(super) fn apply_action_sequence(
                 {
                     cancel_delayed_actions_for_owner(delayed_actions, async_owner);
                 }
+                let async_owner_label = async_owner
+                    .as_ref()
+                    .map(describe_controller_key)
+                    .unwrap_or_else(|| "-".to_owned());
+                if enqueue_delayed_actions(
+                    delayed_actions.as_deref_mut(),
+                    0.0,
+                    actions.clone(),
+                    async_owner,
+                    scope.as_deref().cloned(),
+                ) {
+                    if runtime_verbose_logging() {
+                        write_runtime_diagnostic_line(format!(
+                            "ASYNC:QUEUE owner={} actions={}",
+                            async_owner_label,
+                            describe_statement_list(actions)
+                        ));
+                    }
+                    continue;
+                }
                 let mut async_scope = scope.as_deref().cloned().unwrap_or_default();
                 let _ = apply_action_sequence(
                     actions,
@@ -3488,7 +3542,7 @@ pub(super) fn apply_action_sequence(
                     collider_bounds,
                     delayed_actions.as_deref_mut(),
                     ui_queue.as_deref_mut(),
-                    async_owner,
+                    None,
                     Some(&mut async_scope),
                     continuous_delta_seconds,
                     commands,
@@ -3916,7 +3970,13 @@ pub(super) fn apply_runtime_model_decl(
     collider_bounds: &mut SceneMaxColliderBounds,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -4494,7 +4554,13 @@ fn apply_runtime_animation_controller_action(
     object_pools: &SceneMaxObjectPools,
     scope: Option<&SceneMaxScopeFrame>,
     scene_entities: &mut ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -4672,12 +4738,7 @@ pub(super) fn update_animation_runtime_controllers(
 
         for actions in fired_actions {
             if !actions.is_empty() {
-                delayed_actions.actions.push(DelayedActions {
-                    remaining_seconds: 0.0,
-                    actions,
-                    owner: None,
-                    scope: None,
-                });
+                enqueue_delayed_actions(Some(&mut delayed_actions), 0.0, actions, None, None);
             }
         }
 
@@ -4845,6 +4906,7 @@ fn resolve_throw_motion_target(
 pub(super) fn apply_pending_weapon_actions(
     mut commands: Commands,
     mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
+    mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     scene_entities: Query<(Entity, &SceneMaxEntity)>,
     equipped_weapons: Query<(Entity, &SceneMaxEquippedWeapon)>,
     children: Query<&Children>,
@@ -4872,101 +4934,180 @@ pub(super) fn apply_pending_weapon_actions(
     for pending in pending_actions {
         match pending.action.clone() {
             WeaponAction::Unequip => {
-                despawn_equipped_weapon(&pending.owner, &mut commands, &equipped_weapons);
+                despawn_equipped_weapon(
+                    &pending.owner,
+                    &mut commands,
+                    &equipped_weapons,
+                    &mut collider_bounds,
+                );
             }
             WeaponAction::Detach => {
                 detach_equipped_weapon(&pending.owner, &mut commands, &equipped_weapons);
             }
             WeaponAction::Equip { weapon } => {
-                let Some(owner_entity) = owner_entities.get(&pending.owner).copied() else {
-                    continue;
-                };
-                let Some(definition) = load_weapon_definition(&asset_root, &weapon) else {
-                    continue;
-                };
-                let Some(model_asset_id) = definition.model_asset_id.as_deref() else {
-                    continue;
-                };
-                let posture = definition.default_posture();
-                let parent_entity = if let Some(attachment_point) =
-                    posture.and_then(|posture| posture.attachment_point.as_deref())
-                {
-                    if let Some(bone_entity) = find_descendant_entity_by_name(
-                        owner_entity,
-                        attachment_point,
-                        &children,
-                        &named_nodes,
-                    ) {
-                        bone_entity
-                    } else {
-                        owner_entity
-                    }
-                } else {
-                    owner_entity
-                };
-                let Some(model) = scenemax_assets::resolve_model_resource_with_builtin_fallback(
+                equip_runtime_weapon(
+                    &pending.owner,
+                    &weapon,
+                    None,
+                    &mut commands,
+                    &asset_server,
                     &asset_root,
                     builtin_asset_root.as_deref(),
-                    model_asset_id,
-                )
-                .ok() else {
+                    &owner_entities,
+                    &equipped_weapons,
+                    &children,
+                    &named_nodes,
+                    &global_transforms,
+                    &mut collider_bounds,
+                );
+            }
+            WeaponAction::Posture { posture } => {
+                let Some(weapon) = equipped_weapons
+                    .iter()
+                    .find(|(_, equipped)| equipped.owner == pending.owner)
+                    .map(|(_, equipped)| equipped.weapon.clone())
+                else {
                     continue;
                 };
-
-                despawn_equipped_weapon(&pending.owner, &mut commands, &equipped_weapons);
-
-                let compensation_scale = global_transforms
-                    .get(parent_entity)
-                    .map(|global| {
-                        let (scale, _, _) = global.to_scale_rotation_translation();
-                        Vec3::new(
-                            inverse_scale_component(scale.x),
-                            inverse_scale_component(scale.y),
-                            inverse_scale_component(scale.z),
-                        )
-                    })
-                    .unwrap_or(Vec3::ONE);
-                let mut transform = posture
-                    .and_then(|posture| posture.transform.as_ref())
-                    .map(weapon_transform)
-                    .unwrap_or_default();
-                if let Some(scale) = model.scale {
-                    transform.scale *= Vec3::new(scale[0], scale[1], scale[2]);
-                }
-                let asset_path = model.asset_path;
-                let gltf: Handle<Gltf> = asset_server.load(asset_path.clone());
-                let scene = WorldAssetRoot(
-                    asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())),
+                equip_runtime_weapon(
+                    &pending.owner,
+                    &weapon,
+                    Some(&posture),
+                    &mut commands,
+                    &asset_server,
+                    &asset_root,
+                    builtin_asset_root.as_deref(),
+                    &owner_entities,
+                    &equipped_weapons,
+                    &children,
+                    &named_nodes,
+                    &global_transforms,
+                    &mut collider_bounds,
                 );
-                let runtime_name = format!("{}.weapon", pending.owner);
-                let root_entity = commands
-                    .spawn((
-                        SceneMaxEntity {
-                            name: runtime_name.clone(),
-                            runtime_name: format!("{runtime_name}@weapon"),
-                        },
-                        SceneMaxEquippedWeapon {
-                            owner: pending.owner.clone(),
-                        },
-                        Transform::from_scale(compensation_scale),
-                        Visibility::Inherited,
-                        Name::new(runtime_name.clone()),
-                    ))
-                    .id();
-                let visual_entity = commands
-                    .spawn((
-                        SceneMaxGltf { gltf },
-                        scene,
-                        transform,
-                        Visibility::Inherited,
-                        Name::new(format!("{runtime_name}.visual")),
-                    ))
-                    .id();
-                commands.entity(root_entity).add_child(visual_entity);
-                commands.entity(parent_entity).add_child(root_entity);
             }
         }
     }
+}
+
+fn equip_runtime_weapon(
+    owner: &str,
+    weapon: &str,
+    posture_id_or_name: Option<&str>,
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    asset_root: &Path,
+    builtin_asset_root: Option<&Path>,
+    owner_entities: &HashMap<String, Entity>,
+    equipped_weapons: &Query<(Entity, &SceneMaxEquippedWeapon)>,
+    children: &Query<&Children>,
+    named_nodes: &Query<(Entity, &Name)>,
+    global_transforms: &Query<&GlobalTransform>,
+    collider_bounds: &mut SceneMaxColliderBounds,
+) {
+    let Some(owner_entity) = owner_entities.get(owner).copied() else {
+        return;
+    };
+    let Some(definition) = load_weapon_definition(asset_root, weapon) else {
+        return;
+    };
+    let Some(model_asset_id) = definition.model_asset_id.as_deref() else {
+        return;
+    };
+    let posture = definition.posture(posture_id_or_name);
+    let parent_entity = if let Some(attachment_point) =
+        posture.and_then(|posture| posture.attachment_point.as_deref())
+    {
+        if let Some(bone_entity) =
+            find_descendant_entity_by_name(owner_entity, attachment_point, children, named_nodes)
+        {
+            bone_entity
+        } else {
+            owner_entity
+        }
+    } else {
+        owner_entity
+    };
+    let Some(model) = scenemax_assets::resolve_model_resource_with_builtin_fallback(
+        asset_root,
+        builtin_asset_root,
+        model_asset_id,
+    )
+    .ok() else {
+        return;
+    };
+
+    despawn_equipped_weapon(owner, commands, equipped_weapons, collider_bounds);
+
+    let compensation_scale = global_transforms
+        .get(parent_entity)
+        .map(|global| {
+            let (scale, _, _) = global.to_scale_rotation_translation();
+            Vec3::new(
+                inverse_scale_component(scale.x),
+                inverse_scale_component(scale.y),
+                inverse_scale_component(scale.z),
+            )
+        })
+        .unwrap_or(Vec3::ONE);
+    let posture_transform = posture
+        .and_then(|posture| posture.transform.as_ref())
+        .map(weapon_transform)
+        .unwrap_or_default();
+    let mut visual_transform = Transform::default();
+    if let Some(scale) = model.scale {
+        visual_transform.scale = Vec3::new(scale[0], scale[1], scale[2]);
+    }
+    let asset_path = model.asset_path;
+    let gltf: Handle<Gltf> = asset_server.load(asset_path.clone());
+    let scene =
+        WorldAssetRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())));
+    let runtime_name = format!("{owner}.weapon");
+    let root_entity = commands
+        .spawn((
+            SceneMaxEntity {
+                name: runtime_name.clone(),
+                runtime_name: format!("{runtime_name}@weapon_root"),
+            },
+            SceneMaxEquippedWeapon {
+                owner: owner.to_owned(),
+                weapon: weapon.to_owned(),
+                colliders: weapon_collider_references(&runtime_name, &definition),
+            },
+            Transform::from_scale(compensation_scale),
+            Visibility::Inherited,
+            Name::new(runtime_name.clone()),
+        ))
+        .id();
+    let transform_entity = commands
+        .spawn((
+            posture_transform,
+            Visibility::Inherited,
+            Name::new(format!("{runtime_name}.transform")),
+        ))
+        .id();
+    let visual_entity = commands
+        .spawn((
+            SceneMaxEntity {
+                name: format!("{runtime_name}.visual"),
+                runtime_name: format!("{runtime_name}@weapon_visual"),
+            },
+            SceneMaxGltf { gltf },
+            scene,
+            visual_transform,
+            Visibility::Inherited,
+            Name::new(format!("{runtime_name}.visual")),
+        ))
+        .id();
+    commands.entity(root_entity).add_child(transform_entity);
+    commands.entity(transform_entity).add_child(visual_entity);
+    spawn_weapon_colliders(
+        commands,
+        collider_bounds,
+        transform_entity,
+        &runtime_name,
+        &definition,
+    );
+    commands.entity(parent_entity).add_child(root_entity);
 }
 
 pub(super) fn apply_pending_throw_motion_applications(
@@ -5593,9 +5734,13 @@ fn despawn_equipped_weapon(
     owner: &str,
     commands: &mut Commands,
     equipped_weapons: &Query<(Entity, &SceneMaxEquippedWeapon)>,
+    collider_bounds: &mut SceneMaxColliderBounds,
 ) {
     for (entity, equipped) in equipped_weapons {
         if equipped.owner == owner {
+            for collider in &equipped.colliders {
+                unregister_weapon_collider_bounds(collider_bounds, collider);
+            }
             commands.entity(entity).despawn();
         }
     }
@@ -5652,10 +5797,29 @@ struct RuntimeWeaponDefinition {
     default_posture_id: Option<String>,
     #[serde(default)]
     postures: Vec<RuntimeWeaponPosture>,
+    #[serde(default)]
+    colliders: Vec<RuntimeWeaponCollider>,
 }
 
 impl RuntimeWeaponDefinition {
-    fn default_posture(&self) -> Option<&RuntimeWeaponPosture> {
+    fn posture(&self, id_or_name: Option<&str>) -> Option<&RuntimeWeaponPosture> {
+        if let Some(id_or_name) = id_or_name {
+            let id_or_name = id_or_name.trim();
+            if !id_or_name.is_empty()
+                && let Some(posture) = self.postures.iter().find(|posture| {
+                    posture
+                        .id
+                        .as_deref()
+                        .is_some_and(|id| id.eq_ignore_ascii_case(id_or_name))
+                        || posture
+                            .name
+                            .as_deref()
+                            .is_some_and(|name| name.eq_ignore_ascii_case(id_or_name))
+                })
+            {
+                return Some(posture);
+            }
+        }
         self.default_posture_id
             .as_deref()
             .and_then(|default_id| {
@@ -5672,6 +5836,17 @@ impl RuntimeWeaponDefinition {
             })
             .or_else(|| self.postures.first())
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeWeaponCollider {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    shape: Option<String>,
+    #[serde(default)]
+    transform: Option<RuntimeWeaponTransform>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -5724,6 +5899,114 @@ fn weapon_transform(transform: &RuntimeWeaponTransform) -> Transform {
             transform.rotation_z.to_radians(),
         ),
         scale: Vec3::new(transform.scale_x, transform.scale_y, transform.scale_z),
+    }
+}
+
+fn weapon_collider_references(
+    weapon_runtime_name: &str,
+    definition: &RuntimeWeaponDefinition,
+) -> Vec<String> {
+    definition
+        .colliders
+        .iter()
+        .filter_map(|collider| weapon_collider_reference(weapon_runtime_name, collider))
+        .collect()
+}
+
+fn weapon_collider_reference(
+    weapon_runtime_name: &str,
+    collider: &RuntimeWeaponCollider,
+) -> Option<String> {
+    let name = collider.name.trim();
+    (!name.is_empty()).then(|| format!("{weapon_runtime_name}.colliders[\"{name}\"]"))
+}
+
+fn spawn_weapon_colliders(
+    commands: &mut Commands,
+    collider_bounds: &mut SceneMaxColliderBounds,
+    parent_entity: Entity,
+    weapon_runtime_name: &str,
+    definition: &RuntimeWeaponDefinition,
+) {
+    for collider in &definition.colliders {
+        let Some(runtime_name) = weapon_collider_reference(weapon_runtime_name, collider) else {
+            continue;
+        };
+        let transform = collider
+            .transform
+            .as_ref()
+            .map(weapon_transform)
+            .unwrap_or_default();
+        let shape = weapon_collider_shape(collider.shape.as_deref());
+        let options = EntityOptions {
+            collision_shape: Some(shape),
+            ..Default::default()
+        };
+        let collider_entity = commands
+            .spawn((
+                SceneMaxEntity {
+                    name: runtime_name.clone(),
+                    runtime_name: format!("{runtime_name}@weapon_collider"),
+                },
+                transform,
+                Visibility::Hidden,
+                AvianRigidBody::Kinematic,
+                avian_collider(shape, &options, &transform),
+                hitbox_collision_layers(),
+                Sensor,
+                CollisionEventsEnabled,
+                Name::new(runtime_name.clone()),
+            ))
+            .id();
+        commands.entity(parent_entity).add_child(collider_entity);
+        register_collider_bounds(collider_bounds, &runtime_name, &options, transform);
+        register_collider_owner(collider_bounds, &runtime_name, weapon_runtime_name);
+    }
+}
+
+fn weapon_collider_shape(shape: Option<&str>) -> SceneMaxCollisionShape {
+    match shape.unwrap_or("box").trim().to_ascii_lowercase().as_str() {
+        "sphere" => SceneMaxCollisionShape::Sphere,
+        "capsule" => SceneMaxCollisionShape::Capsule,
+        "none" => SceneMaxCollisionShape::None,
+        _ => SceneMaxCollisionShape::Box,
+    }
+}
+
+fn unregister_weapon_collider_bounds(
+    collider_bounds: &mut SceneMaxColliderBounds,
+    collider_name: &str,
+) {
+    collider_bounds.radius_by_name.remove(collider_name);
+    collider_bounds.shape_by_name.remove(collider_name);
+    collider_bounds.owner_by_name.remove(collider_name);
+    collider_bounds.hidden_by_name.remove(collider_name);
+}
+
+#[cfg(test)]
+mod weapon_runtime_tests {
+    use super::*;
+
+    #[test]
+    fn weapon_collider_references_use_script_lookup_syntax() {
+        let definition: RuntimeWeaponDefinition = serde_json::from_str(
+            r#"{
+                "modelAssetId": "training_blade",
+                "colliders": [
+                    { "name": "hit_sphere", "shape": "sphere" }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            weapon_collider_references("actor.weapon", &definition),
+            vec!["actor.weapon.colliders[\"hit_sphere\"]".to_owned()]
+        );
+        assert_eq!(
+            weapon_collider_shape(definition.colliders[0].shape.as_deref()),
+            SceneMaxCollisionShape::Sphere
+        );
     }
 }
 
@@ -5800,7 +6083,13 @@ pub(super) fn apply_key_action(
     continuous_delta_seconds: Option<f32>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -5885,7 +6174,9 @@ pub(super) fn apply_key_action(
         options,
     } = action
     {
-        if cinematic_resource_id(resource).is_some() {
+        if let Some(camera_system) = camera_system.as_deref_mut()
+            && register_cinematic_camera_var(name, resource, camera_system)
+        {
             return ActionSequenceResult::Completed;
         }
         if let Some(entity) = apply_runtime_model_decl(
@@ -6895,7 +7186,13 @@ pub(super) fn animation_speed_condition_matches(
     transforms_by_name: Option<&HashMap<String, Transform>>,
     collider_bounds: Option<&SceneMaxColliderBounds>,
     scene_entities: &mut ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -6962,7 +7259,13 @@ pub(super) fn apply_function_by_name(
     continuous_delta_seconds: Option<f32>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -7079,7 +7382,13 @@ pub(super) fn apply_transform_aliases(
 pub(super) fn build_action_transform_map(
     program: &Program,
     object_pools: &SceneMaxObjectPools,
-    scene_entities: Query<(Entity, &SceneMaxEntity, &Transform)>,
+    scene_entities: Query<(
+        Entity,
+        &SceneMaxEntity,
+        &Transform,
+        Option<&GlobalTransform>,
+        Option<&ChildOf>,
+    )>,
     bone_queries: &SceneMaxBoneQueries,
 ) -> HashMap<String, Transform> {
     let mut transforms_by_name = HashMap::new();
@@ -7103,15 +7412,66 @@ pub(super) fn build_action_transform_map(
 
 fn collect_scene_transform_roots(
     transforms_by_name: &mut HashMap<String, Transform>,
-    scene_entities: Query<(Entity, &SceneMaxEntity, &Transform)>,
+    scene_entities: Query<(
+        Entity,
+        &SceneMaxEntity,
+        &Transform,
+        Option<&GlobalTransform>,
+        Option<&ChildOf>,
+    )>,
 ) -> Vec<(Entity, String)> {
     scene_entities
         .iter()
-        .map(|(entity, scene_entity, transform)| {
-            transforms_by_name.insert(scene_entity.name.clone(), *transform);
-            (entity, scene_entity.name.clone())
-        })
+        .map(
+            |(entity, scene_entity, transform, global_transform, parent)| {
+                transforms_by_name.insert(
+                    scene_entity.name.clone(),
+                    action_map_transform(transform, global_transform, parent),
+                );
+                (entity, scene_entity.name.clone())
+            },
+        )
         .collect()
+}
+
+fn action_map_transform(
+    transform: &Transform,
+    global_transform: Option<&GlobalTransform>,
+    parent: Option<&ChildOf>,
+) -> Transform {
+    if parent.is_some() {
+        global_transform
+            .map(GlobalTransform::compute_transform)
+            .unwrap_or(*transform)
+    } else {
+        *transform
+    }
+}
+
+#[cfg(test)]
+mod transform_map_tests {
+    use super::*;
+
+    #[test]
+    fn action_map_prefers_global_transform_for_parented_entities() {
+        let local = Transform::from_xyz(0.0, 0.0, 0.0);
+        let global = GlobalTransform::from(Transform::from_xyz(4.0, 5.0, 6.0));
+
+        let parent = ChildOf(Entity::PLACEHOLDER);
+        let transform = action_map_transform(&local, Some(&global), Some(&parent));
+
+        assert_eq!(transform.translation, Vec3::new(4.0, 5.0, 6.0));
+    }
+
+    #[test]
+    fn action_map_prefers_local_transform_for_unparented_entities() {
+        let local = Transform::from_xyz(7.0, 8.0, 9.0);
+        let stale_global = GlobalTransform::from(Transform::from_xyz(1.0, 2.0, 3.0));
+
+        let transform = action_map_transform(&local, Some(&stale_global), None);
+
+        assert_eq!(transform.translation, Vec3::new(7.0, 8.0, 9.0));
+    }
 }
 
 fn collect_bone_alias_targets(program: &Program) -> Vec<SceneMaxBoneAliasTarget> {
@@ -7352,7 +7712,13 @@ pub(super) fn acquire_pool_member(
     collider_bounds: &mut SceneMaxColliderBounds,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -7428,7 +7794,13 @@ fn grow_pool_reserve(
     collider_bounds: &mut SceneMaxColliderBounds,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -7495,7 +7867,13 @@ fn grow_pool_member(
     collider_bounds: &mut SceneMaxColliderBounds,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -7622,7 +8000,13 @@ pub(super) fn release_pool_action(
     scope: Option<&mut SceneMaxScopeFrame>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -7651,7 +8035,13 @@ pub(super) fn delete_scene_object(
     scope: Option<&mut SceneMaxScopeFrame>,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -7727,7 +8117,13 @@ pub(super) fn hide_and_stop_scene_entity(
     target: &str,
     commands: &mut Commands,
     scene_entities: &mut ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,

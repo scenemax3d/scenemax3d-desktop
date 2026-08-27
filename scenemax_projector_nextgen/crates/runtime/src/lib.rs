@@ -976,6 +976,7 @@ struct ActiveCinematicCamera {
     playback: Vec<CinematicPlaybackSegment>,
     elapsed_seconds: f32,
     duration_seconds: f32,
+    playback_fov_degrees: Option<f32>,
     look_at: Option<CinematicLookAt>,
     reverse: bool,
     locked_target_placement_rotation: Option<Quat>,
@@ -1068,6 +1069,8 @@ struct SceneMaxGltf {
 #[derive(Debug, Component)]
 struct SceneMaxEquippedWeapon {
     owner: String,
+    weapon: String,
+    colliders: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

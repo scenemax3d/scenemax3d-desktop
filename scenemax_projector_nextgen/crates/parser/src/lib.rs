@@ -844,6 +844,7 @@ pub struct WeaponStatement {
 #[derive(Debug, Clone, PartialEq)]
 pub enum WeaponAction {
     Equip { weapon: String },
+    Posture { posture: String },
     Unequip,
     Detach,
 }
@@ -3121,6 +3122,22 @@ fn parse_weapon_statement(line: &str) -> Option<WeaponStatement> {
             owner: owner.to_owned(),
             action: WeaponAction::Equip { weapon },
         });
+    }
+    let rest_lower = rest.to_ascii_lowercase();
+    if rest_lower.starts_with(".posture") {
+        let after_posture = rest[".posture".len()..].trim();
+        if let Some(raw_value) = after_posture.strip_prefix('=') {
+            let raw_value = clean_assignment_value(raw_value);
+            let posture = if is_quoted(raw_value) {
+                unquote_ui_text(raw_value)
+            } else {
+                clean_call_arg(raw_value).to_owned()
+            };
+            return (!posture.is_empty()).then(|| WeaponStatement {
+                owner: owner.to_owned(),
+                action: WeaponAction::Posture { posture },
+            });
+        }
     }
     if rest.eq_ignore_ascii_case(".detach") || rest.eq_ignore_ascii_case(".detach()") {
         return Some(WeaponStatement {
@@ -5682,8 +5699,8 @@ fn parse_cinematic_play(line: &str) -> Result<Option<CinematicPlayStatement>, Pa
                     value[1..value.len() - 1].trim().to_owned(),
                 ));
             } else {
-                let entity = normalize_entity_reference(value);
-                if !entity.is_empty() {
+                let entity = normalize_cinematic_target_reference(value);
+                if is_variable_path(&entity) {
                     look_at = Some(CinematicLookAt::Entity(entity));
                 }
             }
@@ -5700,6 +5717,15 @@ fn parse_cinematic_play(line: &str) -> Result<Option<CinematicPlayStatement>, Pa
         reverse,
         async_run: contains_keyword(rest, "async"),
     }))
+}
+
+fn normalize_cinematic_target_reference(text: &str) -> String {
+    text.trim()
+        .trim_matches(|value| value == '(' || value == ')')
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_owned()
 }
 
 fn split_cinematic_play_options(text: &str) -> Vec<&str> {
@@ -6582,6 +6608,23 @@ mod tests {
                 look_at: Some(CinematicLookAt::Entity("axe".to_owned())),
                 duration_seconds: 1.5,
                 reverse: true,
+                async_run: false,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_cinematic_camera_equipped_weapon_target() {
+        let program =
+            parse_program("axe_throw_cam.play : target player1.weapon, duration 0.85").unwrap();
+
+        assert_eq!(
+            program.statements[0],
+            Statement::CinematicPlay(CinematicPlayStatement {
+                target: "axe_throw_cam".to_owned(),
+                look_at: Some(CinematicLookAt::Entity("player1.weapon".to_owned())),
+                duration_seconds: 0.85,
+                reverse: false,
                 async_run: false,
             })
         );
@@ -9270,6 +9313,17 @@ run tick(score+10) every tick_time+0.25 seconds
                     action: WeaponAction::Unequip,
                 }),
             ]
+        );
+
+        let program = parse_program("actor.weapon.posture = \"ready\"").unwrap();
+        assert_eq!(
+            program.statements,
+            vec![Statement::Weapon(WeaponStatement {
+                owner: "actor".to_owned(),
+                action: WeaponAction::Posture {
+                    posture: "ready".to_owned(),
+                },
+            })]
         );
 
         let program = parse_program("equip = {\n  actor.weapon = weapon_training_tool\n}").unwrap();

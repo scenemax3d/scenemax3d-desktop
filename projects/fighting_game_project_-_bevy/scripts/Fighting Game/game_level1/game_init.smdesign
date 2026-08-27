@@ -249,7 +249,7 @@
           ],
           "modelCollisionShape": "default",
           "type": "MODEL",
-          "sceneMaxCode": "player1 => dynamic fighter1: hidden, pos (40.0,-89.249504,30.0), shadow mode cast async",
+          "sceneMaxCode": "player1 => dynamic fighter1: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast async",
           "staticModel": false,
           "name": "player1",
           "vehicleModel": false,
@@ -618,7 +618,7 @@
           ],
           "modelCollisionShape": "default",
           "type": "MODEL",
-          "sceneMaxCode": "player2 => dynamic old_fighter2: hidden, pos (40.0,-88.03695,16.5), shadow mode on async",
+          "sceneMaxCode": "player2 => dynamic old_fighter2: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on async",
           "staticModel": false,
           "name": "player2",
           "vehicleModel": false,
@@ -1437,7 +1437,7 @@
         "cinematicTrackData": {
           "anchorCount": 360,
           "previewSpeed": 30,
-          "selectedStartAnchor": 210,
+          "selectedStartAnchor": 220,
           "radiusZ": 6,
           "radiusX": 50,
           "selectedEndAnchor": -1
@@ -1508,15 +1508,15 @@
   },
   "camera": {
     "rotation": [
-      -0.09904575,
-      0.8923991,
-      -0.2391176,
-      -0.36964384
+      0.2630598,
+      0.46828693,
+      -0.14835428,
+      0.8303601
     ],
     "position": [
-      9.185587,
-      7.5,
-      9.185586
+      -6.6150036,
+      -61.76236,
+      134.35332
     ]
   },
   "version": 1
