@@ -181,7 +181,7 @@ fn stop_audio_statement(
     commands: &mut Commands,
 ) {
     if let Some(entity) = runtime_assets.looping_audio_by_name.remove(key) {
-        commands.entity(entity).despawn();
+        commands.entity(entity).try_despawn();
         write_runtime_diagnostic_line(format!("AUDIO:STOP name={sound} found=1"));
     } else {
         write_runtime_diagnostic_line(format!("AUDIO:STOP name={sound} found=0"));

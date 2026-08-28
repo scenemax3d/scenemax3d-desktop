@@ -29,6 +29,7 @@ public class DesignerDocument {
     private Quaternion cameraRotation = new Quaternion(0, 1, 0, 0);
     private List<JSONObject> entityDefs = new ArrayList<>();
     private String sceneEnvironmentShader = "";
+    private BevyAmbientLightSettings bevyAmbientLight = new BevyAmbientLightSettings();
 
     // Game camera (the user-placed camera entity that sets the initial in-game camera posture)
     private Vector3f gameCameraPos = new Vector3f(0, 2, 10);
@@ -68,6 +69,14 @@ public class DesignerDocument {
 
     public void setSceneEnvironmentShader(String sceneEnvironmentShader) {
         this.sceneEnvironmentShader = sceneEnvironmentShader != null ? sceneEnvironmentShader : "";
+    }
+
+    public BevyAmbientLightSettings getBevyAmbientLight() {
+        return bevyAmbientLight != null ? bevyAmbientLight.copy() : new BevyAmbientLightSettings();
+    }
+
+    public void setBevyAmbientLight(BevyAmbientLightSettings bevyAmbientLight) {
+        this.bevyAmbientLight = bevyAmbientLight != null ? bevyAmbientLight.copy() : new BevyAmbientLightSettings();
     }
 
     public Vector3f getGameCameraPos() {
@@ -133,6 +142,7 @@ public class DesignerDocument {
         }
 
         doc.sceneEnvironmentShader = root.optString("sceneEnvironmentShader", "");
+        doc.bevyAmbientLight = BevyAmbientLightSettings.fromJson(root.optJSONObject("bevyAmbientLight"));
 
         return doc;
     }
@@ -153,6 +163,7 @@ public class DesignerDocument {
                 gameCamRot.getZ(), gameCamRot.getW()});
         root.put("gameCamera", gameCamera);
         root.put("sceneEnvironmentShader", sceneEnvironmentShader);
+        root.put("bevyAmbientLight", getBevyAmbientLight().toJson());
 
         JSONArray entitiesArray = new JSONArray();
         for (DesignerEntity entity : entities) {
@@ -173,6 +184,21 @@ public class DesignerDocument {
     public static boolean saveCodeFile(File smdesignFile, List<DesignerEntity> entities,
                                        Vector3f gameCamPos, Quaternion gameCamRot,
                                        String sceneEnvironmentShader) throws IOException {
+        BevyAmbientLightSettings ambient = new BevyAmbientLightSettings();
+        if (smdesignFile != null && smdesignFile.isFile()) {
+            try {
+                ambient = DesignerDocument.load(smdesignFile).getBevyAmbientLight();
+            } catch (Exception ignored) {
+                ambient = new BevyAmbientLightSettings();
+            }
+        }
+        return saveCodeFile(smdesignFile, entities, gameCamPos, gameCamRot, sceneEnvironmentShader, ambient);
+    }
+
+    public static boolean saveCodeFile(File smdesignFile, List<DesignerEntity> entities,
+                                       Vector3f gameCamPos, Quaternion gameCamRot,
+                                       String sceneEnvironmentShader,
+                                       BevyAmbientLightSettings bevyAmbientLight) throws IOException {
         File codeFile = getCodeFile(smdesignFile);
         boolean isNew = !codeFile.exists();
 
@@ -193,6 +219,9 @@ public class DesignerDocument {
             sb.append("Scene.environment.shader = \"")
               .append(sceneEnvironmentShader.trim())
               .append("\"\n");
+        }
+        if (bevyAmbientLight != null && bevyAmbientLight.isEnabled()) {
+            sb.append(bevyAmbientLight.toSceneMaxCode()).append("\n");
         }
 
         // Game camera setup
@@ -226,6 +255,106 @@ public class DesignerDocument {
 
         Files.write(codeFile.toPath(), sb.toString().getBytes(StandardCharsets.UTF_8));
         return isNew;
+    }
+
+    public static class BevyAmbientLightSettings {
+        private boolean configured = false;
+        private boolean enabled = false;
+        private String name = "level_ambient";
+        private String color = "#ffffff";
+        private float brightness = 220.0f;
+        private boolean affectsLightmappedMeshes = true;
+
+        public boolean isConfigured() {
+            return configured;
+        }
+
+        public void setConfigured(boolean configured) {
+            this.configured = configured;
+        }
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getName() {
+            return name != null && !name.trim().isEmpty() ? name.trim() : "level_ambient";
+        }
+
+        public void setName(String name) {
+            this.name = name != null && !name.trim().isEmpty() ? name.trim() : "level_ambient";
+        }
+
+        public String getColor() {
+            return color != null && !color.trim().isEmpty() ? color.trim() : "#ffffff";
+        }
+
+        public void setColor(String color) {
+            this.color = color != null && !color.trim().isEmpty() ? color.trim() : "#ffffff";
+        }
+
+        public float getBrightness() {
+            return Math.max(0.0f, brightness);
+        }
+
+        public void setBrightness(float brightness) {
+            this.brightness = Float.isFinite(brightness) ? Math.max(0.0f, brightness) : 220.0f;
+        }
+
+        public boolean isAffectsLightmappedMeshes() {
+            return affectsLightmappedMeshes;
+        }
+
+        public void setAffectsLightmappedMeshes(boolean affectsLightmappedMeshes) {
+            this.affectsLightmappedMeshes = affectsLightmappedMeshes;
+        }
+
+        public BevyAmbientLightSettings copy() {
+            BevyAmbientLightSettings copy = new BevyAmbientLightSettings();
+            copy.configured = configured;
+            copy.enabled = enabled;
+            copy.name = getName();
+            copy.color = getColor();
+            copy.brightness = getBrightness();
+            copy.affectsLightmappedMeshes = affectsLightmappedMeshes;
+            return copy;
+        }
+
+        public JSONObject toJson() {
+            JSONObject json = new JSONObject();
+            json.put("configured", configured);
+            json.put("enabled", enabled);
+            json.put("name", getName());
+            json.put("color", getColor());
+            json.put("brightness", getBrightness());
+            json.put("affectsLightmappedMeshes", affectsLightmappedMeshes);
+            return json;
+        }
+
+        public String toSceneMaxCode() {
+            float intensity = getBrightness() / 220.0f;
+            return getName() + " => Lights.ambient : color " + formatLightColor(getColor())
+                    + ", intensity " + intensity
+                    + ", affectsLightmappedMeshes " + affectsLightmappedMeshes;
+        }
+
+        public static BevyAmbientLightSettings fromJson(JSONObject json) {
+            BevyAmbientLightSettings settings = new BevyAmbientLightSettings();
+            if (json == null) {
+                return settings;
+            }
+            settings.configured = json.optBoolean("configured", false);
+            settings.enabled = json.optBoolean("enabled", false);
+            settings.setName(json.optString("name", "level_ambient"));
+            settings.setColor(json.optString("color", "#ffffff"));
+            settings.setBrightness((float) json.optDouble("brightness", 220.0));
+            settings.affectsLightmappedMeshes = json.optBoolean("affectsLightmappedMeshes", true);
+            return settings;
+        }
     }
 
     /**
@@ -742,7 +871,8 @@ public class DesignerDocument {
             }
         }
 
-        saveCodeFile(smdesignFile, entities, doc.gameCameraPos, doc.gameCameraRot, doc.sceneEnvironmentShader);
+        saveCodeFile(smdesignFile, entities, doc.gameCameraPos, doc.gameCameraRot,
+                doc.sceneEnvironmentShader, doc.getBevyAmbientLight());
     }
 
     /**

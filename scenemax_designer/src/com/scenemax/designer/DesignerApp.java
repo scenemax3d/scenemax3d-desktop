@@ -522,6 +522,29 @@ public class DesignerApp extends SceneMaxApp {
         updateOrbitCamera();
     }
 
+    public String createBevyCameraSyncJson() {
+        JSONObject root = new JSONObject();
+        Vector3f pos = cam != null ? cam.getLocation() : new Vector3f(0, 0, 0);
+        Quaternion rot = cam != null ? cam.getRotation() : Quaternion.IDENTITY;
+        root.put("timestampMillis", System.currentTimeMillis());
+        root.put("position", new float[]{pos.x, pos.y, pos.z});
+        root.put("rotation", new float[]{rot.getX(), rot.getY(), rot.getZ(), rot.getW()});
+        root.put("target", new float[]{cameraTarget.x, cameraTarget.y, cameraTarget.z});
+        root.put("distance", cameraDistance);
+        root.put("yaw", cameraYaw);
+        root.put("pitch", cameraPitch);
+
+        DesignerEntity selected = selectionManager != null ? selectionManager.getSelected() : null;
+        if (selected != null) {
+            root.put("selectedName", selected.getName());
+            if (selected.getSceneNode() != null) {
+                Vector3f selectedPos = selected.getSceneNode().getWorldTranslation();
+                root.put("selectedPosition", new float[]{selectedPos.x, selectedPos.y, selectedPos.z});
+            }
+        }
+        return root.toString();
+    }
+
     public void frameSelection(float paddingScale) {
         DesignerEntity selected = selectionManager != null ? selectionManager.getSelected() : null;
         if (selected != null) {
@@ -5877,6 +5900,7 @@ public class DesignerApp extends SceneMaxApp {
     private void persistDocumentStateNow() {
         if (document != null && designerFile != null && designerFile.exists()) {
             try {
+                refreshExternallyEditedDesignerSettingsFromDisk();
                 List<DesignerEntity> sceneEntities = entities.stream()
                         .filter(e -> e.getType() != DesignerEntityType.CAMERA)
                         .collect(Collectors.toList());
@@ -5895,6 +5919,18 @@ public class DesignerApp extends SceneMaxApp {
         }
     }
 
+    private void refreshExternallyEditedDesignerSettingsFromDisk() {
+        if (document == null || designerFile == null || !designerFile.exists()) {
+            return;
+        }
+        try {
+            DesignerDocument diskDocument = DesignerDocument.load(designerFile);
+            document.setBevyAmbientLight(diskDocument.getBevyAmbientLight());
+        } catch (IOException ignored) {
+            // Keep the in-memory settings if the file is momentarily unavailable.
+        }
+    }
+
     /**
      * Writes the companion .code file with the current SceneMax3D script.
      * If the file is newly created, triggers a scripts tree refresh.
@@ -5910,7 +5946,8 @@ public class DesignerApp extends SceneMaxApp {
             Vector3f gameCamPos = getPersistedGameCameraPos();
             Quaternion gameCamRot = getPersistedGameCameraRot();
             boolean wasNew = DesignerDocument.saveCodeFile(designerFile, sceneEntities, gameCamPos, gameCamRot,
-                    document != null ? document.getSceneEnvironmentShader() : "");
+                    document != null ? document.getSceneEnvironmentShader() : "",
+                    document != null ? document.getBevyAmbientLight() : new DesignerDocument.BevyAmbientLightSettings());
             if (wasNew && scriptsTreeRefreshCallback != null) {
                 javax.swing.SwingUtilities.invokeLater(scriptsTreeRefreshCallback);
             }

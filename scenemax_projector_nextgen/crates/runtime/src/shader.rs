@@ -151,6 +151,7 @@ pub(super) fn apply_environment_shader(
 
 pub(super) fn clear_environment_shader(commands: &mut Commands) {
     commands.queue(|world: &mut World| {
+        world.remove_resource::<SceneMaxAuthoredAmbientLight>();
         reset_environment_shader_world(world);
     });
 }
@@ -230,12 +231,14 @@ fn restore_original_materials(world: &mut World, targets: &[Entity]) {
 }
 
 fn apply_environment_shader_to_world(world: &mut World, shader: &SceneMaxEnvironmentShader) {
-    let ambient_color = color_from_rgba(shader.ambient_color);
-    world.insert_resource(GlobalAmbientLight {
-        color: ambient_color,
-        brightness: DEFAULT_AMBIENT_BRIGHTNESS * shader.ambient_intensity.max(0.0),
-        ..default()
-    });
+    if !world.contains_resource::<SceneMaxAuthoredAmbientLight>() {
+        let ambient_color = color_from_rgba(shader.ambient_color);
+        world.insert_resource(GlobalAmbientLight {
+            color: ambient_color,
+            brightness: DEFAULT_AMBIENT_BRIGHTNESS * shader.ambient_intensity.max(0.0),
+            ..default()
+        });
+    }
     world.insert_resource(ClearColor(color_from_rgba(environment_clear_color(shader))));
 
     let mut lights = world.query_filtered::<

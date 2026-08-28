@@ -110,7 +110,7 @@ pub(super) fn update_timed_camera_moves(
         }
         movements.moves = active_moves;
         if movements.moves.is_empty() {
-            commands.entity(entity).remove::<TimedCameraMoves>();
+            commands.entity(entity).try_remove::<TimedCameraMoves>();
         }
     }
 }
