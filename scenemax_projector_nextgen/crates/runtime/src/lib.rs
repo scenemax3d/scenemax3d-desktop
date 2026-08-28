@@ -41,13 +41,15 @@ use bevy_tnua::{
     prelude::{TnuaConfig, TnuaController, TnuaControllerPlugin, TnuaScheme},
 };
 use bevy_tnua_avian3d::prelude::{TnuaAvian3dPlugin, TnuaAvian3dSensorShape};
+#[cfg(test)]
+use scenemax_parser::AnimationStatement;
 use scenemax_parser::{
     AnimationControllerAction, AnimationControllerActionStatement,
     AnimationControllerEventStatement, AnimationControllerValue, AnimationSpeedStatement,
-    AnimationStatement, AssignmentValue, AttachStatement, AudioAction, AudioStatement,
-    CameraAttachStatement, CameraModifierValue, CameraMoveStatement, ChannelDrawStatement,
-    CharacterJumpStatement, CharacterModeStatement, CinematicLookAt, CinematicPlayStatement,
-    Condition, EffekseerPlayStatement, EntityOptions, KeyEventStatement, KeyTrigger,
+    AssignmentValue, AttachStatement, AudioAction, AudioStatement, CameraAttachStatement,
+    CameraModifierValue, CameraMoveStatement, ChannelDrawStatement, CharacterJumpStatement,
+    CharacterModeStatement, CinematicLookAt, CinematicPlayStatement, Condition,
+    EffekseerPlayStatement, EntityOptions, KeyEventStatement, KeyTrigger,
     LightDeclarationStatement, LightProbeAddStatement, LightType, LoggerLevel, LoggerMessage,
     LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement, ObjectPoolStatement,
     PoolReleaseStatement, PositionExpr, PositionValue, PrintStatement, Program, SceneMaxAxis,
@@ -573,6 +575,7 @@ struct SceneMaxRuntimeAssets {
     looping_audio_by_name: HashMap<String, Entity>,
     pending_weapon_actions: Vec<WeaponStatement>,
     gltf_handles_by_name: HashMap<String, Handle<Gltf>>,
+    gltf_animation_names_by_name: HashMap<String, Vec<String>>,
     model_resources_by_name: HashMap<String, String>,
     external_animations_by_name: HashMap<String, RuntimeExternalAnimation>,
     external_animation_misses: HashSet<String>,
@@ -586,6 +589,7 @@ struct SceneMaxRuntimeAssets {
 #[derive(Debug, Clone)]
 struct RuntimeExternalAnimation {
     gltf: Handle<Gltf>,
+    animation_names: Vec<String>,
     clip: String,
     asset_path: String,
     retarget: scenemax_assets::AnimationRetargetOptions,
@@ -838,9 +842,17 @@ struct SceneMaxUiTextVisualState {
 #[derive(Debug)]
 struct DelayedActions {
     remaining_seconds: f32,
+    animation_wait: Option<DelayedAnimationWait>,
     actions: Vec<Statement>,
     owner: Option<SceneMaxControllerKey>,
     scope: Option<SceneMaxScopeFrame>,
+}
+
+#[derive(Debug)]
+struct DelayedAnimationWait {
+    target: String,
+    clip: String,
+    started: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1036,6 +1048,7 @@ struct AnimationToPlay {
     looped: bool,
     speed: f32,
     gltf: Handle<Gltf>,
+    animation_names: Vec<String>,
     target_model_resource: Option<String>,
     baked_external: Option<RuntimeBakedRetarget>,
     bake_request: Option<RuntimeAnimationBakeRequest>,
@@ -1063,6 +1076,7 @@ struct AnimationSpeedOverride {
 #[derive(Debug, Component)]
 struct SceneMaxGltf {
     gltf: Handle<Gltf>,
+    animation_names: Vec<String>,
 }
 
 #[derive(Debug, Component)]
@@ -3119,6 +3133,55 @@ mod tests {
         assert_eq!(
             resolved_blocking_timed_action_seconds(
                 &async_message,
+                &vars,
+                None,
+                &guards,
+                Some(&transforms),
+                None,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn ui_ease_duration_blocks_parent_until_finished() {
+        let target = UiTargetPath {
+            ui_name: None,
+            layer: "layer1".to_owned(),
+            widget_path: vec!["panel".to_owned()],
+        };
+        let blocking = Statement::UiEase(scenemax_parser::UiEaseStatement {
+            target: target.clone(),
+            easing: "EaseInBack".to_owned(),
+            direction: UiEaseDirection::Down,
+            duration_seconds: 0.6,
+            async_run: false,
+        });
+        let async_ease = Statement::UiEase(scenemax_parser::UiEaseStatement {
+            target,
+            easing: "EaseInBack".to_owned(),
+            direction: UiEaseDirection::Down,
+            duration_seconds: 0.6,
+            async_run: true,
+        });
+        let vars = SceneMaxVars::default();
+        let guards = HashMap::new();
+        let transforms = HashMap::new();
+
+        assert_eq!(
+            resolved_blocking_timed_action_seconds(
+                &blocking,
+                &vars,
+                None,
+                &guards,
+                Some(&transforms),
+                None,
+            ),
+            Some(0.6)
+        );
+        assert_eq!(
+            resolved_blocking_timed_action_seconds(
+                &async_ease,
                 &vars,
                 None,
                 &guards,

@@ -2,6 +2,8 @@ use super::*;
 use bevy::transform::commands::BuildChildrenTransformExt;
 use serde::Deserialize;
 
+const ANIMATION_BLOCK_START_TIMEOUT_SECONDS: f32 = 5.0;
+
 pub(super) fn apply_startup_runs(
     program: &Program,
     commands: &mut Commands,
@@ -382,6 +384,39 @@ pub(super) fn apply_startup_action_sequence(
                     return ActionSequenceResult::Suspended;
                 }
                 return ActionSequenceResult::Completed;
+            }
+            Statement::Animate(animation) => {
+                let result = apply_startup_action(
+                    action,
+                    commands,
+                    vars,
+                    object_pools,
+                    camera_system,
+                    runtime_assets,
+                    ui_queue,
+                    functions_by_name,
+                    entities_by_name,
+                    transforms_by_name,
+                    gltfs_by_name,
+                    guards_by_name,
+                    depth,
+                );
+                if result.should_stop_parent() {
+                    return result;
+                }
+                if animation.blocking {
+                    if enqueue_delayed_animation_completion(
+                        Some(delayed_actions),
+                        &animation.target,
+                        &animation.clip,
+                        actions[index + 1..].to_vec(),
+                        None,
+                        None,
+                    ) {
+                        return ActionSequenceResult::Suspended;
+                    }
+                    return ActionSequenceResult::Completed;
+                }
             }
             action
                 if resolved_blocking_timed_action_seconds(
@@ -1050,6 +1085,11 @@ pub(super) fn apply_startup_action(
                     looped: animation.looped,
                     speed,
                     gltf: gltf.clone(),
+                    animation_names: runtime_assets
+                        .gltf_animation_names_by_name
+                        .get(&animation.target)
+                        .cloned()
+                        .unwrap_or_default(),
                     target_model_resource: None,
                     baked_external: None,
                     bake_request: None,
@@ -1816,6 +1856,20 @@ pub(super) fn cancel_delayed_actions_for_owner(
     }
 }
 
+fn delayed_animation_wait_ready(
+    wait: &mut DelayedAnimationWait,
+    current_animation: Option<&CurrentAnimation>,
+) -> bool {
+    let Some(current_animation) = current_animation else {
+        return wait.started;
+    };
+    if !current_animation_matches(current_animation, &wait.clip, false) {
+        return wait.started;
+    }
+    wait.started = true;
+    current_animation_percent(current_animation) >= 100.0
+}
+
 pub(super) fn async_function_controller_key(
     actions: &[Statement],
 ) -> Option<SceneMaxControllerKey> {
@@ -2063,6 +2117,7 @@ mod key_event_controller_tests {
             actions: vec![
                 DelayedActions {
                     remaining_seconds: 0.1,
+                    animation_wait: None,
                     actions: vec![Statement::NoOp {
                         text: "first".to_owned(),
                     }],
@@ -2071,6 +2126,7 @@ mod key_event_controller_tests {
                 },
                 DelayedActions {
                     remaining_seconds: 0.1,
+                    animation_wait: None,
                     actions: vec![Statement::NoOp {
                         text: "second".to_owned(),
                     }],
@@ -2079,6 +2135,7 @@ mod key_event_controller_tests {
                 },
                 DelayedActions {
                     remaining_seconds: 0.1,
+                    animation_wait: None,
                     actions: vec![Statement::NoOp {
                         text: "recurring".to_owned(),
                     }],
@@ -2087,6 +2144,7 @@ mod key_event_controller_tests {
                 },
                 DelayedActions {
                     remaining_seconds: 0.1,
+                    animation_wait: None,
                     actions: vec![Statement::NoOp {
                         text: "detached async".to_owned(),
                     }],
@@ -2136,6 +2194,43 @@ mod key_event_controller_tests {
     }
 
     #[test]
+    fn blocking_animation_wait_releases_only_after_requested_clip_finishes() {
+        let mut wait = DelayedAnimationWait {
+            target: "actor".to_owned(),
+            clip: "Run".to_owned(),
+            started: false,
+        };
+        let halfway = CurrentAnimation {
+            clip: "Run".to_owned(),
+            looped: false,
+            speed: 2.0,
+            elapsed_seconds: 0.5,
+            duration_seconds: 2.0,
+        };
+        let finished = CurrentAnimation {
+            clip: "Run".to_owned(),
+            looped: false,
+            speed: 2.0,
+            elapsed_seconds: 2.0,
+            duration_seconds: 2.0,
+        };
+
+        assert!(!delayed_animation_wait_ready(&mut wait, None));
+        assert!(delayed_animation_wait_ready(&mut wait, Some(&finished)));
+        assert!(wait.started);
+
+        let mut wait = DelayedAnimationWait {
+            target: "actor".to_owned(),
+            clip: "Run".to_owned(),
+            started: false,
+        };
+
+        assert!(!delayed_animation_wait_ready(&mut wait, Some(&halfway)));
+        assert!(wait.started);
+        assert!(delayed_animation_wait_ready(&mut wait, Some(&finished)));
+    }
+
+    #[test]
     fn startup_actions_preserve_async_block_before_following_declaration_and_animation() {
         let program = scenemax_parser::parse_program(
             "do async\n  audio.play \"monster_roar\"\n  wait 3 seconds\nend do\ntg => tiger3 async\ntg.\"Idle_Lie Prone\" loop",
@@ -2169,6 +2264,7 @@ mod key_event_controller_tests {
             actions: vec![
                 DelayedActions {
                     remaining_seconds: 0.5,
+                    animation_wait: None,
                     actions: vec![Statement::NoOp {
                         text: "old restart".to_owned(),
                     }],
@@ -2177,6 +2273,7 @@ mod key_event_controller_tests {
                 },
                 DelayedActions {
                     remaining_seconds: 0.2,
+                    animation_wait: None,
                     actions: vec![Statement::NoOp {
                         text: "effect".to_owned(),
                     }],
@@ -2185,6 +2282,7 @@ mod key_event_controller_tests {
                 },
                 DelayedActions {
                     remaining_seconds: 0.1,
+                    animation_wait: None,
                     actions: vec![Statement::NoOp {
                         text: "legacy detached".to_owned(),
                     }],
@@ -2967,8 +3065,32 @@ pub(super) fn update_delayed_actions(
     let mut ready_actions = Vec::new();
     let mut pending_actions = Vec::new();
     for mut delayed in delayed_actions.actions.drain(..) {
-        delayed.remaining_seconds -= delta;
-        if delayed.remaining_seconds <= 0.0 {
+        let ready = if let Some(animation_wait) = delayed.animation_wait.as_mut() {
+            let wait_ready = {
+                let query = scene_entities.p1();
+                let current_animation =
+                    query
+                        .iter()
+                        .find_map(|(_, entity, _, _, current_animation, _, _, _)| {
+                            (entity.name.as_str() == animation_wait.target.as_str())
+                                .then_some(current_animation)
+                                .flatten()
+                        });
+                delayed_animation_wait_ready(animation_wait, current_animation)
+            };
+            if wait_ready {
+                true
+            } else if animation_wait.started {
+                false
+            } else {
+                delayed.remaining_seconds -= delta;
+                delayed.remaining_seconds <= 0.0
+            }
+        } else {
+            delayed.remaining_seconds -= delta;
+            delayed.remaining_seconds <= 0.0
+        };
+        if ready {
             ready_actions.push(delayed);
         } else {
             pending_actions.push(delayed);
@@ -3120,6 +3242,7 @@ pub(super) fn enqueue_delayed_actions(
     }
     delayed_actions.actions.push(DelayedActions {
         remaining_seconds: seconds.max(0.0),
+        animation_wait: None,
         actions,
         owner,
         scope,
@@ -3137,6 +3260,34 @@ pub(super) fn enqueue_delayed_actions(
                 .unwrap_or_else(|| "-".to_owned())
         ));
     }
+    true
+}
+
+pub(super) fn enqueue_delayed_animation_completion(
+    delayed_actions: Option<&mut DelayedActionQueue>,
+    target: &str,
+    clip: &str,
+    actions: Vec<Statement>,
+    owner: Option<SceneMaxControllerKey>,
+    scope: Option<SceneMaxScopeFrame>,
+) -> bool {
+    let Some(delayed_actions) = delayed_actions else {
+        return false;
+    };
+    if actions.is_empty() && owner.is_none() {
+        return false;
+    }
+    delayed_actions.actions.push(DelayedActions {
+        remaining_seconds: ANIMATION_BLOCK_START_TIMEOUT_SECONDS,
+        animation_wait: Some(DelayedAnimationWait {
+            target: target.to_owned(),
+            clip: clip.to_owned(),
+            started: false,
+        }),
+        actions,
+        owner,
+        scope,
+    });
     true
 }
 
@@ -3182,7 +3333,12 @@ pub(super) fn describe_statement(action: &Statement) -> String {
             audio.looped as u8
         ),
         Statement::UiLoad { name } => format!("UiLoad({name})"),
-        Statement::UiEase(ease) => format!("UiEase({:?})", ease.target),
+        Statement::UiEase(ease) => format!(
+            "UiEase({:?} {}s async={})",
+            ease.target,
+            format_scenemax_number(ease.duration_seconds),
+            ease.async_run as u8
+        ),
         Statement::UiMessage(message) => format!("UiMessage({:?})", message.target),
         Statement::Wait { seconds } => format!("Wait({}s)", format_scenemax_number(*seconds)),
         Statement::WaitValue { .. } => "WaitValue".to_owned(),
@@ -3302,6 +3458,9 @@ pub(super) fn resolved_blocking_timed_action_seconds(
         }
         Statement::UiMessage(message) if !message.async_run => {
             (message.duration_seconds > f32::EPSILON).then_some(message.duration_seconds.max(0.001))
+        }
+        Statement::UiEase(ease) if !ease.async_run => {
+            (ease.duration_seconds > f32::EPSILON).then_some(ease.duration_seconds.max(0.001))
         }
         Statement::CinematicPlay(play) if !play.async_run => Some(play.duration_seconds.max(0.1)),
         _ => None,
@@ -3945,9 +4104,10 @@ pub(super) fn apply_action_sequence(
                 );
                 if animation.blocking {
                     let remaining = actions[index + 1..].to_vec();
-                    if enqueue_delayed_actions(
+                    if enqueue_delayed_animation_completion(
                         delayed_actions.as_deref_mut(),
-                        estimated_animation_seconds(animation, animation_durations),
+                        &animation.target,
+                        &animation.clip,
                         remaining,
                         owner.clone(),
                         scope.as_deref().cloned(),
@@ -4382,6 +4542,11 @@ fn spawn_runtime_gltf_model_decl(
         .and_then(|character| character.bevy_visual_offset_y);
     let asset_path = model.asset_path;
     let gltf: Handle<Gltf> = asset_server.load(asset_path.clone());
+    let animation_names = load_gltf_animation_names(
+        runtime_assets.asset_root.as_deref(),
+        runtime_assets.builtin_asset_root.as_deref(),
+        &asset_path,
+    );
     let scene =
         WorldAssetRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())));
     let entity_id = commands
@@ -4393,7 +4558,10 @@ fn spawn_runtime_gltf_model_decl(
             SceneMaxModelResource {
                 resource: resolved_model_resource.clone(),
             },
-            SceneMaxGltf { gltf: gltf.clone() },
+            SceneMaxGltf {
+                gltf: gltf.clone(),
+                animation_names: animation_names.clone(),
+            },
             scene,
             model_transform,
             if options.hidden {
@@ -4418,6 +4586,9 @@ fn spawn_runtime_gltf_model_decl(
     runtime_assets
         .gltf_handles_by_name
         .insert(name.to_owned(), gltf);
+    runtime_assets
+        .gltf_animation_names_by_name
+        .insert(name.to_owned(), animation_names);
     runtime_assets
         .model_resources_by_name
         .insert(name.to_owned(), resolved_model_resource);
@@ -4558,11 +4729,17 @@ fn apply_startup_animation_controller_action(
             };
             let target_model_resource =
                 runtime_assets.model_resources_by_name.get(&target).cloned();
+            let animation_names = runtime_assets
+                .gltf_animation_names_by_name
+                .get(&target)
+                .cloned()
+                .unwrap_or_default();
             start_runtime_animation_controller(
                 controller,
                 commands,
                 entity,
                 gltf,
+                animation_names,
                 target_model_resource,
             );
             write_runtime_diagnostic_line(format!(
@@ -4638,10 +4815,15 @@ fn apply_runtime_animation_controller_action(
                         .model_resources_by_name
                         .get(&scene_entity.name)
                         .cloned();
-                    gltf.map(|gltf| (entity, gltf, model_resource))
+                    let animation_names = runtime_assets
+                        .gltf_animation_names_by_name
+                        .get(&scene_entity.name)
+                        .cloned()
+                        .unwrap_or_default();
+                    gltf.map(|gltf| (entity, gltf, animation_names, model_resource))
                 },
             );
-            let Some((entity, gltf, target_model_resource)) = resolved else {
+            let Some((entity, gltf, animation_names, target_model_resource)) = resolved else {
                 write_runtime_diagnostic_line(format!(
                     "ANIMCTRL:RUN_MISS controller={} target={} clip={} reason=target_or_gltf_not_found cached_gltfs={}",
                     action.controller,
@@ -4666,6 +4848,7 @@ fn apply_runtime_animation_controller_action(
                 commands,
                 entity,
                 gltf,
+                animation_names,
                 target_model_resource,
             );
             write_runtime_diagnostic_line(format!(
@@ -4702,6 +4885,7 @@ fn start_runtime_animation_controller(
     commands: &mut Commands,
     entity: Entity,
     gltf: Handle<Gltf>,
+    animation_names: Vec<String>,
     target_model_resource: Option<String>,
 ) {
     controller.running = true;
@@ -4716,6 +4900,7 @@ fn start_runtime_animation_controller(
         looped: false,
         speed: 1.0,
         gltf: gltf.clone(),
+        animation_names,
         target_model_resource,
         baked_external: None,
         bake_request: None,
@@ -5095,6 +5280,8 @@ fn equip_runtime_weapon(
     }
     let asset_path = model.asset_path;
     let gltf: Handle<Gltf> = asset_server.load(asset_path.clone());
+    let animation_names =
+        load_gltf_animation_names(Some(asset_root), builtin_asset_root, &asset_path);
     let scene =
         WorldAssetRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())));
     let runtime_name = format!("{owner}.weapon");
@@ -5127,7 +5314,10 @@ fn equip_runtime_weapon(
                 name: format!("{runtime_name}.visual"),
                 runtime_name: format!("{runtime_name}@weapon_visual"),
             },
-            SceneMaxGltf { gltf },
+            SceneMaxGltf {
+                gltf,
+                animation_names,
+            },
             scene,
             visual_transform,
             Visibility::Inherited,
@@ -5284,6 +5474,7 @@ pub(super) fn update_throw_motions(
             if !actions.is_empty() {
                 delayed_actions.actions.push(DelayedActions {
                     remaining_seconds: 0.0,
+                    animation_wait: None,
                     actions,
                     owner: None,
                     scope: None,
@@ -6746,6 +6937,7 @@ pub(super) fn apply_key_action(
                         looped: animation.looped,
                         speed,
                         gltf: gltf.gltf.clone(),
+                        animation_names: gltf.animation_names.clone(),
                         target_model_resource: None,
                         baked_external: None,
                         bake_request: None,

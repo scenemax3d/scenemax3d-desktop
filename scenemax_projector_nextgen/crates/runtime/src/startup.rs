@@ -51,6 +51,75 @@ pub(super) fn canonicalize_existing(path: impl AsRef<Path>) -> Option<PathBuf> {
     path.as_ref().canonicalize().ok()
 }
 
+pub(super) fn load_gltf_animation_names(
+    asset_root: Option<&Path>,
+    builtin_asset_root: Option<&Path>,
+    asset_path: &str,
+) -> Vec<String> {
+    let Some(path) = resolve_gltf_source_path(asset_root, builtin_asset_root, asset_path) else {
+        return Vec::new();
+    };
+    read_gltf_animation_names(&path).unwrap_or_default()
+}
+
+fn read_gltf_animation_names(path: &Path) -> Result<Vec<String>, String> {
+    let bytes = fs::read(path).map_err(|error| error.to_string())?;
+    let json = gltf_json_text(&bytes)?;
+    let value: serde_json::Value = serde_json::from_str(json).map_err(|error| error.to_string())?;
+    let Some(animations) = value.get("animations").and_then(|value| value.as_array()) else {
+        return Ok(Vec::new());
+    };
+    Ok(animations
+        .iter()
+        .map(|animation| {
+            animation
+                .get("name")
+                .and_then(|name| name.as_str())
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect())
+}
+
+fn gltf_json_text(bytes: &[u8]) -> Result<&str, String> {
+    if bytes.starts_with(b"glTF") {
+        return glb_json_text(bytes);
+    }
+    std::str::from_utf8(bytes).map_err(|error| error.to_string())
+}
+
+fn glb_json_text(bytes: &[u8]) -> Result<&str, String> {
+    if bytes.len() < 20 {
+        return Err("GLB file is too short".to_owned());
+    }
+    let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+    if version != 2 {
+        return Err(format!("unsupported GLB version {version}"));
+    }
+    let json_length = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+    let chunk_type = u32::from_le_bytes(bytes[16..20].try_into().unwrap());
+    if chunk_type != 0x4E4F534A {
+        return Err("first GLB chunk is not JSON".to_owned());
+    }
+    let json_end = 20usize
+        .checked_add(json_length)
+        .filter(|end| *end <= bytes.len())
+        .ok_or_else(|| "GLB JSON chunk extends past end of file".to_owned())?;
+    let text = std::str::from_utf8(&bytes[20..json_end]).map_err(|error| error.to_string())?;
+    Ok(text.trim_end_matches('\0').trim_end())
+}
+
+fn resolve_gltf_source_path(
+    asset_root: Option<&Path>,
+    builtin_asset_root: Option<&Path>,
+    asset_path: &str,
+) -> Option<PathBuf> {
+    if let Some(relative) = asset_path.strip_prefix("builtin://") {
+        return builtin_asset_root.map(|root| root.join(relative));
+    }
+    asset_root.map(|root| root.join(asset_path))
+}
+
 pub(super) fn initialize_runtime_logger(project_root: Option<&Path>, script_root: Option<&Path>) {
     let base = project_root
         .or(script_root)
@@ -974,6 +1043,8 @@ pub(super) fn spawn_scenemax_program(
                     .as_ref()
                     .and_then(|character| character.bevy_visual_offset_y);
                 let gltf: Handle<Gltf> = asset_server.load(asset_path.clone());
+                let animation_names =
+                    load_gltf_animation_names(Some(asset_root), builtin_asset_root, &asset_path);
                 let scene = WorldAssetRoot(
                     asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())),
                 );
@@ -994,7 +1065,10 @@ pub(super) fn spawn_scenemax_program(
                         SceneMaxModelResource {
                             resource: resolved_model_resource.clone(),
                         },
-                        SceneMaxGltf { gltf: gltf.clone() },
+                        SceneMaxGltf {
+                            gltf: gltf.clone(),
+                            animation_names,
+                        },
                         scene,
                         transform,
                         initial_visibility(name, options, &preaction_visibility_by_target),
@@ -1213,11 +1287,14 @@ pub(super) fn apply_startup_runs_when_ready(
         build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
     let mut entities_by_name = HashMap::new();
     let mut gltfs_by_name = HashMap::new();
+    let mut gltf_animation_names_by_name = HashMap::new();
     let mut model_resources_by_name = HashMap::new();
     for (entity, scene_entity, _transform, gltf, model_resource) in &scene_entities.p1() {
         entities_by_name.insert(scene_entity.name.clone(), entity);
         if let Some(gltf) = gltf {
             gltfs_by_name.insert(scene_entity.name.clone(), gltf.gltf.clone());
+            gltf_animation_names_by_name
+                .insert(scene_entity.name.clone(), gltf.animation_names.clone());
         }
         if let Some(model_resource) = model_resource {
             model_resources_by_name
@@ -1225,6 +1302,7 @@ pub(super) fn apply_startup_runs_when_ready(
         }
     }
     runtime_assets.gltf_handles_by_name = gltfs_by_name.clone();
+    runtime_assets.gltf_animation_names_by_name = gltf_animation_names_by_name;
     runtime_assets.model_resources_by_name = model_resources_by_name;
 
     let functions_by_name = collect_functions_by_name(program);

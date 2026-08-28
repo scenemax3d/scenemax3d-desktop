@@ -54,6 +54,7 @@ pub(super) fn blocking_timed_action_seconds(action: &Statement) -> Option<f32> {
     }
 }
 
+#[cfg(test)]
 pub(super) fn estimated_animation_seconds(
     animation: &AnimationStatement,
     animation_durations: &SceneMaxAnimationDurations,
@@ -67,11 +68,13 @@ pub(super) fn estimated_animation_seconds(
     estimated_animation_seconds_from_speed(animation.speed)
 }
 
+#[cfg(test)]
 pub(super) fn is_jump_animation_clip(clip: &str) -> bool {
     let lower = clip.to_ascii_lowercase();
     lower.contains("jump") || lower.contains("fly_kick") || lower.contains("flying_kick")
 }
 
+#[cfg(test)]
 pub(super) fn estimated_animation_seconds_from_speed(speed: f32) -> f32 {
     (DEFAULT_ANIMATION_CLIP_SECONDS / speed.max(0.1)).clamp(0.25, 2.0)
 }
@@ -312,9 +315,11 @@ pub(super) fn play_pending_animations(
             }
         }
 
-        let Some((resolved_clip_name, clip)) =
-            find_named_animation_clip(gltf.named_animations.iter(), &animation_to_play.clip)
-        else {
+        let Some(resolved_clip) = find_model_animation_clip(
+            gltf,
+            &animation_to_play.animation_names,
+            &animation_to_play.clip,
+        ) else {
             if switch_to_external_animation_source(
                 target_name,
                 target_model_resource.as_deref(),
@@ -336,6 +341,8 @@ pub(super) fn play_pending_animations(
             commands.entity(root).remove::<AnimationToPlay>();
             continue;
         };
+        let resolved_clip_name = resolved_clip.name;
+        let clip = resolved_clip.clip;
 
         let retargeted_clip = animation_clips.get(clip).and_then(|source_clip| {
             retarget_clip_to_visible_animation_player(
@@ -1234,6 +1241,11 @@ fn switch_to_external_animation_source(
         Ok(resource) => {
             let animation = RuntimeExternalAnimation {
                 gltf: asset_server.load(resource.asset_path.clone()),
+                animation_names: load_gltf_animation_names(
+                    runtime_assets.asset_root.as_deref(),
+                    runtime_assets.builtin_asset_root.as_deref(),
+                    &resource.asset_path,
+                ),
                 clip: resource.clip_name,
                 asset_path: resource.asset_path,
                 retarget: resource.bevy_retarget,
@@ -1300,6 +1312,7 @@ fn use_external_animation_source(
         return;
     }
     animation_to_play.gltf = animation.gltf.clone();
+    animation_to_play.animation_names = animation.animation_names.clone();
     animation_to_play.clip = animation.clip.clone();
     animation_to_play.baked_external = None;
     animation_to_play.external_retarget = animation.retarget.clone();
@@ -2636,6 +2649,52 @@ fn collect_animation_target_paths_recursive(
     }
 }
 
+struct ResolvedAnimationClip<'a> {
+    name: &'a str,
+    clip: &'a Handle<AnimationClip>,
+}
+
+fn find_model_animation_clip<'a>(
+    gltf: &'a Gltf,
+    animation_names: &'a [String],
+    requested: &str,
+) -> Option<ResolvedAnimationClip<'a>> {
+    if let Some(index) =
+        source_order_animation_match_index(animation_names, requested, gltf.animations.len())
+    {
+        return Some(ResolvedAnimationClip {
+            name: animation_names[index].as_str(),
+            clip: &gltf.animations[index],
+        });
+    }
+    find_named_animation_clip(gltf.named_animations.iter(), requested)
+        .map(|(name, clip)| ResolvedAnimationClip { name, clip })
+}
+
+fn source_order_animation_match_index(
+    animation_names: &[String],
+    requested: &str,
+    clip_count: usize,
+) -> Option<usize> {
+    let requested_key = normalized_animation_name(requested);
+    let mut best: Option<(usize, usize)> = None;
+    for (index, name) in animation_names.iter().enumerate().take(clip_count) {
+        if name.is_empty() {
+            continue;
+        }
+        if name == requested
+            || name.eq_ignore_ascii_case(requested)
+            || animation_name_matches(name, &requested_key)
+        {
+            let score = animation_candidate_score(name, &requested_key);
+            if best.is_none_or(|(_, best_score)| score > best_score) {
+                best = Some((index, score));
+            }
+        }
+    }
+    best.map(|(index, _)| index)
+}
+
 pub(super) fn find_named_animation_clip<'a>(
     named_animations: impl IntoIterator<Item = (&'a Box<str>, &'a Handle<AnimationClip>)>,
     requested: &str,
@@ -2812,6 +2871,30 @@ pub(super) fn set_active_animation_speeds(player: &mut AnimationPlayer, speed: f
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_order_animation_resolution_keeps_first_duplicate_name() {
+        let names = vec!["Action".to_owned(), "Idle".to_owned(), "Action".to_owned()];
+
+        assert_eq!(
+            source_order_animation_match_index(&names, "Action", names.len()),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn source_order_animation_resolution_prefers_stronger_later_match() {
+        let names = vec![
+            "Pack|Move".to_owned(),
+            "Move".to_owned(),
+            "Pack|Move".to_owned(),
+        ];
+
+        assert_eq!(
+            source_order_animation_match_index(&names, "Move", names.len()),
+            Some(1)
+        );
+    }
 
     #[test]
     fn humanoid_profile_matches_common_bone_aliases() {

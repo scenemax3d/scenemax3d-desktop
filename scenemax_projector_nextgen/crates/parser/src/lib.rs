@@ -818,6 +818,7 @@ pub struct UiEaseStatement {
     pub easing: String,
     pub direction: UiEaseDirection,
     pub duration_seconds: f32,
+    pub async_run: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2426,11 +2427,14 @@ fn parse_ui_statement(line: &str) -> Result<Option<Statement>, ParseError> {
             .get(2)
             .and_then(|value| value.parse::<f32>().ok())
             .unwrap_or(0.0);
+        let call_open_index = open_index + ".ease".len();
+        let async_run = contains_keyword_after_matching_call(line, call_open_index, "async");
         return Ok(Some(Statement::UiEase(UiEaseStatement {
             target,
             easing,
             direction,
             duration_seconds,
+            async_run,
         })));
     }
 
@@ -9613,6 +9617,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 if ease.target.layer == "layer1"
                     && ease.target.widget_path == vec!["titlePanel"]
                     && ease.direction == UiEaseDirection::Down
+                    && !ease.async_run
         ));
         assert!(matches!(
             &program.statements[2],
@@ -9670,6 +9675,17 @@ run tick(score+10) every tick_time+0.25 seconds
                 text: UiPropertyValue::Literal(text),
                 ..
             }) if channel == "sys" && text.is_empty()
+        ));
+    }
+
+    #[test]
+    fn parses_async_ui_ease_suffix() {
+        let program =
+            parse_program("UI.layer1.titlePanel.ease(\"EaseInBack\", Down, 0.6) async").unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::UiEase(ease) if ease.async_run
         ));
     }
 
