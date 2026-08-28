@@ -1290,109 +1290,7 @@ pub(super) fn attachment_node_transform(
     }
 }
 
-pub(super) fn apply_look_at_commands(
-    program: &Program,
-    commands: &mut Commands,
-    entities_by_name: &HashMap<String, Entity>,
-    transforms_by_name: &mut HashMap<String, Transform>,
-) {
-    for statement in &program.statements {
-        let Statement::LookAt { target, subject } = statement else {
-            continue;
-        };
-        let Some(entity) = entities_by_name.get(target).copied() else {
-            continue;
-        };
-        let (Some(target_transform), Some(subject_transform)) = (
-            transforms_by_name.get(target).copied(),
-            lookup_subject_transform(subject, transforms_by_name),
-        ) else {
-            continue;
-        };
-        let mut updated = target_transform;
-        look_at_scenemax_forward(&mut updated, subject_transform.translation);
-        commands.entity(entity).insert(updated);
-        transforms_by_name.insert(target.clone(), updated);
-    }
-}
-
-pub(super) fn apply_character_modes(
-    program: &Program,
-    commands: &mut Commands,
-    entities_by_name: &HashMap<String, Entity>,
-    transforms_by_name: &HashMap<String, Transform>,
-    character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
-) {
-    let support_samples = fallback_character_mode_support_samples(program, transforms_by_name);
-    spawn_character_stage_support(commands, &support_samples);
-    let explicit_surfaces = explicit_static_support_surfaces(program, transforms_by_name);
-    write_runtime_diagnostic_line(format!(
-        "CHARACTER:STARTUP_SUPPORTS fallback_count={} explicit_surface_count={}",
-        support_samples.len(),
-        explicit_surfaces.len()
-    ));
-
-    for statement in &program.statements {
-        if initial_state_scan_boundary(statement) {
-            break;
-        }
-        let Statement::CharacterMode(character_mode) = statement else {
-            continue;
-        };
-        let Some(entity) = entities_by_name.get(&character_mode.target).copied() else {
-            tracing::warn!(
-                target = character_mode.target,
-                "SceneMax character mode target was not spawned"
-            );
-            write_runtime_diagnostic_line(format!(
-                "CHARACTER:STARTUP_SWITCH_MISS target={}",
-                character_mode.target
-            ));
-            continue;
-        };
-        let mut transform = transforms_by_name
-            .get(&character_mode.target)
-            .copied()
-            .unwrap_or_default();
-        let before_y = transform.translation.y;
-        if snap_character_transform_to_floor(&mut transform, &explicit_surfaces) {
-            commands.entity(entity).insert(transform);
-            write_runtime_diagnostic_line(format!(
-                "CHARACTER:STARTUP_SNAP target={} y_before={} y_after={} explicit_surface_count={}",
-                character_mode.target,
-                format_scenemax_number(before_y),
-                format_scenemax_number(transform.translation.y),
-                explicit_surfaces.len()
-            ));
-        } else {
-            write_runtime_diagnostic_line(format!(
-                "CHARACTER:STARTUP_NO_SNAP target={} y={} explicit_surface_count={}",
-                character_mode.target,
-                format_scenemax_number(transform.translation.y),
-                explicit_surfaces.len()
-            ));
-        }
-        write_runtime_diagnostic_line(format!(
-            "CHARACTER:STARTUP_SWITCH target={} gravity={} pos=({},{},{})",
-            character_mode.target,
-            character_mode
-                .gravity
-                .map(format_scenemax_number)
-                .unwrap_or_else(|| "default".to_owned()),
-            format_scenemax_number(transform.translation.x),
-            format_scenemax_number(transform.translation.y),
-            format_scenemax_number(transform.translation.z)
-        ));
-        insert_tnua_character_controller(
-            commands,
-            entity,
-            character_mode,
-            transform,
-            character_configs,
-        );
-    }
-}
-
+#[cfg(test)]
 pub(super) fn character_mode_support_samples(
     program: &Program,
     transforms_by_name: &HashMap<String, Transform>,
@@ -1414,6 +1312,7 @@ pub(super) fn character_mode_support_samples(
         .collect()
 }
 
+#[cfg(test)]
 pub(super) fn fallback_character_mode_support_samples(
     program: &Program,
     transforms_by_name: &HashMap<String, Transform>,
@@ -2547,6 +2446,7 @@ pub(super) fn transform_from_options_resolved(
     transform
 }
 
+#[cfg(test)]
 pub(super) fn timed_turn_from_statement(turn: &scenemax_parser::TurnStatement) -> TimedTurn {
     timed_turn_from_statement_resolved(turn, turn.degrees, turn.duration_seconds)
 }

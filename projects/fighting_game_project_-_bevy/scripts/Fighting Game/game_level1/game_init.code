@@ -16,7 +16,6 @@ camera.rotate(-20.65568,115.06725,0.8177289)
 
 floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material "wall", shadow mode cast
 level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on async
-level2.shader = "shader_test1"
 ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0 async
 // rotate ring
 ring.turn left 360 in 50 seconds async

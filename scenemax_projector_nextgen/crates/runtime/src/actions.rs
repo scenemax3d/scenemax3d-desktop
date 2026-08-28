@@ -55,8 +55,7 @@ pub(super) fn apply_startup_runs(
 pub(super) fn is_startup_action(statement: &Statement) -> bool {
     !matches!(
         statement,
-        Statement::ModelDecl { .. }
-            | Statement::LightDecl(_)
+        Statement::LightDecl(_)
             | Statement::ObjectPool(_)
             | Statement::KeyEvent(_)
             | Statement::WhenEvent(_)
@@ -558,8 +557,19 @@ pub(super) fn apply_startup_action(
     depth: usize,
 ) -> ActionSequenceResult {
     match action {
-        Statement::ModelDecl { name, resource, .. } => {
+        Statement::ModelDecl {
+            name,
+            resource,
+            options,
+        } => {
             register_cinematic_camera_var(name, resource, camera_system);
+            if let Some(entity) = entities_by_name.get(name) {
+                commands.entity(*entity).insert(if options.hidden {
+                    Visibility::Hidden
+                } else {
+                    Visibility::Inherited
+                });
+            }
             ActionSequenceResult::Completed
         }
         Statement::LightDecl(light) => {
@@ -2123,6 +2133,32 @@ mod key_event_controller_tests {
             }]),
             None
         );
+    }
+
+    #[test]
+    fn startup_actions_preserve_async_block_before_following_declaration_and_animation() {
+        let program = scenemax_parser::parse_program(
+            "do async\n  audio.play \"monster_roar\"\n  wait 3 seconds\nend do\ntg => tiger3 async\ntg.\"Idle_Lie Prone\" loop",
+        )
+        .unwrap();
+
+        let actions = program
+            .statements
+            .iter()
+            .filter(|statement| is_startup_action(statement))
+            .collect::<Vec<_>>();
+
+        assert!(matches!(actions.first(), Some(Statement::Async { .. })));
+        assert!(matches!(
+            actions.get(1),
+            Some(Statement::ModelDecl { name, resource, .. })
+                if name == "tg" && resource == "tiger3"
+        ));
+        assert!(matches!(
+            actions.get(2),
+            Some(Statement::Animate(animation))
+                if animation.target == "tg" && animation.clip == "Idle_Lie Prone"
+        ));
     }
 
     #[test]

@@ -760,11 +760,8 @@ pub(super) fn spawn_scenemax_program(
     collider_bounds: &mut SceneMaxColliderBounds,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
-    character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
+    _character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
 ) -> Vec<Handle<Gltf>> {
-    let animations_by_target = collect_animations_by_target(program);
-    let visibility_by_target = collect_visibility_by_target(program);
-    let turn_by_target = collect_turn_by_target(program);
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
     let attaches_by_target = collect_attaches_by_target(program);
@@ -775,6 +772,10 @@ pub(super) fn spawn_scenemax_program(
         &functions_by_name,
         object_pools,
     ));
+    let preaction_visibility_by_target = model_declarations
+        .iter()
+        .map(|declaration| (declaration.name.clone(), false))
+        .collect::<HashMap<_, _>>();
     let mut spawned_any = false;
     let mut entities_by_name = HashMap::new();
     let mut transforms_by_name = HashMap::new();
@@ -869,7 +870,7 @@ pub(super) fn spawn_scenemax_program(
                         ),
                     },
                     transform,
-                    initial_visibility(name, options, &visibility_by_target),
+                    initial_visibility(name, options, &preaction_visibility_by_target),
                 ))
                 .id();
             entities_by_name.insert(name.clone(), entity_id);
@@ -905,7 +906,7 @@ pub(super) fn spawn_scenemax_program(
                 resource,
                 options,
                 &sprite_index,
-                &visibility_by_target,
+                &preaction_visibility_by_target,
             ) {
                 insert_physics_components(commands, entity_id, name, resource, options, &transform);
                 entities_by_name.insert(name.clone(), entity_id);
@@ -948,7 +949,7 @@ pub(super) fn spawn_scenemax_program(
                     primitive.0,
                     primitive.1,
                     transform,
-                    initial_visibility(name, options, &visibility_by_target),
+                    initial_visibility(name, options, &preaction_visibility_by_target),
                 ))
                 .id();
             insert_physics_components(commands, entity, name, resource, options, &transform);
@@ -996,28 +997,11 @@ pub(super) fn spawn_scenemax_program(
                         SceneMaxGltf { gltf: gltf.clone() },
                         scene,
                         transform,
-                        initial_visibility(name, options, &visibility_by_target),
+                        initial_visibility(name, options, &preaction_visibility_by_target),
                     ))
                     .id();
                 insert_gltf_visual_offset(commands, entity_id, bevy_visual_offset_y);
 
-                if let Some(animation) = animations_by_target.get(name) {
-                    commands.entity(entity_id).insert(AnimationToPlay {
-                        clip: animation.clip.clone(),
-                        runtime_clip: animation.clip.clone(),
-                        looped: animation.looped,
-                        speed: animation.speed,
-                        gltf: gltf.clone(),
-                        target_model_resource: Some(resolved_model_resource.clone()),
-                        baked_external: None,
-                        bake_request: None,
-                        external_retarget: Default::default(),
-                        external_source: false,
-                        tried_external_source: false,
-                        visual_transform_preapplied: false,
-                        retarget_wait_logged: false,
-                    });
-                }
                 insert_physics_components(commands, entity_id, name, resource, options, &transform);
 
                 entities_by_name.insert(name.clone(), entity_id);
@@ -1053,7 +1037,7 @@ pub(super) fn spawn_scenemax_program(
                     resource,
                     options,
                     transform,
-                    &visibility_by_target,
+                    &preaction_visibility_by_target,
                 );
                 insert_physics_components(commands, entity_id, name, resource, options, &transform);
                 entities_by_name.insert(name.clone(), entity_id);
@@ -1086,7 +1070,7 @@ pub(super) fn spawn_scenemax_program(
                     resource,
                     options,
                     transform,
-                    &visibility_by_target,
+                    &preaction_visibility_by_target,
                 );
                 insert_physics_components(commands, entity_id, name, resource, options, &transform);
                 entities_by_name.insert(name.clone(), entity_id);
@@ -1122,7 +1106,7 @@ pub(super) fn spawn_scenemax_program(
                     resource,
                     options,
                     transform,
-                    &visibility_by_target,
+                    &preaction_visibility_by_target,
                 );
                 insert_physics_components(commands, entity_id, name, resource, options, &transform);
                 entities_by_name.insert(name.clone(), entity_id);
@@ -1138,27 +1122,6 @@ pub(super) fn spawn_scenemax_program(
                     "placeholder for unresolved model {name}=>{resource}; reason={error}"
                 ));
             }
-        }
-    }
-
-    apply_look_at_commands(
-        program,
-        commands,
-        &entities_by_name,
-        &mut transforms_by_name,
-    );
-    apply_character_modes(
-        program,
-        commands,
-        &entities_by_name,
-        &transforms_by_name,
-        character_configs,
-    );
-    for (target, turn) in turn_by_target {
-        if let Some(entity) = entities_by_name.get(&target) {
-            commands
-                .entity(*entity)
-                .insert(timed_turn_from_statement(&turn));
         }
     }
 
@@ -1213,17 +1176,22 @@ pub(super) fn apply_startup_runs_when_ready(
         return;
     };
 
-    if !startup_action_state
+    let startup_audio_handles = startup_audio_handles_before_first_wait(program, &runtime_assets);
+    let gltfs_ready = startup_action_state
         .waiting_gltfs
         .iter()
-        .all(|handle| asset_server.is_loaded_with_dependencies(handle))
-    {
+        .all(|handle| asset_server.is_loaded_with_dependencies(handle));
+    let audio_ready = startup_audio_handles
+        .iter()
+        .all(|handle| asset_server.is_loaded_with_dependencies(handle));
+    if !gltfs_ready || !audio_ready {
         startup_action_state.wait_seconds += time.delta_secs();
         if !startup_action_state.waiting_logged {
             startup_action_state.waiting_logged = true;
             write_runtime_diagnostic_line(format!(
-                "STARTUP:WAIT_ASSETS gltf_count={}",
-                startup_action_state.waiting_gltfs.len()
+                "STARTUP:WAIT_ASSETS gltf_count={} audio_count={}",
+                startup_action_state.waiting_gltfs.len(),
+                startup_audio_handles.len()
             ));
         }
         return;
@@ -1289,4 +1257,88 @@ pub(super) fn apply_startup_runs_when_ready(
         &guards_by_name,
     );
     startup_action_state.applied = true;
+}
+
+fn startup_audio_handles_before_first_wait(
+    program: &Program,
+    runtime_assets: &SceneMaxRuntimeAssets,
+) -> Vec<Handle<AudioSource>> {
+    let functions_by_name = collect_functions_by_name(program);
+    let mut sounds = HashSet::new();
+    collect_audio_names_before_first_wait(&program.statements, &functions_by_name, &mut sounds, 0);
+    sounds
+        .into_iter()
+        .filter_map(|sound| {
+            runtime_assets
+                .audio_by_name
+                .get(&audio_key(&sound))
+                .map(|asset| asset.handle.clone())
+        })
+        .collect()
+}
+
+fn collect_audio_names_before_first_wait(
+    actions: &[Statement],
+    functions_by_name: &HashMap<String, FunctionRuntime>,
+    sounds: &mut HashSet<String>,
+    depth: usize,
+) {
+    if depth > 8 {
+        return;
+    }
+    for action in actions {
+        match action {
+            Statement::Wait { .. }
+            | Statement::WaitValue { .. }
+            | Statement::WaitUntil { .. }
+            | Statement::WaitForKey { .. }
+            | Statement::SwitchTo { .. } => break,
+            Statement::Audio(audio) => {
+                if let Some(sound) = audio.sound.as_ref() {
+                    sounds.insert(sound.clone());
+                }
+            }
+            Statement::Async { actions }
+            | Statement::Repeat {
+                actions,
+                ..
+            }
+            | Statement::Guarded {
+                actions,
+                ..
+            } => {
+                collect_audio_names_before_first_wait(
+                    actions,
+                    functions_by_name,
+                    sounds,
+                    depth + 1,
+                );
+            }
+            Statement::If(statement) => {
+                collect_audio_names_before_first_wait(
+                    &statement.actions,
+                    functions_by_name,
+                    sounds,
+                    depth + 1,
+                );
+                collect_audio_names_before_first_wait(
+                    &statement.else_actions,
+                    functions_by_name,
+                    sounds,
+                    depth + 1,
+                );
+            }
+            Statement::RunFunction { name, .. } => {
+                if let Some(function) = functions_by_name.get(name) {
+                    collect_audio_names_before_first_wait(
+                        &function.actions,
+                        functions_by_name,
+                        sounds,
+                        depth + 1,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
 }
