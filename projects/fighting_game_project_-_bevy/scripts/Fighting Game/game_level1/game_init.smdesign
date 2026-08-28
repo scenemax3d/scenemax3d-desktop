@@ -34,7 +34,7 @@
       "sizeZ": 50
     },
     {
-      "shader": "shader_test1",
+      "shader": "",
       "dynamicModel": false,
       "hidden": false,
       "shadowMode": "both",
@@ -240,7 +240,7 @@
             0,
             -0.05878162
           ],
-          "resourcePath": "fighter1_native",
+          "resourcePath": "fighter1",
           "jointMapping": "mixamorig:Head,mixamorig:LeftShoulder,mixamorig:LeftArm,mixamorig:LeftForeArm,mixamorig:LeftHand,mixamorig:RightShoulder,mixamorig:RightArm,mixamorig:RightForeArm,mixamorig:RightHand,mixamorig:LeftUpLeg,mixamorig:LeftLeg,mixamorig:LeftFoot,mixamorig:RightUpLeg,mixamorig:RightLeg,mixamorig:RightFoot",
           "scale": [
             3,
@@ -249,7 +249,7 @@
           ],
           "modelCollisionShape": "default",
           "type": "MODEL",
-          "sceneMaxCode": "player1 => dynamic fighter1_native: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast async",
+          "sceneMaxCode": "player1 => dynamic fighter1: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast async",
           "staticModel": false,
           "name": "player1",
           "vehicleModel": false,
@@ -609,7 +609,7 @@
             0,
             1
           ],
-          "resourcePath": "old_fighter2_native",
+          "resourcePath": "old_fighter2",
           "jointMapping": "mixamorig:Head,mixamorig:LeftShoulder,mixamorig:LeftArm,mixamorig:LeftForeArm,mixamorig:LeftHand,mixamorig:RightShoulder,mixamorig:RightArm,mixamorig:RightForeArm,mixamorig:RightHand,mixamorig:LeftUpLeg,mixamorig:LeftLeg,mixamorig:LeftFoot,mixamorig:RightUpLeg,mixamorig:RightLeg,mixamorig:RightFoot",
           "scale": [
             3,
@@ -618,7 +618,7 @@
           ],
           "modelCollisionShape": "default",
           "type": "MODEL",
-          "sceneMaxCode": "player2 => dynamic old_fighter2_native: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on async",
+          "sceneMaxCode": "player2 => dynamic old_fighter2: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on async",
           "staticModel": false,
           "name": "player2",
           "vehicleModel": false,
@@ -1381,7 +1381,7 @@
       ],
       "modelCollisionShape": "box",
       "type": "MODEL",
-      "sceneMaxCode": "axe => battleaxe1: hidden, pos (23.46958,-87.37234,147.34291), collision shape box async",
+      "sceneMaxCode": "axe => battleaxe1: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async",
       "staticModel": false,
       "name": "axe",
       "vehicleModel": false,
@@ -1437,7 +1437,7 @@
         "cinematicTrackData": {
           "anchorCount": 360,
           "previewSpeed": 30,
-          "selectedStartAnchor": 210,
+          "selectedStartAnchor": 220,
           "radiusZ": 6,
           "radiusX": 50,
           "selectedEndAnchor": -1
@@ -1508,15 +1508,15 @@
   },
   "camera": {
     "rotation": [
-      0,
-      1,
-      -0,
-      -4.371139E-8
+      -0.020582907,
+      0.9785145,
+      -0.12225933,
+      -0.16473727
     ],
     "position": [
-      0,
-      0,
-      10
+      30.292877,
+      -81.23234,
+      172.23322
     ]
   },
   "version": 1

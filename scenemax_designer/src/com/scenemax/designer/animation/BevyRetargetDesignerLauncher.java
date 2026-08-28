@@ -2,7 +2,9 @@ package com.scenemax.designer.animation;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 
 public class BevyRetargetDesignerLauncher {
@@ -56,14 +58,36 @@ public class BevyRetargetDesignerLauncher {
 
     private static boolean isStaleDevExecutable(File exe, File nextgenRoot) {
         long exeModified = exe.lastModified();
-        return newerThan(exeModified, new File(nextgenRoot, "crates/projector/src/main.rs"))
-                || newerThan(exeModified, new File(nextgenRoot, "crates/runtime/src/lib.rs"))
-                || newerThan(exeModified, new File(nextgenRoot, "crates/runtime/src/animation.rs"))
-                || newerThan(exeModified, new File(nextgenRoot, "crates/runtime/src/retarget_designer.rs"));
+        return newestRustSourceTimestamp(nextgenRoot) > exeModified;
     }
 
-    private static boolean newerThan(long timestamp, File file) {
-        return file.isFile() && file.lastModified() > timestamp;
+    private static long newestRustSourceTimestamp(File nextgenRoot) {
+        long newest = 0L;
+        Deque<File> pending = new ArrayDeque<>();
+        pending.add(new File(nextgenRoot, "crates"));
+        pending.add(new File(nextgenRoot, "Cargo.toml"));
+        pending.add(new File(nextgenRoot, "Cargo.lock"));
+        while (!pending.isEmpty()) {
+            File file = pending.removeFirst();
+            if (file == null || !file.exists()) {
+                continue;
+            }
+            if (file.isDirectory()) {
+                File[] children = file.listFiles();
+                if (children == null) {
+                    continue;
+                }
+                for (File child : children) {
+                    pending.add(child);
+                }
+                continue;
+            }
+            String name = file.getName().toLowerCase();
+            if (name.endsWith(".rs") || "cargo.toml".equals(name) || "cargo.lock".equals(name)) {
+                newest = Math.max(newest, file.lastModified());
+            }
+        }
+        return newest;
     }
 
     private static File findRepoRoot(File start) {

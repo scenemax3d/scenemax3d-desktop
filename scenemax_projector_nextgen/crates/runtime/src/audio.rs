@@ -237,7 +237,7 @@ fn resolved_audio_volume(
     Volume::Linear(value / 100.0)
 }
 
-fn audio_key(name: &str) -> String {
+pub(super) fn audio_key(name: &str) -> String {
     name.trim().to_ascii_lowercase()
 }
 

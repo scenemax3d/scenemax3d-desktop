@@ -160,6 +160,7 @@ pub enum Statement {
     SetEnvironmentShader {
         shader: AssignmentValue,
     },
+    Print(PrintStatement),
     WaitForKey {
         key: String,
     },
@@ -312,6 +313,17 @@ pub struct ChannelDrawStatement {
     pub height: Option<AssignmentValue>,
     pub frame: Option<AssignmentValue>,
     pub stretch: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrintStatement {
+    pub channel: String,
+    pub text: UiPropertyValue,
+    pub position: Option<PositionValue>,
+    pub color: Option<String>,
+    pub font_size: Option<AssignmentValue>,
+    pub font: Option<String>,
+    pub append: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -797,6 +809,7 @@ pub struct UiMessageStatement {
     pub text: String,
     pub effects: String,
     pub duration_seconds: f32,
+    pub async_run: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -805,6 +818,7 @@ pub struct UiEaseStatement {
     pub easing: String,
     pub direction: UiEaseDirection,
     pub duration_seconds: f32,
+    pub async_run: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -831,6 +845,7 @@ pub struct WeaponStatement {
 #[derive(Debug, Clone, PartialEq)]
 pub enum WeaponAction {
     Equip { weapon: String },
+    Posture { posture: String },
     Unequip,
     Detach,
 }
@@ -1104,6 +1119,21 @@ fn parse_key_event_block(
         }
 
         if let Some(condition) = parse_condition_guard(line)? {
+            if let Some((mut event, next_index)) = parse_key_event_block(logical_lines, cursor + 1)?
+            {
+                event.guard = Some(condition);
+                actions.push(Statement::KeyEvent(event));
+                cursor = next_index;
+                continue;
+            }
+            if let Some((mut event, next_index)) =
+                parse_when_event_block(logical_lines, cursor + 1)?
+            {
+                event.guard = Some(condition);
+                actions.push(Statement::WhenEvent(event));
+                cursor = next_index;
+                continue;
+            }
             let (guarded_actions, next_index) =
                 parse_guarded_actions_after(logical_lines, cursor + 1)?;
             actions.push(Statement::Guarded {
@@ -1172,6 +1202,12 @@ fn parse_key_event_block(
 
         if lower.starts_with("do ") {
             cursor = skip_control_block(logical_lines, cursor);
+            continue;
+        }
+
+        if let Some((event, next_index)) = parse_key_event_block(logical_lines, cursor)? {
+            actions.push(Statement::KeyEvent(event));
+            cursor = next_index;
             continue;
         }
 
@@ -1663,6 +1699,21 @@ fn parse_action_block_with_stop(
         }
 
         if let Some(condition) = parse_condition_guard(line)? {
+            if let Some((mut event, next_index)) = parse_key_event_block(logical_lines, cursor + 1)?
+            {
+                event.guard = Some(condition);
+                actions.push(Statement::KeyEvent(event));
+                cursor = next_index;
+                continue;
+            }
+            if let Some((mut event, next_index)) =
+                parse_when_event_block(logical_lines, cursor + 1)?
+            {
+                event.guard = Some(condition);
+                actions.push(Statement::WhenEvent(event));
+                cursor = next_index;
+                continue;
+            }
             let (guarded_actions, next_index) =
                 parse_guarded_actions_after(logical_lines, cursor + 1)?;
             actions.push(Statement::Guarded {
@@ -1731,6 +1782,12 @@ fn parse_action_block_with_stop(
 
         if lower.starts_with("do ") {
             cursor = skip_control_block(logical_lines, cursor);
+            continue;
+        }
+
+        if let Some((event, next_index)) = parse_key_event_block(logical_lines, cursor)? {
+            actions.push(Statement::KeyEvent(event));
+            cursor = next_index;
             continue;
         }
 
@@ -2180,6 +2237,10 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(Statement::Audio(audio));
     }
 
+    if let Some(print) = parse_print_statement(line)? {
+        return Ok(Statement::Print(print));
+    }
+
     if let Some(chase) = parse_camera_chase(line)? {
         return Ok(chase);
     }
@@ -2325,7 +2386,8 @@ fn parse_ui_statement(line: &str) -> Result<Option<Statement>, ParseError> {
         let Some(target) = parse_ui_target_path(path_text) else {
             return Ok(None);
         };
-        let args = parse_call_args(&line[open_index + ".message".len()..]);
+        let call_open_index = open_index + ".message".len();
+        let args = parse_call_args(&line[call_open_index..]);
         let Some(text) = args.first().cloned() else {
             return Ok(None);
         };
@@ -2338,11 +2400,13 @@ fn parse_ui_statement(line: &str) -> Result<Option<Statement>, ParseError> {
             .filter(|value| value.parse::<f32>().is_err())
             .cloned()
             .unwrap_or_default();
+        let async_run = contains_keyword_after_matching_call(line, call_open_index, "async");
         return Ok(Some(Statement::UiMessage(UiMessageStatement {
             target,
             text,
             effects,
             duration_seconds,
+            async_run,
         })));
     }
 
@@ -2363,11 +2427,14 @@ fn parse_ui_statement(line: &str) -> Result<Option<Statement>, ParseError> {
             .get(2)
             .and_then(|value| value.parse::<f32>().ok())
             .unwrap_or(0.0);
+        let call_open_index = open_index + ".ease".len();
+        let async_run = contains_keyword_after_matching_call(line, call_open_index, "async");
         return Ok(Some(Statement::UiEase(UiEaseStatement {
             target,
             easing,
             direction,
             duration_seconds,
+            async_run,
         })));
     }
 
@@ -2625,6 +2692,38 @@ fn parse_call_args(text: &str) -> Vec<String> {
     Vec::new()
 }
 
+fn contains_keyword_after_matching_call(text: &str, open_index: usize, keyword: &str) -> bool {
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut depth = 0usize;
+
+    for (offset, ch) in text[open_index + 1..].char_indices() {
+        if let Some(quote_char) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == quote_char {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '(' | '[' | '{' => depth += 1,
+            ')' if depth == 0 => {
+                let suffix_start = open_index + 1 + offset + ch.len_utf8();
+                return contains_keyword(&text[suffix_start..], keyword);
+            }
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+
+    false
+}
+
 fn clean_call_arg(arg: &str) -> &str {
     arg.trim().trim_matches('"').trim_matches('\'').trim()
 }
@@ -2724,6 +2823,33 @@ fn unquote_ui_text(text: &str) -> String {
 fn split_once_case_insensitive<'a>(text: &'a str, needle: &str) -> Option<(&'a str, &'a str)> {
     let (start, end) = find_case_insensitive_span(text, needle)?;
     Some((&text[..start], &text[end..]))
+}
+
+fn split_once_case_insensitive_outside_quotes<'a>(
+    text: &'a str,
+    needle: &str,
+) -> Option<(&'a str, &'a str)> {
+    let mut quote: Option<char> = None;
+    for (index, value) in text.char_indices() {
+        match value {
+            '"' | '\'' => {
+                if quote == Some(value) {
+                    quote = None;
+                } else if quote.is_none() {
+                    quote = Some(value);
+                }
+            }
+            _ if quote.is_none()
+                && text[index..]
+                    .get(..needle.len())
+                    .is_some_and(|candidate| candidate.eq_ignore_ascii_case(needle)) =>
+            {
+                return Some((&text[..index], &text[index + needle.len()..]));
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn find_case_insensitive_span(text: &str, needle: &str) -> Option<(usize, usize)> {
@@ -3000,6 +3126,22 @@ fn parse_weapon_statement(line: &str) -> Option<WeaponStatement> {
             owner: owner.to_owned(),
             action: WeaponAction::Equip { weapon },
         });
+    }
+    let rest_lower = rest.to_ascii_lowercase();
+    if rest_lower.starts_with(".posture") {
+        let after_posture = rest[".posture".len()..].trim();
+        if let Some(raw_value) = after_posture.strip_prefix('=') {
+            let raw_value = clean_assignment_value(raw_value);
+            let posture = if is_quoted(raw_value) {
+                unquote_ui_text(raw_value)
+            } else {
+                clean_call_arg(raw_value).to_owned()
+            };
+            return (!posture.is_empty()).then(|| WeaponStatement {
+                owner: owner.to_owned(),
+                action: WeaponAction::Posture { posture },
+            });
+        }
     }
     if rest.eq_ignore_ascii_case(".detach") || rest.eq_ignore_ascii_case(".detach()") {
         return Some(WeaponStatement {
@@ -3990,6 +4132,116 @@ fn find_keyword_index(text: &str, keyword: &str) -> Option<usize> {
         start = after_index;
     }
     None
+}
+
+fn parse_print_statement(line: &str) -> Result<Option<PrintStatement>, ParseError> {
+    let Some((channel, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
+    if !is_variable_name(&channel) {
+        return Ok(None);
+    }
+    let Some(after_print) = strip_keyword_prefix(rest.trim(), "print") else {
+        return Ok(None);
+    };
+    let (text, attrs) = split_print_text_and_attrs(after_print.trim());
+    let Some(text) = parse_ui_property_value(text)? else {
+        return Ok(None);
+    };
+    let mut statement = PrintStatement {
+        channel,
+        text,
+        position: None,
+        color: None,
+        font_size: None,
+        font: None,
+        append: false,
+    };
+    parse_print_attrs(attrs, &mut statement)?;
+    Ok(Some(statement))
+}
+
+fn split_print_text_and_attrs(text: &str) -> (&str, &str) {
+    if let Some((before, after)) = split_once_case_insensitive_outside_quotes(text, " having ") {
+        return (before.trim(), after.trim());
+    }
+    if let Some((before, after)) = split_once_case_insensitive_outside_quotes(text, ":") {
+        return (before.trim(), after.trim());
+    }
+    (text.trim(), "")
+}
+
+fn parse_print_attrs(attrs: &str, statement: &mut PrintStatement) -> Result<(), ParseError> {
+    for attr in split_print_attrs(attrs) {
+        let attr = attr.trim().trim_start_matches(':').trim();
+        if attr.is_empty() {
+            continue;
+        }
+        if attr.eq_ignore_ascii_case("append") {
+            statement.append = true;
+            continue;
+        }
+        if starts_with_keyword(attr, "pos") {
+            statement.position = parse_print_position(attr)?;
+            continue;
+        }
+        if starts_with_keyword(attr, "color") {
+            statement.color = parse_print_named_value(attr, "color")
+                .map(|value| value.trim_matches('"').to_owned());
+            continue;
+        }
+        if starts_with_keyword(attr, "size") {
+            if let Some(value) = parse_print_named_value(attr, "size") {
+                statement.font_size = parse_assignment_value(clean_assignment_value(value))?;
+            }
+            continue;
+        }
+        if starts_with_keyword(attr, "font") {
+            statement.font = parse_quoted_strings(attr).into_iter().next().or_else(|| {
+                parse_print_named_value(attr, "font")
+                    .map(clean_call_arg)
+                    .map(str::to_owned)
+            });
+        }
+    }
+    Ok(())
+}
+
+fn split_print_attrs(attrs: &str) -> Vec<&str> {
+    let mut values = Vec::new();
+    let mut remaining = attrs.trim();
+    while let Some((left, right)) = split_once_case_insensitive_outside_quotes(remaining, " and ") {
+        values.push(left.trim());
+        remaining = right.trim();
+    }
+    values.extend(
+        split_top_level_comma(remaining)
+            .into_iter()
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
+    );
+    values
+}
+
+fn parse_print_position(attr: &str) -> Result<Option<PositionValue>, ParseError> {
+    let Some(raw_values) = values_inside_first_parens(attr) else {
+        return Ok(None);
+    };
+    let parts = split_top_level_comma(raw_values);
+    if parts.len() != 3 {
+        return Ok(None);
+    }
+    Ok(Some(PositionValue::Coordinates(
+        parts
+            .into_iter()
+            .map(parse_position_expr)
+            .collect::<Result<Vec<_>, _>>()?,
+    )))
+}
+
+fn parse_print_named_value<'a>(attr: &'a str, name: &str) -> Option<&'a str> {
+    let after_name = attr.trim_start()[name.len()..].trim();
+    Some(after_name.trim_start_matches('=').trim()).filter(|value| !value.is_empty())
 }
 
 fn parse_shader_statement(line: &str) -> Result<Option<Statement>, ParseError> {
@@ -5451,8 +5703,8 @@ fn parse_cinematic_play(line: &str) -> Result<Option<CinematicPlayStatement>, Pa
                     value[1..value.len() - 1].trim().to_owned(),
                 ));
             } else {
-                let entity = normalize_entity_reference(value);
-                if !entity.is_empty() {
+                let entity = normalize_cinematic_target_reference(value);
+                if is_variable_path(&entity) {
                     look_at = Some(CinematicLookAt::Entity(entity));
                 }
             }
@@ -5469,6 +5721,15 @@ fn parse_cinematic_play(line: &str) -> Result<Option<CinematicPlayStatement>, Pa
         reverse,
         async_run: contains_keyword(rest, "async"),
     }))
+}
+
+fn normalize_cinematic_target_reference(text: &str) -> String {
+    text.trim()
+        .trim_matches(|value| value == '(' || value == ')')
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_owned()
 }
 
 fn split_cinematic_play_options(text: &str) -> Vec<&str> {
@@ -6351,6 +6612,23 @@ mod tests {
                 look_at: Some(CinematicLookAt::Entity("axe".to_owned())),
                 duration_seconds: 1.5,
                 reverse: true,
+                async_run: false,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_cinematic_camera_equipped_weapon_target() {
+        let program =
+            parse_program("axe_throw_cam.play : target player1.weapon, duration 0.85").unwrap();
+
+        assert_eq!(
+            program.statements[0],
+            Statement::CinematicPlay(CinematicPlayStatement {
+                target: "axe_throw_cam".to_owned(),
+                look_at: Some(CinematicLookAt::Entity("player1.weapon".to_owned())),
+                duration_seconds: 0.85,
+                reverse: false,
                 async_run: false,
             })
         );
@@ -8756,6 +9034,125 @@ run tick(score+10) every tick_time+0.25 seconds
     }
 
     #[test]
+    fn parses_key_event_inside_function_without_flattening_body() {
+        let program = parse_program(
+            "install_input = {\n  when key Q is pressed once do\n    marker = 1\n  end do\n}\nrun install_input",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::FunctionDef(FunctionDefStatement {
+                    name: "install_input".to_owned(),
+                    params: Vec::new(),
+                    guard: None,
+                    actions: vec![Statement::KeyEvent(KeyEventStatement {
+                        key: "q".to_owned(),
+                        trigger: KeyTrigger::PressedOnce,
+                        guard: None,
+                        actions: vec![Statement::Assignment(AssignmentStatement {
+                            name: "marker".to_owned(),
+                            value: AssignmentValue::Number(1.0),
+                        })],
+                    })],
+                }),
+                Statement::RunFunction {
+                    name: "install_input".to_owned(),
+                    args: Vec::new(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_guarded_key_event_inside_function_as_event_guard() {
+        let program = parse_program(
+            "actor.data.ready = 1\nactor.data.busy = 0\ninstall_input = {\n  [actor.data.ready == 1 && actor.data.busy != 1]\n  when key Q is pressed once do\n    marker = 1\n  end do\n}\nrun install_input",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::Assignment(AssignmentStatement {
+                    name: "actor.data.ready".to_owned(),
+                    value: AssignmentValue::Number(1.0),
+                }),
+                Statement::Assignment(AssignmentStatement {
+                    name: "actor.data.busy".to_owned(),
+                    value: AssignmentValue::Number(0.0),
+                }),
+                Statement::FunctionDef(FunctionDefStatement {
+                    name: "install_input".to_owned(),
+                    params: Vec::new(),
+                    guard: None,
+                    actions: vec![Statement::KeyEvent(KeyEventStatement {
+                        key: "q".to_owned(),
+                        trigger: KeyTrigger::PressedOnce,
+                        guard: Some(Condition::And(vec![
+                            Condition::EqualsNumber {
+                                name: "actor.data.ready".to_owned(),
+                                value: 1.0,
+                            },
+                            Condition::NotEqualsNumber {
+                                name: "actor.data.busy".to_owned(),
+                                value: 1.0,
+                            },
+                        ])),
+                        actions: vec![Statement::Assignment(AssignmentStatement {
+                            name: "marker".to_owned(),
+                            value: AssignmentValue::Number(1.0),
+                        })],
+                    })],
+                }),
+                Statement::RunFunction {
+                    name: "install_input".to_owned(),
+                    args: Vec::new(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_guarded_when_event_inside_function_as_event_guard() {
+        let program = parse_program(
+            "install_collision = {\n  [actor.data.active == 1]\n  when actor.tool.colliders[\"tool_sensor\"] collides with target_box do\n    marker = 1\n  end do\n}\nrun install_collision",
+        )
+        .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![
+                Statement::FunctionDef(FunctionDefStatement {
+                    name: "install_collision".to_owned(),
+                    params: Vec::new(),
+                    guard: None,
+                    actions: vec![Statement::WhenEvent(WhenEventStatement {
+                        condition: Condition::Collision {
+                            sources: vec!["actor.tool.colliders[\"tool_sensor\"]".to_owned()],
+                            target: "target_box".to_owned(),
+                        },
+                        after_condition: None,
+                        guard: Some(Condition::EqualsNumber {
+                            name: "actor.data.active".to_owned(),
+                            value: 1.0,
+                        }),
+                        actions: vec![Statement::Assignment(AssignmentStatement {
+                            name: "marker".to_owned(),
+                            value: AssignmentValue::Number(1.0),
+                        })],
+                    })],
+                }),
+                Statement::RunFunction {
+                    name: "install_collision".to_owned(),
+                    args: Vec::new(),
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn parses_recurring_run_command() {
         let program = parse_program("run enemy_turn every 1.2 seconds").unwrap();
 
@@ -8920,6 +9317,17 @@ run tick(score+10) every tick_time+0.25 seconds
                     action: WeaponAction::Unequip,
                 }),
             ]
+        );
+
+        let program = parse_program("actor.weapon.posture = \"ready\"").unwrap();
+        assert_eq!(
+            program.statements,
+            vec![Statement::Weapon(WeaponStatement {
+                owner: "actor".to_owned(),
+                action: WeaponAction::Posture {
+                    posture: "ready".to_owned(),
+                },
+            })]
         );
 
         let program = parse_program("equip = {\n  actor.weapon = weapon_training_tool\n}").unwrap();
@@ -9209,6 +9617,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 if ease.target.layer == "layer1"
                     && ease.target.widget_path == vec!["titlePanel"]
                     && ease.direction == UiEaseDirection::Down
+                    && !ease.async_run
         ));
         assert!(matches!(
             &program.statements[2],
@@ -9221,6 +9630,62 @@ run tick(score+10) every tick_time+0.25 seconds
             &program.statements[3],
             Statement::UiShowHide(show_hide)
                 if show_hide.target.widget_path == vec!["footerPanel"] && !show_hide.visible
+        ));
+    }
+
+    #[test]
+    fn parses_print_statement_with_position_and_clear() {
+        let program = parse_program(
+            "sys.print \"hello world\": pos (10, 0, 0)\n\
+             debug.print \"hp=\" + hp having color yellow and size 1.5 and append\n\
+             sys.print \"\"",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::Print(PrintStatement {
+                channel,
+                text: UiPropertyValue::Literal(text),
+                position: Some(PositionValue::Coordinates(values)),
+                ..
+            }) if channel == "sys" && text == "hello world" && values.len() == 3
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Statement::Print(PrintStatement {
+                channel,
+                text: UiPropertyValue::Concatenation(parts),
+                color: Some(color),
+                font_size: Some(AssignmentValue::Number(size)),
+                append: true,
+                ..
+            }) if channel == "debug"
+                && parts == &vec![
+                    UiPropertyValuePart::Literal("hp=".to_owned()),
+                    UiPropertyValuePart::Expression(AssignmentValue::Symbol("hp".to_owned())),
+                ]
+                && color == "yellow"
+                && (*size - 1.5).abs() < f32::EPSILON
+        ));
+        assert!(matches!(
+            &program.statements[2],
+            Statement::Print(PrintStatement {
+                channel,
+                text: UiPropertyValue::Literal(text),
+                ..
+            }) if channel == "sys" && text.is_empty()
+        ));
+    }
+
+    #[test]
+    fn parses_async_ui_ease_suffix() {
+        let program =
+            parse_program("UI.layer1.titlePanel.ease(\"EaseInBack\", Down, 0.6) async").unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::UiEase(ease) if ease.async_run
         ));
     }
 
@@ -9238,6 +9703,23 @@ run tick(score+10) every tick_time+0.25 seconds
                     && message.text == "Memorize the keys, then launch straight into the fight."
                     && message.effects == "TextEffect.word_reveal | TextEffect.fade_in"
                     && (message.duration_seconds - 1.2).abs() < f32::EPSILON
+                    && !message.async_run
+        ));
+    }
+
+    #[test]
+    fn parses_async_ui_message_suffix() {
+        let program = parse_program(
+            "UI.layer1.panelMsg.txtMsg.message(\"Async is just text\", TextEffect.fade_in, 7) Async",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &program.statements[0],
+            Statement::UiMessage(message)
+                if message.text == "Async is just text"
+                    && (message.duration_seconds - 7.0).abs() < f32::EPSILON
+                    && message.async_run
         ));
     }
 

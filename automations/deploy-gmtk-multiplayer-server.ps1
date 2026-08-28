@@ -141,9 +141,15 @@ $buildFile = Join-Path $repoRoot "tools\multiplayer-server\build.zig"
 $linuxTemplate = Join-Path $repoRoot "tools\multiplayer-server\bin\linux-x64\scenemax-mp-server"
 $projectOutputDir = Join-Path $repoRoot "projects\GMTK_2026\multiplayer_server"
 $projectOutput = Join-Path $projectOutputDir "scenemax-mp-server"
+$zigCacheDir = Join-Path $repoRoot ".zig-cache"
+$zigGlobalCacheDir = Join-Path $repoRoot ".zig-global-cache"
+
+New-Item -ItemType Directory -Force -Path $zigCacheDir, $zigGlobalCacheDir | Out-Null
 
 Write-Host "Building Linux multiplayer server..."
-& $zig build --build-file $buildFile linux --summary all
+$env:ZIG_LOCAL_CACHE_DIR = $zigCacheDir
+$env:ZIG_GLOBAL_CACHE_DIR = $zigGlobalCacheDir
+& $zig build --build-file $buildFile linux --summary all --cache-dir $zigCacheDir --global-cache-dir $zigGlobalCacheDir
 if ($LASTEXITCODE -ne 0) {
     throw "Zig build failed with exit code $LASTEXITCODE"
 }

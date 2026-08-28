@@ -16,7 +16,6 @@ camera.rotate(-20.65568,115.06725,0.8177289)
 
 floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material "wall", shadow mode cast
 level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on async
-level2.shader = "shader_test1"
 ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0 async
 // rotate ring
 ring.turn left 360 in 50 seconds async
@@ -37,7 +36,7 @@ tg."Idle_Lie Prone" loop
 //effects.flame.show : pos (13,-20,50), radius = 17, duration 4 async
 skybox.show solar system
 wait 1 seconds
-player1 => dynamic fighter1_native: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast
+player1 => dynamic fighter1: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast
 , joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot") async
 player1_body_collider => collider box : size (1.0,1.0,1.0), pos (0.0,0.5,2.88586)
 // player1_body_collider_attach
@@ -57,7 +56,7 @@ player1_left_hand_collider.attach to player1."mixamorig:LeftHand": pos (0,0,0)
 player1_right_hand_collider => collider sphere : pos (8.34038,0.5,0.0), radius 0.5
 // player1_right_hand_collider_attach
 player1_right_hand_collider.attach to player1."mixamorig:RightHand": pos (0,0,0)
-player2 => dynamic old_fighter2_native: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on
+player2 => dynamic old_fighter2: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on
 , joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot") async
 player2_body_collider => collider box : size (1.0,1.0,1.0), pos (0.14360523,0.5,0.0)
 // player2_body_collider_attach

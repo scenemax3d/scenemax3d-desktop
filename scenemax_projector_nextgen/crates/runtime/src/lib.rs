@@ -41,27 +41,29 @@ use bevy_tnua::{
     prelude::{TnuaConfig, TnuaController, TnuaControllerPlugin, TnuaScheme},
 };
 use bevy_tnua_avian3d::prelude::{TnuaAvian3dPlugin, TnuaAvian3dSensorShape};
+#[cfg(test)]
+use scenemax_parser::AnimationStatement;
 use scenemax_parser::{
     AnimationControllerAction, AnimationControllerActionStatement,
     AnimationControllerEventStatement, AnimationControllerValue, AnimationSpeedStatement,
-    AnimationStatement, AssignmentValue, AttachStatement, AudioAction, AudioStatement,
-    CameraAttachStatement, CameraModifierValue, CameraMoveStatement, ChannelDrawStatement,
-    CharacterJumpStatement, CharacterModeStatement, CinematicLookAt, CinematicPlayStatement,
-    Condition, EffekseerPlayStatement, EntityOptions, KeyTrigger, LightDeclarationStatement,
-    LightProbeAddStatement, LightType, LoggerLevel, LoggerMessage, LoggerStatement, MoveDirection,
-    MoveToDestination, MoveToStatement, ObjectPoolStatement, PoolReleaseStatement, PositionExpr,
-    PositionValue, Program, SceneMaxAxis, SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3,
-    ScreenMode, SpritePlayStatement, Statement, ThrowMotionApplyStatement, ThrowMotionAsset,
-    ThrowMotionEventStatement, ThrowMotionTarget, ThrowMotionValue, UiEaseDirection, UiTargetPath,
-    WeaponAction, WeaponStatement,
+    AssignmentValue, AttachStatement, AudioAction, AudioStatement, CameraAttachStatement,
+    CameraModifierValue, CameraMoveStatement, ChannelDrawStatement, CharacterJumpStatement,
+    CharacterModeStatement, CinematicLookAt, CinematicPlayStatement, Condition,
+    EffekseerPlayStatement, EntityOptions, KeyEventStatement, KeyTrigger,
+    LightDeclarationStatement, LightProbeAddStatement, LightType, LoggerLevel, LoggerMessage,
+    LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement, ObjectPoolStatement,
+    PoolReleaseStatement, PositionExpr, PositionValue, PrintStatement, Program, SceneMaxAxis,
+    SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3, ScreenMode, SpritePlayStatement,
+    Statement, ThrowMotionApplyStatement, ThrowMotionAsset, ThrowMotionEventStatement,
+    ThrowMotionTarget, ThrowMotionValue, UiEaseDirection, UiTargetPath, WeaponAction,
+    WeaponStatement, WhenEventStatement,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
-    animation_name_matches, collect_animations_by_target, collect_attaches_by_target,
-    collect_functions_by_name, collect_guards_by_name, collect_shared_assignment_names,
-    collect_turn_by_target, collect_visibility_by_target, initial_state_scan_boundary,
-    instantiate_function_actions, normalized_animation_name, repeat_actions,
-    requested_animation_names_match, substitute_function_condition,
+    animation_name_matches, collect_attaches_by_target, collect_functions_by_name,
+    collect_guards_by_name, collect_shared_assignment_names, instantiate_function_actions,
+    normalized_animation_name, repeat_actions, requested_animation_names_match,
+    substitute_function_condition,
 };
 use scenemax_runtime_ui_core::{
     SceneMaxSpriteAsset, SceneMaxUiDocument, SceneMaxUiWidgetDef, UiLayoutRect, document_scale,
@@ -445,13 +447,55 @@ struct SceneMaxCameraSystem {
 #[derive(Debug, Resource, Default)]
 struct DelayedActionQueue {
     actions: Vec<DelayedActions>,
+    registered_key_events: RegisteredKeyEvents,
+    registered_when_events: RegisteredWhenEvents,
+    registered_run_every: RegisteredRunEveryEvents,
+}
+
+#[derive(Debug, Clone)]
+struct RegisteredKeyEvent {
+    id: usize,
+    event: KeyEventStatement,
+}
+
+#[derive(Debug, Default)]
+struct RegisteredKeyEvents {
+    next_id: usize,
+    events: Vec<RegisteredKeyEvent>,
+}
+
+#[derive(Debug, Clone)]
+struct RegisteredWhenEvent {
+    id: usize,
+    event: WhenEventStatement,
+}
+
+#[derive(Debug, Default)]
+struct RegisteredWhenEvents {
+    next_id: usize,
+    events: Vec<RegisteredWhenEvent>,
+}
+
+#[derive(Debug, Clone)]
+struct RegisteredRunEvery {
+    id: usize,
+    statement: Statement,
+}
+
+#[derive(Debug, Default)]
+struct RegisteredRunEveryEvents {
+    next_id: usize,
+    events: Vec<RegisteredRunEvery>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum SceneMaxControllerKey {
     Key(usize),
+    RegisteredKey(usize),
     When(usize),
+    RegisteredWhen(usize),
     Recurring(usize),
+    RegisteredRecurring(usize),
     AsyncFunction(String),
 }
 
@@ -463,12 +507,19 @@ struct ActiveActionControllers {
 #[derive(Debug, Resource, Default)]
 struct RecurringRunTimers {
     remaining_by_statement: HashMap<usize, f32>,
+    remaining_by_registered: HashMap<usize, f32>,
 }
 
 #[derive(Debug, Resource, Default)]
 struct ActiveCollisionEvents {
-    active_by_statement: HashSet<usize>,
-    transition_armed_by_statement: HashSet<usize>,
+    active_by_event: HashSet<SceneMaxWhenEventKey>,
+    transition_armed_by_event: HashSet<SceneMaxWhenEventKey>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum SceneMaxWhenEventKey {
+    TopLevel(usize),
+    Registered(usize),
 }
 
 #[derive(Debug, Resource, Default)]
@@ -481,6 +532,7 @@ struct SceneMaxColliderBounds {
     radius_by_name: HashMap<String, f32>,
     shape_by_name: HashMap<String, ColliderBoundShape>,
     owner_by_name: HashMap<String, String>,
+    hidden_by_name: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -508,6 +560,7 @@ impl SceneMaxColliderBounds {
         self.radius_by_name.clear();
         self.shape_by_name.clear();
         self.owner_by_name.clear();
+        self.hidden_by_name.clear();
     }
 }
 
@@ -522,6 +575,7 @@ struct SceneMaxRuntimeAssets {
     looping_audio_by_name: HashMap<String, Entity>,
     pending_weapon_actions: Vec<WeaponStatement>,
     gltf_handles_by_name: HashMap<String, Handle<Gltf>>,
+    gltf_animation_names_by_name: HashMap<String, Vec<String>>,
     model_resources_by_name: HashMap<String, String>,
     external_animations_by_name: HashMap<String, RuntimeExternalAnimation>,
     external_animation_misses: HashSet<String>,
@@ -535,6 +589,7 @@ struct SceneMaxRuntimeAssets {
 #[derive(Debug, Clone)]
 struct RuntimeExternalAnimation {
     gltf: Handle<Gltf>,
+    animation_names: Vec<String>,
     clip: String,
     asset_path: String,
     retarget: scenemax_assets::AnimationRetargetOptions,
@@ -620,6 +675,7 @@ struct SceneMaxUiRuntime {
     font_index_root: Option<PathBuf>,
     bitmap_fonts: HashMap<String, SceneMaxBitmapFont>,
     draw_channels: HashMap<String, Entity>,
+    print_channels: HashMap<String, Entity>,
     pending_draw_clears: Vec<PendingSceneMaxDrawClear>,
 }
 
@@ -668,6 +724,7 @@ enum SceneMaxUiAction {
         value: String,
     },
     Draw(SceneMaxDrawAction),
+    Print(SceneMaxPrintAction),
 }
 
 #[derive(Debug, Clone)]
@@ -683,6 +740,18 @@ struct SceneMaxDrawAction {
     stretch: bool,
 }
 
+#[derive(Debug, Clone)]
+struct SceneMaxPrintAction {
+    channel: String,
+    text: String,
+    pos_x: f32,
+    pos_y: f32,
+    color: Option<String>,
+    font_size: Option<f32>,
+    font: Option<String>,
+    append: bool,
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Component)]
 struct SceneMaxUiWidget {
@@ -693,6 +762,9 @@ struct SceneMaxUiWidget {
 
 #[derive(Debug, Clone, Component)]
 struct SceneMaxDrawChannel;
+
+#[derive(Debug, Clone, Component)]
+struct SceneMaxPrintChannel;
 
 #[derive(Debug, Clone)]
 struct PendingSceneMaxDrawClear {
@@ -770,9 +842,17 @@ struct SceneMaxUiTextVisualState {
 #[derive(Debug)]
 struct DelayedActions {
     remaining_seconds: f32,
+    animation_wait: Option<DelayedAnimationWait>,
     actions: Vec<Statement>,
     owner: Option<SceneMaxControllerKey>,
     scope: Option<SceneMaxScopeFrame>,
+}
+
+#[derive(Debug)]
+struct DelayedAnimationWait {
+    target: String,
+    clip: String,
+    started: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -907,6 +987,7 @@ struct ActiveCinematicCamera {
     playback: Vec<CinematicPlaybackSegment>,
     elapsed_seconds: f32,
     duration_seconds: f32,
+    playback_fov_degrees: Option<f32>,
     look_at: Option<CinematicLookAt>,
     reverse: bool,
     locked_target_placement_rotation: Option<Quat>,
@@ -967,6 +1048,7 @@ struct AnimationToPlay {
     looped: bool,
     speed: f32,
     gltf: Handle<Gltf>,
+    animation_names: Vec<String>,
     target_model_resource: Option<String>,
     baked_external: Option<RuntimeBakedRetarget>,
     bake_request: Option<RuntimeAnimationBakeRequest>,
@@ -994,11 +1076,14 @@ struct AnimationSpeedOverride {
 #[derive(Debug, Component)]
 struct SceneMaxGltf {
     gltf: Handle<Gltf>,
+    animation_names: Vec<String>,
 }
 
 #[derive(Debug, Component)]
 struct SceneMaxEquippedWeapon {
     owner: String,
+    weapon: String,
+    colliders: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -2255,6 +2340,7 @@ mod tests {
             ]),
             shape_by_name: HashMap::new(),
             owner_by_name: HashMap::new(),
+            hidden_by_name: HashSet::new(),
         };
 
         assert!(collision_condition_matches(
@@ -2379,6 +2465,70 @@ mod tests {
     }
 
     #[test]
+    fn hidden_collision_owner_does_not_match_collision_conditions() {
+        let transforms = HashMap::from([
+            (
+                "actor".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+            ),
+            (
+                "pickup".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 1.0)),
+            ),
+            (
+                "pickup_collider".to_owned(),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 1.0)),
+            ),
+        ]);
+        let collider_bounds = SceneMaxColliderBounds {
+            hidden_by_name: HashSet::from(["pickup".to_owned()]),
+            owner_by_name: HashMap::from([("pickup_collider".to_owned(), "pickup".to_owned())]),
+            ..Default::default()
+        };
+
+        assert!(!collision_condition_matches(
+            &["actor".to_owned()],
+            "pickup",
+            Some(&transforms),
+            Some(&collider_bounds),
+        ));
+        assert!(!collision_condition_matches(
+            &["actor".to_owned()],
+            "pickup_collider",
+            Some(&transforms),
+            Some(&collider_bounds),
+        ));
+    }
+
+    #[test]
+    fn hidden_collision_owner_does_not_match_physics_contacts() {
+        let contacts = SceneMaxPhysicsContacts {
+            active_pairs: HashSet::from([
+                normalized_collision_pair("actor", "pickup"),
+                normalized_collision_pair("actor", "pickup_collider"),
+            ]),
+        };
+        let collider_bounds = SceneMaxColliderBounds {
+            hidden_by_name: HashSet::from(["pickup".to_owned()]),
+            owner_by_name: HashMap::from([("pickup_collider".to_owned(), "pickup".to_owned())]),
+            ..Default::default()
+        };
+
+        assert!(!active_physics_contact_matches(
+            "actor",
+            "pickup",
+            &contacts,
+            Some(&collider_bounds),
+        ));
+        assert!(!active_physics_contact_matches(
+            "actor",
+            "pickup_collider",
+            &contacts,
+            Some(&collider_bounds),
+        ));
+    }
+
+    #[test]
     fn exact_box_sphere_collision_uses_box_shape_not_bounding_sphere() {
         let transforms = HashMap::from([
             (
@@ -2411,6 +2561,7 @@ mod tests {
                 ),
             ]),
             owner_by_name: HashMap::new(),
+            hidden_by_name: HashSet::new(),
         };
 
         assert!(!collision_condition_matches(
@@ -2454,6 +2605,7 @@ mod tests {
                 ),
             ]),
             owner_by_name: HashMap::new(),
+            hidden_by_name: HashSet::new(),
         };
 
         assert!(collision_condition_matches(
@@ -2593,10 +2745,10 @@ mod tests {
     }
 
     #[test]
-    fn collision_pulse_collection_ignores_arithmetic_state_updates() {
+    fn collision_pulse_collection_ignores_numeric_state_updates() {
         let actions = vec![
             Statement::Assignment(scenemax_parser::AssignmentStatement {
-                name: "enemy_hit".to_owned(),
+                name: "actor.data.ready".to_owned(),
                 value: AssignmentValue::Number(1.0),
             }),
             Statement::Assignment(scenemax_parser::AssignmentStatement {
@@ -2611,17 +2763,39 @@ mod tests {
         let mut pulses = HashSet::new();
         collect_transient_collision_assignments(&actions, &mut pulses);
 
-        assert!(pulses.contains("enemy_hit"));
+        assert!(!pulses.contains("actor.data.ready"));
         assert!(!pulses.contains("score"));
 
         let mut vars = SceneMaxVars(HashMap::from([
-            ("enemy_hit".to_owned(), 1.0),
+            ("actor.data.ready".to_owned(), 1.0),
             ("score".to_owned(), 10.0),
         ]));
         clear_transient_collision_vars(&mut vars, &pulses);
 
-        assert_eq!(vars.0.get("enemy_hit").copied(), Some(0.0));
+        assert_eq!(vars.0.get("actor.data.ready").copied(), Some(1.0));
         assert_eq!(vars.0.get("score").copied(), Some(10.0));
+    }
+
+    #[test]
+    fn collision_pulse_collection_tracks_condition_state_updates() {
+        let actions = vec![Statement::Assignment(
+            scenemax_parser::AssignmentStatement {
+                name: "enemy_hit".to_owned(),
+                value: AssignmentValue::Condition(Box::new(Condition::Collision {
+                    sources: vec!["actor".to_owned()],
+                    target: "enemy".to_owned(),
+                })),
+            },
+        )];
+        let mut pulses = HashSet::new();
+        collect_transient_collision_assignments(&actions, &mut pulses);
+
+        assert!(pulses.contains("enemy_hit"));
+
+        let mut vars = SceneMaxVars(HashMap::from([("enemy_hit".to_owned(), 1.0)]));
+        clear_transient_collision_vars(&mut vars, &pulses);
+
+        assert_eq!(vars.0.get("enemy_hit").copied(), Some(0.0));
     }
 
     #[test]
@@ -2910,6 +3084,104 @@ mod tests {
         assert_eq!(
             resolved_blocking_timed_action_seconds(
                 &action,
+                &vars,
+                None,
+                &guards,
+                Some(&transforms),
+                None,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn ui_message_duration_blocks_parent_until_finished() {
+        let target = UiTargetPath {
+            ui_name: None,
+            layer: "layer1".to_owned(),
+            widget_path: vec!["panelMsg".to_owned(), "txtMsg".to_owned()],
+        };
+        let blocking = Statement::UiMessage(scenemax_parser::UiMessageStatement {
+            target: target.clone(),
+            text: "Status ready".to_owned(),
+            effects: "TextEffect.fade_in | TextEffect.zoom_in".to_owned(),
+            duration_seconds: 7.0,
+            async_run: false,
+        });
+        let async_message = Statement::UiMessage(scenemax_parser::UiMessageStatement {
+            target,
+            text: "Status ready".to_owned(),
+            effects: "TextEffect.fade_in | TextEffect.zoom_in".to_owned(),
+            duration_seconds: 7.0,
+            async_run: true,
+        });
+        let vars = SceneMaxVars::default();
+        let guards = HashMap::new();
+        let transforms = HashMap::new();
+
+        assert_eq!(
+            resolved_blocking_timed_action_seconds(
+                &blocking,
+                &vars,
+                None,
+                &guards,
+                Some(&transforms),
+                None,
+            ),
+            Some(7.0)
+        );
+        assert_eq!(
+            resolved_blocking_timed_action_seconds(
+                &async_message,
+                &vars,
+                None,
+                &guards,
+                Some(&transforms),
+                None,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn ui_ease_duration_blocks_parent_until_finished() {
+        let target = UiTargetPath {
+            ui_name: None,
+            layer: "layer1".to_owned(),
+            widget_path: vec!["panel".to_owned()],
+        };
+        let blocking = Statement::UiEase(scenemax_parser::UiEaseStatement {
+            target: target.clone(),
+            easing: "EaseInBack".to_owned(),
+            direction: UiEaseDirection::Down,
+            duration_seconds: 0.6,
+            async_run: false,
+        });
+        let async_ease = Statement::UiEase(scenemax_parser::UiEaseStatement {
+            target,
+            easing: "EaseInBack".to_owned(),
+            direction: UiEaseDirection::Down,
+            duration_seconds: 0.6,
+            async_run: true,
+        });
+        let vars = SceneMaxVars::default();
+        let guards = HashMap::new();
+        let transforms = HashMap::new();
+
+        assert_eq!(
+            resolved_blocking_timed_action_seconds(
+                &blocking,
+                &vars,
+                None,
+                &guards,
+                Some(&transforms),
+                None,
+            ),
+            Some(0.6)
+        );
+        assert_eq!(
+            resolved_blocking_timed_action_seconds(
+                &async_ease,
                 &vars,
                 None,
                 &guards,

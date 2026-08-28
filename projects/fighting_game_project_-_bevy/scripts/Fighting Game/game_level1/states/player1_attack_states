@@ -12,6 +12,7 @@ player2_head_hit = {
 	
 	player2_head_hit_cnt = player2_head_hit_cnt + 1
 	if (player2_head_hit_cnt % 3 == 0) {
+		run set_front_camera async 
 		do async
 		  player2.shader = "bv_dramatic_hit_red" //"dramatic_hit_red"
 			player2_hit1.pos(player2."mixamorig:Head") 

@@ -7,6 +7,18 @@ bump_fx = camera.system.modifiers.bump_modifier
 fight_cam = camera.system.fighting(player1, player2, depth 18, height 3, side 1.5, min distance 10, max distance 28, damping 8)
 crystal_hunt_cam = camera.system.third_person(player1, distance 12, height 3.4, side 4.5, look ahead 4, damping 7, fov 62, max fov 72)
 
+set_front_camera = {
+
+  camera.attach stop
+  camera.chase stop
+
+  axe_throw_cam=>cinematic.camera.axe_throw_front
+  axe_throw_cam.play : target player1_head_collider, duration 0.85
+  audio.play "crash1"
+  wait 0.15 seconds
+  camera.system = fight_cam
+}
+
 set_camera_on_player = {
   if(camera_mode==CAMERA_MODE_DEFAULT) {
   	camera.attach stop
@@ -64,12 +76,12 @@ level1_hitstop_p1_receives (tm) = {
 }
 
 level1_hit_recoil_p2 = {
-  player2.character.jump at speed of 16 async
+  player2.character.jump at speed of 10 async
   player2.move backward 1.15 for 0.32 seconds
 }
 
 level1_hit_recoil_p1 = {
-  player1.character.jump at speed of 16 async
+  player1.character.jump at speed of 10 async
   player1.move backward 1.15 for 0.32 seconds
 }
 

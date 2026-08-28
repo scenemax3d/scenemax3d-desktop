@@ -388,6 +388,7 @@ pub fn substitute_statement(
                 text: substitute_reference(&message.text, bindings),
                 effects: message.effects.clone(),
                 duration_seconds: message.duration_seconds,
+                async_run: message.async_run,
             })
         }
         Statement::UiEase(ease) => Statement::UiEase(scenemax_parser::UiEaseStatement {
@@ -395,6 +396,7 @@ pub fn substitute_statement(
             easing: ease.easing.clone(),
             direction: ease.direction,
             duration_seconds: ease.duration_seconds,
+            async_run: ease.async_run,
         }),
         Statement::UiSetProperty(property) => {
             Statement::UiSetProperty(scenemax_parser::UiSetPropertyStatement {
@@ -885,7 +887,7 @@ mod tests {
 
     #[test]
     fn collects_last_animation_for_target() {
-        let program = parse_program("d=>dragon\nd.fly\nd.idle loop").unwrap();
+        let program = parse_program("d=>dragon\nd.fly async\nd.idle loop").unwrap();
         let animations = collect_animations_by_target(&program);
 
         assert_eq!(

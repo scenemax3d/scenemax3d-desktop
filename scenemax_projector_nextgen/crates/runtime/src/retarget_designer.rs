@@ -423,7 +423,10 @@ fn spawn_retarget_model(
                 name: "retarget_preview".to_owned(),
                 runtime_name: "retarget_preview@1".to_owned(),
             },
-            SceneMaxGltf { gltf },
+            SceneMaxGltf {
+                gltf,
+                animation_names: Vec::new(),
+            },
             WorldAssetRoot(scene),
             transform,
             Visibility::Inherited,
@@ -745,6 +748,7 @@ fn replay_retarget_preview(
         looped: true,
         speed: state.speed,
         gltf: state.source_gltf.clone(),
+        animation_names: Vec::new(),
         target_model_resource: None,
         baked_external: None,
         bake_request,
@@ -1511,10 +1515,7 @@ fn save_retarget_options(
 }
 
 fn upsert_baked_retarget_entry(entry: &mut Value, baked: &RetargetBakedIndexEntry) {
-    if !entry
-        .get("bevyBakedRetargets")
-        .is_some_and(Value::is_array)
-    {
+    if !entry.get("bevyBakedRetargets").is_some_and(Value::is_array) {
         entry["bevyBakedRetargets"] = json!([]);
     }
     let Some(retargets) = entry

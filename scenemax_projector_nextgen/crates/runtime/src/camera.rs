@@ -1,4 +1,5 @@
 use super::*;
+use bevy::camera::primitives::{Aabb, MeshAabb};
 
 #[derive(Component, Debug, Clone)]
 pub(super) struct TimedCameraMoves {
@@ -148,7 +149,7 @@ pub(super) fn apply_camera_systems(program: &Program, camera_system: &mut SceneM
             last_side_dir: Vec3::Z,
         })
     });
-    register_cinematic_camera_declarations(&program.statements, camera_system);
+    register_top_level_cinematic_camera_declarations(&program.statements, camera_system);
     for statement in &program.statements {
         let Statement::ThirdPersonCamera(camera) = statement else {
             continue;
@@ -278,48 +279,33 @@ fn apply_camera_modifier_overrides(value: &mut RuntimeCameraModifier, overrides:
     }
 }
 
-fn register_cinematic_camera_declarations(
+fn register_top_level_cinematic_camera_declarations(
     statements: &[Statement],
     camera_system: &mut SceneMaxCameraSystem,
 ) {
     for statement in statements {
-        match statement {
-            Statement::ModelDecl { name, resource, .. } => {
-                if let Some(rig_id) = cinematic_resource_id(resource) {
-                    camera_system.cinematic_vars.insert(
-                        name.clone(),
-                        CinematicCameraRuntimeRef {
-                            rig_id: rig_id.to_owned(),
-                        },
-                    );
-                    write_runtime_diagnostic_line(format!(
-                        "registered cinematic camera {name}=>{resource}"
-                    ));
-                }
-            }
-            Statement::KeyEvent(event) => {
-                register_cinematic_camera_declarations(&event.actions, camera_system)
-            }
-            Statement::WhenEvent(event) => {
-                register_cinematic_camera_declarations(&event.actions, camera_system)
-            }
-            Statement::FunctionDef(function) => {
-                register_cinematic_camera_declarations(&function.actions, camera_system)
-            }
-            Statement::If(statement) => {
-                register_cinematic_camera_declarations(&statement.actions, camera_system);
-                register_cinematic_camera_declarations(&statement.else_actions, camera_system);
-            }
-            Statement::Guarded { actions, .. }
-            | Statement::Repeat { actions, .. }
-            | Statement::DoWhile { actions, .. }
-            | Statement::LoopContinue { actions, .. }
-            | Statement::Async { actions } => {
-                register_cinematic_camera_declarations(actions, camera_system);
-            }
-            _ => {}
+        if let Statement::ModelDecl { name, resource, .. } = statement {
+            register_cinematic_camera_var(name, resource, camera_system);
         }
     }
+}
+
+pub(super) fn register_cinematic_camera_var(
+    name: &str,
+    resource: &str,
+    camera_system: &mut SceneMaxCameraSystem,
+) -> bool {
+    let Some(rig_id) = cinematic_resource_id(resource) else {
+        return false;
+    };
+    camera_system.cinematic_vars.insert(
+        name.to_owned(),
+        CinematicCameraRuntimeRef {
+            rig_id: rig_id.to_owned(),
+        },
+    );
+    write_runtime_diagnostic_line(format!("registered cinematic camera {name}=>{resource}"));
+    true
 }
 
 pub(super) fn cinematic_resource_id(resource: &str) -> Option<&str> {
@@ -568,10 +554,9 @@ fn populate_cinematic_relative_target_placement(
         return;
     };
     let target_pos = vec3_json(target.get("position"), Vec3::ZERO);
-    let target_rot = quat_json(target.get("rotation"), Quat::IDENTITY);
     let target_point = target_pos + rig.target_offset;
-    rig.relative_rig_position_to_target = target_rot.inverse() * (rig.position - target_point);
-    rig.relative_rig_rotation_to_target = target_rot.inverse() * rig.rotation;
+    rig.relative_rig_position_to_target = rig.position - target_point;
+    rig.relative_rig_rotation_to_target = rig.rotation;
     rig.has_relative_target_placement = true;
 }
 
@@ -678,6 +663,242 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[test]
+    fn nested_cinematic_camera_declaration_does_not_override_preload_binding() {
+        let program = Program::new(vec![
+            Statement::ModelDecl {
+                name: "shot_cam".to_owned(),
+                resource: "cinematic.camera.front_shot".to_owned(),
+                options: EntityOptions::default(),
+            },
+            Statement::FunctionDef(scenemax_parser::FunctionDefStatement {
+                name: "other_shot".to_owned(),
+                params: Vec::new(),
+                guard: None,
+                actions: vec![Statement::ModelDecl {
+                    name: "shot_cam".to_owned(),
+                    resource: "cinematic.camera.back_shot".to_owned(),
+                    options: EntityOptions::default(),
+                }],
+            }),
+        ]);
+        let mut camera_system = SceneMaxCameraSystem::default();
+
+        apply_camera_systems(&program, &mut camera_system);
+
+        assert_eq!(
+            camera_system
+                .cinematic_vars
+                .get("shot_cam")
+                .map(|camera| camera.rig_id.as_str()),
+            Some("front_shot")
+        );
+
+        assert!(register_cinematic_camera_var(
+            "shot_cam",
+            "cinematic.camera.back_shot",
+            &mut camera_system
+        ));
+        assert_eq!(
+            camera_system
+                .cinematic_vars
+                .get("shot_cam")
+                .map(|camera| camera.rig_id.as_str()),
+            Some("back_shot")
+        );
+    }
+
+    #[test]
+    fn starting_cinematic_camera_clears_camera_attachment() {
+        let mut camera_system = SceneMaxCameraSystem::default();
+        camera_system.attached = Some(CameraAttachmentRuntime {
+            target: "target".to_owned(),
+            offset: Vec3::new(0.0, 3.0, -12.0),
+        });
+        camera_system.cinematic_vars.insert(
+            "shot_cam".to_owned(),
+            CinematicCameraRuntimeRef {
+                rig_id: "rig".to_owned(),
+            },
+        );
+        let mut tracks_by_id = HashMap::new();
+        tracks_by_id.insert(
+            "track".to_owned(),
+            RuntimeCinematicTrack {
+                id: "track".to_owned(),
+                local_position: Vec3::ZERO,
+                local_rotation: Quat::IDENTITY,
+                local_scale: Vec3::ONE,
+                radius_x: 1.0,
+                radius_z: 1.0,
+                anchor_count: 16,
+            },
+        );
+        camera_system.cinematic_rigs.insert(
+            "rig".to_owned(),
+            RuntimeCinematicRig {
+                id: "rig".to_owned(),
+                name: "Rig".to_owned(),
+                position: Vec3::ZERO,
+                rotation: Quat::IDENTITY,
+                scale: Vec3::ONE,
+                target_entity_name: "target".to_owned(),
+                target_offset: Vec3::ZERO,
+                ease_in: String::new(),
+                ease_out: String::new(),
+                tracks_by_id,
+                segments: vec![RuntimeCinematicSegment {
+                    track_id: "track".to_owned(),
+                    start_anchor: 0,
+                    end_anchor: 4,
+                }],
+                has_relative_target_placement: true,
+                relative_rig_position_to_target: Vec3::ZERO,
+                relative_rig_rotation_to_target: Quat::IDENTITY,
+            },
+        );
+        let play = CinematicPlayStatement {
+            target: "shot_cam".to_owned(),
+            look_at: Some(CinematicLookAt::Entity("target".to_owned())),
+            duration_seconds: 1.0,
+            reverse: false,
+            async_run: false,
+        };
+        let transforms = HashMap::from([("target".to_owned(), Transform::default())]);
+        let object_pools = SceneMaxObjectPools::default();
+
+        start_cinematic_camera(&play, &transforms, &object_pools, None, &mut camera_system);
+
+        assert!(camera_system.active_cinematic.is_some());
+        assert!(camera_system.attached.is_none());
+    }
+
+    #[test]
+    fn attached_camera_bounds_center_uses_visual_extents() {
+        let bounds = AttachedCameraBounds::from_points([
+            Vec3::new(-1.0, 0.0, -0.5),
+            Vec3::new(1.0, 6.0, 0.5),
+        ])
+        .unwrap();
+
+        assert_eq!(bounds.center(), Vec3::new(0.0, 3.0, 0.0));
+    }
+
+    #[test]
+    fn entity_target_cinematic_follows_live_target_position_and_look_at() {
+        let mut active = ActiveCinematicCamera {
+            rig: RuntimeCinematicRig {
+                id: "rig".to_owned(),
+                name: "Rig".to_owned(),
+                position: Vec3::ZERO,
+                rotation: Quat::IDENTITY,
+                scale: Vec3::ONE,
+                target_entity_name: String::new(),
+                target_offset: Vec3::Y,
+                ease_in: String::new(),
+                ease_out: String::new(),
+                tracks_by_id: HashMap::new(),
+                segments: Vec::new(),
+                has_relative_target_placement: true,
+                relative_rig_position_to_target: Vec3::new(0.0, 2.0, 5.0),
+                relative_rig_rotation_to_target: Quat::IDENTITY,
+            },
+            playback: Vec::new(),
+            elapsed_seconds: 0.0,
+            duration_seconds: 1.0,
+            playback_fov_degrees: None,
+            look_at: Some(CinematicLookAt::Entity("actor.weapon".to_owned())),
+            reverse: false,
+            locked_target_placement_rotation: None,
+        };
+        let object_pools = SceneMaxObjectPools::default();
+        let mut transforms = HashMap::from([(
+            "actor.weapon".to_owned(),
+            Transform::from_xyz(1.0, 2.0, 3.0),
+        )]);
+
+        update_cinematic_rig_transform(&mut active, &transforms, &object_pools, None);
+        let initial_rig_position = active.rig.position;
+        assert_eq!(initial_rig_position, Vec3::new(1.0, 5.0, 8.0));
+        transforms.insert(
+            "actor.weapon".to_owned(),
+            Transform::from_xyz(20.0, 2.0, 3.0),
+        );
+        update_cinematic_rig_transform(&mut active, &transforms, &object_pools, None);
+
+        assert_eq!(active.rig.position, Vec3::new(20.0, 5.0, 8.0));
+        assert_eq!(
+            resolve_cinematic_look_at(&active, &transforms),
+            Some(Vec3::new(20.0, 3.0, 3.0))
+        );
+    }
+
+    #[test]
+    fn entity_target_cinematic_uses_world_position_delta_without_target_rotation() {
+        let authored_rotation = Quat::from_rotation_y(30.0_f32.to_radians());
+        let target_start_rotation = Quat::from_rotation_y(120.0_f32.to_radians());
+        let mut active = ActiveCinematicCamera {
+            rig: RuntimeCinematicRig {
+                id: "rig".to_owned(),
+                name: "Rig".to_owned(),
+                position: Vec3::ZERO,
+                rotation: authored_rotation,
+                scale: Vec3::ONE,
+                target_entity_name: String::new(),
+                target_offset: Vec3::Y,
+                ease_in: String::new(),
+                ease_out: String::new(),
+                tracks_by_id: HashMap::new(),
+                segments: Vec::new(),
+                has_relative_target_placement: true,
+                relative_rig_position_to_target: Vec3::new(0.0, 2.0, 5.0),
+                relative_rig_rotation_to_target: authored_rotation,
+            },
+            playback: Vec::new(),
+            elapsed_seconds: 0.0,
+            duration_seconds: 1.0,
+            playback_fov_degrees: None,
+            look_at: Some(CinematicLookAt::Entity("target".to_owned())),
+            reverse: false,
+            locked_target_placement_rotation: None,
+        };
+        let object_pools = SceneMaxObjectPools::default();
+        let transforms = HashMap::from([(
+            "target".to_owned(),
+            Transform {
+                translation: Vec3::new(10.0, 20.0, 30.0),
+                rotation: target_start_rotation,
+                ..Default::default()
+            },
+        )]);
+
+        update_cinematic_rig_transform(&mut active, &transforms, &object_pools, None);
+        let initial_rig_position = active.rig.position;
+        let initial_rig_rotation = active.rig.rotation;
+
+        let expected_position = Vec3::new(10.0, 20.0, 30.0) + Vec3::Y + Vec3::new(0.0, 2.0, 5.0);
+        assert!(initial_rig_position.distance(expected_position) < 0.0001);
+        assert!((initial_rig_rotation * Vec3::Z).distance(authored_rotation * Vec3::Z) < 0.0001);
+
+        let transforms = HashMap::from([(
+            "target".to_owned(),
+            Transform {
+                translation: Vec3::new(20.0, 20.0, 30.0),
+                rotation: Quat::IDENTITY,
+                ..Default::default()
+            },
+        )]);
+
+        update_cinematic_rig_transform(&mut active, &transforms, &object_pools, None);
+
+        assert_eq!(
+            active.rig.position,
+            Vec3::new(20.0, 20.0, 30.0) + Vec3::Y + Vec3::new(0.0, 2.0, 5.0)
+        );
+        assert_ne!(active.rig.position, initial_rig_position);
+        assert_eq!(active.rig.rotation, initial_rig_rotation);
+    }
+
     fn cinematic_rig_json(name: &str) -> String {
         format!(
             r#"{{
@@ -755,9 +976,9 @@ pub(super) fn stop_camera_attachment(camera_system: &mut SceneMaxCameraSystem) {
 
 pub(super) fn start_cinematic_camera(
     play: &CinematicPlayStatement,
-    transforms_by_name: &HashMap<String, Transform>,
-    object_pools: &SceneMaxObjectPools,
-    scope: Option<&SceneMaxScopeFrame>,
+    _transforms_by_name: &HashMap<String, Transform>,
+    _object_pools: &SceneMaxObjectPools,
+    _scope: Option<&SceneMaxScopeFrame>,
     camera_system: &mut SceneMaxCameraSystem,
 ) {
     let Some(camera_ref) = camera_system.cinematic_vars.get(&play.target).cloned() else {
@@ -786,12 +1007,14 @@ pub(super) fn start_cinematic_camera(
         playback,
         elapsed_seconds: 0.0,
         duration_seconds: play.duration_seconds.max(0.1),
+        playback_fov_degrees: None,
         look_at: play.look_at.clone(),
         reverse: play.reverse,
         locked_target_placement_rotation: None,
     };
     distribute_cinematic_segment_durations(&mut active);
-    update_cinematic_rig_transform(&mut active, transforms_by_name, object_pools, scope);
+    camera_system.selected = None;
+    camera_system.attached = None;
     tracing::info!(
         camera = %play.target,
         rig = %active.rig.id,
@@ -799,10 +1022,6 @@ pub(super) fn start_cinematic_camera(
         reverse = active.reverse,
         "started SceneMax cinematic camera"
     );
-    write_runtime_diagnostic_line(format!(
-        "started cinematic camera {} rig={} duration={:.3}s reverse={}",
-        play.target, active.rig.id, active.duration_seconds, active.reverse
-    ));
     camera_system.active_cinematic = Some(active);
 }
 
@@ -881,10 +1100,20 @@ pub(super) fn update_cinematic_camera(
     mut camera_system: ResMut<SceneMaxCameraSystem>,
     object_pools: Res<SceneMaxObjectPools>,
     startup_program: Res<SceneMaxStartupProgram>,
-    scene_entities: Query<(Entity, &SceneMaxEntity, &Transform)>,
+    scene_entities: Query<(
+        Entity,
+        &SceneMaxEntity,
+        &Transform,
+        Option<&GlobalTransform>,
+        Option<&ChildOf>,
+    )>,
     bone_queries: SceneMaxBoneQueries,
     mut cameras: Query<
-        (&mut Transform, &mut SceneMaxCameraModifierState),
+        (
+            &mut Transform,
+            &mut SceneMaxCameraModifierState,
+            Option<&mut Projection>,
+        ),
         (With<Camera3d>, Without<SceneMaxEntity>),
     >,
 ) {
@@ -900,9 +1129,16 @@ pub(super) fn update_cinematic_camera(
 
     let delta = time.delta_secs();
     active.elapsed_seconds = (active.elapsed_seconds + delta).min(active.duration_seconds);
-    if let Ok((mut camera, mut modifier_state)) = cameras.single_mut()
+    if let Ok((mut camera, mut modifier_state, projection)) = cameras.single_mut()
         && let Some((camera_pos, look_at)) = cinematic_camera_frame(&active, &transforms_by_name)
     {
+        if active.playback_fov_degrees.is_none() {
+            active.playback_fov_degrees = projection
+                .as_deref()
+                .and_then(perspective_fov_degrees)
+                .or(Some(50.0));
+        }
+        set_perspective_fov_degrees(projection, active.playback_fov_degrees.unwrap_or(50.0));
         camera.translation = camera_pos;
         camera.look_at(look_at, Vec3::Y);
         modifier_state.base_look_at = Some(look_at);
@@ -1031,18 +1267,19 @@ fn update_cinematic_rig_transform(
     else {
         return;
     };
-    let placement_rotation = if should_follow_live_cinematic_target_rotation(active) {
-        target.rotation
-    } else if let Some(locked) = active.locked_target_placement_rotation {
+    let placement_translation = target.translation;
+    let placement_rotation = if let Some(locked) = active.locked_target_placement_rotation {
         locked
     } else {
-        active.locked_target_placement_rotation = Some(target.rotation);
-        target.rotation
+        active
+            .locked_target_placement_rotation
+            .replace(active.rig.relative_rig_rotation_to_target);
+        active.rig.relative_rig_rotation_to_target
     };
-    active.rig.position = target.translation
+    active.rig.position = placement_translation
         + active.rig.target_offset
-        + placement_rotation * active.rig.relative_rig_position_to_target;
-    active.rig.rotation = placement_rotation * active.rig.relative_rig_rotation_to_target;
+        + active.rig.relative_rig_position_to_target;
+    active.rig.rotation = placement_rotation;
 }
 
 fn current_cinematic_target_transform(
@@ -1065,10 +1302,6 @@ fn current_cinematic_target_transform(
             lookup_cinematic_target_transform(&active.rig.target_entity_name, transforms_by_name)
         }
     }
-}
-
-fn should_follow_live_cinematic_target_rotation(active: &ActiveCinematicCamera) -> bool {
-    matches!(active.look_at, Some(CinematicLookAt::RelativePosition(_)))
 }
 
 fn compute_track_world_position(
@@ -1420,7 +1653,10 @@ pub(super) fn update_third_person_camera(
 
 pub(super) fn update_attached_camera(
     camera_system: Res<SceneMaxCameraSystem>,
-    entities: Query<(&SceneMaxEntity, &Transform)>,
+    entities: Query<(Entity, &SceneMaxEntity, &GlobalTransform)>,
+    children: Query<&Children>,
+    mesh_entities: Query<(&Mesh3d, &GlobalTransform)>,
+    meshes: Res<Assets<Mesh>>,
     mut cameras: Query<
         (&mut Transform, &mut SceneMaxCameraModifierState),
         (With<Camera3d>, Without<SceneMaxEntity>),
@@ -1432,9 +1668,10 @@ pub(super) fn update_attached_camera(
     let Some(attachment) = camera_system.attached.as_ref() else {
         return;
     };
-    let Some(target) = entities
-        .iter()
-        .find_map(|(entity, transform)| (entity.name == attachment.target).then_some(*transform))
+    let Some((target_entity, target)) =
+        entities.iter().find_map(|(entity_id, entity, transform)| {
+            (entity.name == attachment.target).then_some((entity_id, transform.compute_transform()))
+        })
     else {
         return;
     };
@@ -1443,10 +1680,124 @@ pub(super) fn update_attached_camera(
     };
 
     let desired_translation = target.translation + target.rotation * attachment.offset;
-    let look_target = target.translation + Vec3::Y * attachment.offset.y.max(1.0) * 0.35;
+    let look_target = attached_camera_look_target(
+        target_entity,
+        target.translation,
+        &children,
+        &mesh_entities,
+        &meshes,
+    );
     camera.translation = desired_translation;
     camera.look_at(look_target, Vec3::Y);
     modifier_state.base_look_at = Some(look_target);
+}
+
+fn attached_camera_look_target(
+    root: Entity,
+    fallback: Vec3,
+    children: &Query<&Children>,
+    mesh_entities: &Query<(&Mesh3d, &GlobalTransform)>,
+    meshes: &Assets<Mesh>,
+) -> Vec3 {
+    attached_camera_subtree_bounds(root, children, mesh_entities, meshes)
+        .map(|bounds| bounds.center())
+        .unwrap_or(fallback)
+}
+
+fn attached_camera_subtree_bounds(
+    root: Entity,
+    children: &Query<&Children>,
+    mesh_entities: &Query<(&Mesh3d, &GlobalTransform)>,
+    meshes: &Assets<Mesh>,
+) -> Option<AttachedCameraBounds> {
+    let mut bounds = attached_camera_mesh_bounds(root, mesh_entities, meshes);
+    for descendant in children.iter_descendants(root) {
+        bounds = union_attached_camera_bounds(
+            bounds,
+            attached_camera_mesh_bounds(descendant, mesh_entities, meshes),
+        );
+    }
+    bounds
+}
+
+fn attached_camera_mesh_bounds(
+    entity: Entity,
+    mesh_entities: &Query<(&Mesh3d, &GlobalTransform)>,
+    meshes: &Assets<Mesh>,
+) -> Option<AttachedCameraBounds> {
+    let (mesh_handle, global_transform) = mesh_entities.get(entity).ok()?;
+    let aabb = meshes
+        .get(&mesh_handle.0)
+        .and_then(MeshAabb::compute_aabb)?;
+    let transform = global_transform.to_matrix();
+    AttachedCameraBounds::from_points(
+        attached_camera_aabb_corners(aabb)
+            .into_iter()
+            .map(|corner| transform.transform_point3(corner)),
+    )
+}
+
+fn attached_camera_aabb_corners(aabb: Aabb) -> [Vec3; 8] {
+    let min: Vec3 = aabb.min().into();
+    let max: Vec3 = aabb.max().into();
+    [
+        Vec3::new(min.x, min.y, min.z),
+        Vec3::new(min.x, min.y, max.z),
+        Vec3::new(min.x, max.y, min.z),
+        Vec3::new(min.x, max.y, max.z),
+        Vec3::new(max.x, min.y, min.z),
+        Vec3::new(max.x, min.y, max.z),
+        Vec3::new(max.x, max.y, min.z),
+        Vec3::new(max.x, max.y, max.z),
+    ]
+}
+
+#[derive(Clone, Copy)]
+struct AttachedCameraBounds {
+    min: Vec3,
+    max: Vec3,
+}
+
+impl AttachedCameraBounds {
+    fn from_points(points: impl IntoIterator<Item = Vec3>) -> Option<Self> {
+        let mut points = points.into_iter();
+        let first = points.next()?;
+        let mut bounds = Self {
+            min: first,
+            max: first,
+        };
+        for point in points {
+            bounds.include(point);
+        }
+        Some(bounds)
+    }
+
+    fn center(self) -> Vec3 {
+        (self.min + self.max) * 0.5
+    }
+
+    fn include(&mut self, point: Vec3) {
+        self.min = self.min.min(point);
+        self.max = self.max.max(point);
+    }
+
+    fn union(mut self, other: Self) -> Self {
+        self.include(other.min);
+        self.include(other.max);
+        self
+    }
+}
+
+fn union_attached_camera_bounds(
+    a: Option<AttachedCameraBounds>,
+    b: Option<AttachedCameraBounds>,
+) -> Option<AttachedCameraBounds> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.union(b)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
 }
 
 pub(super) fn restore_camera_modifier_base(
@@ -1540,6 +1891,13 @@ pub(super) fn update_camera_modifiers(
 fn perspective_fov_radians(projection: &mut Projection) -> Option<f32> {
     match projection {
         Projection::Perspective(perspective) => Some(perspective.fov),
+        _ => None,
+    }
+}
+
+fn perspective_fov_degrees(projection: &Projection) -> Option<f32> {
+    match projection {
+        Projection::Perspective(perspective) => Some(perspective.fov.to_degrees()),
         _ => None,
     }
 }

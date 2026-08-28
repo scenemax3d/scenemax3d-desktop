@@ -51,6 +51,75 @@ pub(super) fn canonicalize_existing(path: impl AsRef<Path>) -> Option<PathBuf> {
     path.as_ref().canonicalize().ok()
 }
 
+pub(super) fn load_gltf_animation_names(
+    asset_root: Option<&Path>,
+    builtin_asset_root: Option<&Path>,
+    asset_path: &str,
+) -> Vec<String> {
+    let Some(path) = resolve_gltf_source_path(asset_root, builtin_asset_root, asset_path) else {
+        return Vec::new();
+    };
+    read_gltf_animation_names(&path).unwrap_or_default()
+}
+
+fn read_gltf_animation_names(path: &Path) -> Result<Vec<String>, String> {
+    let bytes = fs::read(path).map_err(|error| error.to_string())?;
+    let json = gltf_json_text(&bytes)?;
+    let value: serde_json::Value = serde_json::from_str(json).map_err(|error| error.to_string())?;
+    let Some(animations) = value.get("animations").and_then(|value| value.as_array()) else {
+        return Ok(Vec::new());
+    };
+    Ok(animations
+        .iter()
+        .map(|animation| {
+            animation
+                .get("name")
+                .and_then(|name| name.as_str())
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect())
+}
+
+fn gltf_json_text(bytes: &[u8]) -> Result<&str, String> {
+    if bytes.starts_with(b"glTF") {
+        return glb_json_text(bytes);
+    }
+    std::str::from_utf8(bytes).map_err(|error| error.to_string())
+}
+
+fn glb_json_text(bytes: &[u8]) -> Result<&str, String> {
+    if bytes.len() < 20 {
+        return Err("GLB file is too short".to_owned());
+    }
+    let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+    if version != 2 {
+        return Err(format!("unsupported GLB version {version}"));
+    }
+    let json_length = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+    let chunk_type = u32::from_le_bytes(bytes[16..20].try_into().unwrap());
+    if chunk_type != 0x4E4F534A {
+        return Err("first GLB chunk is not JSON".to_owned());
+    }
+    let json_end = 20usize
+        .checked_add(json_length)
+        .filter(|end| *end <= bytes.len())
+        .ok_or_else(|| "GLB JSON chunk extends past end of file".to_owned())?;
+    let text = std::str::from_utf8(&bytes[20..json_end]).map_err(|error| error.to_string())?;
+    Ok(text.trim_end_matches('\0').trim_end())
+}
+
+fn resolve_gltf_source_path(
+    asset_root: Option<&Path>,
+    builtin_asset_root: Option<&Path>,
+    asset_path: &str,
+) -> Option<PathBuf> {
+    if let Some(relative) = asset_path.strip_prefix("builtin://") {
+        return builtin_asset_root.map(|root| root.join(relative));
+    }
+    asset_root.map(|root| root.join(asset_path))
+}
+
 pub(super) fn initialize_runtime_logger(project_root: Option<&Path>, script_root: Option<&Path>) {
     let base = project_root
         .or(script_root)
@@ -606,7 +675,7 @@ pub(super) fn has_ui_runtime_content(program: &Program) -> bool {
 pub(super) fn statement_has_ui_runtime_content(statement: &Statement) -> bool {
     if matches!(
         statement,
-        Statement::UiSetProperty(_) | Statement::ChannelDraw(_)
+        Statement::UiSetProperty(_) | Statement::ChannelDraw(_) | Statement::Print(_)
     ) {
         return true;
     }
@@ -760,11 +829,8 @@ pub(super) fn spawn_scenemax_program(
     collider_bounds: &mut SceneMaxColliderBounds,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
-    character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
+    _character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
 ) -> Vec<Handle<Gltf>> {
-    let animations_by_target = collect_animations_by_target(program);
-    let visibility_by_target = collect_visibility_by_target(program);
-    let turn_by_target = collect_turn_by_target(program);
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
     let attaches_by_target = collect_attaches_by_target(program);
@@ -775,6 +841,10 @@ pub(super) fn spawn_scenemax_program(
         &functions_by_name,
         object_pools,
     ));
+    let preaction_visibility_by_target = model_declarations
+        .iter()
+        .map(|declaration| (declaration.name.clone(), false))
+        .collect::<HashMap<_, _>>();
     let mut spawned_any = false;
     let mut entities_by_name = HashMap::new();
     let mut transforms_by_name = HashMap::new();
@@ -869,7 +939,7 @@ pub(super) fn spawn_scenemax_program(
                         ),
                     },
                     transform,
-                    initial_visibility(name, options, &visibility_by_target),
+                    initial_visibility(name, options, &preaction_visibility_by_target),
                 ))
                 .id();
             entities_by_name.insert(name.clone(), entity_id);
@@ -905,7 +975,7 @@ pub(super) fn spawn_scenemax_program(
                 resource,
                 options,
                 &sprite_index,
-                &visibility_by_target,
+                &preaction_visibility_by_target,
             ) {
                 insert_physics_components(commands, entity_id, name, resource, options, &transform);
                 entities_by_name.insert(name.clone(), entity_id);
@@ -948,7 +1018,7 @@ pub(super) fn spawn_scenemax_program(
                     primitive.0,
                     primitive.1,
                     transform,
-                    initial_visibility(name, options, &visibility_by_target),
+                    initial_visibility(name, options, &preaction_visibility_by_target),
                 ))
                 .id();
             insert_physics_components(commands, entity, name, resource, options, &transform);
@@ -966,12 +1036,15 @@ pub(super) fn spawn_scenemax_program(
         ) {
             Ok(model) => {
                 let runtime_name = format!("{name}@1");
+                let resolved_model_resource = model.name.clone();
                 let asset_path = model.asset_path;
                 let bevy_visual_offset_y = model
                     .character_physics
                     .as_ref()
                     .and_then(|character| character.bevy_visual_offset_y);
                 let gltf: Handle<Gltf> = asset_server.load(asset_path.clone());
+                let animation_names =
+                    load_gltf_animation_names(Some(asset_root), builtin_asset_root, &asset_path);
                 let scene = WorldAssetRoot(
                     asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())),
                 );
@@ -990,33 +1063,19 @@ pub(super) fn spawn_scenemax_program(
                             runtime_name,
                         },
                         SceneMaxModelResource {
-                            resource: resource.clone(),
+                            resource: resolved_model_resource.clone(),
                         },
-                        SceneMaxGltf { gltf: gltf.clone() },
+                        SceneMaxGltf {
+                            gltf: gltf.clone(),
+                            animation_names,
+                        },
                         scene,
                         transform,
-                        initial_visibility(name, options, &visibility_by_target),
+                        initial_visibility(name, options, &preaction_visibility_by_target),
                     ))
                     .id();
                 insert_gltf_visual_offset(commands, entity_id, bevy_visual_offset_y);
 
-                if let Some(animation) = animations_by_target.get(name) {
-                    commands.entity(entity_id).insert(AnimationToPlay {
-                        clip: animation.clip.clone(),
-                        runtime_clip: animation.clip.clone(),
-                        looped: animation.looped,
-                        speed: animation.speed,
-                        gltf: gltf.clone(),
-                        target_model_resource: Some(resource.clone()),
-                        baked_external: None,
-                        bake_request: None,
-                        external_retarget: Default::default(),
-                        external_source: false,
-                        tried_external_source: false,
-                        visual_transform_preapplied: false,
-                        retarget_wait_logged: false,
-                    });
-                }
                 insert_physics_components(commands, entity_id, name, resource, options, &transform);
 
                 entities_by_name.insert(name.clone(), entity_id);
@@ -1052,7 +1111,7 @@ pub(super) fn spawn_scenemax_program(
                     resource,
                     options,
                     transform,
-                    &visibility_by_target,
+                    &preaction_visibility_by_target,
                 );
                 insert_physics_components(commands, entity_id, name, resource, options, &transform);
                 entities_by_name.insert(name.clone(), entity_id);
@@ -1085,7 +1144,7 @@ pub(super) fn spawn_scenemax_program(
                     resource,
                     options,
                     transform,
-                    &visibility_by_target,
+                    &preaction_visibility_by_target,
                 );
                 insert_physics_components(commands, entity_id, name, resource, options, &transform);
                 entities_by_name.insert(name.clone(), entity_id);
@@ -1121,7 +1180,7 @@ pub(super) fn spawn_scenemax_program(
                     resource,
                     options,
                     transform,
-                    &visibility_by_target,
+                    &preaction_visibility_by_target,
                 );
                 insert_physics_components(commands, entity_id, name, resource, options, &transform);
                 entities_by_name.insert(name.clone(), entity_id);
@@ -1137,27 +1196,6 @@ pub(super) fn spawn_scenemax_program(
                     "placeholder for unresolved model {name}=>{resource}; reason={error}"
                 ));
             }
-        }
-    }
-
-    apply_look_at_commands(
-        program,
-        commands,
-        &entities_by_name,
-        &mut transforms_by_name,
-    );
-    apply_character_modes(
-        program,
-        commands,
-        &entities_by_name,
-        &transforms_by_name,
-        character_configs,
-    );
-    for (target, turn) in turn_by_target {
-        if let Some(entity) = entities_by_name.get(&target) {
-            commands
-                .entity(*entity)
-                .insert(timed_turn_from_statement(&turn));
         }
     }
 
@@ -1187,7 +1225,13 @@ pub(super) fn apply_startup_runs_when_ready(
     mut delayed_actions: ResMut<DelayedActionQueue>,
     mut ui_queue: ResMut<SceneMaxUiActionQueue>,
     mut scene_entities: ParamSet<(
-        Query<(Entity, &SceneMaxEntity, &Transform)>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
         Query<(
             Entity,
             &SceneMaxEntity,
@@ -1206,17 +1250,22 @@ pub(super) fn apply_startup_runs_when_ready(
         return;
     };
 
-    if !startup_action_state
+    let startup_audio_handles = startup_audio_handles_before_first_wait(program, &runtime_assets);
+    let gltfs_ready = startup_action_state
         .waiting_gltfs
         .iter()
-        .all(|handle| asset_server.is_loaded_with_dependencies(handle))
-    {
+        .all(|handle| asset_server.is_loaded_with_dependencies(handle));
+    let audio_ready = startup_audio_handles
+        .iter()
+        .all(|handle| asset_server.is_loaded_with_dependencies(handle));
+    if !gltfs_ready || !audio_ready {
         startup_action_state.wait_seconds += time.delta_secs();
         if !startup_action_state.waiting_logged {
             startup_action_state.waiting_logged = true;
             write_runtime_diagnostic_line(format!(
-                "STARTUP:WAIT_ASSETS gltf_count={}",
-                startup_action_state.waiting_gltfs.len()
+                "STARTUP:WAIT_ASSETS gltf_count={} audio_count={}",
+                startup_action_state.waiting_gltfs.len(),
+                startup_audio_handles.len()
             ));
         }
         return;
@@ -1238,11 +1287,14 @@ pub(super) fn apply_startup_runs_when_ready(
         build_action_transform_map(program, &object_pools, scene_entities.p0(), &bone_queries);
     let mut entities_by_name = HashMap::new();
     let mut gltfs_by_name = HashMap::new();
+    let mut gltf_animation_names_by_name = HashMap::new();
     let mut model_resources_by_name = HashMap::new();
     for (entity, scene_entity, _transform, gltf, model_resource) in &scene_entities.p1() {
         entities_by_name.insert(scene_entity.name.clone(), entity);
         if let Some(gltf) = gltf {
             gltfs_by_name.insert(scene_entity.name.clone(), gltf.gltf.clone());
+            gltf_animation_names_by_name
+                .insert(scene_entity.name.clone(), gltf.animation_names.clone());
         }
         if let Some(model_resource) = model_resource {
             model_resources_by_name
@@ -1250,6 +1302,7 @@ pub(super) fn apply_startup_runs_when_ready(
         }
     }
     runtime_assets.gltf_handles_by_name = gltfs_by_name.clone();
+    runtime_assets.gltf_animation_names_by_name = gltf_animation_names_by_name;
     runtime_assets.model_resources_by_name = model_resources_by_name;
 
     let functions_by_name = collect_functions_by_name(program);
@@ -1260,6 +1313,12 @@ pub(super) fn apply_startup_runs_when_ready(
         gltfs_by_name.len(),
         startup_action_state.ready_frames
     ));
+    delayed_actions.registered_key_events.events.clear();
+    delayed_actions.registered_key_events.next_id = 0;
+    delayed_actions.registered_when_events.events.clear();
+    delayed_actions.registered_when_events.next_id = 0;
+    delayed_actions.registered_run_every.events.clear();
+    delayed_actions.registered_run_every.next_id = 0;
     apply_startup_runs(
         program,
         &mut commands,
@@ -1276,4 +1335,82 @@ pub(super) fn apply_startup_runs_when_ready(
         &guards_by_name,
     );
     startup_action_state.applied = true;
+}
+
+fn startup_audio_handles_before_first_wait(
+    program: &Program,
+    runtime_assets: &SceneMaxRuntimeAssets,
+) -> Vec<Handle<AudioSource>> {
+    let functions_by_name = collect_functions_by_name(program);
+    let mut sounds = HashSet::new();
+    collect_audio_names_before_first_wait(&program.statements, &functions_by_name, &mut sounds, 0);
+    sounds
+        .into_iter()
+        .filter_map(|sound| {
+            runtime_assets
+                .audio_by_name
+                .get(&audio_key(&sound))
+                .map(|asset| asset.handle.clone())
+        })
+        .collect()
+}
+
+fn collect_audio_names_before_first_wait(
+    actions: &[Statement],
+    functions_by_name: &HashMap<String, FunctionRuntime>,
+    sounds: &mut HashSet<String>,
+    depth: usize,
+) {
+    if depth > 8 {
+        return;
+    }
+    for action in actions {
+        match action {
+            Statement::Wait { .. }
+            | Statement::WaitValue { .. }
+            | Statement::WaitUntil { .. }
+            | Statement::WaitForKey { .. }
+            | Statement::SwitchTo { .. } => break,
+            Statement::Audio(audio) => {
+                if let Some(sound) = audio.sound.as_ref() {
+                    sounds.insert(sound.clone());
+                }
+            }
+            Statement::Async { actions }
+            | Statement::Repeat { actions, .. }
+            | Statement::Guarded { actions, .. } => {
+                collect_audio_names_before_first_wait(
+                    actions,
+                    functions_by_name,
+                    sounds,
+                    depth + 1,
+                );
+            }
+            Statement::If(statement) => {
+                collect_audio_names_before_first_wait(
+                    &statement.actions,
+                    functions_by_name,
+                    sounds,
+                    depth + 1,
+                );
+                collect_audio_names_before_first_wait(
+                    &statement.else_actions,
+                    functions_by_name,
+                    sounds,
+                    depth + 1,
+                );
+            }
+            Statement::RunFunction { name, .. } => {
+                if let Some(function) = functions_by_name.get(name) {
+                    collect_audio_names_before_first_wait(
+                        &function.actions,
+                        functions_by_name,
+                        sounds,
+                        depth + 1,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
 }
