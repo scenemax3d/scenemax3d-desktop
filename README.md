@@ -1,8 +1,9 @@
 # SceneMax3D Developer Studio
 
-A desktop 3D scene editor and game development environment built with Java, [JMonkeyEngine 3](https://jmonkeyengine.org/), Swing, native runtime integrations, and a growing toolchain for shipping real interactive 3D games.
+**SceneMax3D is an open-source, 3D game creation studio built around choreography programming.** Instead of dealing with low-level engine mechanics, developers describe how characters, cameras, animations, effects, sounds, and game events behave and interact over time.
 
-SceneMax3D lets you visually design 3D scenes, write game logic using a built-in scripting language, extend projects with custom Java runtime code, run multiplayer sessions, and export projects as standalone PC executables or Android apps.
+SceneMax3D combines a visual 3D editor with its high-level scripting language, AI-assisted development through MCP, automatic animation retargeting, multiplayer, inverse kinematics, physics, effects, UI tools, and extensibility with custom code. Its NextGen runtime, powered by Rust, Bevy, and ECS, brings a modern high-performance foundation for building and shipping interactive 3D games.
+
 
 <img width="1600" height="846" alt="image" src="https://github.com/user-attachments/assets/8e83d0b0-950e-425d-94a0-d38db5fc4fd3" />
 
