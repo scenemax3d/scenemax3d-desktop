@@ -1299,14 +1299,8 @@ fn collect_audio_names_before_first_wait(
                 }
             }
             Statement::Async { actions }
-            | Statement::Repeat {
-                actions,
-                ..
-            }
-            | Statement::Guarded {
-                actions,
-                ..
-            } => {
+            | Statement::Repeat { actions, .. }
+            | Statement::Guarded { actions, .. } => {
                 collect_audio_names_before_first_wait(
                     actions,
                     functions_by_name,

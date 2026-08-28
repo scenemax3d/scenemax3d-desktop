@@ -1,4 +1,5 @@
 use super::*;
+use bevy::camera::primitives::{Aabb, MeshAabb};
 
 #[derive(Component, Debug, Clone)]
 pub(super) struct TimedCameraMoves {
@@ -770,6 +771,17 @@ mod tests {
 
         assert!(camera_system.active_cinematic.is_some());
         assert!(camera_system.attached.is_none());
+    }
+
+    #[test]
+    fn attached_camera_bounds_center_uses_visual_extents() {
+        let bounds = AttachedCameraBounds::from_points([
+            Vec3::new(-1.0, 0.0, -0.5),
+            Vec3::new(1.0, 6.0, 0.5),
+        ])
+        .unwrap();
+
+        assert_eq!(bounds.center(), Vec3::new(0.0, 3.0, 0.0));
     }
 
     #[test]
@@ -1641,7 +1653,10 @@ pub(super) fn update_third_person_camera(
 
 pub(super) fn update_attached_camera(
     camera_system: Res<SceneMaxCameraSystem>,
-    entities: Query<(&SceneMaxEntity, &Transform)>,
+    entities: Query<(Entity, &SceneMaxEntity, &GlobalTransform)>,
+    children: Query<&Children>,
+    mesh_entities: Query<(&Mesh3d, &GlobalTransform)>,
+    meshes: Res<Assets<Mesh>>,
     mut cameras: Query<
         (&mut Transform, &mut SceneMaxCameraModifierState),
         (With<Camera3d>, Without<SceneMaxEntity>),
@@ -1653,9 +1668,10 @@ pub(super) fn update_attached_camera(
     let Some(attachment) = camera_system.attached.as_ref() else {
         return;
     };
-    let Some(target) = entities
-        .iter()
-        .find_map(|(entity, transform)| (entity.name == attachment.target).then_some(*transform))
+    let Some((target_entity, target)) =
+        entities.iter().find_map(|(entity_id, entity, transform)| {
+            (entity.name == attachment.target).then_some((entity_id, transform.compute_transform()))
+        })
     else {
         return;
     };
@@ -1664,10 +1680,124 @@ pub(super) fn update_attached_camera(
     };
 
     let desired_translation = target.translation + target.rotation * attachment.offset;
-    let look_target = target.translation + Vec3::Y * attachment.offset.y.max(1.0) * 0.35;
+    let look_target = attached_camera_look_target(
+        target_entity,
+        target.translation,
+        &children,
+        &mesh_entities,
+        &meshes,
+    );
     camera.translation = desired_translation;
     camera.look_at(look_target, Vec3::Y);
     modifier_state.base_look_at = Some(look_target);
+}
+
+fn attached_camera_look_target(
+    root: Entity,
+    fallback: Vec3,
+    children: &Query<&Children>,
+    mesh_entities: &Query<(&Mesh3d, &GlobalTransform)>,
+    meshes: &Assets<Mesh>,
+) -> Vec3 {
+    attached_camera_subtree_bounds(root, children, mesh_entities, meshes)
+        .map(|bounds| bounds.center())
+        .unwrap_or(fallback)
+}
+
+fn attached_camera_subtree_bounds(
+    root: Entity,
+    children: &Query<&Children>,
+    mesh_entities: &Query<(&Mesh3d, &GlobalTransform)>,
+    meshes: &Assets<Mesh>,
+) -> Option<AttachedCameraBounds> {
+    let mut bounds = attached_camera_mesh_bounds(root, mesh_entities, meshes);
+    for descendant in children.iter_descendants(root) {
+        bounds = union_attached_camera_bounds(
+            bounds,
+            attached_camera_mesh_bounds(descendant, mesh_entities, meshes),
+        );
+    }
+    bounds
+}
+
+fn attached_camera_mesh_bounds(
+    entity: Entity,
+    mesh_entities: &Query<(&Mesh3d, &GlobalTransform)>,
+    meshes: &Assets<Mesh>,
+) -> Option<AttachedCameraBounds> {
+    let (mesh_handle, global_transform) = mesh_entities.get(entity).ok()?;
+    let aabb = meshes
+        .get(&mesh_handle.0)
+        .and_then(MeshAabb::compute_aabb)?;
+    let transform = global_transform.to_matrix();
+    AttachedCameraBounds::from_points(
+        attached_camera_aabb_corners(aabb)
+            .into_iter()
+            .map(|corner| transform.transform_point3(corner)),
+    )
+}
+
+fn attached_camera_aabb_corners(aabb: Aabb) -> [Vec3; 8] {
+    let min: Vec3 = aabb.min().into();
+    let max: Vec3 = aabb.max().into();
+    [
+        Vec3::new(min.x, min.y, min.z),
+        Vec3::new(min.x, min.y, max.z),
+        Vec3::new(min.x, max.y, min.z),
+        Vec3::new(min.x, max.y, max.z),
+        Vec3::new(max.x, min.y, min.z),
+        Vec3::new(max.x, min.y, max.z),
+        Vec3::new(max.x, max.y, min.z),
+        Vec3::new(max.x, max.y, max.z),
+    ]
+}
+
+#[derive(Clone, Copy)]
+struct AttachedCameraBounds {
+    min: Vec3,
+    max: Vec3,
+}
+
+impl AttachedCameraBounds {
+    fn from_points(points: impl IntoIterator<Item = Vec3>) -> Option<Self> {
+        let mut points = points.into_iter();
+        let first = points.next()?;
+        let mut bounds = Self {
+            min: first,
+            max: first,
+        };
+        for point in points {
+            bounds.include(point);
+        }
+        Some(bounds)
+    }
+
+    fn center(self) -> Vec3 {
+        (self.min + self.max) * 0.5
+    }
+
+    fn include(&mut self, point: Vec3) {
+        self.min = self.min.min(point);
+        self.max = self.max.max(point);
+    }
+
+    fn union(mut self, other: Self) -> Self {
+        self.include(other.min);
+        self.include(other.max);
+        self
+    }
+}
+
+fn union_attached_camera_bounds(
+    a: Option<AttachedCameraBounds>,
+    b: Option<AttachedCameraBounds>,
+) -> Option<AttachedCameraBounds> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.union(b)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
 }
 
 pub(super) fn restore_camera_modifier_base(
