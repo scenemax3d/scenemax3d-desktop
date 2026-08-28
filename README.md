@@ -9,7 +9,9 @@ SceneMax3D lets you visually design 3D scenes, write game logic using a built-in
 SceneMax3D was first created by Adi Barda in 2005 as a C++/DirectX game engine and scripting language for education purposes.
 In 2017-2018 it was rewritten in Java from scratch using JMonkeyEngine3 as the target renderer and ANTLR4 for the language parsing. 
 In Mar-22, 2026 the entire solution was uploaded to GitHub as an open source (MIT license) project.
-On August 08 2026, the initial next generation projector, based on Rust/Bevy engine was committed looking ahead as the target renderer mainly for web browser games. SceneMax3D will continue to support both the "Classic" Java games and the "NextGen" Rust ones. The choreographic programming language will be similar for both platforms.
+On August 08 2026, the initial next generation projector, based on Rust/Bevy engine was committed looking ahead as the future target renderer.
+SceneMax3D is transitioning from its original Java/JMonkeyEngine runtime to the NextGen Rust/Bevy runtime. During the transition, both projectors remain available so existing projects can run while NextGen reaches feature parity.
+The NextGen run-time projector will have superior performance, rendering, web support and multi platform. Currently, there are no plans for replacing the Swing IDE.
 
 ## Product Website
 [SceneMax3D](https://scenemax3d.com/cook-book/)
