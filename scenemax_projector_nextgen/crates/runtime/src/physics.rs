@@ -1019,6 +1019,25 @@ pub(super) fn insert_physics_components(
     );
 }
 
+#[derive(Component, Debug, Clone, Copy)]
+pub(super) struct SceneMaxPendingStaticMeshCollider;
+
+pub(super) fn should_use_static_mesh_collider(options: &EntityOptions) -> bool {
+    matches!(options.body_kind, Some(SceneMaxBodyKind::Static))
+        && options.collision_shape.is_none()
+        && options.size.is_none()
+        && options.radius.is_none()
+}
+
+pub(super) fn insert_pending_static_mesh_collider(commands: &mut Commands, entity: Entity) {
+    commands.entity(entity).insert((
+        AvianRigidBody::Static,
+        solid_collision_layers(SceneMaxBodyKind::Static),
+        CollisionEventsEnabled,
+        SceneMaxPendingStaticMeshCollider,
+    ));
+}
+
 pub(super) fn physics_body_kind(options: &EntityOptions) -> Option<SceneMaxBodyKind> {
     options.body_kind.or_else(|| {
         options
@@ -1082,6 +1101,150 @@ pub(super) fn collider_dimensions(options: &EntityOptions, transform: &Transform
         .map(vec3_from_scenemax)
         .unwrap_or_else(|| transform.scale.abs())
         .max(Vec3::splat(0.1))
+}
+
+pub(super) fn bake_pending_static_mesh_colliders(
+    mut commands: Commands,
+    meshes: Res<Assets<Mesh>>,
+    roots: Query<(Entity, &GlobalTransform), With<SceneMaxPendingStaticMeshCollider>>,
+    children: Query<&Children>,
+    mesh_entities: Query<(&Mesh3d, &GlobalTransform)>,
+) {
+    for (root, root_global_transform) in &roots {
+        match build_static_mesh_collider(
+            root,
+            root_global_transform,
+            &children,
+            &mesh_entities,
+            &meshes,
+        ) {
+            StaticMeshColliderBuild::Pending => {}
+            StaticMeshColliderBuild::Ready { collider } => {
+                commands
+                    .entity(root)
+                    .insert(collider)
+                    .remove::<SceneMaxPendingStaticMeshCollider>();
+            }
+            StaticMeshColliderBuild::Failed => {
+                commands
+                    .entity(root)
+                    .remove::<SceneMaxPendingStaticMeshCollider>();
+            }
+        }
+    }
+}
+
+enum StaticMeshColliderBuild {
+    Pending,
+    Ready { collider: AvianCollider },
+    Failed,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct StaticMeshColliderStats {
+    meshes: usize,
+    vertices: usize,
+    triangles: usize,
+}
+
+fn build_static_mesh_collider(
+    root: Entity,
+    root_global_transform: &GlobalTransform,
+    children: &Query<&Children>,
+    mesh_entities: &Query<(&Mesh3d, &GlobalTransform)>,
+    meshes: &Assets<Mesh>,
+) -> StaticMeshColliderBuild {
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+    let mut stats = StaticMeshColliderStats::default();
+    let root_from_world = root_global_transform.affine().inverse();
+
+    for descendant in children.iter_descendants(root) {
+        let Ok((mesh_handle, mesh_global_transform)) = mesh_entities.get(descendant) else {
+            continue;
+        };
+        let Some(mesh) = meshes.get(&mesh_handle.0) else {
+            return StaticMeshColliderBuild::Pending;
+        };
+        let mesh_from_root = root_from_world * mesh_global_transform.affine();
+        append_mesh_triangles(
+            mesh,
+            mesh_from_root,
+            &mut vertices,
+            &mut indices,
+            &mut stats,
+        );
+    }
+
+    if indices.is_empty() {
+        return StaticMeshColliderBuild::Pending;
+    }
+
+    let flags = TrimeshFlags::MERGE_DUPLICATE_VERTICES
+        | TrimeshFlags::DELETE_BAD_TOPOLOGY_TRIANGLES
+        | TrimeshFlags::DELETE_DEGENERATE_TRIANGLES
+        | TrimeshFlags::DELETE_DUPLICATE_TRIANGLES;
+    let Ok(collider) = AvianCollider::try_trimesh_with_config(vertices, indices, flags) else {
+        return StaticMeshColliderBuild::Failed;
+    };
+    StaticMeshColliderBuild::Ready { collider }
+}
+
+fn append_mesh_triangles(
+    mesh: &Mesh,
+    mesh_from_root: Affine3A,
+    vertices: &mut Vec<Vec3>,
+    indices: &mut Vec<[u32; 3]>,
+    stats: &mut StaticMeshColliderStats,
+) {
+    if mesh.primitive_topology() != PrimitiveTopology::TriangleList {
+        return;
+    }
+    let Some(VertexAttributeValues::Float32x3(positions)) = mesh
+        .try_attribute_option(Mesh::ATTRIBUTE_POSITION)
+        .ok()
+        .flatten()
+    else {
+        return;
+    };
+
+    let base_index = vertices.len() as u32;
+    vertices.extend(
+        positions
+            .iter()
+            .map(|position| mesh_from_root.transform_point3(Vec3::from(*position))),
+    );
+    let before_triangles = indices.len();
+    if let Some(mesh_indices) = mesh.try_indices_option().ok().flatten() {
+        let mesh_indices = mesh_indices
+            .iter()
+            .filter_map(|index| u32::try_from(index).ok())
+            .map(|index| base_index + index)
+            .collect::<Vec<_>>();
+        indices.extend(
+            mesh_indices
+                .chunks_exact(3)
+                .map(|chunk| [chunk[0], chunk[1], chunk[2]]),
+        );
+    } else {
+        let vertex_count = positions.len() as u32;
+        indices.extend((0..vertex_count).step_by(3).filter_map(|index| {
+            (index + 2 < vertex_count).then_some([
+                base_index + index,
+                base_index + index + 1,
+                base_index + index + 2,
+            ])
+        }));
+    }
+
+    let added_triangles = indices.len() - before_triangles;
+    if added_triangles == 0 {
+        vertices.truncate(base_index as usize);
+        return;
+    }
+    stats.meshes += 1;
+    stats.vertices += positions.len();
+    stats.triangles += added_triangles;
 }
 
 pub(super) fn collider_bound_shape(
@@ -2430,18 +2593,50 @@ pub(super) fn transform_from_options_resolved(
     transforms_by_name: Option<&HashMap<String, Transform>>,
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> Transform {
+    transform_from_options_resolved_scoped(
+        options,
+        asset_scale,
+        vars,
+        None,
+        guards_by_name,
+        transforms_by_name,
+        collider_bounds,
+    )
+}
+
+pub(super) fn transform_from_options_resolved_scoped(
+    options: &EntityOptions,
+    asset_scale: Option<[f32; 3]>,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: Option<&HashMap<String, Transform>>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
+) -> Transform {
     let mut transform = transform_from_options(options, asset_scale);
     if let Some(position) = options.position_value.as_ref().and_then(|position| {
         resolve_position_value_runtime(
             position,
             vars,
-            None,
+            scope,
             guards_by_name,
             transforms_by_name,
             collider_bounds,
         )
     }) {
         transform.translation = position;
+    }
+    if let Some(scale) = options.scale_value.as_ref().and_then(|scale| {
+        resolve_assignment_value_scoped_with_guards(
+            scale,
+            vars,
+            scope,
+            guards_by_name,
+            transforms_by_name,
+            collider_bounds,
+        )
+    }) {
+        transform.scale = Vec3::splat(scale);
     }
     transform
 }
@@ -2565,30 +2760,49 @@ pub(super) fn apply_physics_stop(commands: &mut Commands, entity: Entity) {
         .insert((LinearVelocity::ZERO, AngularVelocity::ZERO));
 }
 
+const PHYSICS_THROW_DEFAULT_GRAVITY: f32 = 9.81;
+const PHYSICS_THROW_DEFAULT_ARC_BLEND: f32 = 0.5;
+
 pub(super) fn apply_physics_throw_at(
     commands: &mut Commands,
     entity: Entity,
     transform: &Transform,
     throw_at: &scenemax_parser::PhysicsThrowAtStatement,
     vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    guards_by_name: &HashMap<String, Condition>,
     transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: Option<&SceneMaxColliderBounds>,
 ) {
     let Some(target_transform) = lookup_subject_transform(&throw_at.subject, transforms_by_name)
     else {
         return;
     };
-    let Some(power) = resolve_assignment_value(&throw_at.power, vars, Some(transforms_by_name))
-    else {
+    let Some(power) = resolve_assignment_value_scoped_with_guards(
+        &throw_at.power,
+        vars,
+        scope,
+        guards_by_name,
+        Some(transforms_by_name),
+        collider_bounds,
+    ) else {
         return;
     };
-    let mut direction = target_transform.translation - transform.translation;
+    let direction = target_transform.translation - transform.translation;
     if direction.length_squared() <= f32::EPSILON {
         return;
     }
-    direction = direction.normalize();
-    commands
-        .entity(entity)
-        .insert(LinearVelocity(direction * power));
+    let velocity = calculate_ballistic_throw_velocity(
+        transform.translation,
+        target_transform.translation,
+        power,
+        PHYSICS_THROW_DEFAULT_ARC_BLEND,
+    );
+    let spin_axis = throw_spin_axis(velocity.normalize_or_zero());
+    commands.entity(entity).insert((
+        LinearVelocity(velocity),
+        AngularVelocity(spin_axis * power.abs() * 0.35),
+    ));
 }
 
 pub(super) fn physics_direction_vector(
@@ -2603,6 +2817,45 @@ pub(super) fn physics_direction_vector(
         scenemax_parser::PhysicsDirection::Left => -horizontal_right(transform),
         scenemax_parser::PhysicsDirection::Right => horizontal_right(transform),
     }
+}
+
+fn throw_spin_axis(direction: Vec3) -> Vec3 {
+    let horizontal = Vec3::new(direction.x, 0.0, direction.z);
+    if horizontal.length_squared() <= f32::EPSILON {
+        return Vec3::X;
+    }
+    horizontal.normalize().cross(Vec3::Y).normalize()
+}
+
+fn calculate_ballistic_throw_velocity(
+    source: Vec3,
+    target: Vec3,
+    speed: f32,
+    arc_blend: f32,
+) -> Vec3 {
+    let delta = target - source;
+    let horizontal = Vec3::new(delta.x, 0.0, delta.z);
+    let horizontal_distance = horizontal.length();
+    if horizontal_distance < 0.001 {
+        return Vec3::new(0.0, speed, 0.0);
+    }
+
+    let speed_sq = speed * speed;
+    let gravity = PHYSICS_THROW_DEFAULT_GRAVITY;
+    let root = speed_sq * speed_sq
+        - gravity
+            * (gravity * horizontal_distance * horizontal_distance + 2.0 * delta.y * speed_sq);
+    let horizontal_dir = horizontal.normalize();
+    if root < 0.0 {
+        return delta.normalize() * speed;
+    }
+
+    let sqrt = root.sqrt();
+    let low_angle = ((speed_sq - sqrt) / (gravity * horizontal_distance)).atan();
+    let high_angle = ((speed_sq + sqrt) / (gravity * horizontal_distance)).atan();
+    let angle = low_angle.lerp(high_angle, arc_blend.clamp(0.0, 1.0));
+
+    horizontal_dir * (speed * angle.cos()) + Vec3::Y * (speed * angle.sin())
 }
 
 pub(super) fn set_character_move_intent_resolved(
@@ -3045,6 +3298,84 @@ pub(super) fn rotation_from_degrees(value: SceneMaxVec3) -> Quat {
 }
 
 #[cfg(test)]
+mod static_mesh_collider_tests {
+    use super::*;
+
+    #[test]
+    fn plain_static_imported_model_uses_mesh_collider() {
+        let options = EntityOptions {
+            body_kind: Some(SceneMaxBodyKind::Static),
+            ..Default::default()
+        };
+
+        assert!(should_use_static_mesh_collider(&options));
+    }
+
+    #[test]
+    fn explicit_static_imported_model_collider_stays_explicit() {
+        let explicit_box = EntityOptions {
+            body_kind: Some(SceneMaxBodyKind::Static),
+            collision_shape: Some(SceneMaxCollisionShape::Box),
+            ..Default::default()
+        };
+        let explicit_size = EntityOptions {
+            body_kind: Some(SceneMaxBodyKind::Static),
+            size: Some(SceneMaxVec3 {
+                x: 2.0,
+                y: 3.0,
+                z: 4.0,
+            }),
+            ..Default::default()
+        };
+
+        assert!(!should_use_static_mesh_collider(&explicit_box));
+        assert!(!should_use_static_mesh_collider(&explicit_size));
+    }
+
+    #[test]
+    fn append_indexed_mesh_triangles_bakes_local_transform() {
+        let mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        )
+        .with_inserted_attribute(
+            Mesh::ATTRIBUTE_POSITION,
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        )
+        .with_inserted_indices(Indices::U32(vec![0, 1, 2]));
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let mut stats = StaticMeshColliderStats::default();
+
+        append_mesh_triangles(
+            &mesh,
+            Affine3A::from_translation(Vec3::new(2.0, 3.0, 4.0)),
+            &mut vertices,
+            &mut indices,
+            &mut stats,
+        );
+
+        assert_eq!(
+            vertices,
+            vec![
+                Vec3::new(2.0, 3.0, 4.0),
+                Vec3::new(3.0, 3.0, 4.0),
+                Vec3::new(2.0, 4.0, 4.0),
+            ]
+        );
+        assert_eq!(indices, vec![[0, 1, 2]]);
+        assert_eq!(
+            stats,
+            StaticMeshColliderStats {
+                meshes: 1,
+                vertices: 3,
+                triangles: 1,
+            }
+        );
+    }
+}
+
+#[cfg(test)]
 mod material_tests {
     use super::*;
 
@@ -3157,9 +3488,121 @@ Material wall : Common/MatDefs/Light/Lighting.j3md {
     }
 
     #[test]
+    fn model_expression_scale_resolves_from_runtime_vars() {
+        let transform = transform_from_options_resolved(
+            &EntityOptions {
+                scale_value: Some(AssignmentValue::Symbol("entity_scale".to_owned())),
+                ..Default::default()
+            },
+            Some([0.02, 0.02, 0.02]),
+            &SceneMaxVars(HashMap::from([("entity_scale".to_owned(), 1.42)])),
+            &HashMap::new(),
+            None,
+            None,
+        );
+
+        assert_eq!(transform.scale, Vec3::splat(1.42));
+    }
+
+    #[test]
+    fn model_expression_scale_resolves_from_local_scope() {
+        let scope = SceneMaxScopeFrame {
+            vars: HashMap::from([("entity_scale".to_owned(), 2.73)]),
+            aliases: HashMap::new(),
+        };
+        let transform = transform_from_options_resolved_scoped(
+            &EntityOptions {
+                scale_value: Some(AssignmentValue::Symbol("entity_scale".to_owned())),
+                ..Default::default()
+            },
+            Some([0.02, 0.02, 0.02]),
+            &SceneMaxVars::default(),
+            Some(&scope),
+            &HashMap::new(),
+            None,
+            None,
+        );
+
+        assert_eq!(transform.scale, Vec3::splat(2.73));
+    }
+
+    #[test]
+    fn physics_throw_power_resolves_from_local_scope() {
+        let mut world = World::new();
+        let entity = world.spawn_empty().id();
+        let mut command_queue = bevy::ecs::world::CommandQueue::default();
+        let mut commands = Commands::new(&mut command_queue, &world);
+        let transforms_by_name = HashMap::from([(
+            "target".to_owned(),
+            Transform::from_translation(Vec3::new(10.0, 0.0, 0.0)),
+        )]);
+        let scope = SceneMaxScopeFrame {
+            vars: HashMap::from([("dist".to_owned(), 14.7)]),
+            aliases: HashMap::new(),
+        };
+        let throw_at = scenemax_parser::PhysicsThrowAtStatement {
+            target: "object".to_owned(),
+            subject: "target".to_owned(),
+            power: AssignmentValue::Binary {
+                left: Box::new(AssignmentValue::Binary {
+                    left: Box::new(AssignmentValue::Symbol("dist".to_owned())),
+                    operator: scenemax_parser::ArithmeticOperator::Multiply,
+                    right: Box::new(AssignmentValue::Number(30.0)),
+                }),
+                operator: scenemax_parser::ArithmeticOperator::Divide,
+                right: Box::new(AssignmentValue::Number(147.0)),
+            },
+        };
+
+        apply_physics_throw_at(
+            &mut commands,
+            entity,
+            &Transform::from_translation(Vec3::ZERO),
+            &throw_at,
+            &SceneMaxVars::default(),
+            Some(&scope),
+            &HashMap::new(),
+            &transforms_by_name,
+            None,
+        );
+        drop(commands);
+        command_queue.apply(&mut world);
+
+        let velocity = world.entity(entity).get::<LinearVelocity>().unwrap();
+        let expected = calculate_ballistic_throw_velocity(
+            Vec3::ZERO,
+            Vec3::new(10.0, 0.0, 0.0),
+            3.0,
+            PHYSICS_THROW_DEFAULT_ARC_BLEND,
+        );
+        assert!((velocity.0 - expected).length() < 0.001);
+        assert!(velocity.0.abs_diff_eq(Vec3::new(3.0, 0.0, 0.0), 0.001));
+        let angular_velocity = world.entity(entity).get::<AngularVelocity>().unwrap();
+        assert!(angular_velocity.0.length() > 0.001);
+    }
+
+    #[test]
+    fn impossible_ballistic_throw_falls_back_to_direct_target_velocity() {
+        let source = Vec3::new(0.0, 10.0, 0.0);
+        let target = Vec3::new(100.0, 0.0, 0.0);
+        let speed = 3.0;
+
+        let velocity = calculate_ballistic_throw_velocity(
+            source,
+            target,
+            speed,
+            PHYSICS_THROW_DEFAULT_ARC_BLEND,
+        );
+        let expected = (target - source).normalize() * speed;
+
+        assert!(velocity.abs_diff_eq(expected, 0.001));
+        assert!(velocity.y < 0.0);
+    }
+
+    #[test]
     fn primitive_resource_detection_stays_generic() {
         assert!(is_primitive_resource("box"));
         assert!(is_primitive_resource("sphere"));
-        assert!(!is_primitive_resource("bone"));
+        assert!(!is_primitive_resource("custom_model"));
     }
 }

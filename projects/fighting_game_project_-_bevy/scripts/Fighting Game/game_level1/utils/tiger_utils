@@ -1,7 +1,7 @@
 
 create_rock = {
 	var rock_scale = 1.38 + rnd(323) * 0.01
-  rock1 => meshy_rock1_native : pos (22.532026,-51.0,148.68306), scale rock_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 3.0
+  rock1 => rock2 : pos (22.532026,-51.0,148.68306), scale rock_scale, rotate(0.0,0.0,0.0), shadow mode on, collision shape box, mass 3.0
   return rock1
 }
 rocks => Object.Pool(create_rock, size 5)

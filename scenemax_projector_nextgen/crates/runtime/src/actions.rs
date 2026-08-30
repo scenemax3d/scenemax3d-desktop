@@ -702,7 +702,20 @@ pub(super) fn apply_startup_action(
         Statement::Assignment(assignment)
         | Statement::SharedAssignment(assignment)
         | Statement::LocalAssignment(assignment) => {
-            if let AssignmentValue::CameraModifier(value) = &assignment.value {
+            if let AssignmentValue::PoolAcquire { pool } = &assignment.value {
+                startup_acquire_pool_member(
+                    pool,
+                    &assignment.name,
+                    commands,
+                    vars,
+                    object_pools,
+                    functions_by_name,
+                    guards_by_name,
+                    transforms_by_name,
+                    runtime_assets,
+                    entities_by_name,
+                );
+            } else if let AssignmentValue::CameraModifier(value) = &assignment.value {
                 register_camera_modifier(camera_system, &assignment.name, value);
             } else if let AssignmentValue::AnimationController(value) = &assignment.value {
                 register_animation_controller_assignment(&assignment.name, value, runtime_assets);
@@ -1057,7 +1070,8 @@ pub(super) fn apply_startup_action(
             ActionSequenceResult::Completed
         }
         Statement::Visibility { target, visible } => {
-            if let Some(entity) = entities_by_name.get(target) {
+            let target_name = resolve_object_alias(target, object_pools, None);
+            if let Some(entity) = entities_by_name.get(&target_name) {
                 commands.entity(*entity).insert(if *visible {
                     Visibility::Inherited
                 } else {
@@ -1067,9 +1081,10 @@ pub(super) fn apply_startup_action(
             ActionSequenceResult::Completed
         }
         Statement::Animate(animation) => {
+            let target_name = resolve_object_alias(&animation.target, object_pools, None);
             if let (Some(entity), Some(gltf)) = (
-                entities_by_name.get(&animation.target),
-                gltfs_by_name.get(&animation.target),
+                entities_by_name.get(&target_name),
+                gltfs_by_name.get(&target_name),
             ) {
                 let speed = resolve_animation_speed_value(
                     &animation.speed_value,
@@ -1088,7 +1103,7 @@ pub(super) fn apply_startup_action(
                     gltf: gltf.clone(),
                     animation_names: runtime_assets
                         .gltf_animation_names_by_name
-                        .get(&animation.target)
+                        .get(&target_name)
                         .cloned()
                         .unwrap_or_default(),
                     target_model_resource: None,
@@ -1104,7 +1119,8 @@ pub(super) fn apply_startup_action(
             ActionSequenceResult::Completed
         }
         Statement::SpritePlay(sprite_play) => {
-            if let Some(entity) = entities_by_name.get(&sprite_play.target) {
+            let target_name = resolve_object_alias(&sprite_play.target, object_pools, None);
+            if let Some(entity) = entities_by_name.get(&target_name) {
                 commands.entity(*entity).insert(resolved_sprite_animation(
                     sprite_play,
                     vars,
@@ -1170,7 +1186,8 @@ pub(super) fn apply_startup_action(
             ActionSequenceResult::Completed
         }
         Statement::AnimationSpeed(animation_speed) => {
-            if let Some(entity) = entities_by_name.get(&animation_speed.target) {
+            let target_name = resolve_object_alias(&animation_speed.target, object_pools, None);
+            if let Some(entity) = entities_by_name.get(&target_name) {
                 commands
                     .entity(*entity)
                     .insert(resolved_animation_speed_override(
@@ -1185,7 +1202,8 @@ pub(super) fn apply_startup_action(
             ActionSequenceResult::Completed
         }
         Statement::CharacterMode(character_mode) => {
-            if let Some(entity) = entities_by_name.get(&character_mode.target) {
+            let target_name = resolve_object_alias(&character_mode.target, object_pools, None);
+            if let Some(entity) = entities_by_name.get(&target_name) {
                 let resolved = resolved_character_mode(
                     character_mode,
                     vars,
@@ -1215,12 +1233,13 @@ pub(super) fn apply_startup_action(
             ActionSequenceResult::Completed
         }
         Statement::ClearCharacterMode { target } => {
-            if let Some(entity) = entities_by_name.get(target) {
+            let target_name = resolve_object_alias(target, object_pools, None);
+            if let Some(entity) = entities_by_name.get(&target_name) {
                 clear_character_mode(
                     commands,
                     *entity,
-                    Some(target),
-                    transforms_by_name.get(target),
+                    Some(&target_name),
+                    transforms_by_name.get(&target_name),
                 );
             } else {
                 write_runtime_diagnostic_line(format!(
@@ -1238,9 +1257,10 @@ pub(super) fn apply_startup_action(
             ActionSequenceResult::Completed
         }
         Statement::LookAt { target, subject } => {
+            let target_name = resolve_object_alias(target, object_pools, None);
             let (Some(entity), Some(target_transform), Some(subject_transform)) = (
-                entities_by_name.get(target),
-                transforms_by_name.get(target).copied(),
+                entities_by_name.get(&target_name),
+                transforms_by_name.get(&target_name).copied(),
                 lookup_subject_transform(subject, transforms_by_name),
             ) else {
                 return ActionSequenceResult::Completed;
@@ -1248,11 +1268,18 @@ pub(super) fn apply_startup_action(
             let mut updated = target_transform;
             look_at_scenemax_forward(&mut updated, subject_transform.translation);
             commands.entity(*entity).insert(updated);
-            transforms_by_name.insert(target.clone(), updated);
+            sync_live_transform(
+                transforms_by_name,
+                object_pools,
+                None,
+                &target_name,
+                updated,
+            );
             ActionSequenceResult::Completed
         }
         Statement::Position(position) => {
-            let Some(entity) = entities_by_name.get(&position.target) else {
+            let target_name = resolve_object_alias(&position.target, object_pools, None);
+            let Some(entity) = entities_by_name.get(&target_name) else {
                 return ActionSequenceResult::Completed;
             };
             let Some(translation) = evaluate_position_value_runtime(
@@ -1266,16 +1293,23 @@ pub(super) fn apply_startup_action(
                 return ActionSequenceResult::Completed;
             };
             let mut transform = transforms_by_name
-                .get(&position.target)
+                .get(&target_name)
                 .copied()
                 .unwrap_or_default();
             transform.translation = translation;
             commands.entity(*entity).insert(transform);
-            transforms_by_name.insert(position.target.clone(), transform);
+            sync_live_transform(
+                transforms_by_name,
+                object_pools,
+                None,
+                &target_name,
+                transform,
+            );
             ActionSequenceResult::Completed
         }
         Statement::Turn(turn) => {
-            if let Some(entity) = entities_by_name.get(&turn.target) {
+            let target_name = resolve_object_alias(&turn.target, object_pools, None);
+            if let Some(entity) = entities_by_name.get(&target_name) {
                 let degrees = resolve_draw_value(
                     Some(&turn.degrees_value),
                     turn.degrees,
@@ -1305,9 +1339,10 @@ pub(super) fn apply_startup_action(
             ActionSequenceResult::Completed
         }
         Statement::Move(movement) => {
+            let target_name = resolve_object_alias(&movement.target, object_pools, None);
             if let (Some(entity), Some(transform)) = (
-                entities_by_name.get(&movement.target),
-                transforms_by_name.get(&movement.target),
+                entities_by_name.get(&target_name),
+                transforms_by_name.get(&target_name),
             ) {
                 let distance = resolve_draw_value(
                     Some(&movement.distance_value),
@@ -1341,9 +1376,10 @@ pub(super) fn apply_startup_action(
             ActionSequenceResult::Completed
         }
         Statement::MoveTo(move_to) => {
+            let target_name = resolve_object_alias(&move_to.target, object_pools, None);
             if let (Some(entity), Some(transform)) = (
-                entities_by_name.get(&move_to.target),
-                transforms_by_name.get(&move_to.target),
+                entities_by_name.get(&target_name),
+                transforms_by_name.get(&target_name),
             ) {
                 if let Some(timed_move) = resolved_move_to(
                     move_to,
@@ -1360,9 +1396,10 @@ pub(super) fn apply_startup_action(
             ActionSequenceResult::Completed
         }
         Statement::CharacterJump(jump) => {
+            let target_name = resolve_object_alias(&jump.target, object_pools, None);
             if let (Some(entity), Some(transform)) = (
-                entities_by_name.get(&jump.target),
-                transforms_by_name.get(&jump.target),
+                entities_by_name.get(&target_name),
+                transforms_by_name.get(&target_name),
             ) {
                 let speed = resolve_draw_value(
                     Some(&jump.speed_value),
@@ -1380,9 +1417,10 @@ pub(super) fn apply_startup_action(
             ActionSequenceResult::Completed
         }
         Statement::PhysicsImpulse(impulse) => {
+            let target_name = resolve_object_alias(&impulse.target, object_pools, None);
             if let (Some(entity), Some(transform)) = (
-                entities_by_name.get(&impulse.target),
-                transforms_by_name.get(&impulse.target),
+                entities_by_name.get(&target_name),
+                transforms_by_name.get(&target_name),
             ) {
                 let strength = resolve_draw_value(
                     Some(&impulse.strength_value),
@@ -1398,15 +1436,17 @@ pub(super) fn apply_startup_action(
             ActionSequenceResult::Completed
         }
         Statement::PhysicsStop { target } => {
-            if let Some(entity) = entities_by_name.get(target) {
+            let target_name = resolve_object_alias(target, object_pools, None);
+            if let Some(entity) = entities_by_name.get(&target_name) {
                 apply_physics_stop(commands, *entity);
             }
             ActionSequenceResult::Completed
         }
         Statement::PhysicsThrowAt(throw_at) => {
+            let target_name = resolve_object_alias(&throw_at.target, object_pools, None);
             if let (Some(entity), Some(transform)) = (
-                entities_by_name.get(&throw_at.target),
-                transforms_by_name.get(&throw_at.target),
+                entities_by_name.get(&target_name),
+                transforms_by_name.get(&target_name),
             ) {
                 apply_physics_throw_at(
                     commands,
@@ -1414,7 +1454,10 @@ pub(super) fn apply_startup_action(
                     transform,
                     throw_at,
                     vars,
+                    None,
+                    guards_by_name,
                     transforms_by_name,
+                    None,
                 );
             }
             ActionSequenceResult::Completed
@@ -1839,25 +1882,6 @@ pub(super) fn delayed_actions_has_owner(
         .any(|delayed| delayed.owner.as_ref() == Some(owner))
 }
 
-pub(super) fn cancel_delayed_actions_for_owner(
-    delayed_actions: &mut DelayedActionQueue,
-    owner: &SceneMaxControllerKey,
-) {
-    let delayed_before = describe_delayed_queue(delayed_actions);
-    delayed_actions
-        .actions
-        .retain(|delayed| delayed.owner.as_ref() != Some(owner));
-    let delayed_after = describe_delayed_queue(delayed_actions);
-    if delayed_before != delayed_after {
-        write_runtime_diagnostic_line(format!(
-            "CTRL:CANCEL_OWNER owner={} delayed_before={} delayed_after={}",
-            describe_controller_key(owner),
-            delayed_before,
-            delayed_after
-        ));
-    }
-}
-
 fn delayed_animation_wait_ready(
     wait: &mut DelayedAnimationWait,
     current_animation: Option<&CurrentAnimation>,
@@ -1872,17 +1896,6 @@ fn delayed_animation_wait_ready(
     current_animation_percent(current_animation) >= 100.0
 }
 
-pub(super) fn async_function_controller_key(
-    actions: &[Statement],
-) -> Option<SceneMaxControllerKey> {
-    match actions {
-        [Statement::RunFunction { name, .. }] => {
-            Some(SceneMaxControllerKey::AsyncFunction(name.clone()))
-        }
-        _ => None,
-    }
-}
-
 pub(super) fn describe_controller_key(owner: &SceneMaxControllerKey) -> String {
     match owner {
         SceneMaxControllerKey::Key(index) => format!("K{index}"),
@@ -1891,7 +1904,6 @@ pub(super) fn describe_controller_key(owner: &SceneMaxControllerKey) -> String {
         SceneMaxControllerKey::RegisteredWhen(index) => format!("RW{index}"),
         SceneMaxControllerKey::Recurring(index) => format!("R{index}"),
         SceneMaxControllerKey::RegisteredRecurring(index) => format!("RR{index}"),
-        SceneMaxControllerKey::AsyncFunction(name) => format!("A:{name}"),
     }
 }
 
@@ -2175,23 +2187,34 @@ mod key_event_controller_tests {
     }
 
     #[test]
-    fn async_run_function_actions_are_owned_by_function_name() {
-        let owner = async_function_controller_key(&[Statement::RunFunction {
-            name: "spawn_round".to_owned(),
-            args: Vec::new(),
-        }]);
+    fn anonymous_async_continuations_can_coexist() {
+        let mut delayed_actions = DelayedActionQueue::default();
 
-        assert_eq!(
-            owner,
-            Some(SceneMaxControllerKey::AsyncFunction(
-                "spawn_round".to_owned()
-            ))
-        );
-        assert_eq!(
-            async_function_controller_key(&[Statement::NoOp {
-                text: "detached block".to_owned()
-            }]),
-            None
+        assert!(enqueue_delayed_actions(
+            Some(&mut delayed_actions),
+            0.25,
+            vec![Statement::NoOp {
+                text: "first".to_owned()
+            }],
+            None,
+            None,
+        ));
+        assert!(enqueue_delayed_actions(
+            Some(&mut delayed_actions),
+            0.25,
+            vec![Statement::NoOp {
+                text: "second".to_owned()
+            }],
+            None,
+            None,
+        ));
+
+        assert_eq!(delayed_actions.actions.len(), 2);
+        assert!(
+            delayed_actions
+                .actions
+                .iter()
+                .all(|delayed| delayed.owner.is_none())
         );
     }
 
@@ -2256,56 +2279,6 @@ mod key_event_controller_tests {
             Some(Statement::Animate(animation))
                 if animation.target == "tg" && animation.clip == "Idle_Lie Prone"
         ));
-    }
-
-    #[test]
-    fn cancel_delayed_actions_for_owner_keeps_unrelated_continuations() {
-        let restart_owner = SceneMaxControllerKey::AsyncFunction("restart".to_owned());
-        let effect_owner = SceneMaxControllerKey::AsyncFunction("effect".to_owned());
-        let mut delayed_actions = DelayedActionQueue {
-            actions: vec![
-                DelayedActions {
-                    remaining_seconds: 0.5,
-                    animation_wait: None,
-                    actions: vec![Statement::NoOp {
-                        text: "old restart".to_owned(),
-                    }],
-                    owner: Some(restart_owner.clone()),
-                    scope: None,
-                },
-                DelayedActions {
-                    remaining_seconds: 0.2,
-                    animation_wait: None,
-                    actions: vec![Statement::NoOp {
-                        text: "effect".to_owned(),
-                    }],
-                    owner: Some(effect_owner.clone()),
-                    scope: None,
-                },
-                DelayedActions {
-                    remaining_seconds: 0.1,
-                    animation_wait: None,
-                    actions: vec![Statement::NoOp {
-                        text: "legacy detached".to_owned(),
-                    }],
-                    owner: None,
-                    scope: None,
-                },
-            ],
-            ..Default::default()
-        };
-
-        cancel_delayed_actions_for_owner(&mut delayed_actions, &restart_owner);
-
-        assert_eq!(delayed_actions.actions.len(), 2);
-        assert!(!delayed_actions_has_owner(&delayed_actions, &restart_owner));
-        assert!(delayed_actions_has_owner(&delayed_actions, &effect_owner));
-        assert!(
-            delayed_actions
-                .actions
-                .iter()
-                .any(|delayed| delayed.owner.is_none())
-        );
     }
 }
 
@@ -3698,27 +3671,16 @@ pub(super) fn apply_action_sequence(
                 return ActionSequenceResult::Completed;
             }
             Statement::Async { actions } => {
-                let async_owner = async_function_controller_key(actions);
-                if let Some(async_owner) = async_owner.as_ref()
-                    && let Some(delayed_actions) = delayed_actions.as_deref_mut()
-                {
-                    cancel_delayed_actions_for_owner(delayed_actions, async_owner);
-                }
-                let async_owner_label = async_owner
-                    .as_ref()
-                    .map(describe_controller_key)
-                    .unwrap_or_else(|| "-".to_owned());
                 if enqueue_delayed_actions(
                     delayed_actions.as_deref_mut(),
                     0.0,
                     actions.clone(),
-                    async_owner,
+                    None,
                     scope.as_deref().cloned(),
                 ) {
                     if runtime_verbose_logging() {
                         write_runtime_diagnostic_line(format!(
-                            "ASYNC:QUEUE owner={} actions={}",
-                            async_owner_label,
+                            "ASYNC:QUEUE owner=- actions={}",
                             describe_statement_list(actions)
                         ));
                     }
@@ -4574,14 +4536,18 @@ fn spawn_runtime_gltf_model_decl(
         ))
         .id();
     insert_gltf_visual_offset(commands, entity_id, bevy_visual_offset_y);
-    insert_physics_components(
-        commands,
-        entity_id,
-        name,
-        resource,
-        options,
-        &model_transform,
-    );
+    if should_use_static_mesh_collider(options) {
+        insert_pending_static_mesh_collider(commands, entity_id);
+    } else {
+        insert_physics_components(
+            commands,
+            entity_id,
+            name,
+            resource,
+            options,
+            &model_transform,
+        );
+    }
     if options.collider {
         register_collider_bounds(collider_bounds, name, options, model_transform);
     }
@@ -6540,7 +6506,7 @@ pub(super) fn apply_key_action(
     | Statement::LocalAssignment(assignment) = action
     {
         if let AssignmentValue::PoolAcquire { pool } = &assignment.value {
-            let Some(member) = acquire_pool_member(
+            let Some((member, factory_scope)) = acquire_pool_member(
                 pool,
                 transforms_by_name,
                 vars,
@@ -6564,10 +6530,22 @@ pub(super) fn apply_key_action(
                     .aliases
                     .insert(assignment.name.clone(), member.clone());
             }
-            for (entity, scene_entity, transform, _, _, visibility, _, _) in
+            let acquired_transform = pool_member_acquire_transform(
+                pool,
+                vars,
+                object_pools,
+                guards_by_name,
+                Some(&factory_scope),
+                runtime_assets,
+                transforms_by_name,
+            );
+            for (entity, scene_entity, mut transform, _, _, visibility, _, _) in
                 &mut scene_entities.p1()
             {
                 if scene_entity.name == member {
+                    if let Some(acquired_transform) = acquired_transform {
+                        *transform = acquired_transform;
+                    }
                     if let Some(mut visibility) = visibility {
                         *visibility = Visibility::Inherited;
                     } else {
@@ -6578,11 +6556,13 @@ pub(super) fn apply_key_action(
                         object_pools,
                         scope.as_deref(),
                         &scene_entity.name,
-                        *transform,
+                        acquired_transform.unwrap_or(*transform),
                     );
-                    commands
-                        .entity(entity)
-                        .insert((LinearVelocity::ZERO, AngularVelocity::ZERO));
+                    commands.entity(entity).insert((
+                        acquired_transform.unwrap_or(*transform),
+                        LinearVelocity::ZERO,
+                        AngularVelocity::ZERO,
+                    ));
                     break;
                 }
             }
@@ -7390,7 +7370,10 @@ pub(super) fn apply_key_action(
                     &transform,
                     throw_at,
                     vars,
+                    scope.as_deref(),
+                    guards_by_name,
                     transforms_by_name,
+                    Some(collider_bounds),
                 );
             }
             Statement::Visibility { target, visible }
@@ -7906,6 +7889,97 @@ const OBJECT_POOL_MAX_MEMBERS: usize = 256;
 const OBJECT_POOL_RESERVE_LOW_WATERMARK: usize = 4;
 const OBJECT_POOL_GROW_BATCH: usize = 8;
 
+fn startup_acquire_pool_member(
+    pool: &str,
+    alias: &str,
+    commands: &mut Commands,
+    vars: &mut SceneMaxVars,
+    object_pools: &mut SceneMaxObjectPools,
+    functions_by_name: &HashMap<String, FunctionRuntime>,
+    guards_by_name: &HashMap<String, Condition>,
+    transforms_by_name: &mut HashMap<String, Transform>,
+    runtime_assets: &SceneMaxRuntimeAssets,
+    entities_by_name: &HashMap<String, Entity>,
+) -> Option<String> {
+    let factory_scope = apply_pool_factory_acquire_side_effects(
+        pool,
+        vars,
+        object_pools,
+        functions_by_name,
+        guards_by_name,
+        transforms_by_name,
+        &SceneMaxColliderBounds::default(),
+    );
+
+    let member = acquire_available_pool_member(pool, object_pools)?;
+    object_pools
+        .aliases
+        .insert(alias.to_owned(), member.clone());
+    let acquired_transform = pool_member_acquire_transform(
+        pool,
+        vars,
+        object_pools,
+        guards_by_name,
+        Some(&factory_scope),
+        runtime_assets,
+        transforms_by_name,
+    );
+    if let Some(entity) = entities_by_name.get(&member) {
+        if let Some(transform) = acquired_transform {
+            commands.entity(*entity).insert((
+                transform,
+                Visibility::Inherited,
+                LinearVelocity::ZERO,
+                AngularVelocity::ZERO,
+            ));
+        } else {
+            commands.entity(*entity).insert((
+                Visibility::Inherited,
+                LinearVelocity::ZERO,
+                AngularVelocity::ZERO,
+            ));
+        }
+    }
+    if let Some(transform) = acquired_transform.or_else(|| transforms_by_name.get(&member).copied())
+    {
+        sync_live_transform(transforms_by_name, object_pools, None, &member, transform);
+    }
+    Some(member)
+}
+
+fn pool_member_acquire_transform(
+    pool: &str,
+    vars: &SceneMaxVars,
+    object_pools: &SceneMaxObjectPools,
+    guards_by_name: &HashMap<String, Condition>,
+    scope: Option<&SceneMaxScopeFrame>,
+    runtime_assets: &SceneMaxRuntimeAssets,
+    transforms_by_name: &HashMap<String, Transform>,
+) -> Option<Transform> {
+    let prototype = object_pools.pools.get(pool)?.prototype.as_ref()?;
+    let asset_scale =
+        runtime_model_resource(&prototype.resource, runtime_assets).and_then(|model| model.scale);
+    Some(transform_from_options_resolved_scoped(
+        &prototype.options,
+        asset_scale,
+        vars,
+        scope,
+        guards_by_name,
+        Some(transforms_by_name),
+        None,
+    ))
+}
+
+pub(super) fn acquire_available_pool_member(
+    pool: &str,
+    object_pools: &mut SceneMaxObjectPools,
+) -> Option<String> {
+    let runtime = object_pools.pools.get_mut(pool)?;
+    let member = runtime.available.pop()?;
+    runtime.in_use.insert(member.clone());
+    Some(member)
+}
+
 pub(super) fn activate_pending_pool_members(
     mut object_pools: ResMut<SceneMaxObjectPools>,
     scene_entities: Query<&SceneMaxEntity>,
@@ -7979,8 +8053,8 @@ pub(super) fn acquire_pool_member(
             Option<&mut SceneMaxCharacterMotor>,
         )>,
     )>,
-) -> Option<String> {
-    apply_pool_factory_acquire_side_effects(
+) -> Option<(String, SceneMaxScopeFrame)> {
+    let factory_scope = apply_pool_factory_acquire_side_effects(
         pool,
         vars,
         object_pools,
@@ -7989,14 +8063,10 @@ pub(super) fn acquire_pool_member(
         transforms_by_name,
         collider_bounds,
     );
-    let member = if let Some(member) = object_pools
-        .pools
-        .get_mut(pool)
-        .and_then(|runtime| runtime.available.pop())
-    {
+    let member = if let Some(member) = acquire_available_pool_member(pool, object_pools) {
         member
     } else {
-        grow_pool_member(
+        let member = grow_pool_member(
             pool,
             transforms_by_name,
             vars,
@@ -8008,15 +8078,12 @@ pub(super) fn acquire_pool_member(
             commands,
             scene_entities,
             false,
-        )?
+        )?;
+        if let Some(runtime) = object_pools.pools.get_mut(pool) {
+            runtime.in_use.insert(member.clone());
+        }
+        member
     };
-    let runtime = object_pools.pools.get_mut(pool)?;
-    runtime.in_use.insert(member.clone());
-    write_runtime_diagnostic_line(format!(
-        "object pool {pool} acquire {member}; available={} in_use={}",
-        runtime.available.len(),
-        runtime.in_use.len()
-    ));
     grow_pool_reserve(
         pool,
         transforms_by_name,
@@ -8029,7 +8096,7 @@ pub(super) fn acquire_pool_member(
         commands,
         scene_entities,
     );
-    Some(member)
+    Some((member, factory_scope))
 }
 
 fn grow_pool_reserve(
@@ -8201,16 +8268,16 @@ pub(super) fn apply_pool_factory_acquire_side_effects(
     guards_by_name: &HashMap<String, Condition>,
     transforms_by_name: &HashMap<String, Transform>,
     collider_bounds: &SceneMaxColliderBounds,
-) {
+) -> SceneMaxScopeFrame {
     let Some(factory) = object_pools
         .pools
         .get(pool)
         .map(|runtime| runtime.factory.as_str())
     else {
-        return;
+        return SceneMaxScopeFrame::default();
     };
     let Some(function) = functions_by_name.get(factory) else {
-        return;
+        return SceneMaxScopeFrame::default();
     };
     let mut factory_scope = SceneMaxScopeFrame::default();
     for action in &function.actions {
@@ -8241,6 +8308,7 @@ pub(super) fn apply_pool_factory_acquire_side_effects(
             _ => {}
         }
     }
+    factory_scope
 }
 
 pub(super) fn release_pool_action(
@@ -9153,33 +9221,6 @@ pub(super) fn apply_assignment_scoped(
     };
     write_state_assignment_probe(&assignment.name, result.previous, result.value, force_local);
     Some(result.value)
-}
-
-pub(super) fn resolve_assignment_value(
-    value: &AssignmentValue,
-    vars: &SceneMaxVars,
-    transforms_by_name: Option<&HashMap<String, Transform>>,
-) -> Option<f32> {
-    resolve_assignment_value_with_guards(value, vars, &HashMap::new(), transforms_by_name, None)
-}
-
-pub(super) fn resolve_assignment_value_with_guards(
-    value: &AssignmentValue,
-    vars: &SceneMaxVars,
-    guards_by_name: &HashMap<String, Condition>,
-    transforms_by_name: Option<&HashMap<String, Transform>>,
-    collider_bounds: Option<&SceneMaxColliderBounds>,
-) -> Option<f32> {
-    let spatial = RuntimeVmSpatial {
-        transforms_by_name,
-        collider_bounds,
-    };
-    scenemax_runtime_vm_core::resolve_assignment_value_with_guards(
-        value,
-        vars,
-        guards_by_name,
-        &spatial,
-    )
 }
 
 pub(super) fn resolve_assignment_value_scoped_with_guards(

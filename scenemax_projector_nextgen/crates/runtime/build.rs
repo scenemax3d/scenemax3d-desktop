@@ -14,6 +14,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=SCENEMAX_EFFEKSEER_NATIVE_SKIP_BUILD");
 
     if env::var_os("CARGO_FEATURE_EFFEKSEER_NATIVE").is_none() {
+        remove_native_marker();
         return;
     }
 
@@ -22,10 +23,12 @@ fn main() {
         println!("cargo:rustc-link-search=native={}", dir.display());
         println!("cargo:rustc-link-lib=dylib=scenemax_effekseer_bevy");
         copy_runtime_dll(&dir);
+        write_native_marker();
         return;
     }
 
     if env::var_os("SCENEMAX_EFFEKSEER_NATIVE_SKIP_BUILD").is_some() {
+        remove_native_marker();
         println!(
             "cargo:warning=effekseer_native enabled, but native bridge build was skipped by SCENEMAX_EFFEKSEER_NATIVE_SKIP_BUILD"
         );
@@ -33,6 +36,7 @@ fn main() {
     }
 
     if env::var_os("SCENEMAX_EFFEKSEER_NATIVE_BUILD").is_none() {
+        remove_native_marker();
         println!(
             "cargo:warning=effekseer_native enabled; set SCENEMAX_EFFEKSEER_NATIVE_BUILD=1 to build/link the native Effekseer Bevy bridge"
         );
@@ -84,6 +88,7 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", bin_dir.display());
     println!("cargo:rustc-link-lib=dylib=scenemax_effekseer_bevy");
     copy_runtime_dll(&bin_dir);
+    write_native_marker();
 }
 
 fn run(command: &mut Command) {
@@ -143,6 +148,40 @@ fn copy_runtime_dll(bin_dir: &Path) {
 fn cargo_profile_dir() -> Option<PathBuf> {
     let out_dir = PathBuf::from(env::var_os("OUT_DIR")?);
     out_dir.ancestors().nth(3).map(Path::to_path_buf)
+}
+
+fn native_marker_path() -> Option<PathBuf> {
+    cargo_profile_dir().map(|dir| dir.join("scenemax_projector_nextgen.effekseer_native"))
+}
+
+fn write_native_marker() {
+    let Some(marker) = native_marker_path() else {
+        return;
+    };
+    if let Some(parent) = marker.parent() {
+        fs::create_dir_all(parent)
+            .unwrap_or_else(|error| panic!("failed to create {}: {error}", parent.display()));
+    }
+    fs::write(&marker, b"effekseer_native=1\n").unwrap_or_else(|error| {
+        panic!(
+            "failed to write native Effekseer marker {}: {error}",
+            marker.display()
+        )
+    });
+}
+
+fn remove_native_marker() {
+    let Some(marker) = native_marker_path() else {
+        return;
+    };
+    if marker.exists() {
+        fs::remove_file(&marker).unwrap_or_else(|error| {
+            panic!(
+                "failed to remove native Effekseer marker {}: {error}",
+                marker.display()
+            )
+        });
+    }
 }
 
 fn copy_file(source: &Path, destination: &Path) {

@@ -95,7 +95,7 @@ end do
 when key A is pressed once do async
 	action=PLAYER_ACTION_A
 	player1.look at (player2)
-	audio.play "kick3"
+	audio.play "punch1"
 	[player1.data.celebrating!=1 && game_status!=GAME_STATE_OVER && player1.data.is_jumping==0]
 	do
 	  player1.mma_kick1 at speed of 2.5 async
@@ -116,7 +116,7 @@ when key S is pressed once do async
 	action=PLAYER_ACTION_S
  		    
 	player1.look at (player2)
-	audio.play "kick3"
+	audio.play "punch1"
 
 	#[player1.data.celebrating!=1 && game_status!=GAME_STATE_OVER && player1.data.is_jumping==0]
 	do

@@ -1167,7 +1167,13 @@ fn spawn_scenemax_program_with_visibility_mode(
                     .id();
                 insert_gltf_visual_offset(commands, entity_id, bevy_visual_offset_y);
 
-                insert_physics_components(commands, entity_id, name, resource, options, &transform);
+                if should_use_static_mesh_collider(options) {
+                    insert_pending_static_mesh_collider(commands, entity_id);
+                } else {
+                    insert_physics_components(
+                        commands, entity_id, name, resource, options, &transform,
+                    );
+                }
 
                 entities_by_name.insert(name.clone(), entity_id);
                 transforms_by_name.insert(name.clone(), transform);

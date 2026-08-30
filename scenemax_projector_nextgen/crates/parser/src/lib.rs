@@ -197,6 +197,7 @@ pub struct EntityOptions {
     pub position_value: Option<PositionValue>,
     pub rotation_degrees: Option<SceneMaxVec3>,
     pub scale: Option<SceneMaxVec3>,
+    pub scale_value: Option<AssignmentValue>,
     pub size: Option<SceneMaxVec3>,
     pub material: Option<String>,
     pub hidden: bool,
@@ -6041,6 +6042,7 @@ fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseErr
         y: value,
         z: value,
     });
+    let scale_value = parse_scale_value_after(text)?;
     let outer_radius = parse_outer_radius_pair_after(text)?;
     let inner_radius = parse_inner_radius_pair_after(text)?;
     let position = parse_vec3_after(text, "pos").ok();
@@ -6050,6 +6052,7 @@ fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseErr
         position_value,
         rotation_degrees: parse_vec3_after(text, "rotate").ok(),
         scale,
+        scale_value,
         size: parse_size_after(text)?,
         material: parse_quoted_value_after(text, "material"),
         hidden: contains_keyword(text, "hidden"),
@@ -6214,6 +6217,47 @@ fn parse_scalar_after(text: &str, name: &str) -> Result<Option<f32>, ParseError>
         return Ok(None);
     }
     Ok(raw.parse::<f32>().ok())
+}
+
+fn parse_scale_value_after(text: &str) -> Result<Option<AssignmentValue>, ParseError> {
+    let lower = text.to_ascii_lowercase();
+    let Some(index) = lower.find("scale") else {
+        return Ok(None);
+    };
+    let after = text[index + "scale".len()..].trim_start();
+    if after.starts_with('(') {
+        return Ok(None);
+    }
+    let raw = take_until_clause(
+        after,
+        &[
+            ",",
+            " rotate",
+            " hidden",
+            " shadow ",
+            " collision ",
+            " mass ",
+            " material ",
+            " radius ",
+            " height ",
+            " size ",
+            " steps ",
+            " thickness ",
+            " segments ",
+            " body ",
+            " billboard ",
+            " async",
+            " loop",
+            " and ",
+        ],
+    )
+    .trim();
+    if raw.is_empty() || raw.parse::<f32>().is_ok() {
+        return Ok(None);
+    }
+    parse_assignment_value(raw)?
+        .ok_or_else(|| ParseError::InvalidNumber(raw.to_owned()))
+        .map(Some)
 }
 
 fn logical_lines(source: &str) -> Vec<String> {
@@ -6922,19 +6966,49 @@ mod tests {
     #[test]
     fn tolerates_symbolic_model_scale_option() {
         let program =
-            parse_program("rock1 => meshy_rock1_native : pos (1,2,3), scale rock_scale").unwrap();
+            parse_program("item1 => imported_item : pos (1,2,3), scale item_scale").unwrap();
 
         assert_eq!(
             program.statements,
             vec![Statement::ModelDecl {
-                name: "rock1".to_owned(),
-                resource: "meshy_rock1_native".to_owned(),
+                name: "item1".to_owned(),
+                resource: "imported_item".to_owned(),
                 options: EntityOptions {
                     position: Some(SceneMaxVec3 {
                         x: 1.0,
                         y: 2.0,
                         z: 3.0,
                     }),
+                    scale_value: Some(AssignmentValue::Symbol("item_scale".to_owned())),
+                    ..Default::default()
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn numeric_model_scale_allows_async_suffix_without_symbolic_scale_error() {
+        let program =
+            parse_program("ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0 async")
+                .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::ModelDecl {
+                name: "ring".to_owned(),
+                resource: "fantasy_ring1".to_owned(),
+                options: EntityOptions {
+                    position: Some(SceneMaxVec3 {
+                        x: 13.0,
+                        y: -12.0,
+                        z: 50.0,
+                    }),
+                    scale: Some(SceneMaxVec3 {
+                        x: 25.0,
+                        y: 25.0,
+                        z: 25.0,
+                    }),
+                    scale_value: None,
                     ..Default::default()
                 },
             }]

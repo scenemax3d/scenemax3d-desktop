@@ -12,7 +12,7 @@ use avian3d::{
     prelude::{
         AngularVelocity, Collider as AvianCollider, CollisionEnd, CollisionEventsEnabled,
         CollisionLayers, CollisionStart, LinearVelocity, LockedAxes, PhysicsPlugins,
-        RigidBody as AvianRigidBody, Sensor,
+        RigidBody as AvianRigidBody, Sensor, TrimeshFlags,
     },
     schedule::PhysicsSchedule,
 };
@@ -29,7 +29,8 @@ use bevy::{
     ecs::system::SystemParam,
     gltf::{Gltf, GltfNode},
     log::LogPlugin,
-    mesh::{Indices, PrimitiveTopology},
+    math::Affine3A,
+    mesh::{Indices, PrimitiveTopology, VertexAttributeValues},
     prelude::*,
     ui::IsDefaultUiCamera,
     window::{MonitorSelection, PresentMode, WindowMode, WindowResolution},
@@ -272,6 +273,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_sprite_animations,
                 update_effekseer_playbacks,
                 apply_gltf_visual_offsets,
+                bake_pending_static_mesh_colliders,
                 apply_pending_animation_controller_stops,
                 play_pending_animations,
                 apply_animation_speed_overrides,
@@ -518,7 +520,6 @@ enum SceneMaxControllerKey {
     RegisteredWhen(usize),
     Recurring(usize),
     RegisteredRecurring(usize),
-    AsyncFunction(String),
 }
 
 #[derive(Debug, Resource, Default)]
@@ -2004,6 +2005,116 @@ mod tests {
     }
 
     #[test]
+    fn object_pool_factory_returns_fresh_local_scope_for_acquire_transform() {
+        let mut vars = SceneMaxVars(HashMap::from([("next_scale".to_owned(), 1.0)]));
+        let mut object_pools = SceneMaxObjectPools::default();
+        object_pools.pools.insert(
+            "items".to_owned(),
+            ObjectPoolRuntime {
+                factory: "create_item".to_owned(),
+                prototype: Some(ModelRuntimeDecl {
+                    name: String::new(),
+                    resource: "pooled_item".to_owned(),
+                    options: EntityOptions {
+                        scale_value: Some(AssignmentValue::Symbol("item_scale".to_owned())),
+                        ..Default::default()
+                    },
+                }),
+                ..Default::default()
+            },
+        );
+        let functions = HashMap::from([(
+            "create_item".to_owned(),
+            FunctionRuntime {
+                params: Vec::new(),
+                guard: None,
+                actions: vec![
+                    Statement::LocalAssignment(scenemax_parser::AssignmentStatement {
+                        name: "item_scale".to_owned(),
+                        value: AssignmentValue::Symbol("next_scale".to_owned()),
+                    }),
+                    Statement::Assignment(scenemax_parser::AssignmentStatement {
+                        name: "next_scale".to_owned(),
+                        value: AssignmentValue::Binary {
+                            left: Box::new(AssignmentValue::Symbol("next_scale".to_owned())),
+                            operator: scenemax_parser::ArithmeticOperator::Add,
+                            right: Box::new(AssignmentValue::Number(1.0)),
+                        },
+                    }),
+                    Statement::ReturnValue {
+                        value: AssignmentValue::Symbol("pooled_item".to_owned()),
+                    },
+                ],
+            },
+        )]);
+
+        let scales = (0..8)
+            .filter_map(|_| {
+                let scope = apply_pool_factory_acquire_side_effects(
+                    "items",
+                    &mut vars,
+                    &object_pools,
+                    &functions,
+                    &HashMap::new(),
+                    &HashMap::new(),
+                    &SceneMaxColliderBounds::default(),
+                );
+                scope.vars.get("item_scale").copied()
+            })
+            .collect::<Vec<_>>();
+
+        assert!(!vars.0.contains_key("item_scale"));
+        assert_eq!(vars.0.get("next_scale"), Some(&9.0));
+        assert_eq!(scales, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+    }
+
+    #[test]
+    fn acquired_pool_alias_tracks_prepared_member_transform() {
+        let mut object_pools = SceneMaxObjectPools::default();
+        object_pools.pools.insert(
+            "items".to_owned(),
+            ObjectPoolRuntime {
+                available: vec!["__pool_items_0".to_owned()],
+                members: HashSet::from(["__pool_items_0".to_owned()]),
+                ..Default::default()
+            },
+        );
+        let mut transforms = HashMap::from([(
+            "__pool_items_0".to_owned(),
+            Transform::from_translation(Vec3::new(1.0, 2.0, 3.0)),
+        )]);
+
+        let member = acquire_available_pool_member("items", &mut object_pools).unwrap();
+        object_pools
+            .aliases
+            .insert("alias".to_owned(), member.clone());
+        sync_live_transform(
+            &mut transforms,
+            &object_pools,
+            None,
+            &member,
+            Transform::from_translation(Vec3::new(4.0, 5.0, 6.0)),
+        );
+
+        assert_eq!(member, "__pool_items_0");
+        assert!(target_matches_alias(
+            "alias",
+            "__pool_items_0",
+            &object_pools,
+            None
+        ));
+        assert_eq!(
+            transforms
+                .get("alias")
+                .map(|transform| transform.translation),
+            Some(Vec3::new(4.0, 5.0, 6.0))
+        );
+        let runtime = object_pools.pools.get("items").unwrap();
+        assert!(runtime.available.is_empty());
+        assert!(runtime.in_use.contains("__pool_items_0"));
+    }
+
+    #[test]
     fn sprite_play_statement_builds_runtime_animation() {
         let animation = sprite_animation_from_statement(&SpritePlayStatement {
             target: "b".to_owned(),
@@ -3325,10 +3436,13 @@ mod tests {
         ]);
 
         assert_eq!(
-            resolve_assignment_value(
+            resolve_assignment_value_scoped_with_guards(
                 &AssignmentValue::Symbol("player1.y".to_owned()),
                 &vars,
+                None,
+                &HashMap::new(),
                 Some(&transforms),
+                None,
             ),
             Some(20.0)
         );
