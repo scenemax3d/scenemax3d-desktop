@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use scenemax_runtime::{
-    BevyRetargetDesignerLaunch, BevyShaderDesignerLaunch, ProjectorLaunch, WindowSettings,
+    BevyAmbientLightDesignerLaunch, BevyRetargetDesignerLaunch, BevyShaderDesignerLaunch,
+    ProjectorLaunch, WindowSettings,
 };
 use tracing_subscriber::{EnvFilter, fmt};
 
@@ -73,6 +74,18 @@ enum Command {
         #[arg(long)]
         model: Option<String>,
     },
+
+    /// Open the Bevy-native ambient light designer for a SceneMax Designer scene.
+    AmbientLightDesigner {
+        #[arg(long)]
+        design: PathBuf,
+
+        #[arg(long)]
+        project_root: PathBuf,
+
+        #[arg(long)]
+        camera_snapshot: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -130,6 +143,17 @@ fn main() -> Result<()> {
                 project_root,
                 animation,
                 model,
+            });
+        }
+        Command::AmbientLightDesigner {
+            design,
+            project_root,
+            camera_snapshot,
+        } => {
+            scenemax_runtime::run_bevy_ambient_light_designer(BevyAmbientLightDesignerLaunch {
+                design,
+                project_root,
+                camera_snapshot,
             });
         }
     }

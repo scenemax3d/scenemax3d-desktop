@@ -36,8 +36,10 @@ import java.awt.geom.Line2D;
 import java.awt.geom.Rectangle2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -457,6 +459,10 @@ public class DesignerPanel extends JPanel {
             if (app != null) app.enqueue(() -> { app.addDefaultPointLight(); return null; });
         });
 
+        JButton btnBevyAmbientLight = new JButton(createDesignerToolbarIcon("ambientlight"));
+        btnBevyAmbientLight.setToolTipText("Edit Bevy Ambient Light");
+        btnBevyAmbientLight.addActionListener(e -> openBevyAmbientLightDesigner());
+
         JButton btnAddPath = new JButton(createDesignerToolbarIcon("path"));
         btnAddPath.setToolTipText("Draw Path (click to place points, double-click to finish, ESC to cancel)");
         btnAddPath.addActionListener(e -> {
@@ -571,6 +577,7 @@ public class DesignerPanel extends JPanel {
             }
         });
         toolbar.add(btnDesignTimeLights);
+        toolbar.add(btnBevyAmbientLight);
 
         add(toolbar, BorderLayout.NORTH);
 
@@ -655,6 +662,187 @@ public class DesignerPanel extends JPanel {
         btnDesignTimeLights.setToolTipText(btnDesignTimeLights.isSelected()
                 ? "Design-time lights on (show helper lighting instead of scene lights)"
                 : "Design-time lights off (show real scene lights)");
+    }
+
+    private void openBevyAmbientLightDesigner() {
+        if (designerFile == null) {
+            return;
+        }
+        JLabel statusLabel = new JLabel("Preparing Bevy ambient light editor...");
+        JDialog progressDialog = createAmbientLightLaunchDialog(statusLabel);
+        new SwingWorker<Void, String>() {
+            private final StringBuilder processOutput = new StringBuilder();
+            private File logFile;
+
+            @Override
+            protected Void doInBackground() throws Exception {
+                publish("Saving designer document...");
+                if (app != null) {
+                    app.enqueue(() -> {
+                        app.flushPendingDocumentPersistNow();
+                        return null;
+                    }).get();
+                }
+
+                publish("Capturing IDE camera...");
+                String cameraSnapshot = null;
+                if (app != null) {
+                    cameraSnapshot = app.enqueue(app::createBevyCameraSyncJson).get();
+                }
+
+                publish("Resolving Bevy ambient light editor...");
+                BevyAmbientLightDesignerLauncher.LaunchProcess launch = BevyAmbientLightDesignerLauncher.open(
+                        projectPath == null || projectPath.isBlank() ? null : new File(projectPath),
+                        designerFile,
+                        cameraSnapshot);
+                logFile = launch.getLogFile();
+                Process process = launch.getProcess();
+                if (!launch.isUsedCargo()) {
+                    publish("Bevy ambient light editor started.");
+                    SwingUtilities.invokeLater(progressDialog::dispose);
+                } else {
+                    publish("Building Rust/Bevy ambient light editor...");
+                }
+
+                Thread drainer = new Thread(() -> captureAmbientLightDesignerOutput(launch, processOutput, this::publish,
+                        progressDialog), "bevy-ambient-light-designer-output");
+                drainer.setDaemon(true);
+                drainer.start();
+
+                int exitCode = process.waitFor();
+                drainer.join(1000);
+                if (exitCode != 0) {
+                    String logPath = logFile == null ? "" : "\nLog: " + logFile.getAbsolutePath();
+                    throw new IOException("Bevy ambient light editor exited with code " + exitCode + "."
+                            + logPath + "\n" + tail(processOutput.toString()));
+                }
+                return null;
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                if (!chunks.isEmpty()) {
+                    statusLabel.setText(chunks.get(chunks.size() - 1));
+                }
+            }
+
+            @Override
+            protected void done() {
+                progressDialog.dispose();
+                try {
+                    get();
+                    regenerateCodeAfterAmbientLightEdit();
+                    reloadFromDisk();
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(DesignerPanel.this,
+                            rootMessage(ex),
+                            "Bevy Ambient Light",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        }.execute();
+        progressDialog.setVisible(true);
+    }
+
+    private void regenerateCodeAfterAmbientLightEdit() throws IOException {
+        if (designerFile == null || !designerFile.exists()) {
+            return;
+        }
+        DesignerDocument.regenerateCodeFileFromDisk(designerFile);
+        if (codeFileUpdatedCallback != null) {
+            String codeFilePath = DesignerDocument.getCodeFile(designerFile).getAbsolutePath();
+            SwingUtilities.invokeLater(() -> codeFileUpdatedCallback.accept(codeFilePath));
+        }
+    }
+
+    private JDialog createAmbientLightLaunchDialog(JLabel statusLabel) {
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        JDialog dialog = new JDialog(owner, "Starting Bevy Ambient Light", Dialog.ModalityType.MODELESS);
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(BorderFactory.createEmptyBorder(14, 16, 14, 16));
+        JProgressBar progress = new JProgressBar();
+        progress.setIndeterminate(true);
+        panel.add(statusLabel, BorderLayout.CENTER);
+        panel.add(progress, BorderLayout.SOUTH);
+        dialog.setContentPane(panel);
+        dialog.setSize(420, 112);
+        dialog.setLocationRelativeTo(this);
+        return dialog;
+    }
+
+    private void captureAmbientLightDesignerOutput(BevyAmbientLightDesignerLauncher.LaunchProcess launch,
+                                                   StringBuilder output,
+                                                   java.util.function.Consumer<String> statusConsumer,
+                                                   JDialog progressDialog) {
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(launch.getProcess().getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                appendBounded(output, line);
+                BevyAmbientLightDesignerLauncher.appendLogLine(launch.getLogFile(), line);
+                String status = ambientLightLaunchStatus(line, launch.isUsedCargo());
+                if (status != null) {
+                    statusConsumer.accept(status);
+                }
+                if (launch.isUsedCargo() && line.toLowerCase(Locale.ROOT).contains("running")
+                        && line.toLowerCase(Locale.ROOT).contains("scenemax_projector_nextgen")) {
+                    SwingUtilities.invokeLater(progressDialog::dispose);
+                }
+            }
+        } catch (IOException ex) {
+            appendBounded(output, ex.getMessage());
+        }
+    }
+
+    private String ambientLightLaunchStatus(String line, boolean usedCargo) {
+        if (!usedCargo || line == null) {
+            return null;
+        }
+        String trimmed = line.trim();
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        if (lower.contains("running") && lower.contains("scenemax_projector_nextgen")) {
+            return "Bevy ambient light editor started.";
+        }
+        if (trimmed.startsWith("Compiling ")) {
+            return "Compiling " + trimmed.substring("Compiling ".length()).trim() + "...";
+        }
+        if (trimmed.startsWith("Checking ")) {
+            return "Checking " + trimmed.substring("Checking ".length()).trim() + "...";
+        }
+        if (trimmed.startsWith("Finished ")) {
+            return "Rust/Bevy build finished. Opening ambient light editor...";
+        }
+        if (trimmed.startsWith("Blocking waiting for file lock")) {
+            return "Waiting for Cargo build lock...";
+        }
+        return null;
+    }
+
+    private void appendBounded(StringBuilder output, String line) {
+        if (line == null) {
+            return;
+        }
+        output.append(line).append(System.lineSeparator());
+        if (output.length() > 12000) {
+            output.delete(0, output.length() - 12000);
+        }
+    }
+
+    private String tail(String output) {
+        if (output == null || output.isBlank()) {
+            return "";
+        }
+        int maxLength = 3000;
+        return output.length() <= maxLength ? output : output.substring(output.length() - maxLength);
+    }
+
+    private String rootMessage(Exception ex) {
+        Throwable t = ex;
+        while (t.getCause() != null) {
+            t = t.getCause();
+        }
+        String message = t.getMessage();
+        return message == null || message.isBlank() ? t.toString() : message;
     }
 
     private void buildLoadingBar() {
@@ -5093,6 +5281,7 @@ public class DesignerPanel extends JPanel {
             case "arch":            drawToolbarArch(g);            break;
             case "light":           drawToolbarLight(g);           break;
             case "designlights":    drawToolbarDesignLights(g);    break;
+            case "ambientlight":    drawToolbarAmbientLight(g);    break;
             case "model":     drawToolbarModel(g);     break;
             case "delete":    drawToolbarDelete(g);    break;
             case "copy":      drawToolbarCopy(g);      break;
@@ -5248,6 +5437,18 @@ public class DesignerPanel extends JPanel {
         g.draw(new Ellipse2D.Float(3, 2, 14, 14));
         g.draw(new Line2D.Float(14, 3, 17, 1));
         g.draw(new Line2D.Float(15, 5, 18, 4));
+    }
+
+    private static void drawToolbarAmbientLight(Graphics2D g) {
+        g.draw(new Ellipse2D.Float(4, 4, 12, 12));
+        g.draw(new Ellipse2D.Float(7, 7, 6, 6));
+        g.setColor(DT_HIGHLIGHT);
+        g.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.draw(new Ellipse2D.Float(1.5f, 1.5f, 17, 17));
+        g.draw(new Line2D.Float(10, 0.5f, 10, 3.0f));
+        g.draw(new Line2D.Float(10, 17.0f, 10, 19.5f));
+        g.draw(new Line2D.Float(0.5f, 10, 3.0f, 10));
+        g.draw(new Line2D.Float(17.0f, 10, 19.5f, 10));
     }
 
     /** 3D Model: diamond/gem shape */

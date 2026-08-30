@@ -73,6 +73,7 @@ use scenemax_runtime_vm_core::{SceneMaxScopeFrame, SceneMaxVars, SceneMaxVmSpati
 use serde::Deserialize;
 
 mod actions;
+mod ambient_light_designer;
 mod animation;
 mod audio;
 mod camera;
@@ -87,6 +88,7 @@ mod startup;
 mod ui;
 
 use actions::*;
+pub use ambient_light_designer::{BevyAmbientLightDesignerLaunch, run_bevy_ambient_light_designer};
 use animation::*;
 use audio::*;
 use camera::*;
@@ -188,6 +190,9 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
     });
 
     app.insert_resource(WinitSettings::continuous())
+        .insert_resource(bevy::ecs::error::FallbackErrorHandler(
+            handle_runtime_ecs_error,
+        ))
         .insert_resource(SceneMaxLaunchContext {
             script_root: effective_script_root,
             asset_root: asset_root.clone(),
@@ -292,6 +297,23 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
     }
 
     app.run();
+}
+
+fn handle_runtime_ecs_error(
+    error: bevy::ecs::error::BevyError,
+    context: bevy::ecs::error::ErrorContext,
+) {
+    if error.is::<bevy::ecs::entity::EntityNotSpawnedError>()
+        || error.is::<bevy::ecs::entity::InvalidEntityError>()
+    {
+        write_runtime_diagnostic_line(format!(
+            "ECS:STALE_ENTITY_COMMAND context={} error={}",
+            context, error
+        ));
+        tracing::warn!(%context, %error, "ignored stale entity command");
+        return;
+    }
+    bevy::ecs::error::panic(error, context);
 }
 
 fn startup_screen_mode(scene_program: &SceneMaxStartupProgram) -> ScreenMode {

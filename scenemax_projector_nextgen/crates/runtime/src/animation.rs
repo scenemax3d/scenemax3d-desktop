@@ -283,7 +283,7 @@ pub(super) fn play_pending_animations(
                         &mut graphs,
                         &mut players,
                     );
-                    commands.entity(root).remove::<AnimationToPlay>();
+                    commands.entity(root).try_remove::<AnimationToPlay>();
                     commands.entity(root).insert(CurrentAnimation {
                         clip: animation_to_play.runtime_clip.clone(),
                         looped: animation_to_play.looped,
@@ -338,7 +338,7 @@ pub(super) fn play_pending_animations(
                     "GLTF animation clip was not found; skipping fallback"
                 );
             }
-            commands.entity(root).remove::<AnimationToPlay>();
+            commands.entity(root).try_remove::<AnimationToPlay>();
             continue;
         };
         let resolved_clip_name = resolved_clip.name;
@@ -410,7 +410,7 @@ pub(super) fn play_pending_animations(
             &mut players,
         );
 
-        commands.entity(root).remove::<AnimationToPlay>();
+        commands.entity(root).try_remove::<AnimationToPlay>();
         commands.entity(root).insert(CurrentAnimation {
             clip: animation_to_play.runtime_clip.clone(),
             looped: animation_to_play.looped,
@@ -1189,7 +1189,7 @@ fn restore_animation_visual_transform(
     }
     commands
         .entity(root)
-        .remove::<SceneMaxAnimationVisualTransform>();
+        .try_remove::<SceneMaxAnimationVisualTransform>();
 }
 
 fn switch_to_external_animation_source(
@@ -2783,7 +2783,7 @@ pub(super) fn restore_inactive_animation_visual_rotations(
         }
         commands
             .entity(root)
-            .remove::<SceneMaxAnimationVisualTransform>();
+            .try_remove::<SceneMaxAnimationVisualTransform>();
     }
 }
 
@@ -2840,7 +2840,7 @@ pub(super) fn apply_animation_speed_overrides(
         }
 
         let Some(remaining_seconds) = speed_override.remaining_seconds.as_mut() else {
-            commands.entity(root).remove::<AnimationSpeedOverride>();
+            commands.entity(root).try_remove::<AnimationSpeedOverride>();
             continue;
         };
         *remaining_seconds -= time.delta_secs();
@@ -2854,7 +2854,7 @@ pub(super) fn apply_animation_speed_overrides(
                     set_active_animation_speeds(&mut player, restore_speed);
                 }
             }
-            commands.entity(root).remove::<AnimationSpeedOverride>();
+            commands.entity(root).try_remove::<AnimationSpeedOverride>();
         }
     }
 }

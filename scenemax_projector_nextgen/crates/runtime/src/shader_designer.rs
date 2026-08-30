@@ -2151,7 +2151,7 @@ fn despawn_preview_model_roots(
     for root in model_roots {
         let mut entity = commands.entity(root);
         entity.despawn_children();
-        entity.despawn();
+        entity.try_despawn();
     }
 }
 

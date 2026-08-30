@@ -1548,8 +1548,8 @@ pub(super) fn insert_tnua_character_controller(
     });
 
     let mut entity_commands = commands.entity(entity);
-    entity_commands.remove::<TimedMoves>();
-    entity_commands.remove::<TimedJump>();
+    entity_commands.try_remove::<TimedMoves>();
+    entity_commands.try_remove::<TimedJump>();
     entity_commands.insert((
         SceneMaxCharacterController {
             move_speed: DEFAULT_CHARACTER_MOVE_SPEED,
@@ -1679,7 +1679,7 @@ pub(super) fn apply_pending_character_modes(
             *transform,
             &mut character_configs,
         );
-        commands.entity(entity).remove::<PendingCharacterMode>();
+        commands.entity(entity).try_remove::<PendingCharacterMode>();
     }
 }
 
@@ -1702,7 +1702,7 @@ pub(super) fn cleanup_character_supports(
             ));
         }
         for support_entity in &supports {
-            commands.entity(support_entity).despawn();
+            commands.entity(support_entity).try_despawn();
         }
     }
 }
@@ -1714,15 +1714,15 @@ pub(super) fn clear_character_mode(
     transform: Option<&Transform>,
 ) {
     let mut entity_commands = commands.entity(entity);
-    entity_commands.remove::<SceneMaxCharacterController>();
-    entity_commands.remove::<SceneMaxCharacterMotor>();
-    entity_commands.remove::<PendingCharacterMode>();
-    entity_commands.remove::<TnuaController<SceneMaxControlScheme>>();
-    entity_commands.remove::<TnuaConfig<SceneMaxControlScheme>>();
-    entity_commands.remove::<TnuaAvian3dSensorShape>();
-    entity_commands.remove::<LockedAxes>();
-    entity_commands.remove::<TimedMoves>();
-    entity_commands.remove::<TimedJump>();
+    entity_commands.try_remove::<SceneMaxCharacterController>();
+    entity_commands.try_remove::<SceneMaxCharacterMotor>();
+    entity_commands.try_remove::<PendingCharacterMode>();
+    entity_commands.try_remove::<TnuaController<SceneMaxControlScheme>>();
+    entity_commands.try_remove::<TnuaConfig<SceneMaxControlScheme>>();
+    entity_commands.try_remove::<TnuaAvian3dSensorShape>();
+    entity_commands.try_remove::<LockedAxes>();
+    entity_commands.try_remove::<TimedMoves>();
+    entity_commands.try_remove::<TimedJump>();
     entity_commands.insert((
         AvianRigidBody::Kinematic,
         character_collision_layers(),
@@ -2904,7 +2904,7 @@ pub(super) fn update_timed_turns(
                 turn.remaining_seconds = turn.duration_seconds;
                 continue;
             }
-            commands.entity(entity).remove::<TimedTurn>();
+            commands.entity(entity).try_remove::<TimedTurn>();
         }
     }
 }
@@ -2960,7 +2960,7 @@ pub(super) fn update_timed_moves(
         }
         movements.moves = active_moves;
         if movements.moves.is_empty() {
-            commands.entity(entity).remove::<TimedMoves>();
+            commands.entity(entity).try_remove::<TimedMoves>();
         }
     }
 }
@@ -2976,7 +2976,7 @@ pub(super) fn update_timed_jumps(
         transform.translation.y = jump.start_y + jump_y_offset(progress, jump.height);
         if progress >= 1.0 {
             transform.translation.y = jump.start_y;
-            commands.entity(entity).remove::<TimedJump>();
+            commands.entity(entity).try_remove::<TimedJump>();
         }
     }
 }

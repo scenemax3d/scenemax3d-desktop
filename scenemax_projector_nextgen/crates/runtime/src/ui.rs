@@ -2,6 +2,17 @@ use super::*;
 
 const SAME_BATCH_DRAW_CLEAR_MIN_SECONDS: f32 = 0.35;
 
+fn add_child_if_alive(commands: &mut Commands, parent: Entity, child: Entity) {
+    commands.queue(move |world: &mut World| {
+        if world.get_entity(parent).is_err() || world.get_entity(child).is_err() {
+            return;
+        }
+        if let Ok(mut parent_entity) = world.get_entity_mut(parent) {
+            parent_entity.add_child(child);
+        }
+    });
+}
+
 pub(super) fn scenemax_ui_action_from_statement(action: &Statement) -> Option<SceneMaxUiAction> {
     match action {
         Statement::UiLoad { name } => Some(SceneMaxUiAction::Load { name: name.clone() }),
@@ -49,16 +60,16 @@ pub(super) fn clear_scenemax_ui_on_scene_change(
     let ui_count = ui_runtime.loaded.len();
     for loaded in ui_runtime.loaded.values() {
         for entity in &loaded.root_entities {
-            commands.entity(*entity).despawn();
+            commands.entity(*entity).try_despawn();
         }
     }
     let draw_count = ui_runtime.draw_channels.len();
     for entity in ui_runtime.draw_channels.values() {
-        commands.entity(*entity).despawn();
+        commands.entity(*entity).try_despawn();
     }
     let print_count = ui_runtime.print_channels.len();
     for entity in ui_runtime.print_channels.values() {
-        commands.entity(*entity).despawn();
+        commands.entity(*entity).try_despawn();
     }
 
     ui_runtime.active_ui_name = None;
@@ -199,7 +210,7 @@ pub(super) fn apply_scenemax_ui_actions(
                     });
                     commands
                         .entity(text_entity)
-                        .remove::<SceneMaxUiMessageAnimation>()
+                        .try_remove::<SceneMaxUiMessageAnimation>()
                         .insert(visual_state);
                     let effect_names = scenemax_runtime_ui_core::parse_effects(&effects);
                     if scenemax_runtime_ui_core::should_animate(&effect_names)
@@ -241,7 +252,7 @@ pub(super) fn apply_scenemax_ui_actions(
                     });
                     commands
                         .entity(text_entity)
-                        .remove::<SceneMaxUiMessageAnimation>()
+                        .try_remove::<SceneMaxUiMessageAnimation>()
                         .insert(visual_state);
                     let effect_names = scenemax_runtime_ui_core::parse_effects(&effects);
                     if scenemax_runtime_ui_core::should_animate(&effect_names)
@@ -328,7 +339,7 @@ pub(super) fn apply_scenemax_ui_actions(
                                 });
                             commands
                                 .entity(text_entity)
-                                .remove::<SceneMaxUiMessageAnimation>()
+                                .try_remove::<SceneMaxUiMessageAnimation>()
                                 .insert(visual_state);
                             text_component.0 = value;
                             text_color.0 = visual_state.base_color;
@@ -343,7 +354,7 @@ pub(super) fn apply_scenemax_ui_actions(
                                 });
                             commands
                                 .entity(text_entity)
-                                .remove::<SceneMaxUiMessageAnimation>()
+                                .try_remove::<SceneMaxUiMessageAnimation>()
                                 .insert(visual_state);
                             bitmap_text.text = value;
                             bitmap_text.color = visual_state.base_color;
@@ -408,7 +419,7 @@ pub(super) fn update_deferred_draw_clears(
 
     for channel in ready_channels {
         if let Some(entity) = ui_runtime.draw_channels.remove(&channel) {
-            commands.entity(entity).despawn();
+            commands.entity(entity).try_despawn();
             write_runtime_diagnostic_line(format!("cleared deferred draw channel {channel}"));
         }
     }
@@ -423,7 +434,7 @@ pub(super) fn apply_scenemax_draw_action(
 ) {
     if draw.clear {
         if let Some(entity) = ui_runtime.draw_channels.remove(&draw.channel) {
-            commands.entity(entity).despawn();
+            commands.entity(entity).try_despawn();
             write_runtime_diagnostic_line(format!("cleared draw channel {}", draw.channel));
         }
         return;
@@ -445,7 +456,7 @@ pub(super) fn apply_scenemax_draw_action(
     };
 
     if let Some(entity) = ui_runtime.draw_channels.remove(&draw.channel) {
-        commands.entity(entity).despawn();
+        commands.entity(entity).try_despawn();
     }
 
     let image_size =
@@ -518,7 +529,7 @@ pub(super) fn apply_scenemax_print_action(
     ui_runtime: &mut SceneMaxUiRuntime,
 ) {
     if let Some(entity) = ui_runtime.print_channels.remove(&print.channel) {
-        commands.entity(entity).despawn();
+        commands.entity(entity).try_despawn();
     }
     if print.text.is_empty() {
         write_runtime_diagnostic_line(format!("cleared print channel {}", print.channel));
@@ -707,7 +718,7 @@ pub(super) fn update_scenemax_ui_eases(
         transform.translation = Val2::percent(offset.x, offset.y);
         if t >= 1.0 {
             transform.translation = Val2::ZERO;
-            commands.entity(entity).remove::<SceneMaxUiEase>();
+            commands.entity(entity).try_remove::<SceneMaxUiEase>();
         }
     }
 }
@@ -742,7 +753,7 @@ pub(super) fn update_scenemax_ui_message_animations(
             *transform = animation.base_transform;
             commands
                 .entity(entity)
-                .remove::<SceneMaxUiMessageAnimation>();
+                .try_remove::<SceneMaxUiMessageAnimation>();
         }
     }
 }
@@ -780,7 +791,7 @@ pub(super) fn update_scenemax_ui_bitmap_message_animations(
             render_scenemax_bitmap_text(&mut commands, entity, &mut bitmap_text, &ui_runtime);
             commands
                 .entity(entity)
-                .remove::<SceneMaxUiMessageAnimation>();
+                .try_remove::<SceneMaxUiMessageAnimation>();
         }
     }
 }
@@ -1038,7 +1049,7 @@ pub(super) fn spawn_scenemax_ui_widget(
                 rect.height,
                 None,
             );
-            commands.entity(entity).add_child(text);
+            add_child_if_alive(commands, entity, text);
             (entity, Some(text))
         }
         "IMAGE" => {
@@ -1118,7 +1129,7 @@ pub(super) fn spawn_scenemax_ui_widget(
             (entity, None)
         }
     };
-    commands.entity(parent_entity).add_child(entity);
+    add_child_if_alive(commands, parent_entity, entity);
     loaded.targets.insert(
         key,
         SceneMaxUiTarget {
@@ -1271,7 +1282,7 @@ pub(super) fn render_scenemax_bitmap_text(
     ui_runtime: &SceneMaxUiRuntime,
 ) {
     for glyph_entity in bitmap_text.glyph_entities.drain(..) {
-        commands.entity(glyph_entity).despawn();
+        commands.entity(glyph_entity).try_despawn();
     }
 
     let Some(font) = ui_runtime.bitmap_fonts.get(&bitmap_text.font_name) else {
@@ -1318,7 +1329,7 @@ pub(super) fn render_scenemax_bitmap_text(
                         },
                     ))
                     .id();
-                commands.entity(entity).add_child(glyph_entity);
+                add_child_if_alive(commands, entity, glyph_entity);
                 bitmap_text.glyph_entities.push(glyph_entity);
             }
             cursor_x += glyph.x_advance * scale;

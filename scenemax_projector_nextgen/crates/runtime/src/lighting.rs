@@ -15,6 +15,9 @@ pub(super) enum SceneMaxFallbackLight {
 #[derive(Debug, Clone, Component)]
 pub(super) struct SceneMaxLight;
 
+#[derive(Debug, Clone, Copy, Resource)]
+pub(super) struct SceneMaxAuthoredAmbientLight;
+
 pub(super) fn collect_light_declarations(program: &Program) -> Vec<LightDeclarationStatement> {
     program
         .statements
@@ -148,6 +151,7 @@ pub(super) fn spawn_scenemax_light_decl(
             ambient_light = Some(GlobalAmbientLight {
                 color: ambient_color,
                 brightness: SCENEMAX_AMBIENT_BRIGHTNESS * intensity,
+                affects_lightmapped_meshes: light.affects_lightmapped_meshes.unwrap_or_default(),
                 ..default()
             });
         }
@@ -156,7 +160,25 @@ pub(super) fn spawn_scenemax_light_decl(
     let entity_id = entity.id();
     drop(entity);
     if let Some(ambient_light) = ambient_light {
-        commands.insert_resource(ambient_light);
+        match light.light_type {
+            LightType::Ambient => {
+                commands.insert_resource(ambient_light);
+                commands.insert_resource(SceneMaxAuthoredAmbientLight);
+            }
+            LightType::Sky | LightType::Probe => {
+                let light_type = light.light_type;
+                commands.queue(move |world: &mut World| {
+                    if world.contains_resource::<SceneMaxAuthoredAmbientLight>() {
+                        write_runtime_diagnostic_line(format!(
+                            "LIGHT:AMBIENT_SKIP type={light_type:?} reason=authored_ambient"
+                        ));
+                    } else {
+                        world.insert_resource(ambient_light);
+                    }
+                });
+            }
+            _ => {}
+        }
     }
     write_runtime_diagnostic_line(format!(
         "LIGHT:DECL target={} type={:?} intensity={} color={}",
@@ -192,6 +214,7 @@ pub(super) fn apply_light_probe_add(
         preset: Some(probe.name.clone()),
         exposure: None,
         ambient_color: None,
+        affects_lightmapped_meshes: None,
     };
     spawn_scenemax_light_decl(
         commands,

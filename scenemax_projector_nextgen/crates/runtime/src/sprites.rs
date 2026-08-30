@@ -281,7 +281,9 @@ pub(super) fn update_sprite_animations(
         let max_frame = animation.from_frame.max(animation.to_frame);
         let span = max_frame.saturating_sub(min_frame) + 1;
         if span == 0 || sheet.frame_count == 0 {
-            commands.entity(entity).remove::<SceneMaxSpriteAnimation>();
+            commands
+                .entity(entity)
+                .try_remove::<SceneMaxSpriteAnimation>();
             continue;
         }
 
@@ -308,7 +310,9 @@ pub(super) fn update_sprite_animations(
         }
 
         if !animation.looped && animation.elapsed_seconds >= animation.duration_seconds {
-            commands.entity(entity).remove::<SceneMaxSpriteAnimation>();
+            commands
+                .entity(entity)
+                .try_remove::<SceneMaxSpriteAnimation>();
         }
         tracing::trace!(
             target = %scene_entity.name,

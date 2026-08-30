@@ -1,4 +1,5 @@
 use super::*;
+use crate::ambient_light_designer::apply_bevy_ambient_light_for_script_root;
 
 pub(super) fn find_builtin_resources_root(
     project_root: Option<&Path>,
@@ -812,10 +813,87 @@ pub(super) fn setup_scenemax_program(
         &mut materials,
         &mut character_configs,
     );
+    apply_bevy_ambient_light_for_script_root(&mut commands, context.script_root.as_deref());
     commands.insert_resource(SceneMaxStartupActionState::waiting_for_gltfs(startup_gltfs));
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SceneMaxSpawnVisibilityMode {
+    RuntimeStartup,
+    DesignerPreview,
+}
+
 pub(super) fn spawn_scenemax_program(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    asset_root: &Path,
+    builtin_asset_root: Option<&Path>,
+    program: &Program,
+    vars: &mut SceneMaxVars,
+    object_pools: &mut SceneMaxObjectPools,
+    camera_system: &mut SceneMaxCameraSystem,
+    delayed_actions: &mut DelayedActionQueue,
+    ui_queue: &mut SceneMaxUiActionQueue,
+    collider_bounds: &mut SceneMaxColliderBounds,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
+) -> Vec<Handle<Gltf>> {
+    spawn_scenemax_program_with_visibility_mode(
+        commands,
+        asset_server,
+        asset_root,
+        builtin_asset_root,
+        program,
+        vars,
+        object_pools,
+        camera_system,
+        delayed_actions,
+        ui_queue,
+        collider_bounds,
+        meshes,
+        materials,
+        character_configs,
+        SceneMaxSpawnVisibilityMode::RuntimeStartup,
+    )
+}
+
+pub(super) fn spawn_scenemax_program_for_designer_preview(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    asset_root: &Path,
+    builtin_asset_root: Option<&Path>,
+    program: &Program,
+    vars: &mut SceneMaxVars,
+    object_pools: &mut SceneMaxObjectPools,
+    camera_system: &mut SceneMaxCameraSystem,
+    delayed_actions: &mut DelayedActionQueue,
+    ui_queue: &mut SceneMaxUiActionQueue,
+    collider_bounds: &mut SceneMaxColliderBounds,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
+) -> Vec<Handle<Gltf>> {
+    spawn_scenemax_program_with_visibility_mode(
+        commands,
+        asset_server,
+        asset_root,
+        builtin_asset_root,
+        program,
+        vars,
+        object_pools,
+        camera_system,
+        delayed_actions,
+        ui_queue,
+        collider_bounds,
+        meshes,
+        materials,
+        character_configs,
+        SceneMaxSpawnVisibilityMode::DesignerPreview,
+    )
+}
+
+fn spawn_scenemax_program_with_visibility_mode(
     commands: &mut Commands,
     asset_server: &AssetServer,
     asset_root: &Path,
@@ -830,21 +908,30 @@ pub(super) fn spawn_scenemax_program(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
     _character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
+    visibility_mode: SceneMaxSpawnVisibilityMode,
 ) -> Vec<Handle<Gltf>> {
     let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
     let attaches_by_target = collect_attaches_by_target(program);
     let mut startup_gltfs = Vec::new();
     let mut model_declarations = collect_model_declarations(program);
-    model_declarations.extend(instantiate_object_pool_declarations(
-        program,
-        &functions_by_name,
-        object_pools,
-    ));
-    let preaction_visibility_by_target = model_declarations
-        .iter()
-        .map(|declaration| (declaration.name.clone(), false))
-        .collect::<HashMap<_, _>>();
+    if visibility_mode == SceneMaxSpawnVisibilityMode::RuntimeStartup {
+        model_declarations.extend(instantiate_object_pool_declarations(
+            program,
+            &functions_by_name,
+            object_pools,
+        ));
+    }
+    if visibility_mode == SceneMaxSpawnVisibilityMode::DesignerPreview {
+        model_declarations.retain(|declaration| !declaration.options.hidden);
+    }
+    let preaction_visibility_by_target = match visibility_mode {
+        SceneMaxSpawnVisibilityMode::RuntimeStartup => model_declarations
+            .iter()
+            .map(|declaration| (declaration.name.clone(), false))
+            .collect::<HashMap<_, _>>(),
+        SceneMaxSpawnVisibilityMode::DesignerPreview => HashMap::new(),
+    };
     let mut spawned_any = false;
     let mut entities_by_name = HashMap::new();
     let mut transforms_by_name = HashMap::new();
@@ -1044,7 +1131,11 @@ pub(super) fn spawn_scenemax_program(
                     .and_then(|character| character.bevy_visual_offset_y);
                 let gltf: Handle<Gltf> = asset_server.load(asset_path.clone());
                 let animation_names =
-                    load_gltf_animation_names(Some(asset_root), builtin_asset_root, &asset_path);
+                    if visibility_mode == SceneMaxSpawnVisibilityMode::RuntimeStartup {
+                        load_gltf_animation_names(Some(asset_root), builtin_asset_root, &asset_path)
+                    } else {
+                        Vec::new()
+                    };
                 let scene = WorldAssetRoot(
                     asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone())),
                 );

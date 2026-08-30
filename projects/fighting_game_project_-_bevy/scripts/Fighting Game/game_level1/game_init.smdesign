@@ -1,324 +1,327 @@
 {
-  "sceneEnvironmentShader": "ambient1",
+  "bevyAmbientLight": {
+    "affectsLightmappedMeshes": true,
+    "brightness": 900.0,
+    "color": "#fff5dc",
+    "configured": true,
+    "enabled": true,
+    "name": "level_ambient"
+  },
+  "camera": {
+    "position": [
+      92.162056,
+      75.25,
+      92.16205
+    ],
+    "rotation": [
+      -0.09904575,
+      0.8923991,
+      -0.23911761,
+      -0.3696438
+    ]
+  },
   "entities": [
     {
-      "shader": "",
-      "hidden": false,
-      "shadowMode": "cast",
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "scale": [
-        1,
-        1,
-        1
-      ],
       "colliderEntity": false,
-      "type": "BOX",
-      "sizeX": 50,
-      "sceneMaxCode": "floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material \"wall\", shadow mode cast",
-      "material": "wall",
-      "name": "floor",
-      "staticEntity": true,
+      "hidden": false,
       "id": "76d36d14-001f-4156-bd68-32f575cd1e36",
+      "material": "wall",
+      "multiplayer": false,
+      "name": "floor",
       "position": [
         0,
         -15,
         0
       ],
-      "multiplayer": false,
-      "sizeY": 0.5,
-      "sizeZ": 50
-    },
-    {
-      "shader": "",
-      "dynamicModel": false,
-      "hidden": false,
-      "shadowMode": "both",
       "rotation": [
         0,
         0,
         0,
         1
       ],
-      "resourcePath": "crime_city1",
-      "jointMapping": "",
       "scale": [
-        0.02,
-        0.02,
-        0.02
+        1,
+        1,
+        1
       ],
-      "modelCollisionShape": "default",
-      "type": "MODEL",
-      "sceneMaxCode": "level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on async",
-      "staticModel": true,
-      "name": "level2",
-      "vehicleModel": false,
+      "sceneMaxCode": "floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material \"wall\", shadow mode cast",
+      "shader": "",
+      "shadowMode": "cast",
+      "sizeX": 50,
+      "sizeY": 0.5,
+      "sizeZ": 50,
+      "staticEntity": true,
+      "type": "BOX"
+    },
+    {
+      "dynamicModel": false,
+      "hidden": false,
       "id": "6c88a888-9117-4243-8c9f-61fbe3e1da6f",
+      "jointMapping": "",
+      "modelCollisionShape": "default",
+      "multiplayer": false,
+      "name": "level2",
       "position": [
         220,
         -90,
         210
       ],
-      "multiplayer": false
-    },
-    {
-      "shader": "",
-      "dynamicModel": false,
-      "hidden": false,
-      "shadowMode": "none",
+      "resourcePath": "crime_city1",
       "rotation": [
         0,
         0,
         0,
         1
       ],
-      "resourcePath": "fantasy_ring1",
-      "jointMapping": "",
       "scale": [
-        25,
-        25,
-        25
+        0.02,
+        0.02,
+        0.02
       ],
-      "modelCollisionShape": "default",
+      "sceneMaxCode": "level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on async",
+      "shader": "",
+      "shadowMode": "both",
+      "staticModel": true,
       "type": "MODEL",
-      "sceneMaxCode": "ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0 async",
-      "staticModel": false,
-      "name": "ring",
-      "vehicleModel": false,
+      "vehicleModel": false
+    },
+    {
+      "dynamicModel": false,
+      "hidden": false,
       "id": "8dbcd4f2-e865-4aa6-b7f9-3f321758aebd",
+      "jointMapping": "",
+      "modelCollisionShape": "default",
+      "multiplayer": false,
+      "name": "ring",
       "position": [
         13,
         -12,
         50
       ],
-      "multiplayer": false
-    },
-    {
+      "resourcePath": "fantasy_ring1",
       "rotation": [
         0,
         0,
         0,
         1
       ],
-      "name": "rotate ring",
       "scale": [
-        1,
-        1,
-        1
+        25,
+        25,
+        25
       ],
+      "sceneMaxCode": "ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0 async",
+      "shader": "",
+      "shadowMode": "none",
+      "staticModel": false,
+      "type": "MODEL",
+      "vehicleModel": false
+    },
+    {
       "codeText": "// rotate ring\nring.turn left 360 in 50 seconds async\n\ndo async\n  audio.play \"monster_roar\"\n  wait 3 seconds\n  audio.play \"drums_music1\" loop\nend do",
       "id": "62d40e7b-90dc-43f2-a989-b5a9db6811db",
+      "name": "rotate ring",
       "position": [
         0,
         0,
         0
       ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
       "type": "CODE"
     },
     {
-      "shader": "",
       "dynamicModel": false,
       "hidden": false,
-      "shadowMode": "both",
+      "id": "7ce35e67-ecb0-468d-b486-659b902279da",
+      "jointMapping": "",
+      "modelCollisionShape": "default",
+      "multiplayer": false,
+      "name": "tg",
+      "position": [
+        10.163753,
+        -5.6443043,
+        49.335724
+      ],
+      "resourcePath": "tiger3",
       "rotation": [
         0,
         0.8216386,
         0,
         0.5700088
       ],
-      "resourcePath": "tiger3",
-      "jointMapping": "",
       "scale": [
         0.04,
         0.04,
         0.04
       ],
-      "modelCollisionShape": "default",
-      "type": "MODEL",
       "sceneMaxCode": "tg => tiger3: pos (10.163753,-5.6443043,49.335724), scale 0.04, rotate(0.0,110.49832,0.0), shadow mode on async",
+      "shader": "",
+      "shadowMode": "both",
       "staticModel": false,
-      "name": "tg",
-      "vehicleModel": false,
-      "id": "7ce35e67-ecb0-468d-b486-659b902279da",
-      "position": [
-        10.163753,
-        -5.6443043,
-        49.335724
-      ],
-      "multiplayer": false
+      "type": "MODEL",
+      "vehicleModel": false
     },
     {
-      "shader": "",
       "dynamicModel": true,
       "hidden": true,
-      "shadowMode": "cast",
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "resourcePath": "boss",
-      "jointMapping": "",
-      "scale": [
-        3,
-        3,
-        3
-      ],
-      "modelCollisionShape": "default",
-      "type": "MODEL",
-      "sceneMaxCode": "boss => dynamic boss: hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast async",
-      "staticModel": false,
-      "name": "boss",
-      "vehicleModel": false,
       "id": "f82122e5-337a-435b-8e29-98465a4ea0be",
+      "jointMapping": "",
+      "modelCollisionShape": "default",
+      "multiplayer": false,
+      "name": "boss",
       "position": [
         9,
         0,
         35
       ],
-      "multiplayer": false
-    },
-    {
+      "resourcePath": "boss",
       "rotation": [
         0,
         0,
         0,
         1
       ],
-      "name": "boss character mode",
       "scale": [
-        1,
-        1,
-        1
+        3,
+        3,
+        3
       ],
+      "sceneMaxCode": "boss => dynamic boss: hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast async",
+      "shader": "",
+      "shadowMode": "cast",
+      "staticModel": false,
+      "type": "MODEL",
+      "vehicleModel": false
+    },
+    {
       "codeText": "// boss character mode\nboss.switch to character mode",
       "id": "5b696acf-2b35-4964-8106-d955b558c97c",
+      "name": "boss character mode",
       "position": [
         0,
         0,
         0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
       ],
       "type": "CODE"
     },
     {
+      "codeText": "// focus camera on tiger\nintro.draw clear\ntg.\"Idle_Lie Prone\" loop\n//camera.attach to tg : pos (0,1,-12)\n//effects.flame.show : pos (13,-20,50), radius = 17, duration 4 async\nskybox.show solar system\nwait 1 seconds",
+      "id": "df559889-baec-4728-99f0-da8f2c50bd86",
+      "name": "focus camera on tiger",
+      "position": [
+        0,
+        0,
+        0
+      ],
       "rotation": [
         0,
         0,
         0,
         1
       ],
-      "name": "focus camera on tiger",
       "scale": [
         1,
         1,
         1
-      ],
-      "codeText": "// focus camera on tiger\nintro.draw clear\ntg.\"Idle_Lie Prone\" loop\n//camera.attach to tg : pos (0,1,-12)\n//effects.flame.show : pos (13,-20,50), radius = 17, duration 4 async\nskybox.show solar system\nwait 1 seconds",
-      "id": "df559889-baec-4728-99f0-da8f2c50bd86",
-      "position": [
-        0,
-        0,
-        0
       ],
       "type": "CODE"
     },
     {
       "children": [
         {
-          "shader": "",
           "dynamicModel": true,
           "hidden": true,
-          "shadowMode": "cast",
+          "id": "f0af5cf2-e250-48cb-b3b1-68726126925a",
+          "jointMapping": "mixamorig:Head,mixamorig:LeftShoulder,mixamorig:LeftArm,mixamorig:LeftForeArm,mixamorig:LeftHand,mixamorig:RightShoulder,mixamorig:RightArm,mixamorig:RightForeArm,mixamorig:RightHand,mixamorig:LeftUpLeg,mixamorig:LeftLeg,mixamorig:LeftFoot,mixamorig:RightUpLeg,mixamorig:RightLeg,mixamorig:RightFoot",
+          "modelCollisionShape": "default",
+          "multiplayer": false,
+          "name": "player1",
+          "position": [
+            40,
+            -89.249504,
+            30
+          ],
+          "resourcePath": "fighter1",
           "rotation": [
             0,
             -0.99827087,
             0,
             -0.05878162
           ],
-          "resourcePath": "fighter1",
-          "jointMapping": "mixamorig:Head,mixamorig:LeftShoulder,mixamorig:LeftArm,mixamorig:LeftForeArm,mixamorig:LeftHand,mixamorig:RightShoulder,mixamorig:RightArm,mixamorig:RightForeArm,mixamorig:RightHand,mixamorig:LeftUpLeg,mixamorig:LeftLeg,mixamorig:LeftFoot,mixamorig:RightUpLeg,mixamorig:RightLeg,mixamorig:RightFoot",
           "scale": [
             3,
             3,
             3
           ],
-          "modelCollisionShape": "default",
-          "type": "MODEL",
           "sceneMaxCode": "player1 => dynamic fighter1: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast async",
+          "shader": "",
+          "shadowMode": "cast",
           "staticModel": false,
-          "name": "player1",
-          "vehicleModel": false,
-          "id": "f0af5cf2-e250-48cb-b3b1-68726126925a",
-          "position": [
-            40,
-            -89.249504,
-            30
-          ],
-          "multiplayer": false
+          "type": "MODEL",
+          "vehicleModel": false
         },
         {
-          "shader": "",
-          "hidden": false,
-          "shadowMode": "none",
-          "rotation": [
-            0,
-            0,
-            0,
-            1
-          ],
-          "scale": [
-            1,
-            1,
-            1
-          ],
           "colliderEntity": true,
-          "type": "BOX",
-          "sizeX": 0.5,
-          "sceneMaxCode": "player1_body_collider => box : size (1.0,1.0,1.0), pos (0.0,0.5,2.88586)",
-          "material": "",
-          "name": "player1_body_collider",
-          "staticEntity": false,
+          "hidden": false,
           "id": "57aa39ba-238f-48b0-90f6-24d73b98f7bf",
+          "material": "",
+          "multiplayer": false,
+          "name": "player1_body_collider",
           "position": [
             0,
             0.5,
             2.88586
           ],
-          "multiplayer": false,
-          "sizeY": 0.5,
-          "sizeZ": 0.5
-        },
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "player1_body_collider_attach",
           "scale": [
             1,
             1,
             1
           ],
+          "sceneMaxCode": "player1_body_collider => box : size (1.0,1.0,1.0), pos (0.0,0.5,2.88586)",
+          "shader": "",
+          "shadowMode": "none",
+          "sizeX": 0.5,
+          "sizeY": 0.5,
+          "sizeZ": 0.5,
+          "staticEntity": false,
+          "type": "BOX"
+        },
+        {
           "codeText": "// player1_body_collider_attach\nplayer1_body_collider.attach to player1: pos (0,1,0)",
           "id": "22e0fb96-80cd-4566-ba30-c3200bccdd57",
+          "name": "player1_body_collider_attach",
           "position": [
             0,
             0,
             0
           ],
-          "type": "CODE"
-        },
-        {
-          "shader": "",
-          "hidden": false,
-          "shadowMode": "none",
           "rotation": [
             0,
             0,
@@ -330,47 +333,47 @@
             1,
             1
           ],
+          "type": "CODE"
+        },
+        {
           "colliderEntity": true,
-          "type": "SPHERE",
-          "sceneMaxCode": "player1_head_collider => sphere : pos (2.5929513,0.5,0.0), radius 0.5",
-          "material": "",
-          "name": "player1_head_collider",
-          "staticEntity": false,
+          "hidden": false,
           "id": "13d9e714-5772-4249-8f25-1bbc118e9ac1",
+          "material": "",
+          "multiplayer": false,
+          "name": "player1_head_collider",
           "position": [
             2.5929513,
             0.5,
             0
           ],
           "radius": 0.5,
-          "multiplayer": false
-        },
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "player1_head_collider_attach",
           "scale": [
             1,
             1,
             1
           ],
+          "sceneMaxCode": "player1_head_collider => sphere : pos (2.5929513,0.5,0.0), radius 0.5",
+          "shader": "",
+          "shadowMode": "none",
+          "staticEntity": false,
+          "type": "SPHERE"
+        },
+        {
           "codeText": "// player1_head_collider_attach\nplayer1_head_collider.attach to player1.\"mixamorig:Head\": pos (0,0.5,0)",
           "id": "584c8e97-284d-442c-a154-b4acb8f439bf",
+          "name": "player1_head_collider_attach",
           "position": [
             0,
             0,
             0
           ],
-          "type": "CODE"
-        },
-        {
-          "shader": "",
-          "hidden": false,
-          "shadowMode": "none",
           "rotation": [
             0,
             0,
@@ -382,47 +385,47 @@
             1,
             1
           ],
+          "type": "CODE"
+        },
+        {
           "colliderEntity": true,
-          "type": "SPHERE",
-          "sceneMaxCode": "player1_left_foot_collider => sphere : pos (4.0232105,0.5,0.0), radius 0.5",
-          "material": "",
-          "name": "player1_left_foot_collider",
-          "staticEntity": false,
+          "hidden": false,
           "id": "c424fd56-5c8e-4eea-90e6-3d86a322ff97",
+          "material": "",
+          "multiplayer": false,
+          "name": "player1_left_foot_collider",
           "position": [
             4.0232105,
             0.5,
             0
           ],
           "radius": 0.5,
-          "multiplayer": false
-        },
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "player1_left_foot_collider_attach",
           "scale": [
             1,
             1,
             1
           ],
+          "sceneMaxCode": "player1_left_foot_collider => sphere : pos (4.0232105,0.5,0.0), radius 0.5",
+          "shader": "",
+          "shadowMode": "none",
+          "staticEntity": false,
+          "type": "SPHERE"
+        },
+        {
           "codeText": "// player1_left_foot_collider_attach\nplayer1_left_foot_collider.attach to player1.\"mixamorig:LeftFoot\": pos (0,0,0)",
           "id": "9c6a6b80-fe19-4479-8688-cedb928e0209",
+          "name": "player1_left_foot_collider_attach",
           "position": [
             0,
             0,
             0
           ],
-          "type": "CODE"
-        },
-        {
-          "shader": "",
-          "hidden": false,
-          "shadowMode": "none",
           "rotation": [
             0,
             0,
@@ -434,47 +437,47 @@
             1,
             1
           ],
+          "type": "CODE"
+        },
+        {
           "colliderEntity": true,
-          "type": "SPHERE",
-          "sceneMaxCode": "player1_right_foot_collider => sphere : pos (5.2495646,0.5,0.0), radius 0.5",
-          "material": "",
-          "name": "player1_right_foot_collider",
-          "staticEntity": false,
+          "hidden": false,
           "id": "57b60bd0-8967-47f4-9edb-ca28c988bdcc",
+          "material": "",
+          "multiplayer": false,
+          "name": "player1_right_foot_collider",
           "position": [
             5.2495646,
             0.5,
             0
           ],
           "radius": 0.5,
-          "multiplayer": false
-        },
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "player1_right_foot_collider_attach",
           "scale": [
             1,
             1,
             1
           ],
+          "sceneMaxCode": "player1_right_foot_collider => sphere : pos (5.2495646,0.5,0.0), radius 0.5",
+          "shader": "",
+          "shadowMode": "none",
+          "staticEntity": false,
+          "type": "SPHERE"
+        },
+        {
           "codeText": "// player1_right_foot_collider_attach\nplayer1_right_foot_collider.attach to player1.\"mixamorig:RightFoot\": pos (0,0,0)",
           "id": "97f92b00-c28d-4991-b4fd-54b688fe743e",
+          "name": "player1_right_foot_collider_attach",
           "position": [
             0,
             0,
             0
           ],
-          "type": "CODE"
-        },
-        {
-          "shader": "",
-          "hidden": false,
-          "shadowMode": "none",
           "rotation": [
             0,
             0,
@@ -486,47 +489,47 @@
             1,
             1
           ],
+          "type": "CODE"
+        },
+        {
           "colliderEntity": true,
-          "type": "SPHERE",
-          "sceneMaxCode": "player1_left_hand_collider => sphere : pos (6.8733816,0.5,0.0), radius 0.5",
-          "material": "",
-          "name": "player1_left_hand_collider",
-          "staticEntity": false,
+          "hidden": false,
           "id": "261f330f-1297-45d5-b515-68da648cfb5e",
+          "material": "",
+          "multiplayer": false,
+          "name": "player1_left_hand_collider",
           "position": [
             6.8733816,
             0.5,
             0
           ],
           "radius": 0.5,
-          "multiplayer": false
-        },
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "player1_left_hand_collider_attach",
           "scale": [
             1,
             1,
             1
           ],
+          "sceneMaxCode": "player1_left_hand_collider => sphere : pos (6.8733816,0.5,0.0), radius 0.5",
+          "shader": "",
+          "shadowMode": "none",
+          "staticEntity": false,
+          "type": "SPHERE"
+        },
+        {
           "codeText": "// player1_left_hand_collider_attach\nplayer1_left_hand_collider.attach to player1.\"mixamorig:LeftHand\": pos (0,0,0)",
           "id": "eb40963e-b6c7-4935-8d17-f85ff94cd77b",
+          "name": "player1_left_hand_collider_attach",
           "position": [
             0,
             0,
             0
           ],
-          "type": "CODE"
-        },
-        {
-          "shader": "",
-          "hidden": false,
-          "shadowMode": "none",
           "rotation": [
             0,
             0,
@@ -538,43 +541,67 @@
             1,
             1
           ],
+          "type": "CODE"
+        },
+        {
           "colliderEntity": true,
-          "type": "SPHERE",
-          "sceneMaxCode": "player1_right_hand_collider => sphere : pos (8.34038,0.5,0.0), radius 0.5",
-          "material": "",
-          "name": "player1_right_hand_collider",
-          "staticEntity": false,
+          "hidden": false,
           "id": "03483af7-3f29-4ae9-8e1c-26fbe94098ca",
+          "material": "",
+          "multiplayer": false,
+          "name": "player1_right_hand_collider",
           "position": [
             8.34038,
             0.5,
             0
           ],
           "radius": 0.5,
-          "multiplayer": false
-        },
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "player1_right_hand_collider_attach",
           "scale": [
             1,
             1,
             1
           ],
+          "sceneMaxCode": "player1_right_hand_collider => sphere : pos (8.34038,0.5,0.0), radius 0.5",
+          "shader": "",
+          "shadowMode": "none",
+          "staticEntity": false,
+          "type": "SPHERE"
+        },
+        {
           "codeText": "// player1_right_hand_collider_attach\nplayer1_right_hand_collider.attach to player1.\"mixamorig:RightHand\": pos (0,0,0)",
           "id": "9682f7f8-6d3d-4fd5-8866-83220c851f70",
+          "name": "player1_right_hand_collider_attach",
           "position": [
             0,
             0,
             0
           ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
           "type": "CODE"
         }
+      ],
+      "id": "2bb48cbe-4499-44b6-9563-a86066a34265",
+      "name": "Main Player",
+      "position": [
+        0,
+        0,
+        0
       ],
       "rotation": [
         0,
@@ -582,58 +609,29 @@
         0,
         1
       ],
-      "name": "Main Player",
       "scale": [
         1,
         1,
         1
-      ],
-      "id": "2bb48cbe-4499-44b6-9563-a86066a34265",
-      "position": [
-        0,
-        0,
-        0
       ],
       "type": "SECTION"
     },
     {
       "children": [
         {
-          "shader": "",
           "dynamicModel": true,
           "hidden": true,
-          "shadowMode": "both",
-          "rotation": [
-            0,
-            0,
-            0,
-            1
-          ],
-          "resourcePath": "old_fighter2",
-          "jointMapping": "mixamorig:Head,mixamorig:LeftShoulder,mixamorig:LeftArm,mixamorig:LeftForeArm,mixamorig:LeftHand,mixamorig:RightShoulder,mixamorig:RightArm,mixamorig:RightForeArm,mixamorig:RightHand,mixamorig:LeftUpLeg,mixamorig:LeftLeg,mixamorig:LeftFoot,mixamorig:RightUpLeg,mixamorig:RightLeg,mixamorig:RightFoot",
-          "scale": [
-            3,
-            3,
-            3
-          ],
-          "modelCollisionShape": "default",
-          "type": "MODEL",
-          "sceneMaxCode": "player2 => dynamic old_fighter2: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on async",
-          "staticModel": false,
-          "name": "player2",
-          "vehicleModel": false,
           "id": "e25c8bd0-3d06-4966-b548-0a76207cd38d",
+          "jointMapping": "mixamorig:Head,mixamorig:LeftShoulder,mixamorig:LeftArm,mixamorig:LeftForeArm,mixamorig:LeftHand,mixamorig:RightShoulder,mixamorig:RightArm,mixamorig:RightForeArm,mixamorig:RightHand,mixamorig:LeftUpLeg,mixamorig:LeftLeg,mixamorig:LeftFoot,mixamorig:RightUpLeg,mixamorig:RightLeg,mixamorig:RightFoot",
+          "modelCollisionShape": "default",
+          "multiplayer": false,
+          "name": "player2",
           "position": [
             40,
             -88.03695,
             16.5
           ],
-          "multiplayer": false
-        },
-        {
-          "shader": "",
-          "hidden": false,
-          "shadowMode": "none",
+          "resourcePath": "old_fighter2",
           "rotation": [
             0,
             0,
@@ -641,53 +639,58 @@
             1
           ],
           "scale": [
-            1,
-            1,
-            1
+            3,
+            3,
+            3
           ],
+          "sceneMaxCode": "player2 => dynamic old_fighter2: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on async",
+          "shader": "",
+          "shadowMode": "both",
+          "staticModel": false,
+          "type": "MODEL",
+          "vehicleModel": false
+        },
+        {
           "colliderEntity": true,
-          "type": "BOX",
-          "sizeX": 0.5,
-          "sceneMaxCode": "player2_body_collider => box : size (1.0,1.0,1.0), pos (0.14360523,0.5,0.0)",
-          "material": "",
-          "name": "player2_body_collider",
-          "staticEntity": false,
+          "hidden": false,
           "id": "68dccc9c-910e-462b-9ae8-1854a3122dcb",
+          "material": "",
+          "multiplayer": false,
+          "name": "player2_body_collider",
           "position": [
             0.14360523,
             0.5,
             0
           ],
-          "multiplayer": false,
-          "sizeY": 0.5,
-          "sizeZ": 0.5
-        },
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "player2_body_collider_attach",
           "scale": [
             1,
             1,
             1
           ],
+          "sceneMaxCode": "player2_body_collider => box : size (1.0,1.0,1.0), pos (0.14360523,0.5,0.0)",
+          "shader": "",
+          "shadowMode": "none",
+          "sizeX": 0.5,
+          "sizeY": 0.5,
+          "sizeZ": 0.5,
+          "staticEntity": false,
+          "type": "BOX"
+        },
+        {
           "codeText": "// player2_body_collider_attach\nplayer2_body_collider.attach to player2: pos (0,1,0)",
           "id": "9106fc03-dc56-4ffe-8a70-1ab35f473a6b",
+          "name": "player2_body_collider_attach",
           "position": [
             0,
             0,
             0
           ],
-          "type": "CODE"
-        },
-        {
-          "shader": "",
-          "hidden": false,
-          "shadowMode": "none",
           "rotation": [
             0,
             0,
@@ -699,47 +702,47 @@
             1,
             1
           ],
+          "type": "CODE"
+        },
+        {
           "colliderEntity": true,
-          "type": "SPHERE",
-          "sceneMaxCode": "player2_head_collider => sphere : pos (-3.021677,0.5,0.0), radius 0.5",
-          "material": "",
-          "name": "player2_head_collider",
-          "staticEntity": false,
+          "hidden": false,
           "id": "23f7efa0-7b71-4f07-8820-932e7d3044c8",
+          "material": "",
+          "multiplayer": false,
+          "name": "player2_head_collider",
           "position": [
             -3.021677,
             0.5,
             0
           ],
           "radius": 0.5,
-          "multiplayer": false
-        },
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "player2_head_collider_attach",
           "scale": [
             1,
             1,
             1
           ],
+          "sceneMaxCode": "player2_head_collider => sphere : pos (-3.021677,0.5,0.0), radius 0.5",
+          "shader": "",
+          "shadowMode": "none",
+          "staticEntity": false,
+          "type": "SPHERE"
+        },
+        {
           "codeText": "// player2_head_collider_attach\nplayer2_head_collider.attach to player2.\"mixamorig:Head\": pos (0,0.5,0)",
           "id": "54121de9-3af2-448c-a71d-330b89c8f28b",
+          "name": "player2_head_collider_attach",
           "position": [
             0,
             0,
             0
           ],
-          "type": "CODE"
-        },
-        {
-          "shader": "",
-          "hidden": false,
-          "shadowMode": "none",
           "rotation": [
             0,
             0,
@@ -751,47 +754,47 @@
             1,
             1
           ],
+          "type": "CODE"
+        },
+        {
           "colliderEntity": true,
-          "type": "SPHERE",
-          "sceneMaxCode": "player2_right_foot_collider => sphere : pos (-6.405216,0.5,0.0), radius 0.5",
-          "material": "",
-          "name": "player2_right_foot_collider",
-          "staticEntity": false,
+          "hidden": false,
           "id": "a717b76e-3396-4015-8fa2-a1627cb7a8ac",
+          "material": "",
+          "multiplayer": false,
+          "name": "player2_right_foot_collider",
           "position": [
             -6.405216,
             0.5,
             0
           ],
           "radius": 0.5,
-          "multiplayer": false
-        },
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "player2_right_foot_collider_attach",
           "scale": [
             1,
             1,
             1
           ],
+          "sceneMaxCode": "player2_right_foot_collider => sphere : pos (-6.405216,0.5,0.0), radius 0.5",
+          "shader": "",
+          "shadowMode": "none",
+          "staticEntity": false,
+          "type": "SPHERE"
+        },
+        {
           "codeText": "// player2_right_foot_collider_attach\nplayer2_right_foot_collider.attach to player2.\"mixamorig:RightFoot\": pos (0,0,0)",
           "id": "0816e206-b376-4a61-a5ac-81fcc953f688",
+          "name": "player2_right_foot_collider_attach",
           "position": [
             0,
             0,
             0
           ],
-          "type": "CODE"
-        },
-        {
-          "shader": "",
-          "hidden": false,
-          "shadowMode": "none",
           "rotation": [
             0,
             0,
@@ -803,47 +806,47 @@
             1,
             1
           ],
+          "type": "CODE"
+        },
+        {
           "colliderEntity": true,
-          "type": "SPHERE",
-          "sceneMaxCode": "player2_left_foot_collider => sphere : pos (-4.7635937,0.5,0.0), radius 0.5",
-          "material": "",
-          "name": "player2_left_foot_collider",
-          "staticEntity": false,
+          "hidden": false,
           "id": "80e44e9d-289f-4a5c-9154-3651d663d3d9",
+          "material": "",
+          "multiplayer": false,
+          "name": "player2_left_foot_collider",
           "position": [
             -4.7635937,
             0.5,
             0
           ],
           "radius": 0.5,
-          "multiplayer": false
-        },
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "player2_left_foot_collider_attach",
           "scale": [
             1,
             1,
             1
           ],
+          "sceneMaxCode": "player2_left_foot_collider => sphere : pos (-4.7635937,0.5,0.0), radius 0.5",
+          "shader": "",
+          "shadowMode": "none",
+          "staticEntity": false,
+          "type": "SPHERE"
+        },
+        {
           "codeText": "// player2_left_foot_collider_attach\nplayer2_left_foot_collider.attach to player2.\"mixamorig:LeftFoot\": pos (0,0,0)",
           "id": "9e8bc341-6c5c-4420-a533-9100d810ed45",
+          "name": "player2_left_foot_collider_attach",
           "position": [
             0,
             0,
             0
           ],
-          "type": "CODE"
-        },
-        {
-          "shader": "",
-          "hidden": false,
-          "shadowMode": "none",
           "rotation": [
             0,
             0,
@@ -855,47 +858,47 @@
             1,
             1
           ],
+          "type": "CODE"
+        },
+        {
           "colliderEntity": true,
-          "type": "SPHERE",
-          "sceneMaxCode": "player2_right_hand_collider => sphere : pos (-10.128401,0.5,0.0), radius 0.5",
-          "material": "",
-          "name": "player2_right_hand_collider",
-          "staticEntity": false,
+          "hidden": false,
           "id": "eb94a332-c95c-488f-a5cd-9fce4f4217f3",
+          "material": "",
+          "multiplayer": false,
+          "name": "player2_right_hand_collider",
           "position": [
             -10.128401,
             0.5,
             0
           ],
           "radius": 0.5,
-          "multiplayer": false
-        },
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "player2_right_hand_collider_attach",
           "scale": [
             1,
             1,
             1
           ],
+          "sceneMaxCode": "player2_right_hand_collider => sphere : pos (-10.128401,0.5,0.0), radius 0.5",
+          "shader": "",
+          "shadowMode": "none",
+          "staticEntity": false,
+          "type": "SPHERE"
+        },
+        {
           "codeText": "// player2_right_hand_collider_attach\nplayer2_right_hand_collider.attach to player2.\"mixamorig:RightHand\": pos (0,0,0)",
           "id": "3c30150c-9aaf-4db1-97e7-64b24b5df89b",
+          "name": "player2_right_hand_collider_attach",
           "position": [
             0,
             0,
             0
           ],
-          "type": "CODE"
-        },
-        {
-          "shader": "",
-          "hidden": false,
-          "shadowMode": "none",
           "rotation": [
             0,
             0,
@@ -907,564 +910,598 @@
             1,
             1
           ],
+          "type": "CODE"
+        },
+        {
           "colliderEntity": true,
-          "type": "SPHERE",
-          "sceneMaxCode": "player2_left_hand_collider => sphere : pos (-8.123157,0.5,0.0), radius 0.5",
-          "material": "",
-          "name": "player2_left_hand_collider",
-          "staticEntity": false,
+          "hidden": false,
           "id": "9806803c-b4bc-4643-8d72-af540f6cceae",
+          "material": "",
+          "multiplayer": false,
+          "name": "player2_left_hand_collider",
           "position": [
             -8.123157,
             0.5,
             0
           ],
           "radius": 0.5,
-          "multiplayer": false
-        },
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "player2_left_hand_collider_attach",
           "scale": [
             1,
             1,
             1
           ],
+          "sceneMaxCode": "player2_left_hand_collider => sphere : pos (-8.123157,0.5,0.0), radius 0.5",
+          "shader": "",
+          "shadowMode": "none",
+          "staticEntity": false,
+          "type": "SPHERE"
+        },
+        {
           "codeText": "// player2_left_hand_collider_attach\nplayer2_left_hand_collider.attach to player2.\"mixamorig:LeftHand\": pos (0,0,0)",
           "id": "140099c2-5f53-444b-befb-2e7a7187b214",
+          "name": "player2_left_hand_collider_attach",
           "position": [
             0,
             0,
             0
           ],
-          "type": "CODE"
-        }
-      ],
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "name": "Opponent Player",
-      "scale": [
-        1,
-        1,
-        1
-      ],
-      "id": "4b616203-41f6-4d34-9f33-96355ddcdcc7",
-      "position": [
-        0,
-        0,
-        0
-      ],
-      "type": "SECTION"
-    },
-    {
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "name": "Cache Sprites",
-      "scale": [
-        1,
-        1,
-        1
-      ],
-      "codeText": "// Cache Sprites\nthrow_text => throw_text sprite : size(2,1),\tbillboard true, collision shape none, hidden\nplayer2_hit1 => hit4 sprite: scale 4, billboard true\t, collision shape none, hidden \nplayer2_hit2 => hit3 sprite : scale 4, billboard true, collision shape none, hidden\nplayer1_hit1 => hit4 sprite: scale 4, billboard true\t, collision shape none, hidden \nplayer1_hit2 => hit3 sprite : scale 4, billboard true, collision shape none, hidden",
-      "id": "9cdc98e1-a0b2-4c0a-a90c-4dc57c8e7f6b",
-      "position": [
-        0,
-        0,
-        0
-      ],
-      "type": "CODE"
-    },
-    {
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "name": "Players Initial Posture",
-      "scale": [
-        1,
-        1,
-        1
-      ],
-      "codeText": "// Players Initial Posture\nloading.print \"\"\nplayer1.data.celebrating=0\nplayer1.switch to character mode : gravity 60\nplayer2.switch to character mode : gravity 40\nplayer1.character.ignore player2.joints // avoid collision of joints with character controls\nplayer2.character.ignore player1.joints",
-      "id": "4ebabf90-abf8-4e28-8ec5-df7bd5f60678",
-      "position": [
-        0,
-        0,
-        0
-      ],
-      "type": "CODE"
-    },
-    {
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "name": "Players Ready To Fight",
-      "scale": [
-        1,
-        1,
-        1
-      ],
-      "codeText": "// Players Ready To Fight\nmiddleSphere is a sphere : hidden and radius 0.1 and material=\"alpha\"\nring.hide\ntg.switch to character mode\ntg.turn right 45 in 0.1 seconds\ntg.hide\n\nplayer1.show\nplayer2.show\n\nplayer2.look at (player1)\nplayer1.look at (player2)",
-      "id": "c6680fc9-423c-4804-a20a-a25cd910f730",
-      "position": [
-        0,
-        0,
-        0
-      ],
-      "type": "CODE"
-    },
-    {
-      "cinematicTargetEntityId": "f0af5cf2-e250-48cb-b3b1-68726126925a",
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "scale": [
-        1,
-        1,
-        1
-      ],
-      "cinematicTargetOffset": [
-        0,
-        1.5,
-        0
-      ],
-      "cinematicEaseIn": "linear",
-      "type": "CINEMATIC_RIG",
-      "cinematicTargetEntityName": "player1",
-      "children": [
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "cinematic_track_4",
           "scale": [
             1,
             1,
             1
           ],
+          "type": "CODE"
+        }
+      ],
+      "id": "4b616203-41f6-4d34-9f33-96355ddcdcc7",
+      "name": "Opponent Player",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "type": "SECTION"
+    },
+    {
+      "codeText": "// Cache Sprites\nthrow_text => throw_text sprite : size(2,1),\tbillboard true, collision shape none, hidden\nplayer2_hit1 => hit4 sprite: scale 4, billboard true\t, collision shape none, hidden \nplayer2_hit2 => hit3 sprite : scale 4, billboard true, collision shape none, hidden\nplayer1_hit1 => hit4 sprite: scale 4, billboard true\t, collision shape none, hidden \nplayer1_hit2 => hit3 sprite : scale 4, billboard true, collision shape none, hidden",
+      "id": "9cdc98e1-a0b2-4c0a-a90c-4dc57c8e7f6b",
+      "name": "Cache Sprites",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "type": "CODE"
+    },
+    {
+      "codeText": "// Players Initial Posture\nloading.print \"\"\nplayer1.data.celebrating=0\nplayer1.switch to character mode : gravity 60\nplayer2.switch to character mode : gravity 40\nplayer1.character.ignore player2.joints // avoid collision of joints with character controls\nplayer2.character.ignore player1.joints",
+      "id": "4ebabf90-abf8-4e28-8ec5-df7bd5f60678",
+      "name": "Players Initial Posture",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "type": "CODE"
+    },
+    {
+      "codeText": "// Players Ready To Fight\nmiddleSphere is a sphere : hidden and radius 0.1 and material=\"alpha\"\nring.hide\ntg.switch to character mode\ntg.turn right 45 in 0.1 seconds\ntg.hide\n\nplayer1.show\nplayer2.show\n\nplayer2.look at (player1)\nplayer1.look at (player2)",
+      "id": "c6680fc9-423c-4804-a20a-a25cd910f730",
+      "name": "Players Ready To Fight",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "type": "CODE"
+    },
+    {
+      "children": [
+        {
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 30,
+            "radiusX": 22,
+            "radiusZ": 18,
+            "selectedEndAnchor": -1,
+            "selectedStartAnchor": -1
+          },
           "id": "9cea26a0-3703-472d-ac18-0fda19493fd7",
+          "name": "cinematic_track_4",
           "position": [
             19.897793,
             3.9387856,
             18.21473
           ],
-          "type": "CINEMATIC_TRACK",
-          "cinematicTrackData": {
-            "anchorCount": 360,
-            "previewSpeed": 30,
-            "selectedStartAnchor": -1,
-            "radiusZ": 18,
-            "radiusX": 22,
-            "selectedEndAnchor": -1
-          }
-        },
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "cinematic_track_5",
           "scale": [
             1,
             1,
             1
           ],
+          "type": "CINEMATIC_TRACK"
+        },
+        {
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 30,
+            "radiusX": 15,
+            "radiusZ": 10.8,
+            "selectedEndAnchor": 288,
+            "selectedStartAnchor": 124
+          },
           "id": "bf026758-e670-472f-b750-40ad7197fcf3",
+          "name": "cinematic_track_5",
           "position": [
             20.280842,
             3.8571434,
             25.833563
           ],
-          "type": "CINEMATIC_TRACK",
-          "cinematicTrackData": {
-            "anchorCount": 360,
-            "previewSpeed": 30,
-            "selectedStartAnchor": 124,
-            "radiusZ": 10.8,
-            "radiusX": 15,
-            "selectedEndAnchor": 288
-          }
-        },
-        {
           "rotation": [
             0,
             0,
             0,
             1
           ],
-          "name": "cinematic_track_6",
           "scale": [
             1,
             1,
             1
           ],
+          "type": "CINEMATIC_TRACK"
+        },
+        {
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 30,
+            "radiusX": 2.5,
+            "radiusZ": 4.5,
+            "selectedEndAnchor": 39,
+            "selectedStartAnchor": 291
+          },
           "id": "f0b270c6-dcd6-4712-91cb-0606161b33e4",
+          "name": "cinematic_track_6",
           "position": [
             23.877895,
             3.8571434,
             19.769173
           ],
-          "type": "CINEMATIC_TRACK",
-          "cinematicTrackData": {
-            "anchorCount": 360,
-            "previewSpeed": 30,
-            "selectedStartAnchor": 291,
-            "radiusZ": 4.5,
-            "radiusX": 2.5,
-            "selectedEndAnchor": 39
-          }
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "type": "CINEMATIC_TRACK"
         }
       ],
+      "cinematicEaseIn": "linear",
       "cinematicEaseOut": "linear",
-      "name": "Cinematic Rig",
+      "cinematicPreviewDuration": 10,
+      "cinematicRuntimeId": "cinematic1",
       "cinematicSegments": [
         {
+          "endAnchor": 110,
+          "speed": 45,
           "startAnchor": 300,
           "trackId": "9cea26a0-3703-472d-ac18-0fda19493fd7",
-          "endAnchor": 110,
-          "trackName": "cinematic_track_4",
-          "speed": 45
+          "trackName": "cinematic_track_4"
         },
         {
+          "endAnchor": 288,
+          "speed": 30,
           "startAnchor": 124,
           "trackId": "bf026758-e670-472f-b750-40ad7197fcf3",
-          "endAnchor": 288,
-          "trackName": "cinematic_track_5",
-          "speed": 30
+          "trackName": "cinematic_track_5"
         },
         {
+          "endAnchor": 39,
+          "speed": 30,
           "startAnchor": 291,
           "trackId": "f0b270c6-dcd6-4712-91cb-0606161b33e4",
-          "endAnchor": 39,
-          "trackName": "cinematic_track_6",
-          "speed": 30
+          "trackName": "cinematic_track_6"
         }
       ],
-      "cinematicPreviewDuration": 10,
-      "id": "2fea4ba8-52fe-4a1f-a848-3241cfe9b9d7",
-      "position": [
-        18.025543,
-        -87.260925,
-        0
-      ],
-      "cinematicRuntimeId": "cinematic1"
-    },
-    {
-      "cinematicTargetEntityId": "9623875e-175c-4d46-8104-7f7a6aeb27df",
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "scale": [
-        1,
-        1,
-        1
-      ],
-      "cinematicTargetOffset": [
-        0,
-        0,
-        0
-      ],
-      "cinematicEaseIn": "ease_out_quad",
-      "type": "CINEMATIC_RIG",
-      "cinematicTargetEntityName": "axe",
-      "children": [{
-        "rotation": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "name": "axe_throw_front_track",
-        "scale": [
-          1,
-          1,
-          1
-        ],
-        "id": "75b35f9b-9bd8-4b04-a82c-d7ac9275f9d0",
-        "position": [
-          0,
-          0.85,
-          5.2
-        ],
-        "type": "CINEMATIC_TRACK",
-        "cinematicTrackData": {
-          "anchorCount": 360,
-          "previewSpeed": 30,
-          "selectedStartAnchor": 40,
-          "radiusZ": 0.4,
-          "radiusX": 1,
-          "selectedEndAnchor": 140
-        }
-      }],
-      "cinematicEaseOut": "ease_in_quad",
-      "name": "Axe Throw Front Camera",
-      "cinematicSegments": [{
-        "startAnchor": 40,
-        "trackId": "75b35f9b-9bd8-4b04-a82c-d7ac9275f9d0",
-        "endAnchor": 140,
-        "trackName": "axe_throw_front_track",
-        "speed": 24
-      }],
-      "cinematicPreviewDuration": 10,
-      "id": "a54a1935-061e-4d83-9a33-97ef75b2a713",
-      "position": [
-        23.46958,
-        -87.37234,
-        147.34291
-      ],
-      "cinematicRuntimeId": "axe_throw_front"
-    },
-    {
-      "shader": "",
-      "dynamicModel": false,
-      "hidden": false,
-      "shadowMode": "none",
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "resourcePath": "dragon_gate1",
-      "jointMapping": "",
-      "scale": [
-        30,
-        30,
-        30
-      ],
-      "modelCollisionShape": "none",
-      "type": "MODEL",
-      "sceneMaxCode": "dragons_gate => static dragon_gate1: pos (22.532026,-66.486755,148.68306), scale 30.0, collision shape none async",
-      "staticModel": true,
-      "name": "dragons_gate",
-      "vehicleModel": false,
-      "id": "393076d1-cb35-4443-9bc3-c33011d3b489",
-      "position": [
-        22.532026,
-        -66.486755,
-        148.68306
-      ],
-      "multiplayer": false
-    },
-    {
-      "shader": "",
-      "dynamicModel": false,
-      "hidden": true,
-      "shadowMode": "none",
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "resourcePath": "meshy_crystal1",
-      "jointMapping": "",
-      "scale": [
-        1,
-        1,
-        1
-      ],
-      "modelCollisionShape": "box",
-      "type": "MODEL",
-      "sceneMaxCode": "crystal => static meshy_crystal1: hidden, pos (23.844534,-88.28118,161.98776), collision shape box async",
-      "staticModel": true,
-      "name": "crystal",
-      "vehicleModel": false,
-      "id": "1bdd3174-0757-4dd5-a8c2-c85062ab81a9",
-      "position": [
-        23.844534,
-        -88.28118,
-        161.98776
-      ],
-      "multiplayer": false
-    },
-    {
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "name": "player_got_crystal",
-      "scale": [
-        1,
-        1,
-        1
-      ],
-      "codeText": "// player_got_crystal\nwhen player1 collides with crystal do\n\tswitch to \"game_level_train\"\nend do",
-      "id": "e322b200-18eb-4c85-949c-b6f9fafeb123",
-      "position": [
-        0,
-        0,
-        0
-      ],
-      "type": "CODE"
-    },
-    {
-      "shader": "",
-      "dynamicModel": false,
-      "hidden": false,
-      "shadowMode": "none",
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "resourcePath": "meshy_wooden_box",
-      "jointMapping": "",
-      "scale": [
-        1.4,
-        1.4,
-        1.4
-      ],
-      "modelCollisionShape": "box",
-      "type": "MODEL",
-      "sceneMaxCode": "crystal_box => static meshy_wooden_box: pos (23.732,-88.0,161.9128), scale 1.4, collision shape box async",
-      "staticModel": true,
-      "name": "crystal_box",
-      "vehicleModel": false,
-      "id": "22817967-626c-4039-8b9a-03d53481c5df",
-      "position": [
-        23.732,
-        -88,
-        161.9128
-      ],
-      "multiplayer": false
-    },
-    {
-      "shader": "",
-      "dynamicModel": false,
-      "hidden": true,
-      "shadowMode": "none",
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "resourcePath": "battleaxe1",
-      "jointMapping": "",
-      "scale": [
-        2,
-        2,
-        2
-      ],
-      "modelCollisionShape": "box",
-      "type": "MODEL",
-      "sceneMaxCode": "axe => battleaxe1: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async",
-      "staticModel": false,
-      "name": "axe",
-      "vehicleModel": false,
-      "id": "9623875e-175c-4d46-8104-7f7a6aeb27df",
-      "position": [
-        23.46958,
-        -87.37234,
-        147.34291
-      ],
-      "multiplayer": false
-    },
-    {
-      "cinematicTargetEntityId": "9623875e-175c-4d46-8104-7f7a6aeb27df",
-      "rotation": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "scale": [
-        1,
-        1,
-        1
-      ],
+      "cinematicTargetEntityId": "f0af5cf2-e250-48cb-b3b1-68726126925a",
+      "cinematicTargetEntityName": "player1",
       "cinematicTargetOffset": [
         0,
         1.5,
         0
       ],
-      "cinematicEaseIn": "linear",
-      "type": "CINEMATIC_RIG",
-      "cinematicTargetEntityName": "axe",
-      "children": [{
-        "rotation": [
-          0,
-          0.70710677,
-          0,
-          0.70710677
-        ],
-        "name": "cinematic_track_7",
-        "scale": [
-          1,
-          1,
-          1
-        ],
-        "id": "567bf36f-f0f7-4efc-87ac-2100ae817228",
-        "position": [
-          0,
-          3.5,
-          33.58814
-        ],
-        "type": "CINEMATIC_TRACK",
-        "cinematicTrackData": {
-          "anchorCount": 360,
-          "previewSpeed": 30,
-          "selectedStartAnchor": 220,
-          "radiusZ": 6,
-          "radiusX": 50,
-          "selectedEndAnchor": -1
-        }
-      }],
-      "cinematicEaseOut": "ease_out_expo",
+      "id": "2fea4ba8-52fe-4a1f-a848-3241cfe9b9d7",
       "name": "Cinematic Rig",
-      "cinematicSegments": [{
-        "startAnchor": 340,
-        "trackId": "567bf36f-f0f7-4efc-87ac-2100ae817228",
-        "endAnchor": 120,
-        "trackName": "cinematic_track_7",
-        "speed": 26
-      }],
+      "position": [
+        18.025543,
+        -87.260925,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "type": "CINEMATIC_RIG"
+    },
+    {
+      "children": [
+        {
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 30,
+            "radiusX": 1,
+            "radiusZ": 0.4,
+            "selectedEndAnchor": 140,
+            "selectedStartAnchor": 40
+          },
+          "id": "75b35f9b-9bd8-4b04-a82c-d7ac9275f9d0",
+          "name": "axe_throw_front_track",
+          "position": [
+            0,
+            0.85,
+            5.2
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "type": "CINEMATIC_TRACK"
+        }
+      ],
+      "cinematicEaseIn": "ease_out_quad",
+      "cinematicEaseOut": "ease_in_quad",
       "cinematicPreviewDuration": 10,
+      "cinematicRuntimeId": "axe_throw_front",
+      "cinematicSegments": [
+        {
+          "endAnchor": 140,
+          "speed": 24,
+          "startAnchor": 40,
+          "trackId": "75b35f9b-9bd8-4b04-a82c-d7ac9275f9d0",
+          "trackName": "axe_throw_front_track"
+        }
+      ],
+      "cinematicTargetEntityId": "9623875e-175c-4d46-8104-7f7a6aeb27df",
+      "cinematicTargetEntityName": "axe",
+      "cinematicTargetOffset": [
+        0,
+        0,
+        0
+      ],
+      "id": "a54a1935-061e-4d83-9a33-97ef75b2a713",
+      "name": "Axe Throw Front Camera",
+      "position": [
+        23.46958,
+        -87.37234,
+        147.34291
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "type": "CINEMATIC_RIG"
+    },
+    {
+      "dynamicModel": false,
+      "hidden": false,
+      "id": "393076d1-cb35-4443-9bc3-c33011d3b489",
+      "jointMapping": "",
+      "modelCollisionShape": "none",
+      "multiplayer": false,
+      "name": "dragons_gate",
+      "position": [
+        22.532026,
+        -66.486755,
+        148.68306
+      ],
+      "resourcePath": "dragon_gate1",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        30,
+        30,
+        30
+      ],
+      "sceneMaxCode": "dragons_gate => static dragon_gate1: pos (22.532026,-66.486755,148.68306), scale 30.0, collision shape none async",
+      "shader": "",
+      "shadowMode": "none",
+      "staticModel": true,
+      "type": "MODEL",
+      "vehicleModel": false
+    },
+    {
+      "dynamicModel": false,
+      "hidden": true,
+      "id": "1bdd3174-0757-4dd5-a8c2-c85062ab81a9",
+      "jointMapping": "",
+      "modelCollisionShape": "box",
+      "multiplayer": false,
+      "name": "crystal",
+      "position": [
+        23.844534,
+        -88.28118,
+        161.98776
+      ],
+      "resourcePath": "meshy_crystal1",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "sceneMaxCode": "crystal => static meshy_crystal1: hidden, pos (23.844534,-88.28118,161.98776), collision shape box async",
+      "shader": "",
+      "shadowMode": "none",
+      "staticModel": true,
+      "type": "MODEL",
+      "vehicleModel": false
+    },
+    {
+      "codeText": "// player_got_crystal\nwhen player1 collides with crystal do\n\tswitch to \"game_level_train\"\nend do",
+      "id": "e322b200-18eb-4c85-949c-b6f9fafeb123",
+      "name": "player_got_crystal",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "type": "CODE"
+    },
+    {
+      "dynamicModel": false,
+      "hidden": false,
+      "id": "22817967-626c-4039-8b9a-03d53481c5df",
+      "jointMapping": "",
+      "modelCollisionShape": "box",
+      "multiplayer": false,
+      "name": "crystal_box",
+      "position": [
+        23.732,
+        -88,
+        161.9128
+      ],
+      "resourcePath": "meshy_wooden_box",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1.4,
+        1.4,
+        1.4
+      ],
+      "sceneMaxCode": "crystal_box => static meshy_wooden_box: pos (23.732,-88.0,161.9128), scale 1.4, collision shape box async",
+      "shader": "",
+      "shadowMode": "none",
+      "staticModel": true,
+      "type": "MODEL",
+      "vehicleModel": false
+    },
+    {
+      "dynamicModel": false,
+      "hidden": true,
+      "id": "9623875e-175c-4d46-8104-7f7a6aeb27df",
+      "jointMapping": "",
+      "modelCollisionShape": "box",
+      "multiplayer": false,
+      "name": "axe",
+      "position": [
+        23.46958,
+        -87.37234,
+        147.34291
+      ],
+      "resourcePath": "battleaxe1",
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        2,
+        2,
+        2
+      ],
+      "sceneMaxCode": "axe => battleaxe1: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async",
+      "shader": "",
+      "shadowMode": "none",
+      "staticModel": false,
+      "type": "MODEL",
+      "vehicleModel": false
+    },
+    {
+      "children": [
+        {
+          "cinematicTrackData": {
+            "anchorCount": 360,
+            "previewSpeed": 30,
+            "radiusX": 50,
+            "radiusZ": 6,
+            "selectedEndAnchor": -1,
+            "selectedStartAnchor": 220
+          },
+          "id": "567bf36f-f0f7-4efc-87ac-2100ae817228",
+          "name": "cinematic_track_7",
+          "position": [
+            0,
+            3.5,
+            33.58814
+          ],
+          "rotation": [
+            0,
+            0.70710677,
+            0,
+            0.70710677
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "type": "CINEMATIC_TRACK"
+        }
+      ],
+      "cinematicEaseIn": "linear",
+      "cinematicEaseOut": "ease_out_expo",
+      "cinematicPreviewDuration": 10,
+      "cinematicRuntimeId": "cinematic_rig_axe",
+      "cinematicSegments": [
+        {
+          "endAnchor": 120,
+          "speed": 26,
+          "startAnchor": 340,
+          "trackId": "567bf36f-f0f7-4efc-87ac-2100ae817228",
+          "trackName": "cinematic_track_7"
+        }
+      ],
+      "cinematicTargetEntityId": "9623875e-175c-4d46-8104-7f7a6aeb27df",
+      "cinematicTargetEntityName": "axe",
+      "cinematicTargetOffset": [
+        0,
+        1.5,
+        0
+      ],
       "id": "09c75507-c01e-4505-9c37-6d6eb38b572c",
+      "name": "Cinematic Rig",
       "position": [
         22.948027,
         -85.85016,
         73.28616
       ],
-      "cinematicRuntimeId": "cinematic_rig_axe"
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "type": "CINEMATIC_RIG"
     },
     {
-      "shader": "",
+      "colliderEntity": false,
       "hidden": false,
-      "shadowMode": "none",
+      "id": "901f1a85-6133-49f9-8deb-2497cef8421f",
+      "material": "",
+      "multiplayer": false,
+      "name": "quad_1",
+      "position": [
+        -33.073235,
+        -88.97634,
+        115.0642
+      ],
+      "quadHeight": 1,
       "quadWidth": 1,
       "rotation": [
         0,
@@ -1477,47 +1514,26 @@
         34.2,
         34.2
       ],
-      "colliderEntity": false,
-      "type": "QUAD",
       "sceneMaxCode": "quad_1 => quad : size (1.0,1.0), pos (-33.073235,-88.97634,115.0642)",
-      "material": "",
-      "name": "quad_1",
+      "shader": "",
+      "shadowMode": "none",
       "staticEntity": false,
-      "id": "901f1a85-6133-49f9-8deb-2497cef8421f",
-      "position": [
-        -33.073235,
-        -88.97634,
-        115.0642
-      ],
-      "multiplayer": false,
-      "quadHeight": 1
+      "type": "QUAD"
     }
   ],
   "gameCamera": {
+    "position": [
+      8.303196,
+      -13.294227,
+      49.450314
+    ],
     "rotation": [
       0.09031287,
       -0.8293289,
       -0.1550246,
       -0.52917314
-    ],
-    "position": [
-      8.303196,
-      -13.294227,
-      49.450314
     ]
   },
-  "camera": {
-    "rotation": [
-      -0.020582907,
-      0.9785145,
-      -0.12225933,
-      -0.16473727
-    ],
-    "position": [
-      30.292877,
-      -81.23234,
-      172.23322
-    ]
-  },
+  "sceneEnvironmentShader": "",
   "version": 1
 }

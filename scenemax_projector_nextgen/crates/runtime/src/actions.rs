@@ -1,4 +1,5 @@
 use super::*;
+use crate::ambient_light_designer::apply_bevy_ambient_light_for_script_root;
 use bevy::transform::commands::BuildChildrenTransformExt;
 use serde::Deserialize;
 
@@ -1467,7 +1468,7 @@ pub(super) fn switch_scene_on_key(
     match load_script_with_adds(&scene_main, &mut HashSet::new()) {
         Ok((program, scene_script_root)) => {
             for entity in &scene_queries.p0() {
-                commands.entity(entity).despawn();
+                commands.entity(entity).try_despawn();
             }
 
             if let Ok(mut camera) = scene_queries.p1().single_mut() {
@@ -1508,6 +1509,7 @@ pub(super) fn switch_scene_on_key(
                 &mut materials,
                 &mut character_configs,
             );
+            apply_bevy_ambient_light_for_script_root(&mut commands, Some(&scene_script_root));
             commands.insert_resource(SceneMaxStartupActionState::waiting_for_gltfs(startup_gltfs));
             startup_program.0 = Some(program);
             startup_program.1 = Some(scene_script_root);
@@ -4986,8 +4988,8 @@ pub(super) fn apply_pending_animation_controller_stops(
         };
         commands
             .entity(root)
-            .remove::<AnimationToPlay>()
-            .remove::<CurrentAnimation>();
+            .try_remove::<AnimationToPlay>()
+            .try_remove::<CurrentAnimation>();
         for child in children.iter_descendants(root) {
             if let Ok(mut player) = players.get_mut(child) {
                 player.stop_all();
@@ -5324,8 +5326,8 @@ fn equip_runtime_weapon(
             Name::new(format!("{runtime_name}.visual")),
         ))
         .id();
-    commands.entity(root_entity).add_child(transform_entity);
-    commands.entity(transform_entity).add_child(visual_entity);
+    add_child_if_alive(commands, root_entity, transform_entity);
+    add_child_if_alive(commands, transform_entity, visual_entity);
     spawn_weapon_colliders(
         commands,
         collider_bounds,
@@ -5333,7 +5335,7 @@ fn equip_runtime_weapon(
         &runtime_name,
         &definition,
     );
-    commands.entity(parent_entity).add_child(root_entity);
+    add_child_if_alive(commands, parent_entity, root_entity);
 }
 
 pub(super) fn apply_pending_throw_motion_applications(
@@ -5482,7 +5484,7 @@ pub(super) fn update_throw_motions(
             }
         }
         if finished {
-            commands.entity(entity).remove::<SceneMaxThrowMotion>();
+            commands.entity(entity).try_remove::<SceneMaxThrowMotion>();
         }
     }
 }
@@ -5968,7 +5970,7 @@ fn despawn_equipped_weapon(
             for collider in &equipped.colliders {
                 unregister_weapon_collider_bounds(collider_bounds, collider);
             }
-            commands.entity(entity).despawn();
+            commands.entity(entity).try_despawn();
         }
     }
 }
@@ -5980,9 +5982,28 @@ fn detach_equipped_weapon(
 ) {
     for (entity, equipped) in equipped_weapons {
         if equipped.owner == owner {
-            commands.entity(entity).remove_parent_in_place();
+            remove_parent_in_place_if_alive(commands, entity);
         }
     }
+}
+
+fn add_child_if_alive(commands: &mut Commands, parent: Entity, child: Entity) {
+    commands.queue(move |world: &mut World| {
+        if world.get_entity(parent).is_err() || world.get_entity(child).is_err() {
+            return;
+        }
+        if let Ok(mut parent_entity) = world.get_entity_mut(parent) {
+            parent_entity.add_child(child);
+        }
+    });
+}
+
+fn remove_parent_in_place_if_alive(commands: &mut Commands, entity: Entity) {
+    commands.queue(move |world: &mut World| {
+        if let Ok(mut entity) = world.get_entity_mut(entity) {
+            entity.remove_parent_in_place();
+        }
+    });
 }
 
 fn inverse_scale_component(scale: f32) -> f32 {
@@ -6185,7 +6206,7 @@ fn spawn_weapon_colliders(
                 Name::new(runtime_name.clone()),
             ))
             .id();
-        commands.entity(parent_entity).add_child(collider_entity);
+        add_child_if_alive(commands, parent_entity, collider_entity);
         register_collider_bounds(collider_bounds, &runtime_name, &options, transform);
         register_collider_owner(collider_bounds, &runtime_name, weapon_runtime_name);
     }
@@ -6358,7 +6379,7 @@ pub(super) fn apply_key_action(
     if let Statement::LightDecl(light) = action {
         for (entity, scene_entity, _, _, _, _, _, _) in &mut scene_entities.p1() {
             if scene_entity.name == light.name {
-                commands.entity(entity).despawn();
+                commands.entity(entity).try_despawn();
                 break;
             }
         }
@@ -6378,7 +6399,7 @@ pub(super) fn apply_key_action(
     if let Statement::LightProbeAdd(probe) = action {
         for (entity, scene_entity, _, _, _, _, _, _) in &mut scene_entities.p1() {
             if scene_entity.name == probe.name {
-                commands.entity(entity).despawn();
+                commands.entity(entity).try_despawn();
                 break;
             }
         }
@@ -6791,7 +6812,7 @@ pub(super) fn apply_key_action(
     if let Statement::Delete { target } = action {
         let resolved_target = resolve_object_alias(target, object_pools, scope.as_deref());
         if let Some(entity) = runtime_declared_entities.remove(&resolved_target) {
-            commands.entity(entity).despawn();
+            commands.entity(entity).try_despawn();
             transforms_by_name.remove(&resolved_target);
             write_runtime_diagnostic_line(format!(
                 "RUNTIME:DELETE_IMMEDIATE target={} entity={:?}",
@@ -8297,7 +8318,7 @@ pub(super) fn delete_scene_object(
     }
     for (entity, scene_entity, _, _, _, _, _, _) in &mut scene_entities.p1() {
         if scene_entity.name == target {
-            commands.entity(entity).despawn();
+            commands.entity(entity).try_despawn();
             break;
         }
     }
@@ -8376,9 +8397,9 @@ pub(super) fn hide_and_stop_scene_entity(
         commands
             .entity(entity)
             .insert((LinearVelocity::ZERO, AngularVelocity::ZERO))
-            .remove::<TimedMoves>()
-            .remove::<TimedTurn>()
-            .remove::<TimedJump>();
+            .try_remove::<TimedMoves>()
+            .try_remove::<TimedTurn>()
+            .try_remove::<TimedJump>();
         break;
     }
 }

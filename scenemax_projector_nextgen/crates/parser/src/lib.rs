@@ -231,6 +231,7 @@ pub struct LightDeclarationStatement {
     pub preset: Option<String>,
     pub exposure: Option<AssignmentValue>,
     pub ambient_color: Option<String>,
+    pub affects_lightmapped_meshes: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4353,6 +4354,7 @@ fn parse_light_decl_parts(name: &str, rest: &str) -> Result<Option<Statement>, P
         preset: parse_light_string_attr(options_text, "preset"),
         exposure: parse_light_value_attr(options_text, "exposure")?.map(|(value, _)| value),
         ambient_color: parse_light_color_named_attr(options_text, "ambient"),
+        affects_lightmapped_meshes: parse_light_bool_attr(options_text, "affectsLightmappedMeshes"),
     })))
 }
 
@@ -4423,6 +4425,16 @@ fn parse_light_word_attr(text: &str, name: &str) -> Option<String> {
     let attr = light_attr_text(text, name)?;
     let attr = strip_keyword_prefix(attr, "mode").unwrap_or(attr).trim();
     first_light_value_token(attr).map(|value| value.to_ascii_lowercase())
+}
+
+fn parse_light_bool_attr(text: &str, name: &str) -> Option<bool> {
+    let attr = light_attr_text(text, name)?;
+    let value = first_light_value_token(attr)?.to_ascii_lowercase();
+    match value.as_str() {
+        "true" | "yes" | "on" | "1" => Some(true),
+        "false" | "no" | "off" | "0" => Some(false),
+        _ => None,
+    }
 }
 
 fn parse_light_value_attr(
@@ -6498,7 +6510,7 @@ mod tests {
             "sun => Lights.directional : color \"#fff3d2\", intensity 3.0, direction (-0.3,-0.8,-0.4), shadow high\n\
              lamp => Lights.point : pos (2,4,1), color warm, intensity 900 lumens, range 12, shadow medium\n\
              stageSpot => Lights.spot : pos (0,6,-4), look at player1, angle 35, intensity 2500, shadow on\n\
-             environment => Lights.sky : preset \"Night Neon\", exposure 0.2, ambient \"#223344\"\n\
+             environment => Lights.sky : preset \"Night Neon\", exposure 0.2, ambient \"#223344\", affectsLightmappedMeshes true\n\
              Lights.Add Probe \"3\" Having pos (2,1,0)",
         )
         .expect("program parses");
@@ -6538,6 +6550,7 @@ mod tests {
                 light_type: LightType::Sky,
                 preset: Some(preset),
                 ambient_color: Some(ambient),
+                affects_lightmapped_meshes: Some(true),
                 ..
             }) if name == "environment" && preset == "Night Neon" && ambient == "#223344"
         ));

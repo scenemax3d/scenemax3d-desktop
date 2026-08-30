@@ -10,7 +10,7 @@ intro.draw intro_page: stretch
 loading3.draw powered_by_scenemax3d : pos (100,700),size(200,200)
 lights.add probe "4"
 
-Scene.environment.shader = "ambient1"
+level_ambient => Lights.ambient : color "#fff5dc", intensity 4.090909, affectsLightmappedMeshes true
 camera.pos(8.303196,-13.294227,49.450314)
 camera.rotate(-20.65568,115.06725,0.8177289)
 
