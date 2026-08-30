@@ -19,6 +19,7 @@ pub(super) fn apply_startup_runs(
     transforms_by_name: &mut HashMap<String, Transform>,
     gltfs_by_name: &HashMap<String, Handle<Gltf>>,
     guards_by_name: &HashMap<String, Condition>,
+    collider_bounds: &mut SceneMaxColliderBounds,
 ) {
     let actions = program
         .statements
@@ -51,6 +52,7 @@ pub(super) fn apply_startup_runs(
         transforms_by_name,
         gltfs_by_name,
         guards_by_name,
+        collider_bounds,
         0,
     );
 }
@@ -91,6 +93,7 @@ pub(super) fn apply_startup_action_sequence(
     transforms_by_name: &mut HashMap<String, Transform>,
     gltfs_by_name: &HashMap<String, Handle<Gltf>>,
     guards_by_name: &HashMap<String, Condition>,
+    collider_bounds: &mut SceneMaxColliderBounds,
     depth: usize,
 ) -> ActionSequenceResult {
     if depth > 8 {
@@ -198,6 +201,7 @@ pub(super) fn apply_startup_action_sequence(
                     transforms_by_name,
                     gltfs_by_name,
                     guards_by_name,
+                    collider_bounds,
                     depth + 1,
                 );
                 if result.should_stop_parent() {
@@ -222,6 +226,7 @@ pub(super) fn apply_startup_action_sequence(
                     transforms_by_name,
                     gltfs_by_name,
                     guards_by_name,
+                    collider_bounds,
                     depth + 1,
                 );
             }
@@ -247,6 +252,7 @@ pub(super) fn apply_startup_action_sequence(
                     transforms_by_name,
                     gltfs_by_name,
                     guards_by_name,
+                    collider_bounds,
                     depth + 1,
                 );
                 if result.should_stop_parent() {
@@ -284,6 +290,7 @@ pub(super) fn apply_startup_action_sequence(
                     transforms_by_name,
                     gltfs_by_name,
                     guards_by_name,
+                    collider_bounds,
                     depth + 1,
                 );
                 if result.should_stop_parent() {
@@ -320,6 +327,7 @@ pub(super) fn apply_startup_action_sequence(
                         transforms_by_name,
                         gltfs_by_name,
                         guards_by_name,
+                        collider_bounds,
                         depth + 1,
                     );
                     if result.should_stop_parent() {
@@ -370,6 +378,7 @@ pub(super) fn apply_startup_action_sequence(
                     transforms_by_name,
                     gltfs_by_name,
                     guards_by_name,
+                    collider_bounds,
                     depth,
                 );
                 if result.should_stop_parent() {
@@ -400,6 +409,7 @@ pub(super) fn apply_startup_action_sequence(
                     transforms_by_name,
                     gltfs_by_name,
                     guards_by_name,
+                    collider_bounds,
                     depth,
                 );
                 if result.should_stop_parent() {
@@ -458,6 +468,7 @@ pub(super) fn apply_startup_action_sequence(
                     transforms_by_name,
                     gltfs_by_name,
                     guards_by_name,
+                    collider_bounds,
                     depth,
                 );
                 if result.should_stop_parent() {
@@ -488,6 +499,7 @@ pub(super) fn apply_startup_action_sequence(
                     transforms_by_name,
                     gltfs_by_name,
                     guards_by_name,
+                    collider_bounds,
                     depth,
                 );
                 if result.should_stop_parent() {
@@ -514,6 +526,7 @@ pub(super) fn apply_startup_function_by_name(
     transforms_by_name: &mut HashMap<String, Transform>,
     gltfs_by_name: &HashMap<String, Handle<Gltf>>,
     guards_by_name: &HashMap<String, Condition>,
+    collider_bounds: &mut SceneMaxColliderBounds,
     depth: usize,
 ) -> ActionSequenceResult {
     if depth > 8 {
@@ -568,6 +581,7 @@ pub(super) fn apply_startup_function_by_name(
             transforms_by_name,
             gltfs_by_name,
             guards_by_name,
+            collider_bounds,
             depth,
         );
         if result.should_stop_parent() {
@@ -590,6 +604,7 @@ pub(super) fn apply_startup_action(
     transforms_by_name: &mut HashMap<String, Transform>,
     gltfs_by_name: &HashMap<String, Handle<Gltf>>,
     guards_by_name: &HashMap<String, Condition>,
+    collider_bounds: &mut SceneMaxColliderBounds,
     depth: usize,
 ) -> ActionSequenceResult {
     match action {
@@ -600,11 +615,16 @@ pub(super) fn apply_startup_action(
         } => {
             register_cinematic_camera_var(name, resource, camera_system);
             if let Some(entity) = entities_by_name.get(name) {
-                commands.entity(*entity).insert(if options.hidden {
-                    Visibility::Hidden
-                } else {
-                    Visibility::Inherited
-                });
+                commands.entity(*entity).insert((
+                    if options.hidden {
+                        Visibility::Hidden
+                    } else {
+                        Visibility::Inherited
+                    },
+                    SceneMaxRuntimeVisibility {
+                        visible: !options.hidden,
+                    },
+                ));
             }
             ActionSequenceResult::Completed
         }
@@ -914,6 +934,7 @@ pub(super) fn apply_startup_action(
                 transforms_by_name,
                 gltfs_by_name,
                 guards_by_name,
+                collider_bounds,
                 depth + 1,
             ) {
                 ActionSequenceResult::Suspended => ActionSequenceResult::Suspended,
@@ -937,6 +958,7 @@ pub(super) fn apply_startup_action(
                     transforms_by_name,
                     gltfs_by_name,
                     guards_by_name,
+                    collider_bounds,
                     depth,
                 );
                 if result.should_stop_parent() {
@@ -971,6 +993,7 @@ pub(super) fn apply_startup_action(
                     transforms_by_name,
                     gltfs_by_name,
                     guards_by_name,
+                    collider_bounds,
                     depth,
                 );
                 if result.should_stop_parent() {
@@ -1001,6 +1024,7 @@ pub(super) fn apply_startup_action(
                         transforms_by_name,
                         gltfs_by_name,
                         guards_by_name,
+                        collider_bounds,
                         depth,
                     );
                     if result.should_stop_parent() {
@@ -1026,6 +1050,7 @@ pub(super) fn apply_startup_action(
                         transforms_by_name,
                         gltfs_by_name,
                         guards_by_name,
+                        collider_bounds,
                         depth,
                     );
                     if result.should_stop_parent() {
@@ -1051,6 +1076,7 @@ pub(super) fn apply_startup_action(
                         transforms_by_name,
                         gltfs_by_name,
                         guards_by_name,
+                        collider_bounds,
                         depth,
                     );
                     if result.should_stop_parent() {
@@ -1071,12 +1097,16 @@ pub(super) fn apply_startup_action(
         }
         Statement::Visibility { target, visible } => {
             let target_name = resolve_object_alias(target, object_pools, None);
+            set_collider_hidden(collider_bounds, &target_name, !*visible);
             if let Some(entity) = entities_by_name.get(&target_name) {
-                commands.entity(*entity).insert(if *visible {
-                    Visibility::Inherited
-                } else {
-                    Visibility::Hidden
-                });
+                commands.entity(*entity).insert((
+                    if *visible {
+                        Visibility::Inherited
+                    } else {
+                        Visibility::Hidden
+                    },
+                    SceneMaxRuntimeVisibility { visible: *visible },
+                ));
             }
             ActionSequenceResult::Completed
         }
@@ -2295,7 +2325,7 @@ pub(super) fn apply_when_events(
     mut ui_queue: ResMut<SceneMaxUiActionQueue>,
     mut active_collisions: ResMut<ActiveCollisionEvents>,
     mut active_controllers: ResMut<ActiveActionControllers>,
-    physics_contacts: Res<SceneMaxPhysicsContacts>,
+    mut physics_contacts: ResMut<SceneMaxPhysicsContacts>,
     mut commands: Commands,
     mut scene_entities: ParamSet<(
         Query<(
@@ -2509,6 +2539,7 @@ pub(super) fn apply_when_events(
         }
     }
     clear_transient_collision_vars(&mut vars, &transient_collision_vars);
+    prune_hidden_physics_contacts(&mut physics_contacts, &collider_bounds);
 }
 
 pub(super) fn clear_transient_collision_vars(vars: &mut SceneMaxVars, names: &HashSet<String>) {
@@ -4264,6 +4295,9 @@ pub(super) fn apply_runtime_model_decl(
                 Visibility::Inherited
             });
         }
+        commands.entity(entity).insert(SceneMaxRuntimeVisibility {
+            visible: !options.hidden,
+        });
         transforms_by_name.insert(name.to_owned(), transform);
         if options.collider {
             register_collider_bounds(collider_bounds, name, options, transform);
@@ -4533,11 +4567,14 @@ fn spawn_runtime_gltf_model_decl(
             } else {
                 Visibility::Inherited
             },
+            SceneMaxRuntimeVisibility {
+                visible: !options.hidden,
+            },
         ))
         .id();
     insert_gltf_visual_offset(commands, entity_id, bevy_visual_offset_y);
     if should_use_static_mesh_collider(options) {
-        insert_pending_static_mesh_collider(commands, entity_id);
+        insert_pending_static_mesh_collider(commands, entity_id, options.hidden);
     } else {
         insert_physics_components(
             commands,
@@ -5289,6 +5326,7 @@ fn equip_runtime_weapon(
             scene,
             visual_transform,
             Visibility::Inherited,
+            SceneMaxRuntimeVisibility { visible: true },
             Name::new(format!("{runtime_name}.visual")),
         ))
         .id();
@@ -6342,6 +6380,18 @@ pub(super) fn apply_key_action(
         tracing::debug!(text, "skipping unsupported SceneMax runtime action");
         return ActionSequenceResult::Completed;
     }
+    if let Statement::Visibility { target, visible } = action {
+        apply_runtime_visibility_action(
+            target,
+            *visible,
+            object_pools,
+            scope.as_deref(),
+            collider_bounds,
+            commands,
+            scene_entities,
+        );
+        return ActionSequenceResult::Completed;
+    }
     if let Statement::LightDecl(light) = action {
         for (entity, scene_entity, _, _, _, _, _, _) in &mut scene_entities.p1() {
             if scene_entity.name == light.name {
@@ -6551,6 +6601,10 @@ pub(super) fn apply_key_action(
                     } else {
                         commands.entity(entity).insert(Visibility::Inherited);
                     }
+                    commands
+                        .entity(entity)
+                        .insert(SceneMaxRuntimeVisibility { visible: true });
+                    set_collider_hidden(collider_bounds, &scene_entity.name, false);
                     sync_live_transform(
                         transforms_by_name,
                         object_pools,
@@ -6786,6 +6840,7 @@ pub(super) fn apply_key_action(
             scope.as_deref_mut(),
             commands,
             scene_entities,
+            collider_bounds,
         );
         return ActionSequenceResult::Completed;
     }
@@ -6806,6 +6861,7 @@ pub(super) fn apply_key_action(
             scope.as_deref_mut(),
             commands,
             scene_entities,
+            collider_bounds,
         );
         return ActionSequenceResult::Completed;
     }
@@ -6893,7 +6949,7 @@ pub(super) fn apply_key_action(
         mut transform,
         gltf,
         current_animation,
-        visibility,
+        _visibility,
         character_controller,
         mut character_motor,
     ) in &mut scene_entities.p1()
@@ -7376,33 +7432,72 @@ pub(super) fn apply_key_action(
                     Some(collider_bounds),
                 );
             }
-            Statement::Visibility { target, visible }
-                if target_matches_alias(
-                    target,
-                    &scene_entity.name,
-                    object_pools,
-                    scope.as_deref(),
-                ) =>
-            {
-                set_collider_hidden(collider_bounds, &scene_entity.name, !*visible);
-                if let Some(mut visibility) = visibility {
-                    *visibility = if *visible {
-                        Visibility::Inherited
-                    } else {
-                        Visibility::Hidden
-                    };
-                } else {
-                    commands.entity(entity).insert(if *visible {
-                        Visibility::Inherited
-                    } else {
-                        Visibility::Hidden
-                    });
-                }
-            }
             _ => {}
         }
     }
     ActionSequenceResult::Completed
+}
+
+fn apply_runtime_visibility_action(
+    target: &str,
+    visible: bool,
+    object_pools: &SceneMaxObjectPools,
+    scope: Option<&SceneMaxScopeFrame>,
+    collider_bounds: &mut SceneMaxColliderBounds,
+    commands: &mut Commands,
+    scene_entities: &mut ParamSet<(
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            Option<&GlobalTransform>,
+            Option<&ChildOf>,
+        )>,
+        Query<(
+            Entity,
+            &SceneMaxEntity,
+            &mut Transform,
+            Option<&SceneMaxGltf>,
+            Option<&CurrentAnimation>,
+            Option<&mut Visibility>,
+            Option<&SceneMaxCharacterController>,
+            Option<&mut SceneMaxCharacterMotor>,
+        )>,
+    )>,
+) {
+    let resolved_target = resolve_object_alias(target, object_pools, scope);
+    let target_visibility = scene_visibility_from_bool(visible);
+
+    set_collider_hidden(collider_bounds, &resolved_target, !visible);
+    for (entity, scene_entity, _, _, _, visibility, _, _) in &mut scene_entities.p1() {
+        if scene_entity.name != resolved_target {
+            continue;
+        }
+        set_collider_hidden(collider_bounds, &scene_entity.name, !visible);
+        if let Some(mut visibility) = visibility {
+            *visibility = target_visibility;
+        } else {
+            commands.entity(entity).insert(target_visibility);
+        }
+        commands
+            .entity(entity)
+            .insert(SceneMaxRuntimeVisibility { visible });
+        if visible {
+            continue;
+        }
+        commands
+            .entity(entity)
+            .insert(CollisionLayers::NONE)
+            .try_remove::<AvianCollider>();
+    }
+}
+
+fn scene_visibility_from_bool(visible: bool) -> Visibility {
+    if visible {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    }
 }
 
 fn set_debug_mode(commands: &mut Commands, enabled: bool) {
@@ -8335,6 +8430,7 @@ pub(super) fn release_pool_action(
             Option<&mut SceneMaxCharacterMotor>,
         )>,
     )>,
+    collider_bounds: &mut SceneMaxColliderBounds,
 ) {
     let mut scope = scope;
     let target = resolve_object_alias(&release.target, object_pools, scope.as_deref());
@@ -8342,7 +8438,7 @@ pub(super) fn release_pool_action(
         if let Some(scope) = scope.as_deref_mut() {
             scope.aliases.retain(|_, value| value != &target);
         }
-        hide_and_stop_scene_entity(&target, commands, scene_entities);
+        hide_and_stop_scene_entity(&target, commands, scene_entities, collider_bounds);
     }
 }
 
@@ -8370,6 +8466,7 @@ pub(super) fn delete_scene_object(
             Option<&mut SceneMaxCharacterMotor>,
         )>,
     )>,
+    collider_bounds: &mut SceneMaxColliderBounds,
 ) {
     let mut scope = scope;
     let target = resolve_object_alias(target, object_pools, scope.as_deref());
@@ -8377,7 +8474,7 @@ pub(super) fn delete_scene_object(
         if let Some(scope) = scope.as_deref_mut() {
             scope.aliases.retain(|_, value| value != &target);
         }
-        hide_and_stop_scene_entity(&target, commands, scene_entities);
+        hide_and_stop_scene_entity(&target, commands, scene_entities, collider_bounds);
         return;
     }
     object_pools.aliases.retain(|_, value| value != &target);
@@ -8452,16 +8549,21 @@ pub(super) fn hide_and_stop_scene_entity(
             Option<&mut SceneMaxCharacterMotor>,
         )>,
     )>,
+    collider_bounds: &mut SceneMaxColliderBounds,
 ) {
     for (entity, scene_entity, _, _, _, visibility, _, _) in &mut scene_entities.p1() {
         if scene_entity.name != target {
             continue;
         }
+        set_collider_hidden(collider_bounds, &scene_entity.name, true);
         if let Some(mut visibility) = visibility {
             *visibility = Visibility::Hidden;
         } else {
             commands.entity(entity).insert(Visibility::Hidden);
         }
+        commands
+            .entity(entity)
+            .insert(SceneMaxRuntimeVisibility { visible: false });
         commands
             .entity(entity)
             .insert((LinearVelocity::ZERO, AngularVelocity::ZERO))

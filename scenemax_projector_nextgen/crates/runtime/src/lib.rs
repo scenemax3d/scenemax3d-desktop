@@ -11,12 +11,12 @@ use anyhow::Result;
 use avian3d::{
     prelude::{
         AngularVelocity, Collider as AvianCollider, CollisionEnd, CollisionEventsEnabled,
-        CollisionLayers, CollisionStart, LinearVelocity, LockedAxes, PhysicsPlugins,
-        RigidBody as AvianRigidBody, Sensor, TrimeshFlags,
+        CollisionLayers, CollisionStart, LinearVelocity, LockedAxes, PhysicsDebugPlugin,
+        PhysicsGizmos, PhysicsPlugins, RigidBody as AvianRigidBody, Sensor, TrimeshFlags,
     },
     schedule::PhysicsSchedule,
 };
-use bevy::app::AppExit;
+use bevy::app::{AppExit, SceneSpawnerSystems};
 #[cfg(feature = "effekseer_native")]
 use bevy::render::{
     RenderPlugin,
@@ -221,19 +221,34 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .add_plugins(default_plugins)
         .add_plugins((
             PhysicsPlugins::default(),
+            PhysicsDebugPlugin,
             TnuaControllerPlugin::<SceneMaxControlScheme>::new(PhysicsSchedule),
             TnuaAvian3dPlugin::new(PhysicsSchedule),
             SceneMaxEffekseerBridgePlugin,
         ))
         .add_systems(
             Startup,
-            (setup_camera_and_lights, setup_scenemax_program).chain(),
+            (
+                configure_scenemax_physics_debug_gizmos,
+                setup_camera_and_lights,
+                setup_scenemax_program,
+            )
+                .chain(),
         )
         .add_systems(
             PhysicsSchedule,
             feed_tnua_character_controllers.in_set(TnuaUserControlsSystems),
         )
         .add_systems(Update, apply_startup_runs_when_ready)
+        .add_systems(
+            SpawnScene,
+            (
+                sync_scenemax_runtime_visibility,
+                sync_gltf_descendant_visibility,
+            )
+                .chain()
+                .after(SceneSpawnerSystems::SceneSpawn),
+        )
         .add_systems(
             Update,
             (
@@ -246,16 +261,23 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 activate_pending_pool_members,
                 apply_key_events,
                 update_virtual_colliders,
-                update_scenemax_debug_gizmos,
                 update_current_animation_vars,
                 restore_inactive_animation_visual_rotations,
                 update_animation_runtime_controllers,
+                sync_collider_hidden_state_for_visibility,
                 apply_when_events,
                 apply_pending_weapon_actions,
                 apply_pending_throw_motion_applications,
                 update_throw_motions,
+                sync_collision_layers_for_visibility,
+                sync_scenemax_physics_debug_gizmos,
+                update_scenemax_debug_gizmos,
             )
                 .chain(),
+        )
+        .add_systems(
+            Update,
+            sync_scenemax_runtime_visibility.before(sync_collider_hidden_state_for_visibility),
         )
         .add_systems(
             Update,

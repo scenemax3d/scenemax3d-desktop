@@ -923,34 +923,14 @@ pub(super) fn spawn_unsupported_model_placeholder(
 }
 
 pub(super) fn unsupported_model_placeholder_mesh(
-    resource: &str,
+    _resource: &str,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
 ) -> (Mesh3d, MeshMaterial3d<StandardMaterial>) {
-    let lower = resource.to_ascii_lowercase();
-    let (mesh, color) = if lower.contains("crystal") {
-        (meshes.add(Sphere::new(0.8)), Color::srgb_u8(75, 210, 255))
-    } else if lower.contains("axe") {
-        (
-            meshes.add(Cuboid::new(0.25, 0.12, 1.2)),
-            Color::srgb_u8(150, 150, 160),
-        )
-    } else if lower.contains("wooden_box") || lower.contains("box") {
-        (
-            meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-            Color::srgb_u8(150, 95, 45),
-        )
-    } else if lower.contains("gate") {
-        (
-            meshes.add(Cuboid::new(1.0, 2.0, 0.25)),
-            Color::srgb_u8(80, 110, 150),
-        )
-    } else {
-        (
-            meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-            Color::srgb_u8(120, 135, 150),
-        )
-    };
+    let (mesh, color) = (
+        meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+        Color::srgb_u8(120, 135, 150),
+    );
     (Mesh3d(mesh), MeshMaterial3d(materials.add(color)))
 }
 
@@ -1004,12 +984,23 @@ pub(super) fn insert_physics_components(
         SceneMaxBodyKind::Dynamic => AvianRigidBody::Dynamic,
     };
     let collider = avian_collider(shape, options, transform);
-    commands.entity(entity).insert((
+    let collision_layers = solid_collision_layers(body_kind);
+    let mut entity_commands = commands.entity(entity);
+    entity_commands.insert((
         body,
-        collider,
-        solid_collision_layers(body_kind),
+        collision_layers_for_visibility(options.hidden, collision_layers),
+        SceneMaxCollisionFollowsVisibility {
+            collision_layers,
+            collider: Some(collider.clone()),
+        },
+        SceneMaxRuntimeVisibility {
+            visible: !options.hidden,
+        },
         CollisionEventsEnabled,
     ));
+    if !options.hidden {
+        entity_commands.insert(collider);
+    }
     tracing::debug!(
         name,
         resource,
@@ -1022,6 +1013,20 @@ pub(super) fn insert_physics_components(
 #[derive(Component, Debug, Clone, Copy)]
 pub(super) struct SceneMaxPendingStaticMeshCollider;
 
+#[derive(Component, Clone)]
+pub(super) struct SceneMaxCollisionFollowsVisibility {
+    collision_layers: CollisionLayers,
+    collider: Option<AvianCollider>,
+}
+
+#[derive(Component, Clone, Copy, Debug)]
+pub(super) struct SceneMaxVisibilityDrivenByRoot;
+
+#[derive(Component, Clone, Copy, Debug)]
+pub(super) struct SceneMaxRuntimeVisibility {
+    pub(super) visible: bool,
+}
+
 pub(super) fn should_use_static_mesh_collider(options: &EntityOptions) -> bool {
     matches!(options.body_kind, Some(SceneMaxBodyKind::Static))
         && options.collision_shape.is_none()
@@ -1029,13 +1034,241 @@ pub(super) fn should_use_static_mesh_collider(options: &EntityOptions) -> bool {
         && options.radius.is_none()
 }
 
-pub(super) fn insert_pending_static_mesh_collider(commands: &mut Commands, entity: Entity) {
+pub(super) fn insert_pending_static_mesh_collider(
+    commands: &mut Commands,
+    entity: Entity,
+    hidden: bool,
+) {
+    let collision_layers = solid_collision_layers(SceneMaxBodyKind::Static);
     commands.entity(entity).insert((
         AvianRigidBody::Static,
-        solid_collision_layers(SceneMaxBodyKind::Static),
+        collision_layers_for_visibility(hidden, collision_layers),
+        SceneMaxCollisionFollowsVisibility {
+            collision_layers,
+            collider: None,
+        },
+        SceneMaxRuntimeVisibility { visible: !hidden },
         CollisionEventsEnabled,
         SceneMaxPendingStaticMeshCollider,
     ));
+}
+
+pub(super) fn sync_collision_layers_for_visibility(
+    mut commands: Commands,
+    mut colliders: Query<
+        (
+            Entity,
+            &Visibility,
+            &SceneMaxCollisionFollowsVisibility,
+            Option<&AvianCollider>,
+            Option<&CollisionLayers>,
+        ),
+        With<SceneMaxEntity>,
+    >,
+) {
+    for (entity, visibility, state, collider, collision_layers) in &mut colliders {
+        let hidden = matches!(visibility, Visibility::Hidden);
+        let target = collision_layers_for_visibility(hidden, state.collision_layers);
+        if collision_layers.copied() != Some(target) {
+            commands.entity(entity).insert(target);
+        }
+        if hidden {
+            if collider.is_some() {
+                commands.entity(entity).remove::<AvianCollider>();
+            }
+        } else if collider.is_none() {
+            if let Some(collider) = state.collider.as_ref() {
+                commands.entity(entity).insert(collider.clone());
+            }
+        }
+    }
+}
+
+pub(super) fn sync_scenemax_runtime_visibility(
+    mut commands: Commands,
+    mut scene_entities: Query<
+        (
+            Entity,
+            &SceneMaxRuntimeVisibility,
+            Option<&mut Visibility>,
+            Option<&mut InheritedVisibility>,
+        ),
+        With<SceneMaxEntity>,
+    >,
+) {
+    for (entity, runtime_visibility, visibility, inherited_visibility) in &mut scene_entities {
+        let target_visibility = scene_visibility_from_runtime(runtime_visibility.visible);
+        let target_inherited = inherited_visibility_from_runtime(runtime_visibility.visible);
+        if let Some(mut visibility) = visibility {
+            if *visibility != target_visibility {
+                *visibility = target_visibility;
+            }
+        } else {
+            commands.entity(entity).insert(target_visibility);
+        }
+        if let Some(mut inherited_visibility) = inherited_visibility {
+            if *inherited_visibility != target_inherited {
+                *inherited_visibility = target_inherited;
+            }
+        } else {
+            commands.entity(entity).insert(target_inherited);
+        }
+    }
+}
+
+pub(super) fn sync_gltf_descendant_visibility(
+    mut commands: Commands,
+    roots: Query<
+        (Entity, &Visibility, Option<&SceneMaxRuntimeVisibility>),
+        (With<SceneMaxGltf>, With<SceneMaxEntity>),
+    >,
+    children: Query<&Children>,
+    mut descendant_visibility: Query<
+        (
+            Option<&mut Visibility>,
+            Option<&mut InheritedVisibility>,
+            Option<&SceneMaxVisibilityDrivenByRoot>,
+        ),
+        Without<SceneMaxEntity>,
+    >,
+) {
+    for (root, root_visibility, runtime_visibility) in &roots {
+        let visible = runtime_visibility
+            .map(|visibility| visibility.visible)
+            .unwrap_or_else(|| !matches!(root_visibility, Visibility::Hidden));
+        let hidden = !visible;
+        let inherited_target = inherited_visibility_from_runtime(visible);
+        for descendant in children.iter_descendants(root) {
+            let Ok((visibility, inherited_visibility, driven_by_root)) =
+                descendant_visibility.get_mut(descendant)
+            else {
+                continue;
+            };
+            if hidden {
+                if let Some(mut visibility) = visibility {
+                    if *visibility != Visibility::Hidden {
+                        *visibility = Visibility::Hidden;
+                    }
+                } else {
+                    commands.entity(descendant).insert(Visibility::Hidden);
+                }
+                if let Some(mut inherited_visibility) = inherited_visibility {
+                    if *inherited_visibility != inherited_target {
+                        *inherited_visibility = inherited_target;
+                    }
+                } else {
+                    commands.entity(descendant).insert(inherited_target);
+                }
+                commands
+                    .entity(descendant)
+                    .insert(SceneMaxVisibilityDrivenByRoot);
+            } else if driven_by_root.is_some() {
+                if let Some(mut visibility) = visibility {
+                    if *visibility == Visibility::Hidden {
+                        *visibility = Visibility::Inherited;
+                    }
+                } else {
+                    commands.entity(descendant).insert(Visibility::Inherited);
+                }
+                if let Some(mut inherited_visibility) = inherited_visibility {
+                    if *inherited_visibility != inherited_target {
+                        *inherited_visibility = inherited_target;
+                    }
+                } else {
+                    commands.entity(descendant).insert(inherited_target);
+                }
+                commands
+                    .entity(descendant)
+                    .remove::<SceneMaxVisibilityDrivenByRoot>();
+            }
+        }
+    }
+}
+
+pub(super) fn sync_collider_hidden_state_for_visibility(
+    mut collider_bounds: ResMut<SceneMaxColliderBounds>,
+    colliders: Query<(&SceneMaxEntity, &Visibility), With<SceneMaxCollisionFollowsVisibility>>,
+) {
+    let mut hidden_by_reference = HashMap::new();
+    for (scene_entity, visibility) in &colliders {
+        let normalized = normalize_collision_reference(&scene_entity.name).to_owned();
+        let hidden = matches!(visibility, Visibility::Hidden);
+        hidden_by_reference
+            .entry(normalized)
+            .and_modify(|reference_hidden| *reference_hidden |= hidden)
+            .or_insert(hidden);
+    }
+    for (name, hidden) in hidden_by_reference {
+        if hidden {
+            set_collider_hidden(&mut collider_bounds, &name, true);
+        }
+    }
+}
+
+pub(super) fn prune_hidden_physics_contacts(
+    contacts: &mut SceneMaxPhysicsContacts,
+    collider_bounds: &SceneMaxColliderBounds,
+) {
+    contacts
+        .active_pairs
+        .retain(|pair| !collision_pair_hidden(pair, collider_bounds));
+}
+
+fn collision_pair_hidden(
+    pair: &(String, String),
+    collider_bounds: &SceneMaxColliderBounds,
+) -> bool {
+    collision_reference_hidden(&pair.0, Some(collider_bounds))
+        || collision_reference_hidden(&pair.1, Some(collider_bounds))
+}
+
+#[cfg(test)]
+fn descendant_visibility_for_root(root_visibility: &Visibility) -> Visibility {
+    if matches!(root_visibility, Visibility::Hidden) {
+        Visibility::Hidden
+    } else {
+        Visibility::Inherited
+    }
+}
+
+fn scene_visibility_from_runtime(visible: bool) -> Visibility {
+    if visible {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    }
+}
+
+fn inherited_visibility_from_runtime(visible: bool) -> InheritedVisibility {
+    if visible {
+        InheritedVisibility::VISIBLE
+    } else {
+        InheritedVisibility::HIDDEN
+    }
+}
+
+#[cfg(test)]
+fn sync_collision_reference_hidden_for_visibility(
+    collider_bounds: &mut SceneMaxColliderBounds,
+    name: &str,
+    visibility: &Visibility,
+) {
+    set_collider_hidden(
+        collider_bounds,
+        name,
+        matches!(visibility, Visibility::Hidden),
+    );
+}
+
+fn collision_layers_for_visibility(
+    hidden: bool,
+    collision_layers: CollisionLayers,
+) -> CollisionLayers {
+    if hidden {
+        CollisionLayers::NONE
+    } else {
+        collision_layers
+    }
 }
 
 pub(super) fn physics_body_kind(options: &EntityOptions) -> Option<SceneMaxBodyKind> {
@@ -1106,11 +1339,19 @@ pub(super) fn collider_dimensions(options: &EntityOptions, transform: &Transform
 pub(super) fn bake_pending_static_mesh_colliders(
     mut commands: Commands,
     meshes: Res<Assets<Mesh>>,
-    roots: Query<(Entity, &GlobalTransform), With<SceneMaxPendingStaticMeshCollider>>,
+    roots: Query<
+        (
+            Entity,
+            &GlobalTransform,
+            &Visibility,
+            Option<&SceneMaxCollisionFollowsVisibility>,
+        ),
+        With<SceneMaxPendingStaticMeshCollider>,
+    >,
     children: Query<&Children>,
     mesh_entities: Query<(&Mesh3d, &GlobalTransform)>,
 ) {
-    for (root, root_global_transform) in &roots {
+    for (root, root_global_transform, visibility, visibility_collision) in &roots {
         match build_static_mesh_collider(
             root,
             root_global_transform,
@@ -1120,10 +1361,24 @@ pub(super) fn bake_pending_static_mesh_colliders(
         ) {
             StaticMeshColliderBuild::Pending => {}
             StaticMeshColliderBuild::Ready { collider } => {
-                commands
-                    .entity(root)
-                    .insert(collider)
-                    .remove::<SceneMaxPendingStaticMeshCollider>();
+                let collision_layers = visibility_collision
+                    .map(|state| state.collision_layers)
+                    .unwrap_or_else(|| solid_collision_layers(SceneMaxBodyKind::Static));
+                let hidden = matches!(visibility, Visibility::Hidden);
+                let mut entity_commands = commands.entity(root);
+                entity_commands.insert((
+                    collision_layers_for_visibility(hidden, collision_layers),
+                    SceneMaxCollisionFollowsVisibility {
+                        collision_layers,
+                        collider: Some(collider.clone()),
+                    },
+                ));
+                if hidden {
+                    entity_commands.remove::<AvianCollider>();
+                } else {
+                    entity_commands.insert(collider);
+                }
+                entity_commands.remove::<SceneMaxPendingStaticMeshCollider>();
             }
             StaticMeshColliderBuild::Failed => {
                 commands
@@ -1724,8 +1979,13 @@ pub(super) fn insert_tnua_character_controller(
         },
         SceneMaxCharacterMotor::default(),
         AvianRigidBody::Dynamic,
-        capsule_collider,
+        capsule_collider.clone(),
         character_collision_layers(),
+        SceneMaxCollisionFollowsVisibility {
+            collision_layers: character_collision_layers(),
+            collider: Some(capsule_collider),
+        },
+        SceneMaxRuntimeVisibility { visible: true },
         LinearVelocity::ZERO,
         AngularVelocity::ZERO,
         TnuaController::<SceneMaxControlScheme>::default(),
@@ -2127,6 +2387,33 @@ pub(super) fn update_scenemax_debug_gizmos(
     }
 }
 
+pub(super) fn configure_scenemax_physics_debug_gizmos(
+    mut gizmo_config_store: ResMut<GizmoConfigStore>,
+) {
+    let (config, physics_gizmos) = gizmo_config_store.config_mut::<PhysicsGizmos>();
+    config.enabled = false;
+    config.depth_bias = -0.01;
+    *physics_gizmos = scenemax_physics_debug_gizmos();
+}
+
+pub(super) fn sync_scenemax_physics_debug_gizmos(
+    debug_mode: Res<SceneMaxDebugMode>,
+    mut gizmo_config_store: ResMut<GizmoConfigStore>,
+) {
+    let (config, physics_gizmos) = gizmo_config_store.config_mut::<PhysicsGizmos>();
+    config.enabled = debug_mode.enabled;
+    if debug_mode.enabled {
+        *physics_gizmos = scenemax_physics_debug_gizmos();
+    }
+}
+
+fn scenemax_physics_debug_gizmos() -> PhysicsGizmos {
+    let mut physics_gizmos = PhysicsGizmos::none();
+    physics_gizmos.collider_color = Some(Color::srgb(1.0, 0.55, 0.05));
+    physics_gizmos.hide_meshes = false;
+    physics_gizmos
+}
+
 pub(super) fn apply_gltf_visual_offsets(
     mut roots: Query<(Entity, &Children, &mut SceneMaxGltfVisualOffset), With<SceneMaxGltf>>,
     mut transforms: Query<&mut Transform>,
@@ -2231,6 +2518,7 @@ pub(super) fn update_avian_collision_contacts(
     mut ends: MessageReader<CollisionEnd>,
     mut contacts: ResMut<SceneMaxPhysicsContacts>,
     scene_entities: Query<&SceneMaxEntity>,
+    collider_bounds: Res<SceneMaxColliderBounds>,
 ) {
     for event in starts.read() {
         if let Some(pair) = collision_event_pair(
@@ -2240,7 +2528,11 @@ pub(super) fn update_avian_collision_contacts(
             event.body2,
             &scene_entities,
         ) {
-            contacts.active_pairs.insert(pair);
+            if collision_pair_hidden(&pair, &collider_bounds) {
+                contacts.active_pairs.remove(&pair);
+            } else {
+                contacts.active_pairs.insert(pair);
+            }
         }
     }
 
@@ -2255,6 +2547,7 @@ pub(super) fn update_avian_collision_contacts(
             contacts.active_pairs.remove(&pair);
         }
     }
+    prune_hidden_physics_contacts(&mut contacts, &collider_bounds);
 }
 
 pub(super) fn collision_event_pair(
@@ -3604,5 +3897,72 @@ Material wall : Common/MatDefs/Light/Lighting.j3md {
         assert!(is_primitive_resource("box"));
         assert!(is_primitive_resource("sphere"));
         assert!(!is_primitive_resource("custom_model"));
+    }
+
+    #[test]
+    fn hidden_scene_object_collision_layers_are_disabled() {
+        assert_eq!(
+            collision_layers_for_visibility(true, world_collision_layers()),
+            CollisionLayers::NONE
+        );
+    }
+
+    #[test]
+    fn visible_scene_object_collision_layers_are_restored() {
+        let layers = character_collision_layers();
+
+        assert_eq!(collision_layers_for_visibility(false, layers), layers);
+    }
+
+    #[test]
+    fn visible_scene_object_clears_hidden_collision_reference() {
+        let mut collider_bounds = SceneMaxColliderBounds {
+            hidden_by_name: HashSet::from(["pickup".to_owned()]),
+            ..Default::default()
+        };
+
+        sync_collision_reference_hidden_for_visibility(
+            &mut collider_bounds,
+            "pickup",
+            &Visibility::Inherited,
+        );
+
+        assert!(!collision_reference_hidden(
+            "pickup",
+            Some(&collider_bounds)
+        ));
+    }
+
+    #[test]
+    fn hidden_scene_object_sets_hidden_collision_reference() {
+        let mut collider_bounds = SceneMaxColliderBounds::default();
+
+        sync_collision_reference_hidden_for_visibility(
+            &mut collider_bounds,
+            "pickup",
+            &Visibility::Hidden,
+        );
+
+        assert!(collision_reference_hidden("pickup", Some(&collider_bounds)));
+    }
+
+    #[test]
+    fn hidden_scene_root_hides_model_descendants() {
+        assert_eq!(
+            descendant_visibility_for_root(&Visibility::Hidden),
+            Visibility::Hidden
+        );
+    }
+
+    #[test]
+    fn visible_scene_root_restores_model_descendants_to_inherited() {
+        assert_eq!(
+            descendant_visibility_for_root(&Visibility::Inherited),
+            Visibility::Inherited
+        );
+        assert_eq!(
+            descendant_visibility_for_root(&Visibility::Visible),
+            Visibility::Inherited
+        );
     }
 }

@@ -1168,7 +1168,7 @@ fn spawn_scenemax_program_with_visibility_mode(
                 insert_gltf_visual_offset(commands, entity_id, bevy_visual_offset_y);
 
                 if should_use_static_mesh_collider(options) {
-                    insert_pending_static_mesh_collider(commands, entity_id);
+                    insert_pending_static_mesh_collider(commands, entity_id, options.hidden);
                 } else {
                     insert_physics_components(
                         commands, entity_id, name, resource, options, &transform,
@@ -1321,6 +1321,7 @@ pub(super) fn apply_startup_runs_when_ready(
     mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
     mut delayed_actions: ResMut<DelayedActionQueue>,
     mut ui_queue: ResMut<SceneMaxUiActionQueue>,
+    mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut scene_entities: ParamSet<(
         Query<(
             Entity,
@@ -1430,6 +1431,7 @@ pub(super) fn apply_startup_runs_when_ready(
         &mut transforms_by_name,
         &gltfs_by_name,
         &guards_by_name,
+        &mut collider_bounds,
     );
     startup_action_state.applied = true;
 }

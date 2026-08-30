@@ -1,3 +1,5 @@
+//debug.on 
+
 add "/variables/constants", 
     "/variables/global_variables", 
     "/utils/messages" code
