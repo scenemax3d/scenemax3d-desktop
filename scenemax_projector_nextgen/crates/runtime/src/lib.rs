@@ -281,10 +281,14 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         )
         .add_systems(
             Update,
+            (update_timed_turns, update_timed_moves, update_timed_jumps)
+                .chain()
+                .after(apply_key_events)
+                .before(update_virtual_colliders),
+        )
+        .add_systems(
+            Update,
             (
-                update_timed_turns,
-                update_timed_moves,
-                update_timed_jumps,
                 restore_camera_modifier_base,
                 update_timed_camera_moves,
                 update_cinematic_camera,
@@ -295,12 +299,14 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_sprite_animations,
                 update_effekseer_playbacks,
                 apply_gltf_visual_offsets,
+                bake_pending_model_bounds_colliders,
                 bake_pending_static_mesh_colliders,
                 apply_pending_animation_controller_stops,
                 play_pending_animations,
                 apply_animation_speed_overrides,
             )
-                .chain(),
+                .chain()
+                .after(update_timed_jumps),
         )
         .add_systems(
             Update,
@@ -580,9 +586,10 @@ struct SceneMaxColliderBounds {
     hidden_by_name: HashSet<String>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum ColliderBoundShape {
     Box { half_extents: Vec3 },
+    ModelBox { center: Vec3, half_extents: Vec3 },
     Sphere { radius: f32 },
     Capsule { radius: f32, half_height: f32 },
 }
@@ -591,6 +598,10 @@ impl ColliderBoundShape {
     fn bounding_radius(self) -> f32 {
         match self {
             ColliderBoundShape::Box { half_extents } => half_extents.length(),
+            ColliderBoundShape::ModelBox {
+                center,
+                half_extents,
+            } => center.length() + half_extents.length(),
             ColliderBoundShape::Sphere { radius } => radius,
             ColliderBoundShape::Capsule {
                 radius,
@@ -1471,6 +1482,7 @@ const CHARACTER_INPUT_TTL_SECONDS: f32 = 0.12;
 const CHARACTER_JUMP_FEED_SECONDS: f32 = 0.2;
 const DEFAULT_ANIMATION_CLIP_SECONDS: f32 = 1.5;
 const MAX_ATTACHED_COLLIDER_OWNER_DISTANCE: f32 = 3.75;
+const COLLISION_FALLBACK_CONTACT_INSET: f32 = 0.11;
 const LOOP_CONTINUE_DELAY_SECONDS: f32 = 0.001;
 const PHYSICS_LAYER_WORLD: u32 = 1 << 0;
 const PHYSICS_LAYER_CHARACTER: u32 = 1 << 1;

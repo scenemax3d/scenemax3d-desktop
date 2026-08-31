@@ -1,4 +1,5 @@
 use super::*;
+use bevy::camera::primitives::{Aabb, MeshAabb};
 
 pub(super) fn collider_decl_transform(
     name: &str,
@@ -1013,6 +1014,11 @@ pub(super) fn insert_physics_components(
 #[derive(Component, Debug, Clone, Copy)]
 pub(super) struct SceneMaxPendingStaticMeshCollider;
 
+#[derive(Component, Debug, Clone, Copy)]
+pub(super) struct SceneMaxPendingModelBoundsCollider {
+    body_kind: SceneMaxBodyKind,
+}
+
 #[derive(Component, Clone)]
 pub(super) struct SceneMaxCollisionFollowsVisibility {
     collision_layers: CollisionLayers,
@@ -1032,6 +1038,44 @@ pub(super) fn should_use_static_mesh_collider(options: &EntityOptions) -> bool {
         && options.collision_shape.is_none()
         && options.size.is_none()
         && options.radius.is_none()
+}
+
+pub(super) fn should_fit_model_bounds_collider(
+    name: &str,
+    resource: &str,
+    options: &EntityOptions,
+) -> bool {
+    if options.size.is_some() || options.radius.is_some() {
+        return false;
+    }
+    let Some(body_kind) = physics_body_kind(options) else {
+        return false;
+    };
+    physics_collision_shape(name, resource, options, body_kind) == Some(SceneMaxCollisionShape::Box)
+}
+
+pub(super) fn insert_pending_model_bounds_collider(
+    commands: &mut Commands,
+    entity: Entity,
+    body_kind: SceneMaxBodyKind,
+    hidden: bool,
+) {
+    let body = match body_kind {
+        SceneMaxBodyKind::Static => AvianRigidBody::Static,
+        SceneMaxBodyKind::Kinematic => AvianRigidBody::Kinematic,
+        SceneMaxBodyKind::Dynamic => AvianRigidBody::Dynamic,
+    };
+    let collision_layers = solid_collision_layers(body_kind);
+    commands.entity(entity).insert((
+        body,
+        collision_layers_for_visibility(hidden, collision_layers),
+        SceneMaxCollisionFollowsVisibility {
+            collision_layers,
+            collider: None,
+        },
+        SceneMaxPendingModelBoundsCollider { body_kind },
+        CollisionEventsEnabled,
+    ));
 }
 
 pub(super) fn insert_pending_static_mesh_collider(
@@ -1389,10 +1433,86 @@ pub(super) fn bake_pending_static_mesh_colliders(
     }
 }
 
+pub(super) fn bake_pending_model_bounds_colliders(
+    mut commands: Commands,
+    meshes: Res<Assets<Mesh>>,
+    mut collider_bounds: ResMut<SceneMaxColliderBounds>,
+    roots: Query<
+        (
+            Entity,
+            &SceneMaxEntity,
+            &Transform,
+            &GlobalTransform,
+            &Visibility,
+            &SceneMaxPendingModelBoundsCollider,
+            Option<&SceneMaxCollisionFollowsVisibility>,
+        ),
+        With<SceneMaxGltf>,
+    >,
+    children: Query<&Children>,
+    mesh_entities: Query<(&Mesh3d, &GlobalTransform)>,
+) {
+    for (
+        root,
+        scene_entity,
+        transform,
+        root_global_transform,
+        visibility,
+        pending_collider,
+        visibility_collision,
+    ) in &roots
+    {
+        match build_model_bounds_box_collider(
+            root,
+            root_global_transform,
+            &children,
+            &mesh_entities,
+            &meshes,
+        ) {
+            ModelBoundsColliderBuild::Pending => {}
+            ModelBoundsColliderBuild::Ready { bounds, collider } => {
+                let collision_layers = visibility_collision
+                    .map(|state| state.collision_layers)
+                    .unwrap_or_else(|| solid_collision_layers(pending_collider.body_kind));
+                let hidden = matches!(visibility, Visibility::Hidden);
+                let mut entity_commands = commands.entity(root);
+                entity_commands.insert((
+                    collision_layers_for_visibility(hidden, collision_layers),
+                    SceneMaxCollisionFollowsVisibility {
+                        collision_layers,
+                        collider: Some(collider.clone()),
+                    },
+                ));
+                if hidden {
+                    entity_commands.remove::<AvianCollider>();
+                } else {
+                    entity_commands.insert(collider);
+                }
+                entity_commands.remove::<SceneMaxPendingModelBoundsCollider>();
+                register_model_bounds_box_collider_bounds(
+                    &mut collider_bounds,
+                    &scene_entity.name,
+                    *transform,
+                    bounds,
+                    hidden,
+                );
+            }
+        }
+    }
+}
+
 enum StaticMeshColliderBuild {
     Pending,
     Ready { collider: AvianCollider },
     Failed,
+}
+
+enum ModelBoundsColliderBuild {
+    Pending,
+    Ready {
+        bounds: ModelSubtreeBounds,
+        collider: AvianCollider,
+    },
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -1400,6 +1520,49 @@ struct StaticMeshColliderStats {
     meshes: usize,
     vertices: usize,
     triangles: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct ModelSubtreeBounds {
+    min: Vec3,
+    max: Vec3,
+}
+
+impl ModelSubtreeBounds {
+    fn from_points(points: impl IntoIterator<Item = Vec3>) -> Option<Self> {
+        let mut points = points.into_iter();
+        let first = points.next()?;
+        let mut bounds = Self {
+            min: first,
+            max: first,
+        };
+        for point in points {
+            bounds.include(point);
+        }
+        Some(bounds)
+    }
+
+    fn include(&mut self, point: Vec3) {
+        self.min = self.min.min(point);
+        self.max = self.max.max(point);
+    }
+
+    fn include_bounds(&mut self, other: Self) {
+        self.include(other.min);
+        self.include(other.max);
+    }
+
+    fn center(self) -> Vec3 {
+        (self.min + self.max) * 0.5
+    }
+
+    fn dimensions(self) -> Vec3 {
+        (self.max - self.min).max(Vec3::splat(0.1))
+    }
+
+    fn half_extents(self) -> Vec3 {
+        self.dimensions() * 0.5
+    }
 }
 
 fn build_static_mesh_collider(
@@ -1443,6 +1606,92 @@ fn build_static_mesh_collider(
         return StaticMeshColliderBuild::Failed;
     };
     StaticMeshColliderBuild::Ready { collider }
+}
+
+fn build_model_bounds_box_collider(
+    root: Entity,
+    root_global_transform: &GlobalTransform,
+    children: &Query<&Children>,
+    mesh_entities: &Query<(&Mesh3d, &GlobalTransform)>,
+    meshes: &Assets<Mesh>,
+) -> ModelBoundsColliderBuild {
+    let Some(bounds) =
+        build_model_subtree_bounds(root, root_global_transform, children, mesh_entities, meshes)
+    else {
+        return ModelBoundsColliderBuild::Pending;
+    };
+    let dimensions = bounds.dimensions();
+    let collider = AvianCollider::compound(vec![(
+        bounds.center(),
+        Quat::IDENTITY,
+        AvianCollider::cuboid(dimensions.x, dimensions.y, dimensions.z),
+    )]);
+    ModelBoundsColliderBuild::Ready { bounds, collider }
+}
+
+fn build_model_subtree_bounds(
+    root: Entity,
+    root_global_transform: &GlobalTransform,
+    children: &Query<&Children>,
+    mesh_entities: &Query<(&Mesh3d, &GlobalTransform)>,
+    meshes: &Assets<Mesh>,
+) -> Option<ModelSubtreeBounds> {
+    let root_from_world = root_global_transform.affine().inverse();
+    let mut bounds = model_mesh_bounds(root, root_from_world, mesh_entities, meshes);
+    for descendant in children.iter_descendants(root) {
+        let descendant_bounds =
+            model_mesh_bounds(descendant, root_from_world, mesh_entities, meshes);
+        bounds = union_model_subtree_bounds(bounds, descendant_bounds);
+    }
+    bounds
+}
+
+fn model_mesh_bounds(
+    entity: Entity,
+    root_from_world: Affine3A,
+    mesh_entities: &Query<(&Mesh3d, &GlobalTransform)>,
+    meshes: &Assets<Mesh>,
+) -> Option<ModelSubtreeBounds> {
+    let (mesh_handle, global_transform) = mesh_entities.get(entity).ok()?;
+    let aabb = meshes
+        .get(&mesh_handle.0)
+        .and_then(MeshAabb::compute_aabb)?;
+    let mesh_from_root = root_from_world * global_transform.affine();
+    ModelSubtreeBounds::from_points(
+        model_aabb_corners(aabb)
+            .into_iter()
+            .map(|corner| mesh_from_root.transform_point3(corner)),
+    )
+}
+
+fn union_model_subtree_bounds(
+    current: Option<ModelSubtreeBounds>,
+    next: Option<ModelSubtreeBounds>,
+) -> Option<ModelSubtreeBounds> {
+    match (current, next) {
+        (Some(mut current), Some(next)) => {
+            current.include_bounds(next);
+            Some(current)
+        }
+        (Some(current), None) => Some(current),
+        (None, Some(next)) => Some(next),
+        (None, None) => None,
+    }
+}
+
+fn model_aabb_corners(aabb: Aabb) -> [Vec3; 8] {
+    let min: Vec3 = aabb.min().into();
+    let max: Vec3 = aabb.max().into();
+    [
+        Vec3::new(min.x, min.y, min.z),
+        Vec3::new(min.x, min.y, max.z),
+        Vec3::new(min.x, max.y, min.z),
+        Vec3::new(min.x, max.y, max.z),
+        Vec3::new(max.x, min.y, min.z),
+        Vec3::new(max.x, min.y, max.z),
+        Vec3::new(max.x, max.y, min.z),
+        Vec3::new(max.x, max.y, max.z),
+    ]
 }
 
 fn append_mesh_triangles(
@@ -1506,11 +1755,19 @@ pub(super) fn collider_bound_shape(
     options: &EntityOptions,
     transform: Transform,
 ) -> ColliderBoundShape {
-    let dimensions = collider_dimensions(options, &transform);
-    match options
+    let shape = options
         .collision_shape
-        .unwrap_or(SceneMaxCollisionShape::Box)
-    {
+        .unwrap_or(SceneMaxCollisionShape::Box);
+    collider_bound_shape_for_shape(shape, options, transform)
+}
+
+fn collider_bound_shape_for_shape(
+    shape: SceneMaxCollisionShape,
+    options: &EntityOptions,
+    transform: Transform,
+) -> ColliderBoundShape {
+    let dimensions = collider_dimensions(options, &transform);
+    match shape {
         SceneMaxCollisionShape::Sphere => ColliderBoundShape::Sphere {
             radius: dimensions.max_element() * 0.5,
         },
@@ -1527,6 +1784,52 @@ pub(super) fn collider_bound_shape(
         }
         SceneMaxCollisionShape::None => ColliderBoundShape::Sphere { radius: 0.0 },
     }
+}
+
+pub(super) fn register_model_bounds_box_collider_bounds(
+    collider_bounds: &mut SceneMaxColliderBounds,
+    name: &str,
+    transform: Transform,
+    bounds: ModelSubtreeBounds,
+    hidden: bool,
+) {
+    let shape = ColliderBoundShape::ModelBox {
+        center: bounds.center(),
+        half_extents: bounds.half_extents(),
+    };
+    let radius = model_bounds_box_world_radius(bounds, transform).max(0.01);
+    collider_bounds
+        .radius_by_name
+        .insert(name.to_owned(), radius);
+    collider_bounds.shape_by_name.insert(name.to_owned(), shape);
+    set_collider_hidden(collider_bounds, name, hidden);
+}
+
+pub(super) fn register_visual_collider_bounds(
+    collider_bounds: &mut SceneMaxColliderBounds,
+    name: &str,
+    resource: &str,
+    options: &EntityOptions,
+    transform: Transform,
+) {
+    let shape = match options.collision_shape {
+        Some(SceneMaxCollisionShape::None) => return,
+        Some(shape) => shape,
+        None => default_collision_shape(name, resource, SceneMaxBodyKind::Static),
+    };
+    let shape = collider_bound_shape_for_shape(shape, options, transform);
+    let radius = shape.bounding_radius().max(0.01);
+    collider_bounds
+        .radius_by_name
+        .insert(name.to_owned(), radius);
+    collider_bounds.shape_by_name.insert(name.to_owned(), shape);
+    set_collider_hidden(collider_bounds, name, options.hidden);
+}
+
+fn model_bounds_box_world_radius(bounds: ModelSubtreeBounds, transform: Transform) -> f32 {
+    let center = bounds.center() * transform.scale;
+    let half_extents = bounds.half_extents() * transform.scale.abs();
+    center.length() + half_extents.length()
 }
 
 pub(super) fn register_collider_bounds(
@@ -2310,7 +2613,7 @@ pub(super) fn update_scenemax_debug_gizmos(
         &mut Visibility,
         Or<(With<SceneMaxVirtualCollider>, With<SceneMaxStageSupport>)>,
     >,
-    scene_entities: Query<(Entity, &SceneMaxEntity, &Transform)>,
+    scene_entities: Query<(Entity, &SceneMaxEntity, &Transform, Option<&AvianCollider>)>,
     stage_supports: Query<(&SceneMaxStageSupport, &Transform)>,
     characters: Query<(&SceneMaxEntity, &Transform, &SceneMaxCharacterController)>,
     virtual_colliders: Query<(), With<SceneMaxVirtualCollider>>,
@@ -2336,7 +2639,10 @@ pub(super) fn update_scenemax_debug_gizmos(
     let character_color = Color::srgb(1.0, 0.25, 0.9);
     let float_color = Color::srgb(0.6, 1.0, 0.95);
 
-    for (entity, scene_entity, transform) in &scene_entities {
+    for (entity, scene_entity, transform, avian_collider) in &scene_entities {
+        if !should_draw_debug_collider_shape(avian_collider.is_some()) {
+            continue;
+        }
         let Some(shape) = collider_bounds
             .shape_by_name
             .get(&scene_entity.name)
@@ -2385,6 +2691,10 @@ pub(super) fn update_scenemax_debug_gizmos(
         );
         gizmos.cube(sensor_transform, float_color);
     }
+}
+
+fn should_draw_debug_collider_shape(collider_exists: bool) -> bool {
+    collider_exists
 }
 
 pub(super) fn configure_scenemax_physics_debug_gizmos(
@@ -2464,6 +2774,15 @@ fn draw_debug_collider_shape(
         ColliderBoundShape::Box { half_extents } => {
             let mut cube_transform = transform;
             cube_transform.scale = transform.scale * (half_extents * 2.0);
+            gizmos.cube(cube_transform, color);
+        }
+        ColliderBoundShape::ModelBox {
+            center,
+            half_extents,
+        } => {
+            let mut cube_transform = transform;
+            cube_transform.translation += transform.rotation.mul_vec3(center * transform.scale);
+            cube_transform.scale = transform.scale.abs() * (half_extents * 2.0);
             gizmos.cube(cube_transform, color);
         }
         ColliderBoundShape::Sphere { radius } => {
@@ -2741,8 +3060,17 @@ pub(super) fn exact_collider_shapes_overlap(
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> Option<bool> {
     let collider_bounds = collider_bounds?;
-    let source_shape = collider_bounds.shape_by_name.get(source).copied()?;
-    let target_shape = collider_bounds.shape_by_name.get(target).copied()?;
+    let source_shape = collider_bounds.shape_by_name.get(source).copied();
+    let target_shape = collider_bounds.shape_by_name.get(target).copied();
+    if source_shape.is_none() && target_shape.is_none() {
+        return None;
+    }
+    let source_shape = source_shape.unwrap_or_else(|| ColliderBoundShape::Sphere {
+        radius: collision_part_radius(source),
+    });
+    let target_shape = target_shape.unwrap_or_else(|| ColliderBoundShape::Sphere {
+        radius: collision_part_radius(target),
+    });
     Some(collider_shapes_overlap(
         source_shape,
         source_transform,
@@ -2772,21 +3100,89 @@ pub(super) fn collider_shapes_overlap(
                 <= source_radius + target_radius
         }
         (ColliderBoundShape::Box { half_extents }, ColliderBoundShape::Sphere { radius }) => {
-            sphere_overlaps_box(
+            sphere_overlaps_oriented_box(
                 target_transform.translation,
                 radius,
-                source_transform,
-                half_extents,
+                oriented_box_from_parts(source_transform, Vec3::ZERO, half_extents),
             )
         }
+        (
+            ColliderBoundShape::ModelBox {
+                center,
+                half_extents,
+            },
+            ColliderBoundShape::Sphere { radius },
+        ) => sphere_overlaps_oriented_box(
+            target_transform.translation,
+            radius,
+            inset_oriented_box_from_parts(source_transform, center, half_extents),
+        ),
         (ColliderBoundShape::Sphere { radius }, ColliderBoundShape::Box { half_extents }) => {
-            sphere_overlaps_box(
+            sphere_overlaps_oriented_box(
                 source_transform.translation,
                 radius,
-                target_transform,
-                half_extents,
+                oriented_box_from_parts(target_transform, Vec3::ZERO, half_extents),
             )
         }
+        (
+            ColliderBoundShape::Sphere { radius },
+            ColliderBoundShape::ModelBox {
+                center,
+                half_extents,
+            },
+        ) => sphere_overlaps_oriented_box(
+            source_transform.translation,
+            radius,
+            inset_oriented_box_from_parts(target_transform, center, half_extents),
+        ),
+        (
+            ColliderBoundShape::Box {
+                half_extents: source_half_extents,
+            },
+            ColliderBoundShape::Box {
+                half_extents: target_half_extents,
+            },
+        ) => oriented_boxes_overlap(
+            oriented_box_from_parts(source_transform, Vec3::ZERO, source_half_extents),
+            oriented_box_from_parts(target_transform, Vec3::ZERO, target_half_extents),
+        ),
+        (
+            ColliderBoundShape::Box {
+                half_extents: source_half_extents,
+            },
+            ColliderBoundShape::ModelBox {
+                center: target_center,
+                half_extents: target_half_extents,
+            },
+        ) => oriented_boxes_overlap(
+            inset_oriented_box_from_parts(source_transform, Vec3::ZERO, source_half_extents),
+            inset_oriented_box_from_parts(target_transform, target_center, target_half_extents),
+        ),
+        (
+            ColliderBoundShape::ModelBox {
+                center: source_center,
+                half_extents: source_half_extents,
+            },
+            ColliderBoundShape::Box {
+                half_extents: target_half_extents,
+            },
+        ) => oriented_boxes_overlap(
+            inset_oriented_box_from_parts(source_transform, source_center, source_half_extents),
+            inset_oriented_box_from_parts(target_transform, Vec3::ZERO, target_half_extents),
+        ),
+        (
+            ColliderBoundShape::ModelBox {
+                center: source_center,
+                half_extents: source_half_extents,
+            },
+            ColliderBoundShape::ModelBox {
+                center: target_center,
+                half_extents: target_half_extents,
+            },
+        ) => oriented_boxes_overlap(
+            inset_oriented_box_from_parts(source_transform, source_center, source_half_extents),
+            inset_oriented_box_from_parts(target_transform, target_center, target_half_extents),
+        ),
         _ => {
             source_transform
                 .translation
@@ -2796,18 +3192,138 @@ pub(super) fn collider_shapes_overlap(
     }
 }
 
-pub(super) fn sphere_overlaps_box(
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SceneMaxOrientedBox {
+    center: Vec3,
+    axes: [Vec3; 3],
+    half_extents: Vec3,
+}
+
+fn oriented_box_from_parts(
+    transform: Transform,
+    local_center: Vec3,
+    local_half_extents: Vec3,
+) -> SceneMaxOrientedBox {
+    let scale = transform.scale.abs();
+    SceneMaxOrientedBox {
+        center: transform.translation + transform.rotation.mul_vec3(local_center * transform.scale),
+        axes: [
+            transform.rotation.mul_vec3(Vec3::X),
+            transform.rotation.mul_vec3(Vec3::Y),
+            transform.rotation.mul_vec3(Vec3::Z),
+        ],
+        half_extents: local_half_extents * scale,
+    }
+}
+
+fn inset_oriented_box_from_parts(
+    transform: Transform,
+    local_center: Vec3,
+    local_half_extents: Vec3,
+) -> SceneMaxOrientedBox {
+    let mut oriented_box = oriented_box_from_parts(transform, local_center, local_half_extents);
+    oriented_box.half_extents = inset_collision_half_extents(oriented_box.half_extents);
+    oriented_box
+}
+
+fn inset_collision_half_extents(half_extents: Vec3) -> Vec3 {
+    let min_extent = half_extents.min_element();
+    let inset = COLLISION_FALLBACK_CONTACT_INSET.min(min_extent * 0.75);
+    (half_extents - Vec3::splat(inset)).max(Vec3::splat(0.001))
+}
+
+#[cfg(test)]
+pub(super) fn sphere_overlaps_model_box(
     sphere_center: Vec3,
     sphere_radius: f32,
     box_transform: Transform,
+    box_center: Vec3,
     half_extents: Vec3,
 ) -> bool {
-    let local_center = box_transform
-        .rotation
-        .inverse()
-        .mul_vec3(sphere_center - box_transform.translation);
-    let closest = local_center.clamp(-half_extents, half_extents);
+    sphere_overlaps_oriented_box(
+        sphere_center,
+        sphere_radius,
+        oriented_box_from_parts(box_transform, box_center, half_extents),
+    )
+}
+
+pub(super) fn sphere_overlaps_oriented_box(
+    sphere_center: Vec3,
+    sphere_radius: f32,
+    box_shape: SceneMaxOrientedBox,
+) -> bool {
+    let offset = sphere_center - box_shape.center;
+    let local_center = Vec3::new(
+        offset.dot(box_shape.axes[0]),
+        offset.dot(box_shape.axes[1]),
+        offset.dot(box_shape.axes[2]),
+    );
+    let closest = local_center.clamp(-box_shape.half_extents, box_shape.half_extents);
     local_center.distance_squared(closest) <= sphere_radius * sphere_radius
+}
+
+pub(super) fn oriented_boxes_overlap(
+    source: SceneMaxOrientedBox,
+    target: SceneMaxOrientedBox,
+) -> bool {
+    let source_extents = source.half_extents.to_array();
+    let target_extents = target.half_extents.to_array();
+    let mut rotation = [[0.0; 3]; 3];
+    let mut abs_rotation = [[0.0; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            rotation[i][j] = source.axes[i].dot(target.axes[j]);
+            abs_rotation[i][j] = rotation[i][j].abs() + 1.0e-5;
+        }
+    }
+
+    let delta = target.center - source.center;
+    let translation = [
+        delta.dot(source.axes[0]),
+        delta.dot(source.axes[1]),
+        delta.dot(source.axes[2]),
+    ];
+
+    for i in 0..3 {
+        let source_radius = source_extents[i];
+        let target_radius = target_extents[0] * abs_rotation[i][0]
+            + target_extents[1] * abs_rotation[i][1]
+            + target_extents[2] * abs_rotation[i][2];
+        if translation[i].abs() > source_radius + target_radius {
+            return false;
+        }
+    }
+
+    for j in 0..3 {
+        let source_radius = source_extents[0] * abs_rotation[0][j]
+            + source_extents[1] * abs_rotation[1][j]
+            + source_extents[2] * abs_rotation[2][j];
+        let target_radius = target_extents[j];
+        let distance = (translation[0] * rotation[0][j]
+            + translation[1] * rotation[1][j]
+            + translation[2] * rotation[2][j])
+            .abs();
+        if distance > source_radius + target_radius {
+            return false;
+        }
+    }
+
+    for i in 0..3 {
+        for j in 0..3 {
+            let source_radius = source_extents[(i + 1) % 3] * abs_rotation[(i + 2) % 3][j]
+                + source_extents[(i + 2) % 3] * abs_rotation[(i + 1) % 3][j];
+            let target_radius = target_extents[(j + 1) % 3] * abs_rotation[i][(j + 2) % 3]
+                + target_extents[(j + 2) % 3] * abs_rotation[i][(j + 1) % 3];
+            let distance = (translation[(i + 2) % 3] * rotation[(i + 1) % 3][j]
+                - translation[(i + 1) % 3] * rotation[(i + 2) % 3][j])
+                .abs();
+            if distance > source_radius + target_radius {
+                return false;
+            }
+        }
+    }
+
+    true
 }
 
 pub(super) fn exact_collision_threshold(
@@ -3623,6 +4139,192 @@ mod static_mesh_collider_tests {
 
         assert!(!should_use_static_mesh_collider(&explicit_box));
         assert!(!should_use_static_mesh_collider(&explicit_size));
+    }
+
+    #[test]
+    fn imported_model_box_without_size_uses_model_bounds_fit() {
+        let options = EntityOptions {
+            collision_shape: Some(SceneMaxCollisionShape::Box),
+            ..Default::default()
+        };
+
+        assert!(should_fit_model_bounds_collider(
+            "pickup",
+            "imported_model",
+            &options
+        ));
+
+        let sized_options = EntityOptions {
+            collision_shape: Some(SceneMaxCollisionShape::Box),
+            size: Some(SceneMaxVec3 {
+                x: 2.0,
+                y: 3.0,
+                z: 4.0,
+            }),
+            ..Default::default()
+        };
+
+        assert!(!should_fit_model_bounds_collider(
+            "pickup",
+            "imported_model",
+            &sized_options
+        ));
+    }
+
+    #[test]
+    fn model_bounds_box_overlap_applies_center_and_scale() {
+        let box_transform =
+            Transform::from_translation(Vec3::new(10.0, 0.0, 0.0)).with_scale(Vec3::splat(2.0));
+
+        assert!(sphere_overlaps_model_box(
+            Vec3::new(12.85, 0.0, 0.0),
+            0.2,
+            box_transform,
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(0.5, 0.5, 0.5),
+        ));
+        assert!(!sphere_overlaps_model_box(
+            Vec3::new(14.3, 0.0, 0.0),
+            0.2,
+            box_transform,
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(0.5, 0.5, 0.5),
+        ));
+    }
+
+    #[test]
+    fn visual_primitive_bounds_registers_default_box_shape() {
+        let mut collider_bounds = SceneMaxColliderBounds::default();
+
+        register_visual_collider_bounds(
+            &mut collider_bounds,
+            "probe",
+            "box",
+            &EntityOptions::default(),
+            Transform::IDENTITY,
+        );
+
+        assert_eq!(
+            collider_bounds.shape_by_name.get("probe").copied(),
+            Some(ColliderBoundShape::Box {
+                half_extents: Vec3::splat(0.5),
+            })
+        );
+        assert!(
+            (collider_bounds.radius_by_name["probe"] - Vec3::splat(0.5).length()).abs() < 0.001
+        );
+    }
+
+    #[test]
+    fn debug_overlay_tracks_actual_collider_presence() {
+        assert!(!should_draw_debug_collider_shape(false));
+        assert!(should_draw_debug_collider_shape(true));
+    }
+
+    #[test]
+    fn exact_model_bounds_box_rejects_broad_root_radius_overlap() {
+        let transforms = HashMap::from([
+            (
+                "probe".to_owned(),
+                Transform::from_translation(Vec3::new(6.0, 0.0, 0.0)),
+            ),
+            ("model".to_owned(), Transform::from_translation(Vec3::ZERO)),
+        ]);
+        let collider_bounds = SceneMaxColliderBounds {
+            radius_by_name: HashMap::from([("model".to_owned(), 10.5)]),
+            shape_by_name: HashMap::from([(
+                "model".to_owned(),
+                ColliderBoundShape::ModelBox {
+                    center: Vec3::new(10.0, 0.0, 0.0),
+                    half_extents: Vec3::splat(0.5),
+                },
+            )]),
+            owner_by_name: HashMap::new(),
+            hidden_by_name: HashSet::new(),
+        };
+
+        assert!(!collision_condition_matches(
+            &["probe".to_owned()],
+            "model",
+            Some(&transforms),
+            Some(&collider_bounds),
+        ));
+    }
+
+    #[test]
+    fn exact_box_model_bounds_box_uses_debug_box_positions() {
+        let transforms = HashMap::from([
+            (
+                "box_probe".to_owned(),
+                Transform::from_translation(Vec3::new(8.4, 0.0, 0.0)),
+            ),
+            ("model".to_owned(), Transform::from_translation(Vec3::ZERO)),
+        ]);
+        let collider_bounds = SceneMaxColliderBounds {
+            radius_by_name: HashMap::from([
+                ("box_probe".to_owned(), Vec3::splat(0.5).length()),
+                ("model".to_owned(), 10.5),
+            ]),
+            shape_by_name: HashMap::from([
+                (
+                    "box_probe".to_owned(),
+                    ColliderBoundShape::Box {
+                        half_extents: Vec3::splat(0.5),
+                    },
+                ),
+                (
+                    "model".to_owned(),
+                    ColliderBoundShape::ModelBox {
+                        center: Vec3::new(10.0, 0.0, 0.0),
+                        half_extents: Vec3::splat(0.5),
+                    },
+                ),
+            ]),
+            owner_by_name: HashMap::new(),
+            hidden_by_name: HashSet::new(),
+        };
+
+        assert!(!collision_condition_matches(
+            &["box_probe".to_owned()],
+            "model",
+            Some(&transforms),
+            Some(&collider_bounds),
+        ));
+    }
+
+    #[test]
+    fn fitted_model_box_requires_visible_overlap_at_probe_edge() {
+        let source_shape = ColliderBoundShape::Box {
+            half_extents: Vec3::splat(0.5),
+        };
+        let target_shape = ColliderBoundShape::ModelBox {
+            center: Vec3::new(0.00204698, 0.42165446, -0.10750589),
+            half_extents: Vec3::new(0.06233424, 0.6527438, 0.16873631),
+        };
+        let target_transform = Transform {
+            translation: Vec3::ZERO,
+            rotation: Quat::from_xyzw(0.0, 0.9831482, 0.0, -0.18281025),
+            scale: Vec3::splat(2.0),
+        };
+
+        assert!(!collider_shapes_overlap(
+            source_shape,
+            Transform::from_translation(Vec3::new(0.8084648, 0.0, 0.0)),
+            target_shape,
+            target_transform,
+        ));
+        assert!(!collider_shapes_overlap(
+            source_shape,
+            Transform::from_translation(Vec3::new(0.68061477, 0.0, 0.0)),
+            target_shape,
+            target_transform,
+        ));
+        assert!(collider_shapes_overlap(
+            source_shape,
+            Transform::from_translation(Vec3::new(0.55, 0.0, 0.0)),
+            target_shape,
+            target_transform,
+        ));
     }
 
     #[test]

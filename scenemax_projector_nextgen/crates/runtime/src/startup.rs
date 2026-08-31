@@ -1109,6 +1109,7 @@ fn spawn_scenemax_program_with_visibility_mode(
                 ))
                 .id();
             insert_physics_components(commands, entity, name, resource, options, &transform);
+            register_visual_collider_bounds(collider_bounds, name, resource, options, transform);
             entities_by_name.insert(name.clone(), entity);
             transforms_by_name.insert(name.clone(), transform);
             spawned_any = true;
@@ -1169,6 +1170,15 @@ fn spawn_scenemax_program_with_visibility_mode(
 
                 if should_use_static_mesh_collider(options) {
                     insert_pending_static_mesh_collider(commands, entity_id, options.hidden);
+                } else if should_fit_model_bounds_collider(name, resource, options) {
+                    if let Some(body_kind) = physics_body_kind(options) {
+                        insert_pending_model_bounds_collider(
+                            commands,
+                            entity_id,
+                            body_kind,
+                            options.hidden,
+                        );
+                    }
                 } else {
                     insert_physics_components(
                         commands, entity_id, name, resource, options, &transform,

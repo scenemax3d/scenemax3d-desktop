@@ -1099,7 +1099,8 @@ pub(super) fn apply_startup_action(
             let target_name = resolve_object_alias(target, object_pools, None);
             set_collider_hidden(collider_bounds, &target_name, !*visible);
             if let Some(entity) = entities_by_name.get(&target_name) {
-                commands.entity(*entity).insert((
+                let mut entity_commands = commands.entity(*entity);
+                entity_commands.insert((
                     if *visible {
                         Visibility::Inherited
                     } else {
@@ -1107,6 +1108,11 @@ pub(super) fn apply_startup_action(
                     },
                     SceneMaxRuntimeVisibility { visible: *visible },
                 ));
+                if !*visible {
+                    entity_commands
+                        .insert(CollisionLayers::NONE)
+                        .try_remove::<AvianCollider>();
+                }
             }
             ActionSequenceResult::Completed
         }
@@ -4347,6 +4353,7 @@ pub(super) fn apply_runtime_model_decl(
     }
     let entity_id = entity.id();
     insert_physics_components(commands, entity_id, name, resource, options, &transform);
+    register_visual_collider_bounds(collider_bounds, name, resource, options, transform);
     transforms_by_name.insert(name.to_owned(), transform);
     tracing::info!(
         name,
@@ -4575,6 +4582,10 @@ fn spawn_runtime_gltf_model_decl(
     insert_gltf_visual_offset(commands, entity_id, bevy_visual_offset_y);
     if should_use_static_mesh_collider(options) {
         insert_pending_static_mesh_collider(commands, entity_id, options.hidden);
+    } else if should_fit_model_bounds_collider(name, resource, options) {
+        if let Some(body_kind) = physics_body_kind(options) {
+            insert_pending_model_bounds_collider(commands, entity_id, body_kind, options.hidden);
+        }
     } else {
         insert_physics_components(
             commands,
@@ -8567,6 +8578,8 @@ pub(super) fn hide_and_stop_scene_entity(
         commands
             .entity(entity)
             .insert((LinearVelocity::ZERO, AngularVelocity::ZERO))
+            .insert(CollisionLayers::NONE)
+            .try_remove::<AvianCollider>()
             .try_remove::<TimedMoves>()
             .try_remove::<TimedTurn>()
             .try_remove::<TimedJump>();
