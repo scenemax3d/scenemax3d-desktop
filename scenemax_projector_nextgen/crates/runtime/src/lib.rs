@@ -2285,6 +2285,27 @@ mod tests {
     }
 
     #[test]
+    fn character_collider_shape_compensates_for_entity_scale() {
+        let transform = Transform::from_scale(Vec3::splat(3.0));
+        let dimensions = character_dimensions_for_transform(&transform);
+        let local_shape = character_local_collider_shape_for_transform(&transform, dimensions);
+
+        assert!((local_shape.capsule_radius - DEFAULT_CHARACTER_CAPSULE_RADIUS).abs() < 0.0001);
+        assert!((local_shape.capsule_height - DEFAULT_CHARACTER_CAPSULE_HEIGHT).abs() < 0.0001);
+        assert!(
+            (local_shape.capsule_center_y
+                - character_capsule_half_height(
+                    DEFAULT_CHARACTER_CAPSULE_RADIUS,
+                    DEFAULT_CHARACTER_CAPSULE_HEIGHT,
+                ))
+            .abs()
+                < 0.0001
+        );
+        assert!((local_shape.capsule_radius * 3.0 - dimensions.capsule_radius).abs() < 0.0001);
+        assert!((local_shape.capsule_height * 3.0 - dimensions.capsule_height).abs() < 0.0001);
+    }
+
+    #[test]
     fn character_float_height_is_ground_clearance_not_body_height() {
         let transform = Transform::from_scale(Vec3::splat(3.0));
         let dimensions = character_dimensions_for_transform(&transform);
@@ -2315,6 +2336,92 @@ mod tests {
             support.center_y,
             support.top_y - DEFAULT_STAGE_SUPPORT_HALF_HEIGHT
         );
+    }
+
+    #[test]
+    fn existing_stage_support_only_skips_characters_it_covers() {
+        let upper = Transform::from_translation(Vec3::new(9.0, 0.0, 35.0));
+        let upper_dimensions = character_dimensions_for_transform(&upper);
+        let upper_support_top_y =
+            character_stage_support_top_y(upper.translation.y, upper_dimensions);
+        let upper_support_surface = support_surface_from_stage_support(
+            &SceneMaxStageSupport {
+                half_size: DEFAULT_STAGE_SUPPORT_HALF_SIZE,
+            },
+            &Transform::from_translation(Vec3::new(
+                upper.translation.x,
+                upper_support_top_y - DEFAULT_STAGE_SUPPORT_HALF_HEIGHT,
+                upper.translation.z,
+            )),
+        );
+        let lower = Transform::from_translation(Vec3::new(40.0, -89.249504, 30.0))
+            .with_scale(Vec3::splat(3.0));
+        let lower_dimensions = character_dimensions_for_transform(&lower);
+        let samples = vec![
+            ("upper".to_owned(), upper, upper_dimensions),
+            ("lower".to_owned(), lower, lower_dimensions),
+        ];
+
+        let imported_bounds = Vec::new();
+        let missing = missing_character_stage_support_samples(
+            &samples,
+            &[upper_support_surface],
+            &imported_bounds,
+            false,
+        );
+
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].0, "lower");
+    }
+
+    #[test]
+    fn fallback_character_support_skips_when_static_imported_level_can_collide() {
+        let program = scenemax_parser::parse_program(
+            "level => static city_model: pos (0,-90,0), scale 0.02\navatar => dynamic fighter: pos (0,-75,0), scale 3\navatar.switch to character mode : gravity 60",
+        )
+        .unwrap();
+        let transforms = HashMap::from([(
+            "avatar".to_owned(),
+            Transform::from_translation(Vec3::new(0.0, -75.0, 0.0)).with_scale(Vec3::splat(3.0)),
+        )]);
+
+        let fallback_samples = fallback_character_mode_support_samples(&program, &transforms);
+
+        assert!(fallback_samples.is_empty());
+    }
+
+    #[test]
+    fn imported_model_bounds_skip_fallback_only_for_covered_character_columns() {
+        let inside =
+            Transform::from_translation(Vec3::new(0.0, -75.0, 0.0)).with_scale(Vec3::splat(3.0));
+        let outside =
+            Transform::from_translation(Vec3::new(200.0, -75.0, 0.0)).with_scale(Vec3::splat(3.0));
+        let samples = vec![
+            (
+                "inside".to_owned(),
+                inside,
+                character_dimensions_for_transform(&inside),
+            ),
+            (
+                "outside".to_owned(),
+                outside,
+                character_dimensions_for_transform(&outside),
+            ),
+        ];
+        let imported_bounds = vec![SceneMaxImportedModelSupportBounds {
+            min_x: -50.0,
+            max_x: 50.0,
+            min_y: -90.0,
+            max_y: -20.0,
+            min_z: -50.0,
+            max_z: 50.0,
+        }];
+
+        let missing =
+            missing_character_stage_support_samples(&samples, &[], &imported_bounds, false);
+
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].0, "outside");
     }
 
     #[test]

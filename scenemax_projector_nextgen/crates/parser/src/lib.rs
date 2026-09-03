@@ -262,6 +262,7 @@ pub enum SceneMaxBodyKind {
 pub enum SceneMaxCollisionShape {
     None,
     Box,
+    Boxes,
     Sphere,
     Capsule,
 }
@@ -6142,6 +6143,9 @@ fn parse_body_kind(text: &str) -> Option<SceneMaxBodyKind> {
 fn parse_collision_shape(text: &str) -> Option<SceneMaxCollisionShape> {
     let lower = text.to_ascii_lowercase();
     if contains_keyword(&lower, "collider") {
+        if contains_keyword(&lower, "boxes") {
+            return Some(SceneMaxCollisionShape::Boxes);
+        }
         if contains_keyword(&lower, "sphere") {
             return Some(SceneMaxCollisionShape::Sphere);
         }
@@ -6161,6 +6165,7 @@ fn parse_collision_shape(text: &str) -> Option<SceneMaxCollisionShape> {
         "none" => Some(SceneMaxCollisionShape::None),
         "sphere" => Some(SceneMaxCollisionShape::Sphere),
         "capsule" => Some(SceneMaxCollisionShape::Capsule),
+        "boxes" => Some(SceneMaxCollisionShape::Boxes),
         "box" | "" => Some(SceneMaxCollisionShape::Box),
         _ => Some(SceneMaxCollisionShape::Box),
     }
@@ -7089,7 +7094,7 @@ mod tests {
     #[test]
     fn parses_physics_body_and_collision_shape_hints() {
         let program = parse_program(
-            "floor => static box : size (100.0,1.0,100.0), collision shape box\nfx => dynamic fighter : collision shape none",
+            "floor => static box : size (100.0,1.0,100.0), collision shape box\ncity => static city_model : collision shape boxes\nfx => dynamic fighter : collision shape none",
         )
         .unwrap();
 
@@ -7114,6 +7119,15 @@ mod tests {
                         radius: None,
                         body_kind: Some(SceneMaxBodyKind::Static),
                         collision_shape: Some(SceneMaxCollisionShape::Box),
+                        ..Default::default()
+                    },
+                },
+                Statement::ModelDecl {
+                    name: "city".to_owned(),
+                    resource: "city_model".to_owned(),
+                    options: EntityOptions {
+                        body_kind: Some(SceneMaxBodyKind::Static),
+                        collision_shape: Some(SceneMaxCollisionShape::Boxes),
                         ..Default::default()
                     },
                 },

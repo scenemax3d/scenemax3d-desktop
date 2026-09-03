@@ -1172,10 +1172,16 @@ fn spawn_scenemax_program_with_visibility_mode(
                     insert_pending_static_mesh_collider(commands, entity_id, options.hidden);
                 } else if should_fit_model_bounds_collider(name, resource, options) {
                     if let Some(body_kind) = physics_body_kind(options) {
+                        let Some(collision_shape) =
+                            model_bounds_collision_shape(name, resource, options, body_kind)
+                        else {
+                            continue;
+                        };
                         insert_pending_model_bounds_collider(
                             commands,
                             entity_id,
                             body_kind,
+                            collision_shape,
                             options.hidden,
                         );
                     }

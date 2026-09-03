@@ -1,5 +1,4 @@
 use super::*;
-use bevy::camera::primitives::{Aabb, MeshAabb};
 
 pub(super) fn collider_decl_transform(
     name: &str,
@@ -1017,6 +1016,7 @@ pub(super) struct SceneMaxPendingStaticMeshCollider;
 #[derive(Component, Debug, Clone, Copy)]
 pub(super) struct SceneMaxPendingModelBoundsCollider {
     body_kind: SceneMaxBodyKind,
+    collision_shape: SceneMaxCollisionShape,
 }
 
 #[derive(Component, Clone)]
@@ -1035,6 +1035,7 @@ pub(super) struct SceneMaxRuntimeVisibility {
 
 pub(super) fn should_use_static_mesh_collider(options: &EntityOptions) -> bool {
     matches!(options.body_kind, Some(SceneMaxBodyKind::Static))
+        && options.collider
         && options.collision_shape.is_none()
         && options.size.is_none()
         && options.radius.is_none()
@@ -1051,13 +1052,17 @@ pub(super) fn should_fit_model_bounds_collider(
     let Some(body_kind) = physics_body_kind(options) else {
         return false;
     };
-    physics_collision_shape(name, resource, options, body_kind) == Some(SceneMaxCollisionShape::Box)
+    matches!(
+        model_bounds_collision_shape(name, resource, options, body_kind),
+        Some(SceneMaxCollisionShape::Box | SceneMaxCollisionShape::Boxes)
+    )
 }
 
 pub(super) fn insert_pending_model_bounds_collider(
     commands: &mut Commands,
     entity: Entity,
     body_kind: SceneMaxBodyKind,
+    collision_shape: SceneMaxCollisionShape,
     hidden: bool,
 ) {
     let body = match body_kind {
@@ -1073,7 +1078,10 @@ pub(super) fn insert_pending_model_bounds_collider(
             collision_layers,
             collider: None,
         },
-        SceneMaxPendingModelBoundsCollider { body_kind },
+        SceneMaxPendingModelBoundsCollider {
+            body_kind,
+            collision_shape,
+        },
         CollisionEventsEnabled,
     ));
 }
@@ -1337,6 +1345,20 @@ pub(super) fn physics_collision_shape(
     }
 }
 
+pub(super) fn model_bounds_collision_shape(
+    name: &str,
+    resource: &str,
+    options: &EntityOptions,
+    body_kind: SceneMaxBodyKind,
+) -> Option<SceneMaxCollisionShape> {
+    match options.collision_shape {
+        Some(SceneMaxCollisionShape::None) => None,
+        Some(shape) => Some(shape),
+        None if body_kind == SceneMaxBodyKind::Static => Some(SceneMaxCollisionShape::Boxes),
+        None => Some(default_collision_shape(name, resource, body_kind)),
+    }
+}
+
 pub(super) fn default_collision_shape(
     _name: &str,
     resource: &str,
@@ -1357,7 +1379,7 @@ pub(super) fn avian_collider(
     let dimensions = collider_dimensions(options, transform);
     match shape {
         SceneMaxCollisionShape::None => AvianCollider::cuboid(0.1, 0.1, 0.1),
-        SceneMaxCollisionShape::Box => {
+        SceneMaxCollisionShape::Box | SceneMaxCollisionShape::Boxes => {
             AvianCollider::cuboid(dimensions.x, dimensions.y, dimensions.z)
         }
         SceneMaxCollisionShape::Sphere => AvianCollider::sphere(dimensions.max_element() * 0.5),
@@ -1462,15 +1484,29 @@ pub(super) fn bake_pending_model_bounds_colliders(
         visibility_collision,
     ) in &roots
     {
-        match build_model_bounds_box_collider(
-            root,
-            root_global_transform,
-            &children,
-            &mesh_entities,
-            &meshes,
-        ) {
+        let build = match pending_collider.collision_shape {
+            SceneMaxCollisionShape::Boxes => build_model_bounds_boxes_collider(
+                root,
+                root_global_transform,
+                &children,
+                &mesh_entities,
+                &meshes,
+            ),
+            _ => build_model_bounds_box_collider(
+                root,
+                root_global_transform,
+                &children,
+                &mesh_entities,
+                &meshes,
+            ),
+        };
+        match build {
             ModelBoundsColliderBuild::Pending => {}
-            ModelBoundsColliderBuild::Ready { bounds, collider } => {
+            ModelBoundsColliderBuild::Ready {
+                bounds,
+                collider,
+                box_count,
+            } => {
                 let collision_layers = visibility_collision
                     .map(|state| state.collision_layers)
                     .unwrap_or_else(|| solid_collision_layers(pending_collider.body_kind));
@@ -1496,6 +1532,24 @@ pub(super) fn bake_pending_model_bounds_colliders(
                     bounds,
                     hidden,
                 );
+                let diagnostic_kind = match pending_collider.collision_shape {
+                    SceneMaxCollisionShape::Boxes => "BOXES",
+                    _ => "MERGED_BOX",
+                };
+                write_runtime_diagnostic_line(format!(
+                    "MODEL_BOUNDS:{} name={} body={:?} boxes={} center=({},{},{}) half_extents=({},{},{}) hidden={}",
+                    diagnostic_kind,
+                    scene_entity.name,
+                    pending_collider.body_kind,
+                    box_count,
+                    format_scenemax_number(bounds.center().x),
+                    format_scenemax_number(bounds.center().y),
+                    format_scenemax_number(bounds.center().z),
+                    format_scenemax_number(bounds.half_extents().x),
+                    format_scenemax_number(bounds.half_extents().y),
+                    format_scenemax_number(bounds.half_extents().z),
+                    hidden as u8
+                ));
             }
         }
     }
@@ -1512,6 +1566,7 @@ enum ModelBoundsColliderBuild {
     Ready {
         bounds: ModelSubtreeBounds,
         collider: AvianCollider,
+        box_count: usize,
     },
 }
 
@@ -1521,6 +1576,11 @@ struct StaticMeshColliderStats {
     vertices: usize,
     triangles: usize,
 }
+
+const MODEL_BOX_COMPONENT_SPLIT_TRIANGLE_LIMIT: usize = 16_384;
+const MODEL_BOX_COMPONENT_SPLIT_BOX_LIMIT: usize = 128;
+const MODEL_BOUNDS_BOX_LIMIT: usize = 4_096;
+const MODEL_BOX_COMPONENT_POSITION_EPSILON: f32 = 0.0001;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct ModelSubtreeBounds {
@@ -1626,7 +1686,251 @@ fn build_model_bounds_box_collider(
         Quat::IDENTITY,
         AvianCollider::cuboid(dimensions.x, dimensions.y, dimensions.z),
     )]);
-    ModelBoundsColliderBuild::Ready { bounds, collider }
+    ModelBoundsColliderBuild::Ready {
+        bounds,
+        collider,
+        box_count: 1,
+    }
+}
+
+fn build_model_bounds_boxes_collider(
+    root: Entity,
+    root_global_transform: &GlobalTransform,
+    children: &Query<&Children>,
+    mesh_entities: &Query<(&Mesh3d, &GlobalTransform)>,
+    meshes: &Assets<Mesh>,
+) -> ModelBoundsColliderBuild {
+    let root_from_world = root_global_transform.affine().inverse();
+    let mut bounds = None;
+    let mut boxes = Vec::new();
+
+    let mut has_pending_mesh = append_model_mesh_box(
+        root,
+        root_from_world,
+        mesh_entities,
+        meshes,
+        &mut bounds,
+        &mut boxes,
+    );
+    for descendant in children.iter_descendants(root) {
+        has_pending_mesh |= append_model_mesh_box(
+            descendant,
+            root_from_world,
+            mesh_entities,
+            meshes,
+            &mut bounds,
+            &mut boxes,
+        );
+    }
+
+    if has_pending_mesh {
+        return ModelBoundsColliderBuild::Pending;
+    }
+    let Some(bounds) = bounds else {
+        return ModelBoundsColliderBuild::Pending;
+    };
+    if boxes.is_empty() {
+        return ModelBoundsColliderBuild::Pending;
+    }
+    let box_count = boxes.len();
+    ModelBoundsColliderBuild::Ready {
+        bounds,
+        collider: AvianCollider::compound(boxes),
+        box_count,
+    }
+}
+
+fn append_model_mesh_box(
+    entity: Entity,
+    root_from_world: Affine3A,
+    mesh_entities: &Query<(&Mesh3d, &GlobalTransform)>,
+    meshes: &Assets<Mesh>,
+    subtree_bounds: &mut Option<ModelSubtreeBounds>,
+    boxes: &mut Vec<(Vec3, Quat, AvianCollider)>,
+) -> bool {
+    let Ok((mesh_handle, global_transform)) = mesh_entities.get(entity) else {
+        return false;
+    };
+    let Some(mesh) = meshes.get(&mesh_handle.0) else {
+        return true;
+    };
+    let mesh_from_root = root_from_world * global_transform.affine();
+    let Some(root_bounds) = model_vertex_bounds(mesh, mesh_from_root) else {
+        return false;
+    };
+    let Some(local_bounds) = model_vertex_bounds(mesh, Affine3A::IDENTITY) else {
+        return false;
+    };
+    *subtree_bounds = union_model_subtree_bounds(*subtree_bounds, Some(root_bounds));
+    let mesh_box = model_oriented_box_from_local_bounds(local_bounds, mesh_from_root);
+    let Some(mut component_boxes) = model_mesh_component_boxes(mesh, mesh_from_root) else {
+        boxes.push(mesh_box);
+        return false;
+    };
+    if boxes.len() + component_boxes.len() > MODEL_BOUNDS_BOX_LIMIT {
+        boxes.push(mesh_box);
+    } else {
+        boxes.append(&mut component_boxes);
+    }
+    false
+}
+
+fn model_oriented_box_from_local_bounds(
+    local_bounds: ModelSubtreeBounds,
+    mesh_from_root: Affine3A,
+) -> (Vec3, Quat, AvianCollider) {
+    let (scale, rotation, translation) = mesh_from_root.to_scale_rotation_translation();
+    let local_center = local_bounds.center();
+    let dimensions = local_bounds.dimensions() * scale.abs();
+    (
+        translation + rotation * (local_center * scale),
+        rotation,
+        AvianCollider::cuboid(dimensions.x, dimensions.y, dimensions.z),
+    )
+}
+
+fn model_mesh_component_boxes(
+    mesh: &Mesh,
+    mesh_from_root: Affine3A,
+) -> Option<Vec<(Vec3, Quat, AvianCollider)>> {
+    let component_bounds = model_mesh_component_local_bounds(mesh)?;
+    if component_bounds.len() <= 1 || component_bounds.len() > MODEL_BOX_COMPONENT_SPLIT_BOX_LIMIT {
+        return None;
+    }
+    Some(
+        component_bounds
+            .into_iter()
+            .map(|bounds| model_oriented_box_from_local_bounds(bounds, mesh_from_root))
+            .collect(),
+    )
+}
+
+fn model_mesh_component_local_bounds(mesh: &Mesh) -> Option<Vec<ModelSubtreeBounds>> {
+    if mesh.primitive_topology() != PrimitiveTopology::TriangleList {
+        return None;
+    }
+    let Some(VertexAttributeValues::Float32x3(positions)) = mesh
+        .try_attribute_option(Mesh::ATTRIBUTE_POSITION)
+        .ok()
+        .flatten()
+    else {
+        return None;
+    };
+    let triangles = mesh_triangle_vertex_indices(mesh, positions.len());
+    if triangles.is_empty() || triangles.len() > MODEL_BOX_COMPONENT_SPLIT_TRIANGLE_LIMIT {
+        return None;
+    }
+
+    let mut sets = MeshTriangleSets::new(triangles.len());
+    let mut first_triangle_by_vertex = HashMap::new();
+    let mut first_triangle_by_position = HashMap::new();
+    for (triangle_index, triangle) in triangles.iter().enumerate() {
+        for vertex_index in triangle {
+            if let Some(first_triangle) =
+                first_triangle_by_vertex.insert(*vertex_index, triangle_index)
+            {
+                sets.union(first_triangle, triangle_index);
+            }
+            if let Some(key) = mesh_vertex_position_key(positions[*vertex_index]) {
+                if let Some(first_triangle) = first_triangle_by_position.insert(key, triangle_index)
+                {
+                    sets.union(first_triangle, triangle_index);
+                }
+            }
+        }
+    }
+
+    let mut bounds_by_root = HashMap::new();
+    let mut components = Vec::new();
+    for (triangle_index, triangle) in triangles.iter().enumerate() {
+        let root = sets.find(triangle_index);
+        let component_index = if let Some(component_index) = bounds_by_root.get(&root).copied() {
+            component_index
+        } else {
+            let component_index = components.len();
+            bounds_by_root.insert(root, component_index);
+            components.push(ModelSubtreeBounds {
+                min: Vec3::splat(f32::INFINITY),
+                max: Vec3::splat(f32::NEG_INFINITY),
+            });
+            component_index
+        };
+        for vertex_index in triangle {
+            components[component_index].include(Vec3::from(positions[*vertex_index]));
+        }
+    }
+
+    (!components.is_empty()).then_some(components)
+}
+
+fn mesh_triangle_vertex_indices(mesh: &Mesh, vertex_count: usize) -> Vec<[usize; 3]> {
+    if let Some(mesh_indices) = mesh.try_indices_option().ok().flatten() {
+        return mesh_indices
+            .iter()
+            .filter_map(|index| usize::try_from(index).ok())
+            .collect::<Vec<_>>()
+            .chunks_exact(3)
+            .filter_map(|chunk| {
+                (chunk[0] < vertex_count && chunk[1] < vertex_count && chunk[2] < vertex_count)
+                    .then_some([chunk[0], chunk[1], chunk[2]])
+            })
+            .collect();
+    }
+    (0..vertex_count)
+        .step_by(3)
+        .filter_map(|index| (index + 2 < vertex_count).then_some([index, index + 1, index + 2]))
+        .collect()
+}
+
+fn mesh_vertex_position_key(position: [f32; 3]) -> Option<(i64, i64, i64)> {
+    if !position.iter().all(|value| value.is_finite()) {
+        return None;
+    }
+    Some((
+        (position[0] / MODEL_BOX_COMPONENT_POSITION_EPSILON).round() as i64,
+        (position[1] / MODEL_BOX_COMPONENT_POSITION_EPSILON).round() as i64,
+        (position[2] / MODEL_BOX_COMPONENT_POSITION_EPSILON).round() as i64,
+    ))
+}
+
+struct MeshTriangleSets {
+    parents: Vec<usize>,
+    ranks: Vec<u8>,
+}
+
+impl MeshTriangleSets {
+    fn new(count: usize) -> Self {
+        Self {
+            parents: (0..count).collect(),
+            ranks: vec![0; count],
+        }
+    }
+
+    fn find(&mut self, index: usize) -> usize {
+        let parent = self.parents[index];
+        if parent == index {
+            return index;
+        }
+        let root = self.find(parent);
+        self.parents[index] = root;
+        root
+    }
+
+    fn union(&mut self, a: usize, b: usize) {
+        let a_root = self.find(a);
+        let b_root = self.find(b);
+        if a_root == b_root {
+            return;
+        }
+        if self.ranks[a_root] < self.ranks[b_root] {
+            self.parents[a_root] = b_root;
+        } else if self.ranks[a_root] > self.ranks[b_root] {
+            self.parents[b_root] = a_root;
+        } else {
+            self.parents[b_root] = a_root;
+            self.ranks[a_root] += 1;
+        }
+    }
 }
 
 fn build_model_subtree_bounds(
@@ -1653,14 +1957,23 @@ fn model_mesh_bounds(
     meshes: &Assets<Mesh>,
 ) -> Option<ModelSubtreeBounds> {
     let (mesh_handle, global_transform) = mesh_entities.get(entity).ok()?;
-    let aabb = meshes
-        .get(&mesh_handle.0)
-        .and_then(MeshAabb::compute_aabb)?;
+    let mesh = meshes.get(&mesh_handle.0)?;
     let mesh_from_root = root_from_world * global_transform.affine();
+    model_vertex_bounds(mesh, mesh_from_root)
+}
+
+fn model_vertex_bounds(mesh: &Mesh, mesh_from_root: Affine3A) -> Option<ModelSubtreeBounds> {
+    let Some(VertexAttributeValues::Float32x3(positions)) = mesh
+        .try_attribute_option(Mesh::ATTRIBUTE_POSITION)
+        .ok()
+        .flatten()
+    else {
+        return None;
+    };
     ModelSubtreeBounds::from_points(
-        model_aabb_corners(aabb)
-            .into_iter()
-            .map(|corner| mesh_from_root.transform_point3(corner)),
+        positions
+            .iter()
+            .map(|position| mesh_from_root.transform_point3(Vec3::from(*position))),
     )
 }
 
@@ -1677,21 +1990,6 @@ fn union_model_subtree_bounds(
         (None, Some(next)) => Some(next),
         (None, None) => None,
     }
-}
-
-fn model_aabb_corners(aabb: Aabb) -> [Vec3; 8] {
-    let min: Vec3 = aabb.min().into();
-    let max: Vec3 = aabb.max().into();
-    [
-        Vec3::new(min.x, min.y, min.z),
-        Vec3::new(min.x, min.y, max.z),
-        Vec3::new(min.x, max.y, min.z),
-        Vec3::new(min.x, max.y, max.z),
-        Vec3::new(max.x, min.y, min.z),
-        Vec3::new(max.x, min.y, max.z),
-        Vec3::new(max.x, max.y, min.z),
-        Vec3::new(max.x, max.y, max.z),
-    ]
 }
 
 fn append_mesh_triangles(
@@ -1771,7 +2069,7 @@ fn collider_bound_shape_for_shape(
         SceneMaxCollisionShape::Sphere => ColliderBoundShape::Sphere {
             radius: dimensions.max_element() * 0.5,
         },
-        SceneMaxCollisionShape::Box => ColliderBoundShape::Box {
+        SceneMaxCollisionShape::Box | SceneMaxCollisionShape::Boxes => ColliderBoundShape::Box {
             half_extents: dimensions * 0.5,
         },
         SceneMaxCollisionShape::Capsule => {
@@ -2039,21 +2337,78 @@ pub(super) fn fallback_character_mode_support_samples(
     transforms_by_name: &HashMap<String, Transform>,
 ) -> Vec<(String, Transform, SceneMaxCharacterDimensions)> {
     let surfaces = explicit_static_support_surfaces(program, transforms_by_name);
-    character_mode_support_samples(program, transforms_by_name)
+    let imported_bounds = Vec::new();
+    missing_character_stage_support_samples(
+        &character_mode_support_samples(program, transforms_by_name),
+        &surfaces,
+        &imported_bounds,
+        has_static_imported_level_collider_candidate(program),
+    )
+}
+
+pub(super) fn has_static_imported_level_collider_candidate(program: &Program) -> bool {
+    program.statements.iter().any(|statement| {
+        let Statement::ModelDecl {
+            name,
+            resource,
+            options,
+        } = statement
+        else {
+            return false;
+        };
+        if is_primitive_resource(resource) {
+            return false;
+        }
+        let Some(body_kind) = physics_body_kind(options) else {
+            return false;
+        };
+        body_kind == SceneMaxBodyKind::Static
+            && (should_use_static_mesh_collider(options)
+                || should_fit_model_bounds_collider(name, resource, options))
+    })
+}
+
+pub(super) fn missing_character_stage_support_samples(
+    samples: &[(String, Transform, SceneMaxCharacterDimensions)],
+    surfaces: &[SceneMaxExplicitSupportSurface],
+    imported_bounds: &[SceneMaxImportedModelSupportBounds],
+    has_pending_imported_support_candidate: bool,
+) -> Vec<(String, Transform, SceneMaxCharacterDimensions)> {
+    samples
         .into_iter()
+        .cloned()
         .filter(|(_, transform, dimensions)| {
             let has_explicit_support =
                 has_explicit_static_support_below(transform, *dimensions, &surfaces);
             if has_explicit_support {
                 write_runtime_diagnostic_line(format!(
-                    "CHARACTER:SUPPORT_FALLBACK_SKIP pos=({},{},{}) explicit_surface_count={}",
+                    "CHARACTER:SUPPORT_FALLBACK_SKIP reason=explicit_surface pos=({},{},{}) explicit_surface_count={}",
                     format_scenemax_number(transform.translation.x),
                     format_scenemax_number(transform.translation.y),
                     format_scenemax_number(transform.translation.z),
                     surfaces.len()
                 ));
             }
-            !has_explicit_support
+            let has_imported_support = imported_bounds.iter().any(|bounds| {
+                imported_model_bounds_cover_character_column(*bounds, transform, *dimensions)
+            });
+            if has_imported_support {
+                write_runtime_diagnostic_line(format!(
+                    "CHARACTER:SUPPORT_FALLBACK_SKIP reason=imported_model_bounds pos=({},{},{}) imported_bounds_count={}",
+                    format_scenemax_number(transform.translation.x),
+                    format_scenemax_number(transform.translation.y),
+                    format_scenemax_number(transform.translation.z),
+                    imported_bounds.len()
+                ));
+            } else if has_pending_imported_support_candidate {
+                write_runtime_diagnostic_line(format!(
+                    "CHARACTER:SUPPORT_FALLBACK_SKIP reason=pending_imported_model pos=({},{},{})",
+                    format_scenemax_number(transform.translation.x),
+                    format_scenemax_number(transform.translation.y),
+                    format_scenemax_number(transform.translation.z),
+                ));
+            }
+            !has_explicit_support && !has_imported_support && !has_pending_imported_support_candidate
         })
         .collect()
 }
@@ -2083,6 +2438,16 @@ pub(super) struct SceneMaxExplicitSupportSurface {
     pub(super) top_y: f32,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SceneMaxImportedModelSupportBounds {
+    pub(super) min_x: f32,
+    pub(super) max_x: f32,
+    pub(super) min_y: f32,
+    pub(super) max_y: f32,
+    pub(super) min_z: f32,
+    pub(super) max_z: f32,
+}
+
 pub(super) fn explicit_static_support_surfaces(
     program: &Program,
     transforms_by_name: &HashMap<String, Transform>,
@@ -2107,7 +2472,10 @@ pub(super) fn explicit_static_support_surfaces(
                 return None;
             }
             let shape = physics_collision_shape(name, resource, options, body_kind)?;
-            if shape != SceneMaxCollisionShape::Box {
+            if !matches!(
+                shape,
+                SceneMaxCollisionShape::Box | SceneMaxCollisionShape::Boxes
+            ) {
                 return None;
             }
             let transform = transforms_by_name.get(name).copied().unwrap_or_default();
@@ -2117,6 +2485,85 @@ pub(super) fn explicit_static_support_surfaces(
             ))
         })
         .collect()
+}
+
+pub(super) fn imported_static_collider_support_bounds(
+    program: &Program,
+    transforms_by_name: &HashMap<String, Transform>,
+    collider_bounds: &SceneMaxColliderBounds,
+) -> Vec<SceneMaxImportedModelSupportBounds> {
+    program
+        .statements
+        .iter()
+        .filter_map(|statement| {
+            let Statement::ModelDecl {
+                name,
+                resource,
+                options,
+            } = statement
+            else {
+                return None;
+            };
+            if is_primitive_resource(resource) {
+                return None;
+            }
+            let body_kind = physics_body_kind(options)?;
+            if body_kind != SceneMaxBodyKind::Static
+                || !should_fit_model_bounds_collider(name, resource, options)
+            {
+                return None;
+            }
+            let transform = transforms_by_name.get(name).copied().unwrap_or_default();
+            match collider_bounds.shape_by_name.get(name).copied()? {
+                ColliderBoundShape::ModelBox {
+                    center,
+                    half_extents,
+                } => Some(imported_model_support_bounds_from_model_box(
+                    transform,
+                    center,
+                    half_extents,
+                )),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+pub(super) fn imported_model_support_bounds_from_model_box(
+    transform: Transform,
+    center: Vec3,
+    half_extents: Vec3,
+) -> SceneMaxImportedModelSupportBounds {
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    let mut min_z = f32::INFINITY;
+    let mut max_z = f32::NEG_INFINITY;
+
+    for x in [-half_extents.x, half_extents.x] {
+        for y in [-half_extents.y, half_extents.y] {
+            for z in [-half_extents.z, half_extents.z] {
+                let local = center + Vec3::new(x, y, z);
+                let world = transform.translation + transform.rotation * (local * transform.scale);
+                min_x = min_x.min(world.x);
+                max_x = max_x.max(world.x);
+                min_y = min_y.min(world.y);
+                max_y = max_y.max(world.y);
+                min_z = min_z.min(world.z);
+                max_z = max_z.max(world.z);
+            }
+        }
+    }
+
+    SceneMaxImportedModelSupportBounds {
+        min_x,
+        max_x,
+        min_y,
+        max_y,
+        min_z,
+        max_z,
+    }
 }
 
 fn explicit_support_box_dimensions(options: &EntityOptions, transform: &Transform) -> Vec3 {
@@ -2161,6 +2608,19 @@ pub(super) fn explicit_support_surface_from_box(
     }
 }
 
+pub(super) fn support_surface_from_stage_support(
+    support: &SceneMaxStageSupport,
+    transform: &Transform,
+) -> SceneMaxExplicitSupportSurface {
+    SceneMaxExplicitSupportSurface {
+        min_x: transform.translation.x - support.half_size,
+        max_x: transform.translation.x + support.half_size,
+        min_z: transform.translation.z - support.half_size,
+        max_z: transform.translation.z + support.half_size,
+        top_y: transform.translation.y + DEFAULT_STAGE_SUPPORT_HALF_HEIGHT,
+    }
+}
+
 pub(super) fn has_explicit_static_support_below(
     transform: &Transform,
     dimensions: SceneMaxCharacterDimensions,
@@ -2202,6 +2662,21 @@ pub(super) fn nearest_explicit_static_support_y(
         .max_by(|a, b| a.total_cmp(b))
 }
 
+pub(super) fn imported_model_bounds_cover_character_column(
+    bounds: SceneMaxImportedModelSupportBounds,
+    transform: &Transform,
+    dimensions: SceneMaxCharacterDimensions,
+) -> bool {
+    let horizontal_margin = dimensions.capsule_radius.max(0.05);
+    let within_x = transform.translation.x >= bounds.min_x - horizontal_margin
+        && transform.translation.x <= bounds.max_x + horizontal_margin;
+    let within_z = transform.translation.z >= bounds.min_z - horizontal_margin
+        && transform.translation.z <= bounds.max_z + horizontal_margin;
+    let below_top = transform.translation.y <= bounds.max_y + dimensions.visual_drop;
+    let above_bottom = transform.translation.y >= bounds.min_y - dimensions.visual_drop;
+    within_x && within_z && below_top && above_bottom
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(super) struct SceneMaxCharacterDimensions {
     pub(super) capsule_radius: f32,
@@ -2230,6 +2705,35 @@ pub(super) fn character_dimensions_for_transform(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct SceneMaxCharacterLocalColliderShape {
+    pub(super) capsule_radius: f32,
+    pub(super) capsule_height: f32,
+    pub(super) capsule_center_y: f32,
+    pub(super) sensor_radius: f32,
+    pub(super) sensor_height: f32,
+}
+
+pub(super) fn character_local_collider_shape_for_transform(
+    transform: &Transform,
+    dimensions: SceneMaxCharacterDimensions,
+) -> SceneMaxCharacterLocalColliderShape {
+    let horizontal_scale = transform
+        .scale
+        .x
+        .abs()
+        .max(transform.scale.z.abs())
+        .max(0.001);
+    let vertical_scale = transform.scale.y.abs().max(0.001);
+    SceneMaxCharacterLocalColliderShape {
+        capsule_radius: dimensions.capsule_radius / horizontal_scale,
+        capsule_height: dimensions.capsule_height / vertical_scale,
+        capsule_center_y: dimensions.capsule_center_y / vertical_scale,
+        sensor_radius: dimensions.capsule_radius * 0.98 / horizontal_scale,
+        sensor_height: DEFAULT_CHARACTER_SENSOR_HEIGHT / vertical_scale,
+    }
+}
+
 pub(super) fn character_capsule_half_height(radius: f32, height: f32) -> f32 {
     height * 0.5 + radius
 }
@@ -2248,10 +2752,11 @@ pub(super) fn insert_tnua_character_controller(
     let float_height = dimensions.float_height;
     let capsule_center_y = dimensions.capsule_center_y;
     let foot_contact_offset = dimensions.foot_contact_offset;
+    let local_shape = character_local_collider_shape_for_transform(&transform, dimensions);
     let capsule_collider = AvianCollider::compound(vec![(
-        Vec3::Y * capsule_center_y,
+        Vec3::Y * local_shape.capsule_center_y,
         Quat::IDENTITY,
-        AvianCollider::capsule(radius, height),
+        AvianCollider::capsule(local_shape.capsule_radius, local_shape.capsule_height),
     )]);
     let config = character_configs.add(SceneMaxControlSchemeConfig {
         basis: TnuaBuiltinWalkConfig {
@@ -2294,8 +2799,8 @@ pub(super) fn insert_tnua_character_controller(
         TnuaController::<SceneMaxControlScheme>::default(),
         TnuaConfig::<SceneMaxControlScheme>(config),
         TnuaAvian3dSensorShape(AvianCollider::cylinder(
-            radius * 0.98,
-            DEFAULT_CHARACTER_SENSOR_HEIGHT,
+            local_shape.sensor_radius,
+            local_shape.sensor_height,
         )),
         LockedAxes::ROTATION_LOCKED.unlock_rotation_y(),
         CollisionEventsEnabled,
@@ -2312,7 +2817,7 @@ pub(super) fn insert_tnua_character_controller(
         "enabled Tnua SceneMax character mode"
     );
     write_runtime_diagnostic_line(format!(
-        "CHARACTER:ENABLE target={} gravity={} pos=({},{},{}) scale=({:.3},{:.3},{:.3}) capsule_radius={:.3} capsule_height={:.3} capsule_center_y={:.3} float_height={:.3} foot_contact_offset={:.3} visual_drop={:.3}",
+        "CHARACTER:ENABLE target={} gravity={} pos=({},{},{}) scale=({:.3},{:.3},{:.3}) capsule_radius={:.3} capsule_height={:.3} capsule_center_y={:.3} capsule_local_radius={:.3} capsule_local_height={:.3} capsule_local_center_y={:.3} sensor_local_radius={:.3} sensor_local_height={:.3} float_height={:.3} foot_contact_offset={:.3} visual_drop={:.3}",
         character_mode.target,
         format_scenemax_number(gravity),
         format_scenemax_number(transform.translation.x),
@@ -2324,6 +2829,11 @@ pub(super) fn insert_tnua_character_controller(
         radius,
         height,
         capsule_center_y,
+        local_shape.capsule_radius,
+        local_shape.capsule_height,
+        local_shape.capsule_center_y,
+        local_shape.sensor_radius,
+        local_shape.sensor_height,
         float_height,
         foot_contact_offset,
         dimensions.visual_drop,
@@ -2334,11 +2844,12 @@ pub(super) fn apply_pending_character_modes(
     mut commands: Commands,
     mut character_configs: ResMut<Assets<SceneMaxControlSchemeConfig>>,
     startup_program: Res<SceneMaxStartupProgram>,
+    collider_bounds: Res<SceneMaxColliderBounds>,
     mut scene_queries: ParamSet<(
         Query<(&SceneMaxEntity, &Transform)>,
+        Query<(&SceneMaxStageSupport, &Transform)>,
         Query<(Entity, &mut Transform, &PendingCharacterMode)>,
     )>,
-    supports: Query<Entity, With<SceneMaxStageSupport>>,
 ) {
     let transforms_by_name = scene_queries
         .p0()
@@ -2350,8 +2861,29 @@ pub(super) fn apply_pending_character_modes(
         .as_ref()
         .map(|program| explicit_static_support_surfaces(program, &transforms_by_name))
         .unwrap_or_default();
+    let imported_bounds = startup_program
+        .0
+        .as_ref()
+        .map(|program| {
+            imported_static_collider_support_bounds(program, &transforms_by_name, &collider_bounds)
+        })
+        .unwrap_or_default();
+    let has_pending_imported_support_candidate = startup_program
+        .0
+        .as_ref()
+        .is_some_and(|program| has_static_imported_level_collider_candidate(program))
+        && imported_bounds.is_empty();
+    let existing_support_surfaces = scene_queries
+        .p1()
+        .iter()
+        .map(|(support, transform)| support_surface_from_stage_support(support, transform))
+        .collect::<Vec<_>>();
+    let mut support_surfaces =
+        Vec::with_capacity(explicit_surfaces.len() + existing_support_surfaces.len());
+    support_surfaces.extend(explicit_surfaces.iter().copied());
+    support_surfaces.extend(existing_support_surfaces.iter().copied());
     let mut support_samples = Vec::new();
-    for (_, transform, pending_mode) in scene_queries.p1().iter_mut() {
+    for (_, transform, pending_mode) in scene_queries.p2().iter_mut() {
         support_samples.push((
             pending_mode.0.target.clone(),
             *transform,
@@ -2365,24 +2897,23 @@ pub(super) fn apply_pending_character_modes(
     write_runtime_diagnostic_line(format!(
         "CHARACTER:PENDING_BATCH count={} supports_existing={} explicit_surface_count={}",
         support_samples.len(),
-        !supports.is_empty(),
+        existing_support_surfaces.len(),
         explicit_surfaces.len()
     ));
 
-    if supports.is_empty() {
-        let fallback_samples = support_samples
-            .iter()
-            .cloned()
-            .filter(|(_, transform, dimensions)| {
-                !has_explicit_static_support_below(transform, *dimensions, &explicit_surfaces)
-            })
-            .collect::<Vec<_>>();
+    let fallback_samples = missing_character_stage_support_samples(
+        &support_samples,
+        &support_surfaces,
+        &imported_bounds,
+        has_pending_imported_support_candidate,
+    );
+    if !fallback_samples.is_empty() {
         spawn_character_stage_support(&mut commands, &fallback_samples);
     }
 
-    for (entity, mut transform, pending_mode) in scene_queries.p1().iter_mut() {
+    for (entity, mut transform, pending_mode) in scene_queries.p2().iter_mut() {
         let before_y = transform.translation.y;
-        let snapped = snap_character_transform_to_floor(&mut transform, &explicit_surfaces);
+        let snapped = snap_character_transform_to_floor(&mut transform, &support_surfaces);
         write_runtime_diagnostic_line(format!(
             "CHARACTER:PENDING_APPLY target={} gravity={} snapped={} y_before={} y_after={} pos=({},{},{})",
             pending_mode.0.target,
@@ -4111,9 +4642,34 @@ mod static_mesh_collider_tests {
     use super::*;
 
     #[test]
-    fn plain_static_imported_model_uses_mesh_collider() {
+    fn plain_static_imported_model_avoids_mesh_collider() {
         let options = EntityOptions {
             body_kind: Some(SceneMaxBodyKind::Static),
+            ..Default::default()
+        };
+
+        assert!(!should_use_static_mesh_collider(&options));
+        assert!(should_fit_model_bounds_collider(
+            "scenery",
+            "imported_model",
+            &options
+        ));
+        assert_eq!(
+            model_bounds_collision_shape(
+                "scenery",
+                "imported_model",
+                &options,
+                SceneMaxBodyKind::Static
+            ),
+            Some(SceneMaxCollisionShape::Boxes)
+        );
+    }
+
+    #[test]
+    fn explicit_static_imported_model_can_use_mesh_collider() {
+        let options = EntityOptions {
+            body_kind: Some(SceneMaxBodyKind::Static),
+            collider: true,
             ..Default::default()
         };
 
@@ -4139,10 +4695,19 @@ mod static_mesh_collider_tests {
 
         assert!(!should_use_static_mesh_collider(&explicit_box));
         assert!(!should_use_static_mesh_collider(&explicit_size));
+        assert_eq!(
+            model_bounds_collision_shape(
+                "scenery",
+                "imported_model",
+                &explicit_box,
+                SceneMaxBodyKind::Static
+            ),
+            Some(SceneMaxCollisionShape::Box)
+        );
     }
 
     #[test]
-    fn imported_model_box_without_size_uses_model_bounds_fit() {
+    fn imported_model_box_shapes_without_size_use_model_bounds_fit() {
         let options = EntityOptions {
             collision_shape: Some(SceneMaxCollisionShape::Box),
             ..Default::default()
@@ -4169,6 +4734,26 @@ mod static_mesh_collider_tests {
             "imported_model",
             &sized_options
         ));
+
+        let boxes_options = EntityOptions {
+            collision_shape: Some(SceneMaxCollisionShape::Boxes),
+            ..Default::default()
+        };
+
+        assert!(should_fit_model_bounds_collider(
+            "city",
+            "imported_model",
+            &boxes_options
+        ));
+        assert_eq!(
+            model_bounds_collision_shape(
+                "city",
+                "imported_model",
+                &boxes_options,
+                SceneMaxBodyKind::Static
+            ),
+            Some(SceneMaxCollisionShape::Boxes)
+        );
     }
 
     #[test]
@@ -4367,6 +4952,72 @@ mod static_mesh_collider_tests {
                 triangles: 1,
             }
         );
+    }
+
+    #[test]
+    fn model_vertex_bounds_uses_merged_vertices_not_mesh_aabb_corners() {
+        let mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        )
+        .with_inserted_attribute(
+            Mesh::ATTRIBUTE_POSITION,
+            vec![[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        );
+        let mesh_from_root = Affine3A::from_rotation_z(45.0_f32.to_radians());
+
+        let bounds = model_vertex_bounds(&mesh, mesh_from_root).unwrap();
+
+        assert!((bounds.min.x - -0.70710677).abs() < 0.0001);
+        assert!((bounds.max.x - 7.071068).abs() < 0.0001);
+        assert!((bounds.min.y - 0.0).abs() < 0.0001);
+        assert!((bounds.max.y - 7.071068).abs() < 0.0001);
+        assert!(bounds.max.y < 7.2);
+    }
+
+    #[test]
+    fn model_boxes_preserve_mesh_local_rotation() {
+        let local_bounds = ModelSubtreeBounds {
+            min: Vec3::new(-1.0, -0.05, -4.0),
+            max: Vec3::new(1.0, 0.05, 4.0),
+        };
+        let rotation = Quat::from_rotation_y(45.0_f32.to_radians());
+        let mesh_from_root =
+            Affine3A::from_scale_rotation_translation(Vec3::splat(2.0), rotation, Vec3::X * 3.0);
+
+        let (center, child_rotation, _) =
+            model_oriented_box_from_local_bounds(local_bounds, mesh_from_root);
+
+        assert!(center.abs_diff_eq(Vec3::X * 3.0, 0.0001));
+        assert!((child_rotation.dot(rotation).abs() - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn model_boxes_split_disconnected_mesh_islands() {
+        let mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        )
+        .with_inserted_attribute(
+            Mesh::ATTRIBUTE_POSITION,
+            vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [10.0, 0.0, 0.0],
+                [11.0, 0.0, 0.0],
+                [10.0, 1.0, 0.0],
+            ],
+        );
+
+        let boxes = model_mesh_component_boxes(&mesh, Affine3A::IDENTITY).unwrap();
+
+        assert_eq!(boxes.len(), 2);
+        assert!(boxes[0].0.abs_diff_eq(Vec3::new(0.5, 0.5, 0.0), 0.0001));
+        assert!(boxes[1].0.abs_diff_eq(Vec3::new(10.5, 0.5, 0.0), 0.0001));
     }
 }
 

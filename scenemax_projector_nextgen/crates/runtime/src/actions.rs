@@ -4584,7 +4584,17 @@ fn spawn_runtime_gltf_model_decl(
         insert_pending_static_mesh_collider(commands, entity_id, options.hidden);
     } else if should_fit_model_bounds_collider(name, resource, options) {
         if let Some(body_kind) = physics_body_kind(options) {
-            insert_pending_model_bounds_collider(commands, entity_id, body_kind, options.hidden);
+            if let Some(collision_shape) =
+                model_bounds_collision_shape(name, resource, options, body_kind)
+            {
+                insert_pending_model_bounds_collider(
+                    commands,
+                    entity_id,
+                    body_kind,
+                    collision_shape,
+                    options.hidden,
+                );
+            }
         }
     } else {
         insert_physics_components(
