@@ -1,5 +1,7 @@
 package com.scenemax.desktop;
 
+import com.scenemaxeng.common.skybox.SkyboxDefinition;
+
 import javax.swing.*;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeCellRenderer;
@@ -19,6 +21,7 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
     private static final ImageIcon ICON_EFFEKSEER_DESIGNER = createEffekseerDesignerIcon();
     private static final ImageIcon ICON_SHADER_DESIGNER = createShaderDesignerIcon();
     private static final ImageIcon ICON_BEVY_SHADER_DESIGNER = createBevyShaderDesignerIcon();
+    private static final ImageIcon ICON_SKYBOX_DESIGNER = createSkyboxDesignerIcon();
     private static final ImageIcon ICON_ENVIRONMENT_SHADER_DESIGNER = createEnvironmentShaderDesignerIcon();
     private static final ImageIcon ICON_MATERIAL_DESIGNER = createMaterialDesignerIcon();
     private static final ImageIcon ICON_WEAPON_DESIGNER = createWeaponDesignerIcon();
@@ -54,6 +57,8 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
             label.setIcon(ICON_UI_DESIGNER);
         } else if (name.endsWith(BevyShaderDocument.FILE_EXTENSION)) {
             label.setIcon(ICON_BEVY_SHADER_DESIGNER);
+        } else if (name.toLowerCase().endsWith(SkyboxDefinition.FILE_EXTENSION)) {
+            label.setIcon(ICON_SKYBOX_DESIGNER);
         } else if (name.endsWith(".smshader")) {
             label.setIcon(ICON_SHADER_DESIGNER);
         } else if (name.endsWith(".smenvshader")) {
@@ -306,6 +311,28 @@ public class ScriptsTreeCellRenderer extends DefaultTreeCellRenderer {
         g.drawLine(10, 14, 8, 18);
         g.drawLine(14, 14, 12, 18);
         g.drawLine(18, 14, 16, 18);
+
+        g.dispose();
+        return new ImageIcon(img);
+    }
+
+    private static ImageIcon createSkyboxDesignerIcon() {
+        BufferedImage img = new BufferedImage(24, 24, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        GradientPaint paint = new GradientPaint(3, 4, new Color(74, 164, 255), 21, 20, new Color(255, 199, 92));
+        g.setPaint(paint);
+        g.fillRoundRect(3, 4, 18, 16, 5, 5);
+
+        g.setColor(new Color(246, 251, 255));
+        g.fillOval(6, 7, 5, 5);
+        g.setColor(new Color(40, 72, 94, 175));
+        g.fillArc(4, 11, 17, 10, 0, 180);
+        g.setColor(new Color(238, 248, 255));
+        g.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.drawArc(5, 9, 14, 10, 12, 156);
+        g.drawLine(8, 16, 18, 16);
 
         g.dispose();
         return new ImageIcon(img);

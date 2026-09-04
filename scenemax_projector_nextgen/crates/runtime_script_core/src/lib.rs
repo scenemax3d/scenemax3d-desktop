@@ -474,6 +474,9 @@ pub fn substitute_statement(
         Statement::SetEnvironmentShader { shader } => Statement::SetEnvironmentShader {
             shader: substitute_assignment_value(shader, bindings),
         },
+        Statement::SetSkybox { skybox } => Statement::SetSkybox {
+            skybox: substitute_assignment_value(skybox, bindings),
+        },
         Statement::RunFunction { name, args } => Statement::RunFunction {
             name: name.clone(),
             args: args

@@ -48,6 +48,7 @@ import com.scenemaxeng.common.ui.model.UIDocument;
 import com.scenemaxeng.common.ui.model.UIWidgetDef;
 import com.scenemaxeng.common.ik.IKDefinition;
 import com.scenemaxeng.common.motion.ThrowMotionDefinition;
+import com.scenemaxeng.common.skybox.SkyboxDefinition;
 import com.scenemaxeng.compiler.ApplyMacroResults;
 import com.scenemaxeng.compiler.MacroFilter;
 import com.scenemaxeng.compiler.ProgramDef;
@@ -603,6 +604,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     createNewThrowMotionDocument(getProjectFilesRootFolder().getAbsolutePath());
                 } else if (cmd.equals("create_ik_document")) {
                     createNewIKDocument(getSelectedScriptsFolder().getAbsolutePath());
+                } else if (cmd.equals("create_skybox_document")) {
+                    createNewSkyboxDocument(getSelectedScriptsFolder().getAbsolutePath());
                 } else if (cmd.equals("font_generator")) {
                     FontGeneratorDialog dlg = new FontGeneratorDialog(MainApp.this);
                     dlg.setLocationRelativeTo(MainApp.this);
@@ -1668,6 +1671,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     createNewThrowMotionDocument(filePath);
                 } else if (cmd.equals("new_ik_document")) {
                     createNewIKDocument(filePath);
+                } else if (cmd.equals("new_skybox_document")) {
+                    createNewSkyboxDocument(filePath);
                 } else if (cmd.equals("new_environment_shader_document")) {
                     createNewEnvironmentShaderDocument(filePath);
                 } else if (cmd.equals("clean_backup_files")) {
@@ -1724,11 +1729,12 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                         boolean isMaterialDesigner = f.getName().toLowerCase().endsWith(".mat");
                         boolean isWeaponDesigner = f.getName().toLowerCase().endsWith(WeaponDefinition.FILE_EXTENSION);
                         boolean isThrowMotionDesigner = f.getName().toLowerCase().endsWith(ThrowMotionDefinition.FILE_EXTENSION);
+                        boolean isSkyboxDesigner = f.getName().toLowerCase(Locale.ROOT).endsWith(SkyboxDefinition.FILE_EXTENSION);
                         boolean isIKDesigner = isIKDesignerFile(f.getName());
                         editorTabPanel.closeTabByPath(filePath,
                                 isDesigner || isUIDesigner || isEffekseerDesigner || isShaderDesigner || isBevyShaderDesigner
                                         || isEnvironmentShaderDesigner || isMaterialDesigner || isWeaponDesigner
-                                        || isThrowMotionDesigner || isIKDesigner);
+                                        || isThrowMotionDesigner || isSkyboxDesigner || isIKDesigner);
 
                         // If this is a .smdesign file, also delete its companion .code, _init.code
                         // and _end.code files and clean up any DB references (open_tabs)
@@ -1949,6 +1955,9 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         addScriptsTreePopupMenuItem("Create Throw Motion", "new_throw_motion_document", popup, popupActionListener, true, false, file);
         addScriptsTreePopupMenuItem("Create IK Asset", "new_ik_document", popup, popupActionListener, true, false, file);
         SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject != null && activeProject.isNextGenProjector()) {
+            addScriptsTreePopupMenuItem("Create SkyBox...", "new_skybox_document", popup, popupActionListener, true, false, file);
+        }
         String shaderDocumentLabel = activeProject != null && activeProject.isNextGenProjector()
                 ? "Create Bevy Shader Document"
                 : "Create Shader Document";
@@ -2451,6 +2460,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 || lowerPath.endsWith(".smeffectdesign")
                 || lowerPath.endsWith(".smshader")
                 || lowerPath.endsWith(BevyShaderDocument.FILE_EXTENSION)
+                || lowerPath.endsWith(SkyboxDefinition.FILE_EXTENSION)
                 || lowerPath.endsWith(".smenvshader")
                 || lowerPath.endsWith(".mat")
                 || lowerPath.endsWith(WeaponDefinition.FILE_EXTENSION)
@@ -3220,6 +3230,65 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         openLastTreeNode();
     }
 
+    private void createNewSkyboxDocument(String path) {
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject == null || !activeProject.isNextGenProjector()) {
+            JOptionPane.showMessageDialog(this,
+                    "Bevy skybox documents can only be created in Rust/Bevy projects.",
+                    "Bevy Skybox Designer",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        String docName = (String) JOptionPane.showInputDialog(
+                null,
+                "Type new skybox name",
+                "Skybox Name",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                null,
+                "");
+
+        if (docName == null || docName.trim().length() == 0) {
+            return;
+        }
+
+        String[] labels = {
+                "Procedural Sky (Bevy Atmosphere)",
+                "HDRI / Cubemap Sky"
+        };
+        String selected = (String) JOptionPane.showInputDialog(
+                null,
+                "Choose a skybox system",
+                "Skybox System",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                labels,
+                labels[0]
+        );
+        String mode = labels[1].equals(selected)
+                ? SkyboxDefinition.MODE_HDRI_CUBEMAP
+                : SkyboxDefinition.MODE_PROCEDURAL_ATMOSPHERE;
+
+        SkyboxDefinition definition = SkyboxDefinition.createTemplate(docName.trim(), mode);
+        String fileName = definition.getId() + SkyboxDefinition.FILE_EXTENSION;
+        File skyboxFolder = resolveDocumentCreationFolder(new File(path));
+        File f = new File(skyboxFolder, fileName);
+        try {
+            definition.save(f);
+        } catch (IOException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(null, "Error creating skybox: " + e.getMessage(),
+                    "Skybox Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        File parentDir = f.getParentFile();
+        saveSelectedTreeNodePosition(parentDir.getPath(), fileName);
+        loadScriptsFolder();
+        openSkyboxDesignerDocument(f, true);
+    }
+
     private File resolveIKDocumentFolder(File selectedFolder) {
         return resolveDocumentCreationFolder(selectedFolder);
     }
@@ -3348,6 +3417,40 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         lastSelectedNodeIsFile = true;
         btnRunScript.setEnabled(false);
         saveSelectedTreeNodePosition(f.getParentFile().getPath(), f.getName());
+    }
+
+    private void openSkyboxDesignerDocument(File f) {
+        openSkyboxDesignerDocument(f, false);
+    }
+
+    private void openSkyboxDesignerDocument(File f, boolean launchNativeDesigner) {
+        SceneMaxProject activeProject = Util.getActiveProject();
+        if (activeProject == null || !activeProject.isNextGenProjector()) {
+            JOptionPane.showMessageDialog(this,
+                    "Bevy skybox documents can only be opened in Rust/Bevy projects.",
+                    "Bevy Skybox Designer",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        Runnable launchDesigner = () -> launchBevySkyboxDesigner(activeProject, f);
+        BevySkyboxSummaryPanel panel = new BevySkyboxSummaryPanel(f, launchDesigner);
+        editorTabPanel.openPluginView(f.getAbsolutePath(), f.getName(), panel);
+        lastSelectedFilePath = f.getAbsolutePath();
+        lastSelectedNodeIsFile = true;
+        btnRunScript.setEnabled(false);
+        saveSelectedTreeNodePosition(f.getParentFile().getPath(), f.getName());
+        if (launchNativeDesigner) {
+            launchDesigner.run();
+        }
+    }
+
+    private void launchBevySkyboxDesigner(SceneMaxProject activeProject, File f) {
+        showNextGenLaunchProgress(
+                "Starting Bevy Skybox Designer",
+                "First launch after Rust/Bevy changes can compile the skybox designer before the window appears.",
+                "Preparing Bevy skybox designer...");
+        BevySkyboxDesignerLauncher.launch(this, activeProject, f, this::updateNextGenLaunchProgress);
     }
 
     private void openEffekseerDesignerDocument(File f) {
@@ -3513,6 +3616,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
         // JME3 canvas and DesignerApp — switching between designer tabs
         // triggers a document switch (similar to switchState for game levels).
         DesignerPanel newPanel = new DesignerPanel(projectPath, f);
+        newPanel.setBevyProject(activeProject != null && activeProject.isNextGenProjector());
 
         // Refresh the scripts tree when a .code file is first created
         newPanel.setScriptsTreeRefreshCallback(this::loadScriptsFolder);
@@ -3967,6 +4071,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                             openUIDesignerDocument(f);
                         } else if (f.getName().endsWith(BevyShaderDocument.FILE_EXTENSION)) {
                             openBevyShaderDesignerDocument(f);
+                        } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(SkyboxDefinition.FILE_EXTENSION)) {
+                            openSkyboxDesignerDocument(f);
                         } else if (f.getName().endsWith(".smshader")) {
                             openShaderDesignerDocument(f);
                         } else if (f.getName().endsWith(".smenvshader")) {
@@ -4171,6 +4277,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             openUIDesignerDocument(f);
         } else if (f.getName().endsWith(BevyShaderDocument.FILE_EXTENSION)) {
             openBevyShaderDesignerDocument(f);
+        } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(SkyboxDefinition.FILE_EXTENSION)) {
+            openSkyboxDesignerDocument(f);
         } else if (f.getName().endsWith(".smshader")) {
             openShaderDesignerDocument(f);
         } else if (f.getName().endsWith(".smenvshader")) {
@@ -4313,6 +4421,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                     openUIDesignerDocument(f);
                 } else if (f.getName().endsWith(BevyShaderDocument.FILE_EXTENSION)) {
                     openBevyShaderDesignerDocument(f);
+                } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(SkyboxDefinition.FILE_EXTENSION)) {
+                    openSkyboxDesignerDocument(f);
                 } else if (f.getName().endsWith(".smshader")) {
                     openShaderDesignerDocument(f);
                 } else if (f.getName().endsWith(".smenvshader")) {
@@ -4378,6 +4488,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             if (treeNode.getRoot() == treeNode
                     && fileEntry.isFile()
                     && !fileEntry.getName().toLowerCase(Locale.ROOT).endsWith(ThrowMotionDefinition.FILE_EXTENSION)
+                    && !fileEntry.getName().toLowerCase(Locale.ROOT).endsWith(SkyboxDefinition.FILE_EXTENSION)
                     && !isIKDesignerFile(fileEntry.getName())) {
                 continue;
             }
@@ -5089,7 +5200,8 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
             nextGenLaunchProgressBar.setString("Working...");
         }
         if (message.startsWith("Bevy projector process started.")
-                || message.startsWith("Bevy shader designer process started.")) {
+                || message.startsWith("Bevy shader designer process started.")
+                || message.startsWith("Bevy skybox designer process started.")) {
             scheduleNextGenLaunchProgressHide();
         }
     }
@@ -5168,6 +5280,7 @@ public class MainApp extends JFrame implements IAppObserver, ActionListener, ISe
                 || name.endsWith(".smeffectdesign")
                 || name.endsWith(".smshader")
                 || name.endsWith(BevyShaderDocument.FILE_EXTENSION)
+                || name.endsWith(SkyboxDefinition.FILE_EXTENSION)
                 || name.endsWith(".smenvshader")
                 || name.endsWith(".mat")
                 || name.endsWith(WeaponDefinition.FILE_EXTENSION)

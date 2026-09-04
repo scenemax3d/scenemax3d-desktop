@@ -2,8 +2,8 @@
 [@allow_move]
 when key W is pressed once do 
   
-    laser_effect => effects.effekseer.Homing_Laser01_3//Laser02_3
-    laser_effect.play pos (player1)
+  laser_effect => effects.effekseer.Homing_Laser01_3//Laser02_3
+  laser_effect.play pos (player1)
     
   audio.play "jump1"
   player1.data.is_jumping = 1
@@ -39,12 +39,12 @@ end do
 
 [@allow_move]
 when key left is pressed  do
-  player1.turn left 3 in 0.1 seconds async
+  player1.turn left 6 in 0.1 seconds async
 end do
 
 [@allow_move]
 when key right is pressed  do
-  player1.turn right 3 in 0.1 seconds async
+  player1.turn right 6 in 0.1 seconds async
 end do
 
 var up_anim=0, move_forward=0
@@ -93,6 +93,9 @@ end do
 
 [@asd_go_condition]
 when key A is pressed once do async
+	effect => effects.effekseer.A_Salamander1  // Lance3
+  effect.play pos (player1."mixamorig:RightHand") 
+
 	action=PLAYER_ACTION_A
 	player1.look at (player2)
 	audio.play "punch1"
@@ -112,6 +115,8 @@ end do
 
 [@asd_go_condition]
 when key S is pressed once do async
+	//effect => effects.effekseer.A_Salamander1  // Lance3
+  //effect.play pos (player1."mixamorig:RightHand") 
   
 	action=PLAYER_ACTION_S
  		    
@@ -131,6 +136,9 @@ end do
 
 [@asd_go_condition]
 when key D is pressed once do async
+	//effect => effects.effekseer.A_Salamander1  // Lance3
+  //effect.play pos (player1."mixamorig:RightHand") 
+
 	action=PLAYER_ACTION_D
 	player1.look at (player2)
 	player1.move forward 0.3 for 0.2 seconds async

@@ -29,6 +29,7 @@ public class DesignerDocument {
     private Quaternion cameraRotation = new Quaternion(0, 1, 0, 0);
     private List<JSONObject> entityDefs = new ArrayList<>();
     private String sceneEnvironmentShader = "";
+    private String selectedBevySkybox = "";
     private BevyAmbientLightSettings bevyAmbientLight = new BevyAmbientLightSettings();
 
     // Game camera (the user-placed camera entity that sets the initial in-game camera posture)
@@ -69,6 +70,14 @@ public class DesignerDocument {
 
     public void setSceneEnvironmentShader(String sceneEnvironmentShader) {
         this.sceneEnvironmentShader = sceneEnvironmentShader != null ? sceneEnvironmentShader : "";
+    }
+
+    public String getSelectedBevySkybox() {
+        return selectedBevySkybox != null ? selectedBevySkybox : "";
+    }
+
+    public void setSelectedBevySkybox(String selectedBevySkybox) {
+        this.selectedBevySkybox = selectedBevySkybox != null ? selectedBevySkybox : "";
     }
 
     public BevyAmbientLightSettings getBevyAmbientLight() {
@@ -142,6 +151,7 @@ public class DesignerDocument {
         }
 
         doc.sceneEnvironmentShader = root.optString("sceneEnvironmentShader", "");
+        doc.selectedBevySkybox = root.optString("selectedBevySkybox", "");
         doc.bevyAmbientLight = BevyAmbientLightSettings.fromJson(root.optJSONObject("bevyAmbientLight"));
 
         return doc;
@@ -163,6 +173,7 @@ public class DesignerDocument {
                 gameCamRot.getZ(), gameCamRot.getW()});
         root.put("gameCamera", gameCamera);
         root.put("sceneEnvironmentShader", sceneEnvironmentShader);
+        root.put("selectedBevySkybox", getSelectedBevySkybox());
         root.put("bevyAmbientLight", getBevyAmbientLight().toJson());
 
         JSONArray entitiesArray = new JSONArray();
@@ -172,6 +183,20 @@ public class DesignerDocument {
         root.put("entities", entitiesArray);
 
         Files.write(file.toPath(), root.toString(2).getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static void updateSelectedBevySkybox(File smdesignFile, String selectedSkybox) throws IOException {
+        if (smdesignFile == null || !smdesignFile.isFile()) {
+            return;
+        }
+        String content = new String(Files.readAllBytes(smdesignFile.toPath()), StandardCharsets.UTF_8);
+        if (!content.isEmpty() && content.charAt(0) == '\uFEFF') {
+            content = content.substring(1);
+        }
+        JSONObject root = content.trim().isEmpty() ? new JSONObject() : new JSONObject(content);
+        root.put("selectedBevySkybox", selectedSkybox != null ? selectedSkybox.trim() : "");
+        Files.write(smdesignFile.toPath(), root.toString(2).getBytes(StandardCharsets.UTF_8));
+        regenerateCodeFileFromDisk(smdesignFile);
     }
 
     /**
@@ -185,20 +210,32 @@ public class DesignerDocument {
                                        Vector3f gameCamPos, Quaternion gameCamRot,
                                        String sceneEnvironmentShader) throws IOException {
         BevyAmbientLightSettings ambient = new BevyAmbientLightSettings();
+        String selectedSkybox = "";
         if (smdesignFile != null && smdesignFile.isFile()) {
             try {
-                ambient = DesignerDocument.load(smdesignFile).getBevyAmbientLight();
+                DesignerDocument diskDocument = DesignerDocument.load(smdesignFile);
+                ambient = diskDocument.getBevyAmbientLight();
+                selectedSkybox = diskDocument.getSelectedBevySkybox();
             } catch (Exception ignored) {
                 ambient = new BevyAmbientLightSettings();
             }
         }
-        return saveCodeFile(smdesignFile, entities, gameCamPos, gameCamRot, sceneEnvironmentShader, ambient);
+        return saveCodeFile(smdesignFile, entities, gameCamPos, gameCamRot, sceneEnvironmentShader, ambient, selectedSkybox);
     }
 
     public static boolean saveCodeFile(File smdesignFile, List<DesignerEntity> entities,
                                        Vector3f gameCamPos, Quaternion gameCamRot,
                                        String sceneEnvironmentShader,
                                        BevyAmbientLightSettings bevyAmbientLight) throws IOException {
+        return saveCodeFile(smdesignFile, entities, gameCamPos, gameCamRot,
+                sceneEnvironmentShader, bevyAmbientLight, "");
+    }
+
+    public static boolean saveCodeFile(File smdesignFile, List<DesignerEntity> entities,
+                                       Vector3f gameCamPos, Quaternion gameCamRot,
+                                       String sceneEnvironmentShader,
+                                       BevyAmbientLightSettings bevyAmbientLight,
+                                       String selectedBevySkybox) throws IOException {
         File codeFile = getCodeFile(smdesignFile);
         boolean isNew = !codeFile.exists();
 
@@ -218,6 +255,11 @@ public class DesignerDocument {
         if (sceneEnvironmentShader != null && !sceneEnvironmentShader.trim().isEmpty()) {
             sb.append("Scene.environment.shader = \"")
               .append(sceneEnvironmentShader.trim())
+              .append("\"\n");
+        }
+        if (selectedBevySkybox != null && !selectedBevySkybox.trim().isEmpty()) {
+            sb.append("Scene.skybox = \"")
+              .append(selectedBevySkybox.trim())
               .append("\"\n");
         }
         if (bevyAmbientLight != null && bevyAmbientLight.isEnabled()) {
@@ -872,7 +914,7 @@ public class DesignerDocument {
         }
 
         saveCodeFile(smdesignFile, entities, doc.gameCameraPos, doc.gameCameraRot,
-                doc.sceneEnvironmentShader, doc.getBevyAmbientLight());
+                doc.sceneEnvironmentShader, doc.getBevyAmbientLight(), doc.getSelectedBevySkybox());
     }
 
     /**
@@ -923,6 +965,7 @@ public class DesignerDocument {
                 .put("position", new float[]{0, 2, 10})
                 .put("rotation", new float[]{0, 1, 0, 0}));
         root.put("sceneEnvironmentShader", "");
+        root.put("selectedBevySkybox", "");
         root.put("entities", new JSONArray());
         Files.write(file.toPath(), root.toString(2).getBytes(StandardCharsets.UTF_8));
 

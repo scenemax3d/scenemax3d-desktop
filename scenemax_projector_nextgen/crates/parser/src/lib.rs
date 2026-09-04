@@ -160,6 +160,9 @@ pub enum Statement {
     SetEnvironmentShader {
         shader: AssignmentValue,
     },
+    SetSkybox {
+        skybox: AssignmentValue,
+    },
     Print(PrintStatement),
     WaitForKey {
         key: String,
@@ -4258,6 +4261,11 @@ fn parse_shader_statement(line: &str) -> Result<Option<Statement>, ParseError> {
             shader: parse_shader_value(right)?,
         }));
     }
+    if lower_target == "scene.skybox" || lower_target == "skybox" {
+        return Ok(Some(Statement::SetSkybox {
+            skybox: parse_shader_value(right)?,
+        }));
+    }
     if !lower_target.ends_with(".shader") {
         return Ok(None);
     }
@@ -6504,6 +6512,18 @@ mod tests {
             program.statements[0],
             Statement::SetEnvironmentShader {
                 shader: AssignmentValue::Symbol("rainy_evening".to_owned()),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_scene_skybox_assignment() {
+        let program = parse_program("Scene.skybox = \"skybox_morning_atmosphere\"").unwrap();
+
+        assert_eq!(
+            program.statements[0],
+            Statement::SetSkybox {
+                skybox: AssignmentValue::Symbol("skybox_morning_atmosphere".to_owned()),
             }
         );
     }

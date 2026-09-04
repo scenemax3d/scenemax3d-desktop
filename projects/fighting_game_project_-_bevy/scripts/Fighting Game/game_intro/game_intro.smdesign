@@ -1,5 +1,13 @@
 {
   "sceneEnvironmentShader": "ambient1",
+  "bevyAmbientLight": {
+    "configured": false,
+    "brightness": 220,
+    "color": "#ffffff",
+    "name": "level_ambient",
+    "affectsLightmappedMeshes": true,
+    "enabled": false
+  },
   "entities": [
     {
       "rotation": [
@@ -168,17 +176,18 @@
       10
     ]
   },
+  "selectedBevySkybox": "skybox_skybox1",
   "camera": {
     "rotation": [
-      0.06905802,
-      0.8991075,
-      -0.1536895,
-      0.40400025
+      0,
+      1,
+      -0,
+      -4.371139E-8
     ],
     "position": [
-      -159.59203,
-      17.378418,
-      82.09793
+      0,
+      0,
+      10
     ]
   },
   "version": 1

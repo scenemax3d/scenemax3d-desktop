@@ -310,6 +310,8 @@ public class DesignerPanel extends JPanel {
     private JPanel shaderPanel;
     private JComboBox<String> cboSceneShader;
     private JPanel sceneShaderPanel;
+    private JComboBox<String> cboSceneSkybox;
+    private JPanel sceneSkyboxPanel;
     private JComboBox<String> cboShadowMode;
     private JPanel shadowModePanel;
     private JComboBox<String> cboModelAsset;
@@ -369,9 +371,14 @@ public class DesignerPanel extends JPanel {
     private java.util.function.Consumer<String> codeFileUpdatedCallback;
     private Runnable onDirtyCallback;
     private Runnable onSavedCallback;
+    private boolean bevyProject;
 
     public DesignerPanel(String projectPath, File designerFile) {
         this(projectPath, designerFile, true);
+    }
+
+    public void setBevyProject(boolean bevyProject) {
+        this.bevyProject = bevyProject;
     }
 
     /**
@@ -1433,6 +1440,22 @@ public class DesignerPanel extends JPanel {
         sceneShaderPanel.add(sceneShaderRow);
         sceneShaderPanel.setVisible(false);
         propertiesForm.add(sceneShaderPanel);
+
+        sceneSkyboxPanel = new JPanel();
+        sceneSkyboxPanel.setLayout(new BoxLayout(sceneSkyboxPanel, BoxLayout.Y_AXIS));
+        sceneSkyboxPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sceneSkyboxPanel.add(Box.createVerticalStrut(8));
+        JPanel sceneSkyboxRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        sceneSkyboxRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sceneSkyboxRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        sceneSkyboxRow.add(new JLabel("Bevy Skybox:"));
+        cboSceneSkybox = new JComboBox<>(new String[]{"None"});
+        cboSceneSkybox.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+        cboSceneSkybox.addActionListener(e -> applySceneSkyboxChange());
+        sceneSkyboxRow.add(cboSceneSkybox);
+        sceneSkyboxPanel.add(sceneSkyboxRow);
+        sceneSkyboxPanel.setVisible(false);
+        propertiesForm.add(sceneSkyboxPanel);
 
         // Shadow Mode combo (BOX, SPHERE, MODEL)
         shadowModePanel = new JPanel();
@@ -3179,6 +3202,7 @@ public class DesignerPanel extends JPanel {
                 hiddenPanel.setVisible(false);
                 shaderPanel.setVisible(false);
                 sceneShaderPanel.setVisible(false);
+                sceneSkyboxPanel.setVisible(false);
                 shadowModePanel.setVisible(false);
                 modelAssetPanel.setVisible(false);
                 modelCollisionShapePanel.setVisible(false);
@@ -3381,6 +3405,7 @@ public class DesignerPanel extends JPanel {
             }
 
             sceneShaderPanel.setVisible(false);
+            sceneSkyboxPanel.setVisible(false);
 
             // PATH properties
             if (entity.getType() == DesignerEntityType.PATH && entity.getBezierPath() != null) {
@@ -3503,6 +3528,12 @@ public class DesignerPanel extends JPanel {
             DesignerDocument doc = app != null ? app.getDocument() : null;
             refreshSceneShaderChoices(doc != null ? doc.getSceneEnvironmentShader() : "");
             sceneShaderPanel.setVisible(true);
+            if (bevyProject) {
+                refreshSceneSkyboxChoices(doc != null ? doc.getSelectedBevySkybox() : "");
+                sceneSkyboxPanel.setVisible(true);
+            } else {
+                sceneSkyboxPanel.setVisible(false);
+            }
 
             spnScaleX.setEnabled(false);
             spnScaleY.setEnabled(false);
@@ -3864,6 +3895,23 @@ public class DesignerPanel extends JPanel {
 
         app.enqueue(() -> {
             app.applySceneEnvironmentShader(shader);
+            return null;
+        });
+    }
+
+    private void applySceneSkyboxChange() {
+        if (updatingProperties || app == null || app.getDocument() == null) return;
+
+        TreePath selectionPath = sceneTree.getSelectionPath();
+        if (selectionPath == null || selectionPath.getLastPathComponent() != sceneTreeRoot) {
+            return;
+        }
+
+        String selected = (String) cboSceneSkybox.getSelectedItem();
+        String skybox = (selected == null || "None".equals(selected)) ? "" : selected;
+
+        app.enqueue(() -> {
+            app.applySceneSkybox(skybox);
             return null;
         });
     }
@@ -4468,6 +4516,33 @@ public class DesignerPanel extends JPanel {
 
         cboSceneShader.setModel(model);
         cboSceneShader.setSelectedItem(selectedShader != null && !selectedShader.isBlank() ? selectedShader : "None");
+    }
+
+    private void refreshSceneSkyboxChoices(String selectedSkybox) {
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+        model.addElement("None");
+
+        if (app != null) {
+            for (String skyboxName : app.getAvailableProjectSkyboxNames()) {
+                model.addElement(skyboxName);
+            }
+        }
+
+        if (selectedSkybox != null && !selectedSkybox.isBlank()) {
+            boolean exists = false;
+            for (int i = 0; i < model.getSize(); i++) {
+                if (selectedSkybox.equals(model.getElementAt(i))) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                model.addElement(selectedSkybox);
+            }
+        }
+
+        cboSceneSkybox.setModel(model);
+        cboSceneSkybox.setSelectedItem(selectedSkybox != null && !selectedSkybox.isBlank() ? selectedSkybox : "None");
     }
 
     private void refreshModelAssetChoices(String selectedModelAsset) {

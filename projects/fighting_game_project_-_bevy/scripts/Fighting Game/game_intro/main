@@ -1,7 +1,10 @@
 intro.draw intro_page: stretch
 audio.play "drums_music1" loop
 add "game_intro.code", "game_intro_ui_fx.code" code
-intro.draw Clear
+do async 
+  wait 4 Seconds
+  intro.draw Clear
+end do
 camera.move (z+5) in 5 seconds
 //wait 5 seconds
 intro_camera=>cinematic.camera.cinematic_rig_1

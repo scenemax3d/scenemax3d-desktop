@@ -88,6 +88,8 @@ mod physics;
 mod retarget_designer;
 mod shader;
 mod shader_designer;
+mod skybox;
+mod skybox_designer;
 mod sprites;
 mod startup;
 mod ui;
@@ -103,6 +105,8 @@ use physics::*;
 pub use retarget_designer::{BevyRetargetDesignerLaunch, run_bevy_retarget_designer};
 use shader::*;
 pub use shader_designer::{BevyShaderDesignerLaunch, run_bevy_shader_designer};
+use skybox::*;
+pub use skybox_designer::{BevySkyboxDesignerLaunch, run_bevy_skybox_designer};
 use sprites::*;
 use startup::*;
 use ui::*;
@@ -347,14 +351,18 @@ fn handle_runtime_ecs_error(
     error: bevy::ecs::error::BevyError,
     context: bevy::ecs::error::ErrorContext,
 ) {
+    let error_text = error.to_string();
     if error.is::<bevy::ecs::entity::EntityNotSpawnedError>()
         || error.is::<bevy::ecs::entity::InvalidEntityError>()
+        || error.is::<bevy::ecs::world::error::EntityMutableFetchError>()
+        || error_text.contains("Entity despawned:")
+        || error_text.contains("If you were attempting to apply a command to this entity")
     {
         write_runtime_diagnostic_line(format!(
             "ECS:STALE_ENTITY_COMMAND context={} error={}",
-            context, error
+            context, error_text.trim()
         ));
-        tracing::warn!(%context, %error, "ignored stale entity command");
+        tracing::warn!(%context, error = %error_text.trim(), "ignored stale entity command");
         return;
     }
     bevy::ecs::error::panic(error, context);

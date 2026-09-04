@@ -666,6 +666,18 @@ pub(super) fn apply_startup_action(
             apply_environment_shader(commands, shader_name, runtime_assets);
             ActionSequenceResult::Completed
         }
+        Statement::SetSkybox { skybox } => {
+            let skybox_name = resolve_shader_name(
+                skybox,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            apply_skybox(commands, skybox_name, runtime_assets);
+            ActionSequenceResult::Completed
+        }
         Statement::SetShader(shader) => {
             let shader_name = resolve_shader_name(
                 &shader.shader,
@@ -6502,6 +6514,18 @@ pub(super) fn apply_key_action(
             Some(collider_bounds),
         );
         apply_environment_shader(commands, shader_name, runtime_assets);
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::SetSkybox { skybox } = action {
+        let skybox_name = resolve_shader_name(
+            skybox,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
+        apply_skybox(commands, skybox_name, runtime_assets);
         return ActionSequenceResult::Completed;
     }
     if let Statement::SetShader(shader) = action {

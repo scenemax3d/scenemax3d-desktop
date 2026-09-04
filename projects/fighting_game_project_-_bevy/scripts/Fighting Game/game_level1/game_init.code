@@ -16,6 +16,7 @@ stage_rim => Lights.point : pos (7,-72,62), color "#ff4aa2", intensity 1550 lume
 crystal_glow => Lights.point : pos (24,-82,162), color "#7ff7ff", intensity 850 lumens, range 26, shadow off
 
 Scene.environment.shader = "night_city_arena"
+Scene.skybox = "skybox_skybox1"
 level_ambient => Lights.ambient : color "#c7d6ff", intensity 0.25, affectsLightmappedMeshes true
 camera.pos(8.303196,-13.294227,49.450314)
 camera.rotate(-20.65568,115.06725,0.8177289)
