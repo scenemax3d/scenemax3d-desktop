@@ -1,9 +1,9 @@
 {
-  "sceneEnvironmentShader": "",
+  "sceneEnvironmentShader": "night_city_arena",
   "bevyAmbientLight": {
     "configured": true,
-    "brightness": 763.77954,
-    "color": "#ffd0a0",
+    "brightness": 55,
+    "color": "#c7d6ff",
     "name": "level_ambient",
     "affectsLightmappedMeshes": true,
     "enabled": true
@@ -12,7 +12,7 @@
     {
       "shader": "",
       "hidden": false,
-      "shadowMode": "cast",
+      "shadowMode": "both",
       "rotation": [
         0,
         0,
@@ -27,7 +27,7 @@
       "colliderEntity": false,
       "type": "BOX",
       "sizeX": 50,
-      "sceneMaxCode": "floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material \"wall\", shadow mode cast",
+      "sceneMaxCode": "floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material \"wall\", shadow mode on",
       "material": "wall",
       "name": "floor",
       "staticEntity": true,
@@ -77,7 +77,7 @@
       "shader": "",
       "dynamicModel": false,
       "hidden": false,
-      "shadowMode": "none",
+      "shadowMode": "both",
       "rotation": [
         0,
         0,
@@ -93,7 +93,7 @@
       ],
       "modelCollisionShape": "default",
       "type": "MODEL",
-      "sceneMaxCode": "ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0 async",
+      "sceneMaxCode": "ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0, shadow mode on async",
       "staticModel": false,
       "name": "ring",
       "vehicleModel": false,
@@ -163,7 +163,7 @@
       "shader": "",
       "dynamicModel": true,
       "hidden": true,
-      "shadowMode": "cast",
+      "shadowMode": "both",
       "rotation": [
         0,
         0,
@@ -179,7 +179,7 @@
       ],
       "modelCollisionShape": "default",
       "type": "MODEL",
-      "sceneMaxCode": "boss => dynamic boss: hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast async",
+      "sceneMaxCode": "boss => dynamic boss: hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode on async",
       "staticModel": false,
       "name": "boss",
       "vehicleModel": false,
@@ -241,7 +241,7 @@
           "shader": "",
           "dynamicModel": true,
           "hidden": true,
-          "shadowMode": "cast",
+          "shadowMode": "both",
           "rotation": [
             0,
             -0.99827087,
@@ -257,7 +257,7 @@
           ],
           "modelCollisionShape": "default",
           "type": "MODEL",
-          "sceneMaxCode": "player1 => dynamic fighter1: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast async",
+          "sceneMaxCode": "player1 => dynamic fighter1: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode on async",
           "staticModel": false,
           "name": "player1",
           "vehicleModel": false,
@@ -1255,7 +1255,7 @@
       "shader": "",
       "dynamicModel": false,
       "hidden": false,
-      "shadowMode": "none",
+      "shadowMode": "both",
       "rotation": [
         0,
         0,
@@ -1271,7 +1271,7 @@
       ],
       "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "dragons_gate => static dragon_gate1: pos (22.532026,-66.486755,148.68306), scale 30.0, collision shape none async",
+      "sceneMaxCode": "dragons_gate => static dragon_gate1: pos (22.532026,-66.486755,148.68306), scale 30.0, shadow mode on, collision shape none async",
       "staticModel": true,
       "name": "dragons_gate",
       "vehicleModel": false,
@@ -1287,7 +1287,7 @@
       "shader": "",
       "dynamicModel": false,
       "hidden": true,
-      "shadowMode": "none",
+      "shadowMode": "both",
       "rotation": [
         0,
         0,
@@ -1303,7 +1303,7 @@
       ],
       "modelCollisionShape": "box",
       "type": "MODEL",
-      "sceneMaxCode": "crystal => static meshy_crystal1: hidden, pos (23.844534,-88.28118,161.98776), collision shape box async",
+      "sceneMaxCode": "crystal => static meshy_crystal1: hidden, pos (23.844534,-88.28118,161.98776), shadow mode on, collision shape box async",
       "staticModel": true,
       "name": "crystal",
       "vehicleModel": false,
@@ -1341,7 +1341,7 @@
       "shader": "",
       "dynamicModel": false,
       "hidden": false,
-      "shadowMode": "none",
+      "shadowMode": "both",
       "rotation": [
         0,
         0,
@@ -1357,7 +1357,7 @@
       ],
       "modelCollisionShape": "box",
       "type": "MODEL",
-      "sceneMaxCode": "crystal_box => static meshy_wooden_box: pos (23.732,-88.0,161.9128), scale 1.4, collision shape box async",
+      "sceneMaxCode": "crystal_box => static meshy_wooden_box: pos (23.732,-88.0,161.9128), scale 1.4, shadow mode on, collision shape box async",
       "staticModel": true,
       "name": "crystal_box",
       "vehicleModel": false,
@@ -1373,7 +1373,7 @@
       "shader": "",
       "dynamicModel": false,
       "hidden": true,
-      "shadowMode": "none",
+      "shadowMode": "both",
       "rotation": [
         0,
         0,
@@ -1389,7 +1389,7 @@
       ],
       "modelCollisionShape": "box",
       "type": "MODEL",
-      "sceneMaxCode": "axe => battleaxe1: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async",
+      "sceneMaxCode": "axe => battleaxe1: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, shadow mode on, collision shape box async",
       "staticModel": false,
       "name": "axe",
       "vehicleModel": false,
@@ -1516,15 +1516,15 @@
   },
   "camera": {
     "rotation": [
-      -0.09904578,
-      0.8923991,
-      -0.23911762,
-      -0.3696439
+      0,
+      1,
+      -0,
+      -4.371139E-8
     ],
     "position": [
-      65.32203,
-      30.720757,
-      102.32202
+      0,
+      0,
+      10
     ]
   },
   "version": 1

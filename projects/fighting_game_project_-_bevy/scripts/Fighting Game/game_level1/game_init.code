@@ -10,13 +10,19 @@ intro.draw intro_page: stretch
 loading3.draw powered_by_scenemax3d : pos (100,700),size(200,200)
 lights.add probe "4"
 
-level_ambient => Lights.ambient : color "#ffd0a0", intensity 3.4717252, affectsLightmappedMeshes true
+stage_key => Lights.directional : color "#ffd6a0", intensity 1.85, direction (-0.45,-0.82,-0.28), shadow high
+stage_fill => Lights.point : pos (22,-76,22), color "#6fa8ff", intensity 1200 lumens, range 70, shadow off
+stage_rim => Lights.point : pos (7,-72,62), color "#ff4aa2", intensity 1550 lumens, range 74, shadow off
+crystal_glow => Lights.point : pos (24,-82,162), color "#7ff7ff", intensity 850 lumens, range 26, shadow off
+
+Scene.environment.shader = "night_city_arena"
+level_ambient => Lights.ambient : color "#c7d6ff", intensity 0.25, affectsLightmappedMeshes true
 camera.pos(8.303196,-13.294227,49.450314)
 camera.rotate(-20.65568,115.06725,0.8177289)
 
-floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material "wall", shadow mode cast
+floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material "wall", shadow mode on
 level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on async
-ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0 async
+ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0, shadow mode on async
 // rotate ring
 ring.turn left 360 in 50 seconds async
 
@@ -26,7 +32,7 @@ do async
   audio.play "drums_music1" loop
 end do
 tg => tiger3: pos (10.163753,-5.6443043,49.335724), scale 0.04, rotate(0.0,110.49832,0.0), shadow mode on async
-boss => dynamic boss: hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode cast async
+boss => dynamic boss: hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode on async
 // boss character mode
 boss.switch to character mode
 // focus camera on tiger
@@ -36,7 +42,7 @@ tg."Idle_Lie Prone" loop
 //effects.flame.show : pos (13,-20,50), radius = 17, duration 4 async
 skybox.show solar system
 wait 1 seconds
-player1 => dynamic fighter1: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode cast
+player1 => dynamic fighter1: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode on
 , joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot") async
 player1_body_collider => collider box : size (1.0,1.0,1.0), pos (0.0,0.5,2.88586)
 // player1_body_collider_attach
@@ -101,14 +107,14 @@ player2.show
 
 player2.look at (player1)
 player1.look at (player2)
-dragons_gate => static dragon_gate1: pos (22.532026,-66.486755,148.68306), scale 30.0, collision shape none async
-crystal => static meshy_crystal1: hidden, pos (23.844534,-88.28118,161.98776), collision shape box async
+dragons_gate => static dragon_gate1: pos (22.532026,-66.486755,148.68306), scale 30.0, shadow mode on, collision shape none async
+crystal => static meshy_crystal1: hidden, pos (23.844534,-88.28118,161.98776), shadow mode on, collision shape box async
 // player_got_crystal
 when player1 collides with crystal do
 	switch to "game_level_train"
 end do
-crystal_box => static meshy_wooden_box: pos (23.732,-88.0,161.9128), scale 1.4, collision shape box async
-axe => battleaxe1: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, collision shape box async
+crystal_box => static meshy_wooden_box: pos (23.732,-88.0,161.9128), scale 1.4, shadow mode on, collision shape box async
+axe => battleaxe1: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, shadow mode on, collision shape box async
 quad_1 => quad : size (1.0,1.0), pos (-33.073235,-88.97634,115.0642), scale 34.2, rotate(0.0,-44.446686,0.0)
 
 // Write your finalization code here.
