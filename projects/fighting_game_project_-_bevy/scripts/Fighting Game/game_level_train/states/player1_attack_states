@@ -36,8 +36,7 @@ when @hit_by_legs && action == PLAYER_ACTION_S && player1.anim_percent < 25 do
   end do
 
   audio.play "attack1_jap"
-  run player1_slow_motion (0.5,40)
-
+  
 end do
 
 when player1.data.attack_legs == 1 do

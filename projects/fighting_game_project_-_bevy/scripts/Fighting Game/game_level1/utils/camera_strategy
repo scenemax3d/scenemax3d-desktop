@@ -76,12 +76,12 @@ level1_hitstop_p1_receives (tm) = {
 }
 
 level1_hit_recoil_p2 = {
-  player2.character.jump at speed of 10 async
+  player2.character.jump at speed of 5 async
   player2.move backward 1.15 for 0.32 seconds
 }
 
 level1_hit_recoil_p1 = {
-  player1.character.jump at speed of 10 async
+  player1.character.jump at speed of 5 async
   player1.move backward 1.15 for 0.32 seconds
 }
 
