@@ -26,6 +26,10 @@ use bevy::{
     animation::AnimationTargetId,
     asset::{AssetApp, AssetPlugin, RenderAssetUsages, io::AssetSourceBuilder},
     audio::{PlaybackMode, PlaybackSettings, Volume},
+    diagnostic::{
+        DiagnosticPath, DiagnosticsStore, FrameTimeDiagnosticsPlugin,
+        SystemInformationDiagnosticsPlugin,
+    },
     ecs::system::SystemParam,
     gltf::{Gltf, GltfNode},
     log::LogPlugin,
@@ -218,8 +222,11 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<SceneMaxUiRuntime>()
         .init_resource::<SceneMaxUiActionQueue>()
         .init_resource::<SceneMaxPerfDebug>()
+        .init_resource::<SceneMaxDiagnosticsOverlay>()
         .add_plugins(default_plugins)
         .add_plugins((
+            FrameTimeDiagnosticsPlugin::default(),
+            SystemInformationDiagnosticsPlugin,
             PhysicsPlugins::default(),
             PhysicsDebugPlugin,
             TnuaControllerPlugin::<SceneMaxControlScheme>::new(PhysicsSchedule),
@@ -320,7 +327,14 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             )
                 .chain(),
         )
-        .add_systems(Update, update_scenemax_perf_debug);
+        .add_systems(
+            Update,
+            (
+                update_scenemax_perf_debug,
+                update_scenemax_diagnostics_overlay,
+            )
+                .chain(),
+        );
 
     if exit_on_escape {
         app.add_systems(Update, exit_on_escape_in_undecorated_window);
@@ -439,6 +453,17 @@ struct SceneMaxDebugMode {
     enabled: bool,
 }
 
+#[derive(Debug, Resource, Default)]
+struct SceneMaxDiagnosticsOverlay {
+    elapsed_seconds: f32,
+}
+
+#[derive(Component)]
+struct SceneMaxDiagnosticsOverlayRoot;
+
+#[derive(Component)]
+struct SceneMaxDiagnosticsOverlayText;
+
 static PERF_BONE_ALIAS_NS: AtomicU64 = AtomicU64::new(0);
 static PERF_TRANSFORM_BUILDS: AtomicU64 = AtomicU64::new(0);
 static PERF_BONE_TARGET_RESOLVES: AtomicU64 = AtomicU64::new(0);
@@ -463,6 +488,230 @@ fn update_scenemax_perf_debug(time: Res<Time>, mut perf: ResMut<SceneMaxPerfDebu
         aliases as f64 / builds as f64,
     ));
     *perf = SceneMaxPerfDebug::default();
+}
+
+fn update_scenemax_diagnostics_overlay(
+    mut commands: Commands,
+    time: Res<Time>,
+    debug_mode: Res<SceneMaxDebugMode>,
+    diagnostics: Res<DiagnosticsStore>,
+    mut overlay: ResMut<SceneMaxDiagnosticsOverlay>,
+    roots: Query<Entity, With<SceneMaxDiagnosticsOverlayRoot>>,
+    mut texts: Query<&mut Text, With<SceneMaxDiagnosticsOverlayText>>,
+    scene_entities: Query<(), With<SceneMaxEntity>>,
+    colliders: Query<(), With<AvianCollider>>,
+    rigid_bodies: Query<(), With<AvianRigidBody>>,
+    meshes: Res<Assets<Mesh>>,
+    images: Res<Assets<Image>>,
+    contacts: Res<SceneMaxPhysicsContacts>,
+    collision_events: Res<ActiveCollisionEvents>,
+    action_controllers: Res<ActiveActionControllers>,
+    collider_bounds: Res<SceneMaxColliderBounds>,
+) {
+    if !debug_mode.enabled {
+        for root in &roots {
+            commands
+                .entity(root)
+                .despawn_related::<Children>()
+                .try_despawn();
+        }
+        overlay.elapsed_seconds = 0.0;
+        return;
+    }
+
+    if roots.is_empty() {
+        spawn_scenemax_diagnostics_overlay(&mut commands);
+    }
+
+    overlay.elapsed_seconds += time.delta_secs();
+    if overlay.elapsed_seconds < 0.25 && !texts.is_empty() {
+        return;
+    }
+    overlay.elapsed_seconds = 0.0;
+
+    let snapshot = scenemax_diagnostics_snapshot(
+        &diagnostics,
+        &meshes,
+        &images,
+        scene_entities.iter().count(),
+        colliders.iter().count(),
+        rigid_bodies.iter().count(),
+        contacts.active_pairs.len(),
+        collision_events.active_by_event.len(),
+        collision_events.transition_armed_by_event.len(),
+        action_controllers.running.len(),
+        collider_bounds.shape_by_name.len(),
+        collider_bounds.hidden_by_name.len(),
+    );
+    for mut text in &mut texts {
+        *text = Text::new(snapshot.clone());
+    }
+}
+
+fn spawn_scenemax_diagnostics_overlay(commands: &mut Commands) {
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(12.0),
+                top: px(12.0),
+                max_width: px(360.0),
+                padding: UiRect::all(px(10.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.02, 0.025, 0.03, 0.82)),
+            GlobalZIndex(i32::MAX - 16),
+            SceneMaxDiagnosticsOverlayRoot,
+        ))
+        .with_child((
+            Text::new("SceneMax diagnostics"),
+            TextFont {
+                font_size: FontSize::Px(13.0),
+                ..default()
+            },
+            TextColor(Color::srgb(0.86, 0.95, 1.0)),
+            SceneMaxDiagnosticsOverlayText,
+        ));
+}
+
+fn scenemax_diagnostics_snapshot(
+    diagnostics: &DiagnosticsStore,
+    meshes: &Assets<Mesh>,
+    images: &Assets<Image>,
+    scene_entities: usize,
+    colliders: usize,
+    rigid_bodies: usize,
+    active_contacts: usize,
+    active_collision_handlers: usize,
+    armed_collision_handlers: usize,
+    action_controllers: usize,
+    registered_collider_bounds: usize,
+    hidden_collider_bounds: usize,
+) -> String {
+    let triangles = loaded_mesh_triangle_count(meshes);
+    let image_bytes = loaded_image_bytes(images);
+    format!(
+        "SceneMax diagnostics\n\
+         FPS: {}\n\
+         Frame: {}\n\
+         CPU: process {} / system {}\n\
+         Memory: process {} / images {}\n\
+         Meshes: {} / triangles {}\n\
+         Images: {}\n\
+         Entities: scene {} / bodies {} / colliders {}\n\
+         Collisions: contacts {} / handlers active {} armed {}\n\
+         Runtime: action controllers {} / collider bounds {} hidden {}\n\
+         GPU: n/a",
+        format_diagnostic(diagnostics, &FrameTimeDiagnosticsPlugin::FPS, "{:.1}"),
+        format_diagnostic(
+            diagnostics,
+            &FrameTimeDiagnosticsPlugin::FRAME_TIME,
+            "{:.2} ms"
+        ),
+        format_diagnostic(
+            diagnostics,
+            &SystemInformationDiagnosticsPlugin::PROCESS_CPU_USAGE,
+            "{:.1}%"
+        ),
+        format_diagnostic(
+            diagnostics,
+            &SystemInformationDiagnosticsPlugin::SYSTEM_CPU_USAGE,
+            "{:.1}%"
+        ),
+        format_diagnostic(
+            diagnostics,
+            &SystemInformationDiagnosticsPlugin::PROCESS_MEM_USAGE,
+            "{:.2} GiB"
+        ),
+        format_bytes(image_bytes),
+        meshes.len(),
+        format_count(triangles),
+        images.len(),
+        scene_entities,
+        rigid_bodies,
+        colliders,
+        active_contacts,
+        active_collision_handlers,
+        armed_collision_handlers,
+        action_controllers,
+        registered_collider_bounds,
+        hidden_collider_bounds,
+    )
+}
+
+fn format_diagnostic(
+    diagnostics: &DiagnosticsStore,
+    path: &DiagnosticPath,
+    format: &str,
+) -> String {
+    let Some(value) = diagnostics.get(path).and_then(|diagnostic| {
+        diagnostic
+            .smoothed()
+            .or_else(|| diagnostic.average())
+            .or_else(|| diagnostic.value())
+    }) else {
+        return "n/a".to_owned();
+    };
+    match format {
+        "{:.1}" => format!("{value:.1}"),
+        "{:.2} ms" => format!("{value:.2} ms"),
+        "{:.1}%" => format!("{value:.1}%"),
+        "{:.2} GiB" => format!("{value:.2} GiB"),
+        _ => format!("{value:.2}"),
+    }
+}
+
+fn loaded_mesh_triangle_count(meshes: &Assets<Mesh>) -> usize {
+    meshes
+        .iter()
+        .map(|(_, mesh)| loaded_mesh_triangle_count_for_mesh(mesh))
+        .sum()
+}
+
+fn loaded_mesh_triangle_count_for_mesh(mesh: &Mesh) -> usize {
+    if mesh.primitive_topology() != PrimitiveTopology::TriangleList {
+        return 0;
+    }
+    if let Some(indices) = mesh.try_indices_option().ok().flatten() {
+        return indices.iter().count() / 3;
+    }
+    let Some(VertexAttributeValues::Float32x3(positions)) = mesh
+        .try_attribute_option(Mesh::ATTRIBUTE_POSITION)
+        .ok()
+        .flatten()
+    else {
+        return 0;
+    };
+    positions.len() / 3
+}
+
+fn loaded_image_bytes(images: &Assets<Image>) -> usize {
+    images
+        .iter()
+        .filter_map(|(_, image)| image.data.as_ref())
+        .map(Vec::len)
+        .sum()
+}
+
+fn format_bytes(bytes: usize) -> String {
+    const MIB: f64 = 1024.0 * 1024.0;
+    const GIB: f64 = MIB * 1024.0;
+    let bytes = bytes as f64;
+    if bytes >= GIB {
+        format!("{:.2} GiB", bytes / GIB)
+    } else {
+        format!("{:.1} MiB", bytes / MIB)
+    }
+}
+
+fn format_count(count: usize) -> String {
+    if count >= 1_000_000 {
+        format!("{:.2}M", count as f64 / 1_000_000.0)
+    } else if count >= 1_000 {
+        format!("{:.1}K", count as f64 / 1_000.0)
+    } else {
+        count.to_string()
+    }
 }
 
 #[derive(Debug, Resource, Default)]

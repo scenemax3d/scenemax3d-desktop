@@ -21,7 +21,7 @@ anyhow = "1"
 avian3d = "0.7"
 bevy-tnua = "0.32.0"
 bevy-tnua-avian3d = "0.12.1"
-bevy = { version = "0.19.0", default-features = false, features = ["3d", "bevy_ui", "bevy_ui_render", "bevy_text", "default_font", "bevy_sprite", "bevy_audio", "bevy_gizmos_render", "mesh_picking", "vorbis", "wav", "mp3", "jpeg", "png"] }
+bevy = { version = "0.19.0", default-features = false, features = ["3d", "bevy_ui", "bevy_ui_render", "bevy_text", "default_font", "bevy_sprite", "bevy_audio", "bevy_gizmos_render", "mesh_picking", "sysinfo_plugin", "vorbis", "wav", "mp3", "jpeg", "png"] }
 clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
