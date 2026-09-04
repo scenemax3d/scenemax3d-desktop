@@ -6,3 +6,8 @@ intro.draw intro_page: stretch
 //loading.print "Loading..." : pos (100,10,0) , font "arial_64" , color=white, size 1
 loading3.draw powered_by_scenemax3d : pos (100,700),size(200,200)
 lights.add probe "4"
+
+stage_key => Lights.directional : color "#ffd6a0", intensity 1.85, direction (-0.45,-0.82,-0.28), shadow high
+stage_fill => Lights.point : pos (22,-76,22), color "#6fa8ff", intensity 1200 lumens, range 70, shadow off
+stage_rim => Lights.point : pos (7,-72,62), color "#ff4aa2", intensity 1550 lumens, range 74, shadow off
+crystal_glow => Lights.point : pos (24,-82,162), color "#7ff7ff", intensity 850 lumens, range 26, shadow off
