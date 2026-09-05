@@ -2,7 +2,7 @@ intro.draw intro_page: stretch
 audio.play "drums_music1" loop
 add "game_intro.code", "game_intro_ui_fx.code" code
 do async 
-  wait 4 Seconds
+  wait 3 Seconds
   intro.draw Clear
 end do
 camera.move (z+5) in 5 seconds
@@ -14,4 +14,4 @@ wait for key space to be pressed
 run hide_game_intro_ui
 
 
-switch to "game_level1" //"game_level_train" //"game_level1"
+switch to "game_level1" //"game_level_train" 
