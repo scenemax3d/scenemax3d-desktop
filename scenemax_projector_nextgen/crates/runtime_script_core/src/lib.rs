@@ -12,6 +12,7 @@ use scenemax_parser::{
 pub struct FunctionRuntime {
     pub params: Vec<String>,
     pub guard: Option<Condition>,
+    pub guard_recheck: bool,
     pub actions: Vec<Statement>,
 }
 
@@ -119,6 +120,7 @@ pub fn collect_functions_by_name(program: &Program) -> HashMap<String, FunctionR
                 FunctionRuntime {
                     params: function.params.clone(),
                     guard: function.guard.clone(),
+                    guard_recheck: function.guard_recheck,
                     actions: function.actions.clone(),
                 },
             )),
@@ -139,19 +141,71 @@ pub fn collect_guards_by_name(program: &Program) -> HashMap<String, Condition> {
 }
 
 pub fn instantiate_function_actions(function: &FunctionRuntime, args: &[String]) -> Vec<Statement> {
-    if function.params.is_empty() || args.is_empty() {
-        return function.actions.clone();
+    let actions = if function.params.is_empty() || args.is_empty() {
+        function.actions.clone()
+    } else {
+        let bindings = function
+            .params
+            .iter()
+            .zip(args.iter())
+            .map(|(param, arg)| (param.clone(), arg.clone()))
+            .collect::<HashMap<_, _>>();
+        function
+            .actions
+            .iter()
+            .map(|action| substitute_statement(action, &bindings))
+            .collect()
+    };
+
+    if function.guard_recheck {
+        if let Some(condition) = function.guard.as_ref() {
+            return wrap_actions_with_rechecked_guard(
+                actions,
+                substitute_function_condition(function, args, condition),
+            );
+        }
     }
-    let bindings = function
-        .params
-        .iter()
-        .zip(args.iter())
-        .map(|(param, arg)| (param.clone(), arg.clone()))
-        .collect::<HashMap<_, _>>();
-    function
-        .actions
-        .iter()
-        .map(|action| substitute_statement(action, &bindings))
+
+    actions
+}
+
+fn wrap_actions_with_rechecked_guard(
+    actions: Vec<Statement>,
+    condition: Condition,
+) -> Vec<Statement> {
+    actions
+        .into_iter()
+        .map(|mut action| {
+            // Blocks are expanded or scheduled independently by the runtime. Carry
+            // the function guard into their bodies so resumed commands recheck it.
+            match &mut action {
+                Statement::Async { actions }
+                | Statement::Guarded { actions, .. }
+                | Statement::Repeat { actions, .. }
+                | Statement::DoWhile { actions, .. }
+                | Statement::LoopContinue { actions, .. } => {
+                    *actions = wrap_actions_with_rechecked_guard(
+                        std::mem::take(actions),
+                        condition.clone(),
+                    );
+                }
+                Statement::If(branch) => {
+                    branch.actions = wrap_actions_with_rechecked_guard(
+                        std::mem::take(&mut branch.actions),
+                        condition.clone(),
+                    );
+                    branch.else_actions = wrap_actions_with_rechecked_guard(
+                        std::mem::take(&mut branch.else_actions),
+                        condition.clone(),
+                    );
+                }
+                _ => {}
+            }
+            Statement::Guarded {
+                condition: condition.clone(),
+                actions: vec![action],
+            }
+        })
         .collect()
 }
 

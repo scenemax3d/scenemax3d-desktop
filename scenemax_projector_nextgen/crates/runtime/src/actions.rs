@@ -2267,6 +2267,112 @@ mod key_event_controller_tests {
     }
 
     #[test]
+    fn rechecked_function_guard_stops_delayed_continuation_when_false() {
+        for nested_async in [false, true] {
+            for guard_still_true in [false, true] {
+                check_rechecked_function_continuation(nested_async, guard_still_true);
+            }
+        }
+    }
+
+    fn check_rechecked_function_continuation(nested_async: bool, guard_still_true: bool) {
+        let body = "before = 1\nwait 0.1 seconds\nafter = 1";
+        let body = if nested_async {
+            format!("do async\n{body}\nend do")
+        } else {
+            body.to_owned()
+        };
+        let program = scenemax_parser::parse_program(&format!(
+            "can_go = 1\n#[can_go == 1]\nkey_d_handler = {{\n{body}\n}}\nrun key_d_handler"
+        ))
+        .unwrap();
+        let functions_by_name = collect_functions_by_name(&program);
+        let guards_by_name = collect_guards_by_name(&program);
+        let actions = program
+            .statements
+            .iter()
+            .filter(|statement| is_startup_action(statement))
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut world = World::new();
+        let mut commands_state = bevy::ecs::system::SystemState::<Commands>::new(&mut world);
+        let mut vars = SceneMaxVars::default();
+        let mut object_pools = SceneMaxObjectPools::default();
+        let mut camera_system = SceneMaxCameraSystem::default();
+        let mut runtime_assets = SceneMaxRuntimeAssets::default();
+        let mut delayed_actions = DelayedActionQueue::default();
+        let mut ui_queue = SceneMaxUiActionQueue::default();
+        let mut transforms_by_name = HashMap::new();
+        let gltfs_by_name = HashMap::new();
+        let entities_by_name = HashMap::new();
+        let mut collider_bounds = SceneMaxColliderBounds::default();
+
+        let result = {
+            let mut commands = commands_state.get_mut(&mut world).unwrap();
+            apply_startup_action_sequence(
+                &actions,
+                &mut commands,
+                &mut vars,
+                &mut object_pools,
+                &mut camera_system,
+                &mut runtime_assets,
+                &mut delayed_actions,
+                &mut ui_queue,
+                &functions_by_name,
+                &entities_by_name,
+                &mut transforms_by_name,
+                &gltfs_by_name,
+                &guards_by_name,
+                &mut collider_bounds,
+                0,
+            )
+        };
+        commands_state.apply(&mut world);
+
+        assert_eq!(
+            result,
+            if nested_async {
+                ActionSequenceResult::Completed
+            } else {
+                ActionSequenceResult::Suspended
+            }
+        );
+        assert_eq!(vars.0.get("before").copied(), Some(1.0));
+        assert_eq!(vars.0.get("after"), None);
+        assert_eq!(delayed_actions.actions.len(), 1);
+
+        vars.0.insert("can_go".to_owned(), if guard_still_true { 1.0 } else { 0.0 });
+        let delayed = delayed_actions.actions.pop().unwrap();
+        let result = {
+            let mut commands = commands_state.get_mut(&mut world).unwrap();
+            apply_startup_action_sequence(
+                &delayed.actions,
+                &mut commands,
+                &mut vars,
+                &mut object_pools,
+                &mut camera_system,
+                &mut runtime_assets,
+                &mut delayed_actions,
+                &mut ui_queue,
+                &functions_by_name,
+                &entities_by_name,
+                &mut transforms_by_name,
+                &gltfs_by_name,
+                &guards_by_name,
+                &mut collider_bounds,
+                0,
+            )
+        };
+        commands_state.apply(&mut world);
+
+        assert_eq!(result, ActionSequenceResult::Completed);
+        assert_eq!(
+            vars.0.get("after").copied(),
+            if guard_still_true { Some(1.0) } else { None }
+        );
+    }
+
+    #[test]
     fn blocking_animation_wait_releases_only_after_requested_clip_finishes() {
         let mut wait = DelayedAnimationWait {
             target: "actor".to_owned(),

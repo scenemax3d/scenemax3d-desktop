@@ -793,6 +793,7 @@ pub struct FunctionDefStatement {
     pub name: String,
     pub params: Vec<String>,
     pub guard: Option<Condition>,
+    pub guard_recheck: bool,
     pub actions: Vec<Statement>,
 }
 
@@ -908,8 +909,8 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
             continue;
         }
 
-        if let Some(condition) = parse_condition_guard(line)? {
-            pending_guard = Some(condition);
+        if let Some(guard) = parse_condition_guard(line)? {
+            pending_guard = Some(guard);
             index += 1;
             continue;
         }
@@ -929,21 +930,23 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
         }
 
         if let Some((mut event, next_index)) = parse_key_event_block(&logical_lines, index)? {
-            event.guard = pending_guard.take();
+            event.guard = pending_guard.take().map(|guard| guard.condition);
             statements.push(Statement::KeyEvent(event));
             index = next_index;
             continue;
         }
 
         if let Some((mut event, next_index)) = parse_when_event_block(&logical_lines, index)? {
-            event.guard = pending_guard.take();
+            event.guard = pending_guard.take().map(|guard| guard.condition);
             statements.push(Statement::WhenEvent(event));
             index = next_index;
             continue;
         }
 
         if let Some((mut function, next_index)) = parse_function_def_block(&logical_lines, index)? {
-            function.guard = pending_guard.take();
+            let guard = pending_guard.take();
+            function.guard_recheck = guard.as_ref().is_some_and(|guard| guard.recheck);
+            function.guard = guard.map(|guard| guard.condition);
             statements.push(Statement::FunctionDef(function));
             index = next_index;
             continue;
@@ -1124,10 +1127,10 @@ fn parse_key_event_block(
             break;
         }
 
-        if let Some(condition) = parse_condition_guard(line)? {
+        if let Some(guard) = parse_condition_guard(line)? {
             if let Some((mut event, next_index)) = parse_key_event_block(logical_lines, cursor + 1)?
             {
-                event.guard = Some(condition);
+                event.guard = Some(guard.condition);
                 actions.push(Statement::KeyEvent(event));
                 cursor = next_index;
                 continue;
@@ -1135,7 +1138,7 @@ fn parse_key_event_block(
             if let Some((mut event, next_index)) =
                 parse_when_event_block(logical_lines, cursor + 1)?
             {
-                event.guard = Some(condition);
+                event.guard = Some(guard.condition);
                 actions.push(Statement::WhenEvent(event));
                 cursor = next_index;
                 continue;
@@ -1143,7 +1146,7 @@ fn parse_key_event_block(
             let (guarded_actions, next_index) =
                 parse_guarded_actions_after(logical_lines, cursor + 1)?;
             actions.push(Statement::Guarded {
-                condition,
+                condition: guard.condition,
                 actions: guarded_actions,
             });
             cursor = next_index;
@@ -1292,6 +1295,7 @@ fn parse_function_def_block(
             name,
             params,
             guard: None,
+            guard_recheck: false,
             actions,
         },
         next_index,
@@ -1704,10 +1708,10 @@ fn parse_action_block_with_stop(
             return Ok((actions, cursor, ActionBlockStop::Else));
         }
 
-        if let Some(condition) = parse_condition_guard(line)? {
+        if let Some(guard) = parse_condition_guard(line)? {
             if let Some((mut event, next_index)) = parse_key_event_block(logical_lines, cursor + 1)?
             {
-                event.guard = Some(condition);
+                event.guard = Some(guard.condition);
                 actions.push(Statement::KeyEvent(event));
                 cursor = next_index;
                 continue;
@@ -1715,7 +1719,7 @@ fn parse_action_block_with_stop(
             if let Some((mut event, next_index)) =
                 parse_when_event_block(logical_lines, cursor + 1)?
             {
-                event.guard = Some(condition);
+                event.guard = Some(guard.condition);
                 actions.push(Statement::WhenEvent(event));
                 cursor = next_index;
                 continue;
@@ -1723,7 +1727,7 @@ fn parse_action_block_with_stop(
             let (guarded_actions, next_index) =
                 parse_guarded_actions_after(logical_lines, cursor + 1)?;
             actions.push(Statement::Guarded {
-                condition,
+                condition: guard.condition,
                 actions: guarded_actions,
             });
             cursor = next_index;
@@ -2097,20 +2101,29 @@ fn is_condition_guard(line: &str) -> bool {
     trimmed.starts_with('[') || trimmed.starts_with("#[")
 }
 
-fn parse_condition_guard(line: &str) -> Result<Option<Condition>, ParseError> {
+#[derive(Debug, Clone, PartialEq)]
+struct ParsedConditionGuard {
+    condition: Condition,
+    recheck: bool,
+}
+
+fn parse_condition_guard(line: &str) -> Result<Option<ParsedConditionGuard>, ParseError> {
     let trimmed = line.trim();
-    let Some(content) = trimmed
+    let (content, recheck) = if let Some(content) = trimmed
         .strip_prefix("#[")
         .and_then(|value| value.strip_suffix(']'))
-        .or_else(|| {
-            trimmed
-                .strip_prefix('[')
-                .and_then(|value| value.strip_suffix(']'))
-        })
-    else {
+    {
+        (content, true)
+    } else if let Some(content) = trimmed
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        (content, false)
+    } else {
         return Ok(None);
     };
-    parse_condition(content.trim())
+    Ok(parse_condition(content.trim())?
+        .map(|condition| ParsedConditionGuard { condition, recheck }))
 }
 
 fn update_block_depth(current: usize, line: &str) -> usize {
@@ -8039,6 +8052,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 name: "ai".to_owned(),
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![Statement::If(IfStatement {
                     condition: Condition::EqualsNumber {
                         name: "close_choice".to_owned(),
@@ -8303,6 +8317,28 @@ run tick(score+10) every tick_time+0.25 seconds
     }
 
     #[test]
+    fn parses_rechecked_function_guard() {
+        let program = parse_program(
+            "#[can_go == 1]\nkey_d_handler = {\n  before = 1\n  wait 0.1 seconds\n  after = 1\n}",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            program.statements.first(),
+            Some(Statement::FunctionDef(FunctionDefStatement {
+                name,
+                guard: Some(Condition::EqualsNumber { name: guard_name, value }),
+                guard_recheck: true,
+                actions,
+                ..
+            })) if name == "key_d_handler"
+                && guard_name == "can_go"
+                && (*value - 1.0).abs() < f32::EPSILON
+                && actions.len() == 3
+        ));
+    }
+
+    #[test]
     fn parses_or_and_parenthesized_key_guard() {
         let program = parse_program(
             "[player1_ko==0 && (game_status!=GAME_STATE_OVER || action == PLAYER_ACTION_X_2)]\nwhen key X is pressed once do\n  player1.pull_start\nend do",
@@ -8434,6 +8470,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 name: "old_fighter_jump".to_owned(),
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::Async {
                         actions: vec![Statement::DoWhile {
@@ -8492,6 +8529,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 name: "opponent_ai".to_owned(),
                 params: vec!["p1".to_owned(), "p2".to_owned()],
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::LocalAssignment(AssignmentStatement {
                         name: "dist".to_owned(),
@@ -8542,6 +8580,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 name: "opponent_ai".to_owned(),
                 params: vec!["p1".to_owned(), "p2".to_owned()],
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::LocalAssignment(AssignmentStatement {
                         name: "dist".to_owned(),
@@ -8607,6 +8646,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 name: "test_vm".to_owned(),
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::LocalAssignment(AssignmentStatement {
                         name: "flag".to_owned(),
@@ -8647,6 +8687,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "opponent_ai".to_owned(),
                     params: vec!["p1".to_owned(), "p2".to_owned()],
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![
                         Statement::LocalAssignment(AssignmentStatement {
                             name: "dist".to_owned(),
@@ -8931,6 +8972,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "opponent_ai".to_owned(),
                     params: Vec::new(),
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![Statement::If(IfStatement {
                         condition: Condition::CompareValue {
                             left: AssignmentValue::RandomInt {
@@ -8967,6 +9009,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 name: "math_case".to_owned(),
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![Statement::If(IfStatement {
                     condition: Condition::EqualsValue {
                         left: AssignmentValue::Binary {
@@ -9127,6 +9170,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "game_start".to_owned(),
                     params: Vec::new(),
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![
                         Statement::Visibility {
                             target: "boss".to_owned(),
@@ -9168,6 +9212,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "install_input".to_owned(),
                     params: Vec::new(),
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![Statement::KeyEvent(KeyEventStatement {
                         key: "q".to_owned(),
                         trigger: KeyTrigger::PressedOnce,
@@ -9208,6 +9253,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "install_input".to_owned(),
                     params: Vec::new(),
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![Statement::KeyEvent(KeyEventStatement {
                         key: "q".to_owned(),
                         trigger: KeyTrigger::PressedOnce,
@@ -9249,6 +9295,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "install_collision".to_owned(),
                     params: Vec::new(),
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![Statement::WhenEvent(WhenEventStatement {
                         condition: Condition::Collision {
                             sources: vec!["actor.tool.colliders[\"tool_sensor\"]".to_owned()],
@@ -9302,6 +9349,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "op_punch".to_owned(),
                     params: vec!["p2".to_owned()],
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![
                         Statement::Move(MoveStatement {
                             target: "p2".to_owned(),
@@ -9351,6 +9399,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "opponent_ai".to_owned(),
                     params: vec!["p1".to_owned(), "p2".to_owned()],
                     guard: Some(Condition::Alias("enemy_ai_allowed".to_owned())),
+                    guard_recheck: false,
                     actions: vec![Statement::LookAt {
                         target: "p2".to_owned(),
                         subject: "p1".to_owned(),
@@ -10040,6 +10089,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 name: "fx_test".to_owned(),
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::Audio(AudioStatement {
                         action: AudioAction::Play,
@@ -10098,6 +10148,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "set_camera_on_player".to_owned(),
                     params: Vec::new(),
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![Statement::If(IfStatement {
                         condition: Condition::EqualsNumber {
                             name: "enemy_ko".to_owned(),
@@ -10132,6 +10183,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "enemy_knockout".to_owned(),
                     params: Vec::new(),
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![Statement::ModelDecl {
                         name: "win1".to_owned(),
                         resource: "you_win1".to_owned(),

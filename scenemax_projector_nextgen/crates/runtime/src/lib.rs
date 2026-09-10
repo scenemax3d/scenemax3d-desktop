@@ -360,7 +360,8 @@ fn handle_runtime_ecs_error(
     {
         write_runtime_diagnostic_line(format!(
             "ECS:STALE_ENTITY_COMMAND context={} error={}",
-            context, error_text.trim()
+            context,
+            error_text.trim()
         ));
         tracing::warn!(%context, error = %error_text.trim(), "ignored stale entity command");
         return;
@@ -2213,6 +2214,7 @@ mod tests {
             FunctionRuntime {
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::ModelDecl {
                         name: "ignored".to_owned(),
@@ -2261,6 +2263,7 @@ mod tests {
             FunctionRuntime {
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::ModelDecl {
                         name: "rock1".to_owned(),
@@ -2319,6 +2322,7 @@ mod tests {
             FunctionRuntime {
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::LocalAssignment(scenemax_parser::AssignmentStatement {
                         name: "item_scale".to_owned(),
