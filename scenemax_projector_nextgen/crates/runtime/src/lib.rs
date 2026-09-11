@@ -756,6 +756,7 @@ struct SceneMaxCameraSystem {
 
 #[derive(Debug, Resource, Default)]
 struct DelayedActionQueue {
+    pending_scene: Option<String>,
     actions: Vec<DelayedActions>,
     registered_key_events: RegisteredKeyEvents,
     registered_when_events: RegisteredWhenEvents,
@@ -1745,6 +1746,7 @@ const LOOP_CONTINUE_DELAY_SECONDS: f32 = 0.001;
 const PHYSICS_LAYER_WORLD: u32 = 1 << 0;
 const PHYSICS_LAYER_CHARACTER: u32 = 1 << 1;
 const PHYSICS_LAYER_HITBOX: u32 = 1 << 2;
+const PHYSICS_LAYER_WEAPON: u32 = 1 << 3;
 static SCENEMAX_RUNTIME_LOG_FILE: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 fn setup_placeholder_model(

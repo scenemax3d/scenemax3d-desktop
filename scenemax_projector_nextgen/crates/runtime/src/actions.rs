@@ -102,7 +102,14 @@ pub(super) fn apply_startup_action_sequence(
     }
 
     for (index, action) in actions.iter().enumerate() {
+        if delayed_actions.pending_scene.is_some() {
+            return ActionSequenceResult::Suspended;
+        }
         match action {
+            Statement::SwitchTo { scene } => {
+                delayed_actions.pending_scene = Some(scene.clone());
+                return ActionSequenceResult::Suspended;
+            }
             Statement::NoOp { .. } | Statement::Unsupported { .. } => {}
             Statement::Return | Statement::ReturnValue { .. } => {
                 return ActionSequenceResult::Returned;
@@ -1539,7 +1546,8 @@ pub(super) fn switch_scene_on_key(
     let Some(program) = startup_program.0.as_ref() else {
         return;
     };
-    let Some(scene) = pending_key_switch(program, &keyboard).map(str::to_owned) else {
+    let Some(scene) = delayed_actions.pending_scene.take()
+        .or_else(|| pending_key_switch(program, &keyboard).map(str::to_owned)) else {
         return;
     };
     let Some(script_root) = startup_program.1.as_ref().or(context.script_root.as_ref()) else {
@@ -1553,7 +1561,7 @@ pub(super) fn switch_scene_on_key(
 
     let scene_main = scene_main_path(script_root, &scene);
     write_runtime_diagnostic_line(format!(
-        "switch key accepted; loading scene {scene} from {}",
+        "switch requested; loading scene {scene} from {}",
         scene_main.display()
     ));
     match load_script_with_adds(&scene_main, &mut HashSet::new()) {
@@ -1569,10 +1577,11 @@ pub(super) fn switch_scene_on_key(
             retain_scene_switch_shared_vars(&mut vars, startup_program.0.as_ref(), &program);
             object_pools.aliases.clear();
             object_pools.pools.clear();
-            delayed_actions.actions.clear();
-            recurring_timers.remaining_by_statement.clear();
+            *delayed_actions = DelayedActionQueue::default();
+            *recurring_timers = RecurringRunTimers::default();
             clear_environment_shader(&mut commands);
             commands.insert_resource(ActiveActionControllers::default());
+            commands.insert_resource(ActiveCollisionEvents::default());
             physics_contacts.active_pairs.clear();
             collider_bounds.clear();
             apply_initial_assignments(&program, &mut vars);
@@ -1647,6 +1656,33 @@ pub(super) fn retain_scene_switch_shared_vars(
 mod scene_switch_tests {
     use super::*;
     use scenemax_parser::parse_program;
+
+    #[test]
+    fn collision_handler_requests_scene_switch_and_stops_its_tail() {
+        let program = parse_program("when projectile collides with target do\nswitch to \"next_room\"\nafter_switch = 1\nend do").unwrap();
+        let Statement::WhenEvent(event) = &program.statements[0] else { panic!("expected collision handler") };
+        let mut world = World::new();
+        let mut state = bevy::ecs::system::SystemState::<(
+            Commands,
+            ParamSet<(
+                Query<(Entity, &SceneMaxEntity, &Transform, Option<&GlobalTransform>, Option<&ChildOf>)>,
+                Query<(Entity, &SceneMaxEntity, &mut Transform, Option<&SceneMaxGltf>, Option<&CurrentAnimation>, Option<&mut Visibility>, Option<&SceneMaxCharacterController>, Option<&mut SceneMaxCharacterMotor>)>,
+            )>,
+        )>::new(&mut world);
+        let mut queue = DelayedActionQueue::default();
+        let mut vars = SceneMaxVars::default();
+        let (mut commands, mut entities) = state.get_mut(&mut world).unwrap();
+        let result = apply_action_sequence(
+            &event.actions, &mut HashMap::new(), &mut vars,
+            &mut SceneMaxObjectPools::default(), None, &HashMap::new(), &HashMap::new(),
+            &mut HashMap::new(), &mut SceneMaxRuntimeAssets::default(),
+            &SceneMaxAnimationDurations::default(), &mut SceneMaxColliderBounds::default(),
+            Some(&mut queue), None, None, None, None, &mut commands, &mut entities,
+        );
+        assert_eq!(result, ActionSequenceResult::Suspended);
+        assert_eq!(queue.pending_scene.as_deref(), Some("next_room"));
+        assert!(!vars.0.contains_key("after_switch"));
+    }
 
     #[test]
     fn scene_switch_retains_only_shared_values_declared_by_both_scenes() {
@@ -2930,7 +2966,7 @@ pub(super) fn update_recurring_runs(
     bone_queries: SceneMaxBoneQueries,
 ) {
     let Some(program) = startup_program.0.as_ref() else {
-        recurring_timers.remaining_by_statement.clear();
+        *recurring_timers = RecurringRunTimers::default();
         active_controllers.running.clear();
         return;
     };
@@ -3639,7 +3675,16 @@ pub(super) fn apply_action_sequence(
     let mut runtime_declared_entities = HashMap::<String, Entity>::new();
 
     for (index, action) in actions.iter().enumerate() {
+        if delayed_actions.as_deref().is_some_and(|queue| queue.pending_scene.is_some()) {
+            return ActionSequenceResult::Suspended;
+        }
         match action {
+            Statement::SwitchTo { scene } => {
+                if let Some(queue) = delayed_actions.as_deref_mut() {
+                    queue.pending_scene = Some(scene.clone());
+                }
+                return ActionSequenceResult::Suspended;
+            }
             Statement::NoOp { .. } => {}
             Statement::Unsupported { text } => {
                 tracing::debug!(text, "skipping unsupported SceneMax runtime action");
@@ -6343,7 +6388,7 @@ fn spawn_weapon_colliders(
                 Visibility::Hidden,
                 AvianRigidBody::Kinematic,
                 avian_collider(shape, &options, &transform),
-                hitbox_collision_layers(),
+                weapon_collision_layers(),
                 Sensor,
                 CollisionEventsEnabled,
                 Name::new(runtime_name.clone()),
@@ -6377,6 +6422,92 @@ fn unregister_weapon_collider_bounds(
 #[cfg(test)]
 mod weapon_runtime_tests {
     use super::*;
+
+    #[test]
+    fn detached_weapon_collider_follows_motion_and_contacts_world() {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            bevy::asset::AssetPlugin::default(),
+            bevy::transform::TransformPlugin,
+        ));
+        app.init_asset::<Mesh>();
+        app.add_plugins(PhysicsPlugins::default());
+        app.finish();
+        app.cleanup();
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            std::time::Duration::from_secs_f32(1.0 / 60.0),
+        ));
+        app.init_resource::<SceneMaxColliderBounds>();
+        let root = app.world_mut().spawn(Transform::default()).id();
+        let definition: RuntimeWeaponDefinition =
+            serde_json::from_str(r#"{"colliders":[{"name":"hit_sphere","shape":"sphere"}]}"#)
+                .unwrap();
+        app.world_mut()
+            .resource_scope(|world, mut bounds: Mut<SceneMaxColliderBounds>| {
+                let mut commands = world.commands();
+                spawn_weapon_colliders(
+                    &mut commands,
+                    &mut bounds,
+                    root,
+                    "actor.weapon",
+                    &definition,
+                );
+            });
+        app.world_mut().flush();
+        let target = app
+            .world_mut()
+            .spawn((
+                Transform::from_xyz(8.0, 0.0, 0.0),
+                AvianRigidBody::Static,
+                AvianCollider::cuboid(2.0, 2.0, 2.0),
+                world_collision_layers(),
+                avian3d::prelude::CollidingEntities::default(),
+            ))
+            .id();
+        for _ in 0..3 {
+            app.update();
+        }
+        let collider = app
+            .world_mut()
+            .query::<(Entity, &SceneMaxEntity)>()
+            .iter(app.world())
+            .find(|(_, scene)| scene.name.contains("colliders["))
+            .unwrap()
+            .0;
+        app.world_mut()
+            .get_mut::<Transform>(root)
+            .unwrap()
+            .translation
+            .x = 8.0;
+        for _ in 0..3 {
+            app.update();
+        }
+        let position = app
+            .world()
+            .get::<GlobalTransform>(collider)
+            .unwrap()
+            .translation();
+        assert!(
+            (position.x - 8.0).abs() < 0.01,
+            "collider remained at {position:?}"
+        );
+        let layers = *app.world().get::<CollisionLayers>(collider).unwrap();
+        assert!(
+            layers.interacts_with(*app.world().get::<CollisionLayers>(target).unwrap()),
+            "weapon sensor must contact world objects"
+        );
+        assert!(
+            app.world()
+                .get::<avian3d::prelude::CollidingEntities>(target)
+                .unwrap()
+                .contains(&collider),
+            "physics must report the weapon impact"
+        );
+        assert!(layers.interacts_with(hitbox_collision_layers()));
+        assert!(layers.interacts_with(solid_collision_layers(SceneMaxBodyKind::Dynamic)));
+        assert!(!hitbox_collision_layers().interacts_with(world_collision_layers()));
+    }
 
     #[test]
     fn weapon_collider_references_use_script_lookup_syntax() {

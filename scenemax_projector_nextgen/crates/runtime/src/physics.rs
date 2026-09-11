@@ -1251,9 +1251,7 @@ pub(super) fn sync_collider_hidden_state_for_visibility(
             .or_insert(hidden);
     }
     for (name, hidden) in hidden_by_reference {
-        if hidden {
-            set_collider_hidden(&mut collider_bounds, &name, true);
-        }
+        set_collider_hidden(&mut collider_bounds, &name, hidden);
     }
 }
 
@@ -2171,16 +2169,17 @@ pub(super) fn set_collider_hidden(
 pub(super) fn solid_collision_layers(body_kind: SceneMaxBodyKind) -> CollisionLayers {
     match body_kind {
         SceneMaxBodyKind::Static => world_collision_layers(),
-        SceneMaxBodyKind::Kinematic | SceneMaxBodyKind::Dynamic => {
-            CollisionLayers::from_bits(PHYSICS_LAYER_WORLD, PHYSICS_LAYER_CHARACTER)
-        }
+        SceneMaxBodyKind::Kinematic | SceneMaxBodyKind::Dynamic => CollisionLayers::from_bits(
+            PHYSICS_LAYER_WORLD,
+            PHYSICS_LAYER_CHARACTER | PHYSICS_LAYER_WEAPON,
+        ),
     }
 }
 
 pub(super) fn world_collision_layers() -> CollisionLayers {
     CollisionLayers::from_bits(
         PHYSICS_LAYER_WORLD,
-        PHYSICS_LAYER_WORLD | PHYSICS_LAYER_CHARACTER,
+        PHYSICS_LAYER_WORLD | PHYSICS_LAYER_CHARACTER | PHYSICS_LAYER_WEAPON,
     )
 }
 
@@ -2189,7 +2188,18 @@ pub(super) fn character_collision_layers() -> CollisionLayers {
 }
 
 pub(super) fn hitbox_collision_layers() -> CollisionLayers {
-    CollisionLayers::from_bits(PHYSICS_LAYER_HITBOX, PHYSICS_LAYER_HITBOX)
+    CollisionLayers::from_bits(
+        PHYSICS_LAYER_HITBOX,
+        PHYSICS_LAYER_HITBOX | PHYSICS_LAYER_WEAPON,
+    )
+}
+
+pub(super) fn weapon_collision_layers() -> CollisionLayers {
+    // Weapon sensors report both world impacts and hits against named hitboxes.
+    CollisionLayers::from_bits(
+        PHYSICS_LAYER_WEAPON,
+        PHYSICS_LAYER_WORLD | PHYSICS_LAYER_HITBOX | PHYSICS_LAYER_WEAPON,
+    )
 }
 
 pub(super) fn virtual_collider_transform(
@@ -5258,6 +5268,56 @@ Material wall : Common/MatDefs/Light/Lighting.j3md {
             collision_layers_for_visibility(true, world_collision_layers()),
             CollisionLayers::NONE
         );
+    }
+
+    #[test]
+    fn delayed_visible_declaration_restores_collision_events() {
+        let mut app = App::new();
+        app.init_resource::<SceneMaxColliderBounds>();
+        app.add_systems(Update, sync_collider_hidden_state_for_visibility);
+        let target = app
+            .world_mut()
+            .spawn((
+                SceneMaxEntity {
+                    name: "target".into(),
+                    runtime_name: "target@1".into(),
+                },
+                Visibility::Hidden,
+                SceneMaxCollisionFollowsVisibility {
+                    collision_layers: world_collision_layers(),
+                    collider: None,
+                },
+            ))
+            .id();
+        let transforms = HashMap::from([
+            ("sensor".into(), Transform::default()),
+            ("target".into(), Transform::default()),
+        ]);
+        for _ in 0..3 {
+            app.update();
+        }
+        assert!(!collision_condition_matches(
+            &["sensor".into()],
+            "target",
+            Some(&transforms),
+            Some(app.world().resource::<SceneMaxColliderBounds>())
+        ));
+        *app.world_mut().get_mut::<Visibility>(target).unwrap() = Visibility::Inherited;
+        app.update();
+        assert!(collision_condition_matches(
+            &["sensor".into()],
+            "target",
+            Some(&transforms),
+            Some(app.world().resource::<SceneMaxColliderBounds>())
+        ));
+        *app.world_mut().get_mut::<Visibility>(target).unwrap() = Visibility::Hidden;
+        app.update();
+        assert!(!collision_condition_matches(
+            &["sensor".into()],
+            "target",
+            Some(&transforms),
+            Some(app.world().resource::<SceneMaxColliderBounds>())
+        ));
     }
 
     #[test]
