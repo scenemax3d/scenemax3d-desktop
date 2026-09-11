@@ -675,6 +675,7 @@ mod tests {
                 name: "other_shot".to_owned(),
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![Statement::ModelDecl {
                     name: "shot_cam".to_owned(),
                     resource: "cinematic.camera.back_shot".to_owned(),

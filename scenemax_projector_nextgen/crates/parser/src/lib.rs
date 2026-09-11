@@ -160,6 +160,9 @@ pub enum Statement {
     SetEnvironmentShader {
         shader: AssignmentValue,
     },
+    SetSkybox {
+        skybox: AssignmentValue,
+    },
     Print(PrintStatement),
     WaitForKey {
         key: String,
@@ -197,6 +200,7 @@ pub struct EntityOptions {
     pub position_value: Option<PositionValue>,
     pub rotation_degrees: Option<SceneMaxVec3>,
     pub scale: Option<SceneMaxVec3>,
+    pub scale_value: Option<AssignmentValue>,
     pub size: Option<SceneMaxVec3>,
     pub material: Option<String>,
     pub hidden: bool,
@@ -261,6 +265,7 @@ pub enum SceneMaxBodyKind {
 pub enum SceneMaxCollisionShape {
     None,
     Box,
+    Boxes,
     Sphere,
     Capsule,
 }
@@ -788,6 +793,7 @@ pub struct FunctionDefStatement {
     pub name: String,
     pub params: Vec<String>,
     pub guard: Option<Condition>,
+    pub guard_recheck: bool,
     pub actions: Vec<Statement>,
 }
 
@@ -903,8 +909,8 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
             continue;
         }
 
-        if let Some(condition) = parse_condition_guard(line)? {
-            pending_guard = Some(condition);
+        if let Some(guard) = parse_condition_guard(line)? {
+            pending_guard = Some(guard);
             index += 1;
             continue;
         }
@@ -924,21 +930,23 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
         }
 
         if let Some((mut event, next_index)) = parse_key_event_block(&logical_lines, index)? {
-            event.guard = pending_guard.take();
+            event.guard = pending_guard.take().map(|guard| guard.condition);
             statements.push(Statement::KeyEvent(event));
             index = next_index;
             continue;
         }
 
         if let Some((mut event, next_index)) = parse_when_event_block(&logical_lines, index)? {
-            event.guard = pending_guard.take();
+            event.guard = pending_guard.take().map(|guard| guard.condition);
             statements.push(Statement::WhenEvent(event));
             index = next_index;
             continue;
         }
 
         if let Some((mut function, next_index)) = parse_function_def_block(&logical_lines, index)? {
-            function.guard = pending_guard.take();
+            let guard = pending_guard.take();
+            function.guard_recheck = guard.as_ref().is_some_and(|guard| guard.recheck);
+            function.guard = guard.map(|guard| guard.condition);
             statements.push(Statement::FunctionDef(function));
             index = next_index;
             continue;
@@ -1119,10 +1127,10 @@ fn parse_key_event_block(
             break;
         }
 
-        if let Some(condition) = parse_condition_guard(line)? {
+        if let Some(guard) = parse_condition_guard(line)? {
             if let Some((mut event, next_index)) = parse_key_event_block(logical_lines, cursor + 1)?
             {
-                event.guard = Some(condition);
+                event.guard = Some(guard.condition);
                 actions.push(Statement::KeyEvent(event));
                 cursor = next_index;
                 continue;
@@ -1130,7 +1138,7 @@ fn parse_key_event_block(
             if let Some((mut event, next_index)) =
                 parse_when_event_block(logical_lines, cursor + 1)?
             {
-                event.guard = Some(condition);
+                event.guard = Some(guard.condition);
                 actions.push(Statement::WhenEvent(event));
                 cursor = next_index;
                 continue;
@@ -1138,7 +1146,7 @@ fn parse_key_event_block(
             let (guarded_actions, next_index) =
                 parse_guarded_actions_after(logical_lines, cursor + 1)?;
             actions.push(Statement::Guarded {
-                condition,
+                condition: guard.condition,
                 actions: guarded_actions,
             });
             cursor = next_index;
@@ -1287,6 +1295,7 @@ fn parse_function_def_block(
             name,
             params,
             guard: None,
+            guard_recheck: false,
             actions,
         },
         next_index,
@@ -1699,10 +1708,10 @@ fn parse_action_block_with_stop(
             return Ok((actions, cursor, ActionBlockStop::Else));
         }
 
-        if let Some(condition) = parse_condition_guard(line)? {
+        if let Some(guard) = parse_condition_guard(line)? {
             if let Some((mut event, next_index)) = parse_key_event_block(logical_lines, cursor + 1)?
             {
-                event.guard = Some(condition);
+                event.guard = Some(guard.condition);
                 actions.push(Statement::KeyEvent(event));
                 cursor = next_index;
                 continue;
@@ -1710,7 +1719,7 @@ fn parse_action_block_with_stop(
             if let Some((mut event, next_index)) =
                 parse_when_event_block(logical_lines, cursor + 1)?
             {
-                event.guard = Some(condition);
+                event.guard = Some(guard.condition);
                 actions.push(Statement::WhenEvent(event));
                 cursor = next_index;
                 continue;
@@ -1718,7 +1727,7 @@ fn parse_action_block_with_stop(
             let (guarded_actions, next_index) =
                 parse_guarded_actions_after(logical_lines, cursor + 1)?;
             actions.push(Statement::Guarded {
-                condition,
+                condition: guard.condition,
                 actions: guarded_actions,
             });
             cursor = next_index;
@@ -2092,20 +2101,29 @@ fn is_condition_guard(line: &str) -> bool {
     trimmed.starts_with('[') || trimmed.starts_with("#[")
 }
 
-fn parse_condition_guard(line: &str) -> Result<Option<Condition>, ParseError> {
+#[derive(Debug, Clone, PartialEq)]
+struct ParsedConditionGuard {
+    condition: Condition,
+    recheck: bool,
+}
+
+fn parse_condition_guard(line: &str) -> Result<Option<ParsedConditionGuard>, ParseError> {
     let trimmed = line.trim();
-    let Some(content) = trimmed
+    let (content, recheck) = if let Some(content) = trimmed
         .strip_prefix("#[")
         .and_then(|value| value.strip_suffix(']'))
-        .or_else(|| {
-            trimmed
-                .strip_prefix('[')
-                .and_then(|value| value.strip_suffix(']'))
-        })
-    else {
+    {
+        (content, true)
+    } else if let Some(content) = trimmed
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        (content, false)
+    } else {
         return Ok(None);
     };
-    parse_condition(content.trim())
+    Ok(parse_condition(content.trim())?
+        .map(|condition| ParsedConditionGuard { condition, recheck }))
 }
 
 fn update_block_depth(current: usize, line: &str) -> usize {
@@ -4256,6 +4274,11 @@ fn parse_shader_statement(line: &str) -> Result<Option<Statement>, ParseError> {
             shader: parse_shader_value(right)?,
         }));
     }
+    if lower_target == "scene.skybox" || lower_target == "skybox" {
+        return Ok(Some(Statement::SetSkybox {
+            skybox: parse_shader_value(right)?,
+        }));
+    }
     if !lower_target.ends_with(".shader") {
         return Ok(None);
     }
@@ -6041,6 +6064,7 @@ fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseErr
         y: value,
         z: value,
     });
+    let scale_value = parse_scale_value_after(text)?;
     let outer_radius = parse_outer_radius_pair_after(text)?;
     let inner_radius = parse_inner_radius_pair_after(text)?;
     let position = parse_vec3_after(text, "pos").ok();
@@ -6050,6 +6074,7 @@ fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseErr
         position_value,
         rotation_degrees: parse_vec3_after(text, "rotate").ok(),
         scale,
+        scale_value,
         size: parse_size_after(text)?,
         material: parse_quoted_value_after(text, "material"),
         hidden: contains_keyword(text, "hidden"),
@@ -6139,6 +6164,9 @@ fn parse_body_kind(text: &str) -> Option<SceneMaxBodyKind> {
 fn parse_collision_shape(text: &str) -> Option<SceneMaxCollisionShape> {
     let lower = text.to_ascii_lowercase();
     if contains_keyword(&lower, "collider") {
+        if contains_keyword(&lower, "boxes") {
+            return Some(SceneMaxCollisionShape::Boxes);
+        }
         if contains_keyword(&lower, "sphere") {
             return Some(SceneMaxCollisionShape::Sphere);
         }
@@ -6158,6 +6186,7 @@ fn parse_collision_shape(text: &str) -> Option<SceneMaxCollisionShape> {
         "none" => Some(SceneMaxCollisionShape::None),
         "sphere" => Some(SceneMaxCollisionShape::Sphere),
         "capsule" => Some(SceneMaxCollisionShape::Capsule),
+        "boxes" => Some(SceneMaxCollisionShape::Boxes),
         "box" | "" => Some(SceneMaxCollisionShape::Box),
         _ => Some(SceneMaxCollisionShape::Box),
     }
@@ -6214,6 +6243,47 @@ fn parse_scalar_after(text: &str, name: &str) -> Result<Option<f32>, ParseError>
         return Ok(None);
     }
     Ok(raw.parse::<f32>().ok())
+}
+
+fn parse_scale_value_after(text: &str) -> Result<Option<AssignmentValue>, ParseError> {
+    let lower = text.to_ascii_lowercase();
+    let Some(index) = lower.find("scale") else {
+        return Ok(None);
+    };
+    let after = text[index + "scale".len()..].trim_start();
+    if after.starts_with('(') {
+        return Ok(None);
+    }
+    let raw = take_until_clause(
+        after,
+        &[
+            ",",
+            " rotate",
+            " hidden",
+            " shadow ",
+            " collision ",
+            " mass ",
+            " material ",
+            " radius ",
+            " height ",
+            " size ",
+            " steps ",
+            " thickness ",
+            " segments ",
+            " body ",
+            " billboard ",
+            " async",
+            " loop",
+            " and ",
+        ],
+    )
+    .trim();
+    if raw.is_empty() || raw.parse::<f32>().is_ok() {
+        return Ok(None);
+    }
+    parse_assignment_value(raw)?
+        .ok_or_else(|| ParseError::InvalidNumber(raw.to_owned()))
+        .map(Some)
 }
 
 fn logical_lines(source: &str) -> Vec<String> {
@@ -6455,6 +6525,18 @@ mod tests {
             program.statements[0],
             Statement::SetEnvironmentShader {
                 shader: AssignmentValue::Symbol("rainy_evening".to_owned()),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_scene_skybox_assignment() {
+        let program = parse_program("Scene.skybox = \"skybox_morning_atmosphere\"").unwrap();
+
+        assert_eq!(
+            program.statements[0],
+            Statement::SetSkybox {
+                skybox: AssignmentValue::Symbol("skybox_morning_atmosphere".to_owned()),
             }
         );
     }
@@ -6922,19 +7004,49 @@ mod tests {
     #[test]
     fn tolerates_symbolic_model_scale_option() {
         let program =
-            parse_program("rock1 => meshy_rock1_native : pos (1,2,3), scale rock_scale").unwrap();
+            parse_program("item1 => imported_item : pos (1,2,3), scale item_scale").unwrap();
 
         assert_eq!(
             program.statements,
             vec![Statement::ModelDecl {
-                name: "rock1".to_owned(),
-                resource: "meshy_rock1_native".to_owned(),
+                name: "item1".to_owned(),
+                resource: "imported_item".to_owned(),
                 options: EntityOptions {
                     position: Some(SceneMaxVec3 {
                         x: 1.0,
                         y: 2.0,
                         z: 3.0,
                     }),
+                    scale_value: Some(AssignmentValue::Symbol("item_scale".to_owned())),
+                    ..Default::default()
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn numeric_model_scale_allows_async_suffix_without_symbolic_scale_error() {
+        let program =
+            parse_program("ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0 async")
+                .unwrap();
+
+        assert_eq!(
+            program.statements,
+            vec![Statement::ModelDecl {
+                name: "ring".to_owned(),
+                resource: "fantasy_ring1".to_owned(),
+                options: EntityOptions {
+                    position: Some(SceneMaxVec3 {
+                        x: 13.0,
+                        y: -12.0,
+                        z: 50.0,
+                    }),
+                    scale: Some(SceneMaxVec3 {
+                        x: 25.0,
+                        y: 25.0,
+                        z: 25.0,
+                    }),
+                    scale_value: None,
                     ..Default::default()
                 },
             }]
@@ -7015,7 +7127,7 @@ mod tests {
     #[test]
     fn parses_physics_body_and_collision_shape_hints() {
         let program = parse_program(
-            "floor => static box : size (100.0,1.0,100.0), collision shape box\nfx => dynamic fighter : collision shape none",
+            "floor => static box : size (100.0,1.0,100.0), collision shape box\ncity => static city_model : collision shape boxes\nfx => dynamic fighter : collision shape none",
         )
         .unwrap();
 
@@ -7040,6 +7152,15 @@ mod tests {
                         radius: None,
                         body_kind: Some(SceneMaxBodyKind::Static),
                         collision_shape: Some(SceneMaxCollisionShape::Box),
+                        ..Default::default()
+                    },
+                },
+                Statement::ModelDecl {
+                    name: "city".to_owned(),
+                    resource: "city_model".to_owned(),
+                    options: EntityOptions {
+                        body_kind: Some(SceneMaxBodyKind::Static),
+                        collision_shape: Some(SceneMaxCollisionShape::Boxes),
                         ..Default::default()
                     },
                 },
@@ -7931,6 +8052,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 name: "ai".to_owned(),
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![Statement::If(IfStatement {
                     condition: Condition::EqualsNumber {
                         name: "close_choice".to_owned(),
@@ -8195,6 +8317,28 @@ run tick(score+10) every tick_time+0.25 seconds
     }
 
     #[test]
+    fn parses_rechecked_function_guard() {
+        let program = parse_program(
+            "#[can_go == 1]\nkey_d_handler = {\n  before = 1\n  wait 0.1 seconds\n  after = 1\n}",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            program.statements.first(),
+            Some(Statement::FunctionDef(FunctionDefStatement {
+                name,
+                guard: Some(Condition::EqualsNumber { name: guard_name, value }),
+                guard_recheck: true,
+                actions,
+                ..
+            })) if name == "key_d_handler"
+                && guard_name == "can_go"
+                && (*value - 1.0).abs() < f32::EPSILON
+                && actions.len() == 3
+        ));
+    }
+
+    #[test]
     fn parses_or_and_parenthesized_key_guard() {
         let program = parse_program(
             "[player1_ko==0 && (game_status!=GAME_STATE_OVER || action == PLAYER_ACTION_X_2)]\nwhen key X is pressed once do\n  player1.pull_start\nend do",
@@ -8326,6 +8470,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 name: "old_fighter_jump".to_owned(),
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::Async {
                         actions: vec![Statement::DoWhile {
@@ -8384,6 +8529,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 name: "opponent_ai".to_owned(),
                 params: vec!["p1".to_owned(), "p2".to_owned()],
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::LocalAssignment(AssignmentStatement {
                         name: "dist".to_owned(),
@@ -8434,6 +8580,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 name: "opponent_ai".to_owned(),
                 params: vec!["p1".to_owned(), "p2".to_owned()],
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::LocalAssignment(AssignmentStatement {
                         name: "dist".to_owned(),
@@ -8499,6 +8646,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 name: "test_vm".to_owned(),
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::LocalAssignment(AssignmentStatement {
                         name: "flag".to_owned(),
@@ -8539,6 +8687,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "opponent_ai".to_owned(),
                     params: vec!["p1".to_owned(), "p2".to_owned()],
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![
                         Statement::LocalAssignment(AssignmentStatement {
                             name: "dist".to_owned(),
@@ -8823,6 +8972,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "opponent_ai".to_owned(),
                     params: Vec::new(),
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![Statement::If(IfStatement {
                         condition: Condition::CompareValue {
                             left: AssignmentValue::RandomInt {
@@ -8859,6 +9009,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 name: "math_case".to_owned(),
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![Statement::If(IfStatement {
                     condition: Condition::EqualsValue {
                         left: AssignmentValue::Binary {
@@ -9019,6 +9170,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "game_start".to_owned(),
                     params: Vec::new(),
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![
                         Statement::Visibility {
                             target: "boss".to_owned(),
@@ -9060,6 +9212,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "install_input".to_owned(),
                     params: Vec::new(),
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![Statement::KeyEvent(KeyEventStatement {
                         key: "q".to_owned(),
                         trigger: KeyTrigger::PressedOnce,
@@ -9100,6 +9253,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "install_input".to_owned(),
                     params: Vec::new(),
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![Statement::KeyEvent(KeyEventStatement {
                         key: "q".to_owned(),
                         trigger: KeyTrigger::PressedOnce,
@@ -9141,6 +9295,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "install_collision".to_owned(),
                     params: Vec::new(),
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![Statement::WhenEvent(WhenEventStatement {
                         condition: Condition::Collision {
                             sources: vec!["actor.tool.colliders[\"tool_sensor\"]".to_owned()],
@@ -9194,6 +9349,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "op_punch".to_owned(),
                     params: vec!["p2".to_owned()],
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![
                         Statement::Move(MoveStatement {
                             target: "p2".to_owned(),
@@ -9243,6 +9399,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "opponent_ai".to_owned(),
                     params: vec!["p1".to_owned(), "p2".to_owned()],
                     guard: Some(Condition::Alias("enemy_ai_allowed".to_owned())),
+                    guard_recheck: false,
                     actions: vec![Statement::LookAt {
                         target: "p2".to_owned(),
                         subject: "p1".to_owned(),
@@ -9932,6 +10089,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 name: "fx_test".to_owned(),
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::Audio(AudioStatement {
                         action: AudioAction::Play,
@@ -9990,6 +10148,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "set_camera_on_player".to_owned(),
                     params: Vec::new(),
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![Statement::If(IfStatement {
                         condition: Condition::EqualsNumber {
                             name: "enemy_ko".to_owned(),
@@ -10024,6 +10183,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     name: "enemy_knockout".to_owned(),
                     params: Vec::new(),
                     guard: None,
+                    guard_recheck: false,
                     actions: vec![Statement::ModelDecl {
                         name: "win1".to_owned(),
                         resource: "you_win1".to_owned(),

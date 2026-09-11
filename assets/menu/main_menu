@@ -29,6 +29,7 @@
       {"name": "Create New Weapon...","command": "create_weapon_document", "enabled": true},
       {"name": "Create New Throw Motion...","command": "create_throw_motion_document", "enabled": true},
       {"name": "Create New IK Asset...","command": "create_ik_document", "enabled": true},
+      {"name": "Create New Bevy SkyBox...","command": "create_skybox_document", "enabled": true},
       {"name": "Import Effekseer Effect...","command": "import_effekseer", "enabled": true},
       {"name": "Import Animation...","command": "import_animation", "enabled": true},
       {"name": "Import Video...","command": "import_video", "enabled": true},

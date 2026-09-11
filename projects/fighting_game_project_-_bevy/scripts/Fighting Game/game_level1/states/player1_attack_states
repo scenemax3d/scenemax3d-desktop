@@ -27,8 +27,6 @@ player2_head_hit = {
 	player2."Hit" at speed of 3 async
 	run level1_camera_impact_p1_to_p2 async
 	run level1_hitstop_p2_receives (0.12)
-	laser_effect => effects.effekseer.Simple_Sprite_BillBoard
-  laser_effect.play pos (player1)
 	run level1_hit_recoil_p2
 }
 
@@ -43,8 +41,7 @@ when @hit_by_legs && action == PLAYER_ACTION_S && player1.anim_percent < 25 do
   end do
 
   audio.play "attack1_jap"
-  run player1_slow_motion (0.5,40)
-
+  
 end do
 
 when player1.data.attack_legs == 1 do

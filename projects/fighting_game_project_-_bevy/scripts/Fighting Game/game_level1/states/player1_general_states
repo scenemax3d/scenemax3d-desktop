@@ -1,22 +1,4 @@
 
-player1_slow_motion (tm, frame_count) = {
-
-	slow_motion=1
-	do async
-		player2_hit2.show
-	  player2_hit2.pos (player2."mixamorig:Head")
-	  player2_hit2.play(frame 0 to 15)
-		player2_hit2.hide
-	end do
-		
-	//effects.flash.show : pos (player2."mixamorig:LeftFoot") and duration=0.5 async
-	//effects.TimeOrbit.show : pos (player1) and end size = 4 and duration = 0.5 async
-	player2.animation speed 0.01	for tm seconds // 10 times slower
-	player1.animation speed 0.01	for tm seconds when frames > frame_count // 10 times slower
-	wait tm second
-	slow_motion=0
-									
-}
 
 when player1_ko == 1 do
     

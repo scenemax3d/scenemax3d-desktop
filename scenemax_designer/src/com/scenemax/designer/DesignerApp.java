@@ -42,6 +42,7 @@ import com.scenemax.designer.selection.OutlineEffect;
 import com.scenemax.designer.selection.SelectionManager;
 import com.scenemaxeng.common.ik.IKDefinition;
 import com.scenemaxeng.common.ik.IKLayerDefinition;
+import com.scenemaxeng.common.skybox.SkyboxDefinition;
 import com.scenemaxeng.common.types.AssetsMapping;
 import com.scenemaxeng.common.types.ResourceSetup;
 import com.scenemaxeng.projector.AppModel;
@@ -263,6 +264,8 @@ public class DesignerApp extends SceneMaxApp {
     private int loadingFailedEntityCount = 0;
     private boolean documentLoadIncomplete = false;
     private boolean persistenceBlockedWarningLogged = false;
+    private boolean entityRemovalPending = false;
+    private boolean entityShrinkBlockedWarningLogged = false;
     private boolean documentPersistPending = false;
     private long documentPersistDeadlineNanos = 0L;
     private static final long DOCUMENT_PERSIST_DEBOUNCE_NANOS = TimeUnit.MILLISECONDS.toNanos(500);
@@ -3112,6 +3115,24 @@ public class DesignerApp extends SceneMaxApp {
         return null;
     }
 
+    private File getProjectRootFolder() {
+        if (designerProjectPath != null && !designerProjectPath.isBlank()) {
+            return new File(designerProjectPath);
+        }
+        if (designerFile != null) {
+            File parent = designerFile.getParentFile();
+            while (parent != null) {
+                File resources = new File(parent, "resources");
+                File scripts = new File(parent, "scripts");
+                if (resources.isDirectory() && scripts.isDirectory()) {
+                    return parent;
+                }
+                parent = parent.getParentFile();
+            }
+        }
+        return null;
+    }
+
     /**
      * Creates an AssetsMapping that includes both default and project-specific
      * extended models, the same way MainApp does via Util.getResourcesFolder().
@@ -3500,6 +3521,28 @@ public class DesignerApp extends SceneMaxApp {
         } catch (Exception ex) {
             System.err.println("Failed to load project environment shaders list");
             ex.printStackTrace();
+        }
+
+        return new ArrayList<>(names);
+    }
+
+    public List<String> getAvailableProjectSkyboxNames() {
+        TreeSet<String> names = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        File root = getProjectRootFolder();
+        if (root == null || !root.isDirectory()) {
+            return new ArrayList<>();
+        }
+
+        Collection<File> files = FileUtils.listFiles(root,
+                new String[]{SkyboxDefinition.FILE_EXTENSION.substring(1)}, true);
+        for (File file : files) {
+            try {
+                SkyboxDefinition definition = SkyboxDefinition.load(file);
+                if (!definition.getId().isBlank()) {
+                    names.add(definition.getId());
+                }
+            } catch (Exception ignored) {
+            }
         }
 
         return new ArrayList<>(names);
@@ -4267,6 +4310,26 @@ public class DesignerApp extends SceneMaxApp {
         markDocumentDirty();
     }
 
+    public void applySceneSkybox(String skybox) {
+        if (document == null) return;
+        String skyboxName = skybox != null ? skybox.trim() : "";
+        document.setSelectedBevySkybox(skyboxName);
+        if (designerFile != null && designerFile.exists()) {
+            try {
+                DesignerDocument.updateSelectedBevySkybox(designerFile, skyboxName);
+                notifyCodeFileUpdated();
+                if (panelCallback != null) {
+                    panelCallback.onDocumentSaved();
+                }
+                return;
+            } catch (IOException e) {
+                System.err.println("Failed to persist Bevy skybox selection");
+                e.printStackTrace();
+            }
+        }
+        markDocumentDirty();
+    }
+
     public boolean applyEntityAttachment(DesignerEntity entity, String attachTo) {
         if (entity == null || entity.getSceneNode() == null || !isAttachableEntity(entity)) {
             return false;
@@ -4523,6 +4586,7 @@ public class DesignerApp extends SceneMaxApp {
         entities.remove(entity);
         // Also remove from any parent section
         removeEntityFromAllSections(entity, entities);
+        entityRemovalPending = true;
         refreshDesignerFallbackLighting();
         markDocumentDirty();
         notifySceneChanged();
@@ -4961,6 +5025,8 @@ public class DesignerApp extends SceneMaxApp {
         loadingFailedEntityCount = 0;
         documentLoadIncomplete = false;
         persistenceBlockedWarningLogged = false;
+        entityRemovalPending = false;
+        entityShrinkBlockedWarningLogged = false;
         documentPersistPending = false;
         documentPersistDeadlineNanos = 0L;
     }
@@ -5079,6 +5145,8 @@ public class DesignerApp extends SceneMaxApp {
         loadingFailedEntityCount = 0;
         documentLoadIncomplete = false;
         persistenceBlockedWarningLogged = false;
+        entityRemovalPending = false;
+        entityShrinkBlockedWarningLogged = false;
         documentPersistPending = false;
         documentPersistDeadlineNanos = 0L;
         loadingExpectedEntityCount = countJsonEntities(document.getEntityDefs());
@@ -5904,10 +5972,15 @@ public class DesignerApp extends SceneMaxApp {
                 List<DesignerEntity> sceneEntities = entities.stream()
                         .filter(e -> e.getType() != DesignerEntityType.CAMERA)
                         .collect(Collectors.toList());
+                if (!canPersistSceneEntityList(sceneEntities)) {
+                    return;
+                }
                 Vector3f gameCamPos = getPersistedGameCameraPos();
                 Quaternion gameCamRot = getPersistedGameCameraRot();
                 document.save(new File(document.getFilePath()), sceneEntities,
                         cam.getLocation(), cam.getRotation(), gameCamPos, gameCamRot);
+                entityRemovalPending = false;
+                entityShrinkBlockedWarningLogged = false;
             } catch (IOException e) {
                 System.err.println("Failed to auto-save designer document");
                 e.printStackTrace();
@@ -5943,23 +6016,32 @@ public class DesignerApp extends SceneMaxApp {
             List<DesignerEntity> sceneEntities = entities.stream()
                     .filter(e -> e.getType() != DesignerEntityType.CAMERA)
                     .collect(Collectors.toList());
+            if (!canPersistSceneEntityList(sceneEntities)) {
+                return;
+            }
             Vector3f gameCamPos = getPersistedGameCameraPos();
             Quaternion gameCamRot = getPersistedGameCameraRot();
             boolean wasNew = DesignerDocument.saveCodeFile(designerFile, sceneEntities, gameCamPos, gameCamRot,
                     document != null ? document.getSceneEnvironmentShader() : "",
-                    document != null ? document.getBevyAmbientLight() : new DesignerDocument.BevyAmbientLightSettings());
+                    document != null ? document.getBevyAmbientLight() : new DesignerDocument.BevyAmbientLightSettings(),
+                    document != null ? document.getSelectedBevySkybox() : "");
             if (wasNew && scriptsTreeRefreshCallback != null) {
                 javax.swing.SwingUtilities.invokeLater(scriptsTreeRefreshCallback);
             }
             // Notify the UI so an open .code tab refreshes its content
-            if (codeFileUpdatedCallback != null) {
-                String codeFilePath = DesignerDocument.getCodeFile(designerFile).getAbsolutePath();
-                javax.swing.SwingUtilities.invokeLater(() -> codeFileUpdatedCallback.accept(codeFilePath));
-            }
+            notifyCodeFileUpdated();
         } catch (IOException e) {
             System.err.println("Failed to persist .code file");
             e.printStackTrace();
         }
+    }
+
+    private void notifyCodeFileUpdated() {
+        if (designerFile == null || codeFileUpdatedCallback == null) {
+            return;
+        }
+        String codeFilePath = DesignerDocument.getCodeFile(designerFile).getAbsolutePath();
+        javax.swing.SwingUtilities.invokeLater(() -> codeFileUpdatedCallback.accept(codeFilePath));
     }
 
     /**
@@ -5994,6 +6076,36 @@ public class DesignerApp extends SceneMaxApp {
         }
         persistenceBlockedWarningLogged = false;
         return true;
+    }
+
+    private boolean canPersistSceneEntityList(List<DesignerEntity> sceneEntities) {
+        if (designerFile == null || !designerFile.exists()) {
+            return true;
+        }
+        try {
+            DesignerDocument diskDocument = DesignerDocument.load(designerFile);
+            int diskEntityCount = countJsonEntities(diskDocument.getEntityDefs());
+            int memoryEntityCount = countDesignerEntities(sceneEntities);
+            if (!entityRemovalPending && diskEntityCount > memoryEntityCount) {
+                if (!entityShrinkBlockedWarningLogged) {
+                    System.err.println("[Designer] Blocking scene save because the in-memory entity list is smaller than the file on disk."
+                            + " diskEntities=" + diskEntityCount
+                            + " memoryEntities=" + memoryEntityCount
+                            + ". Reload the designer document before saving scene-graph changes.");
+                }
+                entityShrinkBlockedWarningLogged = true;
+                return false;
+            }
+            entityShrinkBlockedWarningLogged = false;
+            return true;
+        } catch (IOException e) {
+            if (!entityShrinkBlockedWarningLogged) {
+                System.err.println("[Designer] Could not verify entity count before save; blocking full scene save to protect the file.");
+                e.printStackTrace();
+            }
+            entityShrinkBlockedWarningLogged = true;
+            return false;
+        }
     }
 
     private Vector3f getPersistedGameCameraPos() {

@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use scenemax_runtime::{
     BevyAmbientLightDesignerLaunch, BevyRetargetDesignerLaunch, BevyShaderDesignerLaunch,
-    ProjectorLaunch, WindowSettings,
+    BevySkyboxDesignerLaunch, ProjectorLaunch, WindowSettings,
 };
 use tracing_subscriber::{EnvFilter, fmt};
 
@@ -86,6 +86,15 @@ enum Command {
         #[arg(long)]
         camera_snapshot: Option<String>,
     },
+
+    /// Open the Bevy-native skybox designer for a SceneMax skybox document.
+    SkyboxDesigner {
+        #[arg(long)]
+        skybox: PathBuf,
+
+        #[arg(long)]
+        project_root: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -154,6 +163,15 @@ fn main() -> Result<()> {
                 design,
                 project_root,
                 camera_snapshot,
+            });
+        }
+        Command::SkyboxDesigner {
+            skybox,
+            project_root,
+        } => {
+            scenemax_runtime::run_bevy_skybox_designer(BevySkyboxDesignerLaunch {
+                skybox,
+                project_root,
             });
         }
     }

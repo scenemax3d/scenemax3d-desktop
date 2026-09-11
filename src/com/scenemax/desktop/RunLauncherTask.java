@@ -434,7 +434,10 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
             List<String> command = new ArrayList<>();
             File processDirectory;
             File cargoExe = resolveCargoExecutable();
-            boolean builtExeIsCurrent = builtExe != null && !isNextGenExecutableStale(nextGenRoot, debugExe, releaseExe);
+            boolean builtExeHasNativeEffects = builtExe != null && hasNextGenNativeEffectsMarker(builtExe);
+            boolean builtExeIsCurrent = builtExe != null
+                    && builtExeHasNativeEffects
+                    && !isNextGenExecutableStale(nextGenRoot, debugExe, releaseExe);
             boolean useCargo = !builtExeIsCurrent && cargoExe.isFile();
             if (builtExeIsCurrent) {
                 command.add(builtExe.getAbsolutePath());
@@ -450,11 +453,15 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
                 processDirectory = nextGenRoot;
                 publishLaunchStatus(builtExe == null
                         ? "Building Rust/Bevy projector, then opening the game..."
-                        : "Rust/Bevy projector changed. Rebuilding, then opening the game...");
+                        : builtExeHasNativeEffects
+                        ? "Rust/Bevy projector changed. Rebuilding, then opening the game..."
+                        : "Building Rust/Bevy projector with native Effekseer, then opening the game...");
             } else if (builtExe != null) {
                 command.add(builtExe.getAbsolutePath());
                 processDirectory = nextGenRoot;
-                publishLaunchStatus("Cargo was not found, starting the existing Bevy projector...");
+                publishLaunchStatus(builtExeHasNativeEffects
+                        ? "Cargo was not found, starting the existing Bevy projector..."
+                        : "Cargo was not found, starting the existing Bevy projector without native Effekseer...");
             } else {
                 throw new IOException("SceneMax NextGen projector is not built and Cargo was not found at: "
                         + cargoExe.getAbsolutePath());
@@ -609,6 +616,13 @@ public class RunLauncherTask extends SwingWorker<Integer, String> {
         }
         long newestSource = newestRustSourceTimestamp(nextGenRoot);
         return newestSource > newestExe.lastModified();
+    }
+
+    private boolean hasNextGenNativeEffectsMarker(File exe) {
+        if (exe == null || exe.getParentFile() == null) {
+            return false;
+        }
+        return new File(exe.getParentFile(), "scenemax_projector_nextgen.effekseer_native").isFile();
     }
 
     private File newestExistingFile(File... files) {

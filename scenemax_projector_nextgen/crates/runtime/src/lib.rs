@@ -11,12 +11,12 @@ use anyhow::Result;
 use avian3d::{
     prelude::{
         AngularVelocity, Collider as AvianCollider, CollisionEnd, CollisionEventsEnabled,
-        CollisionLayers, CollisionStart, LinearVelocity, LockedAxes, PhysicsPlugins,
-        RigidBody as AvianRigidBody, Sensor,
+        CollisionLayers, CollisionStart, LinearVelocity, LockedAxes, PhysicsDebugPlugin,
+        PhysicsGizmos, PhysicsPlugins, RigidBody as AvianRigidBody, Sensor, TrimeshFlags,
     },
     schedule::PhysicsSchedule,
 };
-use bevy::app::AppExit;
+use bevy::app::{AppExit, SceneSpawnerSystems};
 #[cfg(feature = "effekseer_native")]
 use bevy::render::{
     RenderPlugin,
@@ -26,10 +26,15 @@ use bevy::{
     animation::AnimationTargetId,
     asset::{AssetApp, AssetPlugin, RenderAssetUsages, io::AssetSourceBuilder},
     audio::{PlaybackMode, PlaybackSettings, Volume},
+    diagnostic::{
+        DiagnosticPath, DiagnosticsStore, FrameTimeDiagnosticsPlugin,
+        SystemInformationDiagnosticsPlugin,
+    },
     ecs::system::SystemParam,
     gltf::{Gltf, GltfNode},
     log::LogPlugin,
-    mesh::{Indices, PrimitiveTopology},
+    math::Affine3A,
+    mesh::{Indices, PrimitiveTopology, VertexAttributeValues},
     prelude::*,
     ui::IsDefaultUiCamera,
     window::{MonitorSelection, PresentMode, WindowMode, WindowResolution},
@@ -83,6 +88,8 @@ mod physics;
 mod retarget_designer;
 mod shader;
 mod shader_designer;
+mod skybox;
+mod skybox_designer;
 mod sprites;
 mod startup;
 mod ui;
@@ -98,6 +105,8 @@ use physics::*;
 pub use retarget_designer::{BevyRetargetDesignerLaunch, run_bevy_retarget_designer};
 use shader::*;
 pub use shader_designer::{BevyShaderDesignerLaunch, run_bevy_shader_designer};
+use skybox::*;
+pub use skybox_designer::{BevySkyboxDesignerLaunch, run_bevy_skybox_designer};
 use sprites::*;
 use startup::*;
 use ui::*;
@@ -217,22 +226,40 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<SceneMaxUiRuntime>()
         .init_resource::<SceneMaxUiActionQueue>()
         .init_resource::<SceneMaxPerfDebug>()
+        .init_resource::<SceneMaxDiagnosticsOverlay>()
         .add_plugins(default_plugins)
         .add_plugins((
+            FrameTimeDiagnosticsPlugin::default(),
+            SystemInformationDiagnosticsPlugin,
             PhysicsPlugins::default(),
+            PhysicsDebugPlugin,
             TnuaControllerPlugin::<SceneMaxControlScheme>::new(PhysicsSchedule),
             TnuaAvian3dPlugin::new(PhysicsSchedule),
             SceneMaxEffekseerBridgePlugin,
         ))
         .add_systems(
             Startup,
-            (setup_camera_and_lights, setup_scenemax_program).chain(),
+            (
+                configure_scenemax_physics_debug_gizmos,
+                setup_camera_and_lights,
+                setup_scenemax_program,
+            )
+                .chain(),
         )
         .add_systems(
             PhysicsSchedule,
             feed_tnua_character_controllers.in_set(TnuaUserControlsSystems),
         )
         .add_systems(Update, apply_startup_runs_when_ready)
+        .add_systems(
+            SpawnScene,
+            (
+                sync_scenemax_runtime_visibility,
+                sync_gltf_descendant_visibility,
+            )
+                .chain()
+                .after(SceneSpawnerSystems::SceneSpawn),
+        )
         .add_systems(
             Update,
             (
@@ -245,23 +272,34 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 activate_pending_pool_members,
                 apply_key_events,
                 update_virtual_colliders,
-                update_scenemax_debug_gizmos,
                 update_current_animation_vars,
                 restore_inactive_animation_visual_rotations,
                 update_animation_runtime_controllers,
+                sync_collider_hidden_state_for_visibility,
                 apply_when_events,
                 apply_pending_weapon_actions,
                 apply_pending_throw_motion_applications,
                 update_throw_motions,
+                sync_collision_layers_for_visibility,
+                sync_scenemax_physics_debug_gizmos,
+                update_scenemax_debug_gizmos,
             )
                 .chain(),
         )
         .add_systems(
             Update,
+            sync_scenemax_runtime_visibility.before(sync_collider_hidden_state_for_visibility),
+        )
+        .add_systems(
+            Update,
+            (update_timed_turns, update_timed_moves, update_timed_jumps)
+                .chain()
+                .after(apply_key_events)
+                .before(update_virtual_colliders),
+        )
+        .add_systems(
+            Update,
             (
-                update_timed_turns,
-                update_timed_moves,
-                update_timed_jumps,
                 restore_camera_modifier_base,
                 update_timed_camera_moves,
                 update_cinematic_camera,
@@ -272,11 +310,14 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_sprite_animations,
                 update_effekseer_playbacks,
                 apply_gltf_visual_offsets,
+                bake_pending_model_bounds_colliders,
+                bake_pending_static_mesh_colliders,
                 apply_pending_animation_controller_stops,
                 play_pending_animations,
                 apply_animation_speed_overrides,
             )
-                .chain(),
+                .chain()
+                .after(update_timed_jumps),
         )
         .add_systems(
             Update,
@@ -290,7 +331,14 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             )
                 .chain(),
         )
-        .add_systems(Update, update_scenemax_perf_debug);
+        .add_systems(
+            Update,
+            (
+                update_scenemax_perf_debug,
+                update_scenemax_diagnostics_overlay,
+            )
+                .chain(),
+        );
 
     if exit_on_escape {
         app.add_systems(Update, exit_on_escape_in_undecorated_window);
@@ -303,14 +351,19 @@ fn handle_runtime_ecs_error(
     error: bevy::ecs::error::BevyError,
     context: bevy::ecs::error::ErrorContext,
 ) {
+    let error_text = error.to_string();
     if error.is::<bevy::ecs::entity::EntityNotSpawnedError>()
         || error.is::<bevy::ecs::entity::InvalidEntityError>()
+        || error.is::<bevy::ecs::world::error::EntityMutableFetchError>()
+        || error_text.contains("Entity despawned:")
+        || error_text.contains("If you were attempting to apply a command to this entity")
     {
         write_runtime_diagnostic_line(format!(
             "ECS:STALE_ENTITY_COMMAND context={} error={}",
-            context, error
+            context,
+            error_text.trim()
         ));
-        tracing::warn!(%context, %error, "ignored stale entity command");
+        tracing::warn!(%context, error = %error_text.trim(), "ignored stale entity command");
         return;
     }
     bevy::ecs::error::panic(error, context);
@@ -409,6 +462,17 @@ struct SceneMaxDebugMode {
     enabled: bool,
 }
 
+#[derive(Debug, Resource, Default)]
+struct SceneMaxDiagnosticsOverlay {
+    elapsed_seconds: f32,
+}
+
+#[derive(Component)]
+struct SceneMaxDiagnosticsOverlayRoot;
+
+#[derive(Component)]
+struct SceneMaxDiagnosticsOverlayText;
+
 static PERF_BONE_ALIAS_NS: AtomicU64 = AtomicU64::new(0);
 static PERF_TRANSFORM_BUILDS: AtomicU64 = AtomicU64::new(0);
 static PERF_BONE_TARGET_RESOLVES: AtomicU64 = AtomicU64::new(0);
@@ -433,6 +497,230 @@ fn update_scenemax_perf_debug(time: Res<Time>, mut perf: ResMut<SceneMaxPerfDebu
         aliases as f64 / builds as f64,
     ));
     *perf = SceneMaxPerfDebug::default();
+}
+
+fn update_scenemax_diagnostics_overlay(
+    mut commands: Commands,
+    time: Res<Time>,
+    debug_mode: Res<SceneMaxDebugMode>,
+    diagnostics: Res<DiagnosticsStore>,
+    mut overlay: ResMut<SceneMaxDiagnosticsOverlay>,
+    roots: Query<Entity, With<SceneMaxDiagnosticsOverlayRoot>>,
+    mut texts: Query<&mut Text, With<SceneMaxDiagnosticsOverlayText>>,
+    scene_entities: Query<(), With<SceneMaxEntity>>,
+    colliders: Query<(), With<AvianCollider>>,
+    rigid_bodies: Query<(), With<AvianRigidBody>>,
+    meshes: Res<Assets<Mesh>>,
+    images: Res<Assets<Image>>,
+    contacts: Res<SceneMaxPhysicsContacts>,
+    collision_events: Res<ActiveCollisionEvents>,
+    action_controllers: Res<ActiveActionControllers>,
+    collider_bounds: Res<SceneMaxColliderBounds>,
+) {
+    if !debug_mode.enabled {
+        for root in &roots {
+            commands
+                .entity(root)
+                .despawn_related::<Children>()
+                .try_despawn();
+        }
+        overlay.elapsed_seconds = 0.0;
+        return;
+    }
+
+    if roots.is_empty() {
+        spawn_scenemax_diagnostics_overlay(&mut commands);
+    }
+
+    overlay.elapsed_seconds += time.delta_secs();
+    if overlay.elapsed_seconds < 0.25 && !texts.is_empty() {
+        return;
+    }
+    overlay.elapsed_seconds = 0.0;
+
+    let snapshot = scenemax_diagnostics_snapshot(
+        &diagnostics,
+        &meshes,
+        &images,
+        scene_entities.iter().count(),
+        colliders.iter().count(),
+        rigid_bodies.iter().count(),
+        contacts.active_pairs.len(),
+        collision_events.active_by_event.len(),
+        collision_events.transition_armed_by_event.len(),
+        action_controllers.running.len(),
+        collider_bounds.shape_by_name.len(),
+        collider_bounds.hidden_by_name.len(),
+    );
+    for mut text in &mut texts {
+        *text = Text::new(snapshot.clone());
+    }
+}
+
+fn spawn_scenemax_diagnostics_overlay(commands: &mut Commands) {
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(12.0),
+                top: px(12.0),
+                max_width: px(360.0),
+                padding: UiRect::all(px(10.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.02, 0.025, 0.03, 0.82)),
+            GlobalZIndex(i32::MAX - 16),
+            SceneMaxDiagnosticsOverlayRoot,
+        ))
+        .with_child((
+            Text::new("SceneMax diagnostics"),
+            TextFont {
+                font_size: FontSize::Px(13.0),
+                ..default()
+            },
+            TextColor(Color::srgb(0.86, 0.95, 1.0)),
+            SceneMaxDiagnosticsOverlayText,
+        ));
+}
+
+fn scenemax_diagnostics_snapshot(
+    diagnostics: &DiagnosticsStore,
+    meshes: &Assets<Mesh>,
+    images: &Assets<Image>,
+    scene_entities: usize,
+    colliders: usize,
+    rigid_bodies: usize,
+    active_contacts: usize,
+    active_collision_handlers: usize,
+    armed_collision_handlers: usize,
+    action_controllers: usize,
+    registered_collider_bounds: usize,
+    hidden_collider_bounds: usize,
+) -> String {
+    let triangles = loaded_mesh_triangle_count(meshes);
+    let image_bytes = loaded_image_bytes(images);
+    format!(
+        "SceneMax diagnostics\n\
+         FPS: {}\n\
+         Frame: {}\n\
+         CPU: process {} / system {}\n\
+         Memory: process {} / images {}\n\
+         Meshes: {} / triangles {}\n\
+         Images: {}\n\
+         Entities: scene {} / bodies {} / colliders {}\n\
+         Collisions: contacts {} / handlers active {} armed {}\n\
+         Runtime: action controllers {} / collider bounds {} hidden {}\n\
+         GPU: n/a",
+        format_diagnostic(diagnostics, &FrameTimeDiagnosticsPlugin::FPS, "{:.1}"),
+        format_diagnostic(
+            diagnostics,
+            &FrameTimeDiagnosticsPlugin::FRAME_TIME,
+            "{:.2} ms"
+        ),
+        format_diagnostic(
+            diagnostics,
+            &SystemInformationDiagnosticsPlugin::PROCESS_CPU_USAGE,
+            "{:.1}%"
+        ),
+        format_diagnostic(
+            diagnostics,
+            &SystemInformationDiagnosticsPlugin::SYSTEM_CPU_USAGE,
+            "{:.1}%"
+        ),
+        format_diagnostic(
+            diagnostics,
+            &SystemInformationDiagnosticsPlugin::PROCESS_MEM_USAGE,
+            "{:.2} GiB"
+        ),
+        format_bytes(image_bytes),
+        meshes.len(),
+        format_count(triangles),
+        images.len(),
+        scene_entities,
+        rigid_bodies,
+        colliders,
+        active_contacts,
+        active_collision_handlers,
+        armed_collision_handlers,
+        action_controllers,
+        registered_collider_bounds,
+        hidden_collider_bounds,
+    )
+}
+
+fn format_diagnostic(
+    diagnostics: &DiagnosticsStore,
+    path: &DiagnosticPath,
+    format: &str,
+) -> String {
+    let Some(value) = diagnostics.get(path).and_then(|diagnostic| {
+        diagnostic
+            .smoothed()
+            .or_else(|| diagnostic.average())
+            .or_else(|| diagnostic.value())
+    }) else {
+        return "n/a".to_owned();
+    };
+    match format {
+        "{:.1}" => format!("{value:.1}"),
+        "{:.2} ms" => format!("{value:.2} ms"),
+        "{:.1}%" => format!("{value:.1}%"),
+        "{:.2} GiB" => format!("{value:.2} GiB"),
+        _ => format!("{value:.2}"),
+    }
+}
+
+fn loaded_mesh_triangle_count(meshes: &Assets<Mesh>) -> usize {
+    meshes
+        .iter()
+        .map(|(_, mesh)| loaded_mesh_triangle_count_for_mesh(mesh))
+        .sum()
+}
+
+fn loaded_mesh_triangle_count_for_mesh(mesh: &Mesh) -> usize {
+    if mesh.primitive_topology() != PrimitiveTopology::TriangleList {
+        return 0;
+    }
+    if let Some(indices) = mesh.try_indices_option().ok().flatten() {
+        return indices.iter().count() / 3;
+    }
+    let Some(VertexAttributeValues::Float32x3(positions)) = mesh
+        .try_attribute_option(Mesh::ATTRIBUTE_POSITION)
+        .ok()
+        .flatten()
+    else {
+        return 0;
+    };
+    positions.len() / 3
+}
+
+fn loaded_image_bytes(images: &Assets<Image>) -> usize {
+    images
+        .iter()
+        .filter_map(|(_, image)| image.data.as_ref())
+        .map(Vec::len)
+        .sum()
+}
+
+fn format_bytes(bytes: usize) -> String {
+    const MIB: f64 = 1024.0 * 1024.0;
+    const GIB: f64 = MIB * 1024.0;
+    let bytes = bytes as f64;
+    if bytes >= GIB {
+        format!("{:.2} GiB", bytes / GIB)
+    } else {
+        format!("{:.1} MiB", bytes / MIB)
+    }
+}
+
+fn format_count(count: usize) -> String {
+    if count >= 1_000_000 {
+        format!("{:.2}M", count as f64 / 1_000_000.0)
+    } else if count >= 1_000 {
+        format!("{:.1}K", count as f64 / 1_000.0)
+    } else {
+        count.to_string()
+    }
 }
 
 #[derive(Debug, Resource, Default)]
@@ -468,6 +756,7 @@ struct SceneMaxCameraSystem {
 
 #[derive(Debug, Resource, Default)]
 struct DelayedActionQueue {
+    pending_scene: Option<String>,
     actions: Vec<DelayedActions>,
     registered_key_events: RegisteredKeyEvents,
     registered_when_events: RegisteredWhenEvents,
@@ -518,7 +807,6 @@ enum SceneMaxControllerKey {
     RegisteredWhen(usize),
     Recurring(usize),
     RegisteredRecurring(usize),
-    AsyncFunction(String),
 }
 
 #[derive(Debug, Resource, Default)]
@@ -557,9 +845,10 @@ struct SceneMaxColliderBounds {
     hidden_by_name: HashSet<String>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum ColliderBoundShape {
     Box { half_extents: Vec3 },
+    ModelBox { center: Vec3, half_extents: Vec3 },
     Sphere { radius: f32 },
     Capsule { radius: f32, half_height: f32 },
 }
@@ -568,6 +857,10 @@ impl ColliderBoundShape {
     fn bounding_radius(self) -> f32 {
         match self {
             ColliderBoundShape::Box { half_extents } => half_extents.length(),
+            ColliderBoundShape::ModelBox {
+                center,
+                half_extents,
+            } => center.length() + half_extents.length(),
             ColliderBoundShape::Sphere { radius } => radius,
             ColliderBoundShape::Capsule {
                 radius,
@@ -1448,10 +1741,12 @@ const CHARACTER_INPUT_TTL_SECONDS: f32 = 0.12;
 const CHARACTER_JUMP_FEED_SECONDS: f32 = 0.2;
 const DEFAULT_ANIMATION_CLIP_SECONDS: f32 = 1.5;
 const MAX_ATTACHED_COLLIDER_OWNER_DISTANCE: f32 = 3.75;
+const COLLISION_FALLBACK_CONTACT_INSET: f32 = 0.11;
 const LOOP_CONTINUE_DELAY_SECONDS: f32 = 0.001;
 const PHYSICS_LAYER_WORLD: u32 = 1 << 0;
 const PHYSICS_LAYER_CHARACTER: u32 = 1 << 1;
 const PHYSICS_LAYER_HITBOX: u32 = 1 << 2;
+const PHYSICS_LAYER_WEAPON: u32 = 1 << 3;
 static SCENEMAX_RUNTIME_LOG_FILE: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 fn setup_placeholder_model(
@@ -1921,6 +2216,7 @@ mod tests {
             FunctionRuntime {
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::ModelDecl {
                         name: "ignored".to_owned(),
@@ -1969,6 +2265,7 @@ mod tests {
             FunctionRuntime {
                 params: Vec::new(),
                 guard: None,
+                guard_recheck: false,
                 actions: vec![
                     Statement::ModelDecl {
                         name: "rock1".to_owned(),
@@ -2001,6 +2298,117 @@ mod tests {
         );
 
         assert_eq!(vars.0.get("index"), Some(&2.0));
+    }
+
+    #[test]
+    fn object_pool_factory_returns_fresh_local_scope_for_acquire_transform() {
+        let mut vars = SceneMaxVars(HashMap::from([("next_scale".to_owned(), 1.0)]));
+        let mut object_pools = SceneMaxObjectPools::default();
+        object_pools.pools.insert(
+            "items".to_owned(),
+            ObjectPoolRuntime {
+                factory: "create_item".to_owned(),
+                prototype: Some(ModelRuntimeDecl {
+                    name: String::new(),
+                    resource: "pooled_item".to_owned(),
+                    options: EntityOptions {
+                        scale_value: Some(AssignmentValue::Symbol("item_scale".to_owned())),
+                        ..Default::default()
+                    },
+                }),
+                ..Default::default()
+            },
+        );
+        let functions = HashMap::from([(
+            "create_item".to_owned(),
+            FunctionRuntime {
+                params: Vec::new(),
+                guard: None,
+                guard_recheck: false,
+                actions: vec![
+                    Statement::LocalAssignment(scenemax_parser::AssignmentStatement {
+                        name: "item_scale".to_owned(),
+                        value: AssignmentValue::Symbol("next_scale".to_owned()),
+                    }),
+                    Statement::Assignment(scenemax_parser::AssignmentStatement {
+                        name: "next_scale".to_owned(),
+                        value: AssignmentValue::Binary {
+                            left: Box::new(AssignmentValue::Symbol("next_scale".to_owned())),
+                            operator: scenemax_parser::ArithmeticOperator::Add,
+                            right: Box::new(AssignmentValue::Number(1.0)),
+                        },
+                    }),
+                    Statement::ReturnValue {
+                        value: AssignmentValue::Symbol("pooled_item".to_owned()),
+                    },
+                ],
+            },
+        )]);
+
+        let scales = (0..8)
+            .filter_map(|_| {
+                let scope = apply_pool_factory_acquire_side_effects(
+                    "items",
+                    &mut vars,
+                    &object_pools,
+                    &functions,
+                    &HashMap::new(),
+                    &HashMap::new(),
+                    &SceneMaxColliderBounds::default(),
+                );
+                scope.vars.get("item_scale").copied()
+            })
+            .collect::<Vec<_>>();
+
+        assert!(!vars.0.contains_key("item_scale"));
+        assert_eq!(vars.0.get("next_scale"), Some(&9.0));
+        assert_eq!(scales, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+    }
+
+    #[test]
+    fn acquired_pool_alias_tracks_prepared_member_transform() {
+        let mut object_pools = SceneMaxObjectPools::default();
+        object_pools.pools.insert(
+            "items".to_owned(),
+            ObjectPoolRuntime {
+                available: vec!["__pool_items_0".to_owned()],
+                members: HashSet::from(["__pool_items_0".to_owned()]),
+                ..Default::default()
+            },
+        );
+        let mut transforms = HashMap::from([(
+            "__pool_items_0".to_owned(),
+            Transform::from_translation(Vec3::new(1.0, 2.0, 3.0)),
+        )]);
+
+        let member = acquire_available_pool_member("items", &mut object_pools).unwrap();
+        object_pools
+            .aliases
+            .insert("alias".to_owned(), member.clone());
+        sync_live_transform(
+            &mut transforms,
+            &object_pools,
+            None,
+            &member,
+            Transform::from_translation(Vec3::new(4.0, 5.0, 6.0)),
+        );
+
+        assert_eq!(member, "__pool_items_0");
+        assert!(target_matches_alias(
+            "alias",
+            "__pool_items_0",
+            &object_pools,
+            None
+        ));
+        assert_eq!(
+            transforms
+                .get("alias")
+                .map(|transform| transform.translation),
+            Some(Vec3::new(4.0, 5.0, 6.0))
+        );
+        let runtime = object_pools.pools.get("items").unwrap();
+        assert!(runtime.available.is_empty());
+        assert!(runtime.in_use.contains("__pool_items_0"));
     }
 
     #[test]
@@ -2140,6 +2548,27 @@ mod tests {
     }
 
     #[test]
+    fn character_collider_shape_compensates_for_entity_scale() {
+        let transform = Transform::from_scale(Vec3::splat(3.0));
+        let dimensions = character_dimensions_for_transform(&transform);
+        let local_shape = character_local_collider_shape_for_transform(&transform, dimensions);
+
+        assert!((local_shape.capsule_radius - DEFAULT_CHARACTER_CAPSULE_RADIUS).abs() < 0.0001);
+        assert!((local_shape.capsule_height - DEFAULT_CHARACTER_CAPSULE_HEIGHT).abs() < 0.0001);
+        assert!(
+            (local_shape.capsule_center_y
+                - character_capsule_half_height(
+                    DEFAULT_CHARACTER_CAPSULE_RADIUS,
+                    DEFAULT_CHARACTER_CAPSULE_HEIGHT,
+                ))
+            .abs()
+                < 0.0001
+        );
+        assert!((local_shape.capsule_radius * 3.0 - dimensions.capsule_radius).abs() < 0.0001);
+        assert!((local_shape.capsule_height * 3.0 - dimensions.capsule_height).abs() < 0.0001);
+    }
+
+    #[test]
     fn character_float_height_is_ground_clearance_not_body_height() {
         let transform = Transform::from_scale(Vec3::splat(3.0));
         let dimensions = character_dimensions_for_transform(&transform);
@@ -2170,6 +2599,92 @@ mod tests {
             support.center_y,
             support.top_y - DEFAULT_STAGE_SUPPORT_HALF_HEIGHT
         );
+    }
+
+    #[test]
+    fn existing_stage_support_only_skips_characters_it_covers() {
+        let upper = Transform::from_translation(Vec3::new(9.0, 0.0, 35.0));
+        let upper_dimensions = character_dimensions_for_transform(&upper);
+        let upper_support_top_y =
+            character_stage_support_top_y(upper.translation.y, upper_dimensions);
+        let upper_support_surface = support_surface_from_stage_support(
+            &SceneMaxStageSupport {
+                half_size: DEFAULT_STAGE_SUPPORT_HALF_SIZE,
+            },
+            &Transform::from_translation(Vec3::new(
+                upper.translation.x,
+                upper_support_top_y - DEFAULT_STAGE_SUPPORT_HALF_HEIGHT,
+                upper.translation.z,
+            )),
+        );
+        let lower = Transform::from_translation(Vec3::new(40.0, -89.249504, 30.0))
+            .with_scale(Vec3::splat(3.0));
+        let lower_dimensions = character_dimensions_for_transform(&lower);
+        let samples = vec![
+            ("upper".to_owned(), upper, upper_dimensions),
+            ("lower".to_owned(), lower, lower_dimensions),
+        ];
+
+        let imported_bounds = Vec::new();
+        let missing = missing_character_stage_support_samples(
+            &samples,
+            &[upper_support_surface],
+            &imported_bounds,
+            false,
+        );
+
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].0, "lower");
+    }
+
+    #[test]
+    fn fallback_character_support_skips_when_static_imported_level_can_collide() {
+        let program = scenemax_parser::parse_program(
+            "level => static city_model: pos (0,-90,0), scale 0.02\navatar => dynamic fighter: pos (0,-75,0), scale 3\navatar.switch to character mode : gravity 60",
+        )
+        .unwrap();
+        let transforms = HashMap::from([(
+            "avatar".to_owned(),
+            Transform::from_translation(Vec3::new(0.0, -75.0, 0.0)).with_scale(Vec3::splat(3.0)),
+        )]);
+
+        let fallback_samples = fallback_character_mode_support_samples(&program, &transforms);
+
+        assert!(fallback_samples.is_empty());
+    }
+
+    #[test]
+    fn imported_model_bounds_skip_fallback_only_for_covered_character_columns() {
+        let inside =
+            Transform::from_translation(Vec3::new(0.0, -75.0, 0.0)).with_scale(Vec3::splat(3.0));
+        let outside =
+            Transform::from_translation(Vec3::new(200.0, -75.0, 0.0)).with_scale(Vec3::splat(3.0));
+        let samples = vec![
+            (
+                "inside".to_owned(),
+                inside,
+                character_dimensions_for_transform(&inside),
+            ),
+            (
+                "outside".to_owned(),
+                outside,
+                character_dimensions_for_transform(&outside),
+            ),
+        ];
+        let imported_bounds = vec![SceneMaxImportedModelSupportBounds {
+            min_x: -50.0,
+            max_x: 50.0,
+            min_y: -90.0,
+            max_y: -20.0,
+            min_z: -50.0,
+            max_z: 50.0,
+        }];
+
+        let missing =
+            missing_character_stage_support_samples(&samples, &[], &imported_bounds, false);
+
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].0, "outside");
     }
 
     #[test]
@@ -3325,10 +3840,13 @@ mod tests {
         ]);
 
         assert_eq!(
-            resolve_assignment_value(
+            resolve_assignment_value_scoped_with_guards(
                 &AssignmentValue::Symbol("player1.y".to_owned()),
                 &vars,
+                None,
+                &HashMap::new(),
                 Some(&transforms),
+                None,
             ),
             Some(20.0)
         );

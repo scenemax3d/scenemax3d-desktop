@@ -5,6 +5,7 @@
 // This code will be included at the beginning of the generated .code file.
 
 Scene.environment.shader = "ambient1"
+Scene.skybox = "skybox_skybox1"
 camera.pos(0.0,2.0,10.0)
 camera.rotate(0.0,180.0,0.0)
 

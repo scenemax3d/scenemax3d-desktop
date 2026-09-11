@@ -1,7 +1,10 @@
+//debug.on 
+
 add "/variables/constants", 
     "/variables/global_variables", 
     "/utils/messages" code
 add "game_init.code",
+    "/game_input/input_actions.code",
     "/game_input/input",
     "/game_input/input_x",
     "/game_input/input_c", 

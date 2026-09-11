@@ -1,5 +1,13 @@
 {
   "sceneEnvironmentShader": "",
+  "bevyAmbientLight": {
+    "configured": false,
+    "brightness": 220,
+    "color": "#ffffff",
+    "name": "level_ambient",
+    "affectsLightmappedMeshes": true,
+    "enabled": false
+  },
   "entities": [
     {
       "shader": "",
@@ -2767,7 +2775,7 @@
       ],
       "modelCollisionShape": "none",
       "type": "MODEL",
-      "sceneMaxCode": "model_21 => static dragon_gate1: pos (40.464985,-64.232185,-103.70199), collision shape none async",
+      "sceneMaxCode": "model_21 => static dragon_gate1: pos (40.464985,-64.232185,-103.70199), scale 43.4, collision shape none async",
       "staticModel": true,
       "name": "model_21",
       "vehicleModel": false,
@@ -2795,15 +2803,15 @@
   },
   "camera": {
     "rotation": [
-      -0.02704136,
-      0.9622321,
-      -0.25010976,
-      -0.10403458
+      -0.09904575,
+      0.8923991,
+      -0.2391176,
+      -0.36964384
     ],
     "position": [
-      35.656685,
-      93.00817,
-      162.96957
+      9.185587,
+      7.5,
+      9.185586
     ]
   },
   "version": 1

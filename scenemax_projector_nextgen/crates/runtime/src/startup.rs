@@ -1109,6 +1109,7 @@ fn spawn_scenemax_program_with_visibility_mode(
                 ))
                 .id();
             insert_physics_components(commands, entity, name, resource, options, &transform);
+            register_visual_collider_bounds(collider_bounds, name, resource, options, transform);
             entities_by_name.insert(name.clone(), entity);
             transforms_by_name.insert(name.clone(), transform);
             spawned_any = true;
@@ -1167,7 +1168,28 @@ fn spawn_scenemax_program_with_visibility_mode(
                     .id();
                 insert_gltf_visual_offset(commands, entity_id, bevy_visual_offset_y);
 
-                insert_physics_components(commands, entity_id, name, resource, options, &transform);
+                if should_use_static_mesh_collider(options) {
+                    insert_pending_static_mesh_collider(commands, entity_id, options.hidden);
+                } else if should_fit_model_bounds_collider(name, resource, options) {
+                    if let Some(body_kind) = physics_body_kind(options) {
+                        let Some(collision_shape) =
+                            model_bounds_collision_shape(name, resource, options, body_kind)
+                        else {
+                            continue;
+                        };
+                        insert_pending_model_bounds_collider(
+                            commands,
+                            entity_id,
+                            body_kind,
+                            collision_shape,
+                            options.hidden,
+                        );
+                    }
+                } else {
+                    insert_physics_components(
+                        commands, entity_id, name, resource, options, &transform,
+                    );
+                }
 
                 entities_by_name.insert(name.clone(), entity_id);
                 transforms_by_name.insert(name.clone(), transform);
@@ -1315,6 +1337,7 @@ pub(super) fn apply_startup_runs_when_ready(
     mut runtime_assets: ResMut<SceneMaxRuntimeAssets>,
     mut delayed_actions: ResMut<DelayedActionQueue>,
     mut ui_queue: ResMut<SceneMaxUiActionQueue>,
+    mut collider_bounds: ResMut<SceneMaxColliderBounds>,
     mut scene_entities: ParamSet<(
         Query<(
             Entity,
@@ -1424,6 +1447,7 @@ pub(super) fn apply_startup_runs_when_ready(
         &mut transforms_by_name,
         &gltfs_by_name,
         &guards_by_name,
+        &mut collider_bounds,
     );
     startup_action_state.applied = true;
 }
