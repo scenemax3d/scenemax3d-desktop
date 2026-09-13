@@ -1,8 +1,8 @@
 # SceneMax3D Developer Studio
 
-**SceneMax3D is an open-source, 3D game creation studio built around choreography programming.** Instead of dealing with low-level engine mechanics, developers describe how characters, cameras, animations, effects, sounds, and game events behave and interact over time.
+**Rust/Bevy migration:** the target product is now a Java-free IDE and projector. A side-by-side native IDE preview is available through [`run-rust-ide.ps1`](run-rust-ide.ps1); see the [migration plan](docs/RUST_IDE_MIGRATION.md) and [preview instructions](scenemax3d_nextgen/IDE/app/README.md). The Swing product described below remains available as a comparison reference until migration acceptance is complete.
 
-SceneMax3D combines a visual 3D editor with its high-level scripting language, AI-assisted development through MCP, automatic animation retargeting, multiplayer, inverse kinematics, physics, effects, UI tools, and extensibility with custom code. Its NextGen runtime, powered by Rust, Bevy, and ECS, brings a modern high-performance foundation for building and shipping interactive 3D games.
+A desktop 3D scene editor and game development environment built with Java, [JMonkeyEngine 3](https://jmonkeyengine.org/), Swing, native runtime integrations, and a growing toolchain for shipping real interactive 3D games.
 
 
 <img width="1600" height="846" alt="image" src="https://github.com/user-attachments/assets/8e83d0b0-950e-425d-94a0-d38db5fc4fd3" />
@@ -10,9 +10,7 @@ SceneMax3D combines a visual 3D editor with its high-level scripting language, A
 SceneMax3D was first created by Adi Barda in 2005 as a C++/DirectX game engine and scripting language for education purposes.
 In 2017-2018 it was rewritten in Java from scratch using JMonkeyEngine3 as the target renderer and ANTLR4 for the language parsing. 
 In Mar-22, 2026 the entire solution was uploaded to GitHub as an open source (MIT license) project.
-On August 08 2026, the initial next generation projector, based on Rust/Bevy engine was committed looking ahead as the future target renderer.
-SceneMax3D is transitioning from its original Java/JMonkeyEngine runtime to the NextGen Rust/Bevy runtime. During the transition, both projectors remain available so existing projects can run while NextGen reaches feature parity.
-The NextGen run-time projector will have superior performance, rendering, web support and multi platform. Currently, there are no plans for replacing the Swing IDE.
+On August 08 2026, the initial next generation projector, based on Rust/Bevy engine was committed. As of September 11, 2026, the product direction is a Rust/Bevy-only IDE and runtime; the Java projects remain temporarily for migration comparisons.
 
 ## Product Website
 [SceneMax3D](https://scenemax3d.com/cook-book/)
@@ -270,7 +268,7 @@ Effect objects support placement, show/hide/delete, attachment, look-at behavior
 scenemax_desktop/            -- Main desktop application (Swing UI)
 scenemax_designer/           -- 3D scene designer/editor module
 scenemax_win_projector/      -- 3D runtime/playback engine
-scenemax_projector_nextgen/  -- Next generation Rust/Bevy runtime projector
+scenemax3d_nextgen/         -- Rust/Bevy IDE, projector, engine and shared components
 scenemax_effekseer_runtime/  -- Effekseer JNI/native runtime bridge
 scenemax3d_compiler/         -- Script compilation engine
 scenemax3d_parser/           -- ANTLR4 grammar & parser for SceneMax scripting language

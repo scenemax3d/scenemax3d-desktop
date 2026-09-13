@@ -1,0 +1,13 @@
+camera.pos (0,3,12)
+camera.rotate (0,180,0)
+projectile => sphere : radius 0.4, pos (0,0,0), collision shape sphere
+target => static box : size (1,1,1), pos (0,0,0)
+enabled = 0
+[enabled == 1]
+when projectile collides with target do
+  Logger.info "SCENE_SWITCH_TEST CONTACT"
+  switch to "next_room"
+  Logger.info "SCENE_SWITCH_TEST FAIL: continued old handler"
+end do
+wait 1 second
+enabled = 1

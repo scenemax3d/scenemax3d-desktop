@@ -1,0 +1,238 @@
+//! SceneMax Studio composition root and application plugin.
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
+mod application;
+mod presentation;
+mod project_assets;
+#[cfg(test)]
+mod tests;
+
+use anyhow::Result;
+use application::{CommandQueue, EditorServices, Session, ViewChange};
+use bevy::{input_focus::tab_navigation::TabNavigationPlugin, prelude::*};
+use scenemax_ide_core::Project;
+use scenemax_ide_services::StorageRequest;
+use scenemax_ide_ui::{StudioUiPlugin, theme::BG};
+use std::{path::PathBuf, time::Duration};
+
+/// Launch configuration independent of command-line parsing.
+pub struct LaunchOptions {
+    /// Selected project directory.
+    pub project_root: PathBuf,
+    /// Optional existing Java-compatible project catalog.
+    pub project_catalog: Option<PathBuf>,
+    /// Restore the catalog selection when no explicit project was requested.
+    pub select_catalog_project: bool,
+    /// Optional initial script, relative to the project root or absolute.
+    pub script: Option<PathBuf>,
+    /// Explicit projector build; otherwise use the sibling executable.
+    pub projector: Option<PathBuf>,
+    /// Optional frame limit for controlled GPU smoke runs.
+    pub smoke_frames: Option<u32>,
+    /// Screenshot destination for a controlled smoke run of at least 30 frames.
+    pub smoke_screenshot: Option<PathBuf>,
+    /// Open the File menu during a controlled screenshot run.
+    pub smoke_menu: bool,
+    /// Show Project Explorer after initial loading in a controlled smoke run.
+    pub smoke_projects: bool,
+    /// Run the project after loading in a controlled smoke run.
+    pub smoke_run_project: bool,
+    /// Show code completion at the document end during a controlled GPU run.
+    pub smoke_completion: bool,
+    /// Select a scene hierarchy entry in a controlled GPU capture.
+    pub smoke_scene_entry: Option<usize>,
+}
+
+/// Start the standalone IDE. Projector code is not linked into this executable.
+pub fn run(options: LaunchOptions) -> Result<()> {
+    // Show the shell immediately; canonicalization, scanning and initial loading
+    // belong to the disk worker, including startup on slow/network storage.
+    let mut session = Session::new(Project::new(options.project_root.clone(), vec![]));
+    session.status = "Opening project…".into();
+    let projector = match options.projector {
+        Some(path) => path,
+        None => std::env::current_exe()?.with_file_name(format!(
+            "scenemax_projector_nextgen{}",
+            std::env::consts::EXE_SUFFIX
+        )),
+    };
+    let mut services = EditorServices::new(projector)?;
+    services.catalog_root = options.project_root.clone();
+    services.catalog_path = options.project_catalog.clone();
+    services.catalog_storage.request(StorageRequest::Catalog {
+        root: options.project_root.clone(),
+        path: options.project_catalog,
+    })?;
+    if options.select_catalog_project {
+        services.catalog_startup = Some((options.project_root, options.script));
+    } else {
+        services.storage.request(StorageRequest::Project {
+            root: options.project_root,
+            script: options.script,
+        })?;
+    }
+    let mut app = App::new();
+    let project_assets = project_assets::ProjectAssets::default();
+    let reader = project_assets.clone();
+    app.register_asset_source(
+        "project",
+        bevy::asset::io::AssetSourceBuilder::new(move || Box::new(reader.clone())),
+    );
+    app.insert_resource(project_assets);
+    app.insert_resource(services)
+        .insert_resource(session)
+        .insert_resource(ClearColor(BG))
+        .insert_resource(if options.smoke_frames.is_some() {
+            bevy::winit::WinitSettings::continuous()
+        } else {
+            bevy::winit::WinitSettings {
+                focused_mode: bevy::winit::UpdateMode::reactive(Duration::from_millis(100)),
+                unfocused_mode: bevy::winit::UpdateMode::reactive_low_power(Duration::from_millis(
+                    250,
+                )),
+            }
+        })
+        .add_plugins(
+            DefaultPlugins
+                .set(bevy::asset::AssetPlugin {
+                    unapproved_path_mode: bevy::asset::UnapprovedPathMode::Forbid,
+                    ..default()
+                })
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "SceneMax Studio".into(),
+                        decorations: false,
+                        resolution: (1400, 900).into(),
+                        ..default()
+                    }),
+                    close_when_requested: false,
+                    ..default()
+                }),
+        )
+        .add_plugins((TabNavigationPlugin, StudioUiPlugin, StudioPlugin))
+        .add_plugins(presentation::scene3d::gizmo::GizmoPlugin);
+    bevy::asset::embedded_asset!(app, "presentation/scenemax_icon.png");
+    presentation::java_icons::register(&mut app);
+    if let Some(remaining) = options.smoke_frames {
+        app.insert_resource(presentation::smoke::SmokeCapture {
+            remaining,
+            path: options.smoke_screenshot,
+            show_projects: options.smoke_projects,
+            run_project: options.smoke_run_project,
+            show_completion: options.smoke_completion,
+            scene_entry: options.smoke_scene_entry,
+        });
+    }
+    if options.smoke_menu && options.smoke_frames.is_some() {
+        app.world_mut()
+            .resource_mut::<presentation::chrome::ChromeState>()
+            .preview_file_menu();
+    }
+    app.run();
+    Ok(())
+}
+
+struct StudioPlugin;
+impl Plugin for StudioPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            Update,
+            (
+                presentation::titlebar::load_icon,
+                presentation::java_icons::load,
+            ),
+        );
+        app.init_resource::<CommandQueue>()
+            .init_resource::<presentation::titlebar::Maximized>()
+            .init_resource::<application::symbols::ProjectSymbols>()
+            .init_resource::<presentation::scene3d::SceneState>()
+            .init_resource::<presentation::scene3d::rig::Selection>()
+            .init_resource::<presentation::scene3d::picking::Request>()
+            .init_resource::<presentation::scene3d::tools::Tools>()
+            .init_resource::<presentation::scene3d::path::Drawing>()
+            .init_resource::<presentation::scene3d::navigation::Navigation>()
+            .init_resource::<presentation::scene3d::playback::Playback>()
+            .init_resource::<presentation::completion::CompletionState>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<presentation::chrome::ChromeState>()
+            .init_resource::<presentation::browser::TreeState>()
+            .add_message::<ViewChange>()
+            .add_systems(Startup, presentation::shell::setup)
+            .add_systems(
+                Update,
+                (
+                    presentation::completion::prepare,
+                    presentation::assistance::indent_newlines,
+                    scenemax_ide_ui::commit_pending_input,
+                )
+                    .chain()
+                    .before(presentation::input::sync_documents),
+            )
+            // Commit queued native input before commands, then materialize retained views
+            // in Update. Bevy can prepare, lay out and render every change in the
+            // same frame; no UI entities are rebuilt after the layout pass.
+            .add_systems(
+                Update,
+                (
+                    presentation::input::sync_documents,
+                    presentation::input::collect_actions,
+                    presentation::input::sync_filter,
+                    presentation::chrome::controls,
+                    presentation::browser::keyboard,
+                    (
+                        presentation::designer::interactions,
+                        presentation::scene3d::live::update,
+                        presentation::scene3d::inspector::apply,
+                        presentation::scene3d::tools::update,
+                        presentation::scene3d::ambient::update,
+                        presentation::scene3d::path::update,
+                        presentation::scene3d::segments::update,
+                        application::execute_commands,
+                    )
+                        .chain(),
+                    (application::poll_jobs, application::symbols::update).chain(),
+                    application::checkpoint_buffers,
+                    (
+                        presentation::reconcile::reconcile,
+                        presentation::designer::refresh,
+                        presentation::scene3d::update,
+                        presentation::scene3d::synchronize_tree,
+                        presentation::scene3d::synchronize_names,
+                        presentation::scene3d::rig::highlight,
+                        presentation::scene3d::navigation::update,
+                        presentation::scene3d::focus::update,
+                        presentation::scene3d::game_camera::synchronize,
+                        presentation::scene3d::tools::lighting,
+                        presentation::scene3d::asset_status,
+                        presentation::scene3d::playback::update,
+                        presentation::scene3d::playback::cadence,
+                    )
+                        .chain(),
+                    presentation::projects::refresh,
+                    presentation::browser::update_tree,
+                    presentation::browser::selection,
+                    presentation::chrome::active_tabs,
+                    presentation::reconcile::search_results,
+                    presentation::editing::project_edits,
+                    (
+                        presentation::editing::update_gutters,
+                        presentation::editing::highlight_documents,
+                        presentation::assistance::bracket_emphasis,
+                        presentation::completion::refresh,
+                    )
+                        .chain(),
+                    presentation::labels::refresh_labels,
+                    (
+                        presentation::labels::refresh_console,
+                        presentation::labels::output_visibility,
+                    )
+                        .chain(),
+                    presentation::labels::tab_close_prompt,
+                    presentation::smoke::smoke_capture,
+                )
+                    .chain(),
+            );
+    }
+}

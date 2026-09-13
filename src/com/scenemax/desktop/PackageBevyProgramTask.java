@@ -243,13 +243,13 @@ public class PackageBevyProgramTask extends SwingWorker<Integer, String> {
         List<File> candidates = new ArrayList<>();
         String configuredPath = AppDB.getInstance().getParam("nextgen_projector_path");
         if (configuredPath != null && !configuredPath.isBlank()) {
-            addPrebuiltRuntimeCandidates(candidates, new File(configuredPath.trim()), target);
+            addPrebuiltRuntimeCandidates(candidates, com.scenemaxeng.common.NextGenWorkspacePaths.relocated(new File(configuredPath.trim())), target);
         }
         File workingDir = new File(Util.getWorkingDir());
         addPrebuiltRuntimeCandidates(candidates, new File(workingDir, "runtime\\nextgen"), target);
         addPrebuiltRuntimeCandidates(candidates, new File(workingDir, "projectors\\nextgen"), target);
         addPrebuiltRuntimeCandidates(candidates, new File(workingDir, "bin\\nextgen"), target);
-        addPrebuiltRuntimeCandidates(candidates, new File(workingDir, "scenemax_projector_nextgen"), target);
+        addPrebuiltRuntimeCandidates(candidates, new File(workingDir, "scenemax3d_nextgen"), target);
         for (File candidate : candidates) {
             if (candidate != null && candidate.isFile()) {
                 return candidate;
@@ -622,7 +622,7 @@ public class PackageBevyProgramTask extends SwingWorker<Integer, String> {
     private File resolveNextGenProjectorRoot() {
         String configuredPath = AppDB.getInstance().getParam("nextgen_projector_path");
         if (configuredPath != null && !configuredPath.isBlank()) {
-            File configured = new File(configuredPath.trim());
+            File configured = com.scenemaxeng.common.NextGenWorkspacePaths.relocated(new File(configuredPath.trim()));
             if (configured.isFile()) {
                 File targetDir = configured.getParentFile();
                 if (targetDir != null && ("debug".equalsIgnoreCase(targetDir.getName()) || "release".equalsIgnoreCase(targetDir.getName()))
@@ -634,7 +634,7 @@ public class PackageBevyProgramTask extends SwingWorker<Integer, String> {
             }
             return configured;
         }
-        return new File(Util.getWorkingDir(), "scenemax_projector_nextgen");
+        return new File(Util.getWorkingDir(), "scenemax3d_nextgen");
     }
 
     private File resolveCargoExecutable() {

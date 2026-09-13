@@ -158,7 +158,7 @@ public final class BevySkyboxDesignerLauncher {
     private static File resolveNextGenProjectorRoot() {
         String configuredPath = AppDB.getInstance().getParam("nextgen_projector_path");
         if (configuredPath != null && !configuredPath.isBlank()) {
-            File configured = new File(configuredPath.trim());
+            File configured = com.scenemaxeng.common.NextGenWorkspacePaths.relocated(new File(configuredPath.trim()));
             if (configured.isFile()) {
                 File targetDir = configured.getParentFile();
                 if (targetDir != null && ("debug".equalsIgnoreCase(targetDir.getName())
@@ -171,7 +171,7 @@ public final class BevySkyboxDesignerLauncher {
             }
             return configured;
         }
-        return new File(Util.getWorkingDir(), "scenemax_projector_nextgen");
+        return new File(Util.getWorkingDir(), "scenemax3d_nextgen");
     }
 
     private static boolean isNextGenExecutableStale(File nextGenRoot, File debugExe, File releaseExe) {
@@ -199,7 +199,9 @@ public final class BevySkyboxDesignerLauncher {
     private static long newestRustSourceTimestamp(File nextGenRoot) {
         long newest = 0L;
         Deque<File> pending = new ArrayDeque<>();
-        pending.add(new File(nextGenRoot, "crates"));
+        for (String component : List.of("Engine", "Language", "Common", "Projector")) {
+            pending.add(new File(nextGenRoot, component));
+        }
         pending.add(new File(nextGenRoot, "Cargo.toml"));
         pending.add(new File(nextGenRoot, "Cargo.lock"));
         while (!pending.isEmpty()) {

@@ -1,0 +1,16 @@
+[package]
+name = "scenemax_projector_nextgen"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+effekseer_native = ["scenemax_runtime/effekseer_native"]
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+scenemax_runtime = { path = "../../Engine/runtime" }
+tracing.workspace = true
+tracing-subscriber.workspace = true

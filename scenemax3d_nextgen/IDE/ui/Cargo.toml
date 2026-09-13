@@ -1,0 +1,11 @@
+[package]
+name = "scenemax_ide_ui"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bevy = { workspace = true, features = ["ui", "default_font", "system_font_discovery", "system_clipboard", "png"] }
+
+[lints]
+workspace = true

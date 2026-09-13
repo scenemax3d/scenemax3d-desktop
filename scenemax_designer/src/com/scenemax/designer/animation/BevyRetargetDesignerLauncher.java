@@ -41,7 +41,7 @@ public class BevyRetargetDesignerLauncher {
     private static CommandTarget commandTarget() {
         File current = new File(System.getProperty("user.dir", ".")).getAbsoluteFile();
         File repoRoot = findRepoRoot(current);
-        File nextgenRoot = new File(repoRoot, "scenemax_projector_nextgen");
+        File nextgenRoot = new File(repoRoot, "scenemax3d_nextgen");
         File exe = new File(nextgenRoot, "target/debug/scenemax_projector_nextgen.exe");
         List<String> command = new ArrayList<>();
         if (exe.isFile() && !isStaleDevExecutable(exe, nextgenRoot)) {
@@ -64,7 +64,9 @@ public class BevyRetargetDesignerLauncher {
     private static long newestRustSourceTimestamp(File nextgenRoot) {
         long newest = 0L;
         Deque<File> pending = new ArrayDeque<>();
-        pending.add(new File(nextgenRoot, "crates"));
+        for (String component : List.of("Engine", "Language", "Common", "Projector")) {
+            pending.add(new File(nextgenRoot, component));
+        }
         pending.add(new File(nextgenRoot, "Cargo.toml"));
         pending.add(new File(nextgenRoot, "Cargo.lock"));
         while (!pending.isEmpty()) {
@@ -93,7 +95,7 @@ public class BevyRetargetDesignerLauncher {
     private static File findRepoRoot(File start) {
         File current = start;
         while (current != null) {
-            if (new File(current, "scenemax_projector_nextgen/Cargo.toml").isFile()) {
+            if (new File(current, "scenemax3d_nextgen/Cargo.toml").isFile()) {
                 return current;
             }
             current = current.getParentFile();

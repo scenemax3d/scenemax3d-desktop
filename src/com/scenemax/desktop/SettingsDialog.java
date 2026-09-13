@@ -108,7 +108,7 @@ public class SettingsDialog extends JDialog {
         cboGemmaVariant.setSelectedItem(resolveVariant(defaultValue(AppDB.getInstance().getParam("local_gemma_model"), LocalGemmaBridgeConfig.DEFAULT_MODEL)));
         txtButlerPath = new JTextField(Util.getItchButlerPath(Util.getActiveProject()));
         txtRustCargoPath = new JTextField(defaultValue(AppDB.getInstance().getParam("rust_cargo_path"), defaultCargoPath()));
-        txtNextGenProjectorPath = new JTextField(defaultValue(AppDB.getInstance().getParam("nextgen_projector_path"), new File(Util.getWorkingDir(), "scenemax_projector_nextgen").getAbsolutePath()));
+        txtNextGenProjectorPath = new JTextField(defaultValue(AppDB.getInstance().getParam("nextgen_projector_path"), new File(Util.getWorkingDir(), "scenemax3d_nextgen").getAbsolutePath()));
         txtWasmBindgenPath = new JTextField(defaultValue(AppDB.getInstance().getParam("wasm_bindgen_path"), defaultWasmBindgenPath()));
         rustBevyPanel = createRustBevyPanel();
         tabbedPane1.addTab("Rust/Bevy", rustBevyPanel);
@@ -429,7 +429,7 @@ public class SettingsDialog extends JDialog {
         gbc.gridy = 0;
         gbc.gridwidth = 2;
         JTextArea intro = new JTextArea(
-                "Prepare the toolchain used by SceneMax NextGen packaging. Bevy itself is not a separate SDK: Cargo downloads the Bevy crates from the scenemax_projector_nextgen workspace dependencies."
+                "Prepare the toolchain used by SceneMax NextGen packaging. Bevy itself is not a separate SDK: Cargo downloads the Bevy crates from the scenemax3d_nextgen workspace dependencies."
         );
         intro.setEditable(false);
         intro.setLineWrap(true);
@@ -475,7 +475,7 @@ public class SettingsDialog extends JDialog {
         gbc.weightx = 0;
         JPanel nextGenActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         JButton btnBrowseNextGen = new JButton("Browse...");
-        btnBrowseNextGen.addActionListener(e -> chooseDirectoryPath(txtNextGenProjectorPath, "Select scenemax_projector_nextgen folder"));
+        btnBrowseNextGen.addActionListener(e -> chooseDirectoryPath(txtNextGenProjectorPath, "Select scenemax3d_nextgen folder"));
         btnBuildNextGenRelease = new JButton("Build Optimized Runtime (only if missing)");
         btnBuildNextGenRelease.addActionListener(e -> buildNextGenRelease());
         nextGenActions.add(btnBrowseNextGen);
@@ -957,12 +957,12 @@ public class SettingsDialog extends JDialog {
         File workingDir = new File(Util.getWorkingDir());
         File parent = workingDir.getParentFile();
         return firstExistingDirectory(candidateFiles(
-                new File(configured),
-                new File(env("SCENEMAX_NEXTGEN_PROJECTOR")),
-                new File(workingDir, "scenemax_projector_nextgen"),
-                parent == null ? null : new File(parent, "scenemax_projector_nextgen"),
-                new File("C:\\dev\\scenemax_desktop\\scenemax_projector_nextgen"),
-                new File(env("USERPROFILE"), "Documents\\scenemax_nextgen\\scenemax_projector_nextgen")
+                com.scenemaxeng.common.NextGenWorkspacePaths.relocated(new File(configured)),
+                com.scenemaxeng.common.NextGenWorkspacePaths.relocated(new File(env("SCENEMAX_NEXTGEN_PROJECTOR"))),
+                new File(workingDir, "scenemax3d_nextgen"),
+                parent == null ? null : new File(parent, "scenemax3d_nextgen"),
+                new File("C:\\dev\\scenemax_desktop\\scenemax3d_nextgen"),
+                new File(env("USERPROFILE"), "Documents\\scenemax_nextgen\\scenemax3d_nextgen")
         ), "Cargo.toml");
     }
 
@@ -972,10 +972,10 @@ public class SettingsDialog extends JDialog {
         File workingDir = new File(Util.getWorkingDir());
         File workspace = findNextGenProjectorWorkspace();
         List<File> candidates = new ArrayList<>();
-        addNextGenBinaryCandidates(candidates, new File(configured));
-        addNextGenBinaryCandidates(candidates, new File(uiConfigured));
+        addNextGenBinaryCandidates(candidates, com.scenemaxeng.common.NextGenWorkspacePaths.relocated(new File(configured)));
+        addNextGenBinaryCandidates(candidates, com.scenemaxeng.common.NextGenWorkspacePaths.relocated(new File(uiConfigured)));
         addNextGenBinaryCandidates(candidates, workspace);
-        addNextGenBinaryCandidates(candidates, new File(workingDir, "scenemax_projector_nextgen"));
+        addNextGenBinaryCandidates(candidates, new File(workingDir, "scenemax3d_nextgen"));
         addNextGenBinaryCandidates(candidates, new File(workingDir, "runtime\\nextgen"));
         addNextGenBinaryCandidates(candidates, new File(workingDir, "projectors\\nextgen"));
         addNextGenBinaryCandidates(candidates, new File(workingDir, "bin\\nextgen"));
@@ -1338,7 +1338,7 @@ public class SettingsDialog extends JDialog {
         }
         if (!nextGen.isDirectory() || !new File(nextGen, "Cargo.toml").isFile()) {
             JOptionPane.showMessageDialog(this,
-                    "The NextGen projector workspace was not found. Browse to scenemax_projector_nextgen first.",
+                    "The NextGen projector workspace was not found. Browse to scenemax3d_nextgen first.",
                     "NextGen Build",
                     JOptionPane.ERROR_MESSAGE);
             return;

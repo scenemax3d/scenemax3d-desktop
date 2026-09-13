@@ -1,0 +1,4 @@
+// A second document for testing tabs and file saves.
+// UTF-8 sample: שלום · café · 日本語
+
+sys.print "A second script"
