@@ -2,4 +2,3 @@ canvas.size 1600,900
 screen.mode full 
 
 switch to "game_intro"
-

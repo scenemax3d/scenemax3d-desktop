@@ -1,0 +1,63 @@
+[workspace]
+members = [
+    "Common/assets",
+    "IDE/core",
+    "IDE/app",
+    "IDE/services",
+    "IDE/ui",
+    "Language/ir",
+    "Engine/multiplayer",
+    "Language/parser",
+    "Projector/app",
+    "Engine/runtime",
+    "Engine/scripting",
+    "Engine/runtime_ui",
+    "Engine/vm",
+]
+resolver = "3"
+default-members = ["IDE/app", "Projector/app"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.97"
+
+[workspace.dependencies]
+anyhow = "1"
+avian3d = "0.7"
+bevy-tnua = "0.32.0"
+bevy-tnua-avian3d = "0.12.1"
+bevy = { version = "=0.19.0", default-features = false }
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tempfile = "3"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+undocumented_unsafe_blocks = "deny"
+
+[profile.dev]
+opt-level = 1
+debug = 1
+incremental = true
+codegen-units = 256
+
+[profile.dev.package."*"]
+opt-level = 1
+debug = 0
+codegen-units = 256
+
+[profile.dev-perf]
+inherits = "dev"
+
+[profile.dev-perf.package."*"]
+opt-level = 3
+debug = 0

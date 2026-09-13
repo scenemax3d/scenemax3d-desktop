@@ -1,0 +1,18 @@
+// SceneMax editor syntax preview
+// Unicode text: café · שלום · 日本語
+
+var distance = 12.5
+var enabled = true
+
+if enabled then
+    sys.print "Hello from SceneMax Studio"
+    sys.print "Quotes: \"hello\" and // inside a string"
+end
+
+// Types and function names use the Java editor palette:
+// sphere, box, function, abs, round
+
+function sample do
+    var value = abs(3.5)
+    sys.print "Retained Bevy UI"
+end

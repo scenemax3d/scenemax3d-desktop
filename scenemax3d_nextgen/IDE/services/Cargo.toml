@@ -1,0 +1,18 @@
+[package]
+name = "scenemax_ide_services"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+scenemax_ide_core = { path = "../core" }
+scenemax_runtime_ui_core = { path = "../../Engine/runtime_ui" }
+scenemax_assets = { path = "../../Common/assets" }
+scenemax_parser = { path = "../../Language/parser" }
+tempfile.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

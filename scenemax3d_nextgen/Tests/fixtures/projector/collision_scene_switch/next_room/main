@@ -1,0 +1,4 @@
+camera.pos (0,3,12)
+camera.rotate (0,180,0)
+marker => sphere : radius 2, pos (0,0,0), collision shape none
+Logger.info "SCENE_SWITCH_TEST PASS: next room loaded"

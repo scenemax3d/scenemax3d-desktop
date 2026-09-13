@@ -1,0 +1,7 @@
+// SceneMax Studio — native Rust / Bevy editor
+//
+// Edit this script, then use Ctrl+S to save.
+// Ctrl+Enter checks syntax. F5 runs the active script.
+// Open another script to compare retained tabs.
+
+sys.print "Hello from SceneMax Studio"

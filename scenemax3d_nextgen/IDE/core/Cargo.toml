@@ -1,0 +1,12 @@
+[package]
+name = "scenemax_ide_core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -1,5 +1,7 @@
 # SceneMax3D Developer Studio
 
+**Rust/Bevy migration:** the target product is now a Java-free IDE and projector. A side-by-side native IDE preview is available through [`run-rust-ide.ps1`](run-rust-ide.ps1); see the [migration plan](docs/RUST_IDE_MIGRATION.md) and [preview instructions](scenemax3d_nextgen/IDE/app/README.md). The Swing product described below remains available as a comparison reference until migration acceptance is complete.
+
 A desktop 3D scene editor and game development environment built with Java, [JMonkeyEngine 3](https://jmonkeyengine.org/), Swing, native runtime integrations, and a growing toolchain for shipping real interactive 3D games.
 
 SceneMax3D lets you visually design 3D scenes, write game logic using a built-in scripting language, extend projects with custom Java runtime code, run multiplayer sessions, and export projects as standalone PC executables or Android apps.
@@ -9,7 +11,7 @@ SceneMax3D lets you visually design 3D scenes, write game logic using a built-in
 SceneMax3D was first created by Adi Barda in 2005 as a C++/DirectX game engine and scripting language for education purposes.
 In 2017-2018 it was rewritten in Java from scratch using JMonkeyEngine3 as the target renderer and ANTLR4 for the language parsing. 
 In Mar-22, 2026 the entire solution was uploaded to GitHub as an open source (MIT license) project.
-On August 08 2026, the initial next generation projector, based on Rust/Bevy engine was committed looking ahead as the target renderer mainly for web browser games. SceneMax3D will continue to support both the "Classic" Java games and the "NextGen" Rust ones. The choreographic programming language will be similar for both platforms.
+On August 08 2026, the initial next generation projector, based on Rust/Bevy engine was committed. As of September 11, 2026, the product direction is a Rust/Bevy-only IDE and runtime; the Java projects remain temporarily for migration comparisons.
 
 ## Product Website
 [SceneMax3D](https://scenemax3d.com/cook-book/)
@@ -267,7 +269,7 @@ Effect objects support placement, show/hide/delete, attachment, look-at behavior
 scenemax_desktop/            -- Main desktop application (Swing UI)
 scenemax_designer/           -- 3D scene designer/editor module
 scenemax_win_projector/      -- 3D runtime/playback engine
-scenemax_projector_nextgen/  -- Next generation Rust/Bevy runtime projector
+scenemax3d_nextgen/         -- Rust/Bevy IDE, projector, engine and shared components
 scenemax_effekseer_runtime/  -- Effekseer JNI/native runtime bridge
 scenemax3d_compiler/         -- Script compilation engine
 scenemax3d_parser/           -- ANTLR4 grammar & parser for SceneMax scripting language

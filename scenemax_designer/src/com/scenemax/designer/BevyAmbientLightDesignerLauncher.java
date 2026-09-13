@@ -117,11 +117,11 @@ public final class BevyAmbientLightDesignerLauncher {
 
         for (File candidate : candidates) {
             File root = normalizeNextGenRoot(candidate);
-            if (root != null && new File(root, "Cargo.toml").isFile() && new File(root, "crates").isDirectory()) {
+            if (root != null && new File(root, "Cargo.toml").isFile() && new File(root, "Projector/app/Cargo.toml").isFile()) {
                 return root.getCanonicalFile();
             }
         }
-        throw new IOException("Could not find the scenemax_projector_nextgen workspace.");
+        throw new IOException("Could not find the scenemax3d_nextgen workspace.");
     }
 
     private static void addConfiguredNextGenCandidate(List<File> candidates) {
@@ -135,7 +135,7 @@ public final class BevyAmbientLightDesignerLauncher {
         File current = start.isFile() ? start.getParentFile() : start;
         while (current != null) {
             addNextGenCandidate(candidates, current);
-            addNextGenCandidate(candidates, new File(current, "scenemax_projector_nextgen"));
+            addNextGenCandidate(candidates, new File(current, "scenemax3d_nextgen"));
             current = current.getParentFile();
         }
     }
@@ -150,7 +150,7 @@ public final class BevyAmbientLightDesignerLauncher {
         if (candidate == null || candidate.getPath().isBlank()) {
             return null;
         }
-        File file = candidate;
+        File file = com.scenemaxeng.common.NextGenWorkspacePaths.relocated(candidate);
         if (file.isFile()) {
             File parent = file.getParentFile();
             if (parent != null && ("debug".equalsIgnoreCase(parent.getName())
@@ -207,7 +207,9 @@ public final class BevyAmbientLightDesignerLauncher {
     private static long newestRustSourceTimestamp(File nextgenRoot) {
         long newest = 0L;
         Deque<File> pending = new ArrayDeque<>();
-        pending.add(new File(nextgenRoot, "crates"));
+        for (String component : List.of("Engine", "Language", "Common", "Projector")) {
+            pending.add(new File(nextgenRoot, component));
+        }
         pending.add(new File(nextgenRoot, "Cargo.toml"));
         pending.add(new File(nextgenRoot, "Cargo.lock"));
         while (!pending.isEmpty()) {

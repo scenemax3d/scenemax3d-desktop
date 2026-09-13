@@ -1,0 +1,191 @@
+{
+  "version": 1,
+  "name": "welcome",
+  "canvasWidth": 1280,
+  "canvasHeight": 720,
+  "layers": [
+    {
+      "name": "Welcome",
+      "visible": true,
+      "widgets": [
+        {
+          "name": "welcomePanel",
+          "type": "PANEL",
+          "width": 1120,
+          "height": 580,
+          "constraints": [
+            {
+              "side": "LEFT",
+              "targetName": "parent",
+              "targetSide": "LEFT",
+              "margin": 80
+            },
+            {
+              "side": "TOP",
+              "targetName": "parent",
+              "targetSide": "TOP",
+              "margin": 70
+            }
+          ],
+          "backgroundColor": "#202B40",
+          "children": [
+            {
+              "name": "eyebrow",
+              "type": "TEXT_VIEW",
+              "width": 700,
+              "height": 36,
+              "constraints": [
+                {
+                  "side": "LEFT",
+                  "targetName": "parent",
+                  "targetSide": "LEFT",
+                  "margin": 56
+                },
+                {
+                  "side": "TOP",
+                  "targetName": "parent",
+                  "targetSide": "TOP",
+                  "margin": 42
+                }
+              ],
+              "text": "SCENEMAX  /  INTERFACE STUDIO",
+              "fontSize": 20,
+              "textColor": "#8EAEE8",
+              "widthMode": "FIXED",
+              "heightMode": "FIXED"
+            },
+            {
+              "name": "title",
+              "type": "TEXT_VIEW",
+              "width": 1000,
+              "height": 70,
+              "constraints": [
+                {
+                  "side": "LEFT",
+                  "targetName": "parent",
+                  "targetSide": "LEFT",
+                  "margin": 56
+                },
+                {
+                  "side": "TOP",
+                  "targetName": "parent",
+                  "targetSide": "TOP",
+                  "margin": 110
+                }
+              ],
+              "text": "Create your next scene",
+              "fontSize": 46,
+              "textColor": "#FFFFFF",
+              "widthMode": "FIXED",
+              "heightMode": "FIXED"
+            },
+            {
+              "name": "description",
+              "type": "TEXT_VIEW",
+              "width": 1000,
+              "height": 52,
+              "constraints": [
+                {
+                  "side": "LEFT",
+                  "targetName": "parent",
+                  "targetSide": "LEFT",
+                  "margin": 56
+                },
+                {
+                  "side": "TOP",
+                  "targetName": "parent",
+                  "targetSide": "TOP",
+                  "margin": 198
+                }
+              ],
+              "text": "Build interfaces directly inside the Bevy IDE.",
+              "fontSize": 25,
+              "textColor": "#BAC8DF",
+              "widthMode": "FIXED",
+              "heightMode": "FIXED"
+            },
+            {
+              "name": "primaryAction",
+              "type": "BUTTON",
+              "width": 320,
+              "height": 76,
+              "constraints": [
+                {
+                  "side": "LEFT",
+                  "targetName": "parent",
+                  "targetSide": "LEFT",
+                  "margin": 56
+                },
+                {
+                  "side": "TOP",
+                  "targetName": "parent",
+                  "targetSide": "TOP",
+                  "margin": 326
+                }
+              ],
+              "buttonText": "Start creating",
+              "fontSize": 26,
+              "buttonColor": "#416AC9",
+              "buttonTextColor": "#FFFFFF",
+              "widthMode": "FIXED",
+              "heightMode": "FIXED"
+            },
+            {
+              "name": "secondaryAction",
+              "type": "BUTTON",
+              "width": 280,
+              "height": 76,
+              "constraints": [
+                {
+                  "side": "LEFT",
+                  "targetName": "parent",
+                  "targetSide": "LEFT",
+                  "margin": 402
+                },
+                {
+                  "side": "TOP",
+                  "targetName": "parent",
+                  "targetSide": "TOP",
+                  "margin": 326
+                }
+              ],
+              "buttonText": "Explore scenes",
+              "fontSize": 24,
+              "buttonColor": "#35435E",
+              "buttonTextColor": "#E5ECF8",
+              "widthMode": "FIXED",
+              "heightMode": "FIXED"
+            },
+            {
+              "name": "footer",
+              "type": "TEXT_VIEW",
+              "width": 1000,
+              "height": 35,
+              "constraints": [
+                {
+                  "side": "LEFT",
+                  "targetName": "parent",
+                  "targetSide": "LEFT",
+                  "margin": 56
+                },
+                {
+                  "side": "TOP",
+                  "targetName": "parent",
+                  "targetSide": "TOP",
+                  "margin": 482
+                }
+              ],
+              "text": "Native Bevy UI  ·  Retained canvas  ·  Shared runtime layout",
+              "fontSize": 18,
+              "textColor": "#8194B2",
+              "widthMode": "FIXED",
+              "heightMode": "FIXED"
+            }
+          ],
+          "widthMode": "FIXED",
+          "heightMode": "FIXED"
+        }
+      ]
+    }
+  ]
+}

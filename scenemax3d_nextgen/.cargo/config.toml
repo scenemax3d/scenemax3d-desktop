@@ -1,0 +1,6 @@
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
+rustflags = ["-C", "link-arg=/DEBUG:NONE"]
+
+[alias]
+check-all = "check --workspace --all-targets"

@@ -1,0 +1,11 @@
+(12 + 3)
+// Place the caret beside parentheses, brackets or braces.
+// Delimiters inside strings and comments are ignored: ([{}])
+sys.print "Brackets inside text: [ ]"
+
+if ready then
+    sys.print "Press Enter at the end of this line"
+end
+
+// Enter after do, then, else, (, [ or { adds four spaces.
+// Existing tabs and spaces are preserved. Undo reverts the newline too.
