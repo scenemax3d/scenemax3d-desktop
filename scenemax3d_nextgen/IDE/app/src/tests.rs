@@ -1313,6 +1313,11 @@ fn embedded_designer_opens_applies_saves_and_undoes_without_a_text_editor() {
     std::fs::write(&path, source).unwrap();
     dispatch(&mut app, Command::Open(path.clone()));
     finish_io(&mut app);
+    for _ in 0..200 {
+        app.update();
+        if app.world_mut().query_filtered::<Entity, With<crate::presentation::designer::Apply>>().iter(app.world()).next().is_some() { break; }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
     let id = app
         .world()
         .resource::<Session>()
@@ -1333,7 +1338,7 @@ fn embedded_designer_opens_applies_saves_and_undoes_without_a_text_editor() {
             .query::<(&Property, &mut EditableText)>()
             .iter_mut(world)
         {
-            if property.host == host && property.key == "Width" {
+            if property.host == host && property.key == "width" {
                 input.editor_mut().set_text("1000");
             }
         }

@@ -42,7 +42,16 @@ pub struct Properties {
 
 /// Add a supported widget to the selected panel or selected widget's layer.
 pub fn add(source: &str, selected: Option<&str>, kind: &str) -> Result<(String, String), String> {
-    if !["PANEL", "TEXT_VIEW", "BUTTON"].contains(&kind) {
+    if ![
+        "PANEL",
+        "TEXT_VIEW",
+        "BUTTON",
+        "IMAGE",
+        "EDIT_TEXT",
+        "LIST_VIEW",
+    ]
+    .contains(&kind)
+    {
         return Err("Unsupported widget type".into());
     }
     let mut value = parse(source)?;
@@ -201,6 +210,200 @@ mod tests {
                     font_size: 1.,
                     color: "red".into()
                 }
+            )
+            .is_err()
+        );
+    }
+}
+
+/// Apply typed inspector values without discarding imported extensions.
+pub fn patch(source: &str, pointer: &str, fields: Vec<(String, Value)>) -> Result<String, String> {
+    let mut root = parse(source)?;
+    let old = root
+        .pointer(pointer)
+        .and_then(|w| w["name"].as_str())
+        .ok_or("Select a widget")?
+        .to_owned();
+    let name = fields
+        .iter()
+        .find(|(k, _)| k == "name")
+        .and_then(|(_, v)| v.as_str())
+        .unwrap_or(&old)
+        .trim()
+        .to_owned();
+    if name.is_empty() {
+        return Err("Name cannot be empty".into());
+    }
+    if name != old {
+        let mut pending = vec![&root];
+        while let Some(v) = pending.pop() {
+            if v.get("type").is_some() && v["name"] == name {
+                return Err("A widget with this name already exists".into());
+            }
+            match v {
+                Value::Array(a) => pending.extend(a),
+                Value::Object(o) => pending.extend(o.values()),
+                _ => {}
+            }
+        }
+    }
+    let widget = root.pointer_mut(pointer).ok_or("Missing widget")?;
+    for (key, value) in fields {
+        if let Some(n) = value.as_f64() {
+            if !n.is_finite() || n.abs() > 100000. {
+                return Err(format!("Invalid {key}"));
+            }
+            if [
+                "width",
+                "height",
+                "fontSize",
+                "listHeaderFontSize",
+                "listRowFontSize",
+            ]
+            .contains(&key.as_str())
+                && n <= 0.
+            {
+                return Err(format!("{key} must be positive"));
+            }
+            if ["horizontalBias", "verticalBias"].contains(&key.as_str())
+                && !(0. ..=1.).contains(&n)
+            {
+                return Err(format!("{key} must be between 0 and 1"));
+            }
+        }
+        if [
+            "spriteFrame",
+            "paddingLeft",
+            "paddingRight",
+            "paddingTop",
+            "paddingBottom",
+        ]
+        .contains(&key.as_str())
+            && value.as_f64().is_some_and(|n| n < 0.)
+        {
+            return Err(format!("{key} cannot be negative"));
+        }
+        if key == "listColumnWidths"
+            && !value.as_array().is_some_and(|a| {
+                a.iter()
+                    .all(|v| v.as_f64().is_some_and(|n| n.is_finite() && n > 0.))
+            })
+        {
+            return Err("Column widths must be positive numbers".into());
+        }
+        if key.to_ascii_lowercase().ends_with("color") {
+            let s = value
+                .as_str()
+                .ok_or("Invalid color")?
+                .trim_start_matches('#');
+            if ![6, 8].contains(&s.len()) || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err(format!("{key}: use #RRGGBB or #RRGGBBAA"));
+            }
+        }
+        if let Some(rest) = key.strip_prefix("constraints/") {
+            let (side, field) = rest.split_once('/').ok_or("Invalid constraint")?;
+            if !["LEFT", "RIGHT", "TOP", "BOTTOM"].contains(&side)
+                || !["targetName", "targetSide", "margin"].contains(&field)
+            {
+                return Err("Invalid constraint field".into());
+            }
+            if widget.get("constraints").is_none() {
+                widget["constraints"] = json!([]);
+            }
+            let constraints = widget["constraints"]
+                .as_array_mut()
+                .ok_or("Invalid constraints")?;
+            let index = constraints
+                .iter()
+                .position(|c| c["side"] == side)
+                .unwrap_or_else(|| {
+                    constraints
+                        .push(json!({"side":side,"targetName":"","targetSide":side,"margin":0}));
+                    constraints.len() - 1
+                });
+            constraints[index][field] = value;
+        } else {
+            if ["children", "type", "id"].contains(&key.as_str()) {
+                return Err("Protected structural property".into());
+            }
+            widget[&key] = value;
+        }
+    }
+    widget["name"] = json!(name);
+    if let Some(a) = widget["constraints"].as_array_mut() {
+        a.retain(|c| c["targetName"].as_str().is_some_and(|s| !s.is_empty()));
+    }
+    fn rename(v: &mut Value, old: &str, new: &str) {
+        match v {
+            Value::Object(o) => {
+                if o.get("targetName").and_then(Value::as_str) == Some(old) {
+                    o.insert("targetName".into(), json!(new));
+                }
+                for v in o.values_mut() {
+                    rename(v, old, new);
+                }
+            }
+            Value::Array(a) => {
+                for v in a {
+                    rename(v, old, new);
+                }
+            }
+            _ => {}
+        }
+    }
+    if name != old {
+        rename(&mut root, &old, &name);
+    }
+    let output = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    parse(&output)?;
+    Ok(output)
+}
+
+#[cfg(test)]
+mod patch_tests {
+    use super::*;
+    #[test]
+    fn edits_constraints_and_rename_preserve_imported_data() {
+        let source = r#"{"layers":[{"widgets":[{"name":"a","type":"IMAGE","custom":42,"spriteFrame":0},{"name":"b","type":"TEXT_VIEW","constraints":[{"side":"LEFT","targetName":"a","targetSide":"RIGHT","extra":true}]}]}]}"#;
+        let edited = patch(
+            source,
+            "/layers/0/widgets/0",
+            vec![
+                ("name".into(), json!("portrait")),
+                ("spriteFrame".into(), json!(3)),
+                ("constraints/LEFT/targetName".into(), json!("parent")),
+                ("constraints/LEFT/targetSide".into(), json!("LEFT")),
+                ("constraints/LEFT/margin".into(), json!(12.)),
+            ],
+        )
+        .unwrap();
+        let v = parse(&edited).unwrap();
+        assert_eq!(v["layers"][0]["widgets"][0]["custom"], 42);
+        assert_eq!(
+            v["layers"][0]["widgets"][0]["constraints"][0]["margin"],
+            12.
+        );
+        assert_eq!(
+            v["layers"][0]["widgets"][1]["constraints"][0]["targetName"],
+            "portrait"
+        );
+        assert_eq!(
+            v["layers"][0]["widgets"][1]["constraints"][0]["extra"],
+            true
+        );
+        assert!(
+            patch(
+                source,
+                "/layers/0/widgets/0",
+                vec![("name".into(), json!("b"))]
+            )
+            .is_err()
+        );
+        assert!(
+            patch(
+                source,
+                "/layers/0/widgets/0",
+                vec![("horizontalBias".into(), json!(2.))]
             )
             .is_err()
         );

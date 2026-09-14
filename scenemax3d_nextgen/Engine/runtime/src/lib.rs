@@ -1121,19 +1121,7 @@ struct SceneMaxBitmapFontAsset {
 #[derive(Debug, Clone)]
 struct SceneMaxBitmapFont {
     image: Handle<Image>,
-    size: f32,
-    line_height: f32,
-    glyphs: HashMap<char, SceneMaxBitmapGlyph>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct SceneMaxBitmapGlyph {
-    source: Rect,
-    width: f32,
-    height: f32,
-    x_offset: f32,
-    y_offset: f32,
-    x_advance: f32,
+    metrics: scenemax_runtime_ui_core::bitmap::Font,
 }
 
 #[derive(Debug, Clone, Component)]

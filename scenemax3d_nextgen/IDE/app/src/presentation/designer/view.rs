@@ -29,11 +29,16 @@ fn area(commands: &mut Commands, parent: Entity, node: Node, color: Color) -> En
     }
     entity
 }
+#[allow(clippy::too_many_arguments)]
 pub(super) fn build(
     commands: &mut Commands,
     host: Entity,
     scene: &ScenePreview,
     selected: Option<&str>,
+    assets: Option<&crate::project_assets::ProjectAssets>,
+    server: Option<&AssetServer>,
+    collapsed: &std::collections::HashSet<String>,
+    properties_collapsed: bool,
 ) -> Parts {
     let root = area(
         commands,
@@ -83,28 +88,7 @@ pub(super) fn build(
         },
         PANEL,
     );
-    commands.spawn((label("Add widget", 12.), ChildOf(tools)));
-    for (caption, kind) in [
-        ("Panel", "PANEL"),
-        ("Text", "TEXT_VIEW"),
-        ("Button", "BUTTON"),
-    ] {
-        button(
-            commands,
-            tools,
-            caption,
-            Structure {
-                host,
-                kind: Some(kind),
-            },
-        );
-    }
-    button(
-        commands,
-        tools,
-        "Delete selected",
-        Structure { host, kind: None },
-    );
+    chrome::toolbar(commands, tools, host);
     let body = area(
         commands,
         root,
@@ -116,50 +100,7 @@ pub(super) fn build(
         },
         BG,
     );
-    let tree = area(
-        commands,
-        body,
-        Node {
-            width: px(190.),
-            min_width: px(140.),
-            flex_shrink: 0.,
-            flex_direction: FlexDirection::Column,
-            padding: px(10.).all(),
-            overflow: Overflow::scroll_y(),
-            ..default()
-        },
-        PANEL,
-    );
-    commands.spawn((label("HIERARCHY", 12.), ChildOf(tree)));
-    let mut last_layer = String::new();
-    for w in &scene.widgets {
-        if last_layer != w.layer {
-            commands.spawn((
-                label(format!("Layer: {}", w.layer), 13.),
-                Node {
-                    margin: UiRect::top(px(12.)),
-                    ..default()
-                },
-                ChildOf(tree),
-            ));
-            last_layer.clone_from(&w.layer);
-        }
-        let row = button(
-            commands,
-            tree,
-            &format!("{}{}", "  ".repeat(w.depth), w.name),
-            Pick {
-                host,
-                pointer: w.pointer.clone(),
-            },
-        );
-        if Some(w.pointer.as_str()) == selected {
-            commands.entity(row).insert((
-                scenemax_ide_ui::ButtonSurface(SELECTED),
-                BackgroundColor(SELECTED),
-            ));
-        }
-    }
+    hierarchy::build(commands, body, host, scene, selected, collapsed);
     let middle = area(
         commands,
         body,
@@ -208,21 +149,87 @@ pub(super) fn build(
     commands
         .entity(canvas)
         .insert(Canvas::new(viewport, scene.width, scene.height));
+    let mut entities = std::collections::HashMap::new();
+    let mut layers = std::collections::HashMap::new();
     for w in scene.widgets.iter().filter(|w| w.visible) {
-        draw_widget(commands, canvas, host, scene, w, selected);
+        let parent = w
+            .pointer
+            .rsplit_once("/children/")
+            .and_then(|(p, _)| entities.get(p).copied());
+        let layer_key = w.pointer.split("/widgets/").next().unwrap_or("");
+        let layer_order = layers.len() as i32;
+        let layer = *layers.entry(layer_key.to_owned()).or_insert_with(|| {
+            commands
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: percent(100.),
+                        height: percent(100.),
+                        ..default()
+                    },
+                    ZIndex(layer_order),
+                    Pickable::IGNORE,
+                    ChildOf(canvas),
+                ))
+                .id()
+        });
+        let entity = draw_widget(
+            commands,
+            canvas,
+            host,
+            scene,
+            w,
+            parent.or(Some(layer)),
+            assets,
+            server,
+        );
+        commands.entity(entity).insert(Outline::new(
+            px(1.),
+            px(0.),
+            if selected == Some(w.pointer.as_str()) {
+                SELECTED
+            } else {
+                Color::NONE
+            },
+        ));
+        entities.insert(w.pointer.clone(), entity);
     }
     commands.spawn((
         label(
-            "Preview: panels, text and buttons. Other widget types are labeled placeholders.",
+            if scene.warnings.is_empty() {
+                "Runtime assets · Design resolution · Scripts are not executing".into()
+            } else {
+                scene.warnings.join("; ")
+            },
             11.,
         ),
         ChildOf(middle),
     ));
+    let toggle = button(
+        commands,
+        body,
+        if properties_collapsed { "‹" } else { "›" },
+        Name::new("Collapse or expand UI properties"),
+    );
+    commands.entity(toggle).insert(Node {
+        width: px(24.),
+        min_width: px(24.),
+        height: px(28.),
+        padding: px(4.).all(),
+        flex_shrink: 0.,
+        ..default()
+    });
     let inspector = area(
         commands,
         body,
         Node {
-            width: px(224.),
+            width: px(300.),
+            display: if properties_collapsed {
+                Display::None
+            } else {
+                Display::Flex
+            },
+            min_height: px(0.),
             flex_shrink: 0.,
             flex_direction: FlexDirection::Column,
             padding: px(14.).all(),
@@ -232,6 +239,10 @@ pub(super) fn build(
         },
         PANEL,
     );
+    commands.entity(inspector).insert(chrome::PropertiesPanel);
+    chrome::collapse(commands, toggle, inspector, host);
+    button(commands, inspector, "Apply properties", Apply(host));
+    let inspector = scenemax_ide_ui::property::scroll_column(commands, inspector);
     let parts = Parts { inspector };
     inspect(commands, host, parts, scene, selected);
     parts
@@ -255,94 +266,53 @@ pub(super) fn inspect(
             label(format!("{}\n{}", w.name, w.kind), 15.),
             ChildOf(inspector),
         ));
-        for (key, value) in [
-            ("Text", w.text.clone()),
-            ("Width", w.width.to_string()),
-            ("Height", w.height.to_string()),
-            ("Font size", w.font_size.to_string()),
-            ("Color", w.color.clone()),
-        ] {
-            commands.spawn((label(key, 12.), ChildOf(inspector)));
-            commands.spawn((
-                Property { host, key },
-                EditableText {
-                    visible_lines: Some(1.),
-                    allow_newlines: false,
-                    max_characters: Some(10000),
-                    ..EditableText::new(value)
-                },
-                Node {
-                    width: percent(100.),
-                    padding: px(4.).all(),
-                    height: px(28.),
-                    min_height: px(28.),
-                    flex_shrink: 0.,
-                    ..default()
-                },
-                TextFont {
-                    font: bevy::text::FontSource::SansSerif,
-                    font_size: FontSize::Px(13.),
-                    ..default()
-                },
-                TextColor(INK),
-                scenemax_ide_ui::theme::TEXT_CURSOR_STYLE,
-                BackgroundColor(BG),
-                ChildOf(inspector),
-            ));
-        }
-        button(commands, inspector, "Apply properties", Apply(host));
+        inspector_fields(commands, inspector, host, scene, w);
+
         commands.spawn((
-            label(
-                "Apply records one undo step.\nConstraints remain unchanged.",
-                11.,
-            ),
+            label("Apply records one undo step.", 11.),
             ChildOf(inspector),
         ));
     }
 }
 fn color(value: &str) -> Color {
-    Srgba::hex(value)
+    Srgba::hex(value.trim())
         .map(Color::Srgba)
-        .unwrap_or(Color::srgb_u8(60, 65, 75))
+        .unwrap_or(Color::WHITE)
 }
+#[allow(clippy::too_many_arguments)]
 fn draw_widget(
     commands: &mut Commands,
     canvas: Entity,
     host: Entity,
     scene: &ScenePreview,
     w: &PreviewWidget,
-    selected: Option<&str>,
-) {
-    let [x, y, width, height] = w.rect;
+    parent: Option<Entity>,
+    assets: Option<&crate::project_assets::ProjectAssets>,
+    server: Option<&AssetServer>,
+) -> Entity {
+    let [mut x, mut y, width, height] = w.rect;
+    let mut pw = scene.width;
+    let mut ph = scene.height;
+    if let Some((pointer, _)) = w.pointer.rsplit_once("/children/")
+        && let Some(p) = scene.widgets.iter().find(|p| p.pointer == pointer)
+    {
+        x -= p.rect[0] + p.definition.padding_left;
+        y -= p.rect[1] + p.definition.padding_top;
+        pw = (p.rect[2] - p.definition.padding_left - p.definition.padding_right).max(1.);
+        ph = (p.rect[3] - p.definition.padding_top - p.definition.padding_bottom).max(1.);
+    }
     let entity = area(
         commands,
-        canvas,
+        parent.unwrap_or(canvas),
         Node {
             position_type: PositionType::Absolute,
-            left: percent(x / scene.width * 100.),
-            top: percent(y / scene.height * 100.),
-            width: percent(width / scene.width * 100.),
-            height: percent(height / scene.height * 100.),
-            align_items: AlignItems::Center,
-            justify_content: if w.kind == "TEXT_VIEW" {
-                match w.alignment.to_ascii_lowercase().as_str() {
-                    "center" => JustifyContent::Center,
-                    "right" => JustifyContent::End,
-                    _ => JustifyContent::Start,
-                }
-            } else {
-                JustifyContent::Center
-            },
-            overflow: Overflow::clip(),
-            border: px(if selected == Some(w.pointer.as_str()) {
-                2.
-            } else {
-                0.
-            })
-            .all(),
+            left: percent(x / pw * 100.),
+            top: percent(y / ph * 100.),
+            width: percent(width / pw * 100.),
+            height: percent(height / ph * 100.),
             ..default()
         },
-        if w.kind == "TEXT_VIEW" {
+        if ["PANEL", "TEXT_VIEW", "EDIT_TEXT", "IMAGE"].contains(&w.kind.as_str()) {
             Color::NONE
         } else {
             color(&w.color)
@@ -354,24 +324,73 @@ fn draw_widget(
             host,
             pointer: w.pointer.clone(),
         },
-        BorderColor::all(Color::srgb_u8(95, 158, 255)),
+        ZIndex(w.definition.z_order),
     ));
-    let text = if ["PANEL", "TEXT_VIEW", "BUTTON"].contains(&w.kind.as_str()) {
-        w.text.clone()
-    } else {
-        format!("[{}] {}", w.kind, w.name)
-    };
-    if !text.is_empty() {
-        commands.spawn((
-            Text::new(text),
+    if let Some(visual) = &w.visual {
+        if let (Some(assets), Some(server)) = (assets, server)
+            && let Some(path) = assets.asset(&visual.root, &visual.path)
+        {
+            let image = server.load(path);
+            if visual.text {
+                for (source, dest) in &visual.quads {
+                    commands.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: percent(dest[0] / width.max(1.) * 100.),
+                            top: percent(dest[1] / height.max(1.) * 100.),
+                            width: percent(dest[2] / width.max(1.) * 100.),
+                            height: percent(dest[3] / height.max(1.) * 100.),
+                            ..default()
+                        },
+                        ImageNode {
+                            image: image.clone(),
+                            color: color(&w.text_color),
+                            rect: Some(Rect::new(source[0], source[1], source[2], source[3])),
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                        ChildOf(entity),
+                    ));
+                }
+            } else {
+                commands.entity(entity).insert(ImageNode {
+                    image,
+                    rect: visual
+                        .quads
+                        .first()
+                        .map(|(r, _)| Rect::new(r[0], r[1], r[2], r[3])),
+                    ..default()
+                });
+            }
+        }
+    } else if w.kind == "IMAGE" {
+        commands
+            .entity(entity)
+            .insert(ImageNode::solid_color(Color::srgba(0.9, 0.72, 0.38, 0.85)));
+    } else if ["TEXT_VIEW", "EDIT_TEXT", "BUTTON", "LIST_VIEW"].contains(&w.kind.as_str())
+        && !w.text.is_empty()
+    {
+        commands.entity(entity).insert((
+            Text::new(&w.text),
             TextFont {
-                font: bevy::text::FontSource::SansSerif,
                 font_size: FontSize::Px(w.font_size),
                 ..default()
             },
             TextColor(color(&w.text_color)),
+            TextLayout::justify(match w.alignment.to_ascii_lowercase().as_str() {
+                "center" => Justify::Center,
+                "right" => Justify::Right,
+                _ => Justify::Left,
+            })
+            .with_no_wrap(),
             CanvasText::new(canvas, w.font_size),
-            ChildOf(entity),
         ));
     }
+    entity
 }
+mod properties;
+use properties::inspector_fields;
+pub(super) use properties::{FieldKind, parse_field};
+
+mod chrome;
+pub(super) mod hierarchy;
