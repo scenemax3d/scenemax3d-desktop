@@ -1305,7 +1305,7 @@ fn background_project_symbols_refresh_open_popup_and_insert_through_native_edito
 }
 
 #[test]
-fn embedded_designer_opens_applies_saves_and_undoes_without_a_text_editor() {
+fn embedded_designer_updates_saves_and_undoes_without_a_text_editor() {
     use crate::presentation::designer::{Designer, Property};
     let (mut app, dir, _) = app();
     let path = dir.path().join("welcome.smui");
@@ -1315,7 +1315,7 @@ fn embedded_designer_opens_applies_saves_and_undoes_without_a_text_editor() {
     finish_io(&mut app);
     for _ in 0..200 {
         app.update();
-        if app.world_mut().query_filtered::<Entity, With<crate::presentation::designer::Apply>>().iter(app.world()).next().is_some() { break; }
+        if app.world_mut().query_filtered::<Entity, With<crate::presentation::designer::Property>>().iter(app.world()).next().is_some() { break; }
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     let id = app
@@ -1343,15 +1343,6 @@ fn embedded_designer_opens_applies_saves_and_undoes_without_a_text_editor() {
             }
         }
     }
-    let apply = {
-        let world = app.world_mut();
-        world
-            .query_filtered::<Entity, With<crate::presentation::designer::Apply>>()
-            .iter(world)
-            .next()
-            .unwrap()
-    };
-    *app.world_mut().get_mut::<Interaction>(apply).unwrap() = Interaction::Pressed;
     app.update();
     assert!(
         app.world()

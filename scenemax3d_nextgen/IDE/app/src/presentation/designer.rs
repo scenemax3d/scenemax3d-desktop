@@ -21,14 +21,15 @@ pub(crate) struct Designer {
     scene: Option<ScenePreview>,
     collapsed: std::collections::HashSet<String>,
     properties_collapsed: bool,
+    live_revision: Option<DocumentRevision>,
+    keep_controls: bool,
+    gesture: live::Gesture,
 }
 #[derive(Component)]
 pub(crate) struct Pick {
     host: Entity,
     pointer: String,
 }
-#[derive(Component)]
-pub(crate) struct Apply(Entity);
 #[derive(Component)]
 pub(crate) struct Structure {
     host: Entity,
@@ -39,22 +40,11 @@ pub(crate) struct Property {
     pub(crate) host: Entity,
     pub(crate) key: String,
     pub(crate) kind: view::FieldKind,
+    observed: String,
 }
-type PropertyFields<'w, 's> = Query<
-    'w,
-    's,
-    (
-        &'static Property,
-        Option<&'static EditableText>,
-        Option<&'static scenemax_ide_ui::property::Checked>,
-        Option<&'static scenemax_ide_ui::property::Choice>,
-    ),
->;
 pub(crate) fn interactions(
     picks: Query<(&Interaction, &Pick), Changed<Interaction>>,
     structures: Query<(&Interaction, &Structure), Changed<Interaction>>,
-    applies: Query<(&Interaction, &Apply), Changed<Interaction>>,
-    fields: PropertyFields,
     mut designers: Query<(&EditorHost, &mut Designer)>,
     mut session: ResMut<Session>,
     mut changes: MessageWriter<ViewChange>,
@@ -107,56 +97,6 @@ pub(crate) fn interactions(
             |()| "UI structure updated — save to write the document".into(),
         );
     }
-    for (interaction, apply) in &applies {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-        let Ok((host, d)) = designers.get(apply.0) else {
-            continue;
-        };
-        if d.pending.is_some() {
-            continue;
-        }
-        let Some(pointer) = &d.selected else {
-            continue;
-        };
-        let result = (|| -> Result<(), String> {
-            let doc = session
-                .workspace
-                .document_mut(host.0)
-                .map_err(|e| e.to_string())?;
-            if Some(doc.revision()) != d.revision {
-                return Err("Document changed; reselect the widget before applying".into());
-            }
-            let values = fields
-                .iter()
-                .filter(|(p, _, _, _)| p.host == apply.0)
-                .map(|(p, text, checked, choice)| {
-                    let value = if let Some(c) = checked {
-                        serde_json::json!(c.0)
-                    } else if let Some(c) = choice {
-                        serde_json::json!(c.0)
-                    } else {
-                        view::parse_field(
-                            &p.kind,
-                            &text.map(|t| t.value().to_string()).unwrap_or_default(),
-                        )?
-                    };
-                    Ok((p.key.clone(), value))
-                })
-                .collect::<Result<Vec<_>, String>>()?;
-            let source = scenemax_ide_core::scene::patch(doc.text(), pointer, values)?;
-            // Reject changes that cannot be previewed before recording history.
-            scenemax_ide_services::scene::preview(&source)?;
-            doc.replace_text(source);
-            changes.write(ViewChange::BufferChanged(host.0));
-            Ok(())
-        })();
-        session.status = result.map_or_else(
-            |e| e,
-            |()| "UI properties applied — save to write the document".into(),
-        );
-    }
 }
 
 type PickAppearance<'w, 's> = Query<
@@ -184,27 +124,46 @@ pub(crate) fn refresh(
             continue;
         };
         view::hierarchy::synchronize(entity, &designer, &mut rows);
+        let mut ready = None;
         if designer.revision != Some(doc.revision()) {
-            let source = doc.text().to_owned();
-            let root = session.workspace.project().root().to_owned();
-            designer.pending = Some(
-                bevy::tasks::IoTaskPool::get_or_init(Default::default).spawn(async move {
-                    scenemax_ide_services::scene::assets::load(&root, &source)
-                }),
-            );
+            designer.keep_controls =
+                designer.live_revision == Some(doc.revision()) && designer.parts.is_some();
+            if let Some(previous) = designer.scene.as_ref() {
+                match scenemax_ide_services::scene::assets::refresh_cached(doc.text(), previous) {
+                    Ok(Some(scene)) => ready = Some(Ok(scene)),
+                    Ok(None) => {}
+                    Err(error) => ready = Some(Err(error)),
+                }
+            }
+            designer.pending = None;
+            if ready.is_none() {
+                let source = doc.text().to_owned();
+                let root = session.workspace.project().root().to_owned();
+                designer.pending = Some(
+                    bevy::tasks::IoTaskPool::get_or_init(Default::default).spawn(async move {
+                        scenemax_ide_services::scene::assets::load(&root, &source)
+                    }),
+                );
+            }
             designer.revision = Some(doc.revision());
         }
-        let loaded = designer
-            .pending
-            .as_mut()
-            .and_then(|task| bevy::tasks::block_on(bevy::tasks::poll_once(task)));
+        let loaded = ready.or_else(|| {
+            designer
+                .pending
+                .as_mut()
+                .and_then(|task| bevy::tasks::block_on(bevy::tasks::poll_once(task)))
+        });
         if loaded.is_none() && (!designer.redraw || designer.scene.is_none()) {
             continue;
         }
+        let preview_changed = loaded.is_some();
+        let inspect = designer.redraw || !preview_changed;
         let result = if let Some(result) = loaded {
             designer.pending = None;
-            commands.entity(entity).despawn_children();
-            designer.parts = None;
+            if !designer.keep_controls {
+                commands.entity(entity).despawn_children();
+                designer.parts = None;
+            }
             result
         } else {
             let Some(scene) = designer.scene.take() else {
@@ -222,14 +181,33 @@ pub(crate) fn refresh(
                 {
                     designer.selected = scene.widgets.first().map(|w| w.pointer.clone());
                 }
-                if let Some(parts) = designer.parts {
-                    view::inspect(
-                        &mut commands,
-                        entity,
-                        parts,
-                        &scene,
-                        designer.selected.as_deref(),
-                    );
+                if let Some(mut parts) = designer.parts.take() {
+                    if preview_changed && let Some(previous) = designer.scene.as_ref() {
+                        view::update_preview(
+                            &mut commands,
+                            entity,
+                            &mut parts,
+                            &scene,
+                            previous,
+                            assets.as_deref(),
+                            server.as_deref(),
+                        );
+                    }
+                    if inspect {
+                        // A selection can change while a new font/sprite is still loading.
+                        // Build controls from the current buffer, never the older rendered snapshot.
+                        if let Ok(mut current) = scenemax_ide_services::scene::preview(doc.text()) {
+                            current.fonts = scene.fonts.clone();
+                            current.sprites = scene.sprites.clone();
+                            view::inspect(
+                                &mut commands,
+                                entity,
+                                &parts,
+                                &current,
+                                designer.selected.as_deref(),
+                            );
+                        }
+                    }
                     for (pick, outline, mut background, surface) in &mut picks {
                         if pick.host != entity {
                             continue;
@@ -247,6 +225,7 @@ pub(crate) fn refresh(
                             outline.color = if selected { SELECTED } else { Color::NONE };
                         }
                     }
+                    designer.parts = Some(parts);
                 } else {
                     designer.parts = Some(build(
                         &mut commands,
@@ -269,3 +248,5 @@ pub(crate) fn refresh(
 }
 mod view;
 use view::build;
+
+pub(crate) mod live;

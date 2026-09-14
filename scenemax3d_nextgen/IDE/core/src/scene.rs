@@ -330,7 +330,7 @@ pub fn patch(source: &str, pointer: &str, fields: Vec<(String, Value)>) -> Resul
         }
     }
     widget["name"] = json!(name);
-    if let Some(a) = widget["constraints"].as_array_mut() {
+    if let Some(a) = widget.get_mut("constraints").and_then(Value::as_array_mut) {
         a.retain(|c| c["targetName"].as_str().is_some_and(|s| !s.is_empty()));
     }
     fn rename(v: &mut Value, old: &str, new: &str) {

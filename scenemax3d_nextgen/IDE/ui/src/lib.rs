@@ -35,7 +35,7 @@ impl Plugin for StudioUiPlugin {
             (widgets::button_feedback, panels::reset, panels::layout).chain(),
         )
         .add_systems(Last, panels::measure)
-        .add_systems(Update, canvas::fit);
+        .add_systems(PostUpdate, canvas::fit.before(bevy::ui::UiSystems::Prepare));
     }
 }
 pub mod property;

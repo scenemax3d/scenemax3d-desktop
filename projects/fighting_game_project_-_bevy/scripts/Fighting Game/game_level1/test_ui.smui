@@ -1,718 +1,735 @@
 {
+  "canvasHeight": 1080,
   "canvasWidth": 1920,
-  "name": "test_ui",
-  "layers": [{
-    "renderMode": "SCREEN_SPACE",
-    "visible": true,
-    "name": "layer1",
-    "zOrder": 0,
-    "id": "61cb5586-a139-4dfc-8911-4d6c8209f126",
-    "widgets": [
-      {
-        "verticalBias": 0.5,
-        "widthMode": "FIXED",
-        "visible": true,
-        "spriteFrame": 0,
-        "type": "IMAGE",
-        "constraints": [
-          {
-            "side": "LEFT",
-            "targetName": "parent",
-            "margin": 28,
-            "targetSide": "LEFT"
-          },
-          {
-            "side": "TOP",
-            "targetName": "parent",
-            "margin": 28,
-            "targetSide": "TOP"
-          }
-        ],
-        "horizontalBias": 0.5,
-        "name": "playerProfile",
-        "heightMode": "FIXED",
-        "width": 108,
-        "spriteName": "ninja_profile1",
-        "id": "e7e2c3d1-1c63-477a-9bc9-d380020132ab",
-        "imageScaleMode": "fit",
-        "height": 132
-      },
-      {
-        "verticalBias": 0.5,
-        "backgroundColor": "#09131FD8",
-        "widthMode": "FIXED",
-        "visible": true,
-        "type": "PANEL",
-        "constraints": [
-          {
-            "side": "LEFT",
-            "targetName": "playerProfile",
-            "margin": 18,
-            "targetSide": "RIGHT"
-          },
-          {
-            "side": "TOP",
-            "targetName": "parent",
-            "margin": 28,
-            "targetSide": "TOP"
-          }
-        ],
-        "children": [
-          {
-            "verticalBias": 0.5,
-            "backgroundColor": "#4CE7D5FF",
-            "widthMode": "FIXED",
-            "visible": true,
-            "horizontalBias": 0.5,
-            "name": "playerAccent",
-            "heightMode": "FIXED",
-            "width": 6,
-            "id": "d5a16444-9df0-4458-ab60-ef72c8c8641a",
-            "type": "PANEL",
-            "constraints": [
-              {
-                "side": "LEFT",
-                "targetName": "parent",
-                "margin": 18,
-                "targetSide": "LEFT"
-              },
-              {
-                "side": "TOP",
-                "targetName": "parent",
-                "margin": 18,
-                "targetSide": "TOP"
-              }
-            ],
-            "height": 76
-          },
-          {
-            "verticalBias": 0.5,
-            "widthMode": "FIXED",
-            "visible": true,
-            "type": "TEXT_VIEW",
-            "constraints": [
-              {
-                "side": "LEFT",
-                "targetName": "playerAccent",
-                "margin": 14,
-                "targetSide": "RIGHT"
-              },
-              {
-                "side": "TOP",
-                "targetName": "parent",
-                "margin": 16,
-                "targetSide": "TOP"
-              }
-            ],
-            "textColor": "#82FFF0FF",
-            "fontName": "message_bold1",
-            "horizontalBias": 0.5,
-            "textAlignment": "left",
-            "name": "playerTag",
-            "heightMode": "FIXED",
-            "width": 220,
-            "fontSize": 40,
-            "id": "9327df80-44d8-41b6-bfed-9d16edc0195e",
-            "text": "PLAYER ONE",
-            "height": 26
-          },
-          {
-            "verticalBias": 0,
-            "widthMode": "FIXED",
-            "visible": true,
-            "type": "TEXT_VIEW",
-            "constraints": [
-              {
-                "side": "LEFT",
-                "targetName": "playerAccent",
-                "margin": 14,
-                "targetSide": "RIGHT"
-              },
-              {
-                "side": "TOP",
-                "targetName": "playerTag",
-                "margin": 24,
-                "targetSide": "BOTTOM"
-              }
-            ],
-            "textColor": "#A9B8CBFF",
-            "fontName": "message_bold1",
-            "horizontalBias": 0.5,
-            "textAlignment": "left",
-            "name": "score",
-            "heightMode": "FIXED",
-            "width": 250,
-            "fontSize": 34,
-            "id": "e2f80ef9-de9f-4670-96de-6af142564249",
-            "text": "Score: 0",
-            "height": 24
-          },
-          {
-            "verticalBias": 0.5,
-            "widthMode": "FIXED",
-            "visible": true,
-            "type": "TEXT_VIEW",
-            "constraints": [
-              {
-                "side": "RIGHT",
-                "targetName": "playerHealthValue",
-                "margin": 0,
-                "targetSide": "LEFT"
-              },
-              {
-                "side": "TOP",
-                "targetName": "playerHealthValue",
-                "margin": 0,
-                "targetSide": "TOP"
-              }
-            ],
-            "textColor": "#6C7E97FF",
-            "fontName": "message_bold1",
-            "horizontalBias": 0,
-            "textAlignment": "right",
-            "name": "playerStatCaption",
-            "heightMode": "FIXED",
-            "width": 140,
-            "fontSize": 24,
-            "id": "1457b764-2400-47cd-8a01-0307e113190c",
-            "text": "ENERGY",
-            "height": 20
-          },
-          {
-            "verticalBias": 0.5,
-            "widthMode": "FIXED",
-            "visible": true,
-            "type": "TEXT_VIEW",
-            "constraints": [
-              {
-                "side": "RIGHT",
-                "targetName": "parent",
-                "margin": 18,
-                "targetSide": "RIGHT"
-              },
-              {
-                "side": "TOP",
-                "targetName": "parent",
-                "margin": 14,
-                "targetSide": "TOP"
-              }
-            ],
-            "textColor": "#D7FFF9FF",
-            "fontName": "message_bold1",
-            "horizontalBias": 0.5,
-            "textAlignment": "right",
-            "name": "playerHealthValue",
-            "heightMode": "FIXED",
-            "width": 90,
-            "fontSize": 34,
-            "id": "34647287-deb2-4e89-8e60-66cf4f79fa84",
-            "text": "100%",
-            "height": 24
-          },
-          {
-            "verticalBias": 0.5,
-            "backgroundColor": "#18273AFF",
-            "widthMode": "FIXED",
-            "visible": true,
-            "type": "PANEL",
-            "constraints": [
-              {
-                "side": "RIGHT",
-                "targetName": "parent",
-                "margin": 18,
-                "targetSide": "RIGHT"
-              },
-              {
-                "side": "BOTTOM",
-                "targetName": "parent",
-                "margin": 18,
-                "targetSide": "BOTTOM"
-              }
-            ],
-            "children": [{
-              "verticalBias": 0.5,
-              "widthMode": "FIXED",
-              "visible": true,
-              "spriteFrame": 14,
-              "type": "IMAGE",
+  "layers": [
+    {
+      "id": "61cb5586-a139-4dfc-8911-4d6c8209f126",
+      "name": "layer1",
+      "renderMode": "SCREEN_SPACE",
+      "visible": true,
+      "widgets": [
+        {
+          "constraints": [
+            {
+              "margin": 28,
+              "side": "LEFT",
+              "targetName": "parent",
+              "targetSide": "LEFT"
+            },
+            {
+              "margin": 28,
+              "side": "TOP",
+              "targetName": "parent",
+              "targetSide": "TOP"
+            }
+          ],
+          "height": 132,
+          "heightMode": "FIXED",
+          "horizontalBias": 0.5,
+          "id": "e7e2c3d1-1c63-477a-9bc9-d380020132ab",
+          "imageScaleMode": "fit",
+          "name": "playerProfile",
+          "spriteFrame": 0,
+          "spriteName": "ninja_profile1",
+          "type": "IMAGE",
+          "verticalBias": 0.5,
+          "visible": true,
+          "width": 108,
+          "widthMode": "FIXED"
+        },
+        {
+          "backgroundColor": "#09131FD8",
+          "children": [
+            {
+              "backgroundColor": "#4CE7D5FF",
               "constraints": [
                 {
+                  "margin": 18,
                   "side": "LEFT",
                   "targetName": "parent",
-                  "margin": 4,
                   "targetSide": "LEFT"
                 },
                 {
+                  "margin": 18,
                   "side": "TOP",
                   "targetName": "parent",
-                  "margin": 4,
                   "targetSide": "TOP"
                 }
               ],
-              "horizontalBias": 0.5,
-              "name": "playerHealthFill",
+              "height": 76,
               "heightMode": "FIXED",
-              "width": 384,
-              "spriteName": "health_bar1",
-              "id": "22856cbc-5d42-4fbe-8dc0-6a45277c7c2f",
-              "imageScaleMode": "stretch",
-              "height": 24
-            }],
-            "horizontalBias": 0.5,
-            "name": "playerHealthBar",
-            "heightMode": "FIXED",
-            "width": 392,
-            "id": "372ec334-393f-4900-9c0d-bb97d019c012",
-            "height": 32
-          }
-        ],
-        "horizontalBias": 0.5,
-        "name": "playerHud",
-        "heightMode": "FIXED",
-        "width": 540,
-        "id": "61b54eb0-ba4d-4cef-8c39-edc16f93ac4f",
-        "height": 132
-      },
-      {
-        "verticalBias": 0.5,
-        "backgroundColor": "#08111BCC",
-        "widthMode": "FIXED",
-        "visible": true,
-        "centerHorizontal": true,
-        "type": "PANEL",
-        "constraints": [{
-          "side": "TOP",
-          "targetName": "parent",
-          "margin": 26,
-          "targetSide": "TOP"
-        }],
-        "children": [
-          {
-            "verticalBias": 0.5,
-            "widthMode": "FIXED",
-            "visible": true,
-            "centerHorizontal": true,
-            "type": "TEXT_VIEW",
-            "constraints": [{
-              "side": "TOP",
-              "targetName": "parent",
-              "margin": 14,
-              "targetSide": "TOP"
-            }],
-            "textColor": "#6C7E97FF",
-            "fontName": "message_bold1",
-            "horizontalBias": 0.5,
-            "textAlignment": "center",
-            "name": "roundLabel",
-            "heightMode": "FIXED",
-            "width": 120,
-            "fontSize": 22,
-            "id": "e1ce2476-d7dc-483b-aeb4-c77d9645267a",
-            "text": "ROUND TIMER",
-            "height": 16
-          },
-          {
-            "verticalBias": 0.5,
-            "widthMode": "FIXED",
-            "visible": true,
-            "centerHorizontal": true,
-            "type": "TEXT_VIEW",
-            "constraints": [{
-              "side": "TOP",
-              "targetName": "roundLabel",
-              "margin": 18,
-              "targetSide": "BOTTOM"
-            }],
-            "textColor": "#FFFFFFFF",
-            "fontName": "message_bold1",
-            "horizontalBias": 0.5,
-            "textAlignment": "center",
-            "name": "timer",
-            "heightMode": "FIXED",
-            "width": 90,
-            "fontSize": 72,
-            "id": "a1d75a19-9743-4444-8382-64256ba685a1",
-            "text": "60",
-            "height": 30
-          }
-        ],
-        "horizontalBias": 0.5,
-        "name": "panel2",
-        "heightMode": "FIXED",
-        "width": 220,
-        "id": "bb6fb706-7440-47c5-9533-adcdf212ccae",
-        "height": 96
-      },
-      {
-        "verticalBias": 0.5,
-        "widthMode": "FIXED",
-        "visible": true,
-        "spriteFrame": 0,
-        "type": "IMAGE",
-        "constraints": [
-          {
-            "side": "RIGHT",
-            "targetName": "parent",
-            "margin": 28,
-            "targetSide": "RIGHT"
-          },
-          {
-            "side": "TOP",
-            "targetName": "parent",
-            "margin": 28,
-            "targetSide": "TOP"
-          }
-        ],
-        "horizontalBias": 0.5,
-        "name": "opponentProfile",
-        "heightMode": "FIXED",
-        "width": 108,
-        "spriteName": "old_man_profile1",
-        "id": "07f7849b-1fcd-42d1-9c9e-feae8409dfd2",
-        "imageScaleMode": "fit",
-        "height": 132
-      },
-      {
-        "verticalBias": 0.5,
-        "backgroundColor": "#1A1214D8",
-        "widthMode": "FIXED",
-        "visible": true,
-        "type": "PANEL",
-        "constraints": [
-          {
-            "side": "RIGHT",
-            "targetName": "opponentProfile",
-            "margin": 18,
-            "targetSide": "LEFT"
-          },
-          {
-            "side": "TOP",
-            "targetName": "parent",
-            "margin": 28,
-            "targetSide": "TOP"
-          }
-        ],
-        "children": [
-          {
-            "verticalBias": 0.5,
-            "backgroundColor": "#FF9C6FFF",
-            "widthMode": "FIXED",
-            "visible": true,
-            "horizontalBias": 0.5,
-            "name": "opponentAccent",
-            "heightMode": "FIXED",
-            "width": 6,
-            "id": "f74a5bb0-e6a1-4847-bf52-8971c54ea287",
-            "type": "PANEL",
-            "constraints": [
-              {
-                "side": "RIGHT",
-                "targetName": "parent",
-                "margin": 18,
-                "targetSide": "RIGHT"
-              },
-              {
-                "side": "TOP",
-                "targetName": "parent",
-                "margin": 18,
-                "targetSide": "TOP"
-              }
-            ],
-            "height": 76
-          },
-          {
-            "verticalBias": 0.5,
-            "widthMode": "FIXED",
-            "visible": true,
-            "type": "TEXT_VIEW",
-            "constraints": [
-              {
-                "side": "RIGHT",
-                "targetName": "opponentAccent",
-                "margin": 14,
-                "targetSide": "LEFT"
-              },
-              {
-                "side": "TOP",
-                "targetName": "parent",
-                "margin": 16,
-                "targetSide": "TOP"
-              }
-            ],
-            "textColor": "#FFC4A4FF",
-            "fontName": "message_bold1",
-            "horizontalBias": 0.5,
-            "textAlignment": "right",
-            "name": "opponentTag",
-            "heightMode": "FIXED",
-            "width": 220,
-            "fontSize": 40,
-            "id": "a99cf063-7f52-4ecd-aebc-2f02ab15595b",
-            "text": "OPPONENT",
-            "height": 26
-          },
-          {
-            "verticalBias": 0.5,
-            "widthMode": "FIXED",
-            "visible": true,
-            "type": "TEXT_VIEW",
-            "constraints": [
-              {
-                "side": "LEFT",
-                "targetName": "parent",
-                "margin": 18,
-                "targetSide": "LEFT"
-              },
-              {
-                "side": "TOP",
-                "targetName": "parent",
-                "margin": 18,
-                "targetSide": "TOP"
-              }
-            ],
-            "textColor": "#B18676FF",
-            "fontName": "message_bold1",
-            "horizontalBias": 0.5,
-            "textAlignment": "right",
-            "name": "opponentStatCaption",
-            "heightMode": "FIXED",
-            "width": 140,
-            "fontSize": 24,
-            "id": "85b9e574-2c11-4278-af01-2da8de6927b6",
-            "text": "ENERGY",
-            "height": 20
-          },
-          {
-            "verticalBias": 0.5,
-            "widthMode": "FIXED",
-            "visible": true,
-            "type": "TEXT_VIEW",
-            "constraints": [
-              {
-                "side": "LEFT",
-                "targetName": "parent",
-                "margin": 18,
-                "targetSide": "LEFT"
-              },
-              {
-                "side": "TOP",
-                "targetName": "parent",
-                "margin": 14,
-                "targetSide": "TOP"
-              }
-            ],
-            "textColor": "#FFF0E8FF",
-            "fontName": "message_bold1",
-            "horizontalBias": 0.5,
-            "textAlignment": "left",
-            "name": "opponentHealthValue",
-            "heightMode": "FIXED",
-            "width": 90,
-            "fontSize": 34,
-            "id": "533309aa-b475-45b5-923a-3eef853ee0fe",
-            "text": "100%",
-            "height": 24
-          },
-          {
-            "verticalBias": 0.5,
-            "backgroundColor": "#311F24FF",
-            "widthMode": "FIXED",
-            "visible": true,
-            "type": "PANEL",
-            "constraints": [
-              {
-                "side": "LEFT",
-                "targetName": "parent",
-                "margin": 18,
-                "targetSide": "LEFT"
-              },
-              {
-                "side": "BOTTOM",
-                "targetName": "parent",
-                "margin": 18,
-                "targetSide": "BOTTOM"
-              }
-            ],
-            "children": [{
+              "horizontalBias": 0.5,
+              "id": "d5a16444-9df0-4458-ab60-ef72c8c8641a",
+              "name": "playerAccent",
+              "type": "PANEL",
               "verticalBias": 0.5,
-              "widthMode": "FIXED",
               "visible": true,
-              "spriteFrame": 14,
-              "type": "IMAGE",
+              "width": 6,
+              "widthMode": "FIXED"
+            },
+            {
               "constraints": [
                 {
-                  "side": "RIGHT",
-                  "targetName": "parent",
-                  "margin": 4,
+                  "margin": 14,
+                  "side": "LEFT",
+                  "targetName": "playerAccent",
                   "targetSide": "RIGHT"
                 },
                 {
+                  "margin": 16,
                   "side": "TOP",
                   "targetName": "parent",
-                  "margin": 4,
                   "targetSide": "TOP"
                 }
               ],
-              "horizontalBias": 0.5,
-              "name": "opponentHealthFill",
+              "fontName": "message_bold1",
+              "fontSize": 40,
+              "height": 26,
               "heightMode": "FIXED",
-              "width": 384,
-              "spriteName": "health_bar1",
-              "id": "497adbda-82f1-4438-bc1b-4b520131e10c",
-              "imageScaleMode": "stretch",
-              "height": 24
-            }],
-            "horizontalBias": 0.5,
-            "name": "opponentHealthBar",
-            "heightMode": "FIXED",
-            "width": 392,
-            "id": "08fe595b-0d5b-4bb1-a5ad-6556d638830a",
-            "height": 32
-          }
-        ],
-        "horizontalBias": 0.5,
-        "name": "opponentHud",
-        "heightMode": "FIXED",
-        "width": 540,
-        "id": "a679f9bc-1482-4ad2-98c4-befcebb50c6b",
-        "height": 132
-      },
-      {
-        "verticalBias": 0.5,
-        "backgroundColor": "#00000000",
-        "widthMode": "FIXED",
-        "visible": true,
-        "centerHorizontal": true,
-        "type": "PANEL",
-        "constraints": [],
-        "children": [
-          {
-            "verticalBias": 0.5,
-            "widthMode": "FIXED",
-            "visible": true,
-            "centerHorizontal": true,
-            "type": "TEXT_VIEW",
-            "constraints": [{
+              "horizontalBias": 0.5,
+              "id": "9327df80-44d8-41b6-bfed-9d16edc0195e",
+              "name": "playerTag",
+              "text": "PLAYER ONE",
+              "textAlignment": "left",
+              "textColor": "#82FFF0FF",
+              "type": "TEXT_VIEW",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 220,
+              "widthMode": "FIXED"
+            },
+            {
+              "constraints": [
+                {
+                  "margin": 14,
+                  "side": "LEFT",
+                  "targetName": "playerAccent",
+                  "targetSide": "RIGHT"
+                },
+                {
+                  "margin": 24,
+                  "side": "TOP",
+                  "targetName": "playerTag",
+                  "targetSide": "BOTTOM"
+                }
+              ],
+              "fontName": "message_bold1",
+              "fontSize": 34,
+              "height": 24,
+              "heightMode": "FIXED",
+              "horizontalBias": 0.5,
+              "id": "e2f80ef9-de9f-4670-96de-6af142564249",
+              "name": "score",
+              "text": "Score: 0",
+              "textAlignment": "left",
+              "textColor": "#A9B8CBFF",
+              "type": "TEXT_VIEW",
+              "verticalBias": 0,
+              "visible": true,
+              "width": 250,
+              "widthMode": "FIXED"
+            },
+            {
+              "constraints": [
+                {
+                  "margin": 0,
+                  "side": "RIGHT",
+                  "targetName": "playerHealthValue",
+                  "targetSide": "LEFT"
+                },
+                {
+                  "margin": 0,
+                  "side": "TOP",
+                  "targetName": "playerHealthValue",
+                  "targetSide": "TOP"
+                }
+              ],
+              "fontName": "message_bold1",
+              "fontSize": 24,
+              "height": 20,
+              "heightMode": "FIXED",
+              "horizontalBias": 0,
+              "id": "1457b764-2400-47cd-8a01-0307e113190c",
+              "name": "playerStatCaption",
+              "text": "ENERGY",
+              "textAlignment": "right",
+              "textColor": "#6C7E97FF",
+              "type": "TEXT_VIEW",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 140,
+              "widthMode": "FIXED"
+            },
+            {
+              "constraints": [
+                {
+                  "margin": 18,
+                  "side": "RIGHT",
+                  "targetName": "parent",
+                  "targetSide": "RIGHT"
+                },
+                {
+                  "margin": 14,
+                  "side": "TOP",
+                  "targetName": "parent",
+                  "targetSide": "TOP"
+                }
+              ],
+              "fontName": "message_bold1",
+              "fontSize": 34,
+              "height": 24,
+              "heightMode": "FIXED",
+              "horizontalBias": 0.5,
+              "id": "34647287-deb2-4e89-8e60-66cf4f79fa84",
+              "name": "playerHealthValue",
+              "text": "100%",
+              "textAlignment": "right",
+              "textColor": "#D7FFF9FF",
+              "type": "TEXT_VIEW",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 90,
+              "widthMode": "FIXED"
+            },
+            {
+              "backgroundColor": "#18273AFF",
+              "children": [
+                {
+                  "constraints": [
+                    {
+                      "margin": 4,
+                      "side": "LEFT",
+                      "targetName": "parent",
+                      "targetSide": "LEFT"
+                    },
+                    {
+                      "margin": 4,
+                      "side": "TOP",
+                      "targetName": "parent",
+                      "targetSide": "TOP"
+                    }
+                  ],
+                  "height": 24,
+                  "heightMode": "FIXED",
+                  "horizontalBias": 0.5,
+                  "id": "22856cbc-5d42-4fbe-8dc0-6a45277c7c2f",
+                  "imageScaleMode": "stretch",
+                  "name": "playerHealthFill",
+                  "spriteFrame": 14,
+                  "spriteName": "health_bar1",
+                  "type": "IMAGE",
+                  "verticalBias": 0.5,
+                  "visible": true,
+                  "width": 384,
+                  "widthMode": "FIXED"
+                }
+              ],
+              "constraints": [
+                {
+                  "margin": 18,
+                  "side": "RIGHT",
+                  "targetName": "parent",
+                  "targetSide": "RIGHT"
+                },
+                {
+                  "margin": 18,
+                  "side": "BOTTOM",
+                  "targetName": "parent",
+                  "targetSide": "BOTTOM"
+                }
+              ],
+              "height": 32,
+              "heightMode": "FIXED",
+              "horizontalBias": 0.5,
+              "id": "372ec334-393f-4900-9c0d-bb97d019c012",
+              "name": "playerHealthBar",
+              "type": "PANEL",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 392,
+              "widthMode": "FIXED"
+            }
+          ],
+          "constraints": [
+            {
+              "margin": 18,
+              "side": "LEFT",
+              "targetName": "playerProfile",
+              "targetSide": "RIGHT"
+            },
+            {
+              "margin": 28,
               "side": "TOP",
               "targetName": "parent",
-              "margin": 0,
               "targetSide": "TOP"
-            }],
-            "textColor": "#FFFFFFFF",
-            "fontName": "message_bold1",
-            "horizontalBias": 0.5,
-            "textAlignment": "center",
-            "name": "txtMsg",
-            "heightMode": "FIXED",
-            "width": 260,
-            "fontSize": 128,
-            "id": "e377e070-18fe-4e62-8b32-5c8d1528ff67",
-            "text": "",
-            "height": 30
-          },
-          {
-            "verticalBias": 0.5,
-            "widthMode": "FIXED",
-            "visible": true,
-            "centerHorizontal": true,
-            "type": "TEXT_VIEW",
-            "constraints": [{
+            }
+          ],
+          "height": 132,
+          "heightMode": "FIXED",
+          "horizontalBias": 0.5,
+          "id": "61b54eb0-ba4d-4cef-8c39-edc16f93ac4f",
+          "name": "playerHud",
+          "type": "PANEL",
+          "verticalBias": 0.5,
+          "visible": true,
+          "width": 540,
+          "widthMode": "FIXED"
+        },
+        {
+          "backgroundColor": "#08111BCC",
+          "centerHorizontal": true,
+          "children": [
+            {
+              "centerHorizontal": true,
+              "constraints": [
+                {
+                  "margin": 14,
+                  "side": "TOP",
+                  "targetName": "parent",
+                  "targetSide": "TOP"
+                }
+              ],
+              "fontName": "message_bold1",
+              "fontSize": 22,
+              "height": 16,
+              "heightMode": "FIXED",
+              "horizontalBias": 0.5,
+              "id": "e1ce2476-d7dc-483b-aeb4-c77d9645267a",
+              "name": "roundLabel",
+              "text": "ROUND TIMER",
+              "textAlignment": "center",
+              "textColor": "#6C7E97FF",
+              "type": "TEXT_VIEW",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 120,
+              "widthMode": "FIXED"
+            },
+            {
+              "centerHorizontal": true,
+              "constraints": [
+                {
+                  "margin": 18,
+                  "side": "TOP",
+                  "targetName": "roundLabel",
+                  "targetSide": "BOTTOM"
+                }
+              ],
+              "fontName": "message_bold1",
+              "fontSize": 72,
+              "height": 89.0,
+              "heightMode": "FIXED",
+              "horizontalBias": 0.5,
+              "id": "a1d75a19-9743-4444-8382-64256ba685a1",
+              "name": "timer",
+              "text": "60",
+              "textAlignment": "center",
+              "textColor": "#FFFFFFFF",
+              "type": "TEXT_VIEW",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 130.0,
+              "widthMode": "FIXED"
+            }
+          ],
+          "constraints": [
+            {
+              "margin": 26,
+              "side": "TOP",
+              "targetName": "parent",
+              "targetSide": "TOP"
+            }
+          ],
+          "height": 96,
+          "heightMode": "FIXED",
+          "horizontalBias": 0.5,
+          "id": "bb6fb706-7440-47c5-9533-adcdf212ccae",
+          "name": "panel2",
+          "type": "PANEL",
+          "verticalBias": 0.5,
+          "visible": true,
+          "width": 220,
+          "widthMode": "FIXED"
+        },
+        {
+          "constraints": [
+            {
+              "margin": 28,
+              "side": "RIGHT",
+              "targetName": "parent",
+              "targetSide": "RIGHT"
+            },
+            {
+              "margin": 28,
+              "side": "TOP",
+              "targetName": "parent",
+              "targetSide": "TOP"
+            }
+          ],
+          "height": 132,
+          "heightMode": "FIXED",
+          "horizontalBias": 0.5,
+          "id": "07f7849b-1fcd-42d1-9c9e-feae8409dfd2",
+          "imageScaleMode": "fit",
+          "name": "opponentProfile",
+          "spriteFrame": 0,
+          "spriteName": "old_man_profile1",
+          "type": "IMAGE",
+          "verticalBias": 0.5,
+          "visible": true,
+          "width": 108,
+          "widthMode": "FIXED"
+        },
+        {
+          "backgroundColor": "#1A1214D8",
+          "children": [
+            {
+              "backgroundColor": "#FF9C6FFF",
+              "constraints": [
+                {
+                  "margin": 18,
+                  "side": "RIGHT",
+                  "targetName": "parent",
+                  "targetSide": "RIGHT"
+                },
+                {
+                  "margin": 18,
+                  "side": "TOP",
+                  "targetName": "parent",
+                  "targetSide": "TOP"
+                }
+              ],
+              "height": 76,
+              "heightMode": "FIXED",
+              "horizontalBias": 0.5,
+              "id": "f74a5bb0-e6a1-4847-bf52-8971c54ea287",
+              "name": "opponentAccent",
+              "type": "PANEL",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 6,
+              "widthMode": "FIXED"
+            },
+            {
+              "constraints": [
+                {
+                  "margin": 14,
+                  "side": "RIGHT",
+                  "targetName": "opponentAccent",
+                  "targetSide": "LEFT"
+                },
+                {
+                  "margin": 16,
+                  "side": "TOP",
+                  "targetName": "parent",
+                  "targetSide": "TOP"
+                }
+              ],
+              "fontName": "message_bold1",
+              "fontSize": 40,
+              "height": 26,
+              "heightMode": "FIXED",
+              "horizontalBias": 0.5,
+              "id": "a99cf063-7f52-4ecd-aebc-2f02ab15595b",
+              "name": "opponentTag",
+              "text": "OPPONENT",
+              "textAlignment": "right",
+              "textColor": "#FFC4A4FF",
+              "type": "TEXT_VIEW",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 220,
+              "widthMode": "FIXED"
+            },
+            {
+              "constraints": [
+                {
+                  "margin": 18,
+                  "side": "LEFT",
+                  "targetName": "parent",
+                  "targetSide": "LEFT"
+                },
+                {
+                  "margin": 18,
+                  "side": "TOP",
+                  "targetName": "parent",
+                  "targetSide": "TOP"
+                }
+              ],
+              "fontName": "message_bold1",
+              "fontSize": 24,
+              "height": 20,
+              "heightMode": "FIXED",
+              "horizontalBias": 0.5,
+              "id": "85b9e574-2c11-4278-af01-2da8de6927b6",
+              "name": "opponentStatCaption",
+              "text": "ENERGY",
+              "textAlignment": "right",
+              "textColor": "#B18676FF",
+              "type": "TEXT_VIEW",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 140,
+              "widthMode": "FIXED"
+            },
+            {
+              "constraints": [
+                {
+                  "margin": 18,
+                  "side": "LEFT",
+                  "targetName": "parent",
+                  "targetSide": "LEFT"
+                },
+                {
+                  "margin": 14,
+                  "side": "TOP",
+                  "targetName": "parent",
+                  "targetSide": "TOP"
+                }
+              ],
+              "fontName": "message_bold1",
+              "fontSize": 34,
+              "height": 24,
+              "heightMode": "FIXED",
+              "horizontalBias": 0.5,
+              "id": "533309aa-b475-45b5-923a-3eef853ee0fe",
+              "name": "opponentHealthValue",
+              "text": "100%",
+              "textAlignment": "left",
+              "textColor": "#FFF0E8FF",
+              "type": "TEXT_VIEW",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 90,
+              "widthMode": "FIXED"
+            },
+            {
+              "backgroundColor": "#311F24FF",
+              "children": [
+                {
+                  "constraints": [
+                    {
+                      "margin": 4,
+                      "side": "RIGHT",
+                      "targetName": "parent",
+                      "targetSide": "RIGHT"
+                    },
+                    {
+                      "margin": 4,
+                      "side": "TOP",
+                      "targetName": "parent",
+                      "targetSide": "TOP"
+                    }
+                  ],
+                  "height": 24,
+                  "heightMode": "FIXED",
+                  "horizontalBias": 0.5,
+                  "id": "497adbda-82f1-4438-bc1b-4b520131e10c",
+                  "imageScaleMode": "stretch",
+                  "name": "opponentHealthFill",
+                  "spriteFrame": 14,
+                  "spriteName": "health_bar1",
+                  "type": "IMAGE",
+                  "verticalBias": 0.5,
+                  "visible": true,
+                  "width": 384,
+                  "widthMode": "FIXED"
+                }
+              ],
+              "constraints": [
+                {
+                  "margin": 18,
+                  "side": "LEFT",
+                  "targetName": "parent",
+                  "targetSide": "LEFT"
+                },
+                {
+                  "margin": 18,
+                  "side": "BOTTOM",
+                  "targetName": "parent",
+                  "targetSide": "BOTTOM"
+                }
+              ],
+              "height": 32,
+              "heightMode": "FIXED",
+              "horizontalBias": 0.5,
+              "id": "08fe595b-0d5b-4bb1-a5ad-6556d638830a",
+              "name": "opponentHealthBar",
+              "type": "PANEL",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 392,
+              "widthMode": "FIXED"
+            }
+          ],
+          "constraints": [
+            {
+              "margin": 18,
+              "side": "RIGHT",
+              "targetName": "opponentProfile",
+              "targetSide": "LEFT"
+            },
+            {
+              "margin": 28,
+              "side": "TOP",
+              "targetName": "parent",
+              "targetSide": "TOP"
+            }
+          ],
+          "height": 132,
+          "heightMode": "FIXED",
+          "horizontalBias": 0.5,
+          "id": "a679f9bc-1482-4ad2-98c4-befcebb50c6b",
+          "name": "opponentHud",
+          "type": "PANEL",
+          "verticalBias": 0.5,
+          "visible": true,
+          "width": 540,
+          "widthMode": "FIXED"
+        },
+        {
+          "backgroundColor": "#00000000",
+          "centerHorizontal": true,
+          "centerVertical": true,
+          "children": [
+            {
+              "centerHorizontal": true,
+              "constraints": [
+                {
+                  "margin": 0,
+                  "side": "TOP",
+                  "targetName": "parent",
+                  "targetSide": "TOP"
+                }
+              ],
+              "fontName": "message_bold1",
+              "fontSize": 128,
+              "height": 30,
+              "heightMode": "FIXED",
+              "horizontalBias": 0.5,
+              "id": "e377e070-18fe-4e62-8b32-5c8d1528ff67",
+              "name": "txtMsg",
+              "text": "",
+              "textAlignment": "center",
+              "textColor": "#FFFFFFFF",
+              "type": "TEXT_VIEW",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 260,
+              "widthMode": "FIXED"
+            },
+            {
+              "centerHorizontal": true,
+              "constraints": [
+                {
+                  "margin": 0,
+                  "side": "BOTTOM",
+                  "targetName": "parent",
+                  "targetSide": "BOTTOM"
+                }
+              ],
+              "fontName": "arial_64",
+              "fontSize": 52,
+              "height": 24,
+              "heightMode": "FIXED",
+              "horizontalBias": 0.5,
+              "id": "f36a096a-88ea-44d9-b3fb-d2aa91ab4fa1",
+              "name": "txtSubMessage",
+              "text": "",
+              "textAlignment": "center",
+              "textColor": "#FFFFFFFF",
+              "type": "TEXT_VIEW",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 300,
+              "widthMode": "FIXED"
+            }
+          ],
+          "constraints": [],
+          "height": 160,
+          "heightMode": "FIXED",
+          "horizontalBias": 0.5,
+          "id": "bf62e251-d03a-4f5b-be2f-f9298ca86899",
+          "name": "panelMsg",
+          "type": "PANEL",
+          "verticalBias": 0.5,
+          "visible": true,
+          "width": 420,
+          "widthMode": "FIXED"
+        },
+        {
+          "backgroundColor": "#33333300",
+          "children": [
+            {
+              "centerHorizontal": true,
+              "centerVertical": true,
+              "constraints": [],
+              "height": 100,
+              "heightMode": "MATCH_CONSTRAINT",
+              "horizontalBias": 0.5,
+              "id": "dfb0f70d-721f-491f-a47b-137cf8dcdaa5",
+              "imageScaleMode": "fit",
+              "marginBottom": 12.0,
+              "name": "image1",
+              "spriteFrame": 0,
+              "spriteName": "panel_brown_damaged",
+              "type": "IMAGE",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 100,
+              "widthMode": "MATCH_CONSTRAINT"
+            },
+            {
+              "centerHorizontal": true,
+              "centerVertical": true,
+              "constraints": [],
+              "fontName": "arial_64",
+              "fontSize": 64,
+              "height": 30,
+              "heightMode": "FIXED",
+              "horizontalBias": 0.5,
+              "id": "b2259366-2362-44fc-85ff-c3e010b4d7aa",
+              "name": "text1",
+              "text": "",
+              "textAlignment": "center",
+              "textColor": "#FFFFFFFF",
+              "type": "TEXT_VIEW",
+              "verticalBias": 0.5,
+              "visible": true,
+              "width": 150,
+              "widthMode": "FIXED"
+            }
+          ],
+          "constraints": [
+            {
+              "margin": 0,
+              "side": "RIGHT",
+              "targetName": "parent",
+              "targetSide": "RIGHT"
+            },
+            {
+              "margin": 0,
               "side": "BOTTOM",
               "targetName": "parent",
-              "margin": 0,
               "targetSide": "BOTTOM"
-            }],
-            "textColor": "#FFFFFFFF",
-            "fontName": "arial_64",
-            "horizontalBias": 0.5,
-            "textAlignment": "center",
-            "name": "txtSubMessage",
-            "heightMode": "FIXED",
-            "width": 300,
-            "fontSize": 52,
-            "id": "f36a096a-88ea-44d9-b3fb-d2aa91ab4fa1",
-            "text": "",
-            "height": 24
-          }
-        ],
-        "horizontalBias": 0.5,
-        "name": "panelMsg",
-        "heightMode": "FIXED",
-        "width": 420,
-        "id": "bf62e251-d03a-4f5b-be2f-f9298ca86899",
-        "centerVertical": true,
-        "height": 160
-      },
-      {
-        "verticalBias": 0.5,
-        "backgroundColor": "#33333300",
-        "widthMode": "FIXED",
-        "visible": true,
-        "type": "PANEL",
-        "constraints": [
-          {
-            "side": "RIGHT",
-            "targetName": "parent",
-            "margin": 0,
-            "targetSide": "RIGHT"
-          },
-          {
-            "side": "BOTTOM",
-            "targetName": "parent",
-            "margin": 0,
-            "targetSide": "BOTTOM"
-          }
-        ],
-        "marginRight": 15,
-        "children": [
-          {
-            "verticalBias": 0.5,
-            "widthMode": "MATCH_CONSTRAINT",
-            "visible": true,
-            "centerHorizontal": true,
-            "spriteFrame": 0,
-            "type": "IMAGE",
-            "constraints": [],
-            "horizontalBias": 0.5,
-            "name": "image1",
-            "heightMode": "MATCH_CONSTRAINT",
-            "width": 100,
-            "spriteName": "panel_brown_damaged",
-            "id": "dfb0f70d-721f-491f-a47b-137cf8dcdaa5",
-            "imageScaleMode": "fit",
-            "centerVertical": true,
-            "height": 100
-          },
-          {
-            "verticalBias": 0.5,
-            "widthMode": "FIXED",
-            "visible": true,
-            "centerHorizontal": true,
-            "type": "TEXT_VIEW",
-            "constraints": [],
-            "textColor": "#FFFFFFFF",
-            "fontName": "arial_64",
-            "horizontalBias": 0.5,
-            "textAlignment": "center",
-            "name": "text1",
-            "heightMode": "FIXED",
-            "width": 150,
-            "fontSize": 64,
-            "id": "b2259366-2362-44fc-85ff-c3e010b4d7aa",
-            "text": "",
-            "centerVertical": true,
-            "height": 30
-          }
-        ],
-        "horizontalBias": 0.5,
-        "name": "panelRightBottom",
-        "heightMode": "FIXED",
-        "width": 200,
-        "id": "59861e83-ac08-4814-8cac-2fc5e89e4b65",
-        "height": 150
-      }
-    ]
-  }],
-  "version": 1,
-  "canvasHeight": 1080
+            }
+          ],
+          "height": 150,
+          "heightMode": "FIXED",
+          "horizontalBias": 0.5,
+          "id": "59861e83-ac08-4814-8cac-2fc5e89e4b65",
+          "marginRight": 15,
+          "name": "panelRightBottom",
+          "type": "PANEL",
+          "verticalBias": 0.5,
+          "visible": true,
+          "width": 200,
+          "widthMode": "FIXED"
+        }
+      ],
+      "zOrder": 0
+    }
+  ],
+  "name": "test_ui",
+  "version": 1
 }

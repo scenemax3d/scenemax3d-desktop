@@ -195,6 +195,7 @@ impl Plugin for StudioPlugin {
                     )
                         .chain(),
                     (
+                        presentation::designer::live::update,
                         presentation::designer::interactions,
                         presentation::scene3d::live::update,
                         presentation::scene3d::inspector::apply,

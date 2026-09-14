@@ -1,8 +1,11 @@
 //! Retained scene canvas, hierarchy and inspector construction.
 use super::*;
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct Parts {
     inspector: Entity,
+    canvas: Entity,
+    footer: Entity,
+    widgets: std::collections::HashMap<String, WidgetParts>,
 }
 fn area(commands: &mut Commands, parent: Entity, node: Node, color: Color) -> Entity {
     let scrolls = node.overflow.y == OverflowAxis::Scroll;
@@ -52,31 +55,6 @@ pub(super) fn build(
         },
         BG,
     );
-    let toolbar = area(
-        commands,
-        root,
-        Node {
-            align_items: AlignItems::Center,
-            padding: px(8.).all(),
-            column_gap: px(10.),
-            flex_shrink: 0.,
-            ..default()
-        },
-        PANEL,
-    );
-    commands.spawn((
-        label(
-            format!(
-                "UI DESIGNER   /   {}   ·   {} × {}",
-                scene.name, scene.width, scene.height
-            ),
-            13.,
-        ),
-        ChildOf(toolbar),
-    ));
-    button(commands, toolbar, "Save", Action::Save);
-    button(commands, toolbar, "Undo", Action::Undo);
-    button(commands, toolbar, "Redo", Action::Redo);
     let tools = area(
         commands,
         root,
@@ -113,13 +91,18 @@ pub(super) fn build(
         },
         Color::srgb_u8(36, 38, 43),
     );
-    commands.spawn((
-        label(
-            "CANVAS   ·   Fit to viewport   ·   Select a widget to inspect",
-            12.,
-        ),
-        ChildOf(middle),
-    ));
+    let navigation = area(
+        commands,
+        middle,
+        Node {
+            align_items: AlignItems::Center,
+            column_gap: px(4.),
+            flex_shrink: 0.,
+            ..default()
+        },
+        Color::NONE,
+    );
+    commands.spawn((label("Canvas", 12.), ChildOf(navigation)));
     let viewport = area(
         commands,
         middle,
@@ -149,13 +132,15 @@ pub(super) fn build(
     commands
         .entity(canvas)
         .insert(Canvas::new(viewport, scene.width, scene.height));
+    scenemax_ide_ui::canvas::install_navigation(commands, canvas, viewport, host, navigation);
+    chrome::document_actions(commands, navigation);
     let mut entities = std::collections::HashMap::new();
     let mut layers = std::collections::HashMap::new();
-    for w in scene.widgets.iter().filter(|w| w.visible) {
+    for w in scene.widgets.iter() {
         let parent = w
             .pointer
             .rsplit_once("/children/")
-            .and_then(|(p, _)| entities.get(p).copied());
+            .and_then(|(p, _)| entities.get(p).map(|p: &WidgetParts| p.entity));
         let layer_key = w.pointer.split("/widgets/").next().unwrap_or("");
         let layer_order = layers.len() as i32;
         let layer = *layers.entry(layer_key.to_owned()).or_insert_with(|| {
@@ -173,7 +158,7 @@ pub(super) fn build(
                 ))
                 .id()
         });
-        let entity = draw_widget(
+        let widget = draw_widget(
             commands,
             canvas,
             host,
@@ -183,7 +168,7 @@ pub(super) fn build(
             assets,
             server,
         );
-        commands.entity(entity).insert(Outline::new(
+        commands.entity(widget.entity).insert(Outline::new(
             px(1.),
             px(0.),
             if selected == Some(w.pointer.as_str()) {
@@ -192,19 +177,21 @@ pub(super) fn build(
                 Color::NONE
             },
         ));
-        entities.insert(w.pointer.clone(), entity);
+        entities.insert(w.pointer.clone(), widget);
     }
-    commands.spawn((
-        label(
-            if scene.warnings.is_empty() {
-                "Runtime assets · Design resolution · Scripts are not executing".into()
-            } else {
-                scene.warnings.join("; ")
-            },
-            11.,
-        ),
-        ChildOf(middle),
-    ));
+    let footer = commands
+        .spawn((
+            label(
+                if scene.warnings.is_empty() {
+                    "Wheel: zoom · Right/middle drag: pan · Shift+wheel: scroll".into()
+                } else {
+                    scene.warnings.join("; ")
+                },
+                11.,
+            ),
+            ChildOf(middle),
+        ))
+        .id();
     let toggle = button(
         commands,
         body,
@@ -241,16 +228,24 @@ pub(super) fn build(
     );
     commands.entity(inspector).insert(chrome::PropertiesPanel);
     chrome::collapse(commands, toggle, inspector, host);
-    button(commands, inspector, "Apply properties", Apply(host));
+    commands.spawn((
+        label("Changes update the preview immediately", 11.),
+        ChildOf(inspector),
+    ));
     let inspector = scenemax_ide_ui::property::scroll_column(commands, inspector);
-    let parts = Parts { inspector };
-    inspect(commands, host, parts, scene, selected);
+    let parts = Parts {
+        inspector,
+        canvas,
+        footer,
+        widgets: entities,
+    };
+    inspect(commands, host, &parts, scene, selected);
     parts
 }
 pub(super) fn inspect(
     commands: &mut Commands,
     host: Entity,
-    parts: Parts,
+    parts: &Parts,
     scene: &ScenePreview,
     selected: Option<&str>,
 ) {
@@ -264,14 +259,10 @@ pub(super) fn inspect(
     {
         commands.spawn((
             label(format!("{}\n{}", w.name, w.kind), 15.),
+            InspectorTitle(host),
             ChildOf(inspector),
         ));
         inspector_fields(commands, inspector, host, scene, w);
-
-        commands.spawn((
-            label("Apply records one undo step.", 11.),
-            ChildOf(inspector),
-        ));
     }
 }
 fn color(value: &str) -> Color {
@@ -279,17 +270,15 @@ fn color(value: &str) -> Color {
         .map(Color::Srgba)
         .unwrap_or(Color::WHITE)
 }
-#[allow(clippy::too_many_arguments)]
-fn draw_widget(
-    commands: &mut Commands,
-    canvas: Entity,
-    host: Entity,
-    scene: &ScenePreview,
-    w: &PreviewWidget,
-    parent: Option<Entity>,
-    assets: Option<&crate::project_assets::ProjectAssets>,
-    server: Option<&AssetServer>,
-) -> Entity {
+#[derive(Clone)]
+struct WidgetParts {
+    entity: Entity,
+    glyphs: Vec<Entity>,
+    hidden_frame: Entity,
+}
+#[derive(Component)]
+struct InspectorTitle(Entity);
+fn widget_node(scene: &ScenePreview, w: &PreviewWidget) -> Node {
     let [mut x, mut y, width, height] = w.rect;
     let mut pw = scene.width;
     let mut ph = scene.height;
@@ -301,22 +290,38 @@ fn draw_widget(
         pw = (p.rect[2] - p.definition.padding_left - p.definition.padding_right).max(1.);
         ph = (p.rect[3] - p.definition.padding_top - p.definition.padding_bottom).max(1.);
     }
+    Node {
+        position_type: PositionType::Absolute,
+        left: percent(x / pw * 100.),
+        top: percent(y / ph * 100.),
+        width: percent(width / pw * 100.),
+        height: percent(height / ph * 100.),
+        ..default()
+    }
+}
+fn background(w: &PreviewWidget) -> Color {
+    if ["PANEL", "TEXT_VIEW", "EDIT_TEXT", "IMAGE"].contains(&w.kind.as_str()) {
+        Color::NONE
+    } else {
+        color(&w.color)
+    }
+}
+#[allow(clippy::too_many_arguments)]
+fn draw_widget(
+    commands: &mut Commands,
+    canvas: Entity,
+    host: Entity,
+    scene: &ScenePreview,
+    w: &PreviewWidget,
+    parent: Option<Entity>,
+    assets: Option<&crate::project_assets::ProjectAssets>,
+    server: Option<&AssetServer>,
+) -> WidgetParts {
     let entity = area(
         commands,
         parent.unwrap_or(canvas),
-        Node {
-            position_type: PositionType::Absolute,
-            left: percent(x / pw * 100.),
-            top: percent(y / ph * 100.),
-            width: percent(width / pw * 100.),
-            height: percent(height / ph * 100.),
-            ..default()
-        },
-        if ["PANEL", "TEXT_VIEW", "EDIT_TEXT", "IMAGE"].contains(&w.kind.as_str()) {
-            Color::NONE
-        } else {
-            color(&w.color)
-        },
+        widget_node(scene, w),
+        background(w),
     );
     commands.entity(entity).insert((
         Interaction::None,
@@ -326,6 +331,24 @@ fn draw_widget(
         },
         ZIndex(w.definition.z_order),
     ));
+    let glyphs = draw_visual(commands, entity, canvas, w, assets, server);
+    let hidden_frame = hidden::frame(commands, entity, !w.visible);
+    WidgetParts {
+        entity,
+        glyphs,
+        hidden_frame,
+    }
+}
+fn draw_visual(
+    commands: &mut Commands,
+    entity: Entity,
+    canvas: Entity,
+    w: &PreviewWidget,
+    assets: Option<&crate::project_assets::ProjectAssets>,
+    server: Option<&AssetServer>,
+) -> Vec<Entity> {
+    let mut glyphs = Vec::new();
+    let [_, _, width, height] = w.rect;
     if let Some(visual) = &w.visual {
         if let (Some(assets), Some(server)) = (assets, server)
             && let Some(path) = assets.asset(&visual.root, &visual.path)
@@ -333,24 +356,27 @@ fn draw_widget(
             let image = server.load(path);
             if visual.text {
                 for (source, dest) in &visual.quads {
-                    commands.spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: percent(dest[0] / width.max(1.) * 100.),
-                            top: percent(dest[1] / height.max(1.) * 100.),
-                            width: percent(dest[2] / width.max(1.) * 100.),
-                            height: percent(dest[3] / height.max(1.) * 100.),
-                            ..default()
-                        },
-                        ImageNode {
-                            image: image.clone(),
-                            color: color(&w.text_color),
-                            rect: Some(Rect::new(source[0], source[1], source[2], source[3])),
-                            ..default()
-                        },
-                        Pickable::IGNORE,
-                        ChildOf(entity),
-                    ));
+                    let glyph = commands
+                        .spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: percent(dest[0] / width.max(1.) * 100.),
+                                top: percent(dest[1] / height.max(1.) * 100.),
+                                width: percent(dest[2] / width.max(1.) * 100.),
+                                height: percent(dest[3] / height.max(1.) * 100.),
+                                ..default()
+                            },
+                            ImageNode {
+                                image: image.clone(),
+                                color: color(&w.text_color),
+                                rect: Some(Rect::new(source[0], source[1], source[2], source[3])),
+                                ..default()
+                            },
+                            Pickable::IGNORE,
+                            ChildOf(entity),
+                        ))
+                        .id();
+                    glyphs.push(glyph);
                 }
             } else {
                 commands.entity(entity).insert(ImageNode {
@@ -386,11 +412,114 @@ fn draw_widget(
             CanvasText::new(canvas, w.font_size),
         ));
     }
-    entity
+    glyphs
 }
+mod hidden;
 mod properties;
 use properties::inspector_fields;
 pub(super) use properties::{FieldKind, parse_field};
 
 mod chrome;
 pub(super) mod hierarchy;
+
+/// Update only canvas widgets and labels; focused inspector controls remain alive.
+pub(super) fn update_preview(
+    commands: &mut Commands,
+    host: Entity,
+    parts: &mut Parts,
+    scene: &ScenePreview,
+    previous: &ScenePreview,
+    assets: Option<&crate::project_assets::ProjectAssets>,
+    server: Option<&AssetServer>,
+) {
+    for w in &scene.widgets {
+        let (Some(rendered), Some(old)) = (
+            parts.widgets.get_mut(&w.pointer),
+            previous.widgets.iter().find(|old| old.pointer == w.pointer),
+        ) else {
+            continue;
+        };
+        if w.properties == old.properties && w.rect == old.rect && w.visible == old.visible {
+            continue;
+        }
+        commands.entity(rendered.entity).insert((
+            widget_node(scene, w),
+            BackgroundColor(background(w)),
+            ZIndex(w.definition.z_order),
+        ));
+        commands
+            .entity(rendered.hidden_frame)
+            .insert(hidden::node(!w.visible));
+        let same_visual = match (&w.visual, &old.visual) {
+            (Some(a), Some(b)) => a.path == b.path && a.quads == b.quads && a.text == b.text,
+            (None, None) => true,
+            _ => false,
+        };
+        if !same_visual
+            || w.text != old.text
+            || w.text_color != old.text_color
+            || w.font_size != old.font_size
+            || w.alignment != old.alignment
+            || w.rect[2..] != old.rect[2..]
+        {
+            for glyph in rendered.glyphs.drain(..) {
+                commands.entity(glyph).try_despawn();
+            }
+            commands
+                .entity(rendered.entity)
+                .remove::<(Text, ImageNode, CanvasText)>();
+            rendered.glyphs =
+                draw_visual(commands, rendered.entity, parts.canvas, w, assets, server);
+        }
+    }
+    let names: std::collections::HashMap<_, _> = scene
+        .widgets
+        .iter()
+        .map(|w| {
+            (
+                w.pointer.clone(),
+                (w.name.clone(), w.kind.clone(), w.visible),
+            )
+        })
+        .collect();
+    commands
+        .entity(parts.footer)
+        .insert(Text::new(if scene.warnings.is_empty() {
+            "Wheel: zoom · Right/middle drag: pan · Shift+wheel: scroll".into()
+        } else {
+            scene.warnings.join("; ")
+        }));
+    commands.queue(move |world: &mut World| {
+        let selected = world.get::<Designer>(host).and_then(|d| d.selected.clone());
+        for (caption, mut text, mut tint) in world
+            .query::<(&hierarchy::WidgetCaption, &mut Text, &mut TextColor)>()
+            .iter_mut(world)
+        {
+            if caption.host == host
+                && let Some((name, _, visible)) = names.get(&caption.pointer)
+            {
+                if text.0 != *name {
+                    text.0 = name.clone();
+                }
+                tint.0 = if *visible {
+                    INK
+                } else {
+                    Color::srgb_u8(125, 131, 141)
+                };
+            }
+        }
+        for (title, mut text) in world
+            .query::<(&InspectorTitle, &mut Text)>()
+            .iter_mut(world)
+        {
+            if title.0 == host
+                && let Some((name, kind, _)) = selected.as_ref().and_then(|p| names.get(p))
+            {
+                let value = format!("{name}\n{kind}");
+                if text.0 != value {
+                    text.0 = value;
+                }
+            }
+        }
+    });
+}
