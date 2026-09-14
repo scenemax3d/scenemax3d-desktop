@@ -4,7 +4,6 @@
 
 A desktop 3D scene editor and game development environment built with Java, [JMonkeyEngine 3](https://jmonkeyengine.org/), Swing, native runtime integrations, and a growing toolchain for shipping real interactive 3D games.
 
-SceneMax3D lets you visually design 3D scenes, write game logic using a built-in scripting language, extend projects with custom Java runtime code, run multiplayer sessions, and export projects as standalone PC executables or Android apps.
 
 <img width="1600" height="846" alt="image" src="https://github.com/user-attachments/assets/8e83d0b0-950e-425d-94a0-d38db5fc4fd3" />
 
