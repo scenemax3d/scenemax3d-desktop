@@ -285,10 +285,7 @@ pub(super) fn inspect(
                     ..default()
                 },
                 TextColor(INK),
-                bevy::text::TextCursorStyle {
-                    color: Color::WHITE,
-                    ..default()
-                },
+                scenemax_ide_ui::theme::TEXT_CURSOR_STYLE,
                 BackgroundColor(BG),
                 ChildOf(inspector),
             ));

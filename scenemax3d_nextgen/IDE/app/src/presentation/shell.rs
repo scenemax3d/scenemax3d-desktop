@@ -1,10 +1,7 @@
 use super::tabs::{editor, tab};
 use super::{components::*, input::Action};
 use crate::application::Session;
-use bevy::{
-    prelude::*,
-    text::{EditableText, TextCursorStyle},
-};
+use bevy::{prelude::*, text::EditableText};
 use scenemax_ide_ui::{
     button, label,
     panels::{PanelAxis, PanelHost, ResizablePanel, SplitterEdge, splitter, tool_panel},
@@ -140,10 +137,7 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
             ..default()
         },
         TextColor(INK),
-        TextCursorStyle {
-            color: Color::WHITE,
-            ..default()
-        },
+        scenemax_ide_ui::theme::TEXT_CURSOR_STYLE,
         BackgroundColor(PANEL),
         ChildOf(project_bar),
     ));
@@ -280,13 +274,6 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
         ))
         .id();
     commands.spawn((label("Project", 14.), ChildOf(project_header)));
-    button(
-        &mut commands,
-        project_header,
-        "+",
-        super::chrome::ChromeAction::Panel(super::chrome::Panel::NewFile),
-    );
-    button(&mut commands, project_header, "Refresh", Action::Refresh);
     let new_file = commands
         .spawn((
             super::chrome::Panel::NewFile,
@@ -315,14 +302,6 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
         file_actions,
         "Close",
         super::chrome::ChromeAction::Dismiss,
-    );
-    field(
-        &mut commands,
-        sidebar,
-        Field::Filter,
-        "",
-        "Filter project files",
-        254.,
     );
     commands.spawn((SearchResults, Node { display: Display::None, height: px(180.), flex_shrink: 0., flex_direction: FlexDirection::Column, overflow: Overflow::scroll_y(), ..default() }, ChildOf(sidebar)))
         .observe(|event: On<Pointer<Scroll>>, mut query: Query<(&mut ScrollPosition, &ComputedNode), With<SearchResults>>| {
@@ -629,10 +608,7 @@ fn field(
             ..default()
         },
         TextColor(INK),
-        TextCursorStyle {
-            color: Color::WHITE,
-            ..default()
-        },
+        scenemax_ide_ui::theme::TEXT_CURSOR_STYLE,
         BackgroundColor(BG),
         ChildOf(host),
     ));

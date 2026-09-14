@@ -163,7 +163,13 @@ impl Plugin for StudioPlugin {
             .init_resource::<presentation::chrome::ChromeState>()
             .init_resource::<presentation::browser::TreeState>()
             .add_message::<ViewChange>()
-            .add_systems(Startup, presentation::shell::setup)
+            .add_systems(
+                Startup,
+                (
+                    presentation::shell::setup,
+                    presentation::titlebar::maximize_on_startup,
+                ),
+            )
             .add_systems(
                 Update,
                 (
@@ -182,7 +188,6 @@ impl Plugin for StudioPlugin {
                 (
                     presentation::input::sync_documents,
                     presentation::input::collect_actions,
-                    presentation::input::sync_filter,
                     presentation::chrome::controls,
                     (
                         presentation::browser::keyboard,

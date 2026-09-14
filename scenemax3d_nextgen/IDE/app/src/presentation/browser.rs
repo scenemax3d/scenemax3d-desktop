@@ -19,36 +19,11 @@ pub(crate) struct TreeItem {
 #[derive(Component)]
 pub(crate) struct Folder(PathBuf);
 
-fn visible<'a>(project: &'a Project, tree: &TreeState, filter: &str) -> Vec<&'a ProjectEntry> {
-    let needle = filter.to_lowercase();
-    let mut matches = HashSet::new();
-    if !needle.is_empty() {
-        for entry in project.entries() {
-            if entry
-                .path
-                .strip_prefix(project.root())
-                .unwrap_or(&entry.path)
-                .to_string_lossy()
-                .to_lowercase()
-                .contains(&needle)
-            {
-                matches.extend(
-                    entry
-                        .path
-                        .ancestors()
-                        .take_while(|p| *p != project.root())
-                        .map(|p| p.to_owned()),
-                );
-            }
-        }
-    }
+fn visible<'a>(project: &'a Project, tree: &TreeState) -> Vec<&'a ProjectEntry> {
     project
         .entries()
         .iter()
         .filter(|entry| {
-            if !needle.is_empty() {
-                return matches.contains(&entry.path);
-            }
             entry
                 .path
                 .ancestors()
@@ -146,7 +121,7 @@ pub(crate) fn update_tree(
         state.expanded.contains(project.root()),
     );
     let mut focus_row = root_row;
-    for entry in visible(project, &state, &session.filter) {
+    for entry in visible(project, &state) {
         let depth = entry
             .path
             .strip_prefix(project.root())
@@ -351,11 +326,7 @@ pub(crate) fn keyboard(
     };
     let project = session.workspace.project();
     let paths = std::iter::once(project.root())
-        .chain(
-            visible(project, &tree, &session.filter)
-                .iter()
-                .map(|e| e.path.as_path()),
-        )
+        .chain(visible(project, &tree).iter().map(|e| e.path.as_path()))
         .map(|p| p.to_owned())
         .collect::<Vec<_>>();
     let index = paths.iter().position(|p| *p == item.path).unwrap_or(0);
@@ -462,7 +433,7 @@ mod tests {
         }
     }
     #[test]
-    fn expansion_and_filter_keep_the_hierarchy() {
+    fn expansion_keeps_the_hierarchy() {
         let root = PathBuf::from("project");
         let project = Project::new(root.clone(), vec![]).with_entries(
             vec![
@@ -483,12 +454,10 @@ mod tests {
         );
         let mut tree = TreeState::default();
         tree.expanded.insert(root.clone());
-        assert_eq!(visible(&project, &tree, "").len(), 2);
+        assert_eq!(visible(&project, &tree).len(), 2);
         tree.expanded.insert(root.join("scripts"));
-        assert_eq!(visible(&project, &tree, "").len(), 3);
+        assert_eq!(visible(&project, &tree).len(), 3);
         tree.expanded.clear();
-        let matches = visible(&project, &tree, "main");
-        assert_eq!(matches.len(), 2);
-        assert!(matches[0].is_directory);
+        assert!(visible(&project, &tree).is_empty());
     }
 }

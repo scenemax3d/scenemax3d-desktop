@@ -219,7 +219,6 @@ pub(crate) fn apply_storage(
             // Edits may have happened while the inventory was loading.
             session.workspace.switch_project(project)?;
             session.closing_tab = None;
-            session.filter.clear();
             session.search_hits.clear();
             changes.write(ViewChange::SearchResultsChanged);
             changes.write(ViewChange::ProjectOpened);

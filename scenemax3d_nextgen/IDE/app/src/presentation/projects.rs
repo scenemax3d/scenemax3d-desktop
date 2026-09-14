@@ -54,7 +54,6 @@ pub(crate) fn refresh(
                         Field::Project => input
                             .editor_mut()
                             .set_text(&display_path(session.workspace.project().root())),
-                        Field::Filter => input.editor_mut().set_text(""),
                         _ => {}
                     }
                 }

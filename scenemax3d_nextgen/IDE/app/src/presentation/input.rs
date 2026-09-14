@@ -1,5 +1,5 @@
 use super::components::{Editor, Field};
-use crate::application::{Command, CommandQueue, EditCommand, Session, ViewChange};
+use crate::application::{Command, CommandQueue, EditCommand, Session};
 use bevy::{prelude::*, text::EditableText, window::WindowCloseRequested};
 use scenemax_ide_core::DocumentId;
 use std::path::PathBuf;
@@ -258,23 +258,6 @@ pub(crate) fn sync_documents(
                 doc.selection()
             };
             doc.edit_text(text, selection);
-        }
-    }
-}
-
-pub(crate) fn sync_filter(
-    fields: Query<(&Field, &EditableText)>,
-    mut session: ResMut<Session>,
-    mut changes: MessageWriter<ViewChange>,
-) {
-    for (kind, input) in &fields {
-        if *kind != Field::Filter {
-            continue;
-        }
-        let filter = input.value().to_string();
-        if session.filter != filter {
-            session.filter = filter;
-            changes.write(ViewChange::ProjectTreeChanged);
         }
     }
 }
