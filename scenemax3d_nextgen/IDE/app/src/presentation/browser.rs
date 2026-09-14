@@ -211,7 +211,22 @@ fn tree_row(
             row
         }
     };
-    commands.entity(row).insert(tree_item);
+    let target = tree_item.path.clone();
+    commands.entity(row).insert(tree_item).observe(
+        move |mut event: On<Pointer<Click>>,
+              mut menu: Option<ResMut<super::tree_menu::State>>,
+              mut focus: Option<ResMut<bevy::input_focus::InputFocus>>| {
+            if event.button == PointerButton::Secondary {
+                event.propagate(false);
+                if let Some(menu) = menu.as_mut() {
+                    menu.open(target.clone(), directory, event.pointer_location.position);
+                }
+                if let Some(focus) = focus.as_mut() {
+                    focus.set(row, bevy::input_focus::FocusCause::Navigated);
+                }
+            }
+        },
+    );
     commands.entity(row).despawn_children();
     commands.entity(row).insert((
         Node {
@@ -322,7 +337,11 @@ pub(crate) fn keyboard(
     session: Res<Session>,
     mut tree: ResMut<TreeState>,
     mut queue: ResMut<crate::application::CommandQueue>,
+    menu: Option<Res<super::tree_menu::State>>,
 ) {
+    if menu.is_some_and(|m| m.is_open()) {
+        return;
+    }
     let Some(item) = focus
         .as_ref()
         .and_then(|f| f.get())
@@ -395,6 +414,7 @@ mod tests {
         let mut world = World::new();
         world.register_component::<Window>();
         world.init_resource::<crate::application::CommandQueue>();
+        world.init_resource::<super::super::tree_menu::State>();
         let row = world
             .run_system_once(|mut commands: Commands| {
                 let parent = commands.spawn(Node::default()).id();
@@ -436,6 +456,9 @@ mod tests {
                 world.resource::<crate::application::CommandQueue>().0.len(),
                 expected
             );
+            if button == PointerButton::Secondary {
+                assert!(world.resource::<super::super::tree_menu::State>().is_open());
+            }
         }
     }
     #[test]

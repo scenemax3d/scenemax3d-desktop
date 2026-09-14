@@ -194,3 +194,17 @@ Game Camera is pinned immediately below the scene hierarchy heading, outside the
 Project-tree file types reuse the Java IDE images and exported Java2D artwork, including yellow folders, blue main-script braces, amber scene cubes, cyan UI layouts, and the specialized designer icons. Scene toolbar actions use the original Java drawing assets at 16 logical pixels within compact 24-pixel controls. The assets are embedded PNGs; their source provenance is recorded in `app/src/presentation/java_icons/README.md`. No Java runtime or build step is required.
 
 Document tabs use 10-pixel text and a 28-pixel strip. A dark neutral gray header sits above lighter gray content/tool panels, with the Java-style blue selection color.
+
+### Run-output responsiveness
+
+The run console renders at most the latest 200 lines / 24 KiB, independently of retained diagnostic history. Output uses unwrapped text so long runtime messages cannot expand into thousands of visual lines. On projector exit, the hidden console text is cleared before layout and the status bar reports the exit result. This bounds rendering work during noisy runs and avoids re-laying out a large log when its panel collapses. The projector's project-local runtime log is unchanged.
+
+### Project tree context menu
+
+Right-click a project file or folder to select it and open its native retained Bevy UI context menu. Single-click selection and double-click document opening remain unchanged. Escape or a click outside dismisses the menu; long folder menus support wheel scrolling.
+
+The menu uses the Java IDE's contextual labels and ordering. Working actions include Run (for runnable scripts), Save, Reload from disk, Refresh Project Files, Copy absolute path, Open in explorer, Rename, Move To, Delete, Add Scene, Create New Script, Create Designer Document, Create UI Document, and Create Sub Folder. Actions target the clicked path, independently of the active tab. Add Scene creates a scene directory, designer document, companion scripts, and a main script. Java extension creation is omitted from the Rust-only product. Asset-specific creation, backup cleanup, and publishing/import integrations that have not been ported are visible but disabled.
+
+Naming and confirmation dialogs are Bevy UI. Disk operations execute on the existing bounded worker. Existing destinations and paths outside the project are rejected. Renames preserve open buffers and their undo history; reload rejects newer edits that arrive while disk is being read. Delete requires confirmation, protects the root and main entry point, and moves files to `.scenemax-studio/deleted-*` for recovery, including existing scene/UI code companions. File mutations require the game to be stopped and affected buffers saved.
+
+GPU check: `--smoke-frames 120 --smoke-tree-menu scripts --smoke-screenshot <absolute-output.png>` opens a folder context menu after project loading; use a file path instead to inspect the file menu.

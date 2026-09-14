@@ -12,11 +12,13 @@ mod runtime_log;
 mod search;
 pub use search::SearchReport;
 mod storage;
+mod tree_operations;
 pub use diagnostics::{Diagnostics, SourceSnapshot, SyntaxReport};
 pub use filesystem::{Filesystem, MAX_DOCUMENT_BYTES, MAX_SCRIPTS};
 pub use projector::ProjectorProcess;
 pub use recovery::RecoveryBatch;
 pub use storage::{Storage, StorageRequest, StorageResult};
+pub use tree_operations::{TreeOperation, TreeOutcome};
 
 use std::{io, path::PathBuf};
 

@@ -9,6 +9,11 @@ use std::{collections::VecDeque, path::PathBuf};
 /// Every input surface dispatches the same application commands.
 #[derive(Clone)]
 pub(crate) enum Command {
+    Tree(scenemax_ide_services::TreeOperation),
+    SavePath(PathBuf),
+    RunPath(PathBuf),
+    ReloadPath(PathBuf),
+    Explore(PathBuf),
     SaveCopy(PathBuf),
     SaveCloseTab,
     DiscardTab,
@@ -68,6 +73,9 @@ fn execute(
     changes: &mut MessageWriter<ViewChange>,
     _exit: &mut MessageWriter<AppExit>,
 ) -> Result<()> {
+    if let Some(result) = super::tree_commands::execute(&command, session, services) {
+        return result;
+    }
     if session.composing
         && matches!(
             command,
@@ -84,6 +92,11 @@ fn execute(
         bail!("Finish or cancel text composition before this action");
     }
     match command {
+        Command::Tree(_)
+        | Command::SavePath(_)
+        | Command::RunPath(_)
+        | Command::ReloadPath(_)
+        | Command::Explore(_) => unreachable!("Navigator command handled above"),
         Command::SaveCopy(path) => {
             let id = session.workspace.require_active()?;
             services.storage.request(StorageRequest::SaveCopy {

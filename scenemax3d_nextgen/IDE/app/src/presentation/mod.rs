@@ -7,6 +7,7 @@ pub(crate) mod reconcile;
 pub(crate) mod shell;
 pub(crate) mod smoke;
 pub(crate) mod tabs;
+pub(crate) mod tree_menu;
 
 pub(crate) mod editing;
 

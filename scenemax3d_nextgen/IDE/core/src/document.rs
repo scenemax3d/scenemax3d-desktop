@@ -61,6 +61,10 @@ impl Document {
     pub fn path(&self) -> &Path {
         &self.path
     }
+    /// Follow a completed disk rename without losing edits, selection or undo history.
+    pub fn relocate(&mut self, path: PathBuf) {
+        self.path = path;
+    }
     /// Current text, with CRLF normalized to LF internally.
     pub fn text(&self) -> &str {
         &self.text

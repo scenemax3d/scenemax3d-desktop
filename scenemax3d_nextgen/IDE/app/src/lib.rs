@@ -43,6 +43,8 @@ pub struct LaunchOptions {
     pub smoke_completion: bool,
     /// Select a scene hierarchy entry in a controlled GPU capture.
     pub smoke_scene_entry: Option<usize>,
+    /// Open a project-tree popup for a project-relative path during a GPU capture.
+    pub smoke_tree_menu: Option<PathBuf>,
 }
 
 /// Start the standalone IDE. Projector code is not linked into this executable.
@@ -123,6 +125,7 @@ pub fn run(options: LaunchOptions) -> Result<()> {
             run_project: options.smoke_run_project,
             show_completion: options.smoke_completion,
             scene_entry: options.smoke_scene_entry,
+            tree_menu: options.smoke_tree_menu,
         });
     }
     if options.smoke_menu && options.smoke_frames.is_some() {
@@ -145,6 +148,7 @@ impl Plugin for StudioPlugin {
             ),
         );
         app.init_resource::<CommandQueue>()
+            .init_resource::<presentation::tree_menu::State>()
             .init_resource::<presentation::titlebar::Maximized>()
             .init_resource::<application::symbols::ProjectSymbols>()
             .init_resource::<presentation::scene3d::SceneState>()
@@ -180,7 +184,11 @@ impl Plugin for StudioPlugin {
                     presentation::input::collect_actions,
                     presentation::input::sync_filter,
                     presentation::chrome::controls,
-                    presentation::browser::keyboard,
+                    (
+                        presentation::browser::keyboard,
+                        presentation::tree_menu::update,
+                    )
+                        .chain(),
                     (
                         presentation::designer::interactions,
                         presentation::scene3d::live::update,

@@ -1,4 +1,4 @@
-//! Color-only extension of Bevy's native editable text rendering.
+//! Syntax colors and nonprinting tab suppression for native editable text.
 //! Uses Parley's visual clusters, so ligatures and bidirectional text retain
 //! their original layout, hit testing, selection and composition behavior.
 use bevy::{
@@ -36,6 +36,7 @@ struct GlyphCache {
     )>,
     colors: Vec<Option<LinearRgba>>,
     bytes: Vec<usize>,
+    tabs: Vec<bool>,
 }
 
 pub(crate) fn install(app: &mut App) {
@@ -86,16 +87,22 @@ fn color_text(
         else {
             continue;
         };
-        if input.is_composing() || input.value() != highlights.source.as_str() {
+        if input.is_composing() {
             continue;
         }
+        let source = input.value();
+        let highlights_current = source == highlights.source.as_str();
         let Some(layout) = input.editor().try_layout() else {
             continue;
         };
         let cached = cache.entry(entity).or_default();
         let ticks = (highlights.last_changed(), info.last_changed());
         if cached.ticks != Some(ticks) {
+            let mut parts = source.into_iter();
+            let prefix = parts.next().unwrap_or_default().as_bytes();
+            let suffix = parts.next().unwrap_or_default().as_bytes();
             cached.bytes.clear();
+            cached.tabs.clear();
             let mut result = Vec::with_capacity(info.glyphs.len());
             for line in layout.lines() {
                 for run in line.runs() {
@@ -107,12 +114,22 @@ fn color_text(
                         let color = highlights
                             .spans
                             .get(index)
-                            .filter(|(range, _)| range.contains(&byte))
+                            .filter(|(range, _)| highlights_current && range.contains(&byte))
                             .map(|(_, color)| color.to_linear());
                         for glyph in cluster.glyphs() {
                             if u16::try_from(glyph.id).is_ok() {
                                 result.push(color);
                                 cached.bytes.push(byte);
+                                // Some system fonts expose a visible .notdef glyph for U+0009.
+                                // Retain the native cluster advance and source offsets, but never
+                                // paint a tab as text. Selection/caret geometry stays untouched.
+                                cached.tabs.push(
+                                    if byte < prefix.len() {
+                                        prefix.get(byte)
+                                    } else {
+                                        suffix.get(byte - prefix.len())
+                                    } == Some(&b'\t'),
+                                );
                             }
                         }
                     }
@@ -132,9 +149,15 @@ fn color_text(
         }
         for (index, glyph) in glyphs[range.clone()].iter_mut().enumerate() {
             let i = *offset + index;
-            if emphasis.is_some_and(|emphasis| {
-                emphasis.ranges.iter().any(|r| r.contains(&cached.bytes[i]))
-            }) {
+            if cached.tabs[i] {
+                glyph.color = LinearRgba::NONE;
+                continue;
+            }
+            if highlights_current
+                && emphasis.is_some_and(|emphasis| {
+                    emphasis.ranges.iter().any(|r| r.contains(&cached.bytes[i]))
+                })
+            {
                 let bounds = Rect::from_center_size(
                     info.glyphs[i].position,
                     info.glyphs[i].atlas_info.rect.size() + Vec2::splat(4.0 * info.scale_factor),

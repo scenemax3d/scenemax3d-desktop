@@ -45,23 +45,54 @@ pub(crate) fn refresh_labels(
     }
 }
 
+// Bound the rendered tail independently from the retained diagnostic history.
+const CONSOLE_LINES: usize = 200;
+const CONSOLE_BYTES: usize = 24 * 1024;
+fn console_tail(lines: &std::collections::VecDeque<String>) -> String {
+    let mut bytes = 0;
+    let mut selected = Vec::new();
+    for line in lines.iter().rev().take(CONSOLE_LINES) {
+        if bytes + line.len() + 1 > CONSOLE_BYTES {
+            break;
+        }
+        bytes += line.len() + 1;
+        selected.push(line.as_str());
+    }
+    let truncated = selected.len() < lines.len();
+    selected.reverse();
+    let mut text = if truncated {
+        "[Showing the latest output]\n".to_owned()
+    } else {
+        String::new()
+    };
+    text.push_str(&selected.join("\n"));
+    text
+}
 pub(crate) fn refresh_console(
     session: Res<Session>,
-    mut revision: Local<u64>,
+    services: Res<crate::application::EditorServices>,
+    mut revision: Local<Option<u64>>,
     mut text: Single<&mut Text, With<ConsoleText>>,
     mut scroll: Single<&mut ScrollPosition, With<ConsolePane>>,
 ) {
-    if *revision == session.output_revision {
+    // Hidden text still participates in text preparation. Never feed a large
+    // exit-time log update into a collapsed, zero-width text surface.
+    if !services.projector.is_running() {
+        if !text.0.is_empty() {
+            text.0.clear();
+        }
+        if scroll.y != 0. {
+            scroll.y = 0.;
+        }
+        *revision = None;
         return;
     }
-    *revision = session.output_revision;
-    text.0 = session
-        .output
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>()
-        .join("\n");
-    scroll.y = f32::MAX;
+    if *revision == Some(session.output_revision) {
+        return;
+    }
+    *revision = Some(session.output_revision);
+    text.0 = console_tail(&session.output);
+    scroll.y = (CONSOLE_LINES as f32 + 1.) * 24.;
 }
 
 pub(crate) fn tab_close_prompt(
@@ -105,5 +136,46 @@ pub(crate) fn output_visibility(
         if node.display != display {
             node.display = display;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn console_layout_is_bounded_and_preserves_latest_unicode_lines() {
+        let lines = (0..2000)
+            .map(|i| format!("{i}: {}", "🦀".repeat(499)))
+            .collect();
+        let tail = console_tail(&lines);
+        assert!(tail.len() < CONSOLE_BYTES + 100);
+        assert!(tail.contains("1999:"));
+        assert!(tail.starts_with("[Showing"));
+        assert!(!tail.contains("1900:"));
+        assert_eq!(lines.len(), 2000);
+    }
+    #[test]
+    fn exited_projector_clears_hidden_text_without_discarding_history() {
+        use bevy::ecs::system::RunSystemOnce;
+        let mut world = World::new();
+        let mut session = Session::new(scenemax_ide_core::Project::new(
+            std::path::PathBuf::new(),
+            vec![],
+        ));
+        session.append_output("Projector exited: success");
+        world.insert_resource(session);
+        world.insert_resource(
+            crate::application::EditorServices::new(std::path::PathBuf::new()).unwrap(),
+        );
+        let console = world
+            .spawn((ConsoleText, Text::new("large prior output")))
+            .id();
+        let pane = world
+            .spawn((ConsolePane, ScrollPosition(Vec2::new(0., 10000.))))
+            .id();
+        world.run_system_once(refresh_console).unwrap();
+        assert!(world.get::<Text>(console).unwrap().0.is_empty());
+        assert_eq!(world.get::<ScrollPosition>(pane).unwrap().y, 0.);
+        assert_eq!(world.resource::<Session>().output.len(), 1);
     }
 }

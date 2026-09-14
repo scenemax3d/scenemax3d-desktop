@@ -9,6 +9,24 @@ use std::{
 
 /// A single owned filesystem operation submitted without blocking the caller.
 pub enum StorageRequest {
+    /// Mutate project files on the disk worker.
+    Tree {
+        /// Canonical project root.
+        root: PathBuf,
+        /// Requested operation.
+        operation: crate::TreeOperation,
+    },
+    /// Reload a document after an explicit application-level decision.
+    Reload {
+        /// Canonical project root.
+        root: PathBuf,
+        /// Requested path.
+        path: PathBuf,
+        /// Existing buffer and revision, if open.
+        version: Option<(DocumentId, scenemax_ide_core::DocumentRevision)>,
+    },
+    /// Open a containing directory using the desktop shell.
+    Explore(PathBuf),
     /// Load a Java 3D scene and resolve its project model resources.
     Scene3d {
         /// Canonical project root.
@@ -84,6 +102,15 @@ pub enum StorageRequest {
 }
 /// Completed operations; failures are data and never overwrite live buffers.
 pub enum StorageResult {
+    /// Result of a navigator mutation; refresh is requested separately.
+    Tree(Result<crate::TreeOutcome, ServiceError>),
+    /// Reload result with the original buffer version for race protection.
+    Reload(
+        Option<(DocumentId, scenemax_ide_core::DocumentRevision)>,
+        Result<Document, ServiceError>,
+    ),
+    /// Result of launching the desktop file manager.
+    Explored(Result<(), ServiceError>),
     /// Imported scene and resource diagnostics.
     Scene3d(Result<crate::scene3d::Scene3d, String>),
     /// Available projects, independently of an open project.
@@ -178,6 +205,33 @@ fn perform(
     journal: &mut crate::recovery::RecoveryJournal,
 ) -> StorageResult {
     match request {
+        StorageRequest::Tree { root, operation } => {
+            StorageResult::Tree(crate::tree_operations::perform(&root, operation))
+        }
+        StorageRequest::Reload {
+            root,
+            path,
+            version,
+        } => StorageResult::Reload(
+            version,
+            Filesystem::open_document(&Project::new(root, vec![]), &path),
+        ),
+        StorageRequest::Explore(path) => StorageResult::Explored((|| {
+            let folder = if path.is_dir() {
+                path.as_path()
+            } else {
+                path.parent()
+                    .ok_or(ServiceError::Limit("No containing directory"))?
+            };
+            #[cfg(windows)]
+            let program = "explorer.exe";
+            #[cfg(target_os = "macos")]
+            let program = "open";
+            #[cfg(all(not(windows), not(target_os = "macos")))]
+            let program = "xdg-open";
+            std::process::Command::new(program).arg(folder).spawn()?;
+            Ok(())
+        })()),
         StorageRequest::Scene3d { root, source } => {
             StorageResult::Scene3d(crate::scene3d::load(&root, &source))
         }

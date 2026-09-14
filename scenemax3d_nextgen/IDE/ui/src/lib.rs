@@ -14,7 +14,7 @@ pub mod tree;
 mod widgets;
 use bevy::prelude::*;
 pub use editor::{commit_pending_input, spawn_editor};
-pub use widgets::{ButtonSurface, button, label};
+pub use widgets::{ButtonSurface, NoButtonFeedback, button, label};
 /// Install reusable studio widget behavior.
 pub struct StudioUiPlugin;
 impl Plugin for StudioUiPlugin {

@@ -111,6 +111,7 @@ type PropertyInputs<'w, 's> = Query<
 
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct InputFields<'w, 's> {
+    menu: Option<Res<'w, super::tree_menu::State>>,
     fields: Query<'w, 's, (Entity, &'static Field, &'static EditableText)>,
     properties: PropertyInputs<'w, 's>,
 }
@@ -123,7 +124,12 @@ pub(crate) fn collect_actions(
     mut queue: ResMut<CommandQueue>,
     session: Res<Session>,
 ) {
-    let InputFields { fields, properties } = input_fields;
+    if input_fields.menu.as_ref().is_some_and(|m| m.is_open()) {
+        return;
+    }
+    let InputFields {
+        fields, properties, ..
+    } = input_fields;
     let values = fields
         .iter()
         .map(|(entity, kind, input)| (entity, *kind, input.value().to_string()))

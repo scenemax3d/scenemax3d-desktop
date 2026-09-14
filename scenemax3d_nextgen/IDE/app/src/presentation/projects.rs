@@ -128,7 +128,7 @@ pub(crate) fn refresh(
         }
     }
 }
-fn display_path(path: &std::path::Path) -> String {
+pub(crate) fn display_path(path: &std::path::Path) -> String {
     let path = path.to_string_lossy();
     path.strip_prefix(r"\\?\").unwrap_or(&path).to_owned()
 }

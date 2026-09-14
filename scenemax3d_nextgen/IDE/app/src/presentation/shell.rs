@@ -32,6 +32,7 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
         ))
         .id();
     super::chrome::menu_bar(&mut commands, root);
+    super::tree_menu::setup(&mut commands, root);
     super::titlebar::resize_edges(&mut commands, root);
     let recovery = commands
         .spawn((
@@ -584,7 +585,8 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
         }).id();
     commands.spawn((
         ConsoleText,
-        label("Projector output appears here", 13.),
+        label("", 13.),
+        TextLayout::no_wrap(),
         ChildOf(console),
     ));
 }
