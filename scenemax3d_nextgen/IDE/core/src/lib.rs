@@ -37,3 +37,5 @@ pub enum EditorError {
 pub mod scene;
 
 pub mod scene3d;
+
+pub mod model_import;

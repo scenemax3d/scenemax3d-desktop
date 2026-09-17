@@ -108,7 +108,7 @@ fn mouse_caret_press_keeps_focus_and_accepts_native_typing() {
     }
 }
 
-fn app() -> (App, tempfile::TempDir, PathBuf) {
+pub(crate) fn app() -> (App, tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir(dir.path().join("scripts")).unwrap();
     let path = dir.path().join("scripts/test.code");

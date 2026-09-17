@@ -117,6 +117,11 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         .add_plugins(presentation::scene3d::gizmo::GizmoPlugin);
     bevy::asset::embedded_asset!(app, "presentation/scenemax_icon.png");
     presentation::java_icons::register(&mut app);
+    app.init_gizmo_group::<presentation::model_import::render::ImportLines>();
+    app.world_mut().resource_mut::<bevy::gizmos::config::GizmoConfigStore>()
+        .config_mut::<presentation::model_import::render::ImportLines>().0.render_layers = bevy::camera::visibility::RenderLayers::layer(3);
+    app.add_systems(Update,presentation::model_import::render::overlays);
+
     if let Some(remaining) = options.smoke_frames {
         app.insert_resource(presentation::smoke::SmokeCapture {
             remaining,
@@ -132,6 +137,12 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         app.world_mut()
             .resource_mut::<presentation::chrome::ChromeState>()
             .preview_file_menu();
+    }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_IMPORT").is_some() {
+        app.world_mut().resource_mut::<presentation::asset_import::State>().preview(scenemax_ide_services::imports::Kind::Sprite);
+    }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_MODEL").is_some() {
+        app.add_systems(Update, presentation::model_import::smoke);
     }
     app.run();
     Ok(())
@@ -149,6 +160,8 @@ impl Plugin for StudioPlugin {
         );
         app.init_resource::<CommandQueue>()
             .init_resource::<presentation::tree_menu::State>()
+            .init_resource::<presentation::asset_import::State>()
+            .init_resource::<presentation::model_import::State>()
             .init_resource::<presentation::titlebar::Maximized>()
             .init_resource::<application::symbols::ProjectSymbols>()
             .init_resource::<presentation::scene3d::SceneState>()
@@ -192,9 +205,11 @@ impl Plugin for StudioPlugin {
                     (
                         presentation::browser::keyboard,
                         presentation::tree_menu::update,
+                        presentation::asset_import::update,
                     )
                         .chain(),
                     (
+                        presentation::model_import::update,
                         presentation::designer::live::update,
                         presentation::designer::interactions,
                         presentation::scene3d::live::update,
@@ -211,6 +226,8 @@ impl Plugin for StudioPlugin {
                     (
                         presentation::reconcile::reconcile,
                         presentation::designer::refresh,
+                        presentation::model_import::render::update,
+                        presentation::model_import::playback::update,
                         presentation::scene3d::update,
                         presentation::scene3d::synchronize_tree,
                         presentation::scene3d::synchronize_names,

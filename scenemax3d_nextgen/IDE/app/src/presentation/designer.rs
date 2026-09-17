@@ -25,6 +25,14 @@ pub(crate) struct Designer {
     keep_controls: bool,
     gesture: live::Gesture,
 }
+impl Designer {
+    pub(crate) fn reload_assets(&mut self) {
+        self.revision = None;
+        self.live_revision = None;
+        self.scene = None;
+        self.pending = None;
+    }
+}
 #[derive(Component)]
 pub(crate) struct Pick {
     host: Entity,

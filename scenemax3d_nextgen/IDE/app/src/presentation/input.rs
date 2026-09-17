@@ -105,6 +105,7 @@ type PropertyInputs<'w, 's> = Query<
     (),
     Or<(
         With<super::designer::Property>,
+        With<super::model_import::Field>,
         With<super::scene3d::inspector::Property>,
     )>,
 >;
@@ -112,6 +113,7 @@ type PropertyInputs<'w, 's> = Query<
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct InputFields<'w, 's> {
     menu: Option<Res<'w, super::tree_menu::State>>,
+    imports: Option<Res<'w, super::asset_import::State>>,
     fields: Query<'w, 's, (Entity, &'static Field, &'static EditableText)>,
     properties: PropertyInputs<'w, 's>,
 }
@@ -124,11 +126,16 @@ pub(crate) fn collect_actions(
     mut queue: ResMut<CommandQueue>,
     session: Res<Session>,
 ) {
-    if input_fields.menu.as_ref().is_some_and(|m| m.is_open()) {
+    if input_fields.imports.as_ref().is_some_and(|m| m.is_open())
+        || input_fields.menu.as_ref().is_some_and(|m| m.is_open())
+    {
         return;
     }
     let InputFields {
-        fields, properties, ..
+        imports: _,
+        fields,
+        properties,
+        ..
     } = input_fields;
     let values = fields
         .iter()

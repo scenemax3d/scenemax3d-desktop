@@ -21,13 +21,13 @@ pub(crate) enum Choose {
 }
 #[derive(Component, Clone, Copy)]
 pub(crate) struct Orbit {
-    target: Vec3,
-    distance: f32,
-    yaw: f32,
-    pitch: f32,
+    pub(crate) target: Vec3,
+    pub(crate) distance: f32,
+    pub(crate) yaw: f32,
+    pub(crate) pitch: f32,
 }
 impl Orbit {
-    fn transform(&self) -> Transform {
+    pub(crate) fn transform(&self) -> Transform {
         let direction = Vec3::new(
             self.yaw.sin() * self.pitch.cos(),
             self.pitch.sin(),
@@ -39,6 +39,7 @@ impl Orbit {
 }
 #[derive(Resource, Default)]
 pub(crate) struct SceneState {
+    reload_assets: bool,
     pending: Option<(DocumentId, DocumentRevision)>,
     current: Option<(DocumentId, DocumentRevision)>,
     completed: Option<(DocumentId, DocumentRevision)>,
@@ -50,6 +51,9 @@ pub(crate) struct SceneState {
     collapsed: std::collections::HashSet<usize>,
     saved_view: Option<(Transform, Orbit)>,
     parts: Option<view::Parts>,
+}
+impl SceneState {
+    pub(crate) fn reload_assets(&mut self) { self.reload_assets = true; }
 }
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct Renderer<'w, 's> {
@@ -81,7 +85,8 @@ pub(crate) fn update(
             .map(|(host, _)| (host, id, d))
     });
     let desired = target.map(|(_, id, d)| (id, d.revision()));
-    if state.current != desired {
+    if state.current != desired || state.reload_assets {
+        state.reload_assets = false;
         // The world is owned by the active scene. Remove its old controls too,
         // so hidden tabs cannot contribute stale inspector values to live edits.
         if let Some((previous, _)) = state.current

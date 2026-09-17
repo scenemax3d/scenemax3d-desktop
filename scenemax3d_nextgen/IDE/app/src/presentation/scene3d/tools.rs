@@ -209,7 +209,7 @@ pub(super) fn icon(key: &str) -> Vec<Vec<Vec2>> {
         .map(|p| p.into_iter().map(|(x, y)| Vec2::new(x, y)).collect())
         .collect()
 }
-pub(super) fn control<T: Component>(
+pub(crate) fn control<T: Component>(
     commands: &mut Commands,
     parent: Entity,
     key: &str,

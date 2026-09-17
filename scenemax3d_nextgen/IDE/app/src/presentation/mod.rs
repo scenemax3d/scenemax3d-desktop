@@ -27,3 +27,7 @@ pub(crate) mod scene3d;
 pub(crate) mod titlebar;
 
 pub(crate) mod java_icons;
+
+pub(crate) mod asset_import;
+
+pub(crate) mod model_import;

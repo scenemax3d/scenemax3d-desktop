@@ -25,6 +25,9 @@ pub(crate) fn editor(
             ChildOf(parent),
         ))
         .id();
+    if doc.path().extension().is_some_and(|e|e.eq_ignore_ascii_case("smmodelimport")) {
+        commands.entity(host).insert(super::model_import::Import::default());return;
+    }
     if doc
         .path()
         .extension()

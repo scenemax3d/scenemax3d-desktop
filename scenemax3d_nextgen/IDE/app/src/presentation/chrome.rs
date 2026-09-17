@@ -140,6 +140,14 @@ fn populate_menu(
             }
             continue;
         }
+        if entry.command == "add_skybox" {
+            continue;
+        }
+        if let Some(row) = super::asset_import::menu_item(commands, host, entry.name, entry.command)
+        {
+            finish_item(commands, row, "");
+            continue;
+        }
         match entry.command {
             "project_explorer" | "new_project_scripts_folder" => {
                 panel_item(commands, host, entry.name, "", Panel::Project)
