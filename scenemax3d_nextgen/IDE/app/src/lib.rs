@@ -144,6 +144,9 @@ pub fn run(options: LaunchOptions) -> Result<()> {
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_MODEL").is_some() {
         app.add_systems(Update, presentation::model_import::smoke);
     }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_SPRITE").is_some() {
+        app.add_systems(Update, presentation::sprite_import::smoke);
+    }
     app.run();
     Ok(())
 }
@@ -162,6 +165,7 @@ impl Plugin for StudioPlugin {
             .init_resource::<presentation::tree_menu::State>()
             .init_resource::<presentation::asset_import::State>()
             .init_resource::<presentation::model_import::State>()
+            .init_resource::<presentation::sprite_import::State>()
             .init_resource::<presentation::titlebar::Maximized>()
             .init_resource::<application::symbols::ProjectSymbols>()
             .init_resource::<presentation::scene3d::SceneState>()
@@ -210,6 +214,7 @@ impl Plugin for StudioPlugin {
                         .chain(),
                     (
                         presentation::model_import::update,
+                        presentation::sprite_import::update,
                         presentation::designer::live::update,
                         presentation::designer::interactions,
                         presentation::scene3d::live::update,
@@ -227,6 +232,7 @@ impl Plugin for StudioPlugin {
                         presentation::reconcile::reconcile,
                         presentation::designer::refresh,
                         presentation::model_import::render::update,
+                        presentation::sprite_import::preview::update,
                         presentation::model_import::playback::update,
                         presentation::scene3d::update,
                         presentation::scene3d::synchronize_tree,

@@ -70,7 +70,7 @@ pub(crate) fn update_gutters(
         .is_some_and(|doc| {
             doc.path()
                 .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("smui") || ext.eq_ignore_ascii_case("smmodelimport"))
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("smui") || ext.eq_ignore_ascii_case("smmodelimport") || ext.eq_ignore_ascii_case("smspriteimport"))
         });
     let (caret, node) = &mut *caret;
     let display = if ui_designer {

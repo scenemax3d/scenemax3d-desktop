@@ -106,6 +106,7 @@ type PropertyInputs<'w, 's> = Query<
     Or<(
         With<super::designer::Property>,
         With<super::model_import::Field>,
+        With<super::sprite_import::Field>,
         With<super::scene3d::inspector::Property>,
     )>,
 >;
