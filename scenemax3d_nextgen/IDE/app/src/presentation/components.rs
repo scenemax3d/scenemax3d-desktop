@@ -33,7 +33,6 @@ pub(crate) enum Field {
     Replace,
     Line,
     NewScript,
-    Filter,
 }
 
 #[derive(Component)]

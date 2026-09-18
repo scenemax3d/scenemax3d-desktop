@@ -19,36 +19,11 @@ pub(crate) struct TreeItem {
 #[derive(Component)]
 pub(crate) struct Folder(PathBuf);
 
-fn visible<'a>(project: &'a Project, tree: &TreeState, filter: &str) -> Vec<&'a ProjectEntry> {
-    let needle = filter.to_lowercase();
-    let mut matches = HashSet::new();
-    if !needle.is_empty() {
-        for entry in project.entries() {
-            if entry
-                .path
-                .strip_prefix(project.root())
-                .unwrap_or(&entry.path)
-                .to_string_lossy()
-                .to_lowercase()
-                .contains(&needle)
-            {
-                matches.extend(
-                    entry
-                        .path
-                        .ancestors()
-                        .take_while(|p| *p != project.root())
-                        .map(|p| p.to_owned()),
-                );
-            }
-        }
-    }
+fn visible<'a>(project: &'a Project, tree: &TreeState) -> Vec<&'a ProjectEntry> {
     project
         .entries()
         .iter()
         .filter(|entry| {
-            if !needle.is_empty() {
-                return matches.contains(&entry.path);
-            }
             entry
                 .path
                 .ancestors()
@@ -146,7 +121,7 @@ pub(crate) fn update_tree(
         state.expanded.contains(project.root()),
     );
     let mut focus_row = root_row;
-    for entry in visible(project, &state, &session.filter) {
+    for entry in visible(project, &state) {
         let depth = entry
             .path
             .strip_prefix(project.root())
@@ -211,7 +186,22 @@ fn tree_row(
             row
         }
     };
-    commands.entity(row).insert(tree_item);
+    let target = tree_item.path.clone();
+    commands.entity(row).insert(tree_item).observe(
+        move |mut event: On<Pointer<Click>>,
+              mut menu: Option<ResMut<super::tree_menu::State>>,
+              mut focus: Option<ResMut<bevy::input_focus::InputFocus>>| {
+            if event.button == PointerButton::Secondary {
+                event.propagate(false);
+                if let Some(menu) = menu.as_mut() {
+                    menu.open(target.clone(), directory, event.pointer_location.position);
+                }
+                if let Some(focus) = focus.as_mut() {
+                    focus.set(row, bevy::input_focus::FocusCause::Navigated);
+                }
+            }
+        },
+    );
     commands.entity(row).despawn_children();
     commands.entity(row).insert((
         Node {
@@ -322,7 +312,11 @@ pub(crate) fn keyboard(
     session: Res<Session>,
     mut tree: ResMut<TreeState>,
     mut queue: ResMut<crate::application::CommandQueue>,
+    menu: Option<Res<super::tree_menu::State>>,
 ) {
+    if menu.is_some_and(|m| m.is_open()) {
+        return;
+    }
     let Some(item) = focus
         .as_ref()
         .and_then(|f| f.get())
@@ -332,11 +326,7 @@ pub(crate) fn keyboard(
     };
     let project = session.workspace.project();
     let paths = std::iter::once(project.root())
-        .chain(
-            visible(project, &tree, &session.filter)
-                .iter()
-                .map(|e| e.path.as_path()),
-        )
+        .chain(visible(project, &tree).iter().map(|e| e.path.as_path()))
         .map(|p| p.to_owned())
         .collect::<Vec<_>>();
     let index = paths.iter().position(|p| *p == item.path).unwrap_or(0);
@@ -395,6 +385,7 @@ mod tests {
         let mut world = World::new();
         world.register_component::<Window>();
         world.init_resource::<crate::application::CommandQueue>();
+        world.init_resource::<super::super::tree_menu::State>();
         let row = world
             .run_system_once(|mut commands: Commands| {
                 let parent = commands.spawn(Node::default()).id();
@@ -436,10 +427,13 @@ mod tests {
                 world.resource::<crate::application::CommandQueue>().0.len(),
                 expected
             );
+            if button == PointerButton::Secondary {
+                assert!(world.resource::<super::super::tree_menu::State>().is_open());
+            }
         }
     }
     #[test]
-    fn expansion_and_filter_keep_the_hierarchy() {
+    fn expansion_keeps_the_hierarchy() {
         let root = PathBuf::from("project");
         let project = Project::new(root.clone(), vec![]).with_entries(
             vec![
@@ -460,12 +454,10 @@ mod tests {
         );
         let mut tree = TreeState::default();
         tree.expanded.insert(root.clone());
-        assert_eq!(visible(&project, &tree, "").len(), 2);
+        assert_eq!(visible(&project, &tree).len(), 2);
         tree.expanded.insert(root.join("scripts"));
-        assert_eq!(visible(&project, &tree, "").len(), 3);
+        assert_eq!(visible(&project, &tree).len(), 3);
         tree.expanded.clear();
-        let matches = visible(&project, &tree, "main");
-        assert_eq!(matches.len(), 2);
-        assert!(matches[0].is_directory);
+        assert!(visible(&project, &tree).is_empty());
     }
 }

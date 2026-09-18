@@ -1288,66 +1288,40 @@ pub(super) fn render_scenemax_bitmap_text(
     let Some(font) = ui_runtime.bitmap_fonts.get(&bitmap_text.font_name) else {
         return;
     };
-    let scale = bitmap_text.font_size / font.size.max(1.0);
-    let line_height = font.line_height.max(font.size) * scale;
-    let lines = bitmap_text.text.split('\n').collect::<Vec<_>>();
-    let total_height = line_height * lines.len().max(1) as f32;
-    let y_start = (bitmap_text.widget_height - total_height) * 0.5;
-
-    for (line_index, line) in lines.iter().enumerate() {
-        let line_width = scenemax_bitmap_line_width(font, line, scale);
-        let mut cursor_x = match bitmap_text.alignment {
-            Justify::Center => (bitmap_text.widget_width - line_width) * 0.5,
-            Justify::Right => bitmap_text.widget_width - line_width,
-            _ => 0.0,
-        };
-        let line_y = y_start + line_index as f32 * line_height;
-        for ch in line.chars() {
-            if ch == '\r' {
-                continue;
-            }
-            let Some(glyph) = font.glyphs.get(&ch) else {
-                cursor_x += line_height * 0.35;
-                continue;
-            };
-            if glyph.width > 1.0 && glyph.height > 1.0 {
-                let glyph_entity = commands
-                    .spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(cursor_x + glyph.x_offset * scale),
-                            top: Val::Px(line_y + glyph.y_offset * scale),
-                            width: Val::Px(glyph.width * scale),
-                            height: Val::Px(glyph.height * scale),
-                            ..default()
-                        },
-                        ImageNode {
-                            image: font.image.clone(),
-                            color: bitmap_text.color,
-                            rect: Some(glyph.source),
-                            ..default()
-                        },
-                    ))
-                    .id();
-                add_child_if_alive(commands, entity, glyph_entity);
-                bitmap_text.glyph_entities.push(glyph_entity);
-            }
-            cursor_x += glyph.x_advance * scale;
-        }
+    let alignment = match bitmap_text.alignment {
+        Justify::Center => "center",
+        Justify::Right => "right",
+        _ => "left",
+    };
+    for (source, rect) in scenemax_runtime_ui_core::bitmap::layout(
+        &font.metrics,
+        &bitmap_text.text,
+        bitmap_text.font_size,
+        bitmap_text.widget_width,
+        bitmap_text.widget_height,
+        alignment,
+    ) {
+        let glyph_entity = commands
+            .spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(rect[0]),
+                    top: Val::Px(rect[1]),
+                    width: Val::Px(rect[2]),
+                    height: Val::Px(rect[3]),
+                    ..default()
+                },
+                ImageNode {
+                    image: font.image.clone(),
+                    color: bitmap_text.color,
+                    rect: Some(Rect::new(source[0], source[1], source[2], source[3])),
+                    ..default()
+                },
+            ))
+            .id();
+        add_child_if_alive(commands, entity, glyph_entity);
+        bitmap_text.glyph_entities.push(glyph_entity);
     }
-}
-
-pub(super) fn scenemax_bitmap_line_width(font: &SceneMaxBitmapFont, text: &str, scale: f32) -> f32 {
-    text.chars()
-        .filter(|ch| *ch != '\r')
-        .map(|ch| {
-            font.glyphs
-                .get(&ch)
-                .map(|glyph| glyph.x_advance)
-                .unwrap_or(font.line_height * 0.35)
-        })
-        .sum::<f32>()
-        * scale
 }
 
 pub(super) fn node_from_rect(rect: UiLayoutRect, parent_rect: UiLayoutRect) -> Node {
@@ -1697,57 +1671,11 @@ pub(super) fn load_scenemax_bitmap_font(
     let font_file = ui_asset_file_path(asset_path, context)
         .ok_or_else(|| anyhow::anyhow!("font asset {asset_path} was not found"))?;
     let source = fs::read_to_string(&font_file)?;
-    let mut size = 0.0;
-    let mut line_height = 0.0;
-    let mut page_file = None::<String>;
-    let mut glyphs = HashMap::new();
-
-    for line in source.lines() {
-        if line.starts_with("info ") {
-            size = parse_fnt_f32(line, "size").unwrap_or(size).abs();
-        } else if line.starts_with("common ") {
-            line_height = parse_fnt_f32(line, "lineHeight").unwrap_or(line_height);
-        } else if line.starts_with("page ") {
-            page_file = parse_fnt_string(line, "file");
-        } else if line.starts_with("char ") {
-            let Some(id) = parse_fnt_u32(line, "id") else {
-                continue;
-            };
-            let Some(ch) = char::from_u32(id) else {
-                continue;
-            };
-            let x = parse_fnt_f32(line, "x").unwrap_or(0.0);
-            let y = parse_fnt_f32(line, "y").unwrap_or(0.0);
-            let width = parse_fnt_f32(line, "width").unwrap_or(0.0);
-            let height = parse_fnt_f32(line, "height").unwrap_or(0.0);
-            glyphs.insert(
-                ch,
-                SceneMaxBitmapGlyph {
-                    source: Rect {
-                        min: Vec2::new(x, y),
-                        max: Vec2::new(x + width, y + height),
-                    },
-                    width,
-                    height,
-                    x_offset: parse_fnt_f32(line, "xoffset").unwrap_or(0.0),
-                    y_offset: parse_fnt_f32(line, "yoffset").unwrap_or(0.0),
-                    x_advance: parse_fnt_f32(line, "xadvance").unwrap_or(width),
-                },
-            );
-        }
-    }
-
-    if glyphs.is_empty() {
-        anyhow::bail!("font {asset_path} has no glyphs");
-    }
-    let page_file =
-        page_file.ok_or_else(|| anyhow::anyhow!("font {asset_path} has no page image"))?;
-    let image_path = bitmap_font_page_asset_path(asset_path, &page_file);
+    let font = scenemax_runtime_ui_core::bitmap::parse(&source).map_err(anyhow::Error::msg)?;
+    let image_path = bitmap_font_page_asset_path(asset_path, &font.page);
     Ok(SceneMaxBitmapFont {
         image: asset_server.load(image_path),
-        size: size.max(line_height).max(1.0),
-        line_height: line_height.max(size).max(1.0),
-        glyphs,
+        metrics: font,
     })
 }
 
@@ -1787,6 +1715,7 @@ pub(super) fn ui_asset_file_path(
         .filter(|path| path.is_file())
 }
 
+#[cfg(test)]
 pub(super) fn parse_fnt_string(line: &str, key: &str) -> Option<String> {
     let prefix = format!("{key}=");
     line.split_whitespace()
@@ -1794,10 +1723,7 @@ pub(super) fn parse_fnt_string(line: &str, key: &str) -> Option<String> {
         .map(|value| value.trim_matches('"').to_owned())
 }
 
-pub(super) fn parse_fnt_f32(line: &str, key: &str) -> Option<f32> {
-    parse_fnt_string(line, key)?.parse().ok()
-}
-
+#[cfg(test)]
 pub(super) fn parse_fnt_u32(line: &str, key: &str) -> Option<u32> {
     parse_fnt_string(line, key)?.parse().ok()
 }

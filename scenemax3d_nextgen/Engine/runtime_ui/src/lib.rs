@@ -1,6 +1,7 @@
+pub mod bitmap;
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MessageFrame {
@@ -9,7 +10,7 @@ pub struct MessageFrame {
     pub scale: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SceneMaxUiDocument {
     pub name: String,
@@ -21,7 +22,7 @@ pub struct SceneMaxUiDocument {
     pub layers: Vec<SceneMaxUiLayerDef>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SceneMaxUiLayerDef {
     pub name: String,
@@ -34,7 +35,7 @@ pub struct SceneMaxUiLayerDef {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SceneMaxUiWidgetDef {
     pub name: String,
@@ -120,7 +121,7 @@ pub struct SceneMaxUiWidgetDef {
     pub children: Vec<SceneMaxUiWidgetDef>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SceneMaxUiConstraint {
     pub side: String,

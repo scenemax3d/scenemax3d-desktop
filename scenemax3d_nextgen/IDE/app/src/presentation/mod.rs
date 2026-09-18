@@ -7,6 +7,7 @@ pub(crate) mod reconcile;
 pub(crate) mod shell;
 pub(crate) mod smoke;
 pub(crate) mod tabs;
+pub(crate) mod tree_menu;
 
 pub(crate) mod editing;
 
@@ -26,3 +27,11 @@ pub(crate) mod scene3d;
 pub(crate) mod titlebar;
 
 pub(crate) mod java_icons;
+
+pub(crate) mod asset_import;
+
+pub(crate) mod model_import;
+
+pub(crate) mod sprite_import;
+
+pub(crate) mod effect_import;

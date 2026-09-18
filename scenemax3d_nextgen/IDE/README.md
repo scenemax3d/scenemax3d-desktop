@@ -20,7 +20,7 @@ The menu bar follows the Java IDE's `assets/menu/main_menu`: **File, Assets, Too
 
 Launch `./run-rust-ide.ps1` without `-ProjectRoot` to load the project selected in the existing `projects/projects.json` catalog. The catalog is read on a background worker and is never rewritten by this adapter. Bevy project selections are currently session-local; a new launch restores the catalog's selection. Explicit `-ProjectRoot` takes precedence. Direct binary launches can pass `--project-catalog <path>`; otherwise discovery searches ancestors of the requested/current folder for `projects/projects.json`.
 
-Choose a project by name under **File → Projects**, or use **File → Projects → Project Explorer...**. The explorer filters projects by name and also accepts a project directory typed into its path field. On successful selection, the tree and title update, the file filter clears, and the project's main script opens with its ancestor folders expanded. Save dirty buffers and stop a running projector before switching; the same checks run again after asynchronous loading completes.
+Choose a project by name under **File → Projects**, or use **File → Projects → Project Explorer...**. The explorer filters projects by name and also accepts a project directory typed into its path field. On successful selection, the tree and title update, and the project's main script opens with its ancestor folders expanded. Save dirty buffers and stop a running projector before switching; the same checks run again after asynchronous loading completes.
 
 Click files in the project tree to edit them. The tree includes scripts, resources, empty folders and other project files. Native text editing currently supports UTF-8 text; binary files and visual designer documents do not yet have specialized editors. Script tabs retain their edits/caret while inactive. Each tab's × button uses the existing save/discard/cancel guard.
 
@@ -92,7 +92,7 @@ Read [architecture and engineering standards](../docs/ARCHITECTURE.md) before ex
 
 ## Embedded UI scene designer — first slice
 
-Open an existing `.smui` file in the project tree. It opens as a native retained Bevy UI designer tab inside the IDE, with a layer/widget hierarchy, a canvas fitted to its viewport and an inspector. Select widgets in the hierarchy or canvas. Add Panel, Text or Button to the selected panel (otherwise the selected layer); Delete selected removes its subtree. Change text, width, height, font size or fill color and press **Apply properties**. Apply records one undo transaction; **Save**, **Save All**, undo/redo, dirty-tab prompts and recovery use the existing document lifecycle. Inspector fields are drafts until Apply; selecting another widget discards unapplied field changes. The JSON source retains unsupported fields and constraints when edited. The Check syntax action validates the UI schema and layout for designer documents.
+Open an existing `.smui` file in the project tree. It opens as a native retained Bevy UI designer tab inside the IDE, with a layer/widget hierarchy, a canvas fitted to its viewport and an inspector. Select widgets in the hierarchy or canvas. Add Panel, Text or Button to the selected panel (otherwise the selected layer); Delete selected removes its subtree. Valid property edits update the preview immediately while preserving field focus and the canvas view. Incomplete numeric input keeps the last valid preview. Continuous field edits form one undo transaction; **Save**, **Save All**, undo/redo, dirty-tab prompts and recovery use the existing document lifecycle. The JSON source retains unsupported fields and constraints when edited. The Check syntax action validates the UI schema and layout for designer documents.
 
 Try from the repository root:
 
@@ -194,3 +194,17 @@ Game Camera is pinned immediately below the scene hierarchy heading, outside the
 Project-tree file types reuse the Java IDE images and exported Java2D artwork, including yellow folders, blue main-script braces, amber scene cubes, cyan UI layouts, and the specialized designer icons. Scene toolbar actions use the original Java drawing assets at 16 logical pixels within compact 24-pixel controls. The assets are embedded PNGs; their source provenance is recorded in `app/src/presentation/java_icons/README.md`. No Java runtime or build step is required.
 
 Document tabs use 10-pixel text and a 28-pixel strip. A dark neutral gray header sits above lighter gray content/tool panels, with the Java-style blue selection color.
+
+### Run-output responsiveness
+
+The run console renders at most the latest 200 lines / 24 KiB, independently of retained diagnostic history. Output uses unwrapped text so long runtime messages cannot expand into thousands of visual lines. On projector exit, the hidden console text is cleared before layout and the status bar reports the exit result. This bounds rendering work during noisy runs and avoids re-laying out a large log when its panel collapses. The projector's project-local runtime log is unchanged.
+
+### Project tree context menu
+
+Right-click a project file or folder to select it and open its native retained Bevy UI context menu. Single-click selection and double-click document opening remain unchanged. Escape or a click outside dismisses the menu; long folder menus support wheel scrolling.
+
+The menu uses the Java IDE's contextual labels and ordering. Working actions include Run (for runnable scripts), Save, Reload from disk, Refresh Project Files, Copy absolute path, Open in explorer, Rename, Move To, Delete, Add Scene, Create New Script, Create Designer Document, Create UI Document, and Create Sub Folder. Actions target the clicked path, independently of the active tab. Add Scene creates a scene directory, designer document, companion scripts, and a main script. Java extension creation is omitted from the Rust-only product. Asset-specific creation, backup cleanup, and publishing/import integrations that have not been ported are visible but disabled.
+
+Naming and confirmation dialogs are Bevy UI. Disk operations execute on the existing bounded worker. Existing destinations and paths outside the project are rejected. Renames preserve open buffers and their undo history; reload rejects newer edits that arrive while disk is being read. Delete requires confirmation, protects the root and main entry point, and moves files to `.scenemax-studio/deleted-*` for recovery, including existing scene/UI code companions. File mutations require the game to be stopped and affected buffers saved.
+
+GPU check: `--smoke-frames 120 --smoke-tree-menu scripts --smoke-screenshot <absolute-output.png>` opens a folder context menu after project loading; use a file path instead to inspect the file menu.

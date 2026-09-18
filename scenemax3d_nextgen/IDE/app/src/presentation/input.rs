@@ -1,5 +1,5 @@
 use super::components::{Editor, Field};
-use crate::application::{Command, CommandQueue, EditCommand, Session, ViewChange};
+use crate::application::{Command, CommandQueue, EditCommand, Session};
 use bevy::{prelude::*, text::EditableText, window::WindowCloseRequested};
 use scenemax_ide_core::DocumentId;
 use std::path::PathBuf;
@@ -105,12 +105,17 @@ type PropertyInputs<'w, 's> = Query<
     (),
     Or<(
         With<super::designer::Property>,
+        With<super::model_import::Field>,
+        With<super::sprite_import::Field>,
+        With<super::effect_import::Field>,
         With<super::scene3d::inspector::Property>,
     )>,
 >;
 
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct InputFields<'w, 's> {
+    menu: Option<Res<'w, super::tree_menu::State>>,
+    imports: Option<Res<'w, super::asset_import::State>>,
     fields: Query<'w, 's, (Entity, &'static Field, &'static EditableText)>,
     properties: PropertyInputs<'w, 's>,
 }
@@ -123,7 +128,17 @@ pub(crate) fn collect_actions(
     mut queue: ResMut<CommandQueue>,
     session: Res<Session>,
 ) {
-    let InputFields { fields, properties } = input_fields;
+    if input_fields.imports.as_ref().is_some_and(|m| m.is_open())
+        || input_fields.menu.as_ref().is_some_and(|m| m.is_open())
+    {
+        return;
+    }
+    let InputFields {
+        imports: _,
+        fields,
+        properties,
+        ..
+    } = input_fields;
     let values = fields
         .iter()
         .map(|(entity, kind, input)| (entity, *kind, input.value().to_string()))
@@ -252,23 +267,6 @@ pub(crate) fn sync_documents(
                 doc.selection()
             };
             doc.edit_text(text, selection);
-        }
-    }
-}
-
-pub(crate) fn sync_filter(
-    fields: Query<(&Field, &EditableText)>,
-    mut session: ResMut<Session>,
-    mut changes: MessageWriter<ViewChange>,
-) {
-    for (kind, input) in &fields {
-        if *kind != Field::Filter {
-            continue;
-        }
-        let filter = input.value().to_string();
-        if session.filter != filter {
-            session.filter = filter;
-            changes.write(ViewChange::ProjectTreeChanged);
         }
     }
 }

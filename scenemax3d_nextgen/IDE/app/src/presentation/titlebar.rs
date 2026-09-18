@@ -3,6 +3,14 @@ use bevy::{math::CompassOctant, prelude::*};
 use scenemax_ide_ui::{button, label};
 #[derive(Resource, Default)]
 pub(crate) struct Maximized(bool);
+
+pub(crate) fn maximize_on_startup(
+    mut window: Single<&mut Window, With<bevy::window::PrimaryWindow>>,
+    mut maximized: ResMut<Maximized>,
+) {
+    window.set_maximized(true);
+    maximized.0 = true;
+}
 pub(crate) fn drag(commands: &mut Commands, parent: Entity) {
     let region = commands
         .spawn((

@@ -10,6 +10,7 @@ pub(crate) struct SmokeCapture {
     pub(crate) run_project: bool,
     pub(crate) show_completion: bool,
     pub(crate) scene_entry: Option<usize>,
+    pub(crate) tree_menu: Option<PathBuf>,
 }
 
 pub(crate) fn smoke_capture(
@@ -25,6 +26,18 @@ pub(crate) fn smoke_capture(
         return;
     };
     if !services.storage.is_pending() && !services.catalog_storage.is_pending() {
+        if let Some(relative) = capture.tree_menu.take() {
+            let project = completion.session.workspace.project();
+            let path = project.root().join(relative);
+            let directory = path == project.root()
+                || project
+                    .entries()
+                    .iter()
+                    .any(|e| e.path == path && e.is_directory);
+            completion
+                .tree_menu
+                .open(path, directory, Vec2::new(180., 200.));
+        }
         if capture.show_completion
             && let Ok((entity, mut input)) = completion.editors.single_mut()
         {
@@ -56,6 +69,8 @@ pub(crate) fn smoke_capture(
 
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct SmokeCompletion<'w, 's> {
+    session: Res<'w, crate::application::Session>,
+    tree_menu: ResMut<'w, super::tree_menu::State>,
     state: ResMut<'w, super::completion::CompletionState>,
     editors: Query<
         'w,

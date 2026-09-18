@@ -1,6 +1,7 @@
 //! Application commands and services. No view entities or widget operations.
 mod commands;
 mod editing;
+mod tree_commands;
 pub(crate) use editing::EditCommand;
 mod jobs;
 mod recovery;

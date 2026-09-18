@@ -6,14 +6,18 @@ pub struct Canvas {
     viewport: Entity,
     width: f32,
     height: f32,
+    owner: Option<Entity>,
 }
 impl Canvas {
+    /// Resize the virtual surface while retaining its navigation state.
+    pub fn resize(&mut self, width: f32, height: f32) { self.width = width; self.height = height; }
     /// Virtual dimensions must be positive finite values.
     pub fn new(viewport: Entity, width: f32, height: f32) -> Self {
         Self {
             viewport,
             width,
             height,
+            owner: None,
         }
     }
 }
@@ -33,20 +37,41 @@ pub(crate) fn fit(
     viewports: Query<&ComputedNode>,
     mut canvases: Query<(Entity, &Canvas, &mut Node)>,
     mut fonts: Query<(&CanvasText, &mut TextFont)>,
+    views: Query<&navigation::View>,
+    mut labels: Query<(&navigation::ZoomLabel, &mut Text)>,
 ) {
     for (entity, canvas, mut node) in &mut canvases {
         let Ok(viewport) = viewports.get(canvas.viewport) else {
             continue;
         };
         let size = viewport.size() * viewport.inverse_scale_factor();
-        let scale = ((size.x - 16.) / canvas.width)
-            .min((size.y - 16.) / canvas.height)
-            .clamp(0.01, 2.);
+        let fit = fit_scale(size, Vec2::new(canvas.width, canvas.height));
+        let view = canvas.owner.and_then(|owner| views.get(owner).ok());
+        let scale = view.and_then(|v| v.zoom).unwrap_or(fit);
+        let pan = view.map_or(Vec2::ZERO, |v| v.pan);
         let width = px(canvas.width * scale);
         let height = px(canvas.height * scale);
         if node.width != width || node.height != height {
             node.width = width;
             node.height = height;
+        }
+        if canvas.owner.is_some() {
+            let left = px((size.x - canvas.width * scale) * 0.5 + pan.x);
+            let top = px((size.y - canvas.height * scale) * 0.5 + pan.y);
+            if node.left != left || node.top != top || node.position_type != PositionType::Absolute
+            {
+                node.position_type = PositionType::Absolute;
+                node.left = left;
+                node.top = top;
+            }
+        }
+        for (label, mut text) in &mut labels {
+            if label.0 == entity {
+                let value = format!("{:.0}%", scale * 100.);
+                if text.0 != value {
+                    text.0 = value;
+                }
+            }
         }
         for (text, mut font) in &mut fonts {
             if text.canvas == entity {
@@ -58,3 +83,11 @@ pub(crate) fn fit(
         }
     }
 }
+
+fn fit_scale(viewport: Vec2, canvas: Vec2) -> f32 {
+    ((viewport.x - 16.) / canvas.x)
+        .min((viewport.y - 16.) / canvas.y)
+        .clamp(0.01, 2.)
+}
+mod navigation;
+pub use navigation::install_navigation;

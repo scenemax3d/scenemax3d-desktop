@@ -5,6 +5,12 @@ use scenemax_runtime_ui_core::{
 
 /// Bounded preview derived from the shared runtime UI schema.
 pub struct ScenePreview {
+    /// Registered fonts.
+    pub fonts: Vec<String>,
+    /// Registered sprites.
+    pub sprites: Vec<String>,
+    /// Asset resolution warnings.
+    pub warnings: Vec<String>,
     /// Name.
     pub name: String,
     /// Width.
@@ -16,6 +22,12 @@ pub struct ScenePreview {
 }
 /// A widget layout in virtual canvas coordinates.
 pub struct PreviewWidget {
+    /// Complete serialized properties, including Java extensions.
+    pub properties: serde_json::Value,
+    /// Runtime widget definition.
+    pub definition: SceneMaxUiWidgetDef,
+    /// Resolved image or font atlas with crop rectangles.
+    pub visual: Option<assets::Visual>,
     /// Pointer.
     pub pointer: String,
     /// Name.
@@ -48,7 +60,8 @@ pub struct PreviewWidget {
 /// Parse and solve a UI scene without loading assets or creating a window.
 pub fn preview(source: &str) -> Result<ScenePreview, String> {
     let value = scenemax_ide_core::scene::parse(source)?;
-    let doc: SceneMaxUiDocument = serde_json::from_value(value).map_err(|e| e.to_string())?;
+    let doc: SceneMaxUiDocument =
+        serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
     if ![doc.canvas_width, doc.canvas_height]
         .iter()
         .all(|n| n.is_finite() && (1.0..=16384.0).contains(n))
@@ -57,6 +70,9 @@ pub fn preview(source: &str) -> Result<ScenePreview, String> {
     }
     let mut preview = ScenePreview {
         name: doc.name,
+        warnings: vec![],
+        fonts: vec![],
+        sprites: vec![],
         width: doc.canvas_width,
         height: doc.canvas_height,
         widgets: vec![],
@@ -78,6 +94,17 @@ pub fn preview(source: &str) -> Result<ScenePreview, String> {
             layer.visible,
             &mut preview.widgets,
         )?;
+    }
+    for widget in &mut preview.widgets {
+        widget.properties = serde_json::to_value(&widget.definition).map_err(|e| e.to_string())?;
+        if let (Some(base), Some(raw)) = (
+            widget.properties.as_object_mut(),
+            value
+                .pointer(&widget.pointer)
+                .and_then(serde_json::Value::as_object),
+        ) {
+            base.extend(raw.clone());
+        }
     }
     Ok(preview)
 }
@@ -107,6 +134,9 @@ fn collect(
         let button = widget.widget_type == "BUTTON";
         output.push(PreviewWidget {
             pointer: id.clone(),
+            properties: serde_json::Value::Null,
+            definition: widget.clone(),
+            visual: None,
             name: widget.name.clone(),
             kind: widget.widget_type.clone(),
             layer: layer.into(),
@@ -133,7 +163,11 @@ fn collect(
             } else {
                 widget.text_color.clone()
             },
-            alignment: widget.text_alignment.clone(),
+            alignment: if button {
+                "center".into()
+            } else {
+                widget.text_alignment.clone()
+            },
             font_size: widget.font_size,
             width: widget.width,
             height: widget.height,
@@ -166,3 +200,5 @@ mod tests {
         assert_eq!(p.widgets[0].pointer, "/layers/0/widgets/0");
     }
 }
+
+pub mod assets;

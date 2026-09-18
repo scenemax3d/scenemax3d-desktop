@@ -1121,19 +1121,7 @@ struct SceneMaxBitmapFontAsset {
 #[derive(Debug, Clone)]
 struct SceneMaxBitmapFont {
     image: Handle<Image>,
-    size: f32,
-    line_height: f32,
-    glyphs: HashMap<char, SceneMaxBitmapGlyph>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct SceneMaxBitmapGlyph {
-    source: Rect,
-    width: f32,
-    height: f32,
-    x_offset: f32,
-    y_offset: f32,
-    x_advance: f32,
+    metrics: scenemax_runtime_ui_core::bitmap::Font,
 }
 
 #[derive(Debug, Clone, Component)]
@@ -1331,24 +1319,7 @@ struct SceneMaxModelResource {
     resource: String,
 }
 
-#[derive(Debug, Clone, Component)]
-#[allow(dead_code)]
-struct SceneMaxEffekseerEffect {
-    instance_id: u64,
-    asset_id: String,
-    effect_path: Option<PathBuf>,
-    one_shot_duration_seconds: f32,
-}
-
-#[derive(Debug, Clone, Component)]
-#[allow(dead_code)]
-struct SceneMaxEffekseerPlayback {
-    looped: bool,
-    play_generation: u64,
-    playback_speed: f32,
-    dynamic_inputs: [f32; 4],
-    elapsed_seconds: f32,
-}
+use scenemax_effects::{Effect as SceneMaxEffekseerEffect, Playback as SceneMaxEffekseerPlayback};
 
 #[derive(SystemParam)]
 struct SceneMaxBoneQueries<'w, 's> {

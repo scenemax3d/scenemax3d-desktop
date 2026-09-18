@@ -29,6 +29,8 @@ struct Args {
     smoke_completion: bool,
     #[arg(long, hide = true, requires = "smoke_frames")]
     smoke_scene_entry: Option<usize>,
+    #[arg(long, hide = true, requires = "smoke_frames")]
+    smoke_tree_menu: Option<PathBuf>,
 }
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -45,5 +47,6 @@ fn main() -> anyhow::Result<()> {
         smoke_run_project: args.smoke_run_project,
         smoke_completion: args.smoke_completion,
         smoke_scene_entry: args.smoke_scene_entry,
+        smoke_tree_menu: args.smoke_tree_menu,
     })
 }

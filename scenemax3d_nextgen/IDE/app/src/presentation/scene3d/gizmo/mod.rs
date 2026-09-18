@@ -54,7 +54,7 @@ pub(super) struct DragState {
     direction: Vec3,
     size: f32,
 }
-pub(super) fn toolbar(commands: &mut Commands, parent: Entity) {
+pub(crate) fn toolbar(commands: &mut Commands, parent: Entity) {
     let bar = parent;
     commands.spawn((label("Gizmo:", 11.), ChildOf(bar)));
     for (caption, mode) in [
@@ -132,6 +132,7 @@ fn update(
     mut commands: Commands,
     mut state: ResMut<State>,
     scene: Res<SceneState>,
+    importer: Option<Res<crate::presentation::model_import::State>>,
     drawing: Option<Res<super::path::Drawing>>,
     mut view: View,
 ) {
@@ -145,7 +146,8 @@ fn update(
             PANEL
         };
     }
-    let (Some(owner), Some(camera)) = (scene.world, scene.camera) else {
+    let target=importer.as_ref().and_then(|i|i.target).or_else(||scene.world.zip(scene.camera).map(|(w,c)|(w,c,scene.selected)));
+    let Some((owner,camera,selected)) = target else {
         state.key = None;
         state.root = None;
         state.drag = None;
@@ -167,7 +169,7 @@ fn update(
     let Some((entity, _object, mut local, parent)) = view
         .objects
         .iter_mut()
-        .find(|(_, o, _, _)| o.0 == scene.selected)
+        .find(|(_, o, _, _)| o.0 == selected)
     else {
         return;
     };

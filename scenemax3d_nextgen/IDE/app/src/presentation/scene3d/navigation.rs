@@ -14,7 +14,7 @@ pub(crate) struct Arm {
     camera: Entity,
     direction: Vec3,
 }
-pub(super) fn spawn(commands: &mut Commands, parent: Entity, camera: Entity) {
+pub(crate) fn spawn(commands: &mut Commands, parent: Entity, camera: Entity) {
     let root = commands
         .spawn((
             Node {

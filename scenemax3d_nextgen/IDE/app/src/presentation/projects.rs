@@ -54,7 +54,6 @@ pub(crate) fn refresh(
                         Field::Project => input
                             .editor_mut()
                             .set_text(&display_path(session.workspace.project().root())),
-                        Field::Filter => input.editor_mut().set_text(""),
                         _ => {}
                     }
                 }
@@ -128,7 +127,7 @@ pub(crate) fn refresh(
         }
     }
 }
-fn display_path(path: &std::path::Path) -> String {
+pub(crate) fn display_path(path: &std::path::Path) -> String {
     let path = path.to_string_lossy();
     path.strip_prefix(r"\\?\").unwrap_or(&path).to_owned()
 }

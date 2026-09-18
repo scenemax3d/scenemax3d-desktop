@@ -2,7 +2,7 @@
 use crate::theme::*;
 use bevy::{
     prelude::*,
-    text::{EditableText, FontSource, TextCursorStyle},
+    text::{EditableText, FontSource},
 };
 
 /// Commit native queued edits before application commands and UI construction.
@@ -61,10 +61,7 @@ pub fn spawn_editor<T: Component>(
                 ..default()
             },
             TextColor(INK),
-            TextCursorStyle {
-                color: Color::WHITE,
-                ..default()
-            },
+            TEXT_CURSOR_STYLE,
             BackgroundColor(BG),
             ChildOf(parent),
         ))

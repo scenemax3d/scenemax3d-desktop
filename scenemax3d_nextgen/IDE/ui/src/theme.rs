@@ -6,6 +6,15 @@ pub const BG: Color = Color::srgb_u8(58, 62, 64);
 pub const PANEL: Color = Color::srgb_u8(68, 73, 75);
 /// Standard foreground text.
 pub const INK: Color = Color::srgb_u8(195, 199, 206);
+/// Muted selection background sampled from the Java IDE reference.
+pub const TEXT_SELECTION: Color = Color::srgb_u8(63, 70, 82);
+/// Consistent text selection and caret appearance without overriding syntax colors.
+pub const TEXT_CURSOR_STYLE: bevy::text::TextCursorStyle = bevy::text::TextCursorStyle {
+    color: Color::WHITE,
+    selection_color: TEXT_SELECTION,
+    unfocused_selection_color: TEXT_SELECTION,
+    selected_text_color: None,
+};
 /// Quiet supporting text.
 pub const MUTED: Color = Color::srgb_u8(158, 165, 172);
 /// Selected navigator row and menu item.

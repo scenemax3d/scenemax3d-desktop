@@ -140,6 +140,14 @@ fn populate_menu(
             }
             continue;
         }
+        if entry.command == "add_skybox" {
+            continue;
+        }
+        if let Some(row) = super::asset_import::menu_item(commands, host, entry.name, entry.command)
+        {
+            finish_item(commands, row, "");
+            continue;
+        }
         match entry.command {
             "project_explorer" | "new_project_scripts_folder" => {
                 panel_item(commands, host, entry.name, "", Panel::Project)
@@ -227,7 +235,12 @@ pub(crate) fn controls(
     mouse: Res<ButtonInput<MouseButton>>,
     mut focus: Option<ResMut<InputFocus>>,
     session: Res<Session>,
+    context: Option<Res<super::tree_menu::State>>,
 ) {
+    if context.as_ref().is_some_and(|m| m.is_open()) {
+        state.menu = None;
+        state.submenu = None;
+    }
     let mut target = None;
     let mut restore_editor = false;
     if mouse.just_pressed(MouseButton::Left) {
@@ -285,7 +298,7 @@ pub(crate) fn controls(
         (KeyCode::KeyN, Panel::NewFile, Field::NewScript),
         (KeyCode::KeyO, Panel::Project, Field::ProjectFilter),
     ] {
-        if ctrl && keys.just_pressed(key) {
+        if ctrl && keys.just_pressed(key) && !context.as_ref().is_some_and(|m| m.is_open()) {
             state.panel = Some(panel);
             state.menu = None;
             state.submenu = None;

@@ -7,8 +7,9 @@ use scenemax_ide_services::{
 };
 use std::path::PathBuf;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) enum SavePurpose {
+    PathRun(PathBuf),
     Save,
     Close,
     Tab(DocumentId),
@@ -56,7 +57,7 @@ impl EditorServices {
     pub(crate) fn cancel_run(&mut self) {
         if matches!(
             self.pending_save,
-            Some(SavePurpose::Run(_) | SavePurpose::ProjectRun)
+            Some(SavePurpose::Run(_) | SavePurpose::PathRun(_) | SavePurpose::ProjectRun)
         ) {
             self.pending_save = Some(SavePurpose::Save);
         }
@@ -163,6 +164,37 @@ pub(crate) fn apply_storage(
                 }
             }
         }
+        StorageResult::Explored(result) => {
+            result?;
+            session.status = "Opened in explorer".into();
+        }
+        StorageResult::Tree(result) => {
+            super::tree_commands::apply(result?, session, changes)?;
+            services.storage.request(StorageRequest::Refresh(
+                session.workspace.project().root().to_owned(),
+            ))?;
+        }
+        StorageResult::Reload(version, result) => {
+            let document = result?;
+            let id = if let Some((id, revision)) = version {
+                if !session
+                    .workspace
+                    .document(id)
+                    .is_ok_and(|d| d.revision() == revision)
+                {
+                    bail!("Reload cancelled because the document changed while reading disk");
+                }
+                *session.workspace.document_mut(id)? = document;
+                changes.write(ViewChange::DocumentClosed(id));
+                id
+            } else {
+                session.workspace.open_document(document)?
+            };
+            changes.write(ViewChange::DocumentOpened(id));
+            changes.write(ViewChange::BufferChanged(id));
+            changes.write(ViewChange::ActiveChanged);
+            session.status = "Selected file reloaded from disk".into();
+        }
         StorageResult::Scene3d(_) => bail!("Unexpected scene worker result"),
         StorageResult::Refreshed(result) => {
             session.workspace.refresh_project(result?);
@@ -187,7 +219,6 @@ pub(crate) fn apply_storage(
             // Edits may have happened while the inventory was loading.
             session.workspace.switch_project(project)?;
             session.closing_tab = None;
-            session.filter.clear();
             session.search_hits.clear();
             changes.write(ViewChange::SearchResultsChanged);
             changes.write(ViewChange::ProjectOpened);
@@ -274,7 +305,13 @@ pub(crate) fn apply_storage(
                     services.projector.start(project.root(), entry)?;
                     session.status = "Bevy project started".into();
                 }
-                Some(SavePurpose::Run(_) | SavePurpose::ProjectRun) => {
+                Some(SavePurpose::PathRun(path)) if !dirty && !session.closing => {
+                    services
+                        .projector
+                        .start(session.workspace.project().root(), &path)?;
+                    session.status = "Bevy projector started".into();
+                }
+                Some(SavePurpose::Run(_) | SavePurpose::PathRun(_) | SavePurpose::ProjectRun) => {
                     session.status = "Run cancelled: save newer edits and run again".into()
                 }
                 _ => {}
@@ -328,7 +365,11 @@ pub(crate) fn poll_jobs(
         session.append_output(&line);
     }
     match services.projector.poll_exit() {
-        Ok(Some(status)) => session.append_output(&format!("Projector exited: {status}")),
+        Ok(Some(status)) => {
+            session.status = format!("Projector exited: {status}");
+            let message = session.status.clone();
+            session.append_output(&message);
+        }
         Err(error) => session.status = error.to_string(),
         Ok(None) => {}
     }
@@ -339,6 +380,66 @@ mod tests {
     use super::*;
     use scenemax_ide_services::Filesystem;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn reload_does_not_overwrite_edits_made_while_reading() {
+        let (mut app, dir, id) = setup();
+        let session = app.world().resource::<Session>();
+        let root = session.workspace.project().root().to_owned();
+        let revision = session.workspace.document(id).unwrap().revision();
+        std::fs::write(dir.path().join("scripts/main"), "disk version").unwrap();
+        app.world_mut()
+            .resource_mut::<EditorServices>()
+            .storage
+            .request(StorageRequest::Reload {
+                root: root.clone(),
+                path: root.join("scripts/main"),
+                version: Some((id, revision)),
+            })
+            .unwrap();
+        text(&mut app, id, "newer unsaved edit");
+        finish(&mut app);
+        let session = app.world().resource::<Session>();
+        assert_eq!(
+            session.workspace.document(id).unwrap().text(),
+            "newer unsaved edit"
+        );
+        assert!(session.status.contains("Reload cancelled"));
+    }
+    #[test]
+    fn navigator_rename_follows_open_buffer_and_keeps_its_edits() {
+        let (mut app, dir, id) = setup();
+        let root = app
+            .world()
+            .resource::<Session>()
+            .workspace
+            .project()
+            .root()
+            .to_owned();
+        app.world_mut()
+            .resource_mut::<EditorServices>()
+            .storage
+            .request(StorageRequest::Tree {
+                root: root.clone(),
+                operation: scenemax_ide_services::TreeOperation::Move {
+                    path: root.join("scripts/main"),
+                    parent: root.join("scripts"),
+                    name: "renamed.code".into(),
+                },
+            })
+            .unwrap();
+        text(&mut app, id, "typed during rename");
+        finish(&mut app);
+        let session = app.world().resource::<Session>();
+        let doc = session.workspace.document(id).unwrap();
+        assert_eq!(doc.path(), root.join("scripts/renamed.code"));
+        assert_eq!(doc.text(), "typed during rename");
+        assert!(doc.is_dirty());
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("scripts/renamed.code")).unwrap(),
+            "original"
+        );
+    }
 
     fn setup() -> (App, tempfile::TempDir, DocumentId) {
         let dir = tempfile::tempdir().unwrap();

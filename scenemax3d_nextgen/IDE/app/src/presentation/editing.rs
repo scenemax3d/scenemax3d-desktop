@@ -60,27 +60,35 @@ pub(crate) fn update_gutters(
     session: Res<Session>,
     inputs: Query<(&Editor, &bevy::ui::widget::TextScroll, &ComputedNode)>,
     mut gutters: Query<(&Gutter, &mut Text, &mut Node), Without<CaretLabel>>,
-    mut caret: Single<&mut Text, With<CaretLabel>>,
+    mut caret: Single<(&mut Text, &mut Node), With<CaretLabel>>,
     mut previous: Local<Option<GutterState>>,
 ) {
+    let ui_designer = session
+        .workspace
+        .active_id()
+        .and_then(|id| session.workspace.document(id).ok())
+        .is_some_and(|doc| {
+            doc.path()
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("smui") || ext.eq_ignore_ascii_case("smmodelimport") || ext.eq_ignore_ascii_case("smspriteimport") || ext.eq_ignore_ascii_case("smeffectimport"))
+        });
+    let (caret, node) = &mut *caret;
+    let display = if ui_designer {
+        Display::None
+    } else {
+        Display::Flex
+    };
+    if node.display != display {
+        node.display = display;
+    }
+    if ui_designer {
+        previous.take();
+        return;
+    }
     if session.workspace.active_id().is_none() {
         previous.take();
         if caret.0 != "Open a document to begin" {
             caret.0 = "Open a document to begin".into();
-        }
-        return;
-    }
-    if let Some(id) = session.workspace.active_id()
-        && let Ok(doc) = session.workspace.document(id)
-        && doc
-            .path()
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("smui"))
-    {
-        previous.take();
-        let caption = "UI scene designer   |   Apply properties before saving   |   Ctrl+S save   ·   Ctrl+Z undo";
-        if caret.0 != caption {
-            caret.0 = caption.into();
         }
         return;
     }
