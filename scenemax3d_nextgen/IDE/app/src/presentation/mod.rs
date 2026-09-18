@@ -33,3 +33,5 @@ pub(crate) mod asset_import;
 pub(crate) mod model_import;
 
 pub(crate) mod sprite_import;
+
+pub(crate) mod effect_import;

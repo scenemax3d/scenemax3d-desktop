@@ -5334,12 +5334,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "scenemax_effects"
+version = "0.1.0"
+dependencies = [
+ "ash",
+ "bevy",
+ "tracing",
+ "wgpu",
+]
+
+[[package]]
 name = "scenemax_ide"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "bevy",
  "clap",
+ "scenemax_effects",
  "scenemax_ide_core",
  "scenemax_ide_services",
  "scenemax_ide_ui",
@@ -5417,12 +5428,12 @@ name = "scenemax_runtime"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ash",
  "avian3d",
  "bevy",
  "bevy-tnua",
  "bevy-tnua-avian3d",
  "scenemax_assets",
+ "scenemax_effects",
  "scenemax_ir",
  "scenemax_multiplayer",
  "scenemax_parser",
@@ -5432,7 +5443,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
- "wgpu",
 ]
 
 [[package]]

@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+scenemax_effects = { path = "../../Engine/effects", features = ["effekseer_native"] }
 anyhow.workspace = true
 serde_json.workspace = true
 clap.workspace = true

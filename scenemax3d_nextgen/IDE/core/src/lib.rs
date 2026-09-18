@@ -41,3 +41,5 @@ pub mod scene3d;
 pub mod model_import;
 
 pub mod sprite_import;
+
+pub mod effect_import;

@@ -1319,24 +1319,7 @@ struct SceneMaxModelResource {
     resource: String,
 }
 
-#[derive(Debug, Clone, Component)]
-#[allow(dead_code)]
-struct SceneMaxEffekseerEffect {
-    instance_id: u64,
-    asset_id: String,
-    effect_path: Option<PathBuf>,
-    one_shot_duration_seconds: f32,
-}
-
-#[derive(Debug, Clone, Component)]
-#[allow(dead_code)]
-struct SceneMaxEffekseerPlayback {
-    looped: bool,
-    play_generation: u64,
-    playback_speed: f32,
-    dynamic_inputs: [f32; 4],
-    elapsed_seconds: f32,
-}
+use scenemax_effects::{Effect as SceneMaxEffekseerEffect, Playback as SceneMaxEffekseerPlayback};
 
 #[derive(SystemParam)]
 struct SceneMaxBoneQueries<'w, 's> {

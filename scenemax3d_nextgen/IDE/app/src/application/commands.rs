@@ -238,6 +238,10 @@ fn execute(
         Command::Check => {
             let id = session.workspace.require_active()?;
             let doc = session.workspace.document(id)?;
+            if doc.path().extension().is_some_and(|e| e.eq_ignore_ascii_case("smeffectimport")) {
+                scenemax_ide_core::effect_import::validate(&serde_json::from_str(doc.text())?).map_err(anyhow::Error::msg)?;
+                session.status="Effect import settings are valid".into();return Ok(());
+            }
             if doc.path().extension().is_some_and(|e| e.eq_ignore_ascii_case("smspriteimport")) {
                 scenemax_ide_core::sprite_import::validate(&serde_json::from_str(doc.text())?).map_err(anyhow::Error::msg)?;
                 session.status = "Sprite import settings are valid".into();return Ok(());

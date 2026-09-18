@@ -98,6 +98,7 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         })
         .add_plugins(
             DefaultPlugins
+                .set(bevy::render::RenderPlugin {render_creation: bevy::render::settings::RenderCreation::Automatic(Box::new(bevy::render::settings::WgpuSettings {backends: Some(bevy::render::settings::Backends::VULKAN),..default()})),..default()})
                 .set(bevy::asset::AssetPlugin {
                     unapproved_path_mode: bevy::asset::UnapprovedPathMode::Forbid,
                     ..default()
@@ -113,14 +114,19 @@ pub fn run(options: LaunchOptions) -> Result<()> {
                     ..default()
                 }),
         )
+        .add_plugins(scenemax_effects::EffectsPlugin)
+        .init_resource::<scenemax_effects::PreviewClock>()
         .add_plugins((TabNavigationPlugin, StudioUiPlugin, StudioPlugin))
         .add_plugins(presentation::scene3d::gizmo::GizmoPlugin);
     bevy::asset::embedded_asset!(app, "presentation/scenemax_icon.png");
     presentation::java_icons::register(&mut app);
+    app.init_gizmo_group::<presentation::effect_import::preview::Lines>();
+    app.world_mut().resource_mut::<bevy::gizmos::config::GizmoConfigStore>().config_mut::<presentation::effect_import::preview::Lines>().0.render_layers = bevy::camera::visibility::RenderLayers::layer(4);
     app.init_gizmo_group::<presentation::model_import::render::ImportLines>();
     app.world_mut().resource_mut::<bevy::gizmos::config::GizmoConfigStore>()
         .config_mut::<presentation::model_import::render::ImportLines>().0.render_layers = bevy::camera::visibility::RenderLayers::layer(3);
     app.add_systems(Update,presentation::model_import::render::overlays);
+    app.add_systems(Update,presentation::effect_import::preview::update.after(presentation::effect_import::update).after(presentation::scene3d::playback::cadence));
 
     if let Some(remaining) = options.smoke_frames {
         app.insert_resource(presentation::smoke::SmokeCapture {
@@ -147,6 +153,7 @@ pub fn run(options: LaunchOptions) -> Result<()> {
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_SPRITE").is_some() {
         app.add_systems(Update, presentation::sprite_import::smoke);
     }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_EFFECT").is_some() {app.add_systems(Update,presentation::effect_import::smoke);}
     app.run();
     Ok(())
 }
@@ -166,6 +173,7 @@ impl Plugin for StudioPlugin {
             .init_resource::<presentation::asset_import::State>()
             .init_resource::<presentation::model_import::State>()
             .init_resource::<presentation::sprite_import::State>()
+            .init_resource::<presentation::effect_import::State>()
             .init_resource::<presentation::titlebar::Maximized>()
             .init_resource::<application::symbols::ProjectSymbols>()
             .init_resource::<presentation::scene3d::SceneState>()
@@ -215,6 +223,7 @@ impl Plugin for StudioPlugin {
                     (
                         presentation::model_import::update,
                         presentation::sprite_import::update,
+                        presentation::effect_import::update,
                         presentation::designer::live::update,
                         presentation::designer::interactions,
                         presentation::scene3d::live::update,
