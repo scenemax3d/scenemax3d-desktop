@@ -12,3 +12,4 @@ pub(crate) use jobs::{EditorServices, poll_jobs};
 pub(crate) use session::{Session, ViewChange};
 
 pub(crate) mod symbols;
+pub(crate) mod deployment;

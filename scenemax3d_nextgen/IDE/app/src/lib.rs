@@ -154,6 +154,8 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         app.add_systems(Update, presentation::sprite_import::smoke);
     }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_EFFECT").is_some() {app.add_systems(Update,presentation::effect_import::smoke);}
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_DEPLOY").is_some() { app.add_systems(Update, presentation::deployment::smoke); }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_DEPLOY_BUILD").is_some() { app.add_systems(Update, presentation::deployment::smoke_build); }
     app.run();
     Ok(())
 }
@@ -169,6 +171,8 @@ impl Plugin for StudioPlugin {
             ),
         );
         app.init_resource::<CommandQueue>()
+            .init_resource::<application::deployment::Deployment>()
+            .init_resource::<presentation::deployment::View>()
             .init_resource::<presentation::tree_menu::State>()
             .init_resource::<presentation::asset_import::State>()
             .init_resource::<presentation::model_import::State>()
@@ -218,6 +222,10 @@ impl Plugin for StudioPlugin {
                         presentation::browser::keyboard,
                         presentation::tree_menu::update,
                         presentation::asset_import::update,
+                        presentation::deployment::collect,
+                        presentation::deployment::keyboard,
+                        application::deployment::update,
+                        presentation::deployment::refresh,
                     )
                         .chain(),
                     (

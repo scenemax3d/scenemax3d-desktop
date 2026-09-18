@@ -79,6 +79,7 @@ pub(crate) fn menu_bar(commands: &mut Commands, root: Entity) {
             panel_item(commands, popup, "Find…", "Ctrl+F", Panel::Search);
             separator(commands, popup);
         } else if menu.name == "Tools" {
+            super::deployment::menu_item(commands, popup);
             for (name, shortcut, action) in [
                 ("Check syntax", "", Action::Check),
                 ("Run project", "F10", Action::RunProject),

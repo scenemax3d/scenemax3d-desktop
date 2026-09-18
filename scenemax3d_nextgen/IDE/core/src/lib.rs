@@ -3,6 +3,7 @@
 #![deny(missing_docs)]
 pub mod assistance;
 pub mod completion;
+pub mod deployment;
 mod document;
 mod editing;
 mod history;

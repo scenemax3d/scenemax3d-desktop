@@ -114,6 +114,7 @@ type PropertyInputs<'w, 's> = Query<
 
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct InputFields<'w, 's> {
+    deployment: Option<Res<'w, crate::application::deployment::Deployment>>,
     menu: Option<Res<'w, super::tree_menu::State>>,
     imports: Option<Res<'w, super::asset_import::State>>,
     fields: Query<'w, 's, (Entity, &'static Field, &'static EditableText)>,
@@ -129,6 +130,7 @@ pub(crate) fn collect_actions(
     session: Res<Session>,
 ) {
     if input_fields.imports.as_ref().is_some_and(|m| m.is_open())
+        || input_fields.deployment.as_ref().is_some_and(|m| m.open)
         || input_fields.menu.as_ref().is_some_and(|m| m.is_open())
     {
         return;

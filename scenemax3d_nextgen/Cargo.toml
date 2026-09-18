@@ -9,6 +9,7 @@ members = [
     "Engine/multiplayer",
     "Language/parser",
     "Projector/app",
+    "Projector/launcher",
     "Engine/runtime",
     "Engine/effects",
     "Engine/scripting",
