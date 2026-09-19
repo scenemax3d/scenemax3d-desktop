@@ -116,11 +116,13 @@ fn catalog_json(text: &str) -> Result<Value, serde_json::Error> {
     }
     serde_json::from_str(&clean)
 }
+type ModelReferences = BTreeMap<String, BTreeSet<String>>;
+
 fn script_closure(
     project: &Path,
     entry: &Path,
     context: &Context,
-) -> io::Result<(BTreeSet<PathBuf>, BTreeSet<String>)> {
+) -> io::Result<(BTreeSet<PathBuf>, BTreeSet<String>, ModelReferences)> {
     let root = project.join("scripts");
     let inventory: BTreeSet<_> = files::list(&root, context)?.into_iter().collect();
     let scene_root = entry
@@ -129,6 +131,7 @@ fn script_closure(
     let mut pending = vec![entry.to_owned()];
     let mut selected = BTreeSet::new();
     let mut names = BTreeSet::new();
+    let mut references = ModelReferences::new();
     while let Some(path) = pending.pop() {
         context.check()?;
         let path = normalized(&path);
@@ -217,8 +220,18 @@ fn script_closure(
                         ))
                     })?);
                 }
-                Statement::ModelDecl { resource, .. } => {
+                Statement::ModelDecl { resource, name, .. } => {
                     names.insert(resource.to_lowercase());
+                    references
+                        .entry(resource.to_lowercase())
+                        .or_default()
+                        .insert(format!(
+                            "{} (entity {name})",
+                            path.strip_prefix(project)
+                                .map_err(io::Error::other)?
+                                .to_string_lossy()
+                                .replace('\\', "/")
+                        ));
                 }
                 Statement::If(branch) => {
                     statements.extend(&branch.actions);
@@ -238,7 +251,7 @@ fn script_closure(
             }
         }
     }
-    Ok((selected, names))
+    Ok((selected, names, references))
 }
 
 struct Library {
@@ -248,6 +261,7 @@ struct Library {
     selected: BTreeSet<String>,
     catalogs: BTreeMap<String, Value>,
     rows: BTreeSet<(String, String, usize)>,
+    dependencies: BTreeMap<String, BTreeSet<String>>,
 }
 impl Library {
     fn new(root: PathBuf, destination: PathBuf, context: &Context) -> io::Result<Self> {
@@ -296,11 +310,13 @@ impl Library {
             selected: BTreeSet::new(),
             catalogs,
             rows: BTreeSet::new(),
+            dependencies: BTreeMap::new(),
         })
     }
     fn select(&mut self, key: &str, names: &mut BTreeSet<String>) -> io::Result<()> {
         let key = key.replace('\\', "/").to_lowercase();
-        if self.catalogs.contains_key(&key)
+        if key.ends_with(".j3o")
+            || self.catalogs.contains_key(&key)
             || !self.inventory.contains_key(&key)
             || !self.selected.insert(key.clone())
         {
@@ -352,6 +368,16 @@ impl Library {
                                     path.display()
                                 )));
                             }
+                            self.dependencies
+                                .entry(
+                                    path.strip_prefix(&self.root)
+                                        .map_err(io::Error::other)?
+                                        .to_string_lossy()
+                                        .replace('\\', "/")
+                                        .to_lowercase(),
+                                )
+                                .or_default()
+                                .insert(key.clone());
                             self.select(&key, names)?;
                         }
                     }
@@ -432,9 +458,10 @@ impl Library {
                             if row["name"]
                                 .as_str()
                                 .is_some_and(|n| names.contains(&n.to_lowercase()))
-                                && self.rows.insert((key.clone(), group.clone(), i))
                             {
-                                for value in strings(row) {
+                                self.rows.insert((key.clone(), group.clone(), i));
+                                let row = runtime_row(row, names);
+                                for value in strings(&row) {
                                     if value.to_lowercase().ends_with(".j3o")
                                         && row["sourceModel"].is_string()
                                     {
@@ -486,7 +513,103 @@ impl Library {
         }
         Ok(())
     }
-    fn write(&self, context: &Context, report: &mut Vec<Value>) -> io::Result<()> {
+    fn model_inventory(
+        &self,
+        references: &ModelReferences,
+        names: &BTreeSet<String>,
+        snapshot: &Path,
+        all_assets: bool,
+    ) -> Vec<Value> {
+        let prefix = self
+            .destination
+            .strip_prefix(snapshot)
+            .unwrap_or(&self.destination)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let mut result = Vec::new();
+        for (catalog, value) in &self.catalogs {
+            let Some(models) = value["models"].as_array() else {
+                continue;
+            };
+            for (i, row) in models.iter().enumerate() {
+                let name = row["name"].as_str().unwrap_or_default();
+                let path = row["path"].as_str().unwrap_or_default();
+                let selected = self.rows.contains(&(catalog.clone(), "models".into(), i));
+                if !selected {
+                    continue;
+                }
+                let resolved = if supported_model(path) {
+                    Some(path)
+                } else {
+                    row["sourceModel"]
+                        .as_str()
+                        .and_then(|source| {
+                            models.iter().find(|r| {
+                                r["name"]
+                                    .as_str()
+                                    .is_some_and(|n| n.eq_ignore_ascii_case(source))
+                            })
+                        })
+                        .and_then(|r| r["path"].as_str())
+                        .filter(|p| supported_model(p))
+                };
+                let mut paths = BTreeSet::new();
+                if selected && let Some(resolved) = resolved {
+                    let mut pending = vec![resolved.replace('\\', "/").to_lowercase()];
+                    while let Some(key) = pending.pop() {
+                        if self.selected.contains(&key)
+                            && paths.insert(key.clone())
+                            && let Some(deps) = self.dependencies.get(&key)
+                        {
+                            pending.extend(deps.iter().cloned());
+                        }
+                    }
+                }
+                let status = if !selected {
+                    "not referenced"
+                } else if resolved.is_none() {
+                    "unsupported"
+                } else if paths.is_empty() {
+                    "missing"
+                } else {
+                    "included"
+                };
+                let files: Vec<_> = paths.iter().filter_map(|key| self.inventory.get(key)).map(|p| serde_json::json!({"path":format!("{prefix}/{}", p.strip_prefix(&self.root).unwrap_or(p).to_string_lossy().replace('\\', "/")), "bytes":fs::metadata(p).map(|m| m.len()).unwrap_or(0)})).collect();
+                let bytes: u64 = files.iter().filter_map(|f| f["bytes"].as_u64()).sum();
+                let sources = references
+                    .get(&name.to_lowercase())
+                    .cloned()
+                    .unwrap_or_default();
+                let reason = if status == "unsupported" {
+                    "Excluded: Bevy cannot load this model format. Convert to glTF/GLB or remove the scene reference."
+                } else if !selected {
+                    "Not referenced by the reachable game; animation retarget options alone do not require a model."
+                } else if !sources.is_empty() {
+                    "Declared by the parsed game scripts."
+                } else if all_assets {
+                    "Included by explicit all-assets mode."
+                } else if names.contains(&name.to_lowercase()) {
+                    "Dependency of selected scripts, UI or asset metadata (including source-model aliases)."
+                } else {
+                    "Included by explicit all-assets mode."
+                };
+                result.push(serde_json::json!({"name":name,"catalog":format!("{prefix}/{catalog}"),"path":format!("{prefix}/{path}"),"resolvedPath":resolved.map(|p| format!("{prefix}/{p}")),"status":status,"reason":reason,"referencedBy":sources,"bytes":bytes,"files":files}));
+            }
+        }
+        result.sort_by(|a, b| {
+            a["name"]
+                .as_str()
+                .cmp(&b["name"].as_str())
+                .then_with(|| a["path"].as_str().cmp(&b["path"].as_str()))
+        });
+        result
+    }
+    fn write(
+        &self,
+        context: &Context,
+        report: &mut Vec<Value>,
+        names: &BTreeSet<String>,
+    ) -> io::Result<()> {
         for key in &self.selected {
             let source = &self.inventory[key];
             let relative = source.strip_prefix(&self.root).map_err(io::Error::other)?;
@@ -504,8 +627,14 @@ impl Library {
                             let keep = !row["name"].is_string()
                                 || self.rows.contains(&(key.clone(), group.clone(), i));
                             i += 1;
-                            keep
+                            keep && !(row["path"]
+                                .as_str()
+                                .is_some_and(|p| p.to_lowercase().ends_with(".j3o"))
+                                && !row["sourceModel"].is_string())
                         });
+                        for row in array {
+                            *row = runtime_row(row, names);
+                        }
                     }
                 }
             }
@@ -523,6 +652,25 @@ impl Library {
         Ok(())
     }
 }
+fn runtime_row(row: &Value, names: &BTreeSet<String>) -> Value {
+    let mut row = row.clone();
+    if let Some(retargets) = row
+        .get_mut("bevyBakedRetargets")
+        .and_then(Value::as_array_mut)
+    {
+        retargets.retain(|r| {
+            r["model"]
+                .as_str()
+                .is_some_and(|m| names.contains(&m.to_lowercase()))
+        });
+    }
+    row
+}
+fn supported_model(path: &str) -> bool {
+    let path = path.to_ascii_lowercase();
+    path.ends_with(".gltf") || path.ends_with(".glb")
+}
+
 fn decode_uri(uri: &str) -> io::Result<String> {
     let mut bytes = Vec::new();
     let mut input = uri.as_bytes().iter().copied();
@@ -608,102 +756,123 @@ fn snapshot_inner(
         "Compiling deployment graph from root main: {}\n",
         entry.display()
     ));
+    let (mut scripts, mut names, references) = script_closure(&project, &entry, context)?;
     if request.settings.include_all_resources {
-        files::tree(
-            &project.join("scripts"),
-            &destination.join("scripts"),
-            context,
-        )?;
-        if project.join("resources").is_dir() {
-            files::tree(
-                &project.join("resources"),
-                &destination.join("resources"),
-                context,
-            )?;
-        }
-        if !request.settings.builtin_resources.is_empty() {
-            files::tree(
-                Path::new(&request.settings.builtin_resources),
-                &destination.join("builtin/resources"),
-                context,
-            )?;
-        }
-        context.log("Compatibility mode: all scripts and resources included.\n");
-    } else {
-        let (scripts, mut names) = script_closure(&project, &entry, context)?;
-        for script in &scripts {
-            files::copy(
-                script,
-                &destination.join(script.strip_prefix(&project).map_err(io::Error::other)?),
-                context,
-            )?;
-        }
-        let mut libraries = vec![Library::new(
-            project.join("resources"),
-            destination.join("resources"),
-            context,
-        )?];
-        if !request.settings.builtin_resources.is_empty() {
-            libraries.push(Library::new(
-                Path::new(&request.settings.builtin_resources).canonicalize()?,
-                destination.join("builtin/resources"),
-                context,
-            )?);
-        }
-        loop {
-            context.check()?;
-            let before = (
-                names.len(),
-                libraries
-                    .iter()
-                    .map(|l| l.selected.len() + l.rows.len())
-                    .sum::<usize>(),
-            );
-            for library in &mut libraries {
-                library.expand(&mut names)?;
-            }
-            let after = (
-                names.len(),
-                libraries
-                    .iter()
-                    .map(|l| l.selected.len() + l.rows.len())
-                    .sum::<usize>(),
-            );
-            if before == after {
-                break;
-            }
-        }
-        let mut report = Vec::new();
-        for library in &libraries {
-            library.write(context, &mut report)?;
-        }
-        report.sort_by_key(|r| std::cmp::Reverse(r["bytes"].as_u64().unwrap_or(0)));
-        let included: u64 = report.iter().filter_map(|r| r["bytes"].as_u64()).sum();
-        let available: u64 = libraries
-            .iter()
-            .flat_map(|l| l.inventory.values())
-            .map(|p| fs::metadata(p).map(|m| m.len()))
-            .collect::<io::Result<Vec<_>>>()?
+        scripts = files::list(&project.join("scripts"), context)?
             .into_iter()
-            .sum();
-        for row in &mut report {
-            if let Some(path) = row["file"].as_str() {
-                row["file"] = Path::new(path)
-                    .strip_prefix(destination)
-                    .map_err(io::Error::other)?
-                    .to_string_lossy()
-                    .replace('\\', "/")
-                    .into();
+            .collect();
+        context.log("Compatibility mode: all resources except unsupported J3O payloads.\n");
+    }
+    for script in &scripts {
+        files::copy(
+            script,
+            &destination.join(script.strip_prefix(&project).map_err(io::Error::other)?),
+            context,
+        )?;
+    }
+    let mut libraries = vec![Library::new(
+        project.join("resources"),
+        destination.join("resources"),
+        context,
+    )?];
+    if !request.settings.builtin_resources.is_empty() {
+        libraries.push(Library::new(
+            Path::new(&request.settings.builtin_resources).canonicalize()?,
+            destination.join("builtin/resources"),
+            context,
+        )?);
+    }
+    if request.settings.include_all_resources {
+        for library in &libraries {
+            for catalog in library.catalogs.values() {
+                if let Some(object) = catalog.as_object() {
+                    for value in object.values() {
+                        if let Some(rows) = value.as_array() {
+                            names.extend(
+                                rows.iter()
+                                    .filter_map(|r| r["name"].as_str())
+                                    .map(str::to_lowercase),
+                            );
+                        }
+                    }
+                }
             }
         }
-        fs::write(
-            report_path,
-            serde_json::to_vec_pretty(
-                &serde_json::json!({"resource_bytes": included, "excluded_bytes": available.saturating_sub(included), "script_files": scripts.len(), "files": report}),
-            )?,
-        )?;
-        context.log(format!("Dependencies: {} scripts/documents, {} resource files; {:.1} MiB included, {:.1} MiB excluded. See package-size.json.\n", scripts.len(), report.len(), included as f64 / 1048576., available.saturating_sub(included) as f64 / 1048576.));
+        for library in &mut libraries {
+            for key in library.inventory.keys().cloned().collect::<Vec<_>>() {
+                library.select(&key, &mut names)?;
+            }
+        }
     }
+    loop {
+        context.check()?;
+        let before = (
+            names.len(),
+            libraries
+                .iter()
+                .map(|l| l.selected.len() + l.rows.len())
+                .sum::<usize>(),
+        );
+        for library in &mut libraries {
+            library.expand(&mut names)?;
+        }
+        let after = (
+            names.len(),
+            libraries
+                .iter()
+                .map(|l| l.selected.len() + l.rows.len())
+                .sum::<usize>(),
+        );
+        if before == after {
+            break;
+        }
+    }
+    let mut report = Vec::new();
+    for library in &libraries {
+        library.write(context, &mut report, &names)?;
+    }
+    report.sort_by_key(|r| std::cmp::Reverse(r["bytes"].as_u64().unwrap_or(0)));
+    let included: u64 = report.iter().filter_map(|r| r["bytes"].as_u64()).sum();
+    let available: u64 = libraries
+        .iter()
+        .flat_map(|l| l.inventory.values())
+        .map(|p| fs::metadata(p).map(|m| m.len()))
+        .collect::<io::Result<Vec<_>>>()?
+        .into_iter()
+        .sum();
+    for row in &mut report {
+        if let Some(path) = row["file"].as_str() {
+            row["file"] = Path::new(path)
+                .strip_prefix(destination)
+                .map_err(io::Error::other)?
+                .to_string_lossy()
+                .replace('\\', "/")
+                .into();
+        }
+    }
+    let models: Vec<_> = libraries
+        .iter()
+        .flat_map(|library| {
+            library.model_inventory(
+                &references,
+                &names,
+                destination,
+                request.settings.include_all_resources,
+            )
+        })
+        .collect();
+    for model in &models {
+        if model["status"] == "unsupported" {
+            context.log(format!("WARNING: excluded unsupported model {} ({}). Convert to glTF/GLB or remove its scene reference.\n", model["name"], model["path"]));
+        }
+    }
+    fs::write(
+        report_path,
+        serde_json::to_vec_pretty(
+            &serde_json::json!({"resource_bytes": included, "excluded_bytes": available.saturating_sub(included), "script_files": scripts.len(), "files": report, "models": models}),
+        )?,
+    )?;
+    context.log(format!("Dependencies: {} scripts/documents, {} resource files; {:.1} MiB included, {:.1} MiB excluded. See package-size.json.\n", scripts.len(), report.len(), included as f64 / 1048576., available.saturating_sub(included) as f64 / 1048576.));
     fs::create_dir_all(destination.join("resources"))?;
     Ok(())
 }

@@ -453,6 +453,7 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
     let links = area(c, right, row(), HEADER);
     action(c, links, "Open output", Action::Reveal);
     action(c, links, "Log folder", Action::Log);
+    action(c, links, "Size report", Action::SizeReport);
     action(c, right, "Upload / retry existing builds", Action::Upload);
     let footer = area(
         c,
@@ -664,6 +665,9 @@ pub(crate) fn refresh(
             }
             if state.report.log_path.is_some() {
                 action(&mut c, buttons, "Open build log", Action::Log);
+            }
+            if state.report.size_report_path.is_some() {
+                action(&mut c, buttons, "Size report", Action::SizeReport);
             }
             let done = action(&mut c, buttons, "Done", Action::DismissResult);
             focus.set(done, FocusCause::Navigated);

@@ -18,6 +18,7 @@ pub(crate) enum Action {
     Exit,
     Reveal,
     Log,
+    SizeReport,
     Browse(PathField),
 }
 #[derive(Clone, Copy)]
@@ -200,8 +201,10 @@ pub(crate) fn update(
                     state.builder.cancel();
                     state.report.status = "Cancelling the current operation…".into();
                 }
-                Action::Reveal | Action::Log => {
-                    let path = if matches!(action, Action::Log) {
+                Action::Reveal | Action::Log | Action::SizeReport => {
+                    let path = if matches!(action, Action::SizeReport) {
+                        state.report.size_report_path.clone()
+                    } else if matches!(action, Action::Log) {
                         state.report.log_path.clone()
                     } else {
                         state

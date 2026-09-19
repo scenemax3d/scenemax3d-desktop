@@ -39,6 +39,14 @@ The release projector is reused by default. **Rebuild engine from source (slower
 
 Identical resource payloads are byte-verified, archived once and restored at their original paths by the launcher. Already compressed media is stored directly; other files use fast deflate. No lossy asset conversion is performed. The September 18 Windows benchmark on the user's project produced a 245.9 MiB executable in 17.5 seconds, down from approximately 1 GiB and a six-minute engine compilation. Timings depend on the machine, cache and asset contents.
 
+## Asset sizing report
+
+Every build writes `size-report-analysis.txt` and `size-report-analysis.json` next to `build.log`, using the Java report's title, category/top-contributor sections and JSON fields. The report is generated from the actual staged snapshot, after dependency selection and before platform compilation, and survives later build/upload failures. It is also generated when **Include all assets** is enabled.
+
+Use **Size report** in Build Activity or the result dialog to locate the text report. Categories are sorted by total size; the 40 largest individual files are listed with snapshot-relative paths. Project/shared resources are separate, and categories account for every staged byte without overlapping. Counts explicitly represent files, including catalogs and sidecars, rather than Java's sometimes-partial logical resource counts. Machine-readable byte sizes remain exact; MiB figures are rounded to two decimals. Generation times use UTC.
+
+This is staged content analysis, not compressed artifact size or a GPU/frame-time profiler. The runtime and platform libraries are added later; archive compression and deduplication can reduce the game content size. The report files stay outside the payload and upload directories. Existing `package-size.json` remains available for dependency-selection details.
+
 ## Single-file launcher
 
 `Projector/launcher` is a safe-Rust executable with no IDE, Java, Zig or Bevy dependency. The service appends a ZIP containing the projector, scripts, resources, launch manifest and adjacent native libraries. On launch it validates paths and CRCs, extracts into a private temporary directory, passes explicit project/script paths, sets the bundled resource/library paths, waits for the game and cleans up. The caller's working directory is irrelevant. Linux/macOS ZIP entries preserve executable permissions.
@@ -104,3 +112,11 @@ cargo run --locked -p scenemax_ide_services --example package -- <project> <outp
 ```
 
 Use disposable projects because building saves their deployment settings. For native form capture set `SCENEMAX_SMOKE_DEPLOY=1` with the IDE's `--smoke-frames` and `--smoke-screenshot` options. Test/smoke hooks never perform a real itch upload.
+
+## Model selection and report traceability
+
+The size report lists only models included in the artifact under Packaged Models, independently of the top-40 file ranking. Each entry identifies its inclusion status, registered and resolved runtime paths, parsed script declarations (including entity names), and the glTF descriptor, external buffers and textures with byte totals. Shared files can appear under multiple aliases; model subtotals must not be added together. Category totals remain the actual staged file totals.
+
+Animation `bevyBakedRetargets` are optional target variants: only variants for selected models survive dependency expansion and staged catalog writing. An unused variant cannot pull its target model into the game. Source-model aliases still resolve to their supported glTF/GLB resource.
+
+JME `.j3o` payloads are excluded in both dependency and all-assets modes. Unsupported catalog entries without a source-model alias are removed from the staged catalog; source files remain untouched. A referenced unsupported model produces a build-log warning and a dependency diagnostic in package-size.json; excluded models do not appear in the size analysis. This does not convert the model or repair the scene: authors must supply a supported glTF/GLB resource or remove its scene reference.

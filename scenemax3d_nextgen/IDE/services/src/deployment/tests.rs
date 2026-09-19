@@ -1,6 +1,82 @@
 use super::*;
 use std::{fs, sync::atomic::AtomicBool};
 #[test]
+fn size_analysis_reconciles_categories_and_limits_largest_files() {
+    let root = tempfile::tempdir().unwrap();
+    let snapshot = root.path().join("snapshot");
+    for directory in [
+        "resources/Models/demo",
+        "builtin/resources/audio",
+        "scripts",
+        "resources/custom",
+    ] {
+        fs::create_dir_all(snapshot.join(directory)).unwrap();
+    }
+    fs::write(
+        snapshot.join("resources/Models/demo/model.glb"),
+        vec![0; 200],
+    )
+    .unwrap();
+    fs::write(
+        snapshot.join("builtin/resources/audio/sound.ogg"),
+        vec![0; 300],
+    )
+    .unwrap();
+    fs::write(snapshot.join("scripts/main"), vec![0; 10]).unwrap();
+    for i in 0..42 {
+        fs::write(snapshot.join(format!("resources/custom/{i:02}.bin")), [0]).unwrap();
+    }
+    let path = size_report::write(&snapshot, root.path(), &context()).unwrap();
+    let value: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.path().join("size-report-analysis.json")).unwrap())
+            .unwrap();
+    assert_eq!(value["deployTotalBytes"], 552);
+    assert!(value["deployTotalMiB"].is_number());
+    assert_eq!(
+        value["categories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["bytes"].as_u64().unwrap())
+            .sum::<u64>(),
+        552
+    );
+    assert_eq!(
+        value["categories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["count"].as_u64().unwrap())
+            .sum::<u64>(),
+        45
+    );
+    assert_eq!(value["topContributors"].as_array().unwrap().len(), 40);
+    assert_eq!(
+        value["topContributors"][0]["path"],
+        "builtin/resources/audio/sound.ogg"
+    );
+    let text = fs::read_to_string(path).unwrap();
+    for section in [
+        "SceneMax Packaging Size Report",
+        "Asset Categories",
+        "Top Contributors",
+        "Notes",
+        "audio (shared)",
+        "resources / other",
+    ] {
+        assert!(text.contains(section));
+    }
+    assert!(!snapshot.join("size-report-analysis.txt").exists());
+    let empty = root.path().join("empty");
+    fs::create_dir(&empty).unwrap();
+    size_report::write(&empty, root.path(), &context()).unwrap();
+    let value: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.path().join("size-report-analysis.json")).unwrap())
+            .unwrap();
+    assert_eq!(value["deployTotalBytes"], 0);
+    assert!(value["categories"].as_array().unwrap().is_empty());
+}
+#[test]
 fn single_file_archive_deduplicates_verified_identical_resources() {
     let root = tempfile::tempdir().unwrap();
     let source = root.path().join("payload");
@@ -140,6 +216,14 @@ fn benchmark_dependency_snapshot() {
     );
     let entry = assets::root_entry(&request.project, &context()).unwrap();
     fs::write(output.join("snapshot/launch.json"), serde_json::to_vec(&serde_json::json!({"script":entry.strip_prefix(&request.project).unwrap().to_string_lossy().replace('\\', "/")})).unwrap()).unwrap();
+    size_report::write(&output.join("snapshot"), &output, &context()).unwrap();
+    if std::env::var_os("SCENEMAX_PACKAGE_REPORT_ONLY").is_some() {
+        println!(
+            "Size report: {}",
+            output.join("size-report-analysis.txt").display()
+        );
+        return;
+    }
     let platform = request
         .settings
         .platforms
@@ -382,4 +466,136 @@ fn package_contains_runtime_and_resources_and_no_source_mutation() {
         0o755
     );
     assert_eq!(fs::read(source.join("resources/data")).unwrap(), b"asset");
+}
+
+#[test]
+fn model_inventory_excludes_legacy_and_unused_retargets_and_explains_gltf() {
+    let root = tempfile::tempdir().unwrap();
+    for dir in ["scripts", "resources/Models", "resources/animations"] {
+        fs::create_dir_all(root.path().join(dir)).unwrap();
+    }
+    fs::write(
+        root.path().join("scripts/main"),
+        "item is a used\nold is a legacy\ncopy is an alias\nsys.print \"motion\"\n",
+    )
+    .unwrap();
+    let catalog = r#"{"models":[{"name":"used","path":"Models/used.gltf"},{"name":"unused","path":"Models/unused.gltf"},{"name":"legacy","path":"Models/legacy.j3o"},{"name":"alias","path":"Models/alias.j3o","sourceModel":"used"}]}"#;
+    fs::write(
+        root.path().join("resources/Models/models-ext.json"),
+        catalog,
+    )
+    .unwrap();
+    let gltf = r#"{"buffers":[{"uri":"mesh.bin"}],"images":[{"uri":"map.png"}]}"#;
+    fs::write(root.path().join("resources/Models/used.gltf"), gltf).unwrap();
+    fs::write(root.path().join("resources/Models/unused.gltf"), "{}").unwrap();
+    for (file, bytes) in [
+        ("mesh.bin", 71),
+        ("map.png", 23),
+        ("legacy.j3o", 100),
+        ("alias.j3o", 100),
+    ] {
+        fs::write(
+            root.path().join("resources/Models").join(file),
+            vec![0; bytes],
+        )
+        .unwrap();
+    }
+    fs::write(root.path().join("resources/animations/animations-ext.json"), r#"{"animations":[{"name":"motion","bevyBakedRetargets":[{"model":"used","path":"animations/used.json"},{"model":"unused","path":"animations/unused.json"}]}]}"#).unwrap();
+    for model in ["used", "unused"] {
+        fs::write(
+            root.path()
+                .join(format!("resources/animations/{model}.json")),
+            "{}",
+        )
+        .unwrap();
+    }
+    for all in [false, true] {
+        let output = root.path().join(if all { "all" } else { "filtered" });
+        let request = Request {
+            project: root.path().to_owned(),
+            entry: root.path().join("scripts/main"),
+            workspace: workspace(),
+            settings: Settings {
+                include_all_resources: all,
+                ..Default::default()
+            },
+        };
+        fs::create_dir_all(&output).unwrap();
+        let snapshot = output.join("snapshot");
+        assets::snapshot(
+            &request,
+            &snapshot,
+            &output.join("package-size.json"),
+            &context(),
+        )
+        .unwrap();
+        assert!(!snapshot.join("resources/Models/legacy.j3o").exists());
+        assert!(!snapshot.join("resources/Models/alias.j3o").exists());
+        assert_eq!(snapshot.join("resources/Models/unused.gltf").exists(), all);
+        assert_eq!(
+            snapshot.join("resources/animations/unused.json").exists(),
+            all
+        );
+        assert!(snapshot.join("resources/animations/used.json").exists());
+        let staged: serde_json::Value = serde_json::from_slice(
+            &fs::read(snapshot.join("resources/Models/models-ext.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            staged["models"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m["name"] == "alias")
+        );
+        assert!(
+            !staged["models"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m["name"] == "legacy")
+        );
+        let animations: serde_json::Value = serde_json::from_slice(
+            &fs::read(snapshot.join("resources/animations/animations-ext.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            animations["animations"][0]["bevyBakedRetargets"]
+                .as_array()
+                .unwrap()
+                .len(),
+            if all { 2 } else { 1 }
+        );
+        let report_path = size_report::write(&snapshot, &output, &context()).unwrap();
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(output.join("size-report-analysis.json")).unwrap())
+                .unwrap();
+        let models = report["models"].as_array().unwrap();
+        let used = models.iter().find(|m| m["name"] == "used").unwrap();
+        assert_eq!(used["status"], "included");
+        assert_eq!(used["bytes"], gltf.len() + 94);
+        assert_eq!(used["files"].as_array().unwrap().len(), 3);
+        assert_eq!(used["referencedBy"][0], "scripts/main (entity item)");
+        assert!(!models.iter().any(|m| m["name"] == "legacy"));
+        assert_eq!(models.iter().any(|m| m["name"] == "unused"), all);
+        assert!(models.iter().all(|m| m["status"] == "included"));
+        assert_eq!(
+            models.iter().find(|m| m["name"] == "alias").unwrap()["resolvedPath"],
+            "resources/Models/used.gltf"
+        );
+        let text = fs::read_to_string(report_path).unwrap();
+        assert!(text.contains("Packaged Models"));
+        assert!(!text.contains("Model Inventory"));
+        assert!(!text.contains("legacy.j3o"));
+        if !all {
+            assert!(!text.contains("unused"));
+        }
+        assert!(text.contains("resources/Models/used.gltf"));
+        assert!(text.contains("scripts/main (entity item)"));
+    }
+    assert_eq!(
+        fs::read_to_string(root.path().join("resources/Models/models-ext.json")).unwrap(),
+        catalog
+    );
+    assert!(root.path().join("resources/Models/legacy.j3o").exists());
 }

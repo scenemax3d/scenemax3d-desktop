@@ -272,6 +272,8 @@ pub(super) fn build(request: &Request, context: &Context) -> io::Result<()> {
         snapshot.join("launch.json"),
         serde_json::to_vec(&serde_json::json!({"script": entry}))?,
     )?;
+    let size_report = super::size_report::write(&snapshot, &run, context)?;
+    context.edit(|r| r.size_report_path = Some(size_report));
     let targets: Vec<_> = request
         .settings
         .platforms

@@ -3,6 +3,7 @@ mod files;
 mod assets;
 mod pipeline;
 mod process;
+mod size_report;
 #[cfg(test)]
 mod tests;
 use scenemax_ide_core::deployment::Settings;
@@ -64,6 +65,8 @@ pub struct Report {
     pub artifacts: Vec<PathBuf>,
     /// Persistent build log (bounded to 16 MiB).
     pub log_path: Option<PathBuf>,
+    /// Human-readable staged content sizing analysis, retained even if a later build fails.
+    pub size_report_path: Option<PathBuf>,
     /// Saved form returned by Load.
     pub settings: Option<Settings>,
     /// Optional path returned by a native chooser.
@@ -168,6 +171,7 @@ impl Builder {
                 .as_ref()
                 .map(|r| r.artifacts.clone())
                 .unwrap_or_default(),
+            size_report_path: previous.as_ref().and_then(|r| r.size_report_path.clone()),
             log_path: previous.and_then(|r| r.log_path),
             ..Default::default()
         }));
