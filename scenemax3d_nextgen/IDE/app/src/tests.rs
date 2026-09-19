@@ -1541,3 +1541,75 @@ fn save_shortcut_includes_native_input_queued_in_the_same_frame() {
         "// original\n// just typed"
     );
 }
+
+#[test]
+fn code_zoom_updates_text_and_gutter_without_editing_document() {
+    use crate::presentation::components::{Field, Gutter};
+    use bevy::input_focus::{FocusCause, InputFocus};
+    let (mut app, _dir, _) = app();
+    app.init_resource::<InputFocus>();
+    let editor = {
+        let world = app.world_mut();
+        world
+            .query_filtered::<Entity, With<Editor>>()
+            .single(world)
+            .unwrap()
+    };
+    app.world_mut()
+        .resource_mut::<InputFocus>()
+        .set(editor, FocusCause::Navigated);
+    for (key, expected) in [
+        (KeyCode::Equal, 17.),
+        (KeyCode::NumpadAdd, 18.),
+        (KeyCode::Minus, 17.),
+        (KeyCode::NumpadSubtract, 16.),
+    ] {
+        let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        keys.reset_all();
+        keys.press(KeyCode::ControlLeft);
+        keys.press(key);
+        app.update();
+        assert_eq!(
+            app.world().get::<TextFont>(editor).unwrap().font_size,
+            FontSize::Px(expected)
+        );
+        assert_eq!(
+            *app.world().get::<bevy::text::LineHeight>(editor).unwrap(),
+            bevy::text::LineHeight::Px(expected * 22. / 16.)
+        );
+        let world = app.world_mut();
+        let font = world
+            .query_filtered::<&TextFont, With<Gutter>>()
+            .single(world)
+            .unwrap();
+        assert_eq!(font.font_size, FontSize::Px(expected));
+        assert_eq!(
+            world
+                .get::<EditableText>(editor)
+                .unwrap()
+                .value()
+                .to_string(),
+            "// original\n"
+        );
+    }
+    let field = {
+        let world = app.world_mut();
+        world
+            .query_filtered::<Entity, With<Field>>()
+            .iter(world)
+            .next()
+            .unwrap()
+    };
+    app.world_mut()
+        .resource_mut::<InputFocus>()
+        .set(field, FocusCause::Navigated);
+    let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+    keys.reset_all();
+    keys.press(KeyCode::ControlLeft);
+    keys.press(KeyCode::Equal);
+    app.update();
+    assert_eq!(
+        app.world().get::<TextFont>(editor).unwrap().font_size,
+        FontSize::Px(16.)
+    );
+}

@@ -190,6 +190,7 @@ impl Plugin for StudioPlugin {
             .init_resource::<presentation::completion::CompletionState>()
             .init_resource::<ButtonInput<MouseButton>>()
             .init_resource::<presentation::chrome::ChromeState>()
+            .init_resource::<presentation::editing::EditorZoom>()
             .init_resource::<presentation::browser::TreeState>()
             .add_message::<ViewChange>()
             .add_systems(
@@ -271,6 +272,7 @@ impl Plugin for StudioPlugin {
                     presentation::reconcile::search_results,
                     presentation::editing::project_edits,
                     (
+                        presentation::editing::apply_editor_zoom,
                         presentation::editing::update_gutters,
                         presentation::editing::highlight_documents,
                         presentation::assistance::bracket_emphasis,

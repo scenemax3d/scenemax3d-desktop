@@ -114,6 +114,8 @@ type PropertyInputs<'w, 's> = Query<
 
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct InputFields<'w, 's> {
+    zoom: ResMut<'w, super::editing::EditorZoom>,
+    editors: Query<'w, 's, (), With<Editor>>,
     deployment: Option<Res<'w, crate::application::deployment::Deployment>>,
     menu: Option<Res<'w, super::tree_menu::State>>,
     imports: Option<Res<'w, super::asset_import::State>>,
@@ -139,6 +141,8 @@ pub(crate) fn collect_actions(
         imports: _,
         fields,
         properties,
+        mut zoom,
+        editors,
         ..
     } = input_fields;
     let values = fields
@@ -152,6 +156,17 @@ pub(crate) fn collect_actions(
     }
     let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    if ctrl && !session.composing
+        && focus.as_ref().and_then(|f| f.get()).is_some_and(|e| editors.contains(e))
+    {
+        if keys.any_just_pressed([KeyCode::Equal, KeyCode::NumpadAdd]) {
+            zoom.adjust(1.);
+        }
+        if keys.any_just_pressed([KeyCode::Minus, KeyCode::NumpadSubtract]) {
+            zoom.adjust(-1.);
+        }
+    }
+
     for (key, field) in [
         (KeyCode::KeyF, Field::Find),
         (KeyCode::KeyG, Field::Line),

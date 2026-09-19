@@ -52,6 +52,7 @@ pub(crate) fn editor(
     }
     let gutter = commands
         .spawn((
+            GutterPanel,
             Node {
                 width: px(58.),
                 height: percent(100.),

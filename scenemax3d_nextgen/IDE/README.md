@@ -210,3 +210,7 @@ The menu uses the Java IDE's contextual labels and ordering. Working actions inc
 Naming and confirmation dialogs are Bevy UI. Disk operations execute on the existing bounded worker. Existing destinations and paths outside the project are rejected. Renames preserve open buffers and their undo history; reload rejects newer edits that arrive while disk is being read. Delete requires confirmation, protects the root and main entry point, and moves files to `.scenemax-studio/deleted-*` for recovery, including existing scene/UI code companions. File mutations require the game to be stopped and affected buffers saved.
 
 GPU check: `--smoke-frames 120 --smoke-tree-menu scripts --smoke-screenshot <absolute-output.png>` opens a folder context menu after project loading; use a file path instead to inspect the file menu.
+
+### Code editor font size
+
+With focus in the code editor, press Ctrl+plus (Ctrl+= also works) to enlarge text or Ctrl+minus to reduce it. Numeric keypad plus/minus are supported. Font size ranges from 8 to 48 pixels; line spacing and line numbers scale together. The setting applies across code tabs for the current IDE session.

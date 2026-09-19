@@ -6,6 +6,53 @@ use bevy::{
     text::{EditableText, FontCx, LayoutCx},
 };
 
+/// Code-editor typography shared by open and newly opened tabs for this session.
+#[derive(Resource)]
+pub(crate) struct EditorZoom(pub(crate) f32);
+impl Default for EditorZoom {
+    fn default() -> Self {
+        Self(16.)
+    }
+}
+impl EditorZoom {
+    pub(crate) fn adjust(&mut self, delta: f32) {
+        self.0 = (self.0 + delta).clamp(8., 48.);
+    }
+    fn line_height(&self) -> f32 {
+        self.0 * 22. / 16.
+    }
+}
+
+type EditorTypography<'w, 's> = Query<
+    'w,
+    's,
+    (&'static mut TextFont, &'static mut bevy::text::LineHeight),
+    Or<(With<Editor>, With<Gutter>)>,
+>;
+
+pub(crate) fn apply_editor_zoom(
+    zoom: Res<EditorZoom>,
+    mut text: EditorTypography,
+    mut gutters: Query<&mut Node, With<GutterPanel>>,
+) {
+    for mut gutter in &mut gutters {
+        let width = px((zoom.0 * 2.6 + 16.).max(58.));
+        if gutter.width != width {
+            gutter.width = width;
+        }
+    }
+    for (mut font, mut height) in &mut text {
+        let size = FontSize::Px(zoom.0);
+        if font.font_size != size {
+            font.font_size = size;
+        }
+        let line_height = bevy::text::LineHeight::Px(zoom.line_height());
+        if *height != line_height {
+            *height = line_height;
+        }
+    }
+}
+
 pub(crate) fn project_edits(
     mut changes: MessageReader<ViewChange>,
     session: Res<Session>,
@@ -55,9 +102,11 @@ pub(crate) struct GutterState {
     selection: scenemax_ide_core::Selection,
     scroll: Vec2,
     viewport: Vec2,
+    line_height: f32,
 }
 pub(crate) fn update_gutters(
     session: Res<Session>,
+    zoom: Res<EditorZoom>,
     inputs: Query<(&Editor, &bevy::ui::widget::TextScroll, &ComputedNode)>,
     mut gutters: Query<(&Gutter, &mut Text, &mut Node), Without<CaretLabel>>,
     mut caret: Single<(&mut Text, &mut Node), With<CaretLabel>>,
@@ -119,6 +168,7 @@ pub(crate) fn update_gutters(
             selection: doc.selection(),
             scroll: scroll.0,
             viewport: node.size(),
+            line_height: zoom.line_height(),
         };
         if previous.as_ref() == Some(&state) {
             return;
@@ -126,8 +176,8 @@ pub(crate) fn update_gutters(
         *previous = Some(state);
         let scale = node.inverse_scale_factor();
         let y = scroll.0.y * scale;
-        let first = (y / 22.).floor() as usize;
-        let count = ((node.size().y * scale / 22.).ceil() as usize + 2).min(200);
+        let first = (y / zoom.line_height()).floor() as usize;
+        let count = ((node.size().y * scale / zoom.line_height()).ceil() as usize + 2).min(200);
         let total = doc.text().bytes().filter(|b| *b == b'\n').count() + 1;
         for (gutter, mut text, mut style) in &mut gutters {
             if gutter.0 != editor.0 {
@@ -140,7 +190,7 @@ pub(crate) fn update_gutters(
             if text.0 != value {
                 text.0 = value;
             }
-            style.top = px(16. - y % 22.);
+            style.top = px(16. - y % zoom.line_height());
         }
         let (line, column) = doc.line_column();
         let value = format!(
