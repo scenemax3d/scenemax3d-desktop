@@ -8,6 +8,8 @@ The Swing IDE is the behavioral and architectural reference for each migration s
 
 ## Allowed dependency direction
 
+`Projector/launcher` is an independent distribution bootstrap with safe archive extraction and owned projector launch/wait logic. It has no IDE or Bevy dependency. IDE/services builds it through Cargo and appends a snapshot; it never links either executable. Domain settings, service jobs, application orchestration and the retained deployment form follow the normal IDE boundaries. Explicit Android/iOS/Web SDK adapters do not imply completed runtime ports; see [deployment status](../IDE/DEPLOYMENT.md).
+
 ```text
 IDE/app ──> IDE/core
         ├─> IDE/services ──> IDE/core, Language/parser

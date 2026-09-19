@@ -2,6 +2,8 @@
 
 The independent Rust/Bevy products live in one Cargo workspace. The IDE is not a subproject of the projector. Each product can be built and shipped independently; workspace-level versions, policy, fixtures and build artifacts are shared.
 
+Continuing the migration in a new conversation? Start with the [migration handoff](docs/MIGRATION_HANDOFF.md) for current status, decisions, known gaps and verification commands.
+
 | Component | Responsibility |
 |---|---|
 | `IDE/app` | Native IDE executable, composition, application commands and feature views |

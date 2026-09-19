@@ -1,5 +1,7 @@
 # SceneMax Studio — working script editor
 
+Latest distribution slice: **Tools → Package & Deploy…** provides retained release settings, desktop packaging, phase progress, live logs, cancellation and Butler publishing/retry. Windows is a single Java-free executable; Linux/macOS use ZIPs. Android/iOS/Web expose explicit SDK-builder integration, with runtime-port limitations described in [DEPLOYMENT.md](DEPLOYMENT.md). This supersedes older statements below that all packaging is deferred.
+
 SceneMax Studio is an independent Rust/Bevy IDE. The current milestone supports everyday SceneMax script editing and run/check workflows; visual designer and distribution parity with Swing are still separate migration work.
 
 ## Launch

@@ -1,0 +1,1 @@
+FBX2glTF 0.13.1 native Windows converter, reused from the existing SceneMax bundled FBX2glTF archive. This executable is independent of Java. Preserve FBX2glTF-License.txt and FBX-SDK-License.rtf when packaging. The importer accepts SCENEMAX_FBX2GLTF as an executable override.

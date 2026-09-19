@@ -5344,6 +5344,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "scenemax_game_launcher"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tempfile",
+ "zip",
+]
+
+[[package]]
 name = "scenemax_ide"
 version = "0.1.0"
 dependencies = [
@@ -5362,6 +5371,7 @@ dependencies = [
 name = "scenemax_ide_core"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "serde_json",
  "thiserror 2.0.20",
 ]

@@ -98,3 +98,6 @@ pub mod scene;
 pub mod scene3d;
 
 pub mod imports;
+
+/// Bounded packaging workers, SDK adapters and Butler publishing.
+pub mod deployment;
