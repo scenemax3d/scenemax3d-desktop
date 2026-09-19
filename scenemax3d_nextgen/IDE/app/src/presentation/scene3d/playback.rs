@@ -15,18 +15,18 @@ pub(crate) struct Playback {
 /// Keep camera animation smooth while retaining the IDE's idle power-saving mode.
 pub(crate) fn cadence(
     playback: Res<Playback>,
+    material: Option<Res<super::super::material::State>>,
     settings: Option<ResMut<bevy::winit::WinitSettings>>,
     mut previous: Local<Option<bevy::winit::UpdateMode>>,
 ) {
     let Some(mut settings) = settings else {
         return;
     };
-    if playback.active.is_some() && previous.is_none() {
+    let playing = playback.active.is_some() || material.is_some_and(|m| m.animating());
+    if playing && previous.is_none() {
         *previous = Some(settings.focused_mode);
         settings.focused_mode = bevy::winit::UpdateMode::Continuous;
-    } else if playback.active.is_none()
-        && let Some(mode) = previous.take()
-    {
+    } else if !playing && let Some(mode) = previous.take() {
         settings.focused_mode = mode;
     }
 }

@@ -71,6 +71,79 @@ pub(super) struct SceneMaxShaderApplied;
 #[derive(Debug, Component)]
 pub(super) struct SceneMaxEnvironmentDirectionalLight;
 
+fn clear_native_material(commands: &mut Commands, target: Entity) {
+    commands.queue(move |world: &mut World| {
+        if let Ok(mut entity) = world.get_entity_mut(target) {
+            entity.remove::<scenemax_materials::MaterialBinding>();
+        }
+        let mut targets = Vec::new();
+        collect_entity_and_descendants(world, target, &mut targets);
+        for entity in targets {
+            if let Some(original) = world
+                .get::<scenemax_materials::OriginalMaterial>(entity)
+                .map(|m| m.0.clone())
+            {
+                world
+                    .entity_mut(entity)
+                    .insert(MeshMaterial3d(original))
+                    .remove::<scenemax_materials::OriginalMaterial>();
+            }
+        }
+    });
+}
+
+pub(super) fn apply_entity_material(
+    commands: &mut Commands,
+    target: Entity,
+    material_name: String,
+    runtime_assets: &SceneMaxRuntimeAssets,
+) {
+    let asset_root = runtime_assets.asset_root.clone();
+    if material_name.trim().is_empty() {
+        clear_native_material(commands, target);
+        return;
+    }
+    if let Some(value) =
+        find_source_shader_document(material_name.trim(), ".smmat", asset_root.as_deref())
+    {
+        commands.queue(move |world: &mut World| {
+            let surface = world.resource_scope(
+                |world, mut textures: Mut<scenemax_materials::TextureCache>| {
+                    let server = world.resource::<AssetServer>().clone();
+                    let mut images = world.resource_mut::<Assets<Image>>();
+                    scenemax_materials::standard(&value, |path, srgb| {
+                        textures.load(
+                            &server,
+                            &mut images,
+                            bevy::asset::AssetPath::from(path.to_owned()),
+                            srgb,
+                        )
+                    })
+                },
+            );
+            match surface {
+                Ok(surface) => {
+                    let material = world
+                        .resource_mut::<Assets<StandardMaterial>>()
+                        .add(surface);
+                    if let Ok(mut entity) = world.get_entity_mut(target) {
+                        entity.insert(scenemax_materials::MaterialBinding {
+                            material,
+                            slot: value["targetSlot"].as_str().unwrap_or_default().into(),
+                        });
+                    }
+                }
+                Err(error) => tracing::warn!(%error, "Invalid material document"),
+            }
+        });
+        return;
+    }
+    write_runtime_diagnostic_line(format!(
+        "MATERIAL:MISS target={target:?} name={}",
+        material_name.trim()
+    ));
+}
+
 pub(super) fn apply_entity_shader(
     commands: &mut Commands,
     target: Entity,
@@ -79,6 +152,7 @@ pub(super) fn apply_entity_shader(
 ) {
     let asset_root = runtime_assets.asset_root.clone();
     let builtin_asset_root = runtime_assets.builtin_asset_root.clone();
+    clear_native_material(commands, target);
     let shader = if shader_name.trim().is_empty() {
         None
     } else {
@@ -885,6 +959,98 @@ fn parse_float_array(value: &str, fallback: [f32; 4]) -> [f32; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_material_assignment_loads_document_and_restores_mesh() {
+        use bevy::asset::{AssetApp, AssetPlugin};
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+            .init_asset::<Image>()
+            .init_asset::<StandardMaterial>()
+            .add_plugins(scenemax_materials::MaterialsPlugin);
+        let root = std::env::temp_dir().join(format!(
+            "scenemax-material-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("scripts")).unwrap();
+        let file = root.join("scripts/finish.smmat");
+        fs::write(&file, scenemax_assets::material::preset("Gold").to_string()).unwrap();
+        let original = app
+            .world_mut()
+            .resource_mut::<Assets<StandardMaterial>>()
+            .add(StandardMaterial::default());
+        let entity = app.world_mut().spawn(MeshMaterial3d(original.clone())).id();
+        let assets = SceneMaxRuntimeAssets {
+            asset_root: Some(root.join("resources")),
+            ..default()
+        };
+        apply_entity_material(
+            &mut app.world_mut().commands(),
+            entity,
+            "finish".into(),
+            &assets,
+        );
+        app.world_mut().flush();
+        app.update();
+        let assigned = app
+            .world()
+            .get::<MeshMaterial3d<StandardMaterial>>(entity)
+            .unwrap()
+            .0
+            .clone();
+        assert_ne!(assigned, original);
+        assert_eq!(
+            app.world()
+                .resource::<Assets<StandardMaterial>>()
+                .get(&assigned)
+                .unwrap()
+                .metallic,
+            1.
+        );
+        apply_entity_material(
+            &mut app.world_mut().commands(),
+            entity,
+            String::new(),
+            &assets,
+        );
+        app.world_mut().flush();
+        app.update();
+        assert_eq!(
+            app.world()
+                .get::<MeshMaterial3d<StandardMaterial>>(entity)
+                .unwrap()
+                .0,
+            original
+        );
+        // Shader assignment must not silently consume a same-named Material Studio file.
+        apply_entity_shader(
+            &mut app.world_mut().commands(),
+            entity,
+            "finish".into(),
+            &assets,
+        );
+        app.world_mut().flush();
+        app.update();
+        assert!(
+            app.world()
+                .get::<scenemax_materials::MaterialBinding>(entity)
+                .is_none()
+        );
+        assert_eq!(
+            app.world()
+                .get::<MeshMaterial3d<StandardMaterial>>(entity)
+                .unwrap()
+                .0,
+            original
+        );
+        fs::remove_file(file).unwrap();
+        fs::remove_dir(root.join("scripts")).unwrap();
+        fs::remove_dir(root).unwrap();
+    }
 
     #[test]
     fn parses_exported_j3m_shader_parameters() {

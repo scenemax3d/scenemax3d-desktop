@@ -53,13 +53,16 @@ pub(crate) struct SceneState {
     parts: Option<view::Parts>,
 }
 impl SceneState {
-    pub(crate) fn reload_assets(&mut self) { self.reload_assets = true; }
+    pub(crate) fn reload_assets(&mut self) {
+        self.reload_assets = true;
+    }
 }
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct Renderer<'w, 's> {
     capture: Option<ResMut<'w, super::smoke::SmokeCapture>>,
     cameras: Query<'w, 's, (&'static Transform, &'static Orbit)>,
     images: Option<ResMut<'w, Assets<Image>>>,
+    textures: Option<ResMut<'w, scenemax_materials::TextureCache>>,
     meshes: Option<ResMut<'w, Assets<Mesh>>>,
     materials: Option<ResMut<'w, Assets<StandardMaterial>>>,
     server: Option<Res<'w, AssetServer>>,
@@ -147,12 +150,14 @@ pub(crate) fn update(
                                 Some(materials),
                                 Some(server),
                                 Some(project_assets),
+                                Some(textures),
                             ) = (
                                 renderer.images.as_mut(),
                                 renderer.meshes.as_mut(),
                                 renderer.materials.as_mut(),
                                 renderer.server.as_ref(),
                                 renderer.project_assets.as_ref(),
+                                renderer.textures.as_mut(),
                             )
                             else {
                                 return;
@@ -164,7 +169,7 @@ pub(crate) fn update(
                                 materials,
                                 server,
                                 &scene,
-                                project_assets,
+                                (project_assets, textures),
                             );
                             if let Some((transform, orbit)) = state.saved_view {
                                 commands.entity(camera).insert((transform, orbit));

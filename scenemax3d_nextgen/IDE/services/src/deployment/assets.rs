@@ -132,7 +132,34 @@ fn script_closure(
     let mut selected = BTreeSet::new();
     let mut names = BTreeSet::new();
     let mut references = ModelReferences::new();
-    while let Some(path) = pending.pop() {
+    let mut material_requests = BTreeSet::new();
+    loop {
+        // Resolve native surfaces only through material assignments, never shader names.
+        // A symbolic/dynamic name may be supplied by another reachable script/function.
+        if pending.is_empty() && !material_requests.is_empty() {
+            let materials: Vec<_> = inventory
+                .iter()
+                .filter(|p| p.extension().is_some_and(|e| e == "smmat"))
+                .collect();
+            let dynamic = material_requests.iter().any(|name| {
+                !materials.iter().any(|p| {
+                    p.file_stem()
+                        .is_some_and(|s| s.to_string_lossy().to_lowercase() == *name)
+                })
+            });
+            for material in materials {
+                if material.file_stem().is_some_and(|s| {
+                    let name = s.to_string_lossy().to_lowercase();
+                    material_requests.contains(&name) || (dynamic && names.contains(&name))
+                }) {
+                    pending.push(material.clone());
+                }
+            }
+            material_requests.clear();
+        }
+        let Some(path) = pending.pop() else {
+            break;
+        };
         context.check()?;
         let path = normalized(&path);
         if !inventory.contains(&path) {
@@ -150,6 +177,26 @@ fn script_closure(
         if path.extension().is_some_and(|e| e == "smdesign") {
             continue;
         }
+        if path.extension().is_some_and(|e| e == "smmat") {
+            let value: Value = serde_json::from_str(&text).map_err(|e| {
+                io::Error::other(format!("Invalid material {}: {e}", path.display()))
+            })?;
+            scenemax_assets::material::validate(&value).map_err(|e| {
+                io::Error::other(format!("Invalid material {}: {e}", path.display()))
+            })?;
+            for (_, key, _) in scenemax_assets::material::TEXTURES {
+                if let Some(texture) = value["textures"][key].as_str().filter(|p| !p.is_empty()) {
+                    if !project.join("resources").join(texture).is_file() {
+                        return Err(io::Error::other(format!(
+                            "Missing texture {texture} referenced by {}",
+                            path.display()
+                        )));
+                    }
+                    names.insert(texture.to_lowercase());
+                }
+            }
+            continue;
+        }
         let words = tokens(&text);
         names.extend(words.iter().map(|s| s.to_lowercase()));
         let parent = path.parent().unwrap_or(&root);
@@ -163,7 +210,7 @@ fn script_closure(
         }
         if path
             .extension()
-            .is_some_and(|e| e == "smui" || e == "smdesign")
+            .is_some_and(|e| e == "smui" || e == "smdesign" || e == "smmat")
         {
             continue;
         }
@@ -174,6 +221,15 @@ fn script_closure(
         while let Some(statement) = statements.pop() {
             use scenemax_parser::Statement;
             match statement {
+                Statement::SetMaterial(material) => {
+                    if let scenemax_parser::AssignmentValue::Symbol(name) = &material.material {
+                        if !name.trim().is_empty() {
+                            material_requests.insert(name.trim().to_lowercase());
+                        }
+                    } else {
+                        material_requests.insert(String::from("*dynamic*"));
+                    }
+                }
                 Statement::AddCode { path: include } => {
                     let candidate = normalized(
                         &parent.join(include.trim_start_matches('/').replace('\\', "/")),

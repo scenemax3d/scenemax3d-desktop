@@ -22,7 +22,7 @@ pub(crate) fn edit(
     if document
         .path()
         .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("smdesign"))
+        .is_some_and(|e| e.eq_ignore_ascii_case("smdesign") || e.eq_ignore_ascii_case("smmat"))
         && !matches!(command, EditCommand::Undo | EditCommand::Redo)
     {
         bail!("Use the scene property inspector to edit this document");

@@ -28,6 +28,14 @@ pub(super) fn load(root: &Path) -> BTreeMap<String, Vec<String>> {
         names.dedup();
         catalog.insert(key.into(), names);
     }
+    if let Some(project) = root.parent()
+        && let Ok(materials) = crate::material::documents(project)
+    {
+        catalog
+            .entry("material".into())
+            .or_default()
+            .extend(materials.into_keys());
+    }
     let mut ik = vec![String::new()];
     if let Ok(files) = std::fs::read_dir(root.join("ik")) {
         for file in files.flatten() {
@@ -44,4 +52,21 @@ pub(super) fn load(root: &Path) -> BTreeMap<String, Vec<String>> {
     ik.dedup();
     catalog.insert("ikAsset".into(), ik);
     catalog
+}
+
+#[cfg(test)]
+mod material_tests {
+    #[test]
+    fn native_surfaces_appear_only_in_material_catalog() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("scripts")).unwrap();
+        std::fs::write(
+            dir.path().join("scripts/finish.smmat"),
+            scenemax_assets::material::preset("Gold").to_string(),
+        )
+        .unwrap();
+        let catalog = super::load(&dir.path().join("resources"));
+        assert!(catalog["material"].contains(&"finish".to_owned()));
+        assert!(!catalog["shader"].contains(&"finish".to_owned()));
+    }
 }

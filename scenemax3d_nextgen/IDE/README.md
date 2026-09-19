@@ -1,4 +1,6 @@
-# SceneMax Studio — working script editor
+# SceneMax Studio — native IDE
+
+Material authoring: **Assets → Create New Material…** opens the retained [Material Studio](MATERIAL_EDITOR.md): a visual PBR composer with texture channels, presets, live primitive/model previews, named-slot assignment, undo, and shared runtime rendering.
 
 Latest distribution slice: **Tools → Package & Deploy…** provides retained release settings, desktop packaging, phase progress, live logs, cancellation and Butler publishing/retry. Windows is a single Java-free executable; Linux/macOS use ZIPs. Android/iOS/Web expose explicit SDK-builder integration, with runtime-port limitations described in [DEPLOYMENT.md](DEPLOYMENT.md). This supersedes older statements below that all packaging is deferred.
 

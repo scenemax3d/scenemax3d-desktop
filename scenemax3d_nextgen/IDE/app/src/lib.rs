@@ -98,7 +98,15 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         })
         .add_plugins(
             DefaultPlugins
-                .set(bevy::render::RenderPlugin {render_creation: bevy::render::settings::RenderCreation::Automatic(Box::new(bevy::render::settings::WgpuSettings {backends: Some(bevy::render::settings::Backends::VULKAN),..default()})),..default()})
+                .set(bevy::render::RenderPlugin {
+                    render_creation: bevy::render::settings::RenderCreation::Automatic(Box::new(
+                        bevy::render::settings::WgpuSettings {
+                            backends: Some(bevy::render::settings::Backends::VULKAN),
+                            ..default()
+                        },
+                    )),
+                    ..default()
+                })
                 .set(bevy::asset::AssetPlugin {
                     unapproved_path_mode: bevy::asset::UnapprovedPathMode::Forbid,
                     ..default()
@@ -115,18 +123,31 @@ pub fn run(options: LaunchOptions) -> Result<()> {
                 }),
         )
         .add_plugins(scenemax_effects::EffectsPlugin)
+        .add_plugins(scenemax_materials::MaterialsPlugin)
         .init_resource::<scenemax_effects::PreviewClock>()
         .add_plugins((TabNavigationPlugin, StudioUiPlugin, StudioPlugin))
         .add_plugins(presentation::scene3d::gizmo::GizmoPlugin);
     bevy::asset::embedded_asset!(app, "presentation/scenemax_icon.png");
     presentation::java_icons::register(&mut app);
     app.init_gizmo_group::<presentation::effect_import::preview::Lines>();
-    app.world_mut().resource_mut::<bevy::gizmos::config::GizmoConfigStore>().config_mut::<presentation::effect_import::preview::Lines>().0.render_layers = bevy::camera::visibility::RenderLayers::layer(4);
+    app.world_mut()
+        .resource_mut::<bevy::gizmos::config::GizmoConfigStore>()
+        .config_mut::<presentation::effect_import::preview::Lines>()
+        .0
+        .render_layers = bevy::camera::visibility::RenderLayers::layer(4);
     app.init_gizmo_group::<presentation::model_import::render::ImportLines>();
-    app.world_mut().resource_mut::<bevy::gizmos::config::GizmoConfigStore>()
-        .config_mut::<presentation::model_import::render::ImportLines>().0.render_layers = bevy::camera::visibility::RenderLayers::layer(3);
-    app.add_systems(Update,presentation::model_import::render::overlays);
-    app.add_systems(Update,presentation::effect_import::preview::update.after(presentation::effect_import::update).after(presentation::scene3d::playback::cadence));
+    app.world_mut()
+        .resource_mut::<bevy::gizmos::config::GizmoConfigStore>()
+        .config_mut::<presentation::model_import::render::ImportLines>()
+        .0
+        .render_layers = bevy::camera::visibility::RenderLayers::layer(3);
+    app.add_systems(Update, presentation::model_import::render::overlays);
+    app.add_systems(
+        Update,
+        presentation::effect_import::preview::update
+            .after(presentation::effect_import::update)
+            .after(presentation::scene3d::playback::cadence),
+    );
 
     if let Some(remaining) = options.smoke_frames {
         app.insert_resource(presentation::smoke::SmokeCapture {
@@ -145,7 +166,9 @@ pub fn run(options: LaunchOptions) -> Result<()> {
             .preview_file_menu();
     }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_IMPORT").is_some() {
-        app.world_mut().resource_mut::<presentation::asset_import::State>().preview(scenemax_ide_services::imports::Kind::Sprite);
+        app.world_mut()
+            .resource_mut::<presentation::asset_import::State>()
+            .preview(scenemax_ide_services::imports::Kind::Sprite);
     }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_MODEL").is_some() {
         app.add_systems(Update, presentation::model_import::smoke);
@@ -153,9 +176,15 @@ pub fn run(options: LaunchOptions) -> Result<()> {
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_SPRITE").is_some() {
         app.add_systems(Update, presentation::sprite_import::smoke);
     }
-    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_EFFECT").is_some() {app.add_systems(Update,presentation::effect_import::smoke);}
-    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_DEPLOY").is_some() { app.add_systems(Update, presentation::deployment::smoke); }
-    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_DEPLOY_BUILD").is_some() { app.add_systems(Update, presentation::deployment::smoke_build); }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_EFFECT").is_some() {
+        app.add_systems(Update, presentation::effect_import::smoke);
+    }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_DEPLOY").is_some() {
+        app.add_systems(Update, presentation::deployment::smoke);
+    }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_DEPLOY_BUILD").is_some() {
+        app.add_systems(Update, presentation::deployment::smoke_build);
+    }
     app.run();
     Ok(())
 }
@@ -191,6 +220,8 @@ impl Plugin for StudioPlugin {
             .init_resource::<ButtonInput<MouseButton>>()
             .init_resource::<presentation::chrome::ChromeState>()
             .init_resource::<presentation::editing::EditorZoom>()
+            .init_resource::<application::material::MaterialLibrary>()
+            .init_resource::<presentation::material::State>()
             .init_resource::<presentation::browser::TreeState>()
             .add_message::<ViewChange>()
             .add_systems(
@@ -230,6 +261,7 @@ impl Plugin for StudioPlugin {
                     )
                         .chain(),
                     (
+                        presentation::material::update,
                         presentation::model_import::update,
                         presentation::sprite_import::update,
                         presentation::effect_import::update,
@@ -244,12 +276,18 @@ impl Plugin for StudioPlugin {
                         application::execute_commands,
                     )
                         .chain(),
-                    (application::poll_jobs, application::symbols::update).chain(),
+                    (
+                        application::poll_jobs,
+                        application::symbols::update,
+                        application::material::library,
+                    )
+                        .chain(),
                     application::checkpoint_buffers,
                     (
                         presentation::reconcile::reconcile,
                         presentation::designer::refresh,
                         presentation::model_import::render::update,
+                        presentation::material::preview::update,
                         presentation::sprite_import::preview::update,
                         presentation::model_import::playback::update,
                         presentation::scene3d::update,

@@ -521,6 +521,10 @@ pub fn substitute_statement(
                 actions: substitute_statements(&event.actions, bindings),
             })
         }
+        Statement::SetMaterial(material) => Statement::SetMaterial(scenemax_parser::SetMaterialStatement {
+            target: substitute_path(&material.target, bindings),
+            material: substitute_assignment_value(&material.material, bindings),
+        }),
         Statement::SetShader(shader) => Statement::SetShader(scenemax_parser::SetShaderStatement {
             target: substitute_path(&shader.target, bindings),
             shader: substitute_assignment_value(&shader.shader, bindings),
@@ -1102,6 +1106,14 @@ mod tests {
                 }),
             ]
         );
+    }
+
+    #[test]
+    fn material_assignment_substitutes_target_and_surface_arguments() {
+        let program = parse_program("paint(target, surface) = {\n target.material = surface\n}\nrun paint(object, \"finish\")").unwrap();
+        let functions = collect_functions_by_name(&program);
+        let actions = instantiate_function_actions(functions.get("paint").unwrap(), &["object".into(), "finish".into()]);
+        assert!(matches!(&actions[0], Statement::SetMaterial(scenemax_parser::SetMaterialStatement { target, material: AssignmentValue::Symbol(name) }) if target == "object" && name == "finish"));
     }
 
     #[test]

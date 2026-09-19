@@ -1315,7 +1315,15 @@ fn embedded_designer_updates_saves_and_undoes_without_a_text_editor() {
     finish_io(&mut app);
     for _ in 0..200 {
         app.update();
-        if app.world_mut().query_filtered::<Entity, With<crate::presentation::designer::Property>>().iter(app.world()).next().is_some() { break; }
+        if app
+            .world_mut()
+            .query_filtered::<Entity, With<crate::presentation::designer::Property>>()
+            .iter(app.world())
+            .next()
+            .is_some()
+        {
+            break;
+        }
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     let id = app
@@ -1611,5 +1619,124 @@ fn code_zoom_updates_text_and_gutter_without_editing_document() {
     assert_eq!(
         app.world().get::<TextFont>(editor).unwrap().font_size,
         FontSize::Px(16.)
+    );
+}
+
+#[test]
+fn material_document_uses_retained_controls_and_normal_undo() {
+    use crate::{
+        application::material::{Edit, MaterialLibrary},
+        presentation::{components::EditorHost, material::MaterialHost},
+    };
+    let (mut app, dir, _) = app();
+    let source = scenemax_assets::material::preset("Porcelain").to_string();
+    std::fs::write(dir.path().join("scripts/finish.smmat"), &source).unwrap();
+    let id = app
+        .world_mut()
+        .resource_mut::<Session>()
+        .workspace
+        .open_document(
+            scenemax_ide_core::Document::from_bytes(
+                dir.path().join("scripts/finish.smmat"),
+                source.as_bytes().into(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    {
+        let mut library = app.world_mut().resource_mut::<MaterialLibrary>();
+        library.project = dir.path().canonicalize().unwrap();
+        library.assets = Some(scenemax_ide_services::material::Library {
+            root: dir.path().join("resources"),
+            ..Default::default()
+        });
+    }
+    app.world_mut()
+        .write_message(crate::application::ViewChange::DocumentOpened(id));
+    app.world_mut()
+        .write_message(crate::application::ViewChange::ActiveChanged);
+    app.update();
+    app.update();
+    let host = {
+        let world = app.world_mut();
+        world
+            .query_filtered::<(Entity, &EditorHost), With<MaterialHost>>()
+            .iter(world)
+            .find(|(_, h)| h.0 == id)
+            .unwrap()
+            .0
+    };
+    let revision = app
+        .world()
+        .resource::<Session>()
+        .workspace
+        .document(id)
+        .unwrap()
+        .revision();
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command::Material(Edit {
+            id,
+            revision,
+            pointer: "/metallic".into(),
+            value: serde_json::json!(0.75),
+            continuing: false,
+        }));
+    app.update();
+    app.update();
+    assert!(app.world().get_entity(host).is_ok());
+    let document = app
+        .world()
+        .resource::<Session>()
+        .workspace
+        .document(id)
+        .unwrap();
+    assert!(document.is_dirty());
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(document.text()).unwrap()["metallic"],
+        0.75
+    );
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command::Edit(crate::application::EditCommand::Undo));
+    app.update();
+    app.update();
+    assert_eq!(
+        app.world()
+            .resource::<Session>()
+            .workspace
+            .document(id)
+            .unwrap()
+            .text(),
+        source
+    );
+    {
+        let world = app.world_mut();
+        let mut fields =
+            world.query_filtered::<&mut EditableText, With<crate::presentation::material::Field>>();
+        let mut name = fields
+            .iter_mut(world)
+            .find(|f| f.value() == "New material")
+            .unwrap();
+        name.editor_mut().set_text("Custom surface");
+    }
+    app.update();
+    app.update();
+    dispatch(&mut app, Command::Save);
+    finish_io(&mut app);
+    let saved: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.path().join("scripts/finish.smmat")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(saved["name"], "Custom surface");
+    assert!(
+        !app.world()
+            .resource::<Session>()
+            .workspace
+            .document(id)
+            .unwrap()
+            .is_dirty()
     );
 }

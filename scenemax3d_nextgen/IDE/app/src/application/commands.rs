@@ -9,6 +9,7 @@ use std::{collections::VecDeque, path::PathBuf};
 /// Every input surface dispatches the same application commands.
 #[derive(Clone)]
 pub(crate) enum Command {
+    Material(super::material::Edit),
     Tree(scenemax_ide_services::TreeOperation),
     SavePath(PathBuf),
     RunPath(PathBuf),
@@ -92,6 +93,7 @@ fn execute(
         bail!("Finish or cancel text composition before this action");
     }
     match command {
+        Command::Material(edit) => super::material::edit(edit, session, changes)?,
         Command::Tree(_)
         | Command::SavePath(_)
         | Command::RunPath(_)
@@ -238,15 +240,41 @@ fn execute(
         Command::Check => {
             let id = session.workspace.require_active()?;
             let doc = session.workspace.document(id)?;
-            if doc.path().extension().is_some_and(|e| e.eq_ignore_ascii_case("smeffectimport")) {
-                scenemax_ide_core::effect_import::validate(&serde_json::from_str(doc.text())?).map_err(anyhow::Error::msg)?;
-                session.status="Effect import settings are valid".into();return Ok(());
+            if doc
+                .path()
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("smmat"))
+            {
+                scenemax_assets::material::validate(&serde_json::from_str(doc.text())?)
+                    .map_err(anyhow::Error::msg)?;
+                session.status = "Material is valid".into();
+                return Ok(());
             }
-            if doc.path().extension().is_some_and(|e| e.eq_ignore_ascii_case("smspriteimport")) {
-                scenemax_ide_core::sprite_import::validate(&serde_json::from_str(doc.text())?).map_err(anyhow::Error::msg)?;
-                session.status = "Sprite import settings are valid".into();return Ok(());
+            if doc
+                .path()
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("smeffectimport"))
+            {
+                scenemax_ide_core::effect_import::validate(&serde_json::from_str(doc.text())?)
+                    .map_err(anyhow::Error::msg)?;
+                session.status = "Effect import settings are valid".into();
+                return Ok(());
             }
-            if doc.path().extension().is_some_and(|e| e.eq_ignore_ascii_case("smmodelimport")) {
+            if doc
+                .path()
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("smspriteimport"))
+            {
+                scenemax_ide_core::sprite_import::validate(&serde_json::from_str(doc.text())?)
+                    .map_err(anyhow::Error::msg)?;
+                session.status = "Sprite import settings are valid".into();
+                return Ok(());
+            }
+            if doc
+                .path()
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("smmodelimport"))
+            {
                 let draft = serde_json::from_str(doc.text())?;
                 scenemax_ide_core::model_import::validate(&draft).map_err(anyhow::Error::msg)?;
                 session.status = "Model import settings are valid".into();

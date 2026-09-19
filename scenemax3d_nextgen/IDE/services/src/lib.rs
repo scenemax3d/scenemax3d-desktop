@@ -101,3 +101,6 @@ pub mod imports;
 
 /// Bounded packaging workers, SDK adapters and Butler publishing.
 pub mod deployment;
+
+/// Material editor asset inventory.
+pub mod material;

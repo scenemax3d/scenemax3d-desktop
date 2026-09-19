@@ -157,6 +157,7 @@ pub enum Statement {
     CameraMove(CameraMoveStatement),
     Audio(AudioStatement),
     SetShader(SetShaderStatement),
+    SetMaterial(SetMaterialStatement),
     SetEnvironmentShader {
         shader: AssignmentValue,
     },
@@ -465,6 +466,12 @@ pub struct AudioStatement {
 pub struct SetShaderStatement {
     pub target: String,
     pub shader: AssignmentValue,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetMaterialStatement {
+    pub target: String,
+    pub material: AssignmentValue,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4278,6 +4285,13 @@ fn parse_shader_statement(line: &str) -> Result<Option<Statement>, ParseError> {
         return Ok(Some(Statement::SetSkybox {
             skybox: parse_shader_value(right)?,
         }));
+    }
+    if lower_target.ends_with(".material") {
+        let target_name = target[..target.len() - ".material".len()].trim();
+        if target_name.is_empty() || !is_variable_path(target_name) { return Ok(None); }
+        return Ok(Some(Statement::SetMaterial(SetMaterialStatement {
+            target: target_name.to_owned(), material: parse_shader_value(right)?,
+        })));
     }
     if !lower_target.ends_with(".shader") {
         return Ok(None);
@@ -10325,5 +10339,17 @@ run tick(score+10) every tick_time+0.25 seconds
                     ]
                     && play.async_run
         ));
+    }
+}
+
+#[cfg(test)]
+mod material_assignment_tests {
+    use super::*;
+    #[test]
+    fn material_and_shader_assignments_remain_distinct() {
+        let program = parse_program("object.material = \"finish\"\nobject.shader = \"effect\"\nobject.material = \"\"").unwrap();
+        assert!(matches!(&program.statements[0], Statement::SetMaterial(SetMaterialStatement { target, material: AssignmentValue::Symbol(name) }) if target == "object" && name == "finish"));
+        assert!(matches!(&program.statements[1], Statement::SetShader(_)));
+        assert!(matches!(&program.statements[2], Statement::SetMaterial(SetMaterialStatement { material: AssignmentValue::Symbol(name), .. }) if name.is_empty()));
     }
 }

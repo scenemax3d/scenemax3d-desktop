@@ -9,6 +9,8 @@ use std::{
 
 /// A single owned filesystem operation submitted without blocking the caller.
 pub enum StorageRequest {
+    /// Load material editor resources.
+    MaterialLibrary(PathBuf),
     /// Mutate project files on the disk worker.
     Tree {
         /// Canonical project root.
@@ -102,6 +104,8 @@ pub enum StorageRequest {
 }
 /// Completed operations; failures are data and never overwrite live buffers.
 pub enum StorageResult {
+    /// Material resources resolved on the worker.
+    MaterialLibrary(Result<crate::material::Library, String>),
     /// Result of a navigator mutation; refresh is requested separately.
     Tree(Result<crate::TreeOutcome, ServiceError>),
     /// Reload result with the original buffer version for race protection.
@@ -232,6 +236,9 @@ fn perform(
             std::process::Command::new(program).arg(folder).spawn()?;
             Ok(())
         })()),
+        StorageRequest::MaterialLibrary(root) => {
+            StorageResult::MaterialLibrary(crate::material::load(&root))
+        }
         StorageRequest::Scene3d { root, source } => {
             StorageResult::Scene3d(crate::scene3d::load(&root, &source))
         }

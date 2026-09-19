@@ -25,12 +25,35 @@ pub(crate) fn editor(
             ChildOf(parent),
         ))
         .id();
-    if doc.path().extension().is_some_and(|e|e.eq_ignore_ascii_case("smeffectimport")) {commands.entity(host).insert(super::effect_import::Import::default());return;}
-    if doc.path().extension().is_some_and(|e|e.eq_ignore_ascii_case("smspriteimport")) {
-        commands.entity(host).insert(super::sprite_import::Import::default());return;
+    if doc
+        .path()
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("smeffectimport"))
+    {
+        commands
+            .entity(host)
+            .insert(super::effect_import::Import::default());
+        return;
     }
-    if doc.path().extension().is_some_and(|e|e.eq_ignore_ascii_case("smmodelimport")) {
-        commands.entity(host).insert(super::model_import::Import::default());return;
+    if doc
+        .path()
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("smspriteimport"))
+    {
+        commands
+            .entity(host)
+            .insert(super::sprite_import::Import::default());
+        return;
+    }
+    if doc
+        .path()
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("smmodelimport"))
+    {
+        commands
+            .entity(host)
+            .insert(super::model_import::Import::default());
+        return;
     }
     if doc
         .path()
@@ -48,6 +71,14 @@ pub(crate) fn editor(
         .is_some_and(|ext| ext.eq_ignore_ascii_case("smdesign"))
     {
         commands.entity(host).insert(super::scene3d::SceneHost);
+        return;
+    }
+    if doc
+        .path()
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("smmat"))
+    {
+        commands.entity(host).insert(super::material::MaterialHost);
         return;
     }
     let gutter = commands

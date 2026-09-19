@@ -685,6 +685,25 @@ pub(super) fn apply_startup_action(
             apply_skybox(commands, skybox_name, runtime_assets);
             ActionSequenceResult::Completed
         }
+        Statement::SetMaterial(material) => {
+            let material_name = resolve_shader_name(
+                &material.material,
+                vars,
+                None,
+                guards_by_name,
+                Some(transforms_by_name),
+                None,
+            );
+            if let Some(entity) = entities_by_name.get(&material.target) {
+                apply_entity_material(commands, *entity, material_name, runtime_assets);
+            } else {
+                write_runtime_diagnostic_line(format!(
+                    "MATERIAL:TARGET_MISS phase=startup target={}",
+                    material.target
+                ));
+            }
+            ActionSequenceResult::Completed
+        }
         Statement::SetShader(shader) => {
             let shader_name = resolve_shader_name(
                 &shader.shader,
@@ -6763,6 +6782,38 @@ pub(super) fn apply_key_action(
             Some(collider_bounds),
         );
         apply_skybox(commands, skybox_name, runtime_assets);
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::SetMaterial(material) = action {
+        let material_name = resolve_shader_name(
+            &material.material,
+            vars,
+            scope.as_deref(),
+            guards_by_name,
+            Some(transforms_by_name),
+            Some(collider_bounds),
+        );
+        let target_entity =
+            scene_entities
+                .p1()
+                .iter()
+                .find_map(|(entity, scene_entity, _, _, _, _, _, _)| {
+                    target_matches_alias(
+                        &material.target,
+                        &scene_entity.name,
+                        object_pools,
+                        scope.as_deref(),
+                    )
+                    .then_some(entity)
+                });
+        if let Some(entity) = target_entity {
+            apply_entity_material(commands, entity, material_name, runtime_assets);
+        } else {
+            write_runtime_diagnostic_line(format!(
+                "MATERIAL:TARGET_MISS phase=runtime target={}",
+                material.target
+            ));
+        }
         return ActionSequenceResult::Completed;
     }
     if let Statement::SetShader(shader) = action {

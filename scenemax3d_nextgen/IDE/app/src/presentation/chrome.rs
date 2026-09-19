@@ -149,6 +149,18 @@ fn populate_menu(
             finish_item(commands, row, "");
             continue;
         }
+        if entry.command == "create_material_document" {
+            let row = button(commands, host, entry.name, Name::new("Create material"));
+            commands.entity(row).observe(
+                |_: On<Pointer<Click>>,
+                 session: Res<crate::application::Session>,
+                 mut menu: ResMut<super::tree_menu::State>| {
+                    menu.create_material(session.workspace.project().root().join("scripts"));
+                },
+            );
+            finish_item(commands, row, "");
+            continue;
+        }
         match entry.command {
             "project_explorer" | "new_project_scripts_folder" => {
                 panel_item(commands, host, entry.name, "", Panel::Project)

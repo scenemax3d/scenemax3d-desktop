@@ -88,6 +88,18 @@ pub(super) fn build(commands: &mut Commands, parent: Entity, scene: &Scene3d, in
         choice(
             commands,
             parent,
+            "Material",
+            "material",
+            p,
+            scene
+                .catalog
+                .get("material")
+                .map(Vec::as_slice)
+                .unwrap_or(&[]),
+        );
+        choice(
+            commands,
+            parent,
             "Shader",
             "shader",
             p,
@@ -141,18 +153,6 @@ pub(super) fn build(commands: &mut Commands, parent: Entity, scene: &Scene3d, in
                 p["jointMapping"].as_str().unwrap_or(""),
             );
         } else {
-            choice(
-                commands,
-                parent,
-                "Material",
-                "material",
-                p,
-                scene
-                    .catalog
-                    .get("material")
-                    .map(Vec::as_slice)
-                    .unwrap_or(&[]),
-            );
             toggle(commands, parent, "Static", "staticEntity", p);
             toggle(commands, parent, "Collider", "colliderEntity", p);
             for key in [

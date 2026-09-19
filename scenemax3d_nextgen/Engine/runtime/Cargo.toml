@@ -9,6 +9,7 @@ default = []
 effekseer_native = ["scenemax_effects/effekseer_native"]
 
 [dependencies]
+scenemax_materials = { path = "../../Engine/materials" }
 scenemax_effects = { path = "../effects" }
 anyhow.workspace = true
 avian3d.workspace = true

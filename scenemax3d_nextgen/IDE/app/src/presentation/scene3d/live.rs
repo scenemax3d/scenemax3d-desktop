@@ -160,7 +160,10 @@ pub(crate) fn update(
     gesture.last = Some((id, stamp.1, state.selected, focus, saved, from_gizmo));
     changes.write(crate::application::ViewChange::BufferChanged(id));
     // Asset replacement stays asynchronous on the existing storage worker.
-    if patch.iter().any(|(key, _)| key == "resourcePath") {
+    if patch
+        .iter()
+        .any(|(key, _)| key == "resourcePath" || key == "shader" || key == "material")
+    {
         return;
     }
     state.current = Some(stamp);

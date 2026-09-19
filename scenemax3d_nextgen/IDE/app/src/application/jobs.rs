@@ -25,6 +25,7 @@ pub(crate) struct EditorServices {
     pub(crate) storage: Storage,
     pub(crate) catalog_storage: Storage,
     pub(crate) scene_storage: Storage,
+    pub(crate) material_storage: Storage,
     pub(crate) catalog_root: PathBuf,
     pub(crate) catalog_path: Option<PathBuf>,
     pub(crate) catalog_startup: Option<(PathBuf, Option<PathBuf>)>,
@@ -42,6 +43,7 @@ impl EditorServices {
             storage: Storage::new()?,
             catalog_storage: Storage::new()?,
             scene_storage: Storage::new()?,
+            material_storage: Storage::new()?,
             catalog_root: PathBuf::from("."),
             catalog_path: None,
             catalog_startup: None,
@@ -97,6 +99,7 @@ pub(crate) fn apply_storage(
     exit: &mut MessageWriter<AppExit>,
 ) -> Result<()> {
     match result {
+        StorageResult::MaterialLibrary(_) => {}
         StorageResult::Catalog(result) => {
             session.catalog = result?;
             changes.write(ViewChange::CatalogChanged);

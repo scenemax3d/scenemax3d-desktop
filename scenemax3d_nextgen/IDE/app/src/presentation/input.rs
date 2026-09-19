@@ -105,6 +105,7 @@ type PropertyInputs<'w, 's> = Query<
     (),
     Or<(
         With<super::designer::Property>,
+        With<super::material::Field>,
         With<super::model_import::Field>,
         With<super::sprite_import::Field>,
         With<super::effect_import::Field>,
@@ -156,8 +157,12 @@ pub(crate) fn collect_actions(
     }
     let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    if ctrl && !session.composing
-        && focus.as_ref().and_then(|f| f.get()).is_some_and(|e| editors.contains(e))
+    if ctrl
+        && !session.composing
+        && focus
+            .as_ref()
+            .and_then(|f| f.get())
+            .is_some_and(|e| editors.contains(e))
     {
         if keys.any_just_pressed([KeyCode::Equal, KeyCode::NumpadAdd]) {
             zoom.adjust(1.);

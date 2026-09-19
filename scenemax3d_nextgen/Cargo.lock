@@ -5359,10 +5359,12 @@ dependencies = [
  "anyhow",
  "bevy",
  "clap",
+ "scenemax_assets",
  "scenemax_effects",
  "scenemax_ide_core",
  "scenemax_ide_services",
  "scenemax_ide_ui",
+ "scenemax_materials",
  "serde_json",
  "tempfile",
 ]
@@ -5407,6 +5409,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "scenemax_materials"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "scenemax_assets",
+ "serde_json",
+]
+
+[[package]]
 name = "scenemax_multiplayer"
 version = "0.1.0"
 dependencies = [
@@ -5445,6 +5456,7 @@ dependencies = [
  "scenemax_assets",
  "scenemax_effects",
  "scenemax_ir",
+ "scenemax_materials",
  "scenemax_multiplayer",
  "scenemax_parser",
  "scenemax_runtime_script_core",

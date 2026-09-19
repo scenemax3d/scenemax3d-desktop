@@ -9,8 +9,12 @@ pub(super) fn spawn_world(
     materials: &mut Assets<StandardMaterial>,
     server: &AssetServer,
     scene: &Scene3d,
-    project_assets: &crate::project_assets::ProjectAssets,
+    texture_sources: (
+        &crate::project_assets::ProjectAssets,
+        &mut scenemax_materials::TextureCache,
+    ),
 ) -> (Entity, Entity) {
+    let (project_assets, textures) = texture_sources;
     let root = commands
         .spawn((Transform::default(), Visibility::default()))
         .id();
@@ -91,6 +95,28 @@ pub(super) fn spawn_world(
             ))
             .id();
         nodes.push(entity);
+        if let Some(value) = e.properties["material"]
+            .as_str()
+            .and_then(|name| scene.materials.get(name))
+            && let Ok(surface) = scenemax_materials::standard(value, |path, srgb| {
+                let Some(resource_root) = scene.resource_root.as_ref() else {
+                    return Handle::default();
+                };
+                let Some(path) = project_assets.asset(resource_root, &resource_root.join(path))
+                else {
+                    return Handle::default();
+                };
+                textures.load(server, images, path, srgb)
+            })
+        {
+            commands
+                .entity(entity)
+                .insert(scenemax_materials::MaterialBinding {
+                    material: materials.add(surface),
+                    slot: value["targetSlot"].as_str().unwrap_or_default().into(),
+                });
+        }
+
         if e.kind == "CAMERA" {
             super::game_camera::spawn(
                 commands,
@@ -240,7 +266,10 @@ mod tests {
                         &mut materials,
                         &server,
                         &scene,
-                        &crate::project_assets::ProjectAssets::default(),
+                        (
+                            &crate::project_assets::ProjectAssets::default(),
+                            &mut scenemax_materials::TextureCache::default(),
+                        ),
                     );
                 },
             )
