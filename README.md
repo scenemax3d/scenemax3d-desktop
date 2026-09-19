@@ -3,6 +3,7 @@
 **A native Rust/Bevy environment for building interactive 3D games.**
 
 SceneMax3D brings scene editing, game scripting, asset previews, and release packaging into one desktop workspace. Both the IDE and the game runtime are built with Rust and Bevy. Create scenes visually, write gameplay in the SceneMax language, and run your project in a dedicated native game process.
+<img width="1917" height="1013" alt="image" src="https://github.com/user-attachments/assets/0aa39dc2-f6e1-4ef8-942d-f1e570d3b9bd" />
 
 SceneMax is the authoring language: you do not need to write Rust to create game scripts. Rust powers the editor, parser, engine, and deployment tools underneath.
 
