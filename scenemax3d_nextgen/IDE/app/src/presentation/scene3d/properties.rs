@@ -124,7 +124,9 @@ pub(super) fn transaction(
             }
             patch.push((key.into(), json!(n)));
         } else if !key.contains(':') {
-            let value = if matches!(
+            let value = if key == "codeText" {
+                json!(text)
+            } else if matches!(
                 key.as_str(),
                 "hidden"
                     | "multiplayer"

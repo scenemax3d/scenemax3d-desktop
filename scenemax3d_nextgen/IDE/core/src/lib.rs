@@ -44,3 +44,6 @@ pub mod model_import;
 pub mod sprite_import;
 
 pub mod effect_import;
+
+/// Scene designer source generation.
+pub mod scene_codegen;

@@ -9,6 +9,7 @@ mod filesystem;
 mod projector;
 mod recovery;
 mod runtime_log;
+mod scene_save;
 mod search;
 pub use search::SearchReport;
 mod storage;
@@ -25,6 +26,9 @@ use std::{io, path::PathBuf};
 /// Typed errors at IDE service boundaries.
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
+    /// Scene generation failed before the designer save completed.
+    #[error("Scene code generation: {0}")]
+    SceneGeneration(String),
     /// Invalid domain transition or source encoding.
     #[error(transparent)]
     Editor(#[from] scenemax_ide_core::EditorError),

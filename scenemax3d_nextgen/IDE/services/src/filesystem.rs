@@ -169,6 +169,9 @@ impl Filesystem {
     /// Save with conflict detection and same-directory atomic file replacement.
     /// The buffer becomes clean only after successful replacement.
     pub fn save_document(doc: &mut Document) -> Result<(), ServiceError> {
+        crate::scene_save::save(doc).map(|_| ())
+    }
+    pub(crate) fn save_plain(doc: &mut Document) -> Result<(), ServiceError> {
         if !doc.is_dirty() {
             return Ok(());
         }

@@ -4,7 +4,10 @@ use crate::application::{Session, ViewChange};
 use bevy::prelude::*;
 use scenemax_ide_core::{Project, ProjectEntry};
 use scenemax_ide_ui::{ButtonSurface, button, label, theme::*};
-use std::{collections::HashSet, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 
 #[derive(Resource, Default)]
 pub(crate) struct TreeState {
@@ -15,24 +18,73 @@ pub(crate) struct TreeState {
 pub(crate) struct TreeItem {
     path: PathBuf,
     directory: bool,
+    expandable: bool,
 }
 #[derive(Component)]
 pub(crate) struct Folder(PathBuf);
 
-fn visible<'a>(project: &'a Project, tree: &TreeState) -> Vec<&'a ProjectEntry> {
-    project
+// Presentation-only ownership: files retain their real paths and file actions.
+fn companions(project: &Project) -> HashMap<PathBuf, PathBuf> {
+    let files: HashSet<_> = project
         .entries()
         .iter()
-        .filter(|entry| {
-            entry
+        .filter(|e| !e.is_directory)
+        .map(|e| e.path.clone())
+        .collect();
+    let mut owners = HashMap::new();
+    for entry in project.entries().iter().filter(|e| !e.is_directory) {
+        let path = &entry.path;
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let names = match path.extension().and_then(|s| s.to_str()) {
+            Some("smdesign") => vec![
+                format!("{stem}.code"),
+                format!("{stem}_init.code"),
+                format!("{stem}_end.code"),
+            ],
+            Some("smui") => vec![format!("{stem}_ui.code")],
+            _ => continue,
+        };
+        for name in names {
+            let child = path.with_file_name(name);
+            if files.contains(&child) {
+                owners.entry(child).or_insert_with(|| path.clone());
+            }
+        }
+    }
+    owners
+}
+
+fn visible<'a>(project: &'a Project, tree: &TreeState) -> Vec<&'a ProjectEntry> {
+    let owners = companions(project);
+    let mut children: HashMap<&PathBuf, Vec<&ProjectEntry>> = HashMap::new();
+    for entry in project.entries() {
+        if let Some(owner) = owners.get(&entry.path) {
+            children.entry(owner).or_default().push(entry);
+        }
+    }
+    let mut rows = Vec::new();
+    for entry in project.entries() {
+        if owners.contains_key(&entry.path)
+            || !tree.expanded.contains(project.root())
+            || !entry
                 .path
                 .ancestors()
                 .skip(1)
                 .take_while(|p| *p != project.root())
                 .all(|p| tree.expanded.contains(p))
-                && tree.expanded.contains(project.root())
-        })
-        .collect()
+        {
+            continue;
+        }
+        rows.push(entry);
+        if tree.expanded.contains(&entry.path)
+            && let Some(nested) = children.get(&entry.path)
+        {
+            rows.extend(nested.iter().copied());
+        }
+    }
+    rows
 }
 
 pub(crate) fn update_tree(
@@ -71,6 +123,9 @@ pub(crate) fn update_tree(
                 if let Some(id) = session.workspace.active_id()
                     && let Ok(doc) = session.workspace.document(id)
                 {
+                    if let Some(owner) = companions(session.workspace.project()).get(doc.path()) {
+                        rebuild |= state.expanded.insert(owner.clone());
+                    }
                     for parent in doc
                         .path()
                         .ancestors()
@@ -106,6 +161,7 @@ pub(crate) fn update_tree(
     }
     commands.entity(*host).despawn_children();
     let project = session.workspace.project();
+    let owners = companions(project);
     let root_name = project
         .root()
         .file_name()
@@ -118,14 +174,15 @@ pub(crate) fn update_tree(
         &root_name,
         0,
         true,
-        state.expanded.contains(project.root()),
+        Some(state.expanded.contains(project.root())),
     );
     let mut focus_row = root_row;
     for entry in visible(project, &state) {
         let depth = entry
             .path
             .strip_prefix(project.root())
-            .map_or(1, |p| p.components().count());
+            .map_or(1, |p| p.components().count())
+            + usize::from(owners.contains_key(&entry.path));
         let name = entry.path.file_name().unwrap_or_default().to_string_lossy();
         let row = tree_row(
             &mut commands,
@@ -134,7 +191,8 @@ pub(crate) fn update_tree(
             &name,
             depth,
             entry.is_directory,
-            state.expanded.contains(&entry.path),
+            (entry.is_directory || owners.values().any(|p| p == &entry.path))
+                .then(|| state.expanded.contains(&entry.path)),
         );
         if state.focus_path.as_ref() == Some(&entry.path) {
             focus_row = row;
@@ -158,11 +216,14 @@ fn tree_row(
     name: &str,
     depth: usize,
     directory: bool,
-    expanded: bool,
+    expansion: Option<bool>,
 ) -> Entity {
+    let expandable = expansion.is_some();
+    let expanded = expansion.unwrap_or(false);
     let tree_item = TreeItem {
         path: path.clone(),
         directory,
+        expandable,
     };
     let row = if directory {
         button(commands, parent, "", Folder(path))
@@ -186,6 +247,7 @@ fn tree_row(
             row
         }
     };
+    let disclosure_path = tree_item.path.clone();
     let target = tree_item.path.clone();
     commands.entity(row).insert(tree_item).observe(
         move |mut event: On<Pointer<Click>>,
@@ -232,7 +294,17 @@ fn tree_row(
             ChildOf(row),
         ))
         .id();
-    if directory {
+    if expandable {
+        if !directory {
+            commands
+                .entity(chevron)
+                .insert((Button, Interaction::None, Folder(disclosure_path)));
+            commands
+                .entity(chevron)
+                .observe(|mut event: On<Pointer<Click>>| {
+                    event.propagate(false);
+                });
+        }
         commands.spawn((
             Node {
                 width: px(5.),
@@ -325,6 +397,7 @@ pub(crate) fn keyboard(
         return;
     };
     let project = session.workspace.project();
+    let owners = companions(project);
     let paths = std::iter::once(project.root())
         .chain(visible(project, &tree).iter().map(|e| e.path.as_path()))
         .map(|p| p.to_owned())
@@ -337,13 +410,13 @@ pub(crate) fn keyboard(
     if keys.just_pressed(KeyCode::ArrowUp) {
         next = paths.get(index.saturating_sub(1)).cloned();
     }
-    if keys.just_pressed(KeyCode::ArrowRight) && item.directory {
+    if keys.just_pressed(KeyCode::ArrowRight) && item.expandable {
         if tree.expanded.insert(item.path.clone()) {
             next = Some(item.path.clone());
         } else {
             next = paths
                 .get(index + 1)
-                .filter(|p| p.starts_with(&item.path))
+                .filter(|p| p.starts_with(&item.path) || owners.get(*p) == Some(&item.path))
                 .cloned();
         }
     }
@@ -351,9 +424,10 @@ pub(crate) fn keyboard(
         if tree.expanded.remove(&item.path) {
             next = Some(item.path.clone());
         } else {
-            next = item
-                .path
-                .parent()
+            next = owners
+                .get(&item.path)
+                .map(|p| p.as_path())
+                .or_else(|| item.path.parent())
                 .filter(|p| p.starts_with(project.root()))
                 .map(|p| p.to_owned());
         }
@@ -379,6 +453,139 @@ pub(crate) fn keyboard(
 mod tests {
     use super::*;
     #[test]
+    fn companion_keyboard_navigation_uses_designer_parent_and_opens_files() {
+        use bevy::ecs::system::RunSystemOnce;
+        use bevy::input_focus::{FocusCause, InputFocus};
+        let root = PathBuf::from("project");
+        let designer = root.join("scene.smdesign");
+        let child = root.join("scene.code");
+        let project = Project::new(root.clone(), vec![]).with_entries(
+            vec![
+                ProjectEntry {
+                    path: designer.clone(),
+                    is_directory: false,
+                },
+                ProjectEntry {
+                    path: child.clone(),
+                    is_directory: false,
+                },
+            ],
+            false,
+        );
+        let mut world = World::new();
+        world.insert_resource(Session::new(project));
+        world.insert_resource(TreeState {
+            expanded: HashSet::from([root, designer.clone()]),
+            focus_path: None,
+        });
+        world.init_resource::<crate::application::CommandQueue>();
+        world.init_resource::<ButtonInput<KeyCode>>();
+        world.init_resource::<InputFocus>();
+        let row = world
+            .spawn(TreeItem {
+                path: child.clone(),
+                directory: false,
+                expandable: false,
+            })
+            .id();
+        world
+            .resource_mut::<InputFocus>()
+            .set(row, FocusCause::Navigated);
+        world
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::ArrowLeft);
+        world.run_system_once(keyboard).unwrap();
+        assert_eq!(
+            world.resource::<TreeState>().focus_path,
+            Some(designer.clone())
+        );
+        world.resource_mut::<ButtonInput<KeyCode>>().reset_all();
+        world.entity_mut(row).insert(TreeItem {
+            path: designer.clone(),
+            directory: false,
+            expandable: true,
+        });
+        world
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::ArrowRight);
+        world.run_system_once(keyboard).unwrap();
+        assert_eq!(world.resource::<TreeState>().focus_path, Some(child));
+        world.resource_mut::<ButtonInput<KeyCode>>().reset_all();
+        world
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Enter);
+        world.run_system_once(keyboard).unwrap();
+        assert!(
+            matches!(world.resource::<crate::application::CommandQueue>().0.front(), Some(crate::application::Command::Open(p)) if *p == designer)
+        );
+    }
+    #[test]
+    fn designer_companions_are_nested_and_unrelated_files_stay_visible() {
+        let root = PathBuf::from("project");
+        let names = [
+            "level.code",
+            "level.smdesign",
+            "level_end.code",
+            "level_init.code",
+            "other.code",
+            "hud.smui",
+            "hud_ui.code",
+            "hud_init.code",
+            "hud_end.code",
+            "orphan_init.code",
+        ];
+        let project = Project::new(root.clone(), vec![]).with_entries(
+            names
+                .iter()
+                .map(|n| ProjectEntry {
+                    path: root.join(n),
+                    is_directory: false,
+                })
+                .collect(),
+            false,
+        );
+        let mut tree = TreeState::default();
+        tree.expanded.insert(root.clone());
+        let rows = |tree: &TreeState| {
+            visible(&project, tree)
+                .iter()
+                .map(|e| e.path.file_name().unwrap().to_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            rows(&tree),
+            [
+                "level.smdesign",
+                "other.code",
+                "hud.smui",
+                "hud_init.code",
+                "hud_end.code",
+                "orphan_init.code"
+            ]
+        );
+        tree.expanded.insert(root.join("level.smdesign"));
+        assert_eq!(
+            rows(&tree),
+            [
+                "level.smdesign",
+                "level.code",
+                "level_end.code",
+                "level_init.code",
+                "other.code",
+                "hud.smui",
+                "hud_init.code",
+                "hud_end.code",
+                "orphan_init.code"
+            ]
+        );
+        tree.expanded.insert(root.join("hud.smui"));
+        assert_eq!(rows(&tree).len(), names.len());
+        assert_eq!(
+            companions(&project)[&root.join("hud_ui.code")],
+            root.join("hud.smui")
+        );
+    }
+    #[test]
     fn file_requires_primary_double_click_to_open() {
         use bevy::ecs::system::RunSystemOnce;
         use bevy::picking::pointer::{Location, PointerId};
@@ -396,7 +603,7 @@ mod tests {
                     "example",
                     1,
                     false,
-                    false,
+                    None,
                 )
             })
             .unwrap();

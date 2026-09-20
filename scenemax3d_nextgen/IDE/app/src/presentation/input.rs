@@ -116,7 +116,7 @@ type PropertyInputs<'w, 's> = Query<
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct InputFields<'w, 's> {
     zoom: ResMut<'w, super::editing::EditorZoom>,
-    editors: Query<'w, 's, (), With<Editor>>,
+    editors: Query<'w, 's, (), super::editing::CodeEditorFilter>,
     deployment: Option<Res<'w, crate::application::deployment::Deployment>>,
     menu: Option<Res<'w, super::tree_menu::State>>,
     imports: Option<Res<'w, super::asset_import::State>>,

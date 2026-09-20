@@ -82,6 +82,25 @@ impl EditorServices {
                     .map(|doc| (id, doc.snapshot()))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        for (_, designer) in &snapshots {
+            if designer
+                .path()
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("smdesign"))
+            {
+                let generated = designer.path().with_extension("code");
+                if session
+                    .workspace
+                    .documents()
+                    .any(|(_, d)| d.path() == generated && d.is_dirty())
+                {
+                    bail!(
+                        "The generated file {} has unsaved edits. Move those edits into a code node or the init/end scripts before saving the designer.",
+                        generated.display()
+                    );
+                }
+            }
+        }
         self.storage.request(StorageRequest::Save(snapshots))?;
         self.pending_save = Some(purpose);
         session.status = "Saving document snapshots…".into();
@@ -99,6 +118,63 @@ pub(crate) fn apply_storage(
     exit: &mut MessageWriter<AppExit>,
 ) -> Result<()> {
     match result {
+        StorageResult::Generated {
+            results,
+            companions,
+        } => {
+            let mut newer = false;
+            for generated in companions {
+                let path = generated.path().to_owned();
+                if let Some(id) = session.workspace.find_document(&path) {
+                    let doc = session.workspace.document_mut(id)?;
+                    if doc.is_dirty() {
+                        // Input typed while the worker ran must survive; update only its disk baseline.
+                        doc.acknowledge_saved(generated);
+                        newer = true;
+                    } else {
+                        let selection = doc.selection();
+                        doc.replace_text(generated.text().to_owned());
+                        doc.acknowledge_saved(generated);
+                        doc.select(selection);
+                    }
+                    changes.write(ViewChange::BufferChanged(id));
+                }
+                let project = session.workspace.project();
+                let mut entries = project.entries().to_vec();
+                if !entries.iter().any(|e| e.path == path) {
+                    entries.push(scenemax_ide_core::ProjectEntry {
+                        path: path.clone(),
+                        is_directory: false,
+                    });
+                    entries.sort_by(|a, b| a.path.cmp(&b.path));
+                    let truncated = project.tree_truncated();
+                    let mut scripts = project.scripts().to_vec();
+                    if !scripts.contains(&path) {
+                        scripts.push(path);
+                    }
+                    let project =
+                        scenemax_ide_core::Project::new(project.root().to_owned(), scripts)
+                            .with_entries(entries, truncated);
+                    session.workspace.refresh_project(project);
+                }
+            }
+            changes.write(ViewChange::ProjectTreeChanged);
+            apply_storage(
+                StorageResult::Saved(results),
+                services,
+                session,
+                changes,
+                exit,
+            )?;
+            if !newer && session.status == "Saved" {
+                session.status = "Saved · designer code regenerated".into();
+            }
+            if newer {
+                session.status =
+                    "Designer code regenerated; newer edits in the generated tab remain unsaved"
+                        .into();
+            }
+        }
         StorageResult::MaterialLibrary(_) => {}
         StorageResult::Catalog(result) => {
             session.catalog = result?;
@@ -383,6 +459,53 @@ mod tests {
     use super::*;
     use scenemax_ide_services::Filesystem;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn designer_save_all_refreshes_generated_tab_and_uses_saved_init() {
+        let (mut app, dir, _) = setup();
+        let root = app
+            .world()
+            .resource::<Session>()
+            .workspace
+            .project()
+            .root()
+            .to_owned();
+        let source =
+            r#"{"entities":[{"type":"CODE","name":"Logic","codeText":"Logger.info \"old\""}]}"#;
+        let designer_path = root.join("scripts/scene.smdesign");
+        let code_path = root.join("scripts/scene.code");
+        let init_path = root.join("scripts/scene_init.code");
+        std::fs::write(&designer_path, source).unwrap();
+        std::fs::write(&code_path, "// prior output\r\n").unwrap();
+        std::fs::write(&init_path, "// init").unwrap();
+        let ids = {
+            let mut session = app.world_mut().resource_mut::<Session>();
+            [designer_path.clone(), code_path.clone(), init_path].map(|p| {
+                let doc = Filesystem::open_document(session.workspace.project(), &p).unwrap();
+                session.workspace.open_document(doc).unwrap()
+            })
+        };
+        text(&mut app, ids[0], &source.replace("old", "new"));
+        text(&mut app, ids[2], "Logger.info \"init\"\n");
+        save(&mut app, ids.to_vec(), SavePurpose::Save);
+        finish(&mut app);
+        let session = app.world().resource::<Session>();
+        let code = std::fs::read_to_string(&code_path).unwrap();
+        assert!(code.contains("Logger.info \"new\""));
+        assert!(code.contains("Logger.info \"init\""));
+        assert_eq!(session.workspace.document(ids[1]).unwrap().text(), code);
+        assert!(!session.workspace.has_dirty_documents());
+        assert!(session.status.contains("regenerated"));
+        assert!(
+            session
+                .workspace
+                .project()
+                .entries()
+                .iter()
+                .any(|e| e.path == code_path)
+        );
+        assert!(dir.path().exists());
+    }
 
     #[test]
     fn reload_does_not_overwrite_edits_made_while_reading() {

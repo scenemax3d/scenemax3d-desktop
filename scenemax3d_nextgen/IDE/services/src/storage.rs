@@ -104,6 +104,13 @@ pub enum StorageRequest {
 }
 /// Completed operations; failures are data and never overwrite live buffers.
 pub enum StorageResult {
+    /// Saved designer snapshots and freshly generated companion documents.
+    Generated {
+        /// Per-document save outcomes.
+        results: Vec<(DocumentId, Result<Document, ServiceError>)>,
+        /// Successfully regenerated code files.
+        companions: Vec<Document>,
+    },
     /// Material resources resolved on the worker.
     MaterialLibrary(Result<crate::material::Library, String>),
     /// Result of a navigator mutation; refresh is requested separately.
@@ -289,15 +296,59 @@ fn perform(
             &Project::new(root, vec![]),
             &path,
         )),
-        StorageRequest::Save(documents) => StorageResult::Saved(
-            documents
+        StorageRequest::Save(mut documents) => {
+            // Save init/end buffers before generating any designer in Save All.
+            documents.sort_by_key(|(_, doc)| {
+                doc.path()
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("smdesign"))
+            });
+            let generated_paths = documents
+                .iter()
+                .filter(|(_, doc)| {
+                    doc.path()
+                        .extension()
+                        .is_some_and(|e| e.eq_ignore_ascii_case("smdesign"))
+                })
+                .map(|(_, doc)| doc.path().with_extension("code"))
+                .collect::<Vec<_>>();
+            documents.retain(|(_, doc)| {
+                doc.is_dirty() || !generated_paths.iter().any(|p| p == doc.path())
+            });
+            let mut companions = Vec::new();
+            let mut failed = false;
+            let results = documents
                 .into_iter()
                 .map(|(id, mut doc)| {
-                    let result = Filesystem::save_document(&mut doc).map(|()| doc);
+                    let designer = doc
+                        .path()
+                        .extension()
+                        .is_some_and(|e| e.eq_ignore_ascii_case("smdesign"));
+                    let result = if failed && designer {
+                        Err(ServiceError::Limit(
+                            "Designer save cancelled because another document failed to save",
+                        ))
+                    } else {
+                        crate::scene_save::save(&mut doc).map(|generated| {
+                            if let Some(generated) = generated {
+                                companions.push(generated);
+                            }
+                            doc
+                        })
+                    };
+                    failed |= result.is_err();
                     (id, result)
                 })
-                .collect(),
-        ),
+                .collect();
+            if companions.is_empty() {
+                StorageResult::Saved(results)
+            } else {
+                StorageResult::Generated {
+                    results,
+                    companions,
+                }
+            }
+        }
     }
 }
 

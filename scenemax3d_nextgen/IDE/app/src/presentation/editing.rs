@@ -27,7 +27,11 @@ type EditorTypography<'w, 's> = Query<
     'w,
     's,
     (&'static mut TextFont, &'static mut bevy::text::LineHeight),
-    Or<(With<Editor>, With<Gutter>)>,
+    Or<(
+        With<Editor>,
+        With<Gutter>,
+        With<super::scene3d::inspector::CodeEditor>,
+    )>,
 >;
 
 pub(crate) fn apply_editor_zoom(
@@ -206,6 +210,8 @@ pub(crate) fn update_gutters(
     }
 }
 
+pub(crate) type CodeEditorFilter = Or<(With<Editor>, With<super::scene3d::inspector::CodeEditor>)>;
+
 pub(crate) fn highlight_documents(
     mut commands: Commands,
     inputs: Query<
@@ -214,7 +220,7 @@ pub(crate) fn highlight_documents(
             &EditableText,
             Option<&scenemax_ide_ui::TextHighlights>,
         ),
-        With<Editor>,
+        CodeEditorFilter,
     >,
 ) {
     use scenemax_ide_core::syntax::{TokenKind, highlight};
