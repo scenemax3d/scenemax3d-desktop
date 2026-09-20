@@ -14,16 +14,16 @@ stage_key => Lights.directional : color "#ffd6a0", intensity 1.85, direction (-0
 stage_fill => Lights.point : pos (22,-76,22), color "#6fa8ff", intensity 1200 lumens, range 70, shadow off
 stage_rim => Lights.point : pos (7,-72,62), color "#ff4aa2", intensity 1550 lumens, range 74, shadow off
 crystal_glow => Lights.point : pos (24,-82,162), color "#7ff7ff", intensity 850 lumens, range 26, shadow off
-
 Scene.environment.shader = "night_city_arena"
 Scene.skybox = "skybox_skybox1"
 level_ambient => Lights.ambient : color "#c7d6ff", intensity 0.25, affectsLightmappedMeshes true
 camera.pos(8.303196,-13.294227,49.450314)
-camera.rotate(-20.65568,115.06725,0.8177289)
+camera.rotate(-20.65567676337715,115.06724847250129,0.81772831967563)
 
-floor => static box : size (100.0,1.0,100.0), pos (0.0,-15.0,0.0), material "wall", shadow mode on
-level2 => static crime_city1: pos (220.0,-90.0,210.0), scale 0.02, shadow mode on async
-ring => fantasy_ring1: pos (13.0,-12.0,50.0), scale 25.0, shadow mode on async
+floor => static box : size (100,1,100), pos (0,-15,0), shadow mode on
+floor.material = "test_material1"
+level2 => static crime_city1 : pos (220,-90,210), scale (0.02,0.02,0.02), shadow mode on async
+ring => fantasy_ring1 : pos (13,-12,50), scale (25,25,25), shadow mode on async
 // rotate ring
 ring.turn left 360 in 50 seconds async
 
@@ -32,8 +32,8 @@ do async
   wait 3 seconds
   audio.play "drums_music1" loop
 end do
-tg => tiger3: pos (10.163753,-5.6443043,49.335724), scale 0.04, rotate(0.0,110.49832,0.0), shadow mode on async
-boss => dynamic boss: hidden, pos (9.0,0.0,35.0), scale 3.0, shadow mode on async
+tg => static tiger3 : pos (10.163753,-5.6443043,49.335724), scale (0.04,0.04,0.04), rotate(0,110.49832202482622,0), shadow mode on async
+boss => dynamic boss : hidden, pos (9,0,35), scale (3,3,3), shadow mode on async
 // boss character mode
 boss.switch to character mode
 // focus camera on tiger
@@ -43,44 +43,42 @@ tg."Idle_Lie Prone" loop
 //effects.flame.show : pos (13,-20,50), radius = 17, duration 4 async
 skybox.show solar system
 wait 1 seconds
-player1 => dynamic fighter1: hidden, pos (40.0,-89.249504,30.0), scale 3.0, rotate(0.0,173.26024,-0.0), shadow mode on
-, joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot") async
-player1_body_collider => collider box : size (1.0,1.0,1.0), pos (0.0,0.5,2.88586)
+player1 => dynamic fighter1 : hidden, pos (40,-89.249504,30), scale (3,3,3), rotate(0,173.26023745189076,0), shadow mode on, joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot") async
+player1_body_collider => collider box : size (1,1,1), pos (0,0.5,2.88586)
 // player1_body_collider_attach
 player1_body_collider.attach to player1: pos (0,1,0)
-player1_head_collider => collider sphere : pos (2.5929513,0.5,0.0), radius 0.5
+player1_head_collider => collider sphere : radius 0.5, pos (2.5929513,0.5,0)
 // player1_head_collider_attach
 player1_head_collider.attach to player1."mixamorig:Head": pos (0,0.5,0)
-player1_left_foot_collider => collider sphere : pos (4.0232105,0.5,0.0), radius 0.5
+player1_left_foot_collider => collider sphere : radius 0.5, pos (4.0232105,0.5,0)
 // player1_left_foot_collider_attach
 player1_left_foot_collider.attach to player1."mixamorig:LeftFoot": pos (0,0,0)
-player1_right_foot_collider => collider sphere : pos (5.2495646,0.5,0.0), radius 0.5
+player1_right_foot_collider => collider sphere : radius 0.5, pos (5.2495646,0.5,0)
 // player1_right_foot_collider_attach
 player1_right_foot_collider.attach to player1."mixamorig:RightFoot": pos (0,0,0)
-player1_left_hand_collider => collider sphere : pos (6.8733816,0.5,0.0), radius 0.5
+player1_left_hand_collider => collider sphere : radius 0.5, pos (6.8733816,0.5,0)
 // player1_left_hand_collider_attach
 player1_left_hand_collider.attach to player1."mixamorig:LeftHand": pos (0,0,0)
-player1_right_hand_collider => collider sphere : pos (8.34038,0.5,0.0), radius 0.5
+player1_right_hand_collider => collider sphere : radius 0.5, pos (8.34038,0.5,0)
 // player1_right_hand_collider_attach
 player1_right_hand_collider.attach to player1."mixamorig:RightHand": pos (0,0,0)
-player2 => dynamic old_fighter2: hidden, pos (40.0,-88.03695,16.5), scale 3.0, shadow mode on
-, joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot") async
-player2_body_collider => collider box : size (1.0,1.0,1.0), pos (0.14360523,0.5,0.0)
+player2 => dynamic old_fighter2 : hidden, pos (40,-88.03695,16.5), scale (3,3,3), shadow mode on, joints ("mixamorig:Head","mixamorig:LeftShoulder","mixamorig:LeftArm","mixamorig:LeftForeArm","mixamorig:LeftHand","mixamorig:RightShoulder","mixamorig:RightArm","mixamorig:RightForeArm","mixamorig:RightHand","mixamorig:LeftUpLeg","mixamorig:LeftLeg","mixamorig:LeftFoot","mixamorig:RightUpLeg","mixamorig:RightLeg","mixamorig:RightFoot") async
+player2_body_collider => collider box : size (1,1,1), pos (0.14360523,0.5,0)
 // player2_body_collider_attach
 player2_body_collider.attach to player2: pos (0,1,0)
-player2_head_collider => collider sphere : pos (-3.021677,0.5,0.0), radius 0.5
+player2_head_collider => collider sphere : radius 0.5, pos (-3.021677,0.5,0)
 // player2_head_collider_attach
 player2_head_collider.attach to player2."mixamorig:Head": pos (0,0.5,0)
-player2_right_foot_collider => collider sphere : pos (-6.405216,0.5,0.0), radius 0.5
+player2_right_foot_collider => collider sphere : radius 0.5, pos (-6.405216,0.5,0)
 // player2_right_foot_collider_attach
 player2_right_foot_collider.attach to player2."mixamorig:RightFoot": pos (0,0,0)
-player2_left_foot_collider => collider sphere : pos (-4.7635937,0.5,0.0), radius 0.5
+player2_left_foot_collider => collider sphere : radius 0.5, pos (-4.7635937,0.5,0)
 // player2_left_foot_collider_attach
 player2_left_foot_collider.attach to player2."mixamorig:LeftFoot": pos (0,0,0)
-player2_right_hand_collider => collider sphere : pos (-10.128401,0.5,0.0), radius 0.5
+player2_right_hand_collider => collider sphere : radius 0.5, pos (-10.128401,0.5,0)
 // player2_right_hand_collider_attach
 player2_right_hand_collider.attach to player2."mixamorig:RightHand": pos (0,0,0)
-player2_left_hand_collider => collider sphere : pos (-8.123157,0.5,0.0), radius 0.5
+player2_left_hand_collider => collider sphere : radius 0.5, pos (-8.123157,0.5,0)
 // player2_left_hand_collider_attach
 player2_left_hand_collider.attach to player2."mixamorig:LeftHand": pos (0,0,0)
 // Cache Sprites
@@ -99,7 +97,7 @@ player2.character.ignore player1.joints
 // Players Ready To Fight
 middleSphere is a sphere : hidden and radius 0.1 and material="alpha"
 ring.hide
-tg.switch to character mode
+//tg.switch to character mode
 tg.turn right 45 in 0.1 seconds
 tg.hide
 
@@ -108,16 +106,15 @@ player2.show
 
 player2.look at (player1)
 player1.look at (player2)
-dragons_gate => static dragon_gate1: pos (22.532026,-66.486755,148.68306), scale 30.0, shadow mode on, collision shape none async
-crystal => static meshy_crystal1: hidden, pos (23.844534,-88.28118,161.98776), shadow mode on, collision shape box async
+dragons_gate => static dragon_gate1 : pos (22.532026,-66.486755,148.68306), scale (30,30,30), shadow mode on, collision shape none async
+crystal => static meshy_crystal1 : hidden, pos (23.844534,-88.28118,161.98776), shadow mode on, collision shape box async
 // player_got_crystal
 when player1 collides with crystal do
 	switch to "game_level_train"
 end do
-crystal_box => static meshy_wooden_box: pos (23.732,-88.0,161.9128), scale 1.4, shadow mode on, collision shape box async
-axe => battleaxe1: hidden, pos (23.46958,-87.37234,147.34291), scale 2.0, shadow mode on, collision shape box async
-quad_1 => quad : size (1.0,1.0), pos (-33.073235,-88.97634,115.0642), scale 34.2, rotate(0.0,-44.446686,0.0)
-
+crystal_box => static meshy_wooden_box : pos (23.732,-88,161.9128), scale (1.4,1.4,1.4), shadow mode on, collision shape box async
+axe => battleaxe1 : hidden, pos (23.46958,-87.37234,147.34291), scale (2,2,2), shadow mode on, collision shape box async
+quad_1 => quad : size (1,1), pos (-33.073235,-88.97634,115.0642), scale (34.2,34.2,34.2), rotate(0,-44.446685123045924,0)
 // Write your finalization code here.
 // This code will be included at the end of the generated .code file.
 player2.data.is_jumping = 0

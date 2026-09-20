@@ -21,7 +21,8 @@ pub(crate) fn reconcile(
     let mut selection_changed = false;
     for change in changes.read() {
         match change {
-            ViewChange::CatalogChanged
+            ViewChange::MaterialsChanged
+            | ViewChange::CatalogChanged
             | ViewChange::BufferChanged(_)
             | ViewChange::SearchResultsChanged => {}
             ViewChange::DocumentClosed(id) => {

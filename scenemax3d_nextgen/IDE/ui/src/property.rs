@@ -195,6 +195,7 @@ pub fn dropdown_labeled<T: Component>(
                 display: Display::None,
                 width: percent(100.),
                 max_height: px(180.),
+                flex_shrink: 0.,
                 flex_direction: FlexDirection::Column,
                 overflow: Overflow::scroll_y(),
                 ..default()

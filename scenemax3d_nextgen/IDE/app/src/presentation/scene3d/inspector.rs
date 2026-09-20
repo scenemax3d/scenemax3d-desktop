@@ -7,6 +7,10 @@ use serde_json::{Value, json};
 #[derive(Component)]
 pub(crate) struct Property(pub String, pub String);
 #[derive(Component)]
+pub(crate) struct CodeEditor;
+#[derive(Component)]
+pub(crate) struct RefreshMaterials;
+#[derive(Component)]
 pub(crate) struct Apply(pub bool);
 #[derive(Component)]
 pub(crate) struct Proportional;
@@ -37,6 +41,43 @@ pub(super) fn build(commands: &mut Commands, parent: Entity, scene: &Scene3d, in
         return;
     }
     field(commands, parent, "Name", "name", &e.name);
+    if e.kind == "CODE" {
+        property::heading(commands, parent, "SceneMax code");
+        commands.spawn((
+            scenemax_ide_ui::label(
+                "Inserted at this node when scene code is generated. Ctrl+S to save.",
+                12.,
+            ),
+            ChildOf(parent),
+        ));
+        let source = p["codeText"].as_str().unwrap_or("");
+        let editor = scenemax_ide_ui::spawn_editor(
+            commands,
+            parent,
+            Property("codeText".into(), source.into()),
+            source,
+            true,
+        );
+        commands.entity(editor).insert((
+            CodeEditor,
+            Node {
+                width: percent(100.),
+                height: px(360.),
+                min_height: px(200.),
+                min_width: px(0.),
+                flex_shrink: 0.,
+                padding: px(10.).all(),
+                overflow: Overflow::clip(),
+                ..default()
+            },
+        ));
+        commands
+            .entity(editor)
+            .observe(|mut event: On<Pointer<Scroll>>| {
+                event.propagate(false);
+            });
+        return;
+    }
     if e.kind != "SECTION" {
         choice(
             commands,
@@ -85,6 +126,19 @@ pub(super) fn build(commands: &mut Commands, parent: Entity, scene: &Scene3d, in
         ] {
             toggle(commands, parent, title, key, p);
         }
+        choice(
+            commands,
+            parent,
+            "Material",
+            "material",
+            p,
+            scene
+                .catalog
+                .get("material")
+                .map(Vec::as_slice)
+                .unwrap_or(&[]),
+        );
+        button(commands, parent, "Refresh materials", RefreshMaterials);
         choice(
             commands,
             parent,
@@ -141,18 +195,6 @@ pub(super) fn build(commands: &mut Commands, parent: Entity, scene: &Scene3d, in
                 p["jointMapping"].as_str().unwrap_or(""),
             );
         } else {
-            choice(
-                commands,
-                parent,
-                "Material",
-                "material",
-                p,
-                scene
-                    .catalog
-                    .get("material")
-                    .map(Vec::as_slice)
-                    .unwrap_or(&[]),
-            );
             toggle(commands, parent, "Static", "staticEntity", p);
             toggle(commands, parent, "Collider", "colliderEntity", p);
             for key in [

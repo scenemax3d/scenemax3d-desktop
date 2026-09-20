@@ -12,6 +12,7 @@ members = [
     "Projector/launcher",
     "Engine/runtime",
     "Engine/effects",
+    "Engine/materials",
     "Engine/scripting",
     "Engine/runtime_ui",
     "Engine/vm",

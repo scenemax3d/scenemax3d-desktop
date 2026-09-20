@@ -1,4 +1,6 @@
-# SceneMax Studio — working script editor
+# SceneMax Studio — native IDE
+
+Material authoring: **Assets → Create New Material…** opens the retained [Material Studio](MATERIAL_EDITOR.md): a visual PBR composer with texture channels, presets, live primitive/model previews, named-slot assignment, undo, and shared runtime rendering.
 
 Latest distribution slice: **Tools → Package & Deploy…** provides retained release settings, desktop packaging, phase progress, live logs, cancellation and Butler publishing/retry. Windows is a single Java-free executable; Linux/macOS use ZIPs. Android/iOS/Web expose explicit SDK-builder integration, with runtime-port limitations described in [DEPLOYMENT.md](DEPLOYMENT.md). This supersedes older statements below that all packaging is deferred.
 
@@ -210,3 +212,7 @@ The menu uses the Java IDE's contextual labels and ordering. Working actions inc
 Naming and confirmation dialogs are Bevy UI. Disk operations execute on the existing bounded worker. Existing destinations and paths outside the project are rejected. Renames preserve open buffers and their undo history; reload rejects newer edits that arrive while disk is being read. Delete requires confirmation, protects the root and main entry point, and moves files to `.scenemax-studio/deleted-*` for recovery, including existing scene/UI code companions. File mutations require the game to be stopped and affected buffers saved.
 
 GPU check: `--smoke-frames 120 --smoke-tree-menu scripts --smoke-screenshot <absolute-output.png>` opens a folder context menu after project loading; use a file path instead to inspect the file menu.
+
+### Code editor font size
+
+With focus in the code editor, press Ctrl+plus (Ctrl+= also works) to enlarge text or Ctrl+minus to reduce it. Numeric keypad plus/minus are supported. Font size ranges from 8 to 48 pixels; line spacing and line numbers scale together. The setting applies across code tabs for the current IDE session.

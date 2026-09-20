@@ -7,7 +7,10 @@ use std::{
     path::PathBuf,
     time::{Duration, Instant},
 };
-type Stamp = Vec<(DocumentId, DocumentRevision, u64, bool)>;
+type Stamp = (
+    Vec<(DocumentId, DocumentRevision, u64, bool)>,
+    scenemax_ide_services::workspace_state::WorkspaceState,
+);
 pub(crate) struct RecoveryState {
     pub(crate) candidates: Option<RecoveryBatch>,
     pub(crate) retire: Vec<PathBuf>,
@@ -31,11 +34,14 @@ impl Default for RecoveryState {
     }
 }
 fn stamp(session: &Session) -> Stamp {
-    session
-        .workspace
-        .documents()
-        .map(|(id, doc)| (id, doc.revision(), doc.saved_version(), doc.is_dirty()))
-        .collect()
+    (
+        session
+            .workspace
+            .documents()
+            .map(|(id, doc)| (id, doc.revision(), doc.saved_version(), doc.is_dirty()))
+            .collect(),
+        scenemax_ide_services::workspace_state::WorkspaceState::capture(&session.workspace),
+    )
 }
 impl EditorServices {
     fn checkpoint(&mut self, session: &Session, discard: bool) -> Result<()> {
@@ -53,6 +59,10 @@ impl EditorServices {
             root: session.workspace.project().root().to_owned(),
             documents,
             retire: self.recovery.retire.clone(),
+            workspace: Some(
+                scenemax_ide_services::workspace_state::WorkspaceState::capture(&session.workspace),
+            ),
+            last_project: self.last_project_file.clone(),
         })?;
         self.recovery.pending = true;
         self.recovery.stamp = Some(stamp(session));

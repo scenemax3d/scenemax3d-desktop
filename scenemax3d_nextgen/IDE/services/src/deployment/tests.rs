@@ -599,3 +599,41 @@ fn model_inventory_excludes_legacy_and_unused_retargets_and_explains_gltf() {
     );
     assert!(root.path().join("resources/Models/legacy.j3o").exists());
 }
+
+#[test]
+fn native_materials_package_only_when_reachable_with_their_textures() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join("scripts")).unwrap();
+    fs::create_dir_all(root.path().join("resources/textures")).unwrap();
+    fs::write(
+        root.path().join("scripts/main"),
+        "shape => box\nshape.material = \"finish\"\nshape.shader = \"dormant\"\n",
+    )
+    .unwrap();
+    let mut value = scenemax_assets::material::preset("Gold");
+    value["textures"] = serde_json::json!({"baseColor":"textures/gold.png"});
+    fs::write(root.path().join("scripts/finish.smmat"), value.to_string()).unwrap();
+    value["textures"] = serde_json::json!({"baseColor":"textures/unused.png"});
+    fs::write(root.path().join("scripts/dormant.smmat"), value.to_string()).unwrap();
+    for file in ["gold.png", "unused.png"] {
+        fs::write(root.path().join("resources/textures").join(file), "fixture").unwrap();
+    }
+    let request = Request {
+        project: root.path().into(),
+        entry: root.path().join("scripts/main"),
+        workspace: workspace(),
+        settings: Default::default(),
+    };
+    let output = root.path().join("snapshot");
+    assets::snapshot(
+        &request,
+        &output,
+        &root.path().join("package-size.json"),
+        &context(),
+    )
+    .unwrap();
+    assert!(output.join("scripts/finish.smmat").is_file());
+    assert!(output.join("resources/textures/gold.png").is_file());
+    assert!(!output.join("scripts/dormant.smmat").exists());
+    assert!(!output.join("resources/textures/unused.png").exists());
+}

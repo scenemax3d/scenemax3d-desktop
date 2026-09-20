@@ -157,6 +157,7 @@ pub enum Statement {
     CameraMove(CameraMoveStatement),
     Audio(AudioStatement),
     SetShader(SetShaderStatement),
+    SetMaterial(SetMaterialStatement),
     SetEnvironmentShader {
         shader: AssignmentValue,
     },
@@ -465,6 +466,12 @@ pub struct AudioStatement {
 pub struct SetShaderStatement {
     pub target: String,
     pub shader: AssignmentValue,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetMaterialStatement {
+    pub target: String,
+    pub material: AssignmentValue,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4279,6 +4286,16 @@ fn parse_shader_statement(line: &str) -> Result<Option<Statement>, ParseError> {
             skybox: parse_shader_value(right)?,
         }));
     }
+    if lower_target.ends_with(".material") {
+        let target_name = target[..target.len() - ".material".len()].trim();
+        if target_name.is_empty() || !is_variable_path(target_name) {
+            return Ok(None);
+        }
+        return Ok(Some(Statement::SetMaterial(SetMaterialStatement {
+            target: target_name.to_owned(),
+            material: parse_shader_value(right)?,
+        })));
+    }
     if !lower_target.ends_with(".shader") {
         return Ok(None);
     }
@@ -6059,11 +6076,19 @@ fn parse_outer_radius_pair_after(text: &str) -> Result<Option<(f32, f32)>, Parse
 }
 
 fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseError> {
-    let scale = parse_scalar_after(text, "scale")?.map(|value| SceneMaxVec3 {
-        x: value,
-        y: value,
-        z: value,
-    });
+    let scale = if text
+        .to_ascii_lowercase()
+        .find("scale")
+        .is_some_and(|index| text[index + "scale".len()..].trim_start().starts_with('('))
+    {
+        Some(parse_vec3_after(text, "scale")?)
+    } else {
+        parse_scalar_after(text, "scale")?.map(|value| SceneMaxVec3 {
+            x: value,
+            y: value,
+            z: value,
+        })
+    };
     let scale_value = parse_scale_value_after(text)?;
     let outer_radius = parse_outer_radius_pair_after(text)?;
     let inner_radius = parse_inner_radius_pair_after(text)?;
@@ -7022,6 +7047,45 @@ mod tests {
                 },
             }]
         );
+    }
+
+    #[test]
+    fn tuple_model_scale_preserves_all_axes_and_rejects_invalid_vectors() {
+        for scale in ["(30,30,30)", "(2,3,4)"] {
+            let source = format!(
+                "mesh => static sample_asset : pos (8,-12,45), scale {scale}, shadow mode on async"
+            );
+            let program = parse_program(&source).unwrap();
+            let Statement::ModelDecl { options, .. } = &program.statements[0] else {
+                panic!("model expected")
+            };
+            let expected = if scale == "(30,30,30)" {
+                SceneMaxVec3 {
+                    x: 30.,
+                    y: 30.,
+                    z: 30.,
+                }
+            } else {
+                SceneMaxVec3 {
+                    x: 2.,
+                    y: 3.,
+                    z: 4.,
+                }
+            };
+            assert_eq!(options.scale, Some(expected));
+            assert_eq!(
+                options.position,
+                Some(SceneMaxVec3 {
+                    x: 8.,
+                    y: -12.,
+                    z: 45.
+                })
+            );
+            assert_eq!(options.scale_value, None);
+        }
+        for scale in ["(2,3)", "(2,no,4)", "(2,3,4"] {
+            assert!(parse_program(&format!("mesh => sample_asset : scale {scale}")).is_err());
+        }
     }
 
     #[test]
@@ -10325,5 +10389,24 @@ run tick(score+10) every tick_time+0.25 seconds
                     ]
                     && play.async_run
         ));
+    }
+}
+
+#[cfg(test)]
+mod material_assignment_tests {
+    use super::*;
+    #[test]
+    fn material_and_shader_assignments_remain_distinct() {
+        let program = parse_program(
+            "object.material = \"finish\"\nobject.shader = \"effect\"\nobject.material = \"\"",
+        )
+        .unwrap();
+        assert!(
+            matches!(&program.statements[0], Statement::SetMaterial(SetMaterialStatement { target, material: AssignmentValue::Symbol(name) }) if target == "object" && name == "finish")
+        );
+        assert!(matches!(&program.statements[1], Statement::SetShader(_)));
+        assert!(
+            matches!(&program.statements[2], Statement::SetMaterial(SetMaterialStatement { material: AssignmentValue::Symbol(name), .. }) if name.is_empty())
+        );
     }
 }

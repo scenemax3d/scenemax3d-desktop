@@ -51,8 +51,12 @@ pub struct LaunchOptions {
 pub fn run(options: LaunchOptions) -> Result<()> {
     // Show the shell immediately; canonicalization, scanning and initial loading
     // belong to the disk worker, including startup on slow/network storage.
+    let restart_executable = std::env::current_exe()?;
+    let restart_catalog = options.project_catalog.clone();
+    let restart_projector = options.projector.clone();
     let mut session = Session::new(Project::new(options.project_root.clone(), vec![]));
     session.status = "Opening project…".into();
+    let restart_project = session.restart_project.clone();
     let projector = match options.projector {
         Some(path) => path,
         None => std::env::current_exe()?.with_file_name(format!(
@@ -62,10 +66,14 @@ pub fn run(options: LaunchOptions) -> Result<()> {
     };
     let mut services = EditorServices::new(projector)?;
     services.catalog_root = options.project_root.clone();
+    if options.smoke_frames.is_none() {
+        services.last_project_file = scenemax_ide_services::workspace_state::last_project_file();
+    }
     services.catalog_path = options.project_catalog.clone();
     services.catalog_storage.request(StorageRequest::Catalog {
         root: options.project_root.clone(),
         path: options.project_catalog,
+        last_project: services.last_project_file.clone(),
     })?;
     if options.select_catalog_project {
         services.catalog_startup = Some((options.project_root, options.script));
@@ -98,7 +106,15 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         })
         .add_plugins(
             DefaultPlugins
-                .set(bevy::render::RenderPlugin {render_creation: bevy::render::settings::RenderCreation::Automatic(Box::new(bevy::render::settings::WgpuSettings {backends: Some(bevy::render::settings::Backends::VULKAN),..default()})),..default()})
+                .set(bevy::render::RenderPlugin {
+                    render_creation: bevy::render::settings::RenderCreation::Automatic(Box::new(
+                        bevy::render::settings::WgpuSettings {
+                            backends: Some(bevy::render::settings::Backends::VULKAN),
+                            ..default()
+                        },
+                    )),
+                    ..default()
+                })
                 .set(bevy::asset::AssetPlugin {
                     unapproved_path_mode: bevy::asset::UnapprovedPathMode::Forbid,
                     ..default()
@@ -115,18 +131,31 @@ pub fn run(options: LaunchOptions) -> Result<()> {
                 }),
         )
         .add_plugins(scenemax_effects::EffectsPlugin)
+        .add_plugins(scenemax_materials::MaterialsPlugin)
         .init_resource::<scenemax_effects::PreviewClock>()
         .add_plugins((TabNavigationPlugin, StudioUiPlugin, StudioPlugin))
         .add_plugins(presentation::scene3d::gizmo::GizmoPlugin);
     bevy::asset::embedded_asset!(app, "presentation/scenemax_icon.png");
     presentation::java_icons::register(&mut app);
     app.init_gizmo_group::<presentation::effect_import::preview::Lines>();
-    app.world_mut().resource_mut::<bevy::gizmos::config::GizmoConfigStore>().config_mut::<presentation::effect_import::preview::Lines>().0.render_layers = bevy::camera::visibility::RenderLayers::layer(4);
+    app.world_mut()
+        .resource_mut::<bevy::gizmos::config::GizmoConfigStore>()
+        .config_mut::<presentation::effect_import::preview::Lines>()
+        .0
+        .render_layers = bevy::camera::visibility::RenderLayers::layer(4);
     app.init_gizmo_group::<presentation::model_import::render::ImportLines>();
-    app.world_mut().resource_mut::<bevy::gizmos::config::GizmoConfigStore>()
-        .config_mut::<presentation::model_import::render::ImportLines>().0.render_layers = bevy::camera::visibility::RenderLayers::layer(3);
-    app.add_systems(Update,presentation::model_import::render::overlays);
-    app.add_systems(Update,presentation::effect_import::preview::update.after(presentation::effect_import::update).after(presentation::scene3d::playback::cadence));
+    app.world_mut()
+        .resource_mut::<bevy::gizmos::config::GizmoConfigStore>()
+        .config_mut::<presentation::model_import::render::ImportLines>()
+        .0
+        .render_layers = bevy::camera::visibility::RenderLayers::layer(3);
+    app.add_systems(Update, presentation::model_import::render::overlays);
+    app.add_systems(
+        Update,
+        presentation::effect_import::preview::update
+            .after(presentation::effect_import::update)
+            .after(presentation::scene3d::playback::cadence),
+    );
 
     if let Some(remaining) = options.smoke_frames {
         app.insert_resource(presentation::smoke::SmokeCapture {
@@ -139,13 +168,27 @@ pub fn run(options: LaunchOptions) -> Result<()> {
             tree_menu: options.smoke_tree_menu,
         });
     }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_INVENTORY").is_some() {
+        app.add_systems(
+            Update,
+            presentation::inventory::smoke.before(presentation::inventory::update),
+        );
+    }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_WEAPON").is_some() {
+        app.add_systems(Update, presentation::weapon::smoke);
+    }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_FONT").is_some() {
+        app.add_systems(Update, presentation::font_generator::smoke);
+    }
     if options.smoke_menu && options.smoke_frames.is_some() {
         app.world_mut()
             .resource_mut::<presentation::chrome::ChromeState>()
             .preview_file_menu();
     }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_IMPORT").is_some() {
-        app.world_mut().resource_mut::<presentation::asset_import::State>().preview(scenemax_ide_services::imports::Kind::Sprite);
+        app.world_mut()
+            .resource_mut::<presentation::asset_import::State>()
+            .preview(scenemax_ide_services::imports::Kind::Sprite);
     }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_MODEL").is_some() {
         app.add_systems(Update, presentation::model_import::smoke);
@@ -153,10 +196,28 @@ pub fn run(options: LaunchOptions) -> Result<()> {
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_SPRITE").is_some() {
         app.add_systems(Update, presentation::sprite_import::smoke);
     }
-    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_EFFECT").is_some() {app.add_systems(Update,presentation::effect_import::smoke);}
-    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_DEPLOY").is_some() { app.add_systems(Update, presentation::deployment::smoke); }
-    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_DEPLOY_BUILD").is_some() { app.add_systems(Update, presentation::deployment::smoke_build); }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_EFFECT").is_some() {
+        app.add_systems(Update, presentation::effect_import::smoke);
+    }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_DEPLOY").is_some() {
+        app.add_systems(Update, presentation::deployment::smoke);
+    }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_DEPLOY_BUILD").is_some() {
+        app.add_systems(Update, presentation::deployment::smoke_build);
+    }
     app.run();
+    let restart = restart_project
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take();
+    if let Some(root) = restart {
+        scenemax_ide_services::workspace_state::restart(
+            &restart_executable,
+            &root,
+            restart_catalog.as_deref(),
+            restart_projector.as_deref(),
+        )?;
+    }
     Ok(())
 }
 
@@ -175,6 +236,8 @@ impl Plugin for StudioPlugin {
             .init_resource::<presentation::deployment::View>()
             .init_resource::<presentation::tree_menu::State>()
             .init_resource::<presentation::asset_import::State>()
+            .init_resource::<presentation::inventory::State>()
+            .init_resource::<presentation::font_generator::State>()
             .init_resource::<presentation::model_import::State>()
             .init_resource::<presentation::sprite_import::State>()
             .init_resource::<presentation::effect_import::State>()
@@ -190,6 +253,16 @@ impl Plugin for StudioPlugin {
             .init_resource::<presentation::completion::CompletionState>()
             .init_resource::<ButtonInput<MouseButton>>()
             .init_resource::<presentation::chrome::ChromeState>()
+            .init_resource::<presentation::editing::EditorZoom>()
+            .init_resource::<application::material::MaterialLibrary>()
+            .init_resource::<presentation::material::State>()
+            .init_resource::<presentation::weapon::State>()
+            .add_systems(
+                PostUpdate,
+                presentation::weapon::attachment::follow
+                    .after(bevy::app::AnimationSystems)
+                    .before(bevy::transform::TransformSystems::Propagate),
+            )
             .init_resource::<presentation::browser::TreeState>()
             .add_message::<ViewChange>()
             .add_systems(
@@ -222,6 +295,9 @@ impl Plugin for StudioPlugin {
                         presentation::browser::keyboard,
                         presentation::tree_menu::update,
                         presentation::asset_import::update,
+                        presentation::inventory::update,
+                        presentation::inventory::preview_update,
+                        presentation::font_generator::update,
                         presentation::deployment::collect,
                         presentation::deployment::keyboard,
                         application::deployment::update,
@@ -229,6 +305,8 @@ impl Plugin for StudioPlugin {
                     )
                         .chain(),
                     (
+                        presentation::material::update,
+                        presentation::weapon::update,
                         presentation::model_import::update,
                         presentation::sprite_import::update,
                         presentation::effect_import::update,
@@ -243,14 +321,22 @@ impl Plugin for StudioPlugin {
                         application::execute_commands,
                     )
                         .chain(),
-                    (application::poll_jobs, application::symbols::update).chain(),
+                    (
+                        application::poll_jobs,
+                        application::symbols::update,
+                        application::material::library,
+                    )
+                        .chain(),
                     application::checkpoint_buffers,
                     (
                         presentation::reconcile::reconcile,
                         presentation::designer::refresh,
                         presentation::model_import::render::update,
+                        presentation::material::preview::update,
+                        presentation::weapon::preview::update,
                         presentation::sprite_import::preview::update,
                         presentation::model_import::playback::update,
+                        presentation::scene3d::refresh_materials,
                         presentation::scene3d::update,
                         presentation::scene3d::synchronize_tree,
                         presentation::scene3d::synchronize_names,
@@ -271,6 +357,7 @@ impl Plugin for StudioPlugin {
                     presentation::reconcile::search_results,
                     presentation::editing::project_edits,
                     (
+                        presentation::editing::apply_editor_zoom,
                         presentation::editing::update_gutters,
                         presentation::editing::highlight_documents,
                         presentation::assistance::bracket_emphasis,
@@ -278,6 +365,7 @@ impl Plugin for StudioPlugin {
                     )
                         .chain(),
                     presentation::labels::refresh_labels,
+                    presentation::labels::close_prompt,
                     (
                         presentation::labels::refresh_console,
                         presentation::labels::output_visibility,

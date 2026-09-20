@@ -5114,6 +5114,34 @@ Material wall : Common/MatDefs/Light/Lighting.j3md {
     }
 
     #[test]
+    fn parsed_designer_scale_reaches_runtime_transform() {
+        for (source, scale) in [
+            ("30", Vec3::splat(30.)),
+            ("(30,30,30)", Vec3::splat(30.)),
+            ("(2,3,4)", Vec3::new(2., 3., 4.)),
+        ] {
+            let program = scenemax_parser::parse_program(&format!(
+                "mesh => static sample_asset : pos (8,-12,45), scale {source}, rotate(0,90,0) async"
+            ))
+            .unwrap();
+            let scenemax_parser::Statement::ModelDecl { options, .. } = &program.statements[0] else {
+                panic!("model expected")
+            };
+            let transform = transform_from_options(options, Some([0.02; 3]));
+            assert_eq!(transform.scale, scale);
+            assert_eq!(transform.translation, Vec3::new(8., -12., 45.));
+            assert!(transform.rotation.abs_diff_eq(
+                rotation_from_degrees(SceneMaxVec3 {
+                    x: 0.,
+                    y: 90.,
+                    z: 0.
+                }),
+                0.0001
+            ));
+        }
+    }
+
+    #[test]
     fn model_script_scale_overrides_asset_scale() {
         let transform = transform_from_options(
             &EntityOptions {

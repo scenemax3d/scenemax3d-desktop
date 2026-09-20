@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = {
     'scenemax_game_launcher': 'Projector/launcher',
     'scenemax_effects': 'Engine/effects',
+    'scenemax_materials': 'Engine/materials',
     'scenemax_ide': 'IDE/app', 'scenemax_ide_core': 'IDE/core',
     'scenemax_ide_services': 'IDE/services', 'scenemax_ide_ui': 'IDE/ui',
     'scenemax_projector_nextgen': 'Projector/app', 'scenemax_assets': 'Common/assets',
@@ -23,7 +24,7 @@ IDE_ALLOWED = {
     'IDE/core': set(),
     'IDE/ui': set(),
     'IDE/services': {'IDE/core', 'Language/parser', 'Common/assets', 'Engine/runtime_ui'},
-    'IDE/app': {'IDE/core', 'IDE/services', 'IDE/ui', 'Common/assets', 'Engine/effects'},
+    'IDE/app': {'IDE/core', 'IDE/services', 'IDE/ui', 'Common/assets', 'Engine/effects', 'Engine/materials'},
 }
 
 def dependency_allowed(source, destination):

@@ -9,6 +9,8 @@ use std::{collections::VecDeque, path::PathBuf};
 /// Every input surface dispatches the same application commands.
 #[derive(Clone)]
 pub(crate) enum Command {
+    Material(super::material::Edit),
+    Weapon(super::material::Edit),
     Tree(scenemax_ide_services::TreeOperation),
     SavePath(PathBuf),
     RunPath(PathBuf),
@@ -40,6 +42,7 @@ pub(crate) enum Command {
     Stop,
     OpenProject(PathBuf),
     RequestClose,
+    Restart,
     CancelClose,
     DiscardExit,
 }
@@ -73,6 +76,14 @@ fn execute(
     changes: &mut MessageWriter<ViewChange>,
     _exit: &mut MessageWriter<AppExit>,
 ) -> Result<()> {
+    if session.asset_operation_pending
+        && !matches!(
+            command,
+            Command::Stop | Command::CancelClose | Command::ClearConsole
+        )
+    {
+        bail!("Wait for the asset operation to finish before changing or closing the project");
+    }
     if let Some(result) = super::tree_commands::execute(&command, session, services) {
         return result;
     }
@@ -82,6 +93,7 @@ fn execute(
             Command::Edit(_)
                 | Command::CloseDocument(_)
                 | Command::CloseTab
+                | Command::Restart
                 | Command::RequestClose
                 | Command::DiscardExit
                 | Command::OpenProject(_)
@@ -92,6 +104,8 @@ fn execute(
         bail!("Finish or cancel text composition before this action");
     }
     match command {
+        Command::Material(edit) => super::material::edit(edit, session, changes)?,
+        Command::Weapon(edit) => super::weapon::edit(edit, session, changes)?,
         Command::Tree(_)
         | Command::SavePath(_)
         | Command::RunPath(_)
@@ -238,15 +252,41 @@ fn execute(
         Command::Check => {
             let id = session.workspace.require_active()?;
             let doc = session.workspace.document(id)?;
-            if doc.path().extension().is_some_and(|e| e.eq_ignore_ascii_case("smeffectimport")) {
-                scenemax_ide_core::effect_import::validate(&serde_json::from_str(doc.text())?).map_err(anyhow::Error::msg)?;
-                session.status="Effect import settings are valid".into();return Ok(());
+            if doc
+                .path()
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("smmat"))
+            {
+                scenemax_assets::material::validate(&serde_json::from_str(doc.text())?)
+                    .map_err(anyhow::Error::msg)?;
+                session.status = "Material is valid".into();
+                return Ok(());
             }
-            if doc.path().extension().is_some_and(|e| e.eq_ignore_ascii_case("smspriteimport")) {
-                scenemax_ide_core::sprite_import::validate(&serde_json::from_str(doc.text())?).map_err(anyhow::Error::msg)?;
-                session.status = "Sprite import settings are valid".into();return Ok(());
+            if doc
+                .path()
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("smeffectimport"))
+            {
+                scenemax_ide_core::effect_import::validate(&serde_json::from_str(doc.text())?)
+                    .map_err(anyhow::Error::msg)?;
+                session.status = "Effect import settings are valid".into();
+                return Ok(());
             }
-            if doc.path().extension().is_some_and(|e| e.eq_ignore_ascii_case("smmodelimport")) {
+            if doc
+                .path()
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("smspriteimport"))
+            {
+                scenemax_ide_core::sprite_import::validate(&serde_json::from_str(doc.text())?)
+                    .map_err(anyhow::Error::msg)?;
+                session.status = "Sprite import settings are valid".into();
+                return Ok(());
+            }
+            if doc
+                .path()
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("smmodelimport"))
+            {
                 let draft = serde_json::from_str(doc.text())?;
                 scenemax_ide_core::model_import::validate(&draft).map_err(anyhow::Error::msg)?;
                 session.status = "Model import settings are valid".into();
@@ -281,6 +321,7 @@ fn execute(
             services.catalog_storage.request(StorageRequest::Catalog {
                 root: services.catalog_root.clone(),
                 path: services.catalog_path.clone(),
+                last_project: None,
             })?;
             session.status = "Refreshing projects…".into();
         }
@@ -331,14 +372,18 @@ fn execute(
             if services.projector.is_running() {
                 bail!("Stop the projector before switching projects");
             }
-            services.storage.request(StorageRequest::Project {
+            services.storage.request(StorageRequest::SwitchProject {
+                previous: session.workspace.project().root().to_owned(),
+                workspace: scenemax_ide_services::workspace_state::WorkspaceState::capture(
+                    &session.workspace,
+                ),
                 root: path,
-                script: None,
             })?;
             session.status = "Opening project…".into();
         }
 
-        Command::RequestClose => {
+        Command::RequestClose | Command::Restart => {
+            session.restarting = matches!(command, Command::Restart);
             session.closing_tab = None;
             if session.workspace.has_dirty_documents() || services.is_saving() {
                 session.closing = true;
@@ -347,6 +392,7 @@ fn execute(
             }
         }
         Command::CancelClose => {
+            session.restarting = false;
             session.closing = false;
             services.recovery.exit = None;
         }

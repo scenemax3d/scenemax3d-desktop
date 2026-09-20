@@ -382,6 +382,8 @@ fn recovery_requires_restore_and_does_not_write_script_files() {
             root,
             documents: vec![snapshot],
             retire: vec![],
+            workspace: None,
+            last_project: None,
         })
         .unwrap();
     finish_io(&mut app);
@@ -1315,7 +1317,15 @@ fn embedded_designer_updates_saves_and_undoes_without_a_text_editor() {
     finish_io(&mut app);
     for _ in 0..200 {
         app.update();
-        if app.world_mut().query_filtered::<Entity, With<crate::presentation::designer::Property>>().iter(app.world()).next().is_some() { break; }
+        if app
+            .world_mut()
+            .query_filtered::<Entity, With<crate::presentation::designer::Property>>()
+            .iter(app.world())
+            .next()
+            .is_some()
+        {
+            break;
+        }
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     let id = app
@@ -1540,4 +1550,306 @@ fn save_shortcut_includes_native_input_queued_in_the_same_frame() {
         std::fs::read_to_string(path).unwrap(),
         "// original\n// just typed"
     );
+}
+
+#[test]
+fn code_zoom_updates_text_and_gutter_without_editing_document() {
+    use crate::presentation::components::{Field, Gutter};
+    use bevy::input_focus::{FocusCause, InputFocus};
+    let (mut app, _dir, _) = app();
+    app.init_resource::<InputFocus>();
+    let editor = {
+        let world = app.world_mut();
+        world
+            .query_filtered::<Entity, With<Editor>>()
+            .single(world)
+            .unwrap()
+    };
+    app.world_mut()
+        .resource_mut::<InputFocus>()
+        .set(editor, FocusCause::Navigated);
+    for (key, expected) in [
+        (KeyCode::Equal, 17.),
+        (KeyCode::NumpadAdd, 18.),
+        (KeyCode::Minus, 17.),
+        (KeyCode::NumpadSubtract, 16.),
+    ] {
+        let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        keys.reset_all();
+        keys.press(KeyCode::ControlLeft);
+        keys.press(key);
+        app.update();
+        assert_eq!(
+            app.world().get::<TextFont>(editor).unwrap().font_size,
+            FontSize::Px(expected)
+        );
+        assert_eq!(
+            *app.world().get::<bevy::text::LineHeight>(editor).unwrap(),
+            bevy::text::LineHeight::Px(expected * 22. / 16.)
+        );
+        let world = app.world_mut();
+        let font = world
+            .query_filtered::<&TextFont, With<Gutter>>()
+            .single(world)
+            .unwrap();
+        assert_eq!(font.font_size, FontSize::Px(expected));
+        assert_eq!(
+            world
+                .get::<EditableText>(editor)
+                .unwrap()
+                .value()
+                .to_string(),
+            "// original\n"
+        );
+    }
+    let field = {
+        let world = app.world_mut();
+        world
+            .query_filtered::<Entity, With<Field>>()
+            .iter(world)
+            .next()
+            .unwrap()
+    };
+    app.world_mut()
+        .resource_mut::<InputFocus>()
+        .set(field, FocusCause::Navigated);
+    let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+    keys.reset_all();
+    keys.press(KeyCode::ControlLeft);
+    keys.press(KeyCode::Equal);
+    app.update();
+    assert_eq!(
+        app.world().get::<TextFont>(editor).unwrap().font_size,
+        FontSize::Px(16.)
+    );
+}
+
+#[test]
+fn material_document_uses_retained_controls_and_normal_undo() {
+    use crate::{
+        application::material::{Edit, MaterialLibrary},
+        presentation::{components::EditorHost, material::MaterialHost},
+    };
+    let (mut app, dir, _) = app();
+    let source = scenemax_assets::material::preset("Porcelain").to_string();
+    std::fs::write(dir.path().join("scripts/finish.smmat"), &source).unwrap();
+    let id = app
+        .world_mut()
+        .resource_mut::<Session>()
+        .workspace
+        .open_document(
+            scenemax_ide_core::Document::from_bytes(
+                dir.path().join("scripts/finish.smmat"),
+                source.as_bytes().into(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    {
+        let mut library = app.world_mut().resource_mut::<MaterialLibrary>();
+        library.project = dir.path().canonicalize().unwrap();
+        library.assets = Some(scenemax_ide_services::material::Library {
+            root: dir.path().join("resources"),
+            ..Default::default()
+        });
+    }
+    app.world_mut()
+        .write_message(crate::application::ViewChange::DocumentOpened(id));
+    app.world_mut()
+        .write_message(crate::application::ViewChange::ActiveChanged);
+    app.update();
+    app.update();
+    let host = {
+        let world = app.world_mut();
+        world
+            .query_filtered::<(Entity, &EditorHost), With<MaterialHost>>()
+            .iter(world)
+            .find(|(_, h)| h.0 == id)
+            .unwrap()
+            .0
+    };
+    let revision = app
+        .world()
+        .resource::<Session>()
+        .workspace
+        .document(id)
+        .unwrap()
+        .revision();
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command::Material(Edit {
+            id,
+            revision,
+            pointer: "/metallic".into(),
+            value: serde_json::json!(0.75),
+            continuing: false,
+        }));
+    app.update();
+    app.update();
+    assert!(app.world().get_entity(host).is_ok());
+    let document = app
+        .world()
+        .resource::<Session>()
+        .workspace
+        .document(id)
+        .unwrap();
+    assert!(document.is_dirty());
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(document.text()).unwrap()["metallic"],
+        0.75
+    );
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command::Edit(crate::application::EditCommand::Undo));
+    app.update();
+    app.update();
+    assert_eq!(
+        app.world()
+            .resource::<Session>()
+            .workspace
+            .document(id)
+            .unwrap()
+            .text(),
+        source
+    );
+    {
+        let world = app.world_mut();
+        let mut fields =
+            world.query_filtered::<&mut EditableText, With<crate::presentation::material::Field>>();
+        let mut name = fields
+            .iter_mut(world)
+            .find(|f| f.value() == "New material")
+            .unwrap();
+        name.editor_mut().set_text("Custom surface");
+    }
+    app.update();
+    app.update();
+    dispatch(&mut app, Command::Save);
+    finish_io(&mut app);
+    let saved: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.path().join("scripts/finish.smmat")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(saved["name"], "Custom surface");
+    assert!(
+        !app.world()
+            .resource::<Session>()
+            .workspace
+            .document(id)
+            .unwrap()
+            .is_dirty()
+    );
+}
+
+#[test]
+fn close_and_reopen_restores_tabs_and_selected_document() {
+    let (mut app, dir, first) = app();
+    app.init_resource::<bevy::text::FontCx>()
+        .init_resource::<bevy::text::LayoutCx>()
+        .init_resource::<bevy::input_focus::InputFocus>();
+    let other = dir.path().join("scripts/other.code");
+    std::fs::write(&other, "// other").unwrap();
+    dispatch(&mut app, Command::Open(other.clone()));
+    finish_io(&mut app);
+    let first_id = app
+        .world()
+        .resource::<Session>()
+        .workspace
+        .find_document(&first.canonicalize().unwrap())
+        .unwrap();
+    let editors: Vec<_> = {
+        let world = app.world_mut();
+        world
+            .query_filtered::<Entity, With<Editor>>()
+            .iter(world)
+            .collect()
+    };
+    let mut fonts = bevy::text::FontCx::default();
+    let mut layouts = bevy::text::LayoutCx::default();
+    for entity in editors {
+        app.world_mut()
+            .resource_mut::<bevy::input_focus::InputFocus>()
+            .set(entity, bevy::input_focus::FocusCause::Navigated);
+        app.world_mut()
+            .get_mut::<EditableText>(entity)
+            .unwrap()
+            .editor_mut()
+            .driver(&mut fonts.context, &mut layouts.0)
+            .select_byte_range(1, 3);
+        app.update();
+    }
+    dispatch(&mut app, Command::Select(first_id));
+    dispatch(&mut app, Command::RequestClose);
+    finish_io(&mut app);
+    assert!(!app.world().resource::<Messages<AppExit>>().is_empty());
+    dispatch(&mut app, Command::OpenProject(dir.path().to_owned()));
+    finish_io(&mut app);
+    let session = app.world().resource::<Session>();
+    let paths = session
+        .workspace
+        .documents()
+        .map(|(_, doc)| doc.path().file_name().unwrap().to_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(paths, ["test.code", "other.code"]);
+    for (_, doc) in session.workspace.documents() {
+        assert_eq!(
+            doc.selection(),
+            scenemax_ide_core::Selection {
+                anchor: 1,
+                focus: 3
+            }
+        );
+    }
+    assert_eq!(
+        session
+            .workspace
+            .document(session.workspace.active_id().unwrap())
+            .unwrap()
+            .path(),
+        first.canonicalize().unwrap()
+    );
+}
+#[test]
+fn restart_shortcut_can_cancel_unsaved_work_and_restarts_only_after_state_is_durable() {
+    let (mut app, _dir, path) = app();
+    edit(&mut app, "// unsaved restart edit");
+    let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+    keys.press(KeyCode::ControlLeft);
+    keys.press(KeyCode::AltLeft);
+    keys.press(KeyCode::KeyR);
+    app.update();
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .reset_all();
+    assert!(app.world().resource::<Session>().restarting);
+    assert!(app.world().resource::<Session>().closing);
+    assert!(app.world().resource::<Messages<AppExit>>().is_empty());
+    dispatch(&mut app, Command::CancelClose);
+    assert!(!app.world().resource::<Session>().restarting);
+    assert!(
+        app.world()
+            .resource::<Session>()
+            .workspace
+            .has_dirty_documents()
+    );
+    dispatch(&mut app, Command::Restart);
+    dispatch(&mut app, Command::SaveAll);
+    finish_io(&mut app);
+    let session = app.world().resource::<Session>();
+    assert!(session.restart_project.lock().unwrap().is_some());
+    assert!(
+        session
+            .workspace
+            .project()
+            .root()
+            .join(".scenemax-studio/workspace.json")
+            .is_file()
+    );
+    assert_eq!(
+        std::fs::read_to_string(path).unwrap(),
+        "// unsaved restart edit"
+    );
+    assert!(!app.world().resource::<Messages<AppExit>>().is_empty());
 }

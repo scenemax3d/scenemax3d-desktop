@@ -9,6 +9,8 @@ use std::{
 
 /// A single owned filesystem operation submitted without blocking the caller.
 pub enum StorageRequest {
+    /// Load material editor resources.
+    MaterialLibrary(PathBuf),
     /// Mutate project files on the disk worker.
     Tree {
         /// Canonical project root.
@@ -34,10 +36,21 @@ pub enum StorageRequest {
         /// Immutable scene source.
         source: String,
     },
+    /// Persist the previous project navigation before switching projects.
+    SwitchProject {
+        /// Current canonical project root.
+        previous: PathBuf,
+        /// Navigation snapshot of the previous project.
+        workspace: crate::workspace_state::WorkspaceState,
+        /// Destination project root.
+        root: PathBuf,
+    },
     /// Read the Java-compatible project catalog on a worker.
     Catalog {
         /// Installation/project directory from which to discover the catalog.
         root: PathBuf,
+        /// Optional application last-project state for startup selection.
+        last_project: Option<PathBuf>,
         /// Explicit catalog path, if supplied.
         path: Option<PathBuf>,
     },
@@ -69,6 +82,10 @@ pub enum StorageRequest {
         root: PathBuf,
         /// Dirty document snapshots.
         documents: Vec<Document>,
+        /// Open tabs and selected document; independent of dirty recovery contents.
+        workspace: Option<crate::workspace_state::WorkspaceState>,
+        /// Optional application-wide last-project state path.
+        last_project: Option<PathBuf>,
         /// Checkpoint paths accepted or discarded by the user.
         retire: Vec<PathBuf>,
     },
@@ -102,6 +119,17 @@ pub enum StorageRequest {
 }
 /// Completed operations; failures are data and never overwrite live buffers.
 pub enum StorageResult {
+    /// Project loaded with restored tab order and selection.
+    WorkspaceProject(Project, Vec<Document>, Option<PathBuf>),
+    /// Saved designer snapshots and freshly generated companion documents.
+    Generated {
+        /// Per-document save outcomes.
+        results: Vec<(DocumentId, Result<Document, ServiceError>)>,
+        /// Successfully regenerated code files.
+        companions: Vec<Document>,
+    },
+    /// Material resources resolved on the worker.
+    MaterialLibrary(Result<crate::material::Library, String>),
     /// Result of a navigator mutation; refresh is requested separately.
     Tree(Result<crate::TreeOutcome, ServiceError>),
     /// Reload result with the original buffer version for race protection.
@@ -205,6 +233,16 @@ fn perform(
     journal: &mut crate::recovery::RecoveryJournal,
 ) -> StorageResult {
     match request {
+        StorageRequest::SwitchProject {
+            previous,
+            workspace,
+            root,
+        } => {
+            if let Err(e) = crate::workspace_state::save(&previous, &workspace, None) {
+                return StorageResult::Project(Err(e));
+            }
+            perform(StorageRequest::Project { root, script: None }, journal)
+        }
         StorageRequest::Tree { root, operation } => {
             StorageResult::Tree(crate::tree_operations::perform(&root, operation))
         }
@@ -232,12 +270,27 @@ fn perform(
             std::process::Command::new(program).arg(folder).spawn()?;
             Ok(())
         })()),
+        StorageRequest::MaterialLibrary(root) => {
+            StorageResult::MaterialLibrary(crate::material::load(&root))
+        }
         StorageRequest::Scene3d { root, source } => {
             StorageResult::Scene3d(crate::scene3d::load(&root, &source))
         }
-        StorageRequest::Catalog { root, path } => {
-            StorageResult::Catalog(crate::catalog::load_catalog(&root, path.as_deref()))
-        }
+        StorageRequest::Catalog {
+            root,
+            path,
+            last_project,
+        } => StorageResult::Catalog(crate::catalog::load_catalog(&root, path.as_deref()).map(
+            |mut catalog| {
+                if let Some(selected) = last_project
+                    .as_deref()
+                    .and_then(crate::workspace_state::last_project)
+                {
+                    catalog.selected = Some(selected);
+                }
+                catalog
+            },
+        )),
         StorageRequest::SaveCopy {
             root,
             path,
@@ -260,7 +313,14 @@ fn perform(
             root,
             documents,
             retire,
-        } => StorageResult::Checkpoint(journal.checkpoint(&root, documents, retire)),
+            workspace,
+            last_project,
+        } => StorageResult::Checkpoint((|| {
+            if let Some(state) = workspace {
+                crate::workspace_state::save(&root, &state, last_project.as_deref())?;
+            }
+            journal.checkpoint(&root, documents, retire)
+        })()),
         StorageRequest::NewProject(root) => {
             StorageResult::Project(Filesystem::create_project(&root).map(|(p, d)| (p, Some(d))))
         }
@@ -270,27 +330,91 @@ fn perform(
             let doc = Filesystem::create_document(&project, &path)?;
             Ok((Filesystem::open_project(&root)?, doc))
         })()),
-        StorageRequest::Project { root, script } => StorageResult::Project((|| {
-            let project = Filesystem::open_project(&root)?;
-            let script = script.or_else(|| project.entry_point().map(|p| p.to_owned()));
-            let document = script
-                .map(|path| Filesystem::open_document(&project, &path))
-                .transpose()?;
-            Ok((project, document))
-        })()),
+        StorageRequest::Project { root, script } => {
+            let project = match Filesystem::open_project(&root) {
+                Ok(p) => p,
+                Err(e) => return StorageResult::Project(Err(e)),
+            };
+            if let Some((mut docs, mut active)) = crate::workspace_state::restore(&project) {
+                if let Some(path) = script {
+                    match Filesystem::open_document(&project, &path) {
+                        Ok(doc) => {
+                            active = Some(doc.path().to_owned());
+                            if !docs.iter().any(|d| d.path() == doc.path()) {
+                                docs.push(doc);
+                            }
+                        }
+                        Err(e) => return StorageResult::Project(Err(e)),
+                    }
+                }
+                StorageResult::WorkspaceProject(project, docs, active)
+            } else {
+                let script = script.or_else(|| project.entry_point().map(PathBuf::from));
+                StorageResult::Project(
+                    script
+                        .map(|p| Filesystem::open_document(&project, &p))
+                        .transpose()
+                        .map(|doc| (project, doc)),
+                )
+            }
+        }
         StorageRequest::Open { root, path } => StorageResult::Open(Filesystem::open_document(
             &Project::new(root, vec![]),
             &path,
         )),
-        StorageRequest::Save(documents) => StorageResult::Saved(
-            documents
+        StorageRequest::Save(mut documents) => {
+            // Save init/end buffers before generating any designer in Save All.
+            documents.sort_by_key(|(_, doc)| {
+                doc.path()
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("smdesign"))
+            });
+            let generated_paths = documents
+                .iter()
+                .filter(|(_, doc)| {
+                    doc.path()
+                        .extension()
+                        .is_some_and(|e| e.eq_ignore_ascii_case("smdesign"))
+                })
+                .map(|(_, doc)| doc.path().with_extension("code"))
+                .collect::<Vec<_>>();
+            documents.retain(|(_, doc)| {
+                doc.is_dirty() || !generated_paths.iter().any(|p| p == doc.path())
+            });
+            let mut companions = Vec::new();
+            let mut failed = false;
+            let results = documents
                 .into_iter()
                 .map(|(id, mut doc)| {
-                    let result = Filesystem::save_document(&mut doc).map(|()| doc);
+                    let designer = doc
+                        .path()
+                        .extension()
+                        .is_some_and(|e| e.eq_ignore_ascii_case("smdesign"));
+                    let result = if failed && designer {
+                        Err(ServiceError::Limit(
+                            "Designer save cancelled because another document failed to save",
+                        ))
+                    } else {
+                        crate::scene_save::save(&mut doc).map(|generated| {
+                            if let Some(generated) = generated {
+                                companions.push(generated);
+                            }
+                            doc
+                        })
+                    };
+                    failed |= result.is_err();
                     (id, result)
                 })
-                .collect(),
-        ),
+                .collect();
+            if companions.is_empty() {
+                StorageResult::Saved(results)
+            } else {
+                StorageResult::Generated {
+                    results,
+                    companions,
+                }
+            }
+        }
     }
 }
 

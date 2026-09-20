@@ -149,11 +149,46 @@ fn populate_menu(
             finish_item(commands, row, "");
             continue;
         }
+        if entry.command == "project_inventory" {
+            let row = super::inventory::menu_item(commands, host, entry.name);
+            finish_item(commands, row, "");
+            continue;
+        }
+        if entry.command == "font_generator" {
+            let row = super::font_generator::menu_item(commands, host, entry.name);
+            finish_item(commands, row, "");
+            continue;
+        }
+        if entry.command == "create_weapon_document" {
+            let row = button(commands, host, entry.name, Name::new("Create weapon"));
+            commands.entity(row).observe(
+                |_: On<Pointer<Press>>,
+                 session: Res<crate::application::Session>,
+                 mut menu: ResMut<super::tree_menu::State>| {
+                    menu.create_weapon(session.workspace.project().root().to_owned());
+                },
+            );
+            finish_item(commands, row, "");
+            continue;
+        }
+        if entry.command == "create_material_document" {
+            let row = button(commands, host, entry.name, Name::new("Create material"));
+            commands.entity(row).observe(
+                |_: On<Pointer<Click>>,
+                 session: Res<crate::application::Session>,
+                 mut menu: ResMut<super::tree_menu::State>| {
+                    menu.create_material(session.workspace.project().root().join("scripts"));
+                },
+            );
+            finish_item(commands, row, "");
+            continue;
+        }
         match entry.command {
             "project_explorer" | "new_project_scripts_folder" => {
                 panel_item(commands, host, entry.name, "", Panel::Project)
             }
             "refresh_project_tree" => item(commands, host, entry.name, "", Action::Refresh),
+            "restart_app" => item(commands, host, entry.name, "Ctrl+Alt+R", Action::Restart),
             "exit" => item(commands, host, entry.name, "", Action::Exit),
             "about" => panel_item(commands, host, entry.name, "", Panel::Help),
             _ => {

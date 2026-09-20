@@ -12,6 +12,8 @@ use std::path::PathBuf;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Dialog {
     AddScene,
+    Material,
+    Weapon,
     Script,
     Scene,
     Ui,
@@ -50,6 +52,14 @@ pub(crate) struct State {
     generation: u64,
 }
 impl State {
+    pub(crate) fn create_weapon(&mut self, parent: PathBuf) {
+        self.open(parent, true, Vec2::new(300., 180.));
+        self.dialog = Some(Dialog::Weapon);
+    }
+    pub(crate) fn create_material(&mut self, parent: PathBuf) {
+        self.open(parent, true, Vec2::new(300., 180.));
+        self.dialog = Some(Dialog::Material);
+    }
     pub(crate) fn open(&mut self, path: PathBuf, directory: bool, position: Vec2) {
         self.target = Some(Target {
             path,
@@ -107,13 +117,14 @@ fn entries(
     ]);
     if directory {
         items.extend([
+            ("Create New Weapon…", Some(Action::Prompt(Dialog::Weapon))),
             ("Create New Script", Some(Action::Prompt(Dialog::Script))),
             (
                 "Create Designer Document",
                 Some(Action::Prompt(Dialog::Scene)),
             ),
             ("Create UI Document", Some(Action::Prompt(Dialog::Ui))),
-            ("Create Material Document", None),
+            ("Create Material…", Some(Action::Prompt(Dialog::Material))),
             ("Create Weapon", None),
             ("Create Throw Motion", None),
             ("Create IK Asset", None),
@@ -129,12 +140,6 @@ fn entries(
                 "Rename Folder…",
                 (!root).then_some(Action::Prompt(Dialog::Rename)),
             ),
-            ("Clean Backup Files…", None),
-            ("Send To…", None),
-            ("Upload To Cloud…", None),
-            ("Import Program From Zip File…", None),
-            ("Upload Program To Web…", None),
-            ("Export to native Android…", None),
         ]);
     } else {
         items.extend([
@@ -157,15 +162,17 @@ fn operation(dialog: Dialog, target: &Target, value: &str, root: &std::path::Pat
         }
     };
     match dialog {
+        Dialog::Weapon => Command::Tree(TreeOperation::CreateWeapon { name: value.into() }),
         Dialog::AddScene => Command::Tree(TreeOperation::AddScene { parent: target.path.clone(), name: value.into() }),
         Dialog::Reload => Command::ReloadPath(target.path.clone()),
         Dialog::Delete => Command::Tree(TreeOperation::Delete(target.path.clone())),
         Dialog::Rename => Command::Tree(TreeOperation::Move { path: target.path.clone(), parent: target.path.parent().unwrap_or(root).to_owned(), name: value.into() }),
         Dialog::Move => Command::Tree(TreeOperation::Move { path: target.path.clone(), parent: root.join(value), name: target.path.file_name().unwrap_or_default().to_string_lossy().into() }),
-        Dialog::Script | Dialog::Scene | Dialog::Ui | Dialog::Folder => Command::Tree(TreeOperation::Create {
-            parent: target.path.clone(),
-            name: match dialog { Dialog::Scene => name(".smdesign"), Dialog::Ui => name(".smui"), _ => value.into() },
+        Dialog::Material | Dialog::Script | Dialog::Scene | Dialog::Ui | Dialog::Folder => Command::Tree(TreeOperation::Create {
+            parent: if dialog == Dialog::Material && !target.path.starts_with(root.join("scripts")) { root.join("scripts") } else { target.path.clone() },
+            name: match dialog { Dialog::Material => name(".smmat"), Dialog::Scene => name(".smdesign"), Dialog::Ui => name(".smui"), _ => value.into() },
             source: match dialog {
+                Dialog::Material => Some(scenemax_assets::material::preset("Porcelain").to_string()),
                 Dialog::Folder => None,
                 Dialog::Scene => Some("{\n  \"version\": 1,\n  \"entities\": []\n}\n".into()),
                 Dialog::Ui => Some("{\n  \"name\": \"UI\",\n  \"canvasWidth\": 1280,\n  \"canvasHeight\": 720,\n  \"layers\": [{\"name\": \"Layer 1\", \"widgets\": []}]\n}\n".into()),
@@ -399,6 +406,8 @@ fn dialog_view(
         .insert(bevy::input_focus::tab_navigation::TabGroup::modal());
     let title = match dialog {
         Dialog::AddScene => "Add Scene",
+        Dialog::Material => "Create Material",
+        Dialog::Weapon => "Create New Weapon",
         Dialog::Script => "Create New Script",
         Dialog::Scene => "Create Designer Document",
         Dialog::Ui => "Create UI Document",
@@ -472,6 +481,22 @@ fn dialog_view(
             ))
             .id();
         focus.set(input, FocusCause::Navigated);
+    }
+    if dialog == Dialog::Weapon {
+        commands.spawn((label("Template", 12.), ChildOf(host)));
+        scenemax_ide_ui::property::dropdown(
+            commands,
+            host,
+            Name::new("Weapon template"),
+            "Sword",
+            &[
+                "Sword".into(),
+                "Pistol".into(),
+                "Bow".into(),
+                "Magic Staff".into(),
+            ],
+        );
+        commands.spawn((label("Choose a model and attachment in the designer.\nAll templates start with one default posture.", 12.), ChildOf(host)));
     }
     let buttons = commands
         .spawn((

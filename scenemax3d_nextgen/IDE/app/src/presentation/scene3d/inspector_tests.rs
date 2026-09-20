@@ -208,3 +208,78 @@ fn cinematic_children_keep_local_transform_under_rig_and_sections_are_organizati
     );
     assert!(scene.entities[3].note.is_empty());
 }
+
+#[test]
+fn box_inspector_can_select_nested_material_studio_document() {
+    use bevy::picking::pointer::{Location, PointerId};
+    use scenemax_ide_ui::property::Choice;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("scripts/Surface library")).unwrap();
+    std::fs::write(
+        dir.path()
+            .join("scripts/Surface library/custom_surface.smmat"),
+        scenemax_assets::material::preset("Gold").to_string(),
+    )
+    .unwrap();
+    let source = r#"{"entities":[{"type":"BOX","name":"surface","material":""}]}"#;
+    let scene = scenemax_ide_services::scene3d::load(dir.path(), source).unwrap();
+    let mut world = World::new();
+    world.register_component::<Window>();
+    world.insert_resource(SceneState {
+        scene: Some(scene),
+        ..default()
+    });
+    world
+        .run_system_once(|mut commands: Commands, state: Res<SceneState>| {
+            let parent = commands.spawn(Node::default()).id();
+            inspector::build(&mut commands, parent, state.scene.as_ref().unwrap(), 0);
+        })
+        .unwrap();
+    let row = world
+        .query_filtered::<(Entity, &Choice), Without<inspector::Property>>()
+        .iter(&world)
+        .find(|(_, choice)| choice.0 == "custom_surface")
+        .unwrap()
+        .0;
+    world.trigger(Pointer::new(
+        PointerId::Mouse,
+        Location {
+            target: bevy::camera::NormalizedRenderTarget::None {
+                width: 100,
+                height: 100,
+            },
+            position: Vec2::ZERO,
+        },
+        Click {
+            button: PointerButton::Primary,
+            count: 1,
+            duration: std::time::Duration::ZERO,
+            hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0., None, None),
+        },
+        row,
+    ));
+    let (_, choice) = world
+        .query::<(&inspector::Property, &Choice)>()
+        .iter(&world)
+        .find(|(p, _)| p.0 == "material")
+        .unwrap();
+    assert_eq!(choice.0, "custom_surface");
+}
+
+#[test]
+fn material_save_and_manual_refresh_invalidate_in_flight_scene_catalog() {
+    let mut app = App::new();
+    app.init_resource::<SceneState>()
+        .add_message::<crate::application::ViewChange>()
+        .add_systems(Update, refresh_materials);
+    app.world_mut()
+        .resource_mut::<Messages<crate::application::ViewChange>>()
+        .write(crate::application::ViewChange::MaterialsChanged);
+    app.update();
+    assert!(app.world().resource::<SceneState>().reload_assets);
+    app.world_mut().resource_mut::<SceneState>().reload_assets = false;
+    app.world_mut()
+        .spawn((inspector::RefreshMaterials, Interaction::Pressed));
+    app.update();
+    assert!(app.world().resource::<SceneState>().reload_assets);
+}

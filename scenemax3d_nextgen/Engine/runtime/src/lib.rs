@@ -228,6 +228,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<SceneMaxPerfDebug>()
         .init_resource::<SceneMaxDiagnosticsOverlay>()
         .add_plugins(default_plugins)
+        .add_plugins(scenemax_materials::MaterialsPlugin)
         .add_plugins((
             FrameTimeDiagnosticsPlugin::default(),
             SystemInformationDiagnosticsPlugin,

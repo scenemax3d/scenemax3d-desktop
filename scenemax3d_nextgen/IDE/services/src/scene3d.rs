@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 pub struct Scene3d {
     /// Java document ambient lighting settings.
     pub ambient: Value,
+    /// Native PBR surfaces referenced by scene material names.
+    pub materials: std::collections::BTreeMap<String, Value>,
     /// Available project-local model, shader, material and IK names.
     pub catalog: std::collections::BTreeMap<String, Vec<String>>,
     /// Saved editor camera, when present.
@@ -200,9 +202,12 @@ pub fn load(root: &Path, source: &str) -> Result<Scene3d, String> {
         model: None,
         note: String::new(),
     });
+    let materials = crate::material::documents(root)?;
+    let catalog = catalog::load(&resources, &materials);
     Ok(Scene3d {
+        materials,
         ambient: value["bevyAmbientLight"].clone(),
-        catalog: catalog::load(&resources),
+        catalog,
         camera: if value["camera"].is_object() {
             Some(SceneCamera {
                 position: vector(&value["camera"]["position"], [0.; 3])?,

@@ -36,6 +36,7 @@ pub(crate) enum Action {
     RefreshProjects,
     ChooseProject(PathBuf),
     Exit,
+    Restart,
     Stop,
     OpenProject,
     CancelClose,
@@ -89,6 +90,7 @@ impl Action {
             Self::RefreshProjects => Command::RefreshProjects,
             Self::ChooseProject(path) => Command::OpenProject(path.clone()),
             Self::Exit => Command::RequestClose,
+            Self::Restart => Command::Restart,
             Self::Stop => Command::Stop,
             Self::OpenProject => Command::OpenProject(value(Field::Project).into()),
             Self::CancelClose => Command::CancelClose,
@@ -105,6 +107,7 @@ type PropertyInputs<'w, 's> = Query<
     (),
     Or<(
         With<super::designer::Property>,
+        With<super::material::Field>,
         With<super::model_import::Field>,
         With<super::sprite_import::Field>,
         With<super::effect_import::Field>,
@@ -114,9 +117,13 @@ type PropertyInputs<'w, 's> = Query<
 
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct InputFields<'w, 's> {
+    zoom: ResMut<'w, super::editing::EditorZoom>,
+    editors: Query<'w, 's, (), super::editing::CodeEditorFilter>,
     deployment: Option<Res<'w, crate::application::deployment::Deployment>>,
     menu: Option<Res<'w, super::tree_menu::State>>,
     imports: Option<Res<'w, super::asset_import::State>>,
+    inventory: Option<Res<'w, super::inventory::State>>,
+    font_generator: Option<Res<'w, super::font_generator::State>>,
     fields: Query<'w, 's, (Entity, &'static Field, &'static EditableText)>,
     properties: PropertyInputs<'w, 's>,
 }
@@ -130,6 +137,8 @@ pub(crate) fn collect_actions(
     session: Res<Session>,
 ) {
     if input_fields.imports.as_ref().is_some_and(|m| m.is_open())
+        || input_fields.inventory.as_ref().is_some_and(|m| m.open)
+        || input_fields.font_generator.as_ref().is_some_and(|m| m.open)
         || input_fields.deployment.as_ref().is_some_and(|m| m.open)
         || input_fields.menu.as_ref().is_some_and(|m| m.is_open())
     {
@@ -139,6 +148,8 @@ pub(crate) fn collect_actions(
         imports: _,
         fields,
         properties,
+        mut zoom,
+        editors,
         ..
     } = input_fields;
     let values = fields
@@ -152,6 +163,21 @@ pub(crate) fn collect_actions(
     }
     let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    if ctrl
+        && !session.composing
+        && focus
+            .as_ref()
+            .and_then(|f| f.get())
+            .is_some_and(|e| editors.contains(e))
+    {
+        if keys.any_just_pressed([KeyCode::Equal, KeyCode::NumpadAdd]) {
+            zoom.adjust(1.);
+        }
+        if keys.any_just_pressed([KeyCode::Minus, KeyCode::NumpadSubtract]) {
+            zoom.adjust(-1.);
+        }
+    }
+
     for (key, field) in [
         (KeyCode::KeyF, Field::Find),
         (KeyCode::KeyG, Field::Line),
@@ -185,6 +211,12 @@ pub(crate) fn collect_actions(
         if ctrl && keys.just_pressed(KeyCode::Slash) {
             queue.0.push_back(Command::Edit(EditCommand::Comment));
         }
+    }
+    if ctrl
+        && keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight])
+        && keys.just_pressed(KeyCode::KeyR)
+    {
+        queue.0.push_back(Command::Restart);
     }
     if ctrl && keys.just_pressed(KeyCode::KeyW) {
         queue.0.push_back(Command::CloseTab);

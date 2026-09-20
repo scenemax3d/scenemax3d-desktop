@@ -1038,3 +1038,6 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 }
+
+/// Native PBR material documents shared by tools and runtime.
+pub mod material;

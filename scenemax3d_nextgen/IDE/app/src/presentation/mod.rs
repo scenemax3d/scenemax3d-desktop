@@ -34,5 +34,12 @@ pub(crate) mod model_import;
 
 pub(crate) mod sprite_import;
 
-pub(crate) mod effect_import;
 pub(crate) mod deployment;
+pub(crate) mod effect_import;
+
+pub(crate) mod material;
+
+pub(crate) mod font_generator;
+pub(crate) mod inventory;
+
+pub(crate) mod weapon;

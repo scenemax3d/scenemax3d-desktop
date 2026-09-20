@@ -5359,10 +5359,12 @@ dependencies = [
  "anyhow",
  "bevy",
  "clap",
+ "scenemax_assets",
  "scenemax_effects",
  "scenemax_ide_core",
  "scenemax_ide_services",
  "scenemax_ide_ui",
+ "scenemax_materials",
  "serde_json",
  "tempfile",
 ]
@@ -5380,6 +5382,7 @@ dependencies = [
 name = "scenemax_ide_services"
 version = "0.1.0"
 dependencies = [
+ "fontique",
  "image",
  "scenemax_assets",
  "scenemax_ide_core",
@@ -5387,8 +5390,10 @@ dependencies = [
  "scenemax_runtime_ui_core",
  "serde",
  "serde_json",
+ "swash",
  "tempfile",
  "thiserror 2.0.20",
+ "zeno",
  "zip",
 ]
 
@@ -5404,6 +5409,15 @@ name = "scenemax_ir"
 version = "0.1.0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "scenemax_materials"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "scenemax_assets",
+ "serde_json",
 ]
 
 [[package]]
@@ -5445,6 +5459,7 @@ dependencies = [
  "scenemax_assets",
  "scenemax_effects",
  "scenemax_ir",
+ "scenemax_materials",
  "scenemax_multiplayer",
  "scenemax_parser",
  "scenemax_runtime_script_core",

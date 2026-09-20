@@ -139,6 +139,41 @@ pub(crate) fn output_visibility(
     }
 }
 
+pub(crate) fn close_prompt(
+    session: Res<Session>,
+    headings: Query<Entity, With<CloseExplanation>>,
+    buttons: Query<(&super::input::Action, &Children)>,
+    mut texts: Query<&mut Text>,
+) {
+    if !session.is_changed() {
+        return;
+    }
+    for entity in &headings {
+        if let Ok(mut text) = texts.get_mut(entity) {
+            text.0 = if session.restarting {
+                "Save changes before restarting, or discard edits:"
+            } else {
+                "Unsaved documents. Save all before closing, or discard edits:"
+            }
+            .into();
+        }
+    }
+    for (action, children) in &buttons {
+        if matches!(action, super::input::Action::DiscardExit) {
+            for child in children.iter() {
+                if let Ok(mut text) = texts.get_mut(child) {
+                    text.0 = if session.restarting {
+                        "Discard edits and restart"
+                    } else {
+                        "Discard edits and exit"
+                    }
+                    .into();
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

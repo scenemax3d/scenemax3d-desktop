@@ -24,6 +24,8 @@ pub(crate) struct TabButton(pub(crate) DocumentId);
 #[derive(Component)]
 pub(crate) struct Gutter(pub(crate) DocumentId);
 #[derive(Component)]
+pub(crate) struct GutterPanel;
+#[derive(Component)]
 pub(crate) struct CaretLabel;
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Field {
@@ -50,3 +52,6 @@ pub(crate) struct SearchResults;
 pub(crate) struct TabClosePrompt;
 #[derive(Component)]
 pub(crate) struct TabCloseCaption;
+
+#[derive(Component)]
+pub(crate) struct CloseExplanation;

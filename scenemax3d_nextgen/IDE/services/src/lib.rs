@@ -9,6 +9,7 @@ mod filesystem;
 mod projector;
 mod recovery;
 mod runtime_log;
+mod scene_save;
 mod search;
 pub use search::SearchReport;
 mod storage;
@@ -25,6 +26,9 @@ use std::{io, path::PathBuf};
 /// Typed errors at IDE service boundaries.
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
+    /// Scene generation failed before the designer save completed.
+    #[error("Scene code generation: {0}")]
+    SceneGeneration(String),
     /// Invalid domain transition or source encoding.
     #[error(transparent)]
     Editor(#[from] scenemax_ide_core::EditorError),
@@ -101,3 +105,17 @@ pub mod imports;
 
 /// Bounded packaging workers, SDK adapters and Butler publishing.
 pub mod deployment;
+
+/// Material editor asset inventory.
+pub mod material;
+
+/// Workspace navigation persistence and restart adapter.
+pub mod workspace_state;
+
+/// Registered project assets, previews and reviewed transfers.
+pub mod inventory;
+
+/// Native system-font discovery, bitmap generation and project registration.
+pub mod font_generator;
+
+pub mod weapon;

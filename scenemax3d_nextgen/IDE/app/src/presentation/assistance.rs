@@ -1,5 +1,5 @@
 //! Native input adaptation and bracket-selection presentation.
-use super::components::Editor;
+use super::editing::CodeEditorFilter;
 use bevy::{
     prelude::*,
     text::{EditableText, EditableTextFilter, FontCx, LayoutCx, TextEdit},
@@ -13,7 +13,7 @@ use scenemax_ide_core::{
 pub(crate) struct BracketIndex(pub(crate) Vec<(usize, usize)>);
 
 type CodeInputs<'w, 's> =
-    Query<'w, 's, &'static mut EditableText, (With<Editor>, Without<EditableTextFilter>)>;
+    Query<'w, 's, &'static mut EditableText, (CodeEditorFilter, Without<EditableTextFilter>)>;
 
 pub(crate) fn indent_newlines(
     mut inputs: CodeInputs,
@@ -75,7 +75,7 @@ type BracketInput<'a> = (
 
 pub(crate) fn bracket_emphasis(
     mut commands: Commands,
-    inputs: Query<BracketInput<'static>, With<Editor>>,
+    inputs: Query<BracketInput<'static>, CodeEditorFilter>,
 ) {
     for (entity, input, index, highlights, previous) in &inputs {
         let selection = input.editor().raw_selection();
