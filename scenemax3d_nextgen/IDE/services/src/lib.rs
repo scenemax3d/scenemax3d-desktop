@@ -117,3 +117,5 @@ pub mod inventory;
 
 /// Native system-font discovery, bitmap generation and project registration.
 pub mod font_generator;
+
+pub mod weapon;

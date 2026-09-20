@@ -1,9 +1,9 @@
 //! Renzora-derived gizmo adapter, bound to the live scene document.
 //! Attribution: IDE/third_party/renzora_gizmo/NOTICE.md.
 mod material;
-mod math;
+pub(crate) mod math;
 use super::*;
-pub(super) use material::GizmoMaterial;
+pub(crate) use material::GizmoMaterial;
 
 pub(crate) struct GizmoPlugin;
 impl Plugin for GizmoPlugin {

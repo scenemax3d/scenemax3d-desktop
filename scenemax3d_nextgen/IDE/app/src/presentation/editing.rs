@@ -124,7 +124,7 @@ pub(crate) fn update_gutters(
         .and_then(|id| session.workspace.document(id).ok())
         .is_some_and(|doc| {
             doc.path().extension().is_some_and(|ext| {
-                ext.eq_ignore_ascii_case("smmat")
+                ext.eq_ignore_ascii_case("smweapon") || ext.eq_ignore_ascii_case("smmat")
                     || ext.eq_ignore_ascii_case("smui")
                     || ext.eq_ignore_ascii_case("smmodelimport")
                     || ext.eq_ignore_ascii_case("smspriteimport")

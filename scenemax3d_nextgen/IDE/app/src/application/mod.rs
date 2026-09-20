@@ -15,3 +15,5 @@ pub(crate) mod deployment;
 pub(crate) mod symbols;
 
 pub(crate) mod material;
+
+pub(crate) mod weapon;

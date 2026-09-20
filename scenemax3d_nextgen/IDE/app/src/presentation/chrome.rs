@@ -159,6 +159,18 @@ fn populate_menu(
             finish_item(commands, row, "");
             continue;
         }
+        if entry.command == "create_weapon_document" {
+            let row = button(commands, host, entry.name, Name::new("Create weapon"));
+            commands.entity(row).observe(
+                |_: On<Pointer<Press>>,
+                 session: Res<crate::application::Session>,
+                 mut menu: ResMut<super::tree_menu::State>| {
+                    menu.create_weapon(session.workspace.project().root().to_owned());
+                },
+            );
+            finish_item(commands, row, "");
+            continue;
+        }
         if entry.command == "create_material_document" {
             let row = button(commands, host, entry.name, Name::new("Create material"));
             commands.entity(row).observe(

@@ -41,3 +41,5 @@ pub(crate) mod material;
 
 pub(crate) mod font_generator;
 pub(crate) mod inventory;
+
+pub(crate) mod weapon;

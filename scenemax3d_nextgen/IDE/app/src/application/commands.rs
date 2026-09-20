@@ -10,6 +10,7 @@ use std::{collections::VecDeque, path::PathBuf};
 #[derive(Clone)]
 pub(crate) enum Command {
     Material(super::material::Edit),
+    Weapon(super::material::Edit),
     Tree(scenemax_ide_services::TreeOperation),
     SavePath(PathBuf),
     RunPath(PathBuf),
@@ -75,7 +76,12 @@ fn execute(
     changes: &mut MessageWriter<ViewChange>,
     _exit: &mut MessageWriter<AppExit>,
 ) -> Result<()> {
-    if session.asset_operation_pending && !matches!(command, Command::Stop | Command::CancelClose | Command::ClearConsole) {
+    if session.asset_operation_pending
+        && !matches!(
+            command,
+            Command::Stop | Command::CancelClose | Command::ClearConsole
+        )
+    {
         bail!("Wait for the asset operation to finish before changing or closing the project");
     }
     if let Some(result) = super::tree_commands::execute(&command, session, services) {
@@ -99,6 +105,7 @@ fn execute(
     }
     match command {
         Command::Material(edit) => super::material::edit(edit, session, changes)?,
+        Command::Weapon(edit) => super::weapon::edit(edit, session, changes)?,
         Command::Tree(_)
         | Command::SavePath(_)
         | Command::RunPath(_)

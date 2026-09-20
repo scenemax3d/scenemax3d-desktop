@@ -81,6 +81,14 @@ pub(crate) fn editor(
         commands.entity(host).insert(super::material::MaterialHost);
         return;
     }
+    if doc
+        .path()
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("smweapon"))
+    {
+        commands.entity(host).insert(super::weapon::WeaponHost);
+        return;
+    }
     let gutter = commands
         .spawn((
             GutterPanel,

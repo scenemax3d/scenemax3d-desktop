@@ -19,11 +19,11 @@ pub(crate) fn edit(
 ) -> Result<()> {
     let id = session.workspace.require_active()?;
     let document = session.workspace.document_mut(id)?;
-    if document
-        .path()
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("smdesign") || e.eq_ignore_ascii_case("smmat"))
-        && !matches!(command, EditCommand::Undo | EditCommand::Redo)
+    if document.path().extension().is_some_and(|e| {
+        e.eq_ignore_ascii_case("smdesign")
+            || e.eq_ignore_ascii_case("smmat")
+            || e.eq_ignore_ascii_case("smweapon")
+    }) && !matches!(command, EditCommand::Undo | EditCommand::Redo)
     {
         bail!("Use the scene property inspector to edit this document");
     }

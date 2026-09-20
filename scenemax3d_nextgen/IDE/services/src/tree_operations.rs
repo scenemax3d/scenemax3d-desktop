@@ -10,6 +10,11 @@ use std::{
 /// Local operations available from the project tree.
 #[derive(Clone, Debug)]
 pub enum TreeOperation {
+    /// Create a runtime-ready weapon in the active project.
+    CreateWeapon {
+        /// Display name used for the initial resource ID.
+        name: String,
+    },
     /// Create a scene directory, designer document and main script as one operation.
     AddScene {
         /// Existing parent directory.
@@ -102,6 +107,7 @@ fn companions(path: &Path) -> Vec<PathBuf> {
 pub(crate) fn perform(root: &Path, operation: TreeOperation) -> Result<TreeOutcome, ServiceError> {
     let project = Project::new(root.to_owned(), vec![]);
     match operation {
+        TreeOperation::CreateWeapon { name } => crate::weapon::create(root, &name),
         TreeOperation::AddScene { parent, name } => {
             let path = destination(&project, &parent, &name)?;
             let name = child_name(&name)?;

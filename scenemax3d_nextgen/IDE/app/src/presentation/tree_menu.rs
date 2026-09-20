@@ -13,6 +13,7 @@ use std::path::PathBuf;
 pub(crate) enum Dialog {
     AddScene,
     Material,
+    Weapon,
     Script,
     Scene,
     Ui,
@@ -51,6 +52,10 @@ pub(crate) struct State {
     generation: u64,
 }
 impl State {
+    pub(crate) fn create_weapon(&mut self, parent: PathBuf) {
+        self.open(parent, true, Vec2::new(300., 180.));
+        self.dialog = Some(Dialog::Weapon);
+    }
     pub(crate) fn create_material(&mut self, parent: PathBuf) {
         self.open(parent, true, Vec2::new(300., 180.));
         self.dialog = Some(Dialog::Material);
@@ -112,6 +117,7 @@ fn entries(
     ]);
     if directory {
         items.extend([
+            ("Create New Weapon…", Some(Action::Prompt(Dialog::Weapon))),
             ("Create New Script", Some(Action::Prompt(Dialog::Script))),
             (
                 "Create Designer Document",
@@ -156,6 +162,7 @@ fn operation(dialog: Dialog, target: &Target, value: &str, root: &std::path::Pat
         }
     };
     match dialog {
+        Dialog::Weapon => Command::Tree(TreeOperation::CreateWeapon { name: value.into() }),
         Dialog::AddScene => Command::Tree(TreeOperation::AddScene { parent: target.path.clone(), name: value.into() }),
         Dialog::Reload => Command::ReloadPath(target.path.clone()),
         Dialog::Delete => Command::Tree(TreeOperation::Delete(target.path.clone())),
@@ -400,6 +407,7 @@ fn dialog_view(
     let title = match dialog {
         Dialog::AddScene => "Add Scene",
         Dialog::Material => "Create Material",
+        Dialog::Weapon => "Create New Weapon",
         Dialog::Script => "Create New Script",
         Dialog::Scene => "Create Designer Document",
         Dialog::Ui => "Create UI Document",
@@ -473,6 +481,22 @@ fn dialog_view(
             ))
             .id();
         focus.set(input, FocusCause::Navigated);
+    }
+    if dialog == Dialog::Weapon {
+        commands.spawn((label("Template", 12.), ChildOf(host)));
+        scenemax_ide_ui::property::dropdown(
+            commands,
+            host,
+            Name::new("Weapon template"),
+            "Sword",
+            &[
+                "Sword".into(),
+                "Pistol".into(),
+                "Bow".into(),
+                "Magic Staff".into(),
+            ],
+        );
+        commands.spawn((label("Choose a model and attachment in the designer.\nAll templates start with one default posture.", 12.), ChildOf(host)));
     }
     let buttons = commands
         .spawn((
