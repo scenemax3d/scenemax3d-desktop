@@ -14,6 +14,7 @@ pub(crate) enum Dialog {
     AddScene,
     Material,
     Weapon,
+    Motion,
     Script,
     Scene,
     Ui,
@@ -37,6 +38,8 @@ enum Action {
 #[derive(Component)]
 pub(crate) struct Input;
 #[derive(Component)]
+struct MotionTemplate;
+#[derive(Component)]
 pub(crate) struct Host;
 #[derive(Clone)]
 struct Target {
@@ -52,6 +55,10 @@ pub(crate) struct State {
     generation: u64,
 }
 impl State {
+    pub(crate) fn create_motion(&mut self, parent: PathBuf) {
+        self.open(parent, true, Vec2::new(300., 180.));
+        self.dialog = Some(Dialog::Motion);
+    }
     pub(crate) fn create_weapon(&mut self, parent: PathBuf) {
         self.open(parent, true, Vec2::new(300., 180.));
         self.dialog = Some(Dialog::Weapon);
@@ -126,7 +133,7 @@ fn entries(
             ("Create UI Document", Some(Action::Prompt(Dialog::Ui))),
             ("Create Material…", Some(Action::Prompt(Dialog::Material))),
             ("Create Weapon", None),
-            ("Create Throw Motion", None),
+            ("Create Throw Motion…", Some(Action::Prompt(Dialog::Motion))),
             ("Create IK Asset", None),
             ("Create SkyBox…", None),
             ("Create Bevy Shader Document", None),
@@ -162,6 +169,7 @@ fn operation(dialog: Dialog, target: &Target, value: &str, root: &std::path::Pat
         }
     };
     match dialog {
+        Dialog::Motion => Command::Tree(TreeOperation::CreateMotion { name: value.into(), kind: "target_arc".into() }),
         Dialog::Weapon => Command::Tree(TreeOperation::CreateWeapon { name: value.into() }),
         Dialog::AddScene => Command::Tree(TreeOperation::AddScene { parent: target.path.clone(), name: value.into() }),
         Dialog::Reload => Command::ReloadPath(target.path.clone()),
@@ -188,6 +196,7 @@ pub(crate) struct Views<'w, 's> {
     focus: Option<ResMut<'w, InputFocus>>,
     clipboard: Option<ResMut<'w, bevy::clipboard::Clipboard>>,
     host: Single<'w, 's, (Entity, &'static mut Node), With<Host>>,
+    templates: Query<'w, 's, &'static scenemax_ide_ui::property::Choice, With<MotionTemplate>>,
     inputs: Query<'w, 's, &'static EditableText, With<Input>>,
     window: Single<'w, 's, &'static Window, With<bevy::window::PrimaryWindow>>,
 }
@@ -243,12 +252,19 @@ pub(crate) fn update(
                     {
                         session.status = "Enter a name or destination folder".into();
                     } else {
-                        queue.0.push_back(operation(
-                            dialog,
-                            &target,
-                            &value,
-                            session.workspace.project().root(),
-                        ));
+                        let mut command =
+                            operation(dialog, &target, &value, session.workspace.project().root());
+                        if let Command::Tree(TreeOperation::CreateMotion { kind, .. }) =
+                            &mut command
+                        {
+                            *kind = views
+                                .templates
+                                .iter()
+                                .next()
+                                .map(|v| v.0.clone())
+                                .unwrap_or_else(|| "target_arc".into());
+                        }
+                        queue.0.push_back(command);
                         state.close();
                     }
                 }
@@ -408,6 +424,7 @@ fn dialog_view(
         Dialog::AddScene => "Add Scene",
         Dialog::Material => "Create Material",
         Dialog::Weapon => "Create New Weapon",
+        Dialog::Motion => "Create New Throw Motion",
         Dialog::Script => "Create New Script",
         Dialog::Scene => "Create Designer Document",
         Dialog::Ui => "Create UI Document",
@@ -481,6 +498,28 @@ fn dialog_view(
             ))
             .id();
         focus.set(input, FocusCause::Navigated);
+    }
+    if dialog == Dialog::Motion {
+        commands.spawn((label("Starter template", 12.), ChildOf(host)));
+        let options = scenemax_ide_core::motion::TYPES
+            .iter()
+            .map(|(k, l)| (k.to_string(), l.to_string()))
+            .collect::<Vec<_>>();
+        scenemax_ide_ui::property::dropdown_labeled(
+            commands,
+            host,
+            MotionTemplate,
+            "target_arc",
+            &options,
+        );
+        commands.spawn((
+            label(
+                "Creates a runtime-ready .smmotion asset.
+Tune its trajectory in the designer.",
+                12.,
+            ),
+            ChildOf(host),
+        ));
     }
     if dialog == Dialog::Weapon {
         commands.spawn((label("Template", 12.), ChildOf(host)));
@@ -865,6 +904,48 @@ mod tests {
         assert!(
             serde_json::from_str::<serde_json::Value>(&source.unwrap()).unwrap()["entities"]
                 .is_array()
+        );
+    }
+    #[test]
+    fn throw_motion_dialog_uses_selected_template() {
+        let mut app = App::new();
+        app.init_resource::<State>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<InputFocus>()
+            .init_resource::<CommandQueue>()
+            .insert_resource(Session::new(scenemax_ide_core::Project::new(
+                "project".into(),
+                vec![],
+            )))
+            .add_message::<ViewChange>()
+            .add_systems(Update, update);
+        app.world_mut()
+            .spawn((Window::default(), bevy::window::PrimaryWindow));
+        app.world_mut().spawn((Host, Node::default()));
+        app.world_mut()
+            .resource_mut::<State>()
+            .create_motion("project".into());
+        app.update();
+        let input = app.world().resource::<InputFocus>().get().unwrap();
+        app.world_mut()
+            .get_mut::<EditableText>(input)
+            .unwrap()
+            .editor_mut()
+            .set_text("Arc fixture");
+        let template = {
+            let w = app.world_mut();
+            w.query_filtered::<Entity, With<MotionTemplate>>()
+                .single(w)
+                .unwrap()
+        };
+        app.world_mut()
+            .get_mut::<scenemax_ide_ui::property::Choice>(template)
+            .unwrap()
+            .0 = "homing".into();
+        app.world_mut().resource_mut::<State>().pending_action = Some(Action::Confirm);
+        app.update();
+        assert!(
+            matches!(app.world_mut().resource_mut::<CommandQueue>().0.pop_front(),Some(Command::Tree(TreeOperation::CreateMotion {name,kind})) if name=="Arc fixture" && kind=="homing")
         );
     }
 }

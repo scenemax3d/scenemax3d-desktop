@@ -17,3 +17,5 @@ pub(crate) mod symbols;
 pub(crate) mod material;
 
 pub(crate) mod weapon;
+
+pub(crate) mod motion;

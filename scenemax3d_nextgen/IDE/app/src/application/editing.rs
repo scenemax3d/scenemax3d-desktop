@@ -22,6 +22,7 @@ pub(crate) fn edit(
     if document.path().extension().is_some_and(|e| {
         e.eq_ignore_ascii_case("smdesign")
             || e.eq_ignore_ascii_case("smmat")
+            || e.eq_ignore_ascii_case("smmotion")
             || e.eq_ignore_ascii_case("smweapon")
     }) && !matches!(command, EditCommand::Undo | EditCommand::Redo)
     {

@@ -51,3 +51,5 @@ pub mod scene_codegen;
 pub mod font_generator;
 
 pub mod weapon;
+
+pub mod motion;

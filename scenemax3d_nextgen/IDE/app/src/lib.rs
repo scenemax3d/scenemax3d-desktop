@@ -174,6 +174,9 @@ pub fn run(options: LaunchOptions) -> Result<()> {
             presentation::inventory::smoke.before(presentation::inventory::update),
         );
     }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_MOTION").is_some() {
+        app.add_systems(Update, presentation::motion::smoke);
+    }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_WEAPON").is_some() {
         app.add_systems(Update, presentation::weapon::smoke);
     }
@@ -257,6 +260,7 @@ impl Plugin for StudioPlugin {
             .init_resource::<application::material::MaterialLibrary>()
             .init_resource::<presentation::material::State>()
             .init_resource::<presentation::weapon::State>()
+            .init_resource::<presentation::motion::State>()
             .add_systems(
                 PostUpdate,
                 presentation::weapon::attachment::follow
@@ -307,6 +311,7 @@ impl Plugin for StudioPlugin {
                     (
                         presentation::material::update,
                         presentation::weapon::update,
+                        presentation::motion::update,
                         presentation::model_import::update,
                         presentation::sprite_import::update,
                         presentation::effect_import::update,
@@ -334,6 +339,7 @@ impl Plugin for StudioPlugin {
                         presentation::model_import::render::update,
                         presentation::material::preview::update,
                         presentation::weapon::preview::update,
+                        presentation::motion::preview::update,
                         presentation::sprite_import::preview::update,
                         presentation::model_import::playback::update,
                         presentation::scene3d::refresh_materials,

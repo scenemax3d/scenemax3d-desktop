@@ -11,6 +11,7 @@ use std::{collections::VecDeque, path::PathBuf};
 pub(crate) enum Command {
     Material(super::material::Edit),
     Weapon(super::material::Edit),
+    Motion(super::material::Edit),
     Tree(scenemax_ide_services::TreeOperation),
     SavePath(PathBuf),
     RunPath(PathBuf),
@@ -105,6 +106,7 @@ fn execute(
     }
     match command {
         Command::Material(edit) => super::material::edit(edit, session, changes)?,
+        Command::Motion(edit) => super::motion::edit(edit, session, changes)?,
         Command::Weapon(edit) => super::weapon::edit(edit, session, changes)?,
         Command::Tree(_)
         | Command::SavePath(_)

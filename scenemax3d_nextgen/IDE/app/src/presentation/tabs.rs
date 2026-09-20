@@ -89,6 +89,14 @@ pub(crate) fn editor(
         commands.entity(host).insert(super::weapon::WeaponHost);
         return;
     }
+    if doc
+        .path()
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("smmotion"))
+    {
+        commands.entity(host).insert(super::motion::MotionHost);
+        return;
+    }
     let gutter = commands
         .spawn((
             GutterPanel,

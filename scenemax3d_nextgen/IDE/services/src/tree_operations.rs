@@ -10,6 +10,13 @@ use std::{
 /// Local operations available from the project tree.
 #[derive(Clone, Debug)]
 pub enum TreeOperation {
+    /// Create a runtime-ready throw motion in the active project.
+    CreateMotion {
+        /// Display name used to derive the motion ID.
+        name: String,
+        /// Starter motion type.
+        kind: String,
+    },
     /// Create a runtime-ready weapon in the active project.
     CreateWeapon {
         /// Display name used for the initial resource ID.
@@ -107,6 +114,7 @@ fn companions(path: &Path) -> Vec<PathBuf> {
 pub(crate) fn perform(root: &Path, operation: TreeOperation) -> Result<TreeOutcome, ServiceError> {
     let project = Project::new(root.to_owned(), vec![]);
     match operation {
+        TreeOperation::CreateMotion { name, kind } => crate::motion::create(root, &name, &kind),
         TreeOperation::CreateWeapon { name } => crate::weapon::create(root, &name),
         TreeOperation::AddScene { parent, name } => {
             let path = destination(&project, &parent, &name)?;
