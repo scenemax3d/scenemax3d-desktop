@@ -108,3 +108,6 @@ pub mod deployment;
 
 /// Material editor asset inventory.
 pub mod material;
+
+/// Workspace navigation persistence and restart adapter.
+pub mod workspace_state;

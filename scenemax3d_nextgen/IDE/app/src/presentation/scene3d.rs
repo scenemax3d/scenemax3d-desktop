@@ -68,6 +68,25 @@ pub(crate) struct Renderer<'w, 's> {
     server: Option<Res<'w, AssetServer>>,
     project_assets: Option<Res<'w, crate::project_assets::ProjectAssets>>,
 }
+pub(crate) fn refresh_materials(
+    mut changes: MessageReader<crate::application::ViewChange>,
+    buttons: Query<&Interaction, (With<inspector::RefreshMaterials>, Changed<Interaction>)>,
+    mut state: ResMut<SceneState>,
+) {
+    let mut refresh = false;
+    for event in changes.read() {
+        refresh |= matches!(
+            event,
+            crate::application::ViewChange::MaterialsChanged
+                | crate::application::ViewChange::ProjectTreeChanged
+        );
+    }
+    if refresh || buttons.iter().any(|i| *i == Interaction::Pressed) {
+        state.reload_assets();
+        // A material scan already in flight describes the old asset inventory.
+        state.pending = None;
+    }
+}
 pub(crate) fn update(
     mut commands: Commands,
     session: Res<Session>,

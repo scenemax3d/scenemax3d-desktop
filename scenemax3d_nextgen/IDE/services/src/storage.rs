@@ -36,10 +36,21 @@ pub enum StorageRequest {
         /// Immutable scene source.
         source: String,
     },
+    /// Persist the previous project navigation before switching projects.
+    SwitchProject {
+        /// Current canonical project root.
+        previous: PathBuf,
+        /// Navigation snapshot of the previous project.
+        workspace: crate::workspace_state::WorkspaceState,
+        /// Destination project root.
+        root: PathBuf,
+    },
     /// Read the Java-compatible project catalog on a worker.
     Catalog {
         /// Installation/project directory from which to discover the catalog.
         root: PathBuf,
+        /// Optional application last-project state for startup selection.
+        last_project: Option<PathBuf>,
         /// Explicit catalog path, if supplied.
         path: Option<PathBuf>,
     },
@@ -71,6 +82,10 @@ pub enum StorageRequest {
         root: PathBuf,
         /// Dirty document snapshots.
         documents: Vec<Document>,
+        /// Open tabs and selected document; independent of dirty recovery contents.
+        workspace: Option<crate::workspace_state::WorkspaceState>,
+        /// Optional application-wide last-project state path.
+        last_project: Option<PathBuf>,
         /// Checkpoint paths accepted or discarded by the user.
         retire: Vec<PathBuf>,
     },
@@ -104,6 +119,8 @@ pub enum StorageRequest {
 }
 /// Completed operations; failures are data and never overwrite live buffers.
 pub enum StorageResult {
+    /// Project loaded with restored tab order and selection.
+    WorkspaceProject(Project, Vec<Document>, Option<PathBuf>),
     /// Saved designer snapshots and freshly generated companion documents.
     Generated {
         /// Per-document save outcomes.
@@ -216,6 +233,16 @@ fn perform(
     journal: &mut crate::recovery::RecoveryJournal,
 ) -> StorageResult {
     match request {
+        StorageRequest::SwitchProject {
+            previous,
+            workspace,
+            root,
+        } => {
+            if let Err(e) = crate::workspace_state::save(&previous, &workspace, None) {
+                return StorageResult::Project(Err(e));
+            }
+            perform(StorageRequest::Project { root, script: None }, journal)
+        }
         StorageRequest::Tree { root, operation } => {
             StorageResult::Tree(crate::tree_operations::perform(&root, operation))
         }
@@ -249,9 +276,21 @@ fn perform(
         StorageRequest::Scene3d { root, source } => {
             StorageResult::Scene3d(crate::scene3d::load(&root, &source))
         }
-        StorageRequest::Catalog { root, path } => {
-            StorageResult::Catalog(crate::catalog::load_catalog(&root, path.as_deref()))
-        }
+        StorageRequest::Catalog {
+            root,
+            path,
+            last_project,
+        } => StorageResult::Catalog(crate::catalog::load_catalog(&root, path.as_deref()).map(
+            |mut catalog| {
+                if let Some(selected) = last_project
+                    .as_deref()
+                    .and_then(crate::workspace_state::last_project)
+                {
+                    catalog.selected = Some(selected);
+                }
+                catalog
+            },
+        )),
         StorageRequest::SaveCopy {
             root,
             path,
@@ -274,7 +313,14 @@ fn perform(
             root,
             documents,
             retire,
-        } => StorageResult::Checkpoint(journal.checkpoint(&root, documents, retire)),
+            workspace,
+            last_project,
+        } => StorageResult::Checkpoint((|| {
+            if let Some(state) = workspace {
+                crate::workspace_state::save(&root, &state, last_project.as_deref())?;
+            }
+            journal.checkpoint(&root, documents, retire)
+        })()),
         StorageRequest::NewProject(root) => {
             StorageResult::Project(Filesystem::create_project(&root).map(|(p, d)| (p, Some(d))))
         }
@@ -284,14 +330,34 @@ fn perform(
             let doc = Filesystem::create_document(&project, &path)?;
             Ok((Filesystem::open_project(&root)?, doc))
         })()),
-        StorageRequest::Project { root, script } => StorageResult::Project((|| {
-            let project = Filesystem::open_project(&root)?;
-            let script = script.or_else(|| project.entry_point().map(|p| p.to_owned()));
-            let document = script
-                .map(|path| Filesystem::open_document(&project, &path))
-                .transpose()?;
-            Ok((project, document))
-        })()),
+        StorageRequest::Project { root, script } => {
+            let project = match Filesystem::open_project(&root) {
+                Ok(p) => p,
+                Err(e) => return StorageResult::Project(Err(e)),
+            };
+            if let Some((mut docs, mut active)) = crate::workspace_state::restore(&project) {
+                if let Some(path) = script {
+                    match Filesystem::open_document(&project, &path) {
+                        Ok(doc) => {
+                            active = Some(doc.path().to_owned());
+                            if !docs.iter().any(|d| d.path() == doc.path()) {
+                                docs.push(doc);
+                            }
+                        }
+                        Err(e) => return StorageResult::Project(Err(e)),
+                    }
+                }
+                StorageResult::WorkspaceProject(project, docs, active)
+            } else {
+                let script = script.or_else(|| project.entry_point().map(PathBuf::from));
+                StorageResult::Project(
+                    script
+                        .map(|p| Filesystem::open_document(&project, &p))
+                        .transpose()
+                        .map(|doc| (project, doc)),
+                )
+            }
+        }
         StorageRequest::Open { root, path } => StorageResult::Open(Filesystem::open_document(
             &Project::new(root, vec![]),
             &path,

@@ -382,6 +382,8 @@ fn recovery_requires_restore_and_does_not_write_script_files() {
             root,
             documents: vec![snapshot],
             retire: vec![],
+            workspace: None,
+            last_project: None,
         })
         .unwrap();
     finish_io(&mut app);
@@ -1739,4 +1741,115 @@ fn material_document_uses_retained_controls_and_normal_undo() {
             .unwrap()
             .is_dirty()
     );
+}
+
+#[test]
+fn close_and_reopen_restores_tabs_and_selected_document() {
+    let (mut app, dir, first) = app();
+    app.init_resource::<bevy::text::FontCx>()
+        .init_resource::<bevy::text::LayoutCx>()
+        .init_resource::<bevy::input_focus::InputFocus>();
+    let other = dir.path().join("scripts/other.code");
+    std::fs::write(&other, "// other").unwrap();
+    dispatch(&mut app, Command::Open(other.clone()));
+    finish_io(&mut app);
+    let first_id = app
+        .world()
+        .resource::<Session>()
+        .workspace
+        .find_document(&first.canonicalize().unwrap())
+        .unwrap();
+    let editors: Vec<_> = {
+        let world = app.world_mut();
+        world
+            .query_filtered::<Entity, With<Editor>>()
+            .iter(world)
+            .collect()
+    };
+    let mut fonts = bevy::text::FontCx::default();
+    let mut layouts = bevy::text::LayoutCx::default();
+    for entity in editors {
+        app.world_mut()
+            .resource_mut::<bevy::input_focus::InputFocus>()
+            .set(entity, bevy::input_focus::FocusCause::Navigated);
+        app.world_mut()
+            .get_mut::<EditableText>(entity)
+            .unwrap()
+            .editor_mut()
+            .driver(&mut fonts.context, &mut layouts.0)
+            .select_byte_range(1, 3);
+        app.update();
+    }
+    dispatch(&mut app, Command::Select(first_id));
+    dispatch(&mut app, Command::RequestClose);
+    finish_io(&mut app);
+    assert!(!app.world().resource::<Messages<AppExit>>().is_empty());
+    dispatch(&mut app, Command::OpenProject(dir.path().to_owned()));
+    finish_io(&mut app);
+    let session = app.world().resource::<Session>();
+    let paths = session
+        .workspace
+        .documents()
+        .map(|(_, doc)| doc.path().file_name().unwrap().to_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(paths, ["test.code", "other.code"]);
+    for (_, doc) in session.workspace.documents() {
+        assert_eq!(
+            doc.selection(),
+            scenemax_ide_core::Selection {
+                anchor: 1,
+                focus: 3
+            }
+        );
+    }
+    assert_eq!(
+        session
+            .workspace
+            .document(session.workspace.active_id().unwrap())
+            .unwrap()
+            .path(),
+        first.canonicalize().unwrap()
+    );
+}
+#[test]
+fn restart_shortcut_can_cancel_unsaved_work_and_restarts_only_after_state_is_durable() {
+    let (mut app, _dir, path) = app();
+    edit(&mut app, "// unsaved restart edit");
+    let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+    keys.press(KeyCode::ControlLeft);
+    keys.press(KeyCode::AltLeft);
+    keys.press(KeyCode::KeyR);
+    app.update();
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .reset_all();
+    assert!(app.world().resource::<Session>().restarting);
+    assert!(app.world().resource::<Session>().closing);
+    assert!(app.world().resource::<Messages<AppExit>>().is_empty());
+    dispatch(&mut app, Command::CancelClose);
+    assert!(!app.world().resource::<Session>().restarting);
+    assert!(
+        app.world()
+            .resource::<Session>()
+            .workspace
+            .has_dirty_documents()
+    );
+    dispatch(&mut app, Command::Restart);
+    dispatch(&mut app, Command::SaveAll);
+    finish_io(&mut app);
+    let session = app.world().resource::<Session>();
+    assert!(session.restart_project.lock().unwrap().is_some());
+    assert!(
+        session
+            .workspace
+            .project()
+            .root()
+            .join(".scenemax-studio/workspace.json")
+            .is_file()
+    );
+    assert_eq!(
+        std::fs::read_to_string(path).unwrap(),
+        "// unsaved restart edit"
+    );
+    assert!(!app.world().resource::<Messages<AppExit>>().is_empty());
 }

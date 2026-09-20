@@ -36,6 +36,7 @@ pub(crate) enum Action {
     RefreshProjects,
     ChooseProject(PathBuf),
     Exit,
+    Restart,
     Stop,
     OpenProject,
     CancelClose,
@@ -89,6 +90,7 @@ impl Action {
             Self::RefreshProjects => Command::RefreshProjects,
             Self::ChooseProject(path) => Command::OpenProject(path.clone()),
             Self::Exit => Command::RequestClose,
+            Self::Restart => Command::Restart,
             Self::Stop => Command::Stop,
             Self::OpenProject => Command::OpenProject(value(Field::Project).into()),
             Self::CancelClose => Command::CancelClose,
@@ -205,6 +207,12 @@ pub(crate) fn collect_actions(
         if ctrl && keys.just_pressed(KeyCode::Slash) {
             queue.0.push_back(Command::Edit(EditCommand::Comment));
         }
+    }
+    if ctrl
+        && keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight])
+        && keys.just_pressed(KeyCode::KeyR)
+    {
+        queue.0.push_back(Command::Restart);
     }
     if ctrl && keys.just_pressed(KeyCode::KeyW) {
         queue.0.push_back(Command::CloseTab);

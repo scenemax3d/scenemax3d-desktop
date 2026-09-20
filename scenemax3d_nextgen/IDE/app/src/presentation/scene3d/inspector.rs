@@ -9,6 +9,8 @@ pub(crate) struct Property(pub String, pub String);
 #[derive(Component)]
 pub(crate) struct CodeEditor;
 #[derive(Component)]
+pub(crate) struct RefreshMaterials;
+#[derive(Component)]
 pub(crate) struct Apply(pub bool);
 #[derive(Component)]
 pub(crate) struct Proportional;
@@ -136,6 +138,7 @@ pub(super) fn build(commands: &mut Commands, parent: Entity, scene: &Scene3d, in
                 .map(Vec::as_slice)
                 .unwrap_or(&[]),
         );
+        button(commands, parent, "Refresh materials", RefreshMaterials);
         choice(
             commands,
             parent,

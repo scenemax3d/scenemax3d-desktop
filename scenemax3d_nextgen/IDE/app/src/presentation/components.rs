@@ -52,3 +52,6 @@ pub(crate) struct SearchResults;
 pub(crate) struct TabClosePrompt;
 #[derive(Component)]
 pub(crate) struct TabCloseCaption;
+
+#[derive(Component)]
+pub(crate) struct CloseExplanation;

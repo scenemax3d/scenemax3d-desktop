@@ -41,6 +41,7 @@ pub(crate) enum Command {
     Stop,
     OpenProject(PathBuf),
     RequestClose,
+    Restart,
     CancelClose,
     DiscardExit,
 }
@@ -83,6 +84,7 @@ fn execute(
             Command::Edit(_)
                 | Command::CloseDocument(_)
                 | Command::CloseTab
+                | Command::Restart
                 | Command::RequestClose
                 | Command::DiscardExit
                 | Command::OpenProject(_)
@@ -309,6 +311,7 @@ fn execute(
             services.catalog_storage.request(StorageRequest::Catalog {
                 root: services.catalog_root.clone(),
                 path: services.catalog_path.clone(),
+                last_project: None,
             })?;
             session.status = "Refreshing projects…".into();
         }
@@ -359,14 +362,18 @@ fn execute(
             if services.projector.is_running() {
                 bail!("Stop the projector before switching projects");
             }
-            services.storage.request(StorageRequest::Project {
+            services.storage.request(StorageRequest::SwitchProject {
+                previous: session.workspace.project().root().to_owned(),
+                workspace: scenemax_ide_services::workspace_state::WorkspaceState::capture(
+                    &session.workspace,
+                ),
                 root: path,
-                script: None,
             })?;
             session.status = "Opening project…".into();
         }
 
-        Command::RequestClose => {
+        Command::RequestClose | Command::Restart => {
+            session.restarting = matches!(command, Command::Restart);
             session.closing_tab = None;
             if session.workspace.has_dirty_documents() || services.is_saving() {
                 session.closing = true;
@@ -375,6 +382,7 @@ fn execute(
             }
         }
         Command::CancelClose => {
+            session.restarting = false;
             session.closing = false;
             services.recovery.exit = None;
         }

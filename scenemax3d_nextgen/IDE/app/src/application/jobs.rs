@@ -27,6 +27,7 @@ pub(crate) struct EditorServices {
     pub(crate) scene_storage: Storage,
     pub(crate) material_storage: Storage,
     pub(crate) catalog_root: PathBuf,
+    pub(crate) last_project_file: Option<PathBuf>,
     pub(crate) catalog_path: Option<PathBuf>,
     pub(crate) catalog_startup: Option<(PathBuf, Option<PathBuf>)>,
     pending_save: Option<SavePurpose>,
@@ -45,6 +46,7 @@ impl EditorServices {
             scene_storage: Storage::new()?,
             material_storage: Storage::new()?,
             catalog_root: PathBuf::from("."),
+            last_project_file: None,
             catalog_path: None,
             catalog_startup: None,
             pending_save: None,
@@ -118,6 +120,28 @@ pub(crate) fn apply_storage(
     exit: &mut MessageWriter<AppExit>,
 ) -> Result<()> {
     match result {
+        StorageResult::WorkspaceProject(project, documents, active) => {
+            apply_storage(
+                StorageResult::Project(Ok((project, None))),
+                services,
+                session,
+                changes,
+                exit,
+            )?;
+            for doc in documents {
+                let id = session.workspace.open_document(doc)?;
+                changes.write(ViewChange::DocumentOpened(id));
+            }
+            if let Some(id) = active
+                .as_ref()
+                .and_then(|path| session.workspace.find_document(path))
+            {
+                session.workspace.select(id)?;
+            }
+            changes.write(ViewChange::ActiveChanged);
+            session.status = "Workspace restored".into();
+        }
+
         StorageResult::Generated {
             results,
             companions,
@@ -237,6 +261,13 @@ pub(crate) fn apply_storage(
             services.recovery.retire.clear();
             if let Some(discard) = services.recovery.exit.take() {
                 if discard || !session.workspace.has_dirty_documents() {
+                    if session.restarting {
+                        *session
+                            .restart_project
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner()) =
+                            Some(session.workspace.project().root().to_owned());
+                    }
                     exit.write(AppExit::Success);
                 } else {
                     session.status = "Newer edits remain unsaved; close cancelled".into();
@@ -336,6 +367,13 @@ pub(crate) fn apply_storage(
             for (id, result) in results {
                 match result {
                     Ok(saved) => {
+                        if saved
+                            .path()
+                            .extension()
+                            .is_some_and(|e| e.eq_ignore_ascii_case("smmat"))
+                        {
+                            changes.write(ViewChange::MaterialsChanged);
+                        }
                         if !session.workspace.document_mut(id)?.acknowledge_saved(saved) {
                             failures.push(
                                 "Save acknowledgement did not match the open document".to_owned(),

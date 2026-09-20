@@ -67,7 +67,7 @@ pub(crate) fn project_edits(
 ) {
     for change in changes.read() {
         let id = match change {
-            ViewChange::BufferChanged(id) => Some(*id),
+            ViewChange::BufferChanged(id) | ViewChange::DocumentOpened(id) => Some(*id),
             ViewChange::ActiveChanged => session.workspace.active_id(),
             _ => None,
         };
@@ -92,7 +92,9 @@ pub(crate) fn project_edits(
                     .driver(&mut fonts.context, &mut layouts.0)
                     .select_byte_range(selection.anchor, selection.focus);
             }
-            if let Some(focus) = focus.as_mut() {
+            if session.workspace.active_id() == Some(id)
+                && let Some(focus) = focus.as_mut()
+            {
                 focus.set(entity, bevy::input_focus::FocusCause::Navigated);
             }
         }

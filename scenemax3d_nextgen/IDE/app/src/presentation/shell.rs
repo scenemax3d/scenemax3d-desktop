@@ -500,6 +500,7 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
             "Unsaved documents. Save all before closing, or discard edits:",
             15.,
         ),
+        CloseExplanation,
         ChildOf(close),
     ));
     button(&mut commands, close, "Save all", Action::SaveAll);

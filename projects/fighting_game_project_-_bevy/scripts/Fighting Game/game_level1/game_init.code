@@ -20,7 +20,8 @@ level_ambient => Lights.ambient : color "#c7d6ff", intensity 0.25, affectsLightm
 camera.pos(8.303196,-13.294227,49.450314)
 camera.rotate(-20.65567676337715,115.06724847250129,0.81772831967563)
 
-floor => static box : size (100,1,100), pos (0,-15,0), shadow mode on, material "wall"
+floor => static box : size (100,1,100), pos (0,-15,0), shadow mode on
+floor.material = "test_material1"
 level2 => static crime_city1 : pos (220,-90,210), scale (0.02,0.02,0.02), shadow mode on async
 ring => fantasy_ring1 : pos (13,-12,50), scale (25,25,25), shadow mode on async
 // rotate ring

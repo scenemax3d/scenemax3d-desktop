@@ -51,8 +51,12 @@ pub struct LaunchOptions {
 pub fn run(options: LaunchOptions) -> Result<()> {
     // Show the shell immediately; canonicalization, scanning and initial loading
     // belong to the disk worker, including startup on slow/network storage.
+    let restart_executable = std::env::current_exe()?;
+    let restart_catalog = options.project_catalog.clone();
+    let restart_projector = options.projector.clone();
     let mut session = Session::new(Project::new(options.project_root.clone(), vec![]));
     session.status = "Opening project…".into();
+    let restart_project = session.restart_project.clone();
     let projector = match options.projector {
         Some(path) => path,
         None => std::env::current_exe()?.with_file_name(format!(
@@ -62,10 +66,14 @@ pub fn run(options: LaunchOptions) -> Result<()> {
     };
     let mut services = EditorServices::new(projector)?;
     services.catalog_root = options.project_root.clone();
+    if options.smoke_frames.is_none() {
+        services.last_project_file = scenemax_ide_services::workspace_state::last_project_file();
+    }
     services.catalog_path = options.project_catalog.clone();
     services.catalog_storage.request(StorageRequest::Catalog {
         root: options.project_root.clone(),
         path: options.project_catalog,
+        last_project: services.last_project_file.clone(),
     })?;
     if options.select_catalog_project {
         services.catalog_startup = Some((options.project_root, options.script));
@@ -186,6 +194,18 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         app.add_systems(Update, presentation::deployment::smoke_build);
     }
     app.run();
+    let restart = restart_project
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take();
+    if let Some(root) = restart {
+        scenemax_ide_services::workspace_state::restart(
+            &restart_executable,
+            &root,
+            restart_catalog.as_deref(),
+            restart_projector.as_deref(),
+        )?;
+    }
     Ok(())
 }
 
@@ -290,6 +310,7 @@ impl Plugin for StudioPlugin {
                         presentation::material::preview::update,
                         presentation::sprite_import::preview::update,
                         presentation::model_import::playback::update,
+                        presentation::scene3d::refresh_materials,
                         presentation::scene3d::update,
                         presentation::scene3d::synchronize_tree,
                         presentation::scene3d::synchronize_names,
@@ -318,6 +339,7 @@ impl Plugin for StudioPlugin {
                     )
                         .chain(),
                     presentation::labels::refresh_labels,
+                    presentation::labels::close_prompt,
                     (
                         presentation::labels::refresh_console,
                         presentation::labels::output_visibility,

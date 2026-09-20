@@ -166,6 +166,7 @@ fn populate_menu(
                 panel_item(commands, host, entry.name, "", Panel::Project)
             }
             "refresh_project_tree" => item(commands, host, entry.name, "", Action::Refresh),
+            "restart_app" => item(commands, host, entry.name, "Ctrl+Alt+R", Action::Restart),
             "exit" => item(commands, host, entry.name, "", Action::Exit),
             "about" => panel_item(commands, host, entry.name, "", Panel::Help),
             _ => {

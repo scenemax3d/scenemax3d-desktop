@@ -25,7 +25,7 @@
       "colliderEntity": false,
       "hidden": false,
       "id": "76d36d14-001f-4156-bd68-32f575cd1e36",
-      "material": "wall",
+      "material": "test_material1",
       "multiplayer": false,
       "name": "floor",
       "position": [

@@ -203,10 +203,11 @@ pub fn load(root: &Path, source: &str) -> Result<Scene3d, String> {
         note: String::new(),
     });
     let materials = crate::material::documents(root)?;
+    let catalog = catalog::load(&resources, &materials);
     Ok(Scene3d {
         materials,
         ambient: value["bevyAmbientLight"].clone(),
-        catalog: catalog::load(&resources),
+        catalog,
         camera: if value["camera"].is_object() {
             Some(SceneCamera {
                 position: vector(&value["camera"]["position"], [0.; 3])?,
