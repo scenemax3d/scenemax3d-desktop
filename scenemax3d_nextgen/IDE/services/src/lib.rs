@@ -111,3 +111,6 @@ pub mod material;
 
 /// Workspace navigation persistence and restart adapter.
 pub mod workspace_state;
+
+/// Registered project assets, previews and reviewed transfers.
+pub mod inventory;

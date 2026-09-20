@@ -9,6 +9,7 @@ pub(crate) struct Session {
     pub(crate) output: std::collections::VecDeque<String>,
     pub(crate) output_revision: u64,
     pub(crate) closing: bool,
+    pub(crate) asset_operation_pending: bool,
     pub(crate) restarting: bool,
     pub(crate) restart_project: std::sync::Arc<std::sync::Mutex<Option<std::path::PathBuf>>>,
     pub(crate) closing_tab: Option<DocumentId>,
@@ -18,7 +19,7 @@ pub(crate) struct Session {
 }
 impl Session {
     pub(crate) fn new(project: Project) -> Self {
-        Self { workspace: EditorWorkspace::new(project), catalog: Default::default(), closing: false, restarting: false, restart_project: Default::default(), closing_tab: None, composing: false, recoverable: 0, search_hits: vec![], output: Default::default(), output_revision: 0,
+        Self { workspace: EditorWorkspace::new(project), catalog: Default::default(), asset_operation_pending: false, closing: false, restarting: false, restart_project: Default::default(), closing_tab: None, composing: false, recoverable: 0, search_hits: vec![], output: Default::default(), output_revision: 0,
             status: "Open a script. Ctrl+S: save | Ctrl+Enter: syntax check | F5: run active script | Shift+F5: stop".into() }
     }
     pub(crate) fn append_output(&mut self, message: &str) {

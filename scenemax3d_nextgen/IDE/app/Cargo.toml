@@ -11,7 +11,7 @@ scenemax_effects = { path = "../../Engine/effects", features = ["effekseer_nativ
 anyhow.workspace = true
 serde_json.workspace = true
 clap.workspace = true
-bevy = { workspace = true, features = ["ui", "default_font", "system_font_discovery", "system_clipboard", "png", "jpeg", "3d"] }
+bevy = { workspace = true, features = ["ui", "default_font", "system_font_discovery", "system_clipboard", "png", "jpeg", "3d", "audio", "wav"] }
 scenemax_ide_core = { path = "../core" }
 scenemax_ide_services = { path = "../services" }
 scenemax_ide_ui = { path = "../ui" }

@@ -75,6 +75,9 @@ fn execute(
     changes: &mut MessageWriter<ViewChange>,
     _exit: &mut MessageWriter<AppExit>,
 ) -> Result<()> {
+    if session.asset_operation_pending && !matches!(command, Command::Stop | Command::CancelClose | Command::ClearConsole) {
+        bail!("Wait for the asset operation to finish before changing or closing the project");
+    }
     if let Some(result) = super::tree_commands::execute(&command, session, services) {
         return result;
     }
