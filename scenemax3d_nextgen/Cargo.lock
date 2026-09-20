@@ -5382,6 +5382,7 @@ dependencies = [
 name = "scenemax_ide_services"
 version = "0.1.0"
 dependencies = [
+ "fontique",
  "image",
  "scenemax_assets",
  "scenemax_ide_core",
@@ -5389,8 +5390,10 @@ dependencies = [
  "scenemax_runtime_ui_core",
  "serde",
  "serde_json",
+ "swash",
  "tempfile",
  "thiserror 2.0.20",
+ "zeno",
  "zip",
 ]
 

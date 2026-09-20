@@ -47,3 +47,5 @@ pub mod effect_import;
 
 /// Scene designer source generation.
 pub mod scene_codegen;
+
+pub mod font_generator;

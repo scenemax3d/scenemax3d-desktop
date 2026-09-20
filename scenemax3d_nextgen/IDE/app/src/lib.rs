@@ -174,6 +174,9 @@ pub fn run(options: LaunchOptions) -> Result<()> {
             presentation::inventory::smoke.before(presentation::inventory::update),
         );
     }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_FONT").is_some() {
+        app.add_systems(Update, presentation::font_generator::smoke);
+    }
     if options.smoke_menu && options.smoke_frames.is_some() {
         app.world_mut()
             .resource_mut::<presentation::chrome::ChromeState>()
@@ -231,6 +234,7 @@ impl Plugin for StudioPlugin {
             .init_resource::<presentation::tree_menu::State>()
             .init_resource::<presentation::asset_import::State>()
             .init_resource::<presentation::inventory::State>()
+            .init_resource::<presentation::font_generator::State>()
             .init_resource::<presentation::model_import::State>()
             .init_resource::<presentation::sprite_import::State>()
             .init_resource::<presentation::effect_import::State>()
@@ -283,6 +287,7 @@ impl Plugin for StudioPlugin {
                         presentation::asset_import::update,
                         presentation::inventory::update,
                         presentation::inventory::preview_update,
+                        presentation::font_generator::update,
                         presentation::deployment::collect,
                         presentation::deployment::keyboard,
                         application::deployment::update,

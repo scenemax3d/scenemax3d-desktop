@@ -39,4 +39,5 @@ pub(crate) mod effect_import;
 
 pub(crate) mod material;
 
+pub(crate) mod font_generator;
 pub(crate) mod inventory;

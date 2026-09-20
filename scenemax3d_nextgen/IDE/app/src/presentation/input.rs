@@ -123,6 +123,7 @@ pub(crate) struct InputFields<'w, 's> {
     menu: Option<Res<'w, super::tree_menu::State>>,
     imports: Option<Res<'w, super::asset_import::State>>,
     inventory: Option<Res<'w, super::inventory::State>>,
+    font_generator: Option<Res<'w, super::font_generator::State>>,
     fields: Query<'w, 's, (Entity, &'static Field, &'static EditableText)>,
     properties: PropertyInputs<'w, 's>,
 }
@@ -137,6 +138,7 @@ pub(crate) fn collect_actions(
 ) {
     if input_fields.imports.as_ref().is_some_and(|m| m.is_open())
         || input_fields.inventory.as_ref().is_some_and(|m| m.open)
+        || input_fields.font_generator.as_ref().is_some_and(|m| m.open)
         || input_fields.deployment.as_ref().is_some_and(|m| m.open)
         || input_fields.menu.as_ref().is_some_and(|m| m.is_open())
     {

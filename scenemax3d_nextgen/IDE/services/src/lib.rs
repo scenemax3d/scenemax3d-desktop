@@ -114,3 +114,6 @@ pub mod workspace_state;
 
 /// Registered project assets, previews and reviewed transfers.
 pub mod inventory;
+
+/// Native system-font discovery, bitmap generation and project registration.
+pub mod font_generator;

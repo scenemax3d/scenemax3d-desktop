@@ -154,6 +154,11 @@ fn populate_menu(
             finish_item(commands, row, "");
             continue;
         }
+        if entry.command == "font_generator" {
+            let row = super::font_generator::menu_item(commands, host, entry.name);
+            finish_item(commands, row, "");
+            continue;
+        }
         if entry.command == "create_material_document" {
             let row = button(commands, host, entry.name, Name::new("Create material"));
             commands.entity(row).observe(
