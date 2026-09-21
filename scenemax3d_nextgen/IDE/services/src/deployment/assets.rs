@@ -527,7 +527,16 @@ impl Library {
                                 .is_some_and(|n| names.contains(&n.to_lowercase()))
                             {
                                 self.rows.insert((key.clone(), group.clone(), i));
-                                let row = runtime_row(row, names);
+                                let mut row = runtime_row(row, names);
+                                // Clip identifiers describe intervals within this model, not
+                                // other registered resources. Keep them in the saved catalog.
+                                if group == "models"
+                                    && let Some(model) = row.as_object_mut()
+                                {
+                                    model.remove("animationFrameRanges");
+                                    model.remove("animationFrameRangesSourceAnimation");
+                                    model.remove("sourceAnimation");
+                                }
                                 for value in strings(&row) {
                                     if value.to_lowercase().ends_with(".j3o")
                                         && row["sourceModel"].is_string()
