@@ -340,6 +340,11 @@ pub fn substitute_statement(
                     .collect(),
             })
         }
+        Statement::Attach(attach) => Statement::Attach(AttachStatement {
+            target: substitute_path(&attach.target, bindings),
+            subject: substitute_path(&attach.subject, bindings),
+            offset: attach.offset,
+        }),
         Statement::CameraAttach(attach) => Statement::CameraAttach(CameraAttachStatement {
             target: substitute_path(&attach.target, bindings),
             offset: attach.offset,

@@ -685,6 +685,21 @@ pub(super) fn apply_startup_action(
             apply_skybox(commands, skybox_name, runtime_assets);
             ActionSequenceResult::Completed
         }
+        Statement::Attach(attach) => {
+            let target = resolve_object_alias(&attach.target, object_pools, None);
+            let (owner, bone) = crate::ik::split_target(&attach.subject);
+            let subject = crate::ik::reference(
+                &resolve_object_alias(owner, object_pools, None),
+                bone.as_deref(),
+            );
+            crate::attachments::enqueue(
+                commands,
+                entities_by_name.get(&target).copied(),
+                subject,
+                attach.offset,
+            );
+            ActionSequenceResult::Completed
+        }
         Statement::Ik(ik) => {
             let asset = if let scenemax_parser::ik::IkAction::Apply(v) = &ik.action {
                 Some(resolve_shader_name(
@@ -6874,6 +6889,24 @@ pub(super) fn apply_key_action(
             Some(collider_bounds),
         );
         apply_skybox(commands, skybox_name, runtime_assets);
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::Attach(attach) = action {
+        let target = resolve_object_alias(&attach.target, object_pools, scope.as_deref());
+        let entity = runtime_declared_entities.get(&target).copied().or_else(|| {
+            scene_entities
+                .p1()
+                .iter()
+                .find_map(|(e, s, _, _, _, _, _, _)| {
+                    (s.name == target || s.runtime_name == target).then_some(e)
+                })
+        });
+        let (owner, bone) = crate::ik::split_target(&attach.subject);
+        let subject = crate::ik::reference(
+            &resolve_object_alias(owner, object_pools, scope.as_deref()),
+            bone.as_deref(),
+        );
+        crate::attachments::enqueue(commands, entity, subject, attach.offset);
         return ActionSequenceResult::Completed;
     }
     if let Statement::Ik(ik) = action {

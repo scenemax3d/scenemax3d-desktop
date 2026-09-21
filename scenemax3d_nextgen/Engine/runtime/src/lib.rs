@@ -231,9 +231,13 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .add_plugins(default_plugins)
         .add_plugins(scenemax_materials::MaterialsPlugin)
         .add_plugins(scenemax_ik::IkPlugin)
+        .add_systems(Last, attachments::audit)
         .add_systems(
             PostUpdate,
             (
+                attachments::update
+                    .after(bevy::app::AnimationSystems)
+                    .before(scenemax_ik::Solve),
                 ik::sync_targets.before(scenemax_ik::Solve),
                 ik::diagnostics.after(scenemax_ik::Solve),
             ),
@@ -1697,6 +1701,7 @@ struct SceneMaxVirtualCollider {
     bone: Option<String>,
     local_offset: Vec3,
     fallback_offset: Vec3,
+    authored: Transform,
 }
 
 #[derive(Debug, Clone)]
@@ -3962,3 +3967,5 @@ mod tests {
         );
     }
 }
+
+mod attachments;
