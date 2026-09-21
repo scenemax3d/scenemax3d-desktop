@@ -119,3 +119,9 @@ pub mod inventory;
 pub mod font_generator;
 
 pub mod weapon;
+
+pub mod motion;
+
+pub mod ik;
+
+pub mod animation_analyzer;

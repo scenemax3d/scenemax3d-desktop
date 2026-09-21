@@ -1,3 +1,4 @@
+pub mod ik;
 use thiserror::Error;
 
 pub mod generated {
@@ -183,6 +184,7 @@ pub enum Statement {
     UiEase(UiEaseStatement),
     UiSetProperty(UiSetPropertyStatement),
     Weapon(WeaponStatement),
+    Ik(ik::IkStatement),
     AnimationControllerAction(AnimationControllerActionStatement),
     AnimationControllerEvent(AnimationControllerEventStatement),
     ThrowMotionApply(ThrowMotionApplyStatement),
@@ -1046,6 +1048,11 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
             continue;
         }
 
+        if let Some(ik) = ik::parse(line)? {
+            statements.push(Statement::Ik(ik));
+            index += 1;
+            continue;
+        }
         if let Some(weapon) = parse_weapon_statement(line) {
             statements.push(Statement::Weapon(weapon));
             index += 1;
@@ -1938,6 +1945,9 @@ fn parse_action_statements(line: &str) -> Result<Vec<Statement>, ParseError> {
     if let Some(statement) = parse_shader_statement(line)? {
         return Ok(vec![statement]);
     }
+    if let Some(ik) = ik::parse(line)? {
+        return Ok(vec![Statement::Ik(ik)]);
+    }
     if let Some(weapon) = parse_weapon_statement(line) {
         return Ok(vec![Statement::Weapon(weapon)]);
     }
@@ -2181,6 +2191,9 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
         return Ok(debug_mode);
     }
 
+    if let Some(ik) = ik::parse(line)? {
+        return Ok(Statement::Ik(ik));
+    }
     if let Some(weapon) = parse_weapon_statement(line) {
         return Ok(Statement::Weapon(weapon));
     }

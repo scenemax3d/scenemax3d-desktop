@@ -123,13 +123,18 @@ pub(crate) fn update_gutters(
         .active_id()
         .and_then(|id| session.workspace.document(id).ok())
         .is_some_and(|doc| {
-            doc.path().extension().is_some_and(|ext| {
-                ext.eq_ignore_ascii_case("smweapon") || ext.eq_ignore_ascii_case("smmat")
-                    || ext.eq_ignore_ascii_case("smui")
-                    || ext.eq_ignore_ascii_case("smmodelimport")
-                    || ext.eq_ignore_ascii_case("smspriteimport")
-                    || ext.eq_ignore_ascii_case("smeffectimport")
-            })
+            scenemax_ide_core::animation_analyzer::is_file(doc.path())
+                || scenemax_ide_core::ik::is_file(doc.path())
+                || doc.path().extension().is_some_and(|ext| {
+                    ext.eq_ignore_ascii_case("smik")
+                        || ext.eq_ignore_ascii_case("smmotion")
+                        || ext.eq_ignore_ascii_case("smweapon")
+                        || ext.eq_ignore_ascii_case("smmat")
+                        || ext.eq_ignore_ascii_case("smui")
+                        || ext.eq_ignore_ascii_case("smmodelimport")
+                        || ext.eq_ignore_ascii_case("smspriteimport")
+                        || ext.eq_ignore_ascii_case("smeffectimport")
+                })
         });
     let (caret, node) = &mut *caret;
     let display = if ui_designer {

@@ -1,20 +1,14 @@
 use super::*;
 
 pub(super) fn collider_decl_transform(
-    name: &str,
+    _name: &str,
     options: &EntityOptions,
-    attaches_by_target: &HashMap<String, AttachStatement>,
+    _attaches_by_target: &HashMap<String, AttachStatement>,
     transforms_by_name: &HashMap<String, Transform>,
     vars: &SceneMaxVars,
     guards_by_name: &HashMap<String, Condition>,
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> Transform {
-    if let Some(attach) = attaches_by_target.get(name) {
-        let owner = attach_owner(&attach.subject);
-        if let Some(owner_transform) = transforms_by_name.get(&owner).copied() {
-            return virtual_collider_transform(owner_transform, attach_fallback_offset(attach));
-        }
-    }
     primitive_transform_from_options_resolved(
         options,
         vars,
@@ -59,6 +53,7 @@ pub(super) fn spawn_scenemax_collider_decl(
             bone: attach_bone_name(&attach.subject),
             local_offset: vec3_from_scenemax(attach.offset),
             fallback_offset: attach_fallback_offset(attach),
+            authored: transform,
         });
     }
     entity.id()
@@ -5124,7 +5119,8 @@ Material wall : Common/MatDefs/Light/Lighting.j3md {
                 "mesh => static sample_asset : pos (8,-12,45), scale {source}, rotate(0,90,0) async"
             ))
             .unwrap();
-            let scenemax_parser::Statement::ModelDecl { options, .. } = &program.statements[0] else {
+            let scenemax_parser::Statement::ModelDecl { options, .. } = &program.statements[0]
+            else {
                 panic!("model expected")
             };
             let transform = transform_from_options(options, Some([0.02; 3]));

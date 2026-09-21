@@ -36,6 +36,23 @@ pub(super) fn build(
         },
     );
     super::tools::toolbar(commands, root);
+    commands.spawn((
+        label("", 11.),
+        AssetStatus,
+        Node {
+            display: Display::None,
+            flex_shrink: 0.,
+            padding: UiRect::horizontal(px(8.)),
+            ..default()
+        },
+        ChildOf(root),
+    ));
+
+    commands.spawn((
+        label("Select a model with IK to tune its joints", 11.),
+        super::ik_controls::Hint,
+        ChildOf(root),
+    ));
     let body = panel(
         commands,
         root,
@@ -257,15 +274,6 @@ pub(super) fn inspect(commands: &mut Commands, parts: Parts, scene: &Scene3d, se
     super::inspector::actions(commands, inspector_frame, scene, selected);
     let inspector = scenemax_ide_ui::property::scroll_column(commands, inspector_frame);
     super::inspector::build(commands, inspector, scene, selected);
-    commands.spawn((
-        label("", 11.),
-        AssetStatus,
-        Node {
-            display: Display::None,
-            ..default()
-        },
-        ChildOf(inspector),
-    ));
 }
 
 pub(crate) fn synchronize_tree(

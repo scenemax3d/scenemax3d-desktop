@@ -16,13 +16,23 @@ pub(crate) struct Playback {
 pub(crate) fn cadence(
     playback: Res<Playback>,
     material: Option<Res<super::super::material::State>>,
+    rigs: Query<&scenemax_ik::Rig, With<gizmo::SceneObject>>,
     settings: Option<ResMut<bevy::winit::WinitSettings>>,
     mut previous: Local<Option<bevy::winit::UpdateMode>>,
 ) {
     let Some(mut settings) = settings else {
         return;
     };
-    let playing = playback.active.is_some() || material.is_some_and(|m| m.animating());
+    let playing = playback.active.is_some()
+        || material.is_some_and(|m| m.animating())
+        || rigs.iter().any(|rig| {
+            rig.active
+                && rig.definition["layers"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|layer| layer["enabled"].as_bool().unwrap_or(false))
+        });
     if playing && previous.is_none() {
         *previous = Some(settings.focused_mode);
         settings.focused_mode = bevy::winit::UpdateMode::Continuous;

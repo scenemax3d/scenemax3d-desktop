@@ -25,6 +25,12 @@ pub(crate) fn editor(
             ChildOf(parent),
         ))
         .id();
+    if scenemax_ide_core::animation_analyzer::is_file(doc.path()) {
+        commands
+            .entity(host)
+            .insert(super::animation_analyzer::AnalyzerHost);
+        return;
+    }
     if doc
         .path()
         .extension()
@@ -87,6 +93,18 @@ pub(crate) fn editor(
         .is_some_and(|e| e.eq_ignore_ascii_case("smweapon"))
     {
         commands.entity(host).insert(super::weapon::WeaponHost);
+        return;
+    }
+    if doc
+        .path()
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("smmotion"))
+    {
+        commands.entity(host).insert(super::motion::MotionHost);
+        return;
+    }
+    if scenemax_ide_core::ik::is_file(doc.path()) {
+        commands.entity(host).insert(super::ik::IkHost);
         return;
     }
     let gutter = commands

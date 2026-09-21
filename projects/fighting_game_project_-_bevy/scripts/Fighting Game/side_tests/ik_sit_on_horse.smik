@@ -1,148 +1,189 @@
 {
-  "schemaVersion": "1.0",
-  "targetModelId": "fighter1_native",
-  "name": "sit_on_horse",
+  "designerMetadata": {
+    "previewModelPosition": [
+      0,
+      0,
+      0
+    ],
+    "previewModelRotation": [
+      0,
+      0,
+      0
+    ],
+    "previewModelScale": [
+      1,
+      1,
+      1
+    ],
+    "previewPolePosition": [
+      0,
+      1,
+      1
+    ],
+    "previewTargetBone": "",
+    "previewTargetModel": "Sphere",
+    "previewTargetPosition": [
+      -1.040320873260498,
+      1.0,
+      0.993406057357788
+    ],
+    "previewTargetRotation": [
+      0,
+      0,
+      0
+    ],
+    "previewTargetScale": [
+      1,
+      1,
+      1
+    ]
+  },
+  "id": "ik_sit_on_horse",
   "layers": [
     {
-      "maxStretch": 1.05,
-      "enabled": true,
-      "rotationOffset": [
-        0,
-        0,
-        0
-      ],
+      "affectedJoints": [],
       "aimAxis": [
         0,
         0,
         1
       ],
       "allowStretch": false,
-      "blendTime": 0,
-      "id": "horse_sit_right_foot",
-      "smoothing": 0.15,
       "blendSpeed": 10,
-      "tolerance": 0.01,
-      "pelvisCompensation": 0.5,
+      "blendTime": 0,
       "chain": {
+        "end": "mixamorig:RightFoot",
         "middle": "mixamorig:RightLeg",
         "root": "mixamorig:RightUpLeg",
-        "start": "",
-        "end": "mixamorig:RightFoot",
-        "secondMiddle": ""
+        "secondMiddle": "",
+        "start": ""
       },
       "debug": false,
-      "maxAngle": 90,
-      "weight": 1,
-      "rotationSpeed": 20,
+      "enabled": true,
       "groundDistance": 1,
+      "id": "horse_sit_right_foot",
+      "iterations": 8,
+      "matchTargetRotation": false,
+      "maxAngle": 90,
+      "maxStretch": 1.05,
+      "name": "horse_sit_right_foot",
+      "pelvisCompensation": 0.5,
+      "poleTarget": "",
       "positionOffset": [
         0,
         0,
         0
       ],
       "priority": 0,
-      "poleTarget": "",
-      "iterations": 8,
-      "target": "",
-      "name": "horse_sit_right_foot",
-      "slopeAlignmentStrength": 0.75,
-      "solverType": "FootIK",
-      "affectedJoints": []
-    },
-    {
-      "maxStretch": 1.05,
-      "enabled": true,
       "rotationOffset": [
         0,
         0,
         0
       ],
+      "rotationSpeed": 20,
+      "slopeAlignmentStrength": 0.75,
+      "smoothing": 0.15,
+      "solverType": "FootIK",
+      "target": "",
+      "tolerance": 0.01,
+      "weight": 1
+    },
+    {
+      "affectedJoints": [],
       "aimAxis": [
         0,
         0,
         1
       ],
       "allowStretch": false,
-      "blendTime": 0,
-      "id": "horse_sit_left_foot",
-      "smoothing": 0.15,
       "blendSpeed": 10,
-      "tolerance": 0.01,
-      "pelvisCompensation": 0.5,
+      "blendTime": 0,
       "chain": {
+        "end": "mixamorig:LeftFoot",
         "middle": "mixamorig:LeftLeg",
         "root": "mixamorig:LeftUpLeg",
-        "start": "",
-        "end": "mixamorig:LeftFoot",
-        "secondMiddle": ""
+        "secondMiddle": "",
+        "start": ""
       },
       "debug": false,
-      "maxAngle": 90,
-      "weight": 1,
-      "rotationSpeed": 20,
+      "enabled": true,
       "groundDistance": 1,
+      "id": "horse_sit_left_foot",
+      "iterations": 8,
+      "matchTargetRotation": false,
+      "maxAngle": 90,
+      "maxStretch": 1.05,
+      "name": "horse_sit_left_foot",
+      "pelvisCompensation": 0.5,
+      "poleTarget": "",
       "positionOffset": [
         0,
         0,
         0
       ],
       "priority": 0,
-      "poleTarget": "",
-      "iterations": 8,
-      "target": "ik_preview_target",
-      "name": "horse_sit_left_foot",
-      "slopeAlignmentStrength": 0.75,
-      "solverType": "FootIK",
-      "affectedJoints": []
-    },
-    {
-      "maxStretch": 1.05,
-      "enabled": true,
       "rotationOffset": [
         0,
         0,
         0
       ],
+      "rotationSpeed": 20,
+      "slopeAlignmentStrength": 0.75,
+      "smoothing": 0.15,
+      "solverType": "FootIK",
+      "target": "ik_preview_target",
+      "tolerance": 0.01,
+      "weight": 1
+    },
+    {
+      "affectedJoints": [],
       "aimAxis": [
         0,
         0,
         1
       ],
       "allowStretch": false,
-      "blendTime": 0,
-      "id": "horse_sit_left_hand",
-      "smoothing": 0.15,
       "blendSpeed": 10,
-      "tolerance": 0.01,
-      "pelvisCompensation": 0.5,
+      "blendTime": 0,
       "chain": {
+        "end": "mixamorig:LeftHand",
         "middle": "mixamorig:LeftForeArm",
         "root": "mixamorig:LeftArm",
-        "start": "",
-        "end": "mixamorig:LeftHand",
-        "secondMiddle": ""
+        "secondMiddle": "",
+        "start": ""
       },
       "debug": false,
-      "maxAngle": 90,
-      "weight": 1,
-      "rotationSpeed": 20,
+      "enabled": true,
       "groundDistance": 1,
+      "id": "horse_sit_left_hand",
+      "iterations": 8,
+      "matchTargetRotation": false,
+      "maxAngle": 90,
+      "maxStretch": 1.05,
+      "name": "horse_sit_left_hand",
+      "pelvisCompensation": 0.5,
+      "poleTarget": "",
       "positionOffset": [
         0,
         0,
         0
       ],
       "priority": 0,
-      "poleTarget": "",
-      "iterations": 8,
-      "target": "ik_preview_target",
-      "name": "horse_sit_left_hand",
+      "rotationOffset": [
+        0,
+        0,
+        0
+      ],
+      "rotationSpeed": 20,
       "slopeAlignmentStrength": 0.75,
+      "smoothing": 0.15,
       "solverType": "TwoBoneIK",
-      "affectedJoints": []
+      "target": "ik_preview_target",
+      "tolerance": 0.01,
+      "weight": 1
     }
   ],
-  "id": "ik_sit_on_horse",
-  "type": "SceneMaxIKDefinition",
-  "designerMetadata": {}
+  "name": "sit_on_horse",
+  "schemaVersion": "1.0",
+  "targetModelId": "fighter1_native",
+  "type": "SceneMaxIKDefinition"
 }

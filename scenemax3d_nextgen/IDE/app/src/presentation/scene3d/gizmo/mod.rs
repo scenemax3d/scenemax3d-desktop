@@ -11,7 +11,12 @@ impl Plugin for GizmoPlugin {
         bevy::asset::embedded_asset!(app, "gizmo_material.wgsl");
         app.add_plugins(MaterialPlugin::<GizmoMaterial>::default())
             .init_resource::<State>()
-            .add_systems(Update, update.before(super::live::update))
+            .add_systems(
+                Update,
+                update
+                    .before(super::ik_controls::commit)
+                    .before(super::live::update),
+            )
             .add_systems(
                 Update,
                 super::picking::update
@@ -94,8 +99,28 @@ pub(crate) fn toolbar(commands: &mut Commands, parent: Entity) {
     );
 }
 
+type Objects<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        Option<&'static SceneObject>,
+        &'static mut Transform,
+        &'static ChildOf,
+        Option<&'static crate::presentation::animation_analyzer::preview::ModelMarker>,
+    ),
+    (
+        Without<Root>,
+        Or<(
+            With<SceneObject>,
+            With<super::ik_controls::Proxy>,
+            With<crate::presentation::animation_analyzer::preview::ModelMarker>,
+        )>,
+    ),
+>;
 #[derive(bevy::ecs::system::SystemParam)]
 struct View<'w, 's> {
+    analyzer: Option<Res<'w, crate::presentation::animation_analyzer::State>>,
     windows: Query<'w, 's, &'static Window>,
     ports: Query<
         'w,
@@ -107,17 +132,7 @@ struct View<'w, 's> {
         ),
     >,
     cameras: Query<'w, 's, (&'static GlobalTransform, &'static Projection), With<Camera3d>>,
-    objects: Query<
-        'w,
-        's,
-        (
-            Entity,
-            &'static SceneObject,
-            &'static mut Transform,
-            &'static ChildOf,
-        ),
-        Without<Root>,
-    >,
+    objects: Objects<'w, 's>,
     parents: Query<'w, 's, &'static GlobalTransform>,
     roots: Query<'w, 's, &'static mut Transform, With<Root>>,
     handles: Query<'w, 's, (&'static HandleAxis, &'static MeshMaterial3d<GizmoMaterial>)>,
@@ -135,9 +150,28 @@ fn update(
     importer: Option<Res<crate::presentation::model_import::State>>,
     drawing: Option<Res<super::path::Drawing>>,
     mut view: View,
+    ik: Option<Res<super::ik_controls::State>>,
 ) {
     if drawing.is_some_and(|d| d.document.is_some()) {
         return;
+    }
+    let analyzer_target = view.analyzer.as_ref().and_then(|s| s.gizmo_target());
+    if let Some((_, _, _, mode)) = analyzer_target {
+        state.mode = match mode {
+            0 => Mode::Move,
+            1 => Mode::Rotate,
+            _ => Mode::Scale,
+        };
+    }
+    let ik_proxy =
+        if analyzer_target.is_some() || importer.as_ref().is_some_and(|i| i.target.is_some()) {
+            None
+        } else {
+            ik.as_ref().and_then(|s| s.proxy)
+        };
+    if ik_proxy.is_some() && (state.mode == Mode::Scale || ik.as_ref().is_some_and(|s| s.is_bend()))
+    {
+        state.mode = Mode::Move;
     }
     for (button, mut color) in &mut view.buttons {
         color.0 = if button.0 == state.mode {
@@ -146,8 +180,16 @@ fn update(
             PANEL
         };
     }
-    let target=importer.as_ref().and_then(|i|i.target).or_else(||scene.world.zip(scene.camera).map(|(w,c)|(w,c,scene.selected)));
-    let Some((owner,camera,selected)) = target else {
+    let target = analyzer_target
+        .map(|(root, camera, _, _)| (root, camera, 0))
+        .or_else(|| importer.as_ref().and_then(|i| i.target))
+        .or_else(|| {
+            scene
+                .world
+                .zip(scene.camera)
+                .map(|(w, c)| (w, c, scene.selected))
+        });
+    let Some((owner, camera, selected)) = target else {
         state.key = None;
         state.root = None;
         state.drag = None;
@@ -157,19 +199,24 @@ fn update(
         if let Some(root) = state.root.take() {
             commands.entity(root).try_despawn();
         }
+        state.drag = None;
         state.root = Some(spawn_handles(
             &mut commands,
             owner,
             state.mode,
+            if analyzer_target.is_some() { 13 } else { 1 },
             &mut view.meshes,
             &mut view.materials,
         ));
         state.key = Some((owner, state.mode));
     }
-    let Some((entity, _object, mut local, parent)) = view
-        .objects
-        .iter_mut()
-        .find(|(_, o, _, _)| o.0 == selected)
+    let Some((entity, _object, mut local, parent, analyzer_model)) =
+        view.objects.iter_mut().find(|(e, o, _, _, _)| {
+            analyzer_target
+                .map(|(_, _, entity, _)| entity)
+                .or(ik_proxy)
+                .map_or_else(|| o.is_some_and(|o| o.0 == selected), |proxy| *e == proxy)
+        })
     else {
         return;
     };
@@ -178,7 +225,9 @@ fn update(
         .get(parent.parent())
         .copied()
         .unwrap_or_default();
+    let pivot = analyzer_model.map_or(Vec3::ZERO, |m| m.pivot);
     let mut transform = parent.mul_transform(*local).compute_transform();
+    transform.translation = transform.transform_point(pivot);
     let Ok((camera_gt, projection)) = view.cameras.get(camera) else {
         return;
     };
@@ -340,6 +389,7 @@ fn update(
         }
     }
     if manipulated {
+        transform.translation -= transform.rotation * (transform.scale * pivot);
         *local =
             Transform::from_matrix(Mat4::from(parent.affine().inverse()) * transform.to_matrix());
     }
@@ -355,6 +405,7 @@ fn spawn_handles(
     commands: &mut Commands,
     owner: Entity,
     mode: Mode,
+    layer: usize,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<GizmoMaterial>,
 ) -> Entity {
@@ -392,7 +443,7 @@ fn spawn_handles(
         for (mesh, translation) in parts {
             commands.spawn((
                 HandleAxis(axis),
-                bevy::camera::visibility::RenderLayers::layer(1),
+                bevy::camera::visibility::RenderLayers::layer(layer),
                 Mesh3d(mesh),
                 MeshMaterial3d(material.clone()),
                 Transform {

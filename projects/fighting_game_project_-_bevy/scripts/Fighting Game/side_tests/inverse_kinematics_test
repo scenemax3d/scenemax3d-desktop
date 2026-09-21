@@ -19,9 +19,9 @@ end do
 
 anim.event("zombie_punch1", 34) = {
 
-//  m1.sword_shield_block async
-//	m1.ik = "ik_test_ik"
-//	m1.ik.layer2.play : target m2.weapon.colliders["weapon_sphere_collider_1"], blend 0.2, weight 1
+ //m1.sword_shield_block async
+	//m1.ik = "ik_test_ik"
+	//m1.ik.layer2.play : target m2.weapon.colliders["weapon_sphere_collider_1"], blend 0.2, weight 1
 
 }
 

@@ -135,6 +135,17 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         .init_resource::<scenemax_effects::PreviewClock>()
         .add_plugins((TabNavigationPlugin, StudioUiPlugin, StudioPlugin))
         .add_plugins(presentation::scene3d::gizmo::GizmoPlugin);
+    app.add_systems(
+        PostUpdate,
+        presentation::scene3d::ik_controls::refresh
+            .after(scenemax_ik::Solve)
+            .before(bevy::transform::TransformSystems::Propagate),
+    );
+    app.add_systems(
+        Update,
+        presentation::scene3d::ik_controls::commit.before(presentation::scene3d::live::update),
+    );
+
     bevy::asset::embedded_asset!(app, "presentation/scenemax_icon.png");
     presentation::java_icons::register(&mut app);
     app.init_gizmo_group::<presentation::effect_import::preview::Lines>();
@@ -172,6 +183,19 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         app.add_systems(
             Update,
             presentation::inventory::smoke.before(presentation::inventory::update),
+        );
+    }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_IK").is_some() {
+        app.add_systems(Update, presentation::ik::smoke);
+    }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_MOTION").is_some() {
+        app.add_systems(Update, presentation::motion::smoke);
+    }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_ANALYZER").is_some() {
+        app.add_systems(
+            Update,
+            presentation::animation_analyzer::smoke
+                .before(presentation::animation_analyzer::update),
         );
     }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_WEAPON").is_some() {
@@ -244,6 +268,7 @@ impl Plugin for StudioPlugin {
             .init_resource::<presentation::titlebar::Maximized>()
             .init_resource::<application::symbols::ProjectSymbols>()
             .init_resource::<presentation::scene3d::SceneState>()
+            .init_resource::<presentation::scene3d::ik_controls::State>()
             .init_resource::<presentation::scene3d::rig::Selection>()
             .init_resource::<presentation::scene3d::picking::Request>()
             .init_resource::<presentation::scene3d::tools::Tools>()
@@ -257,11 +282,31 @@ impl Plugin for StudioPlugin {
             .init_resource::<application::material::MaterialLibrary>()
             .init_resource::<presentation::material::State>()
             .init_resource::<presentation::weapon::State>()
+            .init_resource::<presentation::animation_analyzer::State>()
+            .init_resource::<presentation::motion::State>()
+            .init_resource::<presentation::ik::State>()
+            .add_plugins(scenemax_ik::IkPlugin)
             .add_systems(
                 PostUpdate,
                 presentation::weapon::attachment::follow
                     .after(bevy::app::AnimationSystems)
                     .before(bevy::transform::TransformSystems::Propagate),
+            )
+            .add_systems(
+                PostUpdate,
+                presentation::scene3d::constraints::update
+                    .after(bevy::app::AnimationSystems)
+                    .before(scenemax_ik::Solve),
+            )
+            .add_systems(
+                Update,
+                presentation::scene3d::constraints::diagnostics
+                    .after(presentation::scene3d::asset_status),
+            )
+            .add_systems(
+                Update,
+                presentation::scene3d::constraints::smoke_rotation
+                    .before(presentation::scene3d::live::update),
             )
             .init_resource::<presentation::browser::TreeState>()
             .add_message::<ViewChange>()
@@ -306,7 +351,13 @@ impl Plugin for StudioPlugin {
                         .chain(),
                     (
                         presentation::material::update,
-                        presentation::weapon::update,
+                        (
+                            presentation::weapon::update,
+                            presentation::animation_analyzer::update,
+                        )
+                            .chain(),
+                        presentation::motion::update,
+                        presentation::ik::update,
                         presentation::model_import::update,
                         presentation::sprite_import::update,
                         presentation::effect_import::update,
@@ -333,7 +384,16 @@ impl Plugin for StudioPlugin {
                         presentation::designer::refresh,
                         presentation::model_import::render::update,
                         presentation::material::preview::update,
-                        presentation::weapon::preview::update,
+                        (
+                            presentation::weapon::preview::update,
+                            presentation::animation_analyzer::preview::update,
+                        )
+                            .chain(),
+                        (
+                            presentation::motion::preview::update,
+                            presentation::ik::preview::update,
+                        )
+                            .chain(),
                         presentation::sprite_import::preview::update,
                         presentation::model_import::playback::update,
                         presentation::scene3d::refresh_materials,
@@ -343,7 +403,11 @@ impl Plugin for StudioPlugin {
                         presentation::scene3d::rig::highlight,
                         presentation::scene3d::navigation::update,
                         presentation::scene3d::focus::update,
-                        presentation::scene3d::game_camera::synchronize,
+                        (
+                            presentation::scene3d::game_camera::synchronize,
+                            presentation::scene3d::game_camera::size_marker,
+                        )
+                            .chain(),
                         presentation::scene3d::tools::lighting,
                         presentation::scene3d::asset_status,
                         presentation::scene3d::playback::update,

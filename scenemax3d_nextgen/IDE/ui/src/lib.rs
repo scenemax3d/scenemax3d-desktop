@@ -20,6 +20,7 @@ pub struct StudioUiPlugin;
 impl Plugin for StudioUiPlugin {
     fn build(&self, app: &mut App) {
         syntax::install(app);
+        app.add_systems(PreStartup, editor::share_font_cache);
         app.add_systems(
             PostUpdate,
             (

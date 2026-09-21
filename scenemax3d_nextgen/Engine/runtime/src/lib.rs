@@ -83,6 +83,7 @@ mod animation;
 mod audio;
 mod camera;
 mod effekseer;
+mod ik;
 mod lighting;
 mod physics;
 mod retarget_designer;
@@ -229,6 +230,18 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<SceneMaxDiagnosticsOverlay>()
         .add_plugins(default_plugins)
         .add_plugins(scenemax_materials::MaterialsPlugin)
+        .add_plugins(scenemax_ik::IkPlugin)
+        .add_systems(Last, attachments::audit)
+        .add_systems(
+            PostUpdate,
+            (
+                attachments::update
+                    .after(bevy::app::AnimationSystems)
+                    .before(scenemax_ik::Solve),
+                ik::sync_targets.before(scenemax_ik::Solve),
+                ik::diagnostics.after(scenemax_ik::Solve),
+            ),
+        )
         .add_plugins((
             FrameTimeDiagnosticsPlugin::default(),
             SystemInformationDiagnosticsPlugin,
@@ -880,8 +893,17 @@ impl SceneMaxColliderBounds {
     }
 }
 
+type ModelAnimationRecords = Result<
+    Vec<(
+        scenemax_assets::animation_ranges::Record,
+        scenemax_assets::animation_ranges::Timeline,
+    )>,
+    String,
+>;
+
 #[derive(Resource, Default)]
 struct SceneMaxRuntimeAssets {
+    analyzer_records: HashMap<String, ModelAnimationRecords>,
     asset_server: Option<AssetServer>,
     asset_root: Option<PathBuf>,
     builtin_asset_root: Option<PathBuf>,
@@ -1328,6 +1350,10 @@ struct SceneMaxBoneQueries<'w, 's> {
     named_nodes: Query<'w, 's, (&'static Name, &'static GlobalTransform)>,
 }
 
+/// Authored resource identity remains distinct from a resolved source-model alias.
+#[derive(Component)]
+struct AnimationRecordModel(String);
+
 #[derive(Debug, Component)]
 struct AnimationToPlay {
     clip: String,
@@ -1688,6 +1714,7 @@ struct SceneMaxVirtualCollider {
     bone: Option<String>,
     local_offset: Vec3,
     fallback_offset: Vec3,
+    authored: Transform,
 }
 
 #[derive(Debug, Clone)]
@@ -3953,3 +3980,5 @@ mod tests {
         );
     }
 }
+
+mod attachments;

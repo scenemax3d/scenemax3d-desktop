@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = {
     'scenemax_game_launcher': 'Projector/launcher',
     'scenemax_effects': 'Engine/effects',
-    'scenemax_materials': 'Engine/materials',
+    'scenemax_materials': 'Engine/materials', 'scenemax_ik': 'Engine/ik', 'scenemax_animation': 'Engine/animation',
     'scenemax_ide': 'IDE/app', 'scenemax_ide_core': 'IDE/core',
     'scenemax_ide_services': 'IDE/services', 'scenemax_ide_ui': 'IDE/ui',
     'scenemax_projector_nextgen': 'Projector/app', 'scenemax_assets': 'Common/assets',
@@ -24,10 +24,12 @@ IDE_ALLOWED = {
     'IDE/core': set(),
     'IDE/ui': set(),
     'IDE/services': {'IDE/core', 'Language/parser', 'Common/assets', 'Engine/runtime_ui'},
-    'IDE/app': {'IDE/core', 'IDE/services', 'IDE/ui', 'Common/assets', 'Engine/effects', 'Engine/materials'},
+    'IDE/app': {'IDE/core', 'IDE/services', 'IDE/ui', 'Common/assets', 'Engine/effects', 'Engine/materials', 'Engine/ik', 'Engine/animation'},
 }
 
 def dependency_allowed(source, destination):
+    if source == 'Engine/ik' and destination == 'third_party/bevy_mod_inverse_kinematics':
+        return True  # Pinned, audited upstream solver; see its SCENEMAX-NOTICE.md.
     if source in IDE_ALLOWED:
         return destination in IDE_ALLOWED[source]
     allowed = {'Engine': {'Engine', 'Common', 'Language'},

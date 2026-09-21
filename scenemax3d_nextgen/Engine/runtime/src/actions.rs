@@ -685,6 +685,74 @@ pub(super) fn apply_startup_action(
             apply_skybox(commands, skybox_name, runtime_assets);
             ActionSequenceResult::Completed
         }
+        Statement::Attach(attach) => {
+            let target = resolve_object_alias(&attach.target, object_pools, None);
+            let (owner, bone) = crate::ik::split_target(&attach.subject);
+            let subject = crate::ik::reference(
+                &resolve_object_alias(owner, object_pools, None),
+                bone.as_deref(),
+            );
+            crate::attachments::enqueue(
+                commands,
+                entities_by_name.get(&target).copied(),
+                subject,
+                attach.offset,
+            );
+            ActionSequenceResult::Completed
+        }
+        Statement::Ik(ik) => {
+            let asset = if let scenemax_parser::ik::IkAction::Apply(v) = &ik.action {
+                Some(resolve_shader_name(
+                    v,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                ))
+            } else {
+                None
+            };
+            let weight = ik.weight.as_ref().and_then(|v| {
+                resolve_assignment_value_scoped_with_guards(
+                    v,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                )
+            });
+            let blend = ik.blend.as_ref().and_then(|v| {
+                resolve_assignment_value_scoped_with_guards(
+                    v,
+                    vars,
+                    None,
+                    guards_by_name,
+                    Some(transforms_by_name),
+                    None,
+                )
+            });
+            let mut ik = ik.clone();
+            if let Some(target) = ik.target.as_mut() {
+                let (object, joint) = crate::ik::split_target(target);
+                let resolved = resolve_object_alias(object, object_pools, None);
+                *target = crate::ik::reference(&resolved, joint.as_deref());
+            }
+            let owner = entities_by_name
+                .get(&resolve_object_alias(&ik.owner, object_pools, None))
+                .copied();
+            crate::ik::enqueue(
+                commands,
+                ik,
+                owner,
+                runtime_assets.asset_root.clone(),
+                asset,
+                weight,
+                blend,
+            );
+            ActionSequenceResult::Completed
+        }
         Statement::SetMaterial(material) => {
             let material_name = resolve_shader_name(
                 &material.material,
@@ -1565,8 +1633,11 @@ pub(super) fn switch_scene_on_key(
     let Some(program) = startup_program.0.as_ref() else {
         return;
     };
-    let Some(scene) = delayed_actions.pending_scene.take()
-        .or_else(|| pending_key_switch(program, &keyboard).map(str::to_owned)) else {
+    let Some(scene) = delayed_actions
+        .pending_scene
+        .take()
+        .or_else(|| pending_key_switch(program, &keyboard).map(str::to_owned))
+    else {
         return;
     };
     let Some(script_root) = startup_program.1.as_ref().or(context.script_root.as_ref()) else {
@@ -1679,24 +1750,54 @@ mod scene_switch_tests {
     #[test]
     fn collision_handler_requests_scene_switch_and_stops_its_tail() {
         let program = parse_program("when projectile collides with target do\nswitch to \"next_room\"\nafter_switch = 1\nend do").unwrap();
-        let Statement::WhenEvent(event) = &program.statements[0] else { panic!("expected collision handler") };
+        let Statement::WhenEvent(event) = &program.statements[0] else {
+            panic!("expected collision handler")
+        };
         let mut world = World::new();
         let mut state = bevy::ecs::system::SystemState::<(
             Commands,
             ParamSet<(
-                Query<(Entity, &SceneMaxEntity, &Transform, Option<&GlobalTransform>, Option<&ChildOf>)>,
-                Query<(Entity, &SceneMaxEntity, &mut Transform, Option<&SceneMaxGltf>, Option<&CurrentAnimation>, Option<&mut Visibility>, Option<&SceneMaxCharacterController>, Option<&mut SceneMaxCharacterMotor>)>,
+                Query<(
+                    Entity,
+                    &SceneMaxEntity,
+                    &Transform,
+                    Option<&GlobalTransform>,
+                    Option<&ChildOf>,
+                )>,
+                Query<(
+                    Entity,
+                    &SceneMaxEntity,
+                    &mut Transform,
+                    Option<&SceneMaxGltf>,
+                    Option<&CurrentAnimation>,
+                    Option<&mut Visibility>,
+                    Option<&SceneMaxCharacterController>,
+                    Option<&mut SceneMaxCharacterMotor>,
+                )>,
             )>,
         )>::new(&mut world);
         let mut queue = DelayedActionQueue::default();
         let mut vars = SceneMaxVars::default();
         let (mut commands, mut entities) = state.get_mut(&mut world).unwrap();
         let result = apply_action_sequence(
-            &event.actions, &mut HashMap::new(), &mut vars,
-            &mut SceneMaxObjectPools::default(), None, &HashMap::new(), &HashMap::new(),
-            &mut HashMap::new(), &mut SceneMaxRuntimeAssets::default(),
-            &SceneMaxAnimationDurations::default(), &mut SceneMaxColliderBounds::default(),
-            Some(&mut queue), None, None, None, None, &mut commands, &mut entities,
+            &event.actions,
+            &mut HashMap::new(),
+            &mut vars,
+            &mut SceneMaxObjectPools::default(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut HashMap::new(),
+            &mut SceneMaxRuntimeAssets::default(),
+            &SceneMaxAnimationDurations::default(),
+            &mut SceneMaxColliderBounds::default(),
+            Some(&mut queue),
+            None,
+            None,
+            None,
+            None,
+            &mut commands,
+            &mut entities,
         );
         assert_eq!(result, ActionSequenceResult::Suspended);
         assert_eq!(queue.pending_scene.as_deref(), Some("next_room"));
@@ -2396,7 +2497,10 @@ mod key_event_controller_tests {
         assert_eq!(vars.0.get("after"), None);
         assert_eq!(delayed_actions.actions.len(), 1);
 
-        vars.0.insert("can_go".to_owned(), if guard_still_true { 1.0 } else { 0.0 });
+        vars.0.insert(
+            "can_go".to_owned(),
+            if guard_still_true { 1.0 } else { 0.0 },
+        );
         let delayed = delayed_actions.actions.pop().unwrap();
         let result = {
             let mut commands = commands_state.get_mut(&mut world).unwrap();
@@ -3694,7 +3798,10 @@ pub(super) fn apply_action_sequence(
     let mut runtime_declared_entities = HashMap::<String, Entity>::new();
 
     for (index, action) in actions.iter().enumerate() {
-        if delayed_actions.as_deref().is_some_and(|queue| queue.pending_scene.is_some()) {
+        if delayed_actions
+            .as_deref()
+            .is_some_and(|queue| queue.pending_scene.is_some())
+        {
             return ActionSequenceResult::Suspended;
         }
         match action {
@@ -4742,6 +4849,7 @@ fn spawn_runtime_gltf_model_decl(
                 name: name.to_owned(),
                 runtime_name: format!("{name}@runtime"),
             },
+            AnimationRecordModel(resource.to_owned()),
             SceneMaxModelResource {
                 resource: resolved_model_resource.clone(),
             },
@@ -6782,6 +6890,89 @@ pub(super) fn apply_key_action(
             Some(collider_bounds),
         );
         apply_skybox(commands, skybox_name, runtime_assets);
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::Attach(attach) = action {
+        let target = resolve_object_alias(&attach.target, object_pools, scope.as_deref());
+        let entity = runtime_declared_entities.get(&target).copied().or_else(|| {
+            scene_entities
+                .p1()
+                .iter()
+                .find_map(|(e, s, _, _, _, _, _, _)| {
+                    (s.name == target || s.runtime_name == target).then_some(e)
+                })
+        });
+        let (owner, bone) = crate::ik::split_target(&attach.subject);
+        let subject = crate::ik::reference(
+            &resolve_object_alias(owner, object_pools, scope.as_deref()),
+            bone.as_deref(),
+        );
+        crate::attachments::enqueue(commands, entity, subject, attach.offset);
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::Ik(ik) = action {
+        let asset = if let scenemax_parser::ik::IkAction::Apply(v) = &ik.action {
+            Some(resolve_shader_name(
+                v,
+                vars,
+                scope.as_deref(),
+                guards_by_name,
+                Some(transforms_by_name),
+                Some(collider_bounds),
+            ))
+        } else {
+            None
+        };
+        let weight = ik.weight.as_ref().and_then(|v| {
+            resolve_assignment_value_scoped_with_guards(
+                v,
+                vars,
+                scope.as_deref(),
+                guards_by_name,
+                Some(transforms_by_name),
+                Some(collider_bounds),
+            )
+        });
+        let blend = ik.blend.as_ref().and_then(|v| {
+            resolve_assignment_value_scoped_with_guards(
+                v,
+                vars,
+                scope.as_deref(),
+                guards_by_name,
+                Some(transforms_by_name),
+                Some(collider_bounds),
+            )
+        });
+        let entity = scene_entities
+            .p1()
+            .iter()
+            .find_map(|(e, s, _, _, _, _, _, _)| {
+                target_matches_alias(&ik.owner, &s.name, object_pools, scope.as_deref())
+                    .then_some(e)
+            });
+        let entity = runtime_declared_entities
+            .get(&resolve_object_alias(
+                &ik.owner,
+                object_pools,
+                scope.as_deref(),
+            ))
+            .copied()
+            .or(entity);
+        let mut ik = ik.clone();
+        if let Some(target) = ik.target.as_mut() {
+            let (object, joint) = crate::ik::split_target(target);
+            let resolved = resolve_object_alias(object, object_pools, scope.as_deref());
+            *target = crate::ik::reference(&resolved, joint.as_deref());
+        }
+        crate::ik::enqueue(
+            commands,
+            ik,
+            entity,
+            runtime_assets.asset_root.clone(),
+            asset,
+            weight,
+            blend,
+        );
         return ActionSequenceResult::Completed;
     }
     if let Statement::SetMaterial(material) = action {
