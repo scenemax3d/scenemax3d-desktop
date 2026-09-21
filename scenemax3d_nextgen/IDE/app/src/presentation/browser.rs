@@ -123,6 +123,10 @@ pub(crate) fn update_tree(
                 if let Some(id) = session.workspace.active_id()
                     && let Ok(doc) = session.workspace.document(id)
                 {
+                    // Tool catalogs must not expand the user's project navigator.
+                    if scenemax_ide_core::animation_analyzer::is_file(doc.path()) {
+                        continue;
+                    }
                     if let Some(owner) = companions(session.workspace.project()).get(doc.path()) {
                         rebuild |= state.expanded.insert(owner.clone());
                     }
@@ -639,6 +643,30 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn analyzer_tab_preserves_project_tree_expansion() {
+        let (mut app, dir, _) = crate::tests::app();
+        app.update();
+        let folder = dir.path().join("resources/Models");
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("models-ext.json");
+        std::fs::write(&path, r#"{"models":[]}"#).unwrap();
+        let before = app.world().resource::<TreeState>().expanded.clone();
+        let document = {
+            let session = app.world().resource::<Session>();
+            scenemax_ide_services::Filesystem::open_document(session.workspace.project(), &path)
+                .unwrap()
+        };
+        app.world_mut()
+            .resource_mut::<Session>()
+            .workspace
+            .open_document(document)
+            .unwrap();
+        app.world_mut().write_message(ViewChange::ActiveChanged);
+        app.update();
+        assert_eq!(app.world().resource::<TreeState>().expanded, before);
+    }
+
     #[test]
     fn expansion_keeps_the_hierarchy() {
         let root = PathBuf::from("project");

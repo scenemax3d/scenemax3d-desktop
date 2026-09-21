@@ -107,6 +107,7 @@ type Objects<'w, 's> = Query<
         Option<&'static SceneObject>,
         &'static mut Transform,
         &'static ChildOf,
+        Option<&'static crate::presentation::animation_analyzer::preview::ModelMarker>,
     ),
     (
         Without<Root>,
@@ -198,6 +199,7 @@ fn update(
         if let Some(root) = state.root.take() {
             commands.entity(root).try_despawn();
         }
+        state.drag = None;
         state.root = Some(spawn_handles(
             &mut commands,
             owner,
@@ -208,8 +210,8 @@ fn update(
         ));
         state.key = Some((owner, state.mode));
     }
-    let Some((entity, _object, mut local, parent)) =
-        view.objects.iter_mut().find(|(e, o, _, _)| {
+    let Some((entity, _object, mut local, parent, analyzer_model)) =
+        view.objects.iter_mut().find(|(e, o, _, _, _)| {
             analyzer_target
                 .map(|(_, _, entity, _)| entity)
                 .or(ik_proxy)
@@ -223,7 +225,9 @@ fn update(
         .get(parent.parent())
         .copied()
         .unwrap_or_default();
+    let pivot = analyzer_model.map_or(Vec3::ZERO, |m| m.pivot);
     let mut transform = parent.mul_transform(*local).compute_transform();
+    transform.translation = transform.transform_point(pivot);
     let Ok((camera_gt, projection)) = view.cameras.get(camera) else {
         return;
     };
@@ -385,6 +389,7 @@ fn update(
         }
     }
     if manipulated {
+        transform.translation -= transform.rotation * (transform.scale * pivot);
         *local =
             Transform::from_matrix(Mat4::from(parent.affine().inverse()) * transform.to_matrix());
     }

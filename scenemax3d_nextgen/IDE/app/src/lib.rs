@@ -192,7 +192,11 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         app.add_systems(Update, presentation::motion::smoke);
     }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_ANALYZER").is_some() {
-        app.add_systems(Update, presentation::animation_analyzer::smoke);
+        app.add_systems(
+            Update,
+            presentation::animation_analyzer::smoke
+                .before(presentation::animation_analyzer::update),
+        );
     }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_WEAPON").is_some() {
         app.add_systems(Update, presentation::weapon::smoke);
