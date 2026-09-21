@@ -26,6 +26,7 @@ pub(crate) struct View<'w, 's> {
     parents: Query<'w, 's, &'static ChildOf>,
     objects: Query<'w, 's, &'static gizmo::SceneObject>,
     drawing: Res<'w, path::Drawing>,
+    ik_handles: Query<'w, 's, &'static super::ik_controls::Handle>,
     gizmo: Res<'w, gizmo::State>,
 }
 pub(crate) fn update(
@@ -34,6 +35,7 @@ pub(crate) fn update(
     mut raycast: MeshRayCast,
     view: View,
     mut state: ResMut<SceneState>,
+    mut ik: Option<ResMut<super::ik_controls::State>>,
 ) {
     let Some((viewport, position)) = request.0.take() else {
         return;
@@ -69,6 +71,21 @@ pub(crate) fn update(
     ) else {
         return;
     };
+    if let Some(ik) = ik.as_mut() {
+        let filter = |entity| view.ik_handles.contains(entity);
+        if let Some(handle) = raycast
+            .cast_ray(
+                Ray3d::new(camera.translation(), direction),
+                &MeshRayCastSettings::default().with_filter(&filter),
+            )
+            .first()
+            .and_then(|(e, _)| view.ik_handles.get(*e).ok())
+            .copied()
+        {
+            ik.requested = Some(handle);
+            return;
+        }
+    }
     let owner = |mut entity: Entity| {
         for _ in 0..128 {
             if let Ok(object) = view.objects.get(entity) {
@@ -87,6 +104,9 @@ pub(crate) fn update(
         .first()
         .and_then(|(entity, _)| owner(*entity));
     if let Some(index) = hit {
+        if let Some(ik) = ik.as_mut() {
+            ik.exit = true;
+        }
         select(&mut commands, &mut state, index);
     }
 }
@@ -117,6 +137,7 @@ mod tests {
     use bevy::{camera::primitives::Aabb, ecs::system::RunSystemOnce};
     #[test]
     fn nearest_mesh_resolves_to_model_owner_and_ignores_editor_geometry() {
+        bevy::tasks::ComputeTaskPool::get_or_init(bevy::tasks::TaskPool::default);
         let dir = tempfile::tempdir().unwrap();
         let scene=scenemax_ide_services::scene3d::load(dir.path(),r#"{"entities":[{"type":"SECTION","children":[{"type":"MODEL","name":"Near"},{"type":"MODEL","name":"Far"}]}]}"#).unwrap();
         let mut world = World::new();
@@ -170,5 +191,27 @@ mod tests {
         let state = world.resource::<SceneState>();
         assert_eq!(state.selected, 1);
         assert!(state.collapsed.is_empty());
+        // Always-on-top IK joints remain selectable even behind the model surface.
+        world.init_resource::<super::super::ik_controls::State>();
+        world.spawn((
+            super::super::ik_controls::Handle {
+                layer: 2,
+                kind: super::super::ik_controls::Kind::Bend,
+            },
+            Mesh3d(mesh),
+            GlobalTransform::from_translation(Vec3::new(0., 0., -5.)),
+            Aabb::from_min_max(Vec3::splat(-0.5), Vec3::splat(0.5)),
+            InheritedVisibility::VISIBLE,
+            ViewVisibility::VISIBLE,
+        ));
+        world.insert_resource(Request(Some((port, Vec2::ZERO))));
+        world.run_system_once(update).unwrap();
+        assert_eq!(world.resource::<SceneState>().selected, 1);
+        let requested = world
+            .resource::<super::super::ik_controls::State>()
+            .requested
+            .unwrap();
+        assert_eq!(requested.layer, 2);
+        assert_eq!(requested.kind, super::super::ik_controls::Kind::Bend);
     }
 }

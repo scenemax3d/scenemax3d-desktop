@@ -83,6 +83,7 @@ mod animation;
 mod audio;
 mod camera;
 mod effekseer;
+mod ik;
 mod lighting;
 mod physics;
 mod retarget_designer;
@@ -229,6 +230,14 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<SceneMaxDiagnosticsOverlay>()
         .add_plugins(default_plugins)
         .add_plugins(scenemax_materials::MaterialsPlugin)
+        .add_plugins(scenemax_ik::IkPlugin)
+        .add_systems(
+            PostUpdate,
+            (
+                ik::sync_targets.before(scenemax_ik::Solve),
+                ik::diagnostics.after(scenemax_ik::Solve),
+            ),
+        )
         .add_plugins((
             FrameTimeDiagnosticsPlugin::default(),
             SystemInformationDiagnosticsPlugin,

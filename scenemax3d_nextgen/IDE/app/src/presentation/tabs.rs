@@ -97,6 +97,10 @@ pub(crate) fn editor(
         commands.entity(host).insert(super::motion::MotionHost);
         return;
     }
+    if scenemax_ide_core::ik::is_file(doc.path()) {
+        commands.entity(host).insert(super::ik::IkHost);
+        return;
+    }
     let gutter = commands
         .spawn((
             GutterPanel,

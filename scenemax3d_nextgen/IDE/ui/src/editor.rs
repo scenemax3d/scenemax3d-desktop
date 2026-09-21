@@ -90,3 +90,47 @@ pub fn spawn_editor<T: Component>(
         )
         .id()
 }
+
+// Bevy prunes the local font source cache every frame. Keep a shared weak backing
+// cache so reloaded system fonts reuse blobs still held by existing text layouts,
+// and therefore reuse their GPU glyph atlases instead of creating fresh IDs.
+pub(crate) fn share_font_cache(fonts: Option<ResMut<bevy::text::FontCx>>) {
+    if let Some(mut fonts) = fonts {
+        fonts.source_cache.make_shared();
+    }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod font_cache_tests {
+    use super::*;
+    use bevy::{ecs::system::RunSystemOnce, text::FontCx};
+
+    #[test]
+    fn system_font_id_survives_pruning_while_existing_layout_retains_blob() {
+        let mut world = World::new();
+        world.init_resource::<FontCx>();
+        let source = {
+            let mut fonts = world.resource_mut::<FontCx>();
+            let family = fonts
+                .collection
+                .family_by_name("Arial")
+                .expect("Windows system font");
+            family.fonts()[0].source().clone()
+        };
+        // Reproduce the original behavior: pruning loses the identity even while
+        // an existing text layout still references the same font bytes.
+        {
+            let mut fonts = world.resource_mut::<FontCx>();
+            let retained = fonts.source_cache.get(&source).unwrap();
+            fonts.source_cache.prune(0, false);
+            assert_ne!(retained.id(), fonts.source_cache.get(&source).unwrap().id());
+        }
+        world.run_system_once(share_font_cache).unwrap();
+        let mut fonts = world.resource_mut::<FontCx>();
+        let retained = fonts.source_cache.get(&source).unwrap();
+        for _ in 0..500 {
+            fonts.source_cache.prune(0, false);
+            assert_eq!(retained.id(), fonts.source_cache.get(&source).unwrap().id());
+        }
+    }
+}

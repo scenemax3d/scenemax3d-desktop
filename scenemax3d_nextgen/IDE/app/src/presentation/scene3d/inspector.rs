@@ -252,8 +252,9 @@ pub(super) fn build(commands: &mut Commands, parent: Entity, scene: &Scene3d, in
             property::heading(
                 commands,
                 parent,
-                layer["layerName"].as_str().unwrap_or("IK layer"),
+                layer["layerId"].as_str().unwrap_or("IK layer"),
             );
+            super::ik_controls::controls(commands, parent, i);
             let key = format!("ik:{i}:enabled");
             let enabled = layer["enabled"].as_bool().unwrap_or(false);
             property::checkbox(

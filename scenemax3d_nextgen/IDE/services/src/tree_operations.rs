@@ -10,7 +10,14 @@ use std::{
 /// Local operations available from the project tree.
 #[derive(Clone, Debug)]
 pub enum TreeOperation {
-    /// Create a runtime-ready throw motion in the active project.
+    /// Create a runtime-ready IK asset in the active project.
+    CreateIk {
+        /// Display name for the new IK asset.
+        name: String,
+        /// Initial solver type.
+        kind: String,
+    },
+    /// Create a runtime-ready throw motion.
     CreateMotion {
         /// Display name used to derive the motion ID.
         name: String,
@@ -114,6 +121,7 @@ fn companions(path: &Path) -> Vec<PathBuf> {
 pub(crate) fn perform(root: &Path, operation: TreeOperation) -> Result<TreeOutcome, ServiceError> {
     let project = Project::new(root.to_owned(), vec![]);
     match operation {
+        TreeOperation::CreateIk { name, kind } => crate::ik::create(root, &name, &kind),
         TreeOperation::CreateMotion { name, kind } => crate::motion::create(root, &name, &kind),
         TreeOperation::CreateWeapon { name } => crate::weapon::create(root, &name),
         TreeOperation::AddScene { parent, name } => {

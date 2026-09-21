@@ -9,6 +9,8 @@ pub struct Scene3d {
     pub ambient: Value,
     /// Native PBR surfaces referenced by scene material names.
     pub materials: std::collections::BTreeMap<String, Value>,
+    /// Validated IK assets, resolved by ID or legacy filename on the storage worker.
+    pub ik_assets: std::collections::BTreeMap<String, Value>,
     /// Available project-local model, shader, material and IK names.
     pub catalog: std::collections::BTreeMap<String, Vec<String>>,
     /// Saved editor camera, when present.
@@ -204,7 +206,9 @@ pub fn load(root: &Path, source: &str) -> Result<Scene3d, String> {
     });
     let materials = crate::material::documents(root)?;
     let catalog = catalog::load(&resources, &materials);
+    let ik_assets = catalog::ik_assets(&resources);
     Ok(Scene3d {
+        ik_assets,
         materials,
         ambient: value["bevyAmbientLight"].clone(),
         catalog,

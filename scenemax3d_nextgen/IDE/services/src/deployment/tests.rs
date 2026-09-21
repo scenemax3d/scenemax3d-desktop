@@ -637,3 +637,45 @@ fn native_materials_package_only_when_reachable_with_their_textures() {
     assert!(!output.join("scripts/dormant.smmat").exists());
     assert!(!output.join("resources/textures/unused.png").exists());
 }
+
+#[test]
+fn ik_packages_by_asset_id_without_editor_preview_models() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join("scripts")).unwrap();
+    fs::create_dir_all(root.path().join("resources/ik")).unwrap();
+    fs::create_dir_all(root.path().join("resources/Models")).unwrap();
+    fs::write(
+        root.path().join("scripts/main"),
+        "actor => box\nactor.ik = \"ik_contact\"\n",
+    )
+    .unwrap();
+    let mut value = scenemax_ide_core::ik::template("Contact", "TwoBoneIK").unwrap();
+    value["targetModelId"] = serde_json::json!("authoring_rig");
+    value["designerMetadata"]["previewTargetModel"] = serde_json::json!("preview_only");
+    fs::write(
+        root.path().join("resources/ik/custom_filename.smik"),
+        value.to_string(),
+    )
+    .unwrap();
+    fs::write(root.path().join("resources/Models/models-ext.json"),r#"{"models":[{"name":"authoring_rig","path":"Models/authoring.glb"},{"name":"preview_only","path":"Models/preview.glb"}]}"#).unwrap();
+    for file in ["authoring.glb", "preview.glb"] {
+        fs::write(root.path().join("resources/Models").join(file), "fixture").unwrap();
+    }
+    let request = Request {
+        project: root.path().into(),
+        entry: root.path().join("scripts/main"),
+        workspace: workspace(),
+        settings: Default::default(),
+    };
+    let output = root.path().join("snapshot");
+    assets::snapshot(
+        &request,
+        &output,
+        &root.path().join("size.json"),
+        &context(),
+    )
+    .unwrap();
+    assert!(output.join("resources/ik/custom_filename.smik").is_file());
+    assert!(!output.join("resources/Models/authoring.glb").exists());
+    assert!(!output.join("resources/Models/preview.glb").exists());
+}

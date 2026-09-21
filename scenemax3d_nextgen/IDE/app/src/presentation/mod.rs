@@ -45,3 +45,5 @@ pub(crate) mod inventory;
 pub(crate) mod weapon;
 
 pub(crate) mod motion;
+
+pub(crate) mod ik;

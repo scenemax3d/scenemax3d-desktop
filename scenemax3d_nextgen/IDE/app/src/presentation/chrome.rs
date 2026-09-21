@@ -159,6 +159,18 @@ fn populate_menu(
             finish_item(commands, row, "");
             continue;
         }
+        if entry.command == "create_ik_document" {
+            let row = button(commands, host, entry.name, Name::new("Create IK"));
+            commands.entity(row).observe(
+                |_: On<Pointer<Press>>,
+                 session: Res<crate::application::Session>,
+                 mut menu: ResMut<super::tree_menu::State>| {
+                    menu.create_ik(session.workspace.project().root().to_owned());
+                },
+            );
+            finish_item(commands, row, "");
+            continue;
+        }
         if entry.command == "create_throw_motion_document" {
             let row = button(commands, host, entry.name, Name::new("Create throw motion"));
             commands.entity(row).observe(

@@ -190,6 +190,22 @@ pub(crate) fn update(
                                 &scene,
                                 (project_assets, textures),
                             );
+                            if renderer.capture.is_some()
+                                && std::env::var_os("SCENEMAX_SMOKE_SCENE_SAVED_CAMERA").is_some()
+                                && let Some(view) = &scene.camera
+                            {
+                                let rotation = Quat::from_array(view.rotation).normalize();
+                                let translation = Vec3::from_array(view.position);
+                                // Stored scene cameras look along +Z; Bevy cameras look along -Z.
+                                let direction = -(rotation * Vec3::Z);
+                                let orbit = Orbit {
+                                    target: translation - direction * 20.,
+                                    distance: 20.,
+                                    yaw: direction.x.atan2(direction.z),
+                                    pitch: direction.y.asin(),
+                                };
+                                commands.entity(camera).insert((orbit.transform(), orbit));
+                            }
                             if let Some((transform, orbit)) = state.saved_view {
                                 commands.entity(camera).insert((transform, orbit));
                             }
@@ -331,6 +347,7 @@ pub(crate) fn asset_status(
 
 pub(crate) mod ambient;
 mod cinematic;
+pub(crate) mod constraints;
 pub(crate) mod gizmo;
 pub(crate) mod inspector;
 pub(crate) mod live;
@@ -360,3 +377,5 @@ mod live_tests;
 
 pub(crate) mod focus;
 pub(crate) mod game_camera;
+
+pub(crate) mod ik_controls;

@@ -13,10 +13,12 @@ members = [
     "Engine/runtime",
     "Engine/effects",
     "Engine/materials",
+    "Engine/ik",
     "Engine/scripting",
     "Engine/runtime_ui",
     "Engine/vm",
 ]
+exclude = ["third_party/bevy_mod_inverse_kinematics"]
 resolver = "3"
 default-members = ["IDE/app", "Projector/app"]
 

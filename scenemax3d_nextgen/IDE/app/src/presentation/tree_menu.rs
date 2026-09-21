@@ -15,6 +15,7 @@ pub(crate) enum Dialog {
     Material,
     Weapon,
     Motion,
+    Ik,
     Script,
     Scene,
     Ui,
@@ -40,6 +41,8 @@ pub(crate) struct Input;
 #[derive(Component)]
 struct MotionTemplate;
 #[derive(Component)]
+struct IkTemplate;
+#[derive(Component)]
 pub(crate) struct Host;
 #[derive(Clone)]
 struct Target {
@@ -55,6 +58,10 @@ pub(crate) struct State {
     generation: u64,
 }
 impl State {
+    pub(crate) fn create_ik(&mut self, parent: PathBuf) {
+        self.open(parent, true, Vec2::new(300., 180.));
+        self.dialog = Some(Dialog::Ik);
+    }
     pub(crate) fn create_motion(&mut self, parent: PathBuf) {
         self.open(parent, true, Vec2::new(300., 180.));
         self.dialog = Some(Dialog::Motion);
@@ -134,7 +141,7 @@ fn entries(
             ("Create Material…", Some(Action::Prompt(Dialog::Material))),
             ("Create Weapon", None),
             ("Create Throw Motion…", Some(Action::Prompt(Dialog::Motion))),
-            ("Create IK Asset", None),
+            ("Create IK Asset…", Some(Action::Prompt(Dialog::Ik))),
             ("Create SkyBox…", None),
             ("Create Bevy Shader Document", None),
             ("Create Environment Shader Document", None),
@@ -169,6 +176,7 @@ fn operation(dialog: Dialog, target: &Target, value: &str, root: &std::path::Pat
         }
     };
     match dialog {
+        Dialog::Ik => Command::Tree(TreeOperation::CreateIk {name:value.into(),kind:"TwoBoneIK".into()}),
         Dialog::Motion => Command::Tree(TreeOperation::CreateMotion { name: value.into(), kind: "target_arc".into() }),
         Dialog::Weapon => Command::Tree(TreeOperation::CreateWeapon { name: value.into() }),
         Dialog::AddScene => Command::Tree(TreeOperation::AddScene { parent: target.path.clone(), name: value.into() }),
@@ -196,6 +204,7 @@ pub(crate) struct Views<'w, 's> {
     focus: Option<ResMut<'w, InputFocus>>,
     clipboard: Option<ResMut<'w, bevy::clipboard::Clipboard>>,
     host: Single<'w, 's, (Entity, &'static mut Node), With<Host>>,
+    ik_templates: Query<'w, 's, &'static scenemax_ide_ui::property::Choice, With<IkTemplate>>,
     templates: Query<'w, 's, &'static scenemax_ide_ui::property::Choice, With<MotionTemplate>>,
     inputs: Query<'w, 's, &'static EditableText, With<Input>>,
     window: Single<'w, 's, &'static Window, With<bevy::window::PrimaryWindow>>,
@@ -263,6 +272,14 @@ pub(crate) fn update(
                                 .next()
                                 .map(|v| v.0.clone())
                                 .unwrap_or_else(|| "target_arc".into());
+                        }
+                        if let Command::Tree(TreeOperation::CreateIk { kind, .. }) = &mut command {
+                            *kind = views
+                                .ik_templates
+                                .iter()
+                                .next()
+                                .map(|v| v.0.clone())
+                                .unwrap_or_else(|| "TwoBoneIK".into());
                         }
                         queue.0.push_back(command);
                         state.close();
@@ -425,6 +442,7 @@ fn dialog_view(
         Dialog::Material => "Create Material",
         Dialog::Weapon => "Create New Weapon",
         Dialog::Motion => "Create New Throw Motion",
+        Dialog::Ik => "Create New IK Asset",
         Dialog::Script => "Create New Script",
         Dialog::Scene => "Create Designer Document",
         Dialog::Ui => "Create UI Document",
@@ -498,6 +516,19 @@ fn dialog_view(
             ))
             .id();
         focus.set(input, FocusCause::Navigated);
+    }
+    if dialog == Dialog::Ik {
+        commands.spawn((label("Solver", 12.), ChildOf(host)));
+        scenemax_ide_ui::property::dropdown(
+            commands,
+            host,
+            IkTemplate,
+            "TwoBoneIK",
+            &scenemax_ide_core::ik::SOLVERS
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>(),
+        );
     }
     if dialog == Dialog::Motion {
         commands.spawn((label("Starter template", 12.), ChildOf(host)));
@@ -946,6 +977,48 @@ mod tests {
         app.update();
         assert!(
             matches!(app.world_mut().resource_mut::<CommandQueue>().0.pop_front(),Some(Command::Tree(TreeOperation::CreateMotion {name,kind})) if name=="Arc fixture" && kind=="homing")
+        );
+    }
+    #[test]
+    fn ik_dialog_uses_selected_solver() {
+        let mut app = App::new();
+        app.init_resource::<State>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<InputFocus>()
+            .init_resource::<CommandQueue>()
+            .insert_resource(Session::new(scenemax_ide_core::Project::new(
+                "project".into(),
+                vec![],
+            )))
+            .add_message::<ViewChange>()
+            .add_systems(Update, update);
+        app.world_mut()
+            .spawn((Window::default(), bevy::window::PrimaryWindow));
+        app.world_mut().spawn((Host, Node::default()));
+        app.world_mut()
+            .resource_mut::<State>()
+            .create_ik("project".into());
+        app.update();
+        let input = app.world().resource::<InputFocus>().get().unwrap();
+        app.world_mut()
+            .get_mut::<EditableText>(input)
+            .unwrap()
+            .editor_mut()
+            .set_text("Contact fixture");
+        let template = {
+            let w = app.world_mut();
+            w.query_filtered::<Entity, With<IkTemplate>>()
+                .single(w)
+                .unwrap()
+        };
+        app.world_mut()
+            .get_mut::<scenemax_ide_ui::property::Choice>(template)
+            .unwrap()
+            .0 = "ThreeBoneIK".into();
+        app.world_mut().resource_mut::<State>().pending_action = Some(Action::Confirm);
+        app.update();
+        assert!(
+            matches!(app.world_mut().resource_mut::<CommandQueue>().0.pop_front(),Some(Command::Tree(TreeOperation::CreateIk {name,kind})) if name=="Contact fixture" && kind=="ThreeBoneIK")
         );
     }
 }

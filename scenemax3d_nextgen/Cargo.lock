@@ -1388,6 +1388,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bff34eb29ff4b8a8688bc7299f14fb6b597461ca80fec03ed7d22939ab33e48f"
 
 [[package]]
+name = "bevy_mod_inverse_kinematics"
+version = "0.12.0"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
 name = "bevy_pbr"
 version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5364,6 +5371,7 @@ dependencies = [
  "scenemax_ide_core",
  "scenemax_ide_services",
  "scenemax_ide_ui",
+ "scenemax_ik",
  "scenemax_materials",
  "serde_json",
  "tempfile",
@@ -5402,6 +5410,15 @@ name = "scenemax_ide_ui"
 version = "0.1.0"
 dependencies = [
  "bevy",
+]
+
+[[package]]
+name = "scenemax_ik"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_mod_inverse_kinematics",
+ "serde_json",
 ]
 
 [[package]]
@@ -5458,6 +5475,7 @@ dependencies = [
  "bevy-tnua-avian3d",
  "scenemax_assets",
  "scenemax_effects",
+ "scenemax_ik",
  "scenemax_ir",
  "scenemax_materials",
  "scenemax_multiplayer",

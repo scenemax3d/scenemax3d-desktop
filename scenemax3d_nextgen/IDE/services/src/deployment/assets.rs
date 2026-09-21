@@ -472,6 +472,17 @@ impl Library {
                 | "smprobe"
         ) {
             let text = read_text(&path)?;
+            // Preview models are editor state, not dependencies of a runtime constraint.
+            let text = if scenemax_ide_core::ik::is_file(&path) {
+                let mut value: Value = serde_json::from_str(&text)?;
+                if let Some(v) = value.as_object_mut() {
+                    v.remove("designerMetadata");
+                    v.remove("targetModelId");
+                }
+                value.to_string()
+            } else {
+                text
+            };
             names.extend(tokens(&text).into_iter().map(|s| s.to_lowercase()));
             let values = if let Ok(value) = serde_json::from_str::<Value>(&text) {
                 strings(&value)
@@ -557,6 +568,12 @@ impl Library {
                         | "efkefc"
                 );
                 names.contains(*key)
+                    || (scenemax_ide_core::ik::is_file(path)
+                        && read_text(path)
+                            .ok()
+                            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+                            .and_then(|v| v["id"].as_str().map(str::to_lowercase))
+                            .is_some_and(|id| names.contains(&id)))
                     || (definition
                         && (names.contains(&stem)
                             || (stem.ends_with(".ik")

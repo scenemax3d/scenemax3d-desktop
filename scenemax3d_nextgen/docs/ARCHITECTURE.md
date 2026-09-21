@@ -122,3 +122,9 @@ The application registers a scoped `project` asset reader before Bevy plugins in
 ## Shared material rendering
 
 Common/assets/material owns the pure, versioned PBR document and validation. Engine/materials maps it to Bevy StandardMaterial and applies per-instance, named-slot overrides to asynchronous model subtrees. IDE/app and Engine/runtime may depend on this shared rendering component; it owns neither application nor filesystem access. IDE/core and IDE/services remain Bevy-independent.
+
+## Shared inverse kinematics
+
+Engine/ik is the shared Bevy IK adapter used by Engine/runtime and the native IDE preview. It owns generic constraints, skin-joint resolution, post-animation scheduling, priority/weight blending, finite-pose safeguards and pose restoration. It has no project-specific names, filesystem access, or IDE dependency. The pinned Apache-2.0 upstream solver is vendored under third_party/bevy_mod_inverse_kinematics; the architecture checker permits that specific dependency from Engine/ik only.
+
+Language/parser owns IK command syntax; Engine/scripting substitutes function arguments; Engine/runtime loads project definitions, resolves SceneMax targets and applies commands. IDE/core owns lossless authoring edits, validation and humanoid presets. IDE/services owns conflict-checked creation/publication and deployment reachability. IDE/app owns the retained inspector and isolated preview (render layer 12), reusing the shared solver and existing generic animation/gizmo helpers. The IDE does not link the full runtime or projector.
