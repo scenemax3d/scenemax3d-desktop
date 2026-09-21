@@ -3,8 +3,8 @@
 
 // Write your initialization code here.
 // This code will be included at the beginning of the generated .code file.
-camera.pos(-6.276621,5.344497,9.698259)
-camera.rotate(0,131.32204182861204,0)
+camera.pos(-6.276620864868164,7.393362522125244,9.698259353637695)
+camera.rotate(0,131.32204275529185,0)
 
 horse => horse1_native : pos (0.48224258,0,1.1645527), scale 3.7, collision shape none async
 man => fighter1_native : pos (0.036864906549453735,-0.6493920683860779,1.0924828052520752), scale (2.999989748001098,2.9999992847442627,3.0000081062316895), rotate(-52.849173240355874,0.18561611576185688,0.1427209263361285), collision shape none async

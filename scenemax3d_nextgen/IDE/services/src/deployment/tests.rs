@@ -1,6 +1,57 @@
 use super::*;
 use std::{fs, sync::atomic::AtomicBool};
 #[test]
+fn animation_analyzer_records_survive_packaging_without_selecting_other_models() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join("scripts")).unwrap();
+    fs::create_dir_all(root.path().join("resources/Models")).unwrap();
+    fs::write(
+        root.path().join("scripts/main"),
+        "subject=>fixture\nsubject.opening loop\n",
+    )
+    .unwrap();
+    let catalog = r#"{"models":[{"name":"fixture","path":"Models/fixture.gltf","animationFrameRanges":[{"name":"opening","sourceAnimation":"other_model","start":0,"end":5}]},{"name":"other_model","path":"Models/other.gltf"}]}"#;
+    fs::write(
+        root.path().join("resources/Models/models-ext.json"),
+        catalog,
+    )
+    .unwrap();
+    for name in ["fixture.gltf", "other.gltf"] {
+        fs::write(
+            root.path().join("resources/Models").join(name),
+            r#"{"asset":{"version":"2.0"}}"#,
+        )
+        .unwrap();
+    }
+    let request = Request {
+        project: root.path().into(),
+        entry: root.path().join("scripts/main"),
+        workspace: workspace(),
+        settings: Default::default(),
+    };
+    let output = root.path().join("snapshot");
+    assets::snapshot(
+        &request,
+        &output,
+        &root.path().join("size.json"),
+        &context(),
+    )
+    .unwrap();
+    let saved: serde_json::Value =
+        serde_json::from_slice(&fs::read(output.join("resources/Models/models-ext.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        saved["models"][0]["animationFrameRanges"][0]["sourceAnimation"],
+        "other_model"
+    );
+    assert_eq!(saved["models"].as_array().unwrap().len(), 1);
+    assert!(!output.join("resources/Models/other.gltf").exists());
+    assert_eq!(
+        fs::read_to_string(root.path().join("resources/Models/models-ext.json")).unwrap(),
+        catalog
+    );
+}
+#[test]
 fn size_analysis_reconciles_categories_and_limits_largest_files() {
     let root = tempfile::tempdir().unwrap();
     let snapshot = root.path().join("snapshot");

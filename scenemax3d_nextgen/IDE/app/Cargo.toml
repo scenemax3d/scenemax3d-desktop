@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+scenemax_animation = { path = "../../Engine/animation" }
 scenemax_ik = { path = "../../Engine/ik" }
 scenemax_assets = { path = "../../Common/assets" }
 scenemax_materials = { path = "../../Engine/materials" }

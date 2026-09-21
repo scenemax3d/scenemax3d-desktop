@@ -216,3 +216,8 @@ GPU check: `--smoke-frames 120 --smoke-tree-menu scripts --smoke-screenshot <abs
 ### Code editor font size
 
 With focus in the code editor, press Ctrl+plus (Ctrl+= also works) to enlarge text or Ctrl+minus to reduce it. Numeric keypad plus/minus are supported. Font size ranges from 8 to 48 pixels; line spacing and line numbers scale together. The setting applies across code tabs for the current IDE session.
+
+
+### Model Animation Analyzer
+
+Tools → Model Animation Analyzer opens the project model catalog as a retained designer. Create named frame ranges, preview and scrub them, then save the records into the model JSON. The projector plays them through the ordinary animation syntax without modifying GLTF. See [the analyzer guide](ANIMATION_ANALYZER.md).

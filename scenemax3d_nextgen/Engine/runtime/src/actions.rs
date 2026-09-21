@@ -4849,6 +4849,7 @@ fn spawn_runtime_gltf_model_decl(
                 name: name.to_owned(),
                 runtime_name: format!("{name}@runtime"),
             },
+            AnimationRecordModel(resource.to_owned()),
             SceneMaxModelResource {
                 resource: resolved_model_resource.clone(),
             },

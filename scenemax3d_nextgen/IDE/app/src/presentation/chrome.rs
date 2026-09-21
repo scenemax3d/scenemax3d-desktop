@@ -154,6 +154,11 @@ fn populate_menu(
             finish_item(commands, row, "");
             continue;
         }
+        if entry.command == "model_analyzer" {
+            let row = super::animation_analyzer::menu_item(commands, host, entry.name);
+            finish_item(commands, row, "");
+            continue;
+        }
         if entry.command == "font_generator" {
             let row = super::font_generator::menu_item(commands, host, entry.name);
             finish_item(commands, row, "");

@@ -893,8 +893,17 @@ impl SceneMaxColliderBounds {
     }
 }
 
+type ModelAnimationRecords = Result<
+    Vec<(
+        scenemax_assets::animation_ranges::Record,
+        scenemax_assets::animation_ranges::Timeline,
+    )>,
+    String,
+>;
+
 #[derive(Resource, Default)]
 struct SceneMaxRuntimeAssets {
+    analyzer_records: HashMap<String, ModelAnimationRecords>,
     asset_server: Option<AssetServer>,
     asset_root: Option<PathBuf>,
     builtin_asset_root: Option<PathBuf>,
@@ -1340,6 +1349,10 @@ struct SceneMaxBoneQueries<'w, 's> {
     children: Query<'w, 's, &'static Children>,
     named_nodes: Query<'w, 's, (&'static Name, &'static GlobalTransform)>,
 }
+
+/// Authored resource identity remains distinct from a resolved source-model alias.
+#[derive(Component)]
+struct AnimationRecordModel(String);
 
 #[derive(Debug, Component)]
 struct AnimationToPlay {

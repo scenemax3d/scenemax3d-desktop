@@ -1154,6 +1154,7 @@ fn spawn_scenemax_program_with_visibility_mode(
                             name: name.clone(),
                             runtime_name,
                         },
+                        AnimationRecordModel(resource.to_owned()),
                         SceneMaxModelResource {
                             resource: resolved_model_resource.clone(),
                         },

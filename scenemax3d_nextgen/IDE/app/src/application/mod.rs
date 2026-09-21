@@ -21,3 +21,5 @@ pub(crate) mod weapon;
 pub(crate) mod motion;
 
 pub(crate) mod ik;
+
+pub(crate) mod animation_analyzer;

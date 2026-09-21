@@ -109,6 +109,8 @@ type PropertyInputs<'w, 's> = Query<
         With<super::designer::Property>,
         With<super::material::Field>,
         With<super::model_import::Field>,
+        With<super::animation_analyzer::Field>,
+        With<super::animation_analyzer::Control>,
         With<super::sprite_import::Field>,
         With<super::effect_import::Field>,
         With<super::scene3d::inspector::Property>,

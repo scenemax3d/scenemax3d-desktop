@@ -191,6 +191,9 @@ pub fn run(options: LaunchOptions) -> Result<()> {
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_MOTION").is_some() {
         app.add_systems(Update, presentation::motion::smoke);
     }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_ANALYZER").is_some() {
+        app.add_systems(Update, presentation::animation_analyzer::smoke);
+    }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_WEAPON").is_some() {
         app.add_systems(Update, presentation::weapon::smoke);
     }
@@ -275,6 +278,7 @@ impl Plugin for StudioPlugin {
             .init_resource::<application::material::MaterialLibrary>()
             .init_resource::<presentation::material::State>()
             .init_resource::<presentation::weapon::State>()
+            .init_resource::<presentation::animation_analyzer::State>()
             .init_resource::<presentation::motion::State>()
             .init_resource::<presentation::ik::State>()
             .add_plugins(scenemax_ik::IkPlugin)
@@ -343,7 +347,11 @@ impl Plugin for StudioPlugin {
                         .chain(),
                     (
                         presentation::material::update,
-                        presentation::weapon::update,
+                        (
+                            presentation::weapon::update,
+                            presentation::animation_analyzer::update,
+                        )
+                            .chain(),
                         presentation::motion::update,
                         presentation::ik::update,
                         presentation::model_import::update,
@@ -372,7 +380,11 @@ impl Plugin for StudioPlugin {
                         presentation::designer::refresh,
                         presentation::model_import::render::update,
                         presentation::material::preview::update,
-                        presentation::weapon::preview::update,
+                        (
+                            presentation::weapon::preview::update,
+                            presentation::animation_analyzer::preview::update,
+                        )
+                            .chain(),
                         (
                             presentation::motion::preview::update,
                             presentation::ik::preview::update,

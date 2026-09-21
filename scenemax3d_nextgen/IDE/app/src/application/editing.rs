@@ -19,7 +19,8 @@ pub(crate) fn edit(
 ) -> Result<()> {
     let id = session.workspace.require_active()?;
     let document = session.workspace.document_mut(id)?;
-    if (scenemax_ide_core::ik::is_file(document.path())
+    if (scenemax_ide_core::animation_analyzer::is_file(document.path())
+        || scenemax_ide_core::ik::is_file(document.path())
         || document.path().extension().is_some_and(|e| {
             e.eq_ignore_ascii_case("smdesign")
                 || e.eq_ignore_ascii_case("smmat")

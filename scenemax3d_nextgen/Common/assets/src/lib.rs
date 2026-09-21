@@ -1,3 +1,5 @@
+pub mod animation_ranges;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -108,6 +110,8 @@ struct ModelsIndex {
 
 #[derive(Debug, Deserialize)]
 struct ModelEntry {
+    #[serde(flatten)]
+    animation_metadata: serde_json::Map<String, serde_json::Value>,
     name: String,
     path: String,
     #[serde(rename = "sourceModel")]
@@ -1041,3 +1045,59 @@ mod tests {
 
 /// Native PBR material documents shared by tools and runtime.
 pub mod material;
+
+/// Resolve records against the same source-model alias used by the renderer.
+pub fn model_animation_records(
+    root: &Path,
+    builtin: Option<&Path>,
+    name: &str,
+) -> Result<Vec<(animation_ranges::Record, animation_ranges::Timeline)>, String> {
+    let mut locations = vec![(root, project_models_index_paths(root))];
+    if let Some(builtin) = builtin {
+        locations.push((builtin, builtin_models_index_paths(builtin)));
+    }
+    for (base, paths) in locations {
+        for path in paths {
+            if !path.is_file() {
+                continue;
+            }
+            let index = read_models_index(&path).map_err(|e| e.to_string())?;
+            let Some(entry) = index
+                .models
+                .iter()
+                .find(|e| e.name.eq_ignore_ascii_case(name))
+            else {
+                continue;
+            };
+            let rows = animation_ranges::records(&serde_json::Value::Object(
+                entry.animation_metadata.clone(),
+            ))?;
+            if rows.is_empty() {
+                return Ok(vec![]);
+            }
+            let model = resolve_model_entry(&index, entry, None).map_err(|e| e.to_string())?;
+            let timelines = animation_ranges::timelines(base, &base.join(&model.asset_path))?;
+            return rows
+                .into_iter()
+                .map(|row| {
+                    let timeline = timelines
+                        .iter()
+                        .find(|t| t.name == row.source)
+                        .or_else(|| {
+                            (row.source.is_empty() && timelines.len() == 1).then(|| &timelines[0])
+                        })
+                        .ok_or_else(|| {
+                            format!(
+                                "{}: source animation '{}' was not found",
+                                row.name, row.source
+                            )
+                        })?
+                        .clone();
+                    timeline.interval(&row)?;
+                    Ok((row, timeline))
+                })
+                .collect();
+        }
+    }
+    Ok(vec![])
+}

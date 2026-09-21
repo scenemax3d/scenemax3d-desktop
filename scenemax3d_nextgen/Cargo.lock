@@ -5331,10 +5331,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "scenemax_animation"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
 name = "scenemax_assets"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
+ "gltf",
+ "percent-encoding",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -5366,6 +5376,7 @@ dependencies = [
  "anyhow",
  "bevy",
  "clap",
+ "scenemax_animation",
  "scenemax_assets",
  "scenemax_effects",
  "scenemax_ide_core",
@@ -5473,6 +5484,7 @@ dependencies = [
  "bevy",
  "bevy-tnua",
  "bevy-tnua-avian3d",
+ "scenemax_animation",
  "scenemax_assets",
  "scenemax_effects",
  "scenemax_ik",

@@ -9,6 +9,7 @@ use std::{collections::VecDeque, path::PathBuf};
 /// Every input surface dispatches the same application commands.
 #[derive(Clone)]
 pub(crate) enum Command {
+    Analyzer(super::material::Edit),
     Material(super::material::Edit),
     Weapon(super::material::Edit),
     Motion(super::material::Edit),
@@ -109,6 +110,7 @@ fn execute(
         Command::Material(edit) => super::material::edit(edit, session, changes)?,
         Command::Ik(edit) => super::ik::edit(edit, session, changes)?,
         Command::Motion(edit) => super::motion::edit(edit, session, changes)?,
+        Command::Analyzer(edit) => super::animation_analyzer::edit(edit, session, changes)?,
         Command::Weapon(edit) => super::weapon::edit(edit, session, changes)?,
         Command::Tree(_)
         | Command::SavePath(_)

@@ -25,6 +25,12 @@ pub(crate) fn editor(
             ChildOf(parent),
         ))
         .id();
+    if scenemax_ide_core::animation_analyzer::is_file(doc.path()) {
+        commands
+            .entity(host)
+            .insert(super::animation_analyzer::AnalyzerHost);
+        return;
+    }
     if doc
         .path()
         .extension()

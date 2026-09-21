@@ -110,11 +110,16 @@ type Objects<'w, 's> = Query<
     ),
     (
         Without<Root>,
-        Or<(With<SceneObject>, With<super::ik_controls::Proxy>)>,
+        Or<(
+            With<SceneObject>,
+            With<super::ik_controls::Proxy>,
+            With<crate::presentation::animation_analyzer::preview::ModelMarker>,
+        )>,
     ),
 >;
 #[derive(bevy::ecs::system::SystemParam)]
 struct View<'w, 's> {
+    analyzer: Option<Res<'w, crate::presentation::animation_analyzer::State>>,
     windows: Query<'w, 's, &'static Window>,
     ports: Query<
         'w,
@@ -149,11 +154,20 @@ fn update(
     if drawing.is_some_and(|d| d.document.is_some()) {
         return;
     }
-    let ik_proxy = if importer.as_ref().is_some_and(|i| i.target.is_some()) {
-        None
-    } else {
-        ik.as_ref().and_then(|s| s.proxy)
-    };
+    let analyzer_target = view.analyzer.as_ref().and_then(|s| s.gizmo_target());
+    if let Some((_, _, _, mode)) = analyzer_target {
+        state.mode = match mode {
+            0 => Mode::Move,
+            1 => Mode::Rotate,
+            _ => Mode::Scale,
+        };
+    }
+    let ik_proxy =
+        if analyzer_target.is_some() || importer.as_ref().is_some_and(|i| i.target.is_some()) {
+            None
+        } else {
+            ik.as_ref().and_then(|s| s.proxy)
+        };
     if ik_proxy.is_some() && (state.mode == Mode::Scale || ik.as_ref().is_some_and(|s| s.is_bend()))
     {
         state.mode = Mode::Move;
@@ -165,12 +179,15 @@ fn update(
             PANEL
         };
     }
-    let target = importer.as_ref().and_then(|i| i.target).or_else(|| {
-        scene
-            .world
-            .zip(scene.camera)
-            .map(|(w, c)| (w, c, scene.selected))
-    });
+    let target = analyzer_target
+        .map(|(root, camera, _, _)| (root, camera, 0))
+        .or_else(|| importer.as_ref().and_then(|i| i.target))
+        .or_else(|| {
+            scene
+                .world
+                .zip(scene.camera)
+                .map(|(w, c)| (w, c, scene.selected))
+        });
     let Some((owner, camera, selected)) = target else {
         state.key = None;
         state.root = None;
@@ -185,6 +202,7 @@ fn update(
             &mut commands,
             owner,
             state.mode,
+            if analyzer_target.is_some() { 13 } else { 1 },
             &mut view.meshes,
             &mut view.materials,
         ));
@@ -192,7 +210,10 @@ fn update(
     }
     let Some((entity, _object, mut local, parent)) =
         view.objects.iter_mut().find(|(e, o, _, _)| {
-            ik_proxy.map_or_else(|| o.is_some_and(|o| o.0 == selected), |proxy| *e == proxy)
+            analyzer_target
+                .map(|(_, _, entity, _)| entity)
+                .or(ik_proxy)
+                .map_or_else(|| o.is_some_and(|o| o.0 == selected), |proxy| *e == proxy)
         })
     else {
         return;
@@ -379,6 +400,7 @@ fn spawn_handles(
     commands: &mut Commands,
     owner: Entity,
     mode: Mode,
+    layer: usize,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<GizmoMaterial>,
 ) -> Entity {
@@ -416,7 +438,7 @@ fn spawn_handles(
         for (mesh, translation) in parts {
             commands.spawn((
                 HandleAxis(axis),
-                bevy::camera::visibility::RenderLayers::layer(1),
+                bevy::camera::visibility::RenderLayers::layer(layer),
                 Mesh3d(mesh),
                 MeshMaterial3d(material.clone()),
                 Transform {

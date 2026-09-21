@@ -14,6 +14,7 @@ members = [
     "Engine/effects",
     "Engine/materials",
     "Engine/ik",
+    "Engine/animation",
     "Engine/scripting",
     "Engine/runtime_ui",
     "Engine/vm",

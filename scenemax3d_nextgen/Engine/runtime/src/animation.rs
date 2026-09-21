@@ -141,7 +141,7 @@ pub(super) fn key_event_matches(
 pub(super) fn play_pending_animations(
     mut commands: Commands,
     children: Query<&Children>,
-    root_entities: Query<&SceneMaxEntity>,
+    root_entities: Query<(&SceneMaxEntity, Option<&AnimationRecordModel>)>,
     mut animations_to_play: Query<(Entity, &mut AnimationToPlay)>,
     asset_server: Res<AssetServer>,
     gltfs: Res<Assets<Gltf>>,
@@ -172,9 +172,15 @@ pub(super) fn play_pending_animations(
     for (root, mut animation_to_play) in &mut animations_to_play {
         let target_name = root_entities
             .get(root)
-            .map(|entity| entity.name.as_str())
+            .map(|(entity, _)| entity.name.as_str())
             .unwrap_or("<unknown>");
         let target_model_resource = animation_to_play.target_model_resource.clone();
+        let record_model = root_entities
+            .get(root)
+            .ok()
+            .and_then(|(_, model)| model)
+            .map(|model| model.0.clone())
+            .or_else(|| target_model_resource.clone());
         let Some(gltf) = gltfs.get(&animation_to_play.gltf) else {
             continue;
         };
@@ -315,11 +321,56 @@ pub(super) fn play_pending_animations(
             }
         }
 
-        let Some(resolved_clip) = find_model_animation_clip(
-            gltf,
-            &animation_to_play.animation_names,
-            &animation_to_play.clip,
-        ) else {
+        let mut interval = None;
+        let mut source_index = None;
+        let mut source_name = animation_to_play.clip.clone();
+        if !animation_to_play.external_source {
+            if let (Some(resource), Some(root_path)) =
+                (record_model.as_ref(), runtime_assets.asset_root.clone())
+            {
+                if !runtime_assets.analyzer_records.contains_key(resource) {
+                    let records = scenemax_assets::model_animation_records(
+                        &root_path,
+                        runtime_assets.builtin_asset_root.as_deref(),
+                        resource,
+                    );
+                    if let Err(error) = &records {
+                        tracing::warn!(model = resource, "Invalid animation records: {error}");
+                    }
+                    runtime_assets
+                        .analyzer_records
+                        .insert(resource.clone(), records);
+                }
+                match runtime_assets.analyzer_records.get(resource) {
+                    Some(Ok(records)) => {
+                        if let Some((record, timeline)) = records
+                            .iter()
+                            .find(|(r, _)| r.name.eq_ignore_ascii_case(&animation_to_play.clip))
+                        {
+                            source_name = timeline.name.clone();
+                            source_index = Some(timeline.index);
+                            interval = timeline.interval(record).ok();
+                        }
+                    }
+                    Some(Err(_)) => {
+                        commands.entity(root).try_remove::<AnimationToPlay>();
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let resolved = if let Some(index) = source_index {
+            gltf.animations
+                .get(index)
+                .map(|clip| ResolvedAnimationClip {
+                    name: source_name.as_str(),
+                    clip,
+                })
+        } else {
+            find_model_animation_clip(gltf, &animation_to_play.animation_names, &source_name)
+        };
+        let Some(resolved_clip) = resolved else {
             if switch_to_external_animation_source(
                 target_name,
                 target_model_resource.as_deref(),
@@ -390,6 +441,22 @@ pub(super) fn play_pending_animations(
             } else {
                 (clip.clone(), animation_players.clone(), 0)
             };
+
+        let clip_to_play = if let Some((start, end)) = interval {
+            let Some(source) = animation_clips.get(&clip_to_play) else {
+                continue;
+            };
+            match scenemax_animation::slice(source, start, end) {
+                Ok(clip) => animation_clips.add(clip),
+                Err(error) => {
+                    tracing::warn!("Invalid animation record: {error}");
+                    commands.entity(root).try_remove::<AnimationToPlay>();
+                    continue;
+                }
+            }
+        } else {
+            clip_to_play
+        };
 
         let duration_seconds = animation_clip_duration_seconds(&animation_clips, &clip_to_play);
         animation_durations.insert(
@@ -2911,3 +2978,7 @@ mod tests {
         assert_eq!(humanoid_profile_bone("prop_socket"), None);
     }
 }
+
+#[cfg(test)]
+#[path = "animation_analyzer_tests.rs"]
+mod analyzer_tests;
