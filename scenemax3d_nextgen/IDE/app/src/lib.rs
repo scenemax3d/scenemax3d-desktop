@@ -185,6 +185,12 @@ pub fn run(options: LaunchOptions) -> Result<()> {
             presentation::inventory::smoke.before(presentation::inventory::update),
         );
     }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_ABOUT").is_some() {
+        app.add_systems(
+            Update,
+            presentation::about::smoke.before(presentation::chrome::controls),
+        );
+    }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_IK").is_some() {
         app.add_systems(Update, presentation::ik::smoke);
     }
@@ -283,6 +289,7 @@ impl Plugin for StudioPlugin {
             .init_resource::<presentation::material::State>()
             .init_resource::<presentation::weapon::State>()
             .init_resource::<presentation::animation_analyzer::State>()
+            .init_resource::<presentation::about::State>()
             .init_resource::<presentation::motion::State>()
             .init_resource::<presentation::ik::State>()
             .add_plugins(scenemax_ik::IkPlugin)
@@ -335,7 +342,7 @@ impl Plugin for StudioPlugin {
                 (
                     presentation::input::sync_documents,
                     presentation::input::collect_actions,
-                    presentation::chrome::controls,
+                    (presentation::chrome::controls, presentation::about::update).chain(),
                     (
                         presentation::browser::keyboard,
                         presentation::tree_menu::update,

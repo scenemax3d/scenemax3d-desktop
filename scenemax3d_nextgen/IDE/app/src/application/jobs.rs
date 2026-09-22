@@ -274,6 +274,10 @@ pub(crate) fn apply_storage(
                 }
             }
         }
+        StorageResult::WebOpened(result) => {
+            result?;
+            session.status = "Opened link in your browser".into();
+        }
         StorageResult::Explored(result) => {
             result?;
             session.status = "Opened in explorer".into();

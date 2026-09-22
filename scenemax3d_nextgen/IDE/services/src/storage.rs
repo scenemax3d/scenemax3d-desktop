@@ -29,6 +29,8 @@ pub enum StorageRequest {
     },
     /// Open a containing directory using the desktop shell.
     Explore(PathBuf),
+    /// Open an HTTPS project link in the default browser.
+    OpenWeb(String),
     /// Load a Java 3D scene and resolve its project model resources.
     Scene3d {
         /// Canonical project root.
@@ -139,6 +141,8 @@ pub enum StorageResult {
     ),
     /// Result of launching the desktop file manager.
     Explored(Result<(), ServiceError>),
+    /// Result of opening a web link.
+    WebOpened(Result<(), ServiceError>),
     /// Imported scene and resource diagnostics.
     Scene3d(Result<crate::scene3d::Scene3d, String>),
     /// Available projects, independently of an open project.
@@ -254,6 +258,19 @@ fn perform(
             version,
             Filesystem::open_document(&Project::new(root, vec![]), &path),
         ),
+        StorageRequest::OpenWeb(url) => StorageResult::WebOpened((|| {
+            if !url.starts_with("https://") || url.chars().any(char::is_control) {
+                return Err(ServiceError::Limit("Expected an HTTPS link"));
+            }
+            #[cfg(windows)]
+            let program = "explorer.exe";
+            #[cfg(target_os = "macos")]
+            let program = "open";
+            #[cfg(all(not(windows), not(target_os = "macos")))]
+            let program = "xdg-open";
+            std::process::Command::new(program).arg(&url).spawn()?;
+            Ok(())
+        })()),
         StorageRequest::Explore(path) => StorageResult::Explored((|| {
             let folder = if path.is_dir() {
                 path.as_path()

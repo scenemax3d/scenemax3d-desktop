@@ -19,6 +19,7 @@ pub(crate) enum Command {
     RunPath(PathBuf),
     ReloadPath(PathBuf),
     Explore(PathBuf),
+    OpenWeb(String),
     SaveCopy(PathBuf),
     SaveCloseTab,
     DiscardTab,
@@ -225,6 +226,9 @@ fn execute(
             }
             services.storage.request(StorageRequest::NewProject(path))?;
             session.status = "Creating project...".into();
+        }
+        Command::OpenWeb(url) => {
+            services.storage.request(StorageRequest::OpenWeb(url))?;
         }
         Command::Open(path) => {
             if let Some(id) = session.workspace.find_document(&path) {

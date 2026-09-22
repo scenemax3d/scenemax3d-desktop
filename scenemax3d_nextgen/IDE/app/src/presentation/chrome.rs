@@ -463,3 +463,12 @@ impl ChromeState {
         }
     }
 }
+
+impl ChromeState {
+    pub(crate) fn about_open(&self) -> bool {
+        self.panel == Some(Panel::Help)
+    }
+    pub(crate) fn show_about(&mut self) {
+        self.panel = Some(Panel::Help);
+    }
+}
