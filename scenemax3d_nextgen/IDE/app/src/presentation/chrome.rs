@@ -219,6 +219,17 @@ fn populate_menu(
             "refresh_project_tree" => item(commands, host, entry.name, "", Action::Refresh),
             "restart_app" => item(commands, host, entry.name, "Ctrl+Alt+R", Action::Restart),
             "exit" => item(commands, host, entry.name, "", Action::Exit),
+            "online_help" => {
+                let row = button(commands, host, entry.name, Name::new("Online help"));
+                commands.entity(row).observe(
+                    |_: On<Pointer<Press>>, mut queue: ResMut<crate::application::CommandQueue>| {
+                        queue.0.push_back(crate::application::Command::OpenWeb(
+                            "https://www.scenemax3d.com/tutorials".into(),
+                        ));
+                    },
+                );
+                finish_item(commands, row, "");
+            }
             "about" => panel_item(commands, host, entry.name, "", Panel::Help),
             _ => {
                 let row = commands
