@@ -391,7 +391,12 @@ pub(crate) fn update(
     } else {
         for (name, action) in entries(
             target.directory,
-            session.workspace.project().scripts().contains(&target.path),
+            session
+                .workspace
+                .project()
+                .run_target(&target.path)
+                .as_deref()
+                == Some(target.path.as_path()),
             target.path == session.workspace.project().root(),
             target.path.file_name().is_some_and(|n| n == "main"),
         ) {

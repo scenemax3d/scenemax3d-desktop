@@ -351,13 +351,7 @@ fn execute(
         Command::Run => {
             let id = session.workspace.require_active()?;
             let path = session.workspace.document(id)?.path();
-            if !session
-                .workspace
-                .project()
-                .scripts()
-                .iter()
-                .any(|script| script == path)
-            {
+            if session.workspace.project().run_target(path).is_none() {
                 bail!("The active file is not a runnable SceneMax script");
             }
             if session

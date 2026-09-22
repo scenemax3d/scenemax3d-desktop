@@ -30,7 +30,7 @@ Click files in the project tree to edit them. The tree includes scripts, resourc
 
 ## Editing and running
 
-- **Run file / F8** runs the active `.code` or extensionless script. **Ctrl+F12** is the Java Bevy equivalent. Save other dirty scripts first. Non-script files cannot be run accidentally.
+- **Run file / F8** runs the active `.code` anywhere inside the project, including generated scenes under `tmp/`, or a discovered extensionless script. In a `.smdesign` tab it first saves/regenerates the companion `.code`, then runs that generated file. **Ctrl+F12** is the Java Bevy equivalent. Save other dirty scripts first. Non-script files cannot be run accidentally.
 - **Run project / F10** runs the shallowest extensionless `main` beneath `scripts/`, as Java does. **F12** is the Java Bevy equivalent. Equal-depth candidates use stable path order. Dirty buffers are saved first, so included files are current; edits arriving during the save cancel the deferred launch. An active tab is not required.
 - **Stop** cancels an already-running projector or a run waiting for saves. F5/Shift+F5 remain compatibility shortcuts for run-file/stop.
 - **Save / Ctrl+S**, **Save all / Ctrl+Shift+S**, Undo/Redo, **Check syntax / Ctrl+Enter**, and Find are available in the toolbar or through keyboard shortcuts. The extra Edit/Navigate/Run menus from the prototype have been removed to match Java.

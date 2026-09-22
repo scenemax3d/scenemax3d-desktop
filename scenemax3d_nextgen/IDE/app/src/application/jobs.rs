@@ -412,10 +412,11 @@ pub(crate) fn apply_storage(
                     services.finish_session(session, false)?;
                 }
                 Some(SavePurpose::Run(id)) if !dirty && !session.closing => {
-                    services.projector.start(
-                        session.workspace.project().root(),
-                        session.workspace.document(id)?.path(),
-                    )?;
+                    let project = session.workspace.project();
+                    let target = project
+                        .run_target(session.workspace.document(id)?.path())
+                        .ok_or_else(|| anyhow::anyhow!("The active file is not runnable"))?;
+                    services.projector.start(project.root(), &target)?;
                     session.status = "Bevy projector started".into();
                 }
                 Some(SavePurpose::ProjectRun) if !dirty && !session.closing => {
@@ -501,6 +502,39 @@ mod tests {
     use super::*;
     use scenemax_ide_services::Filesystem;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn designer_run_regenerates_clean_companion_before_launch_validation() {
+        let (mut app, dir, _) = setup();
+        let folder = dir.path().join("tmp/scene1");
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("scene1.smdesign");
+        std::fs::write(
+            &path,
+            r#"{"entities":[{"type":"CODE","name":"Logic","codeText":"Logger.info 42"}]}"#,
+        )
+        .unwrap();
+        let id = {
+            let mut session = app.world_mut().resource_mut::<Session>();
+            let doc = Filesystem::open_document(session.workspace.project(), &path).unwrap();
+            session.workspace.open_document(doc).unwrap()
+        };
+        for stale in [false, true] {
+            if stale {
+                std::fs::write(path.with_extension("code"), "// stale").unwrap();
+            }
+            save(&mut app, vec![id], SavePurpose::Run(id));
+            finish(&mut app);
+            assert!(
+                std::fs::read_to_string(path.with_extension("code"))
+                    .unwrap()
+                    .contains("Logger.info 42")
+            );
+            let session = app.world().resource::<Session>();
+            assert!(!session.workspace.has_dirty_documents());
+            assert!(session.status.contains("Bevy projector not found"));
+        }
+    }
 
     #[test]
     fn designer_save_all_refreshes_generated_tab_and_uses_saved_init() {

@@ -73,7 +73,7 @@ pub(super) fn execute(
                 }
             }
             Command::RunPath(path) => {
-                if !session.workspace.project().scripts().contains(path) {
+                if session.workspace.project().run_target(path).as_deref() != Some(path.as_path()) {
                     bail!("The selected file is not a runnable script");
                 }
                 services.projector.validate()?;

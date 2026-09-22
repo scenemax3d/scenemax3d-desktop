@@ -45,6 +45,23 @@ impl Project {
     pub fn root(&self) -> &Path {
         &self.root
     }
+    /// Run an explicit script anywhere in the project, or a designer's generated companion.
+    /// Extensionless legacy scripts must belong to the discovered script inventory.
+    pub fn run_target(&self, path: &Path) -> Option<PathBuf> {
+        let relative = path.strip_prefix(&self.root).ok()?;
+        if relative
+            .components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+        {
+            return None;
+        }
+        match path.extension() {
+            Some(ext) if ext.eq_ignore_ascii_case("code") => Some(path.to_owned()),
+            Some(ext) if ext.eq_ignore_ascii_case("smdesign") => Some(path.with_extension("code")),
+            None if self.scripts.iter().any(|p| p == path) => Some(path.to_owned()),
+            _ => None,
+        }
+    }
     /// Deterministically sorted source paths.
     pub fn scripts(&self) -> &[PathBuf] {
         &self.scripts
@@ -92,6 +109,26 @@ pub struct ProjectCatalog {
 #[cfg(test)]
 mod project_tests {
     use super::*;
+    #[test]
+    fn run_targets_include_unindexed_scene_code_and_designer_companions() {
+        let root = PathBuf::from("project");
+        let project = Project::new(root.clone(), vec![root.join("scripts/main")]);
+        let code = root.join("tmp/scene1/scene1.code");
+        assert_eq!(project.run_target(&code), Some(code.clone()));
+        assert_eq!(
+            project.run_target(&code.with_extension("smdesign")),
+            Some(code)
+        );
+        assert!(project.run_target(&root.join("scripts/main")).is_some());
+        for path in [
+            root.join("tmp/readme"),
+            root.join("tmp/data.json"),
+            root.join("../outside.code"),
+            PathBuf::from("other/script.code"),
+        ] {
+            assert!(project.run_target(&path).is_none(), "{}", path.display());
+        }
+    }
     #[test]
     fn project_entry_is_shallowest_main_not_the_active_script() {
         let p = Project::new(
