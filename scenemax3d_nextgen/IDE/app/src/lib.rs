@@ -134,7 +134,10 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         .add_plugins(scenemax_materials::MaterialsPlugin)
         .init_resource::<scenemax_effects::PreviewClock>()
         .add_plugins((TabNavigationPlugin, StudioUiPlugin, StudioPlugin))
-        .add_plugins(presentation::scene3d::gizmo::GizmoPlugin);
+        .add_plugins((
+            presentation::scene3d::gizmo::GizmoPlugin,
+            presentation::scene3d::grid::GridPlugin,
+        ));
     app.add_systems(
         PostUpdate,
         presentation::scene3d::ik_controls::refresh

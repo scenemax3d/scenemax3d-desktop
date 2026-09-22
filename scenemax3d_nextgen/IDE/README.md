@@ -221,3 +221,7 @@ With focus in the code editor, press Ctrl+plus (Ctrl+= also works) to enlarge te
 ### Model Animation Analyzer
 
 Tools → Model Animation Analyzer opens the project model catalog as a retained designer. Create named frame ranges, preview and scrub them, then save the records into the model JSON. The projector plays them through the ordinary animation syntax without modifying GLTF. See [the analyzer guide](ANIMATION_ANALYZER.md).
+
+### Scene designer ground grid
+
+The Scene designer displays an infinite XZ ground grid at Y=0, with a red X axis and blue Z axis. Major/minor spacing adapts smoothly as you zoom, and distant lines fade toward the horizon. The grid is an editor aid: it does not add a hierarchy item, intercept selection, change saved scene data, or appear in the game-camera preview or runtime.
