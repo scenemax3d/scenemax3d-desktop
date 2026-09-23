@@ -214,9 +214,12 @@ fn populate_menu(
         }
         if let Some(page) = crate::application::git::Page::menu(entry.command) {
             let row = button(commands, host, entry.name, Name::new(entry.name));
-            commands.entity(row).observe(move |_: On<Pointer<Press>>, mut git: ResMut<crate::application::git::State>| {
-                git.actions.push_back(crate::application::git::Action::Open(page));
-            });
+            commands.entity(row).observe(
+                move |_: On<Pointer<Press>>, mut git: ResMut<crate::application::git::State>| {
+                    git.actions
+                        .push_back(crate::application::git::Action::Open(page));
+                },
+            );
             finish_item(commands, row, "");
             continue;
         }
@@ -227,6 +230,17 @@ fn populate_menu(
             "refresh_project_tree" => item(commands, host, entry.name, "", Action::Refresh),
             "restart_app" => item(commands, host, entry.name, "Ctrl+Alt+R", Action::Restart),
             "exit" => item(commands, host, entry.name, "", Action::Exit),
+            "open_install_folder" => {
+                let row = button(commands, host, entry.name, Name::new(entry.name));
+                commands.entity(row).observe(
+                    |_: On<Pointer<Press>>, mut queue: ResMut<crate::application::CommandQueue>| {
+                        queue
+                            .0
+                            .push_back(crate::application::Command::OpenInstallationFolder);
+                    },
+                );
+                finish_item(commands, row, "");
+            }
             "online_help" => {
                 let row = button(commands, host, entry.name, Name::new("Online help"));
                 commands.entity(row).observe(

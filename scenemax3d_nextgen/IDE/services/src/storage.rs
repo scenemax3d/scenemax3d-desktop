@@ -29,6 +29,8 @@ pub enum StorageRequest {
     },
     /// Open a containing directory using the desktop shell.
     Explore(PathBuf),
+    /// Open the directory containing the running IDE executable.
+    OpenInstallationFolder,
     /// Open an HTTPS project link in the default browser.
     OpenWeb(String),
     /// Load a Java 3D scene and resolve its project model resources.
@@ -271,22 +273,12 @@ fn perform(
             std::process::Command::new(program).arg(&url).spawn()?;
             Ok(())
         })()),
-        StorageRequest::Explore(path) => StorageResult::Explored((|| {
-            let folder = if path.is_dir() {
-                path.as_path()
-            } else {
-                path.parent()
-                    .ok_or(ServiceError::Limit("No containing directory"))?
-            };
-            #[cfg(windows)]
-            let program = "explorer.exe";
-            #[cfg(target_os = "macos")]
-            let program = "open";
-            #[cfg(all(not(windows), not(target_os = "macos")))]
-            let program = "xdg-open";
-            std::process::Command::new(program).arg(folder).spawn()?;
-            Ok(())
-        })()),
+        StorageRequest::OpenInstallationFolder => StorageResult::Explored(
+            std::env::current_exe()
+                .map_err(ServiceError::from)
+                .and_then(|path| explore(&path)),
+        ),
+        StorageRequest::Explore(path) => StorageResult::Explored(explore(&path)),
         StorageRequest::MaterialLibrary(root) => {
             StorageResult::MaterialLibrary(crate::material::load(&root))
         }
@@ -433,6 +425,23 @@ fn perform(
             }
         }
     }
+}
+
+fn explore(path: &std::path::Path) -> Result<(), ServiceError> {
+    let folder = if path.is_dir() {
+        path
+    } else {
+        path.parent()
+            .ok_or(ServiceError::Limit("No containing directory"))?
+    };
+    #[cfg(windows)]
+    let program = "explorer.exe";
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    let program = "xdg-open";
+    std::process::Command::new(program).arg(folder).spawn()?;
+    Ok(())
 }
 
 #[cfg(test)]
