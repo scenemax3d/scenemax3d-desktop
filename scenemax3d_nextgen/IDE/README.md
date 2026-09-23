@@ -229,3 +229,7 @@ The Scene designer displays an infinite XZ ground grid at Y=0, with a red X axis
 ### Git tools
 
 The Git menu now opens retained staging/commit, branches, history/diffs, clone, push/pull/rebase/fetch, stash, initialization, ignore-file and configuration dialogs. Git operations run on an owned background worker with progress and cancellation. See [Git workflows and safeguards](GIT.md).
+
+### AI agent automation (MCP)
+
+The IDE now starts a lightweight localhost MCP server at `http://127.0.0.1:8765/mcp`. Click **MCP** at the bottom right for its connection status and request monitor. AI agents can inspect/edit project files, author scenes and UI, validate, generate code, run previews and capture the 3D viewport. A native stdio proxy supports clients without HTTP transport. See [connection and authoring guide](MCP.md) and [all available tools](MCP_TOOLS.md).

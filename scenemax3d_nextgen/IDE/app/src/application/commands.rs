@@ -74,7 +74,7 @@ pub(crate) fn execute_commands(
     }
 }
 
-fn execute(
+pub(super) fn execute(
     command: Command,
     session: &mut Session,
     services: &mut EditorServices,

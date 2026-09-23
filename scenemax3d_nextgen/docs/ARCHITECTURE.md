@@ -132,3 +132,9 @@ Language/parser owns IK command syntax; Engine/scripting substitutes function ar
 ## Shared animation intervals
 
 `Engine/animation` owns generic Bevy curve interval wrappers consumed by IDE/app and Engine/runtime. It has no filesystem, UI, project, or game dependencies. Wrappers retain source interpolation/property types while translating time and duration; no source model is rewritten. Common/assets owns Java-compatible record decoding and bounded, resource-contained glTF timing reads. The IDE core edits catalog JSON without I/O, services validates modified records before the ordinary atomic save, application performs revision-checked transactions, and presentation owns the retained analyzer and its layer-13 preview. Authored model identity is kept separately from resolved source aliases so alias-specific records remain instance-correct.
+
+### Local MCP automation boundary
+
+The native IDE owns its MCP server; no engine/projector module depends on it. `IDE/core/automation` contains the discoverable schemas and pure scene/UI JSON transactions. `IDE/services/mcp` contains bounded loopback HTTP JSON-RPC, metadata-only logs, a disk worker, scoped path validation, and image encoding. The `scenemax_mcp_proxy` services binary forwards newline-delimited stdio to the local endpoint without loading Bevy or launching another IDE.
+
+`IDE/app/application/mcp` serializes tool requests onto the editor thread after native input synchronization, checks project identity and document revisions, and uses the normal command/save paths. Worker snapshots are adopted only on the main thread. `presentation/scene3d/automation` adapts camera, selection, reference overlays and GPU capture; `presentation/mcp` owns the retained connection monitor. Transport threads never access Bevy state, filesystem work never runs in UI event handlers, and mutations remain document undo transactions. See [MCP guide](../IDE/MCP.md) and [generated tool inventory](../IDE/MCP_TOOLS.md).

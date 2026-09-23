@@ -128,3 +128,5 @@ pub mod animation_analyzer;
 
 /// Background Git CLI adapter.
 pub mod git;
+/// Local MCP automation transport.
+pub mod mcp;

@@ -23,6 +23,7 @@ pub(crate) struct EditorServices {
     pub(crate) symbols: scenemax_ide_services::SymbolIndexer,
     pub(crate) projector: ProjectorProcess,
     pub(crate) storage: Storage,
+    pub(crate) storage_outcome: Option<Result<(), String>>,
     pub(crate) catalog_storage: Storage,
     pub(crate) scene_storage: Storage,
     pub(crate) material_storage: Storage,
@@ -42,6 +43,7 @@ impl EditorServices {
             symbols: scenemax_ide_services::SymbolIndexer::new()?,
             projector: ProjectorProcess::new(executable),
             storage: Storage::new()?,
+            storage_outcome: None,
             catalog_storage: Storage::new()?,
             scene_storage: Storage::new()?,
             material_storage: Storage::new()?,
@@ -461,15 +463,14 @@ pub(crate) fn poll_jobs(
     }
     match services.storage.poll() {
         Ok(Some(result)) => {
-            if let Err(error) =
-                apply_storage(result, &mut services, &mut session, &mut changes, &mut exit)
-            {
-                session.status = format!("{error:#}");
-            }
+            let outcome = apply_storage(result, &mut services, &mut session, &mut changes, &mut exit).map_err(|e| format!("{e:#}"));
+            if let Err(error) = &outcome { session.status = error.clone(); }
+            services.storage_outcome = Some(outcome);
         }
         Err(error) => {
             services.pending_save = None;
             session.status = error.to_string();
+            services.storage_outcome = Some(Err(error.to_string()));
         }
         Ok(None) => {}
     }

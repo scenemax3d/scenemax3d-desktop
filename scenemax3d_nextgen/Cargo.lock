@@ -5401,6 +5401,7 @@ dependencies = [
 name = "scenemax_ide_services"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "fontique",
  "image",
  "scenemax_assets",

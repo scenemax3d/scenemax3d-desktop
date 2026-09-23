@@ -84,6 +84,19 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         })?;
     }
     let mut app = App::new();
+    let mcp_port = std::env::var("SCENEMAX_MCP_PORT").ok();
+    if std::env::var("SCENEMAX_MCP_DISABLED").as_deref() != Ok("1")
+        && (options.smoke_frames.is_none() || mcp_port.is_some()) {
+        let mut state = match mcp_port.as_deref().unwrap_or("8765").parse::<u16>() {
+            Ok(port) => application::mcp::State::start(port, std::env::var("SCENEMAX_MCP_TOKEN").ok().filter(|t|!t.is_empty())),
+            Err(error) => application::mcp::State::unavailable(format!("Invalid SCENEMAX_MCP_PORT: {error}")),
+        };
+        state.monitor = options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_MCP_MONITOR").is_some();
+        app.insert_resource(state);
+    } else {
+        app.insert_resource(application::mcp::State::unavailable("MCP disabled".into()));
+    }
+
     let project_assets = project_assets::ProjectAssets::default();
     let reader = project_assets.clone();
     app.register_asset_source(
@@ -138,6 +151,7 @@ pub fn run(options: LaunchOptions) -> Result<()> {
             presentation::scene3d::gizmo::GizmoPlugin,
             presentation::scene3d::grid::GridPlugin,
         ));
+    app.add_systems(Update, (presentation::mcp::update, presentation::scene3d::automation::update));
     app.add_systems(
         PostUpdate,
         presentation::scene3d::ik_controls::refresh
@@ -242,6 +256,8 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         app.add_systems(Update, presentation::deployment::smoke_build);
     }
     app.run();
+    // Release the listening socket before launching a replacement IDE.
+    app.world_mut().remove_resource::<application::mcp::State>();
     let restart = restart_project
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -269,6 +285,7 @@ impl Plugin for StudioPlugin {
         );
         app.init_resource::<CommandQueue>()
             .init_resource::<application::deployment::Deployment>()
+            .init_resource::<application::mcp::State>()
             .init_resource::<application::git::State>()
             .init_resource::<presentation::git::View>()
             .init_resource::<presentation::deployment::View>()
@@ -387,7 +404,7 @@ impl Plugin for StudioPlugin {
                         presentation::scene3d::ambient::update,
                         presentation::scene3d::path::update,
                         presentation::scene3d::segments::update,
-                        application::execute_commands,
+                        (application::mcp::update, application::execute_commands).chain(),
                     )
                         .chain(),
                     (

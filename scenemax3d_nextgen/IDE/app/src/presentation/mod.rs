@@ -53,3 +53,5 @@ pub(crate) mod animation_analyzer;
 pub(crate) mod about;
 
 pub(crate) mod git;
+
+pub(crate) mod mcp;
