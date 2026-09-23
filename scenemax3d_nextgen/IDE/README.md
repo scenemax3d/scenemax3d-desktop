@@ -225,3 +225,7 @@ Tools → Model Animation Analyzer opens the project model catalog as a retained
 ### Scene designer ground grid
 
 The Scene designer displays an infinite XZ ground grid at Y=0, with a red X axis and blue Z axis. Major/minor spacing adapts smoothly as you zoom, and distant lines fade toward the horizon. The grid is an editor aid: it does not add a hierarchy item, intercept selection, change saved scene data, or appear in the game-camera preview or runtime.
+
+### Git tools
+
+The Git menu now opens retained staging/commit, branches, history/diffs, clone, push/pull/rebase/fetch, stash, initialization, ignore-file and configuration dialogs. Git operations run on an owned background worker with progress and cancellation. See [Git workflows and safeguards](GIT.md).

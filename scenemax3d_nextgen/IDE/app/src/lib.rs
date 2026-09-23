@@ -188,6 +188,9 @@ pub fn run(options: LaunchOptions) -> Result<()> {
             presentation::inventory::smoke.before(presentation::inventory::update),
         );
     }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_GIT").is_some() {
+        app.add_systems(Update, presentation::git::smoke.before(presentation::git::collect));
+    }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_ABOUT").is_some() {
         app.add_systems(
             Update,
@@ -266,6 +269,8 @@ impl Plugin for StudioPlugin {
         );
         app.init_resource::<CommandQueue>()
             .init_resource::<application::deployment::Deployment>()
+            .init_resource::<application::git::State>()
+            .init_resource::<presentation::git::View>()
             .init_resource::<presentation::deployment::View>()
             .init_resource::<presentation::tree_menu::State>()
             .init_resource::<presentation::asset_import::State>()
@@ -354,6 +359,9 @@ impl Plugin for StudioPlugin {
                         presentation::inventory::preview_update,
                         presentation::font_generator::update,
                         presentation::deployment::collect,
+                        presentation::git::collect,
+                        application::git::update,
+                        presentation::git::refresh,
                         presentation::deployment::keyboard,
                         application::deployment::update,
                         presentation::deployment::refresh,

@@ -57,3 +57,6 @@ pub mod motion;
 pub mod ik;
 
 pub mod animation_analyzer;
+
+/// Version control workflow data.
+pub mod git;

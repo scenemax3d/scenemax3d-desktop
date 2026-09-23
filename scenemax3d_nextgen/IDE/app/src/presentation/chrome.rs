@@ -212,6 +212,14 @@ fn populate_menu(
             finish_item(commands, row, "");
             continue;
         }
+        if let Some(page) = crate::application::git::Page::menu(entry.command) {
+            let row = button(commands, host, entry.name, Name::new(entry.name));
+            commands.entity(row).observe(move |_: On<Pointer<Press>>, mut git: ResMut<crate::application::git::State>| {
+                git.actions.push_back(crate::application::git::Action::Open(page));
+            });
+            finish_item(commands, row, "");
+            continue;
+        }
         match entry.command {
             "project_explorer" | "new_project_scripts_folder" => {
                 panel_item(commands, host, entry.name, "", Panel::Project)
