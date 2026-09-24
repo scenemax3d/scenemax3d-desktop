@@ -130,3 +130,5 @@ pub mod animation_analyzer;
 pub mod git;
 /// Local MCP automation transport.
 pub mod mcp;
+
+pub mod physics;

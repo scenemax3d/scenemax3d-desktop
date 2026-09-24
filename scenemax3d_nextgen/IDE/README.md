@@ -233,3 +233,7 @@ The Git menu now opens retained staging/commit, branches, history/diffs, clone, 
 ### AI agent automation (MCP)
 
 The IDE now starts a lightweight localhost MCP server at `http://127.0.0.1:8765/mcp`. Click **MCP** at the bottom right for its connection status and request monitor. AI agents can inspect/edit project files, author scenes and UI, validate, generate code, run previews and capture the 3D viewport. A native stdio proxy supports clients without HTTP transport. See [connection and authoring guide](MCP.md) and [all available tools](MCP_TOOLS.md).
+
+### Physics Simulation
+
+Tools > Physics Simulation opens an isolated Avian laboratory with throw, impulse, force, velocity, angular velocity, torque and stop experiments. Use Play/Pause (F8), Step, Reset, live motion readings and a measured trajectory trail. Copy commands for an existing body or a complete runnable example. See [controls and runtime semantics](PHYSICS_SIMULATION.md).

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "Engine/physics",
     "Common/assets",
     "IDE/core",
     "IDE/app",

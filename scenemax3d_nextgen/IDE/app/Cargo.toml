@@ -5,6 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+scenemax_physics = { path = "../../Engine/physics" }
+avian3d.workspace = true
 scenemax_animation = { path = "../../Engine/animation" }
 scenemax_ik = { path = "../../Engine/ik" }
 scenemax_assets = { path = "../../Common/assets" }

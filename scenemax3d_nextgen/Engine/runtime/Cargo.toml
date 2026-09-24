@@ -9,6 +9,7 @@ default = []
 effekseer_native = ["scenemax_effects/effekseer_native"]
 
 [dependencies]
+scenemax_physics = { path = "../physics" }
 scenemax_animation = { path = "../animation" }
 scenemax_ik = { path = "../../Engine/ik" }
 scenemax_materials = { path = "../../Engine/materials" }

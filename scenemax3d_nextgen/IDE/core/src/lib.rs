@@ -62,3 +62,5 @@ pub mod animation_analyzer;
 pub mod git;
 /// Agent automation schemas and authoring transactions.
 pub mod automation;
+
+pub mod physics;

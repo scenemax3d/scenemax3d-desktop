@@ -214,6 +214,9 @@ pub fn run(options: LaunchOptions) -> Result<()> {
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_IK").is_some() {
         app.add_systems(Update, presentation::ik::smoke);
     }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_PHYSICS").is_some() {
+        app.add_systems(Update, presentation::physics::smoke);
+    }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_MOTION").is_some() {
         app.add_systems(Update, presentation::motion::smoke);
     }
@@ -316,6 +319,8 @@ impl Plugin for StudioPlugin {
             .init_resource::<presentation::animation_analyzer::State>()
             .init_resource::<presentation::about::State>()
             .init_resource::<presentation::motion::State>()
+            .init_resource::<presentation::physics::State>()
+            .insert_non_send(presentation::physics::Sandbox::default())
             .init_resource::<presentation::ik::State>()
             .add_plugins(scenemax_ik::IkPlugin)
             .add_systems(
@@ -391,7 +396,7 @@ impl Plugin for StudioPlugin {
                             presentation::animation_analyzer::update,
                         )
                             .chain(),
-                        presentation::motion::update,
+                        (presentation::motion::update, presentation::physics::update).chain(),
                         presentation::ik::update,
                         presentation::model_import::update,
                         presentation::sprite_import::update,
@@ -426,6 +431,7 @@ impl Plugin for StudioPlugin {
                             .chain(),
                         (
                             presentation::motion::preview::update,
+                            presentation::physics::preview::update,
                             presentation::ik::preview::update,
                         )
                             .chain(),

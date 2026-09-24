@@ -5374,6 +5374,7 @@ name = "scenemax_ide"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "avian3d",
  "bevy",
  "clap",
  "scenemax_animation",
@@ -5384,6 +5385,7 @@ dependencies = [
  "scenemax_ide_ui",
  "scenemax_ik",
  "scenemax_materials",
+ "scenemax_physics",
  "serde_json",
  "tempfile",
 ]
@@ -5466,6 +5468,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "scenemax_physics"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "scenemax_parser",
+]
+
+[[package]]
 name = "scenemax_projector_nextgen"
 version = "0.1.0"
 dependencies = [
@@ -5493,6 +5504,7 @@ dependencies = [
  "scenemax_materials",
  "scenemax_multiplayer",
  "scenemax_parser",
+ "scenemax_physics",
  "scenemax_runtime_script_core",
  "scenemax_runtime_ui_core",
  "scenemax_runtime_vm_core",

@@ -1558,6 +1558,11 @@ pub(super) fn apply_startup_action(
             }
             ActionSequenceResult::Completed
         }
+        Statement::PhysicsMotion { target, action } => {
+            let name = resolve_object_alias(target, object_pools, None);
+            if let Some(entity) = entities_by_name.get(&name) { scenemax_physics::enqueue(commands, *entity, action); }
+            ActionSequenceResult::Completed
+        }
         Statement::PhysicsImpulse(impulse) => {
             let target_name = resolve_object_alias(&impulse.target, object_pools, None);
             if let (Some(entity), Some(transform)) = (
@@ -7906,6 +7911,10 @@ pub(super) fn apply_key_action(
                     ignored = ignore.ignored,
                     "SceneMax character.ignore is handled by collision layers"
                 );
+            }
+            Statement::PhysicsMotion { target, action }
+                if target_matches_alias(target, &scene_entity.name, object_pools, scope.as_deref()) => {
+                scenemax_physics::enqueue(commands, entity, action);
             }
             Statement::PhysicsImpulse(impulse)
                 if target_matches_alias(
