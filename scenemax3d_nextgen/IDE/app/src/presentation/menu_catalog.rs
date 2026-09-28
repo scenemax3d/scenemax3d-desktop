@@ -1,5 +1,6 @@
 //! Java IDE menu parity snapshot, from assets/menu/main_menu.
-//! Keep captions, hierarchy and command IDs aligned; availability is owned by chrome.
+//! Keep retained captions, hierarchy and IDs aligned; cloud/snippets are intentionally omitted.
+//! Availability is owned by chrome.
 pub(crate) struct MenuEntry {
     pub(crate) name: &'static str,
     pub(crate) command: &'static str,
@@ -34,16 +35,6 @@ pub(crate) const MENUS: &[MenuEntry] = &[
             MenuEntry {
                 name: "Import Program...",
                 command: "load_program",
-                children: &[],
-            },
-            MenuEntry {
-                name: "Load From Cloud...",
-                command: "load_from_cloud",
-                children: &[],
-            },
-            MenuEntry {
-                name: "Code Snippets...",
-                command: "macro_builder",
                 children: &[],
             },
             MenuEntry {

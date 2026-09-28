@@ -212,29 +212,7 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
         "Close",
         super::chrome::ChromeAction::Dismiss,
     );
-    let help = commands
-        .spawn((
-            super::chrome::Panel::Help,
-            Node {
-                display: Display::None,
-                padding: px(12.).all(),
-                align_items: AlignItems::Center,
-                ..default()
-            },
-            BackgroundColor(PANEL),
-            ChildOf(root),
-        ))
-        .id();
-    commands.spawn((
-        label("SceneMax Studio · Rust / Bevy IDE preview", 13.),
-        ChildOf(help),
-    ));
-    button(
-        &mut commands,
-        help,
-        "Close",
-        super::chrome::ChromeAction::Dismiss,
-    );
+    super::about::build(&mut commands, root);
     let body = commands
         .spawn((
             Node {

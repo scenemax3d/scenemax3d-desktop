@@ -120,6 +120,8 @@ type Objects<'w, 's> = Query<
 >;
 #[derive(bevy::ecs::system::SystemParam)]
 struct View<'w, 's> {
+    git: Option<Res<'w, crate::application::git::State>>,
+    chrome: Option<Res<'w, crate::presentation::chrome::ChromeState>>,
     analyzer: Option<Res<'w, crate::presentation::animation_analyzer::State>>,
     windows: Query<'w, 's, &'static Window>,
     ports: Query<
@@ -152,7 +154,10 @@ fn update(
     mut view: View,
     ik: Option<Res<super::ik_controls::State>>,
 ) {
-    if drawing.is_some_and(|d| d.document.is_some()) {
+    if view.git.as_ref().is_some_and(|g| g.open)
+        || view.chrome.as_ref().is_some_and(|c| c.about_open())
+        || drawing.is_some_and(|d| d.document.is_some())
+    {
         return;
     }
     let analyzer_target = view.analyzer.as_ref().and_then(|s| s.gizmo_target());

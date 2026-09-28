@@ -379,3 +379,7 @@ pub(crate) mod focus;
 pub(crate) mod game_camera;
 
 pub(crate) mod ik_controls;
+
+pub(crate) mod grid;
+
+pub(crate) mod automation;

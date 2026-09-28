@@ -23,3 +23,7 @@ pub(crate) mod motion;
 pub(crate) mod ik;
 
 pub(crate) mod animation_analyzer;
+
+pub(crate) mod git;
+
+pub(crate) mod mcp;

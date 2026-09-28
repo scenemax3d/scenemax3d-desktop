@@ -84,6 +84,19 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         })?;
     }
     let mut app = App::new();
+    let mcp_port = std::env::var("SCENEMAX_MCP_PORT").ok();
+    if std::env::var("SCENEMAX_MCP_DISABLED").as_deref() != Ok("1")
+        && (options.smoke_frames.is_none() || mcp_port.is_some()) {
+        let mut state = match mcp_port.as_deref().unwrap_or("8765").parse::<u16>() {
+            Ok(port) => application::mcp::State::start(port, std::env::var("SCENEMAX_MCP_TOKEN").ok().filter(|t|!t.is_empty())),
+            Err(error) => application::mcp::State::unavailable(format!("Invalid SCENEMAX_MCP_PORT: {error}")),
+        };
+        state.monitor = options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_MCP_MONITOR").is_some();
+        app.insert_resource(state);
+    } else {
+        app.insert_resource(application::mcp::State::unavailable("MCP disabled".into()));
+    }
+
     let project_assets = project_assets::ProjectAssets::default();
     let reader = project_assets.clone();
     app.register_asset_source(
@@ -134,7 +147,11 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         .add_plugins(scenemax_materials::MaterialsPlugin)
         .init_resource::<scenemax_effects::PreviewClock>()
         .add_plugins((TabNavigationPlugin, StudioUiPlugin, StudioPlugin))
-        .add_plugins(presentation::scene3d::gizmo::GizmoPlugin);
+        .add_plugins((
+            presentation::scene3d::gizmo::GizmoPlugin,
+            presentation::scene3d::grid::GridPlugin,
+        ));
+    app.add_systems(Update, (presentation::mcp::update, presentation::scene3d::automation::update));
     app.add_systems(
         PostUpdate,
         presentation::scene3d::ik_controls::refresh
@@ -185,8 +202,20 @@ pub fn run(options: LaunchOptions) -> Result<()> {
             presentation::inventory::smoke.before(presentation::inventory::update),
         );
     }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_GIT").is_some() {
+        app.add_systems(Update, presentation::git::smoke.before(presentation::git::collect));
+    }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_ABOUT").is_some() {
+        app.add_systems(
+            Update,
+            presentation::about::smoke.before(presentation::chrome::controls),
+        );
+    }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_IK").is_some() {
         app.add_systems(Update, presentation::ik::smoke);
+    }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_PHYSICS").is_some() {
+        app.add_systems(Update, presentation::physics::smoke);
     }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_MOTION").is_some() {
         app.add_systems(Update, presentation::motion::smoke);
@@ -230,6 +259,8 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         app.add_systems(Update, presentation::deployment::smoke_build);
     }
     app.run();
+    // Release the listening socket before launching a replacement IDE.
+    app.world_mut().remove_resource::<application::mcp::State>();
     let restart = restart_project
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -257,6 +288,9 @@ impl Plugin for StudioPlugin {
         );
         app.init_resource::<CommandQueue>()
             .init_resource::<application::deployment::Deployment>()
+            .init_resource::<application::mcp::State>()
+            .init_resource::<application::git::State>()
+            .init_resource::<presentation::git::View>()
             .init_resource::<presentation::deployment::View>()
             .init_resource::<presentation::tree_menu::State>()
             .init_resource::<presentation::asset_import::State>()
@@ -283,7 +317,10 @@ impl Plugin for StudioPlugin {
             .init_resource::<presentation::material::State>()
             .init_resource::<presentation::weapon::State>()
             .init_resource::<presentation::animation_analyzer::State>()
+            .init_resource::<presentation::about::State>()
             .init_resource::<presentation::motion::State>()
+            .init_resource::<presentation::physics::State>()
+            .insert_non_send(presentation::physics::Sandbox::default())
             .init_resource::<presentation::ik::State>()
             .add_plugins(scenemax_ik::IkPlugin)
             .add_systems(
@@ -335,7 +372,7 @@ impl Plugin for StudioPlugin {
                 (
                     presentation::input::sync_documents,
                     presentation::input::collect_actions,
-                    presentation::chrome::controls,
+                    (presentation::chrome::controls, presentation::about::update).chain(),
                     (
                         presentation::browser::keyboard,
                         presentation::tree_menu::update,
@@ -344,6 +381,9 @@ impl Plugin for StudioPlugin {
                         presentation::inventory::preview_update,
                         presentation::font_generator::update,
                         presentation::deployment::collect,
+                        presentation::git::collect,
+                        application::git::update,
+                        presentation::git::refresh,
                         presentation::deployment::keyboard,
                         application::deployment::update,
                         presentation::deployment::refresh,
@@ -356,7 +396,7 @@ impl Plugin for StudioPlugin {
                             presentation::animation_analyzer::update,
                         )
                             .chain(),
-                        presentation::motion::update,
+                        (presentation::motion::update, presentation::physics::update).chain(),
                         presentation::ik::update,
                         presentation::model_import::update,
                         presentation::sprite_import::update,
@@ -369,7 +409,7 @@ impl Plugin for StudioPlugin {
                         presentation::scene3d::ambient::update,
                         presentation::scene3d::path::update,
                         presentation::scene3d::segments::update,
-                        application::execute_commands,
+                        (application::mcp::update, application::execute_commands).chain(),
                     )
                         .chain(),
                     (
@@ -391,6 +431,7 @@ impl Plugin for StudioPlugin {
                             .chain(),
                         (
                             presentation::motion::preview::update,
+                            presentation::physics::preview::update,
                             presentation::ik::preview::update,
                         )
                             .chain(),

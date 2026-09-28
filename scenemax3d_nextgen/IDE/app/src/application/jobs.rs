@@ -23,6 +23,7 @@ pub(crate) struct EditorServices {
     pub(crate) symbols: scenemax_ide_services::SymbolIndexer,
     pub(crate) projector: ProjectorProcess,
     pub(crate) storage: Storage,
+    pub(crate) storage_outcome: Option<Result<(), String>>,
     pub(crate) catalog_storage: Storage,
     pub(crate) scene_storage: Storage,
     pub(crate) material_storage: Storage,
@@ -42,6 +43,7 @@ impl EditorServices {
             symbols: scenemax_ide_services::SymbolIndexer::new()?,
             projector: ProjectorProcess::new(executable),
             storage: Storage::new()?,
+            storage_outcome: None,
             catalog_storage: Storage::new()?,
             scene_storage: Storage::new()?,
             material_storage: Storage::new()?,
@@ -274,6 +276,10 @@ pub(crate) fn apply_storage(
                 }
             }
         }
+        StorageResult::WebOpened(result) => {
+            result?;
+            session.status = "Opened link in your browser".into();
+        }
         StorageResult::Explored(result) => {
             result?;
             session.status = "Opened in explorer".into();
@@ -408,10 +414,11 @@ pub(crate) fn apply_storage(
                     services.finish_session(session, false)?;
                 }
                 Some(SavePurpose::Run(id)) if !dirty && !session.closing => {
-                    services.projector.start(
-                        session.workspace.project().root(),
-                        session.workspace.document(id)?.path(),
-                    )?;
+                    let project = session.workspace.project();
+                    let target = project
+                        .run_target(session.workspace.document(id)?.path())
+                        .ok_or_else(|| anyhow::anyhow!("The active file is not runnable"))?;
+                    services.projector.start(project.root(), &target)?;
                     session.status = "Bevy projector started".into();
                 }
                 Some(SavePurpose::ProjectRun) if !dirty && !session.closing => {
@@ -456,15 +463,14 @@ pub(crate) fn poll_jobs(
     }
     match services.storage.poll() {
         Ok(Some(result)) => {
-            if let Err(error) =
-                apply_storage(result, &mut services, &mut session, &mut changes, &mut exit)
-            {
-                session.status = format!("{error:#}");
-            }
+            let outcome = apply_storage(result, &mut services, &mut session, &mut changes, &mut exit).map_err(|e| format!("{e:#}"));
+            if let Err(error) = &outcome { session.status = error.clone(); }
+            services.storage_outcome = Some(outcome);
         }
         Err(error) => {
             services.pending_save = None;
             session.status = error.to_string();
+            services.storage_outcome = Some(Err(error.to_string()));
         }
         Ok(None) => {}
     }
@@ -497,6 +503,39 @@ mod tests {
     use super::*;
     use scenemax_ide_services::Filesystem;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn designer_run_regenerates_clean_companion_before_launch_validation() {
+        let (mut app, dir, _) = setup();
+        let folder = dir.path().join("tmp/scene1");
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("scene1.smdesign");
+        std::fs::write(
+            &path,
+            r#"{"entities":[{"type":"CODE","name":"Logic","codeText":"Logger.info 42"}]}"#,
+        )
+        .unwrap();
+        let id = {
+            let mut session = app.world_mut().resource_mut::<Session>();
+            let doc = Filesystem::open_document(session.workspace.project(), &path).unwrap();
+            session.workspace.open_document(doc).unwrap()
+        };
+        for stale in [false, true] {
+            if stale {
+                std::fs::write(path.with_extension("code"), "// stale").unwrap();
+            }
+            save(&mut app, vec![id], SavePurpose::Run(id));
+            finish(&mut app);
+            assert!(
+                std::fs::read_to_string(path.with_extension("code"))
+                    .unwrap()
+                    .contains("Logger.info 42")
+            );
+            let session = app.world().resource::<Session>();
+            assert!(!session.workspace.has_dirty_documents());
+            assert!(session.status.contains("Bevy projector not found"));
+        }
+    }
 
     #[test]
     fn designer_save_all_refreshes_generated_tab_and_uses_saved_init() {

@@ -125,3 +125,10 @@ pub mod motion;
 pub mod ik;
 
 pub mod animation_analyzer;
+
+/// Background Git CLI adapter.
+pub mod git;
+/// Local MCP automation transport.
+pub mod mcp;
+
+pub mod physics;

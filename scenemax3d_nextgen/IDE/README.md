@@ -30,7 +30,7 @@ Click files in the project tree to edit them. The tree includes scripts, resourc
 
 ## Editing and running
 
-- **Run file / F8** runs the active `.code` or extensionless script. **Ctrl+F12** is the Java Bevy equivalent. Save other dirty scripts first. Non-script files cannot be run accidentally.
+- **Run file / F8** runs the active `.code` anywhere inside the project, including generated scenes under `tmp/`, or a discovered extensionless script. In a `.smdesign` tab it first saves/regenerates the companion `.code`, then runs that generated file. **Ctrl+F12** is the Java Bevy equivalent. Save other dirty scripts first. Non-script files cannot be run accidentally.
 - **Run project / F10** runs the shallowest extensionless `main` beneath `scripts/`, as Java does. **F12** is the Java Bevy equivalent. Equal-depth candidates use stable path order. Dirty buffers are saved first, so included files are current; edits arriving during the save cancel the deferred launch. An active tab is not required.
 - **Stop** cancels an already-running projector or a run waiting for saves. F5/Shift+F5 remain compatibility shortcuts for run-file/stop.
 - **Save / Ctrl+S**, **Save all / Ctrl+Shift+S**, Undo/Redo, **Check syntax / Ctrl+Enter**, and Find are available in the toolbar or through keyboard shortcuts. The extra Edit/Navigate/Run menus from the prototype have been removed to match Java.
@@ -221,3 +221,19 @@ With focus in the code editor, press Ctrl+plus (Ctrl+= also works) to enlarge te
 ### Model Animation Analyzer
 
 Tools → Model Animation Analyzer opens the project model catalog as a retained designer. Create named frame ranges, preview and scrub them, then save the records into the model JSON. The projector plays them through the ordinary animation syntax without modifying GLTF. See [the analyzer guide](ANIMATION_ANALYZER.md).
+
+### Scene designer ground grid
+
+The Scene designer displays an infinite XZ ground grid at Y=0, with a red X axis and blue Z axis. Major/minor spacing adapts smoothly as you zoom, and distant lines fade toward the horizon. The grid is an editor aid: it does not add a hierarchy item, intercept selection, change saved scene data, or appear in the game-camera preview or runtime.
+
+### Git tools
+
+The Git menu now opens retained staging/commit, branches, history/diffs, clone, push/pull/rebase/fetch, stash, initialization, ignore-file and configuration dialogs. Git operations run on an owned background worker with progress and cancellation. See [Git workflows and safeguards](GIT.md).
+
+### AI agent automation (MCP)
+
+The IDE now starts a lightweight localhost MCP server at `http://127.0.0.1:8765/mcp`. Click **MCP** at the bottom right for its connection status and request monitor. AI agents can inspect/edit project files, author scenes and UI, validate, generate code, run previews and capture the 3D viewport. A native stdio proxy supports clients without HTTP transport. See [connection and authoring guide](MCP.md) and [all available tools](MCP_TOOLS.md).
+
+### Physics Simulation
+
+Tools > Physics Simulation opens an isolated Avian laboratory with throw, impulse, force, velocity, angular velocity, torque and stop experiments. Use Play/Pause (F8), Step, Reset, live motion readings and a measured trajectory trail. Copy commands for an existing body or a complete runnable example. See [controls and runtime semantics](PHYSICS_SIMULATION.md).

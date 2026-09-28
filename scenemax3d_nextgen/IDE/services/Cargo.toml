@@ -4,7 +4,12 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 
+[[bin]]
+name = "scenemax_mcp_proxy"
+path = "src/mcp_proxy.rs"
+
 [dependencies]
+base64 = "=0.22.1"
 scenemax_ide_core = { path = "../core" }
 scenemax_runtime_ui_core = { path = "../../Engine/runtime_ui" }
 scenemax_assets = { path = "../../Common/assets" }

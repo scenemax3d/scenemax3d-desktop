@@ -57,3 +57,10 @@ pub mod motion;
 pub mod ik;
 
 pub mod animation_analyzer;
+
+/// Version control workflow data.
+pub mod git;
+/// Agent automation schemas and authoring transactions.
+pub mod automation;
+
+pub mod physics;

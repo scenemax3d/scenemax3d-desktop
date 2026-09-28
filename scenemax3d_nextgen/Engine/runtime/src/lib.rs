@@ -246,6 +246,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             FrameTimeDiagnosticsPlugin::default(),
             SystemInformationDiagnosticsPlugin,
             PhysicsPlugins::default(),
+            scenemax_physics::MotionPlugin,
             PhysicsDebugPlugin,
             TnuaControllerPlugin::<SceneMaxControlScheme>::new(PhysicsSchedule),
             TnuaAvian3dPlugin::new(PhysicsSchedule),

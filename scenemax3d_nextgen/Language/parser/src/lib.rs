@@ -1,3 +1,4 @@
+pub mod physics_motion;
 pub mod ik;
 use thiserror::Error;
 
@@ -75,6 +76,7 @@ pub enum Statement {
     },
     CharacterIgnore(CharacterIgnoreStatement),
     CharacterJump(CharacterJumpStatement),
+    PhysicsMotion { target: String, action: physics_motion::Action },
     PhysicsImpulse(PhysicsImpulseStatement),
     PhysicsStop {
         target: String,
@@ -2342,6 +2344,11 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
 
     if let Some(jump) = parse_character_jump(line)? {
         return Ok(Statement::CharacterJump(jump));
+    }
+
+    if let Some((target, rest)) = split_dot_command_rest(line)
+        && let Some(action) = physics_motion::parse(&rest).map_err(ParseError::InvalidNumber)? {
+        return Ok(Statement::PhysicsMotion { target, action });
     }
 
     if let Some(physics) = parse_physics_command(line)? {

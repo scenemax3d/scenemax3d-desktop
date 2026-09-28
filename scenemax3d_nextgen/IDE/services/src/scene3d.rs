@@ -55,6 +55,8 @@ pub struct Entity3d {
     pub hidden: bool,
     /// Validated model asset, when available.
     pub model: Option<PathBuf>,
+    /// Model-local visual correction applied by the runtime after GLTF loading.
+    pub model_offset_y: f32,
     /// Unsupported/missing-resource information.
     pub note: String,
 }
@@ -122,6 +124,7 @@ pub fn load(root: &Path, source: &str) -> Result<Scene3d, String> {
             size: [1.; 3],
             hidden: e["hidden"].as_bool().unwrap_or(false),
             model: None,
+            model_offset_y: 0.,
             note: String::new(),
         };
         let number = |key, default| e[key].as_f64().unwrap_or(default) as f32;
@@ -139,6 +142,8 @@ pub fn load(root: &Path, source: &str) -> Result<Scene3d, String> {
                 let resource = e["resourcePath"].as_str().unwrap_or("");
                 match scenemax_assets::resolve_model_resource(&resources, resource) {
                     Ok(model) => {
+                        item.model_offset_y = model.character_physics.as_ref()
+                            .and_then(|p| p.bevy_visual_offset_y).unwrap_or(0.);
                         let path = resources.join(&model.asset_path).canonicalize();
                         match path {
                             Ok(path)
@@ -202,6 +207,7 @@ pub fn load(root: &Path, source: &str) -> Result<Scene3d, String> {
         size: [2.; 3],
         hidden: false,
         model: None,
+        model_offset_y: 0.,
         note: String::new(),
     });
     let materials = crate::material::documents(root)?;
@@ -233,7 +239,7 @@ mod tests {
         let models = dir.path().join("resources/Models");
         std::fs::create_dir_all(&models).unwrap();
         std::fs::write(models.join("sample.glb"), []).unwrap();
-        std::fs::write(models.join("models-ext.json"), r#"{"models":[{"name":"sample","path":"Models/sample.glb","scaleX":0.01,"scaleY":0.02,"scaleZ":0.03}]}"#).unwrap();
+        std::fs::write(models.join("models-ext.json"), r#"{"models":[{"name":"sample","path":"Models/sample.glb","scaleX":0.01,"scaleY":0.02,"scaleZ":0.03,"physics":{"character":{"bevyVisualOffsetY":-0.18}}}]}"#).unwrap();
         let scene = load(dir.path(), r#"{"entities":[{"type":"SECTION","name":"Group","children":[{"type":"MODEL","name":"Saved","resourcePath":"sample","scale":[2,3,4]},{"type":"SECTION","children":[{"type":"MODEL","resourcePath":"sample"}]}]},{"type":"BOX"}]}"#).unwrap();
         assert_eq!(scene.entities.len(), 6);
         assert_eq!(scene.entities[1].parent, Some(0));
@@ -243,6 +249,7 @@ mod tests {
         assert_eq!(scene.entities[1].scale, [2., 3., 4.]);
         assert_eq!(scene.entities[3].scale, [0.01, 0.02, 0.03]);
         assert!(scene.entities[1].model.is_some());
+        assert_eq!(scene.entities[1].model_offset_y, -0.18);
     }
     #[test]
     fn imports_geometry_and_retains_code_without_running_it() {

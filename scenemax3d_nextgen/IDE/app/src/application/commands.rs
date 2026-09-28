@@ -19,6 +19,8 @@ pub(crate) enum Command {
     RunPath(PathBuf),
     ReloadPath(PathBuf),
     Explore(PathBuf),
+    OpenWeb(String),
+    OpenInstallationFolder,
     SaveCopy(PathBuf),
     SaveCloseTab,
     DiscardTab,
@@ -72,7 +74,7 @@ pub(crate) fn execute_commands(
     }
 }
 
-fn execute(
+pub(super) fn execute(
     command: Command,
     session: &mut Session,
     services: &mut EditorServices,
@@ -226,6 +228,14 @@ fn execute(
             services.storage.request(StorageRequest::NewProject(path))?;
             session.status = "Creating project...".into();
         }
+        Command::OpenInstallationFolder => {
+            services
+                .storage
+                .request(StorageRequest::OpenInstallationFolder)?;
+        }
+        Command::OpenWeb(url) => {
+            services.storage.request(StorageRequest::OpenWeb(url))?;
+        }
         Command::Open(path) => {
             if let Some(id) = session.workspace.find_document(&path) {
                 session.workspace.select(id)?;
@@ -347,13 +357,7 @@ fn execute(
         Command::Run => {
             let id = session.workspace.require_active()?;
             let path = session.workspace.document(id)?.path();
-            if !session
-                .workspace
-                .project()
-                .scripts()
-                .iter()
-                .any(|script| script == path)
-            {
+            if session.workspace.project().run_target(path).is_none() {
                 bail!("The active file is not a runnable SceneMax script");
             }
             if session

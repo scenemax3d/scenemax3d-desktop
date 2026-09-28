@@ -4100,9 +4100,7 @@ pub(super) fn apply_physics_impulse_resolved(
 }
 
 pub(super) fn apply_physics_stop(commands: &mut Commands, entity: Entity) {
-    commands
-        .entity(entity)
-        .insert((LinearVelocity::ZERO, AngularVelocity::ZERO));
+    scenemax_physics::stop(commands, entity);
 }
 
 const PHYSICS_THROW_DEFAULT_GRAVITY: f32 = 9.81;

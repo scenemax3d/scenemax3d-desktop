@@ -770,6 +770,45 @@ fn catalog_selection_populates_tree_opens_main_and_saves_edits() {
 }
 
 #[test]
+fn f8_accepts_generated_code_and_scene_designer_outside_scripts() {
+    for extension in ["code", "smdesign"] {
+        let (mut app, dir, _) = app();
+        let folder = dir.path().join("tmp/scene1");
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join(format!("scene1.{extension}"));
+        std::fs::write(
+            &path,
+            if extension == "code" {
+                "// generated"
+            } else {
+                r#"{"entities":[]}"#
+            },
+        )
+        .unwrap();
+        {
+            let mut session = app.world_mut().resource_mut::<Session>();
+            let doc = scenemax_ide_services::Filesystem::open_document(
+                session.workspace.project(),
+                &path,
+            )
+            .unwrap();
+            session.workspace.open_document(doc).unwrap();
+        }
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::F8);
+        app.update();
+        // The harness has no projector; reaching validation checks the real F8 route.
+        assert!(
+            app.world()
+                .resource::<Session>()
+                .status
+                .contains("Bevy projector not found")
+        );
+    }
+}
+
+#[test]
 fn java_run_shortcuts_distinguish_project_from_active_file() {
     let (mut app, _dir, _) = app();
     app.world_mut()

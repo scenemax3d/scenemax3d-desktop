@@ -174,7 +174,7 @@ pub(super) fn spawn_world(
             let handle: Handle<WorldAsset> = server.load(asset.with_label("Scene0"));
             commands.spawn((
                 WorldAssetRoot(handle),
-                Transform::default(),
+                Transform::from_xyz(0., e.model_offset_y, 0.),
                 ChildOf(entity),
             ));
         } else if [

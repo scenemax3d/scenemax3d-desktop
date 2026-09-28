@@ -379,6 +379,9 @@ pub fn substitute_statement(
             speed_value: substitute_assignment_value(&jump.speed_value, bindings),
             async_run: jump.async_run,
         }),
+        Statement::PhysicsMotion { target, action } => Statement::PhysicsMotion {
+            target: substitute_path(target, bindings), action: action.clone(),
+        },
         Statement::PhysicsImpulse(impulse) => {
             Statement::PhysicsImpulse(scenemax_parser::PhysicsImpulseStatement {
                 target: substitute_path(&impulse.target, bindings),
@@ -1175,4 +1178,13 @@ mod tests {
             ]
         );
     }
+    #[test]
+    fn substitutes_physics_body_function_argument() {
+        let program = parse_program("launch(item) = {\nitem.physics velocity (0,4,8)\nitem.physics torque (0,2,0) impulse\n}").unwrap();
+        let functions=collect_functions_by_name(&program);
+        let actions=instantiate_function_actions(functions.get("launch").unwrap(), &["sample_body".into()]);
+        assert!(actions.iter().all(|s|matches!(s,Statement::PhysicsMotion{target,..} if target=="sample_body")));
+        assert_eq!(actions.len(),2);
+    }
+
 }
