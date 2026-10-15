@@ -1,0 +1,3208 @@
+[
+  {
+    "name": "project.get_context",
+    "description": "Active project, open documents, revisions, running state and MCP connection.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "project.list_tree",
+    "description": "List project inventory with bounded results and offset pagination.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "query": {
+          "type": "string"
+        },
+        "root": {
+          "type": "string"
+        },
+        "maxResults": {
+          "type": "integer"
+        },
+        "maxEntries": {
+          "type": "integer"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "project.search_files",
+    "description": "List project inventory with bounded results and offset pagination.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "query": {
+          "type": "string"
+        },
+        "root": {
+          "type": "string"
+        },
+        "maxResults": {
+          "type": "integer"
+        },
+        "maxEntries": {
+          "type": "integer"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "project.search_text",
+    "description": "Search project text, preferring unsaved editor buffers.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "query": {
+          "type": "string"
+        },
+        "maxResults": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "project.refresh_tree",
+    "description": "Refresh project inventory through the IDE worker.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.refresh_project_tree",
+    "description": "Refresh project inventory through the IDE worker.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "file.read",
+    "description": "Read current editor text or load a project file. Returns revision and dirty state.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "file.create",
+    "description": "Create a new UTF-8 file without overwriting; optionally create missing parent directories.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "content": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        },
+        "createParents": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "file.modify",
+    "description": "Replace all text or an exact expected text match; edits are undoable.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "newContent": {
+          "type": "string"
+        },
+        "expectedText": {
+          "type": "string"
+        },
+        "replacementText": {
+          "type": "string"
+        },
+        "replaceAll": {
+          "type": "boolean"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "editor.get_active_document",
+    "description": "Read the active buffer.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "editor.list_documents",
+    "description": "List open documents and revisions.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "editor.open_file",
+    "description": "Open a project file in its native editor.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "editor.reload_from_disk",
+    "description": "Reload a clean file. Dirty buffers are refused.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "editor.save_active",
+    "description": "Save active document and generated companions.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "editor.save_all",
+    "description": "Save all open documents.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "editor.undo",
+    "description": "Undo one active-document edit.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "editor.redo",
+    "description": "Redo one active-document edit.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "run.preview_scene",
+    "description": "Save and run the active script or designer generated code.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "run.stop",
+    "description": "Stop the owned projector.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "app.restart",
+    "description": "Restart IDE using normal unsaved-document guards.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "runtime.get_issue_log",
+    "description": "Read bounded IDE status, runtime output and MCP request diagnostics.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ide.get_recent_errors",
+    "description": "Read bounded IDE status, runtime output and MCP request diagnostics.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ide.get_status",
+    "description": "Read bounded IDE status, runtime output and MCP request diagnostics.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.create_document",
+    "description": "Create a native scene (.smdesign) or UI (.smui) document.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "directoryPath": {
+          "type": "string"
+        },
+        "fileName": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "scene",
+            "ui"
+          ]
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "directoryPath",
+        "fileName",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "scene.create",
+    "description": "Create a scene directory, designer and companion scripts.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "parentPath": {
+          "type": "string"
+        },
+        "sceneName": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "parentPath",
+        "sceneName"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.get_document_json",
+    "description": "Inspect or validate the current JSON document, including unsaved edits.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.list_entities",
+    "description": "Inspect or validate the current JSON document, including unsaved edits.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.validate_document",
+    "description": "Inspect or validate the current JSON document, including unsaved edits.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ui.validate_document",
+    "description": "Inspect or validate the current JSON document, including unsaved edits.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ui.list_layers",
+    "description": "Inspect or validate the current JSON document, including unsaved edits.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ui.list_widgets",
+    "description": "Inspect or validate the current JSON document, including unsaved edits.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.set_document_json",
+    "description": "Replace a scene/UI JSON document while preserving undo history.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "document": {
+          "type": "object"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "document"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.get_entity",
+    "description": "Read one scene entity.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "entity_id": {
+          "type": "string"
+        },
+        "entity_name": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.delete_entity",
+    "description": "Remove a scene entity subtree.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "entity_id": {
+          "type": "string"
+        },
+        "entity_name": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.select_entity",
+    "description": "Select an entity in the live designer.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "entity_id": {
+          "type": "string"
+        },
+        "entity_name": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.update_entity",
+    "description": "Patch scene entity properties; identity and hierarchy are preserved.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "entity_id": {
+          "type": "string"
+        },
+        "entity_name": {
+          "type": "string"
+        },
+        "updates": {
+          "type": "object"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "updates"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.add_primitive",
+    "description": "Add a scene entity using native templates. Rotation is quaternion XYZW.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "primitive": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "primitive"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.add_primitive_advanced",
+    "description": "Add a scene entity using native templates. Rotation is quaternion XYZW.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "primitive": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "primitive"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.add_entities_batch",
+    "description": "Atomically add up to 100 native entity objects.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "entities": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "maxItems": 100
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "entities"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.duplicate_entity",
+    "description": "Create translated copies with fresh identities.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "entity_id": {
+          "type": "string"
+        },
+        "entity_name": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "step": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.array_entities",
+    "description": "Create translated copies with fresh identities.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "entity_id": {
+          "type": "string"
+        },
+        "entity_name": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "step": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.mirror_entities",
+    "description": "Mirror one entity position/scale about a world axis (copy or in place).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "entity_id": {
+          "type": "string"
+        },
+        "entity_name": {
+          "type": "string"
+        },
+        "axis": {
+          "type": "string",
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ]
+        },
+        "pivot": {
+          "type": "number"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "copy",
+            "move"
+          ]
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "axis"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.group_entities",
+    "description": "Group top-level entities or ungroup a section.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "entity_id": {
+          "type": "string"
+        },
+        "entity_name": {
+          "type": "string"
+        },
+        "entity_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "group",
+            "ungroup"
+          ]
+        },
+        "group_name": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.apply_material",
+    "description": "Assign a native material to an entity.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "entity_id": {
+          "type": "string"
+        },
+        "entity_name": {
+          "type": "string"
+        },
+        "material": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "material"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.create_cinematic_rig",
+    "description": "Add a native cinematic rig and track.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "name": {
+          "type": "string"
+        },
+        "targetEntityId": {
+          "type": "string"
+        },
+        "targetEntityName": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.generate_code",
+    "description": "Save via native IDE pipeline, including generated companions/export when applicable.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "material.save_export",
+    "description": "Save via native IDE pipeline, including generated companions/export when applicable.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.list_available_materials",
+    "description": "List current project resource metadata.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ui.list_sprites",
+    "description": "List current project resource metadata.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ui.list_fonts",
+    "description": "List current project resource metadata.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "asset.list_models",
+    "description": "List current project resource metadata.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.validate_resources",
+    "description": "Resolve scene resources and return per-entity diagnostics.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ui.get_schema",
+    "description": "Get native UI authoring schema and templates.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ui.add_layer",
+    "description": "Add a UI layer.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "name": {
+          "type": "string"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "zOrder": {
+          "type": "integer"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ui.update_layer",
+    "description": "Patch a layer by name, ID or JSON pointer.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "layerName": {
+          "type": "string"
+        },
+        "layerId": {
+          "type": "string"
+        },
+        "updates": {
+          "type": "object"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "updates"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ui.delete_layer",
+    "description": "Delete a layer and its widgets.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "layerName": {
+          "type": "string"
+        },
+        "layerId": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ui.get_widget",
+    "description": "Find a widget by JSON pointer, name or ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "widgetPath": {
+          "type": "string"
+        },
+        "widgetId": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ui.delete_widget",
+    "description": "Find a widget by JSON pointer, name or ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "widgetPath": {
+          "type": "string"
+        },
+        "widgetId": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ui.add_widget",
+    "description": "Add a native widget to a layer or PANEL selected by JSON pointer.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "parent": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "ui.update_widget",
+    "description": "Patch a widget, including constraints and appearance.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "widgetPath": {
+          "type": "string"
+        },
+        "widgetId": {
+          "type": "string"
+        },
+        "updates": {
+          "type": "object"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "updates"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.get_view_state",
+    "description": "Read live scene camera and selection.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.adjust_view",
+    "description": "Set live orbit camera target, distance and angles.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "cameraTarget": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "cameraDistance": {
+          "type": "number"
+        },
+        "cameraYawDegrees": {
+          "type": "number"
+        },
+        "cameraPitchDegrees": {
+          "type": "number"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.use_view_gizmo",
+    "description": "Select a standard live camera orientation.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "preset": {
+          "type": "string",
+          "enum": [
+            "front",
+            "back",
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ]
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "preset"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.capture_canvas",
+    "description": "Capture the live scene render target as an MCP PNG image. Includes editor grid/gizmos.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.capture_canvas_reliable",
+    "description": "Capture the live scene render target as an MCP PNG image. Includes editor grid/gizmos.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.capture_thumbnail",
+    "description": "Capture the live scene render target as an MCP PNG image. Includes editor grid/gizmos.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.overlay_reference_image",
+    "description": "Overlay a local project image over the scene viewport. Preview-only; not saved or exported.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "image_path": {
+          "type": "string"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "opacity": {
+          "type": "number"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "designer.compare_to_reference",
+    "description": "Compare two local project images with normalized grayscale MSE; returns dimensions and similarity. Does not generate or download files.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "reference_image_path": {
+          "type": "string"
+        },
+        "snapshot_path": {
+          "type": "string"
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [
+        "reference_image_path",
+        "snapshot_path"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "editor.check",
+    "description": "Validate the active script or native scene/UI/material document without running it. Includes the checked snapshot revision.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project-relative path; omit to use active document."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "project",
+            "scripts",
+            "resources"
+          ]
+        },
+        "expected_revision": {
+          "type": "string",
+          "description": "Revision from a read. Required to modify an already-dirty buffer."
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save through IDE conflict checks after edit; default true."
+        },
+        "project_root": {
+          "type": "string",
+          "description": "Optional root from project.get_context; reject the request if the user switched projects."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  }
+]

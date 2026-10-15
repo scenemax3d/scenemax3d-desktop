@@ -54,6 +54,21 @@ Project replacement rechecks dirty buffers when loading completes, since users c
 * No game-specific resource/entity/animation names or behavior in engine/runtime code. Such data belongs in scripts, project configuration or tests, as required by the repository's AGENTS.md.
 * Avoid global mutable registries and unmanaged child processes. Background work has an owner, bounded communication and a defined shutdown path.
 
+## Multiplayer boundary
+
+`Engine/multiplayer` owns the version-one Java/Zig wire contract and nonblocking
+bounded UDP client. It does not depend on Bevy or IDE components. Runtime bindings
+under `Engine/runtime/src/multiplayer` own local/remote entity identity and replay
+through the existing action queue. Network source may not execute local includes,
+scene changes or unrelated entity commands. Game-specific names and rules remain
+project data.
+
+IDE core owns multiplayer settings, services owns bounded background storage and
+server-template patching, application owns project identity and actions, and the
+presentation owns retained widgets. IDE does not link the runtime/client crate.
+Package metadata is written only into the deployment snapshot. See
+[the multiplayer guide](../IDE/MULTIPLAYER.md) for implemented scope and remaining Java parity gaps.
+
 ## Verification
 
 `Tools/verify.ps1` is the local/CI entry point. It runs architecture checks and their negative cases, formatting and warning-free Clippy for the new IDE crates, a whole-workspace compile check, and library tests. IDE and runtime test/build invocations are separated to avoid unnecessary Bevy feature unification. The existing engine crates retain their compiler/test baseline; tightening their historical lint baseline is separate work, not a reason to suppress new IDE warnings.
@@ -143,3 +158,12 @@ The native IDE owns its MCP server; no engine/projector module depends on it. `I
 ## Physics laboratory and shared command adapter
 
 `Engine/physics` is a shared, generic Avian command adapter used by Engine/runtime and IDE/app. It depends on Language/parser's explicit physics command data and contains no UI, project state or game-specific behavior. IDE/app uses it in an isolated headless Avian world; only measured poses enter the retained offscreen viewport. IDE/core owns settings and generated source; IDE/services validates generated commands through the parser. The IDE does not depend on Engine/runtime or the projector. `Tools/check_architecture.py` records this justified shared-engine boundary. See [Physics Simulation](../IDE/PHYSICS_SIMULATION.md).
+
+## Shared script values
+
+`Common/script_values` owns collection identity and explicit JSON snapshots. It has
+no Engine, Bevy, parser, IDE, filesystem or process dependency. Language/parser
+uses its handle only for runtime-reduced expressions; source parsing creates normal
+syntax values. Engine/vm owns bindings and evaluation; Engine/runtime owns effectful
+function execution. This boundary allows references to cross evaluated expressions
+without introducing a Language-to-Engine dependency or wire-format identity tokens.

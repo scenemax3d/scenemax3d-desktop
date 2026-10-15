@@ -1,0 +1,13 @@
+[package]
+name = "scenemax_materials"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bevy = { workspace = true, features = ["3d", "pbr_anisotropy_texture", "png", "jpeg"] }
+serde_json.workspace = true
+scenemax_assets = { path = "../../Common/assets" }
+
+[lints]
+workspace = true

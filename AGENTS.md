@@ -1,5 +1,12 @@
 # Project Rules
 
+The migration creates independent Rust/Bevy IDE and runtime implementations. Use
+the existing Java code only as a behavioral reference; do not add or modify Java
+implementation code or introduce dependencies on Java source, binaries, or a JVM.
+The Java code will eventually be removed. Keep Bevy product UI wording focused
+on SceneMax features, without Java compatibility or migration labels. Existing
+SceneMax project data and the dedicated Zig UDP server remain supported.
+
 The SceneMax projector/runtime code is a generic engine.
 
 Never add game-specific code, asset names, entity names, animation names, fallback assets, hardcoded variables, or behavior for a specific game inside projector, engine, or runtime modules.
